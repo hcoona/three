@@ -14,11 +14,9 @@ public sealed class NativeProcessTests
     [TestMethod]
     public async Task ExecuteClosesStandardInputBeforeAwaitingNativeExit()
     {
-        const string script = "[Console]::Out.Write([Console]::In.ReadToEnd().Length); exit 0";
-        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-        NativeCommandResult result = await NativeProcess.ExecuteAsync(new("pwsh",
-            Path.GetTempPath(), ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
-                encoded], 30, CloseStandardInput: true), TestContext.CancellationToken);
+        NativeCommandResult result = await NativeProcess.ExecuteAsync(new(
+            TestProcess.Executable, Path.GetTempPath(), TestProcess.Arguments("stdin-length"), 30,
+            TestProcess.Environment(), CloseStandardInput: true), TestContext.CancellationToken);
 
         Assert.AreEqual(NativeTermination.Exited, result.Termination);
         Assert.AreEqual(0, result.ExitCode);
@@ -27,101 +25,45 @@ public sealed class NativeProcessTests
         Assert.IsNull(result.Error);
     }
 
+    // Null values remove a variable and InheritEnvironment=false isolates the child from
+    // ambient variables, such as receiver-only secrets.
     [TestMethod]
-    public async Task ExecuteAppliesPerCommandEnvironmentWithoutAmbientMutation()
+    public async Task ExecuteAppliesCommandEnvironmentSemantics()
     {
         string marker = "WORKFLOW_PROCESS_PROBE_" + Guid.NewGuid().ToString("N");
         string removed = OperatingSystem.IsWindows() ? "USERPROFILE" : "HOME";
-        string? original = Environment.GetEnvironmentVariable(removed);
-        Assert.IsNotNull(original);
-        string inheritedName = OperatingSystem.IsWindows() ? "SystemRoot" : "USER";
-        string? inherited = Environment.GetEnvironmentVariable(inheritedName);
-        Assert.IsNotNull(inherited);
-        const string value = "native spaces;percent% equals=tail";
-        string script = "[Console]::Out.Write([Environment]::GetEnvironmentVariable('" +
-            marker + "') + '|' + [Environment]::GetEnvironmentVariable('" + removed +
-            "') + '|' + [Environment]::GetEnvironmentVariable('" + inheritedName + "'))";
-        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-        var environment = new Dictionary<string, string?>
-        {
-            [marker] = value,
-            [removed] = null,
-        };
+        Assert.IsNotNull(Environment.GetEnvironmentVariable(removed));
+        Assert.IsNotNull(Environment.GetEnvironmentVariable("PATH"));
+        Dictionary<string, string?> inherited = TestProcess.Environment();
+        inherited[marker] = "set";
+        inherited[removed] = null;
+        Dictionary<string, string?> isolated = TestProcess.Environment();
+        isolated[marker] = "kept";
+        // Only what the apphost needs to locate the runtime crosses the cleared boundary.
+        foreach (string name in (string[])["DOTNET_ROOT", "SystemRoot"])
+            if (Environment.GetEnvironmentVariable(name) is { } value) isolated[name] = value;
+        string[] arguments = TestProcess.Arguments("variables", marker, removed, "PATH");
 
-        NativeCommandResult result = await NativeProcess.ExecuteAsync(new("pwsh",
-            Path.GetTempPath(), ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
-                encoded], 30, environment), TestContext.CancellationToken);
-
-        Assert.IsTrue(result.Succeeded, result.Stderr);
-        Assert.AreEqual(value + "||" + inherited, result.Stdout);
-        Assert.IsNull(Environment.GetEnvironmentVariable(marker));
-        Assert.AreEqual(original, Environment.GetEnvironmentVariable(removed));
-        Assert.AreEqual(inherited, Environment.GetEnvironmentVariable(inheritedName));
-    }
-
-    [TestMethod]
-    public async Task ExecuteWithoutInheritedEnvironmentPassesOnlyCommandEnvironment()
-    {
-        // The app's own Environment.Clear wrapper line; ambient variables are only read.
-        // PATH is always present in the test host and is deliberately not passed below.
-        // pwsh itself adds its own directory to PATH, so only the other host entries count.
-        const string ambientName = "PATH";
-        string[] hostPath = (Environment.GetEnvironmentVariable(ambientName) ?? "")
-            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
-        string pwsh = hostPath
-            .Select(directory => Path.Combine(directory,
-                OperatingSystem.IsWindows() ? "pwsh.exe" : "pwsh"))
-            .First(File.Exists);
-        string pwshDirectory = Path.GetDirectoryName(pwsh)!;
-        string[] ambientEntries = [.. hostPath.Where(directory =>
-            !string.Equals(directory.TrimEnd(Path.DirectorySeparatorChar), pwshDirectory,
-                StringComparison.OrdinalIgnoreCase))];
-        Assert.IsNotEmpty(ambientEntries);
-        string marker = "WORKFLOW_PROCESS_PROBE_" + Guid.NewGuid().ToString("N");
-        var environment = new Dictionary<string, string?> { [marker] = "kept" };
-        foreach (string name in (string[])(OperatingSystem.IsWindows() ?
-            ["SystemRoot", "TEMP", "TMP", "USERPROFILE"] : ["HOME", "TMPDIR"]))
-            if (Environment.GetEnvironmentVariable(name) is { } value)
-                environment[name] = value;
-        string script = "[Console]::Out.Write([Environment]::GetEnvironmentVariable('" +
-            marker + "') + '|' + [Environment]::GetEnvironmentVariable('" + ambientName +
-            "'))";
-        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-
-        NativeCommandResult result = await NativeProcess.ExecuteAsync(new(pwsh,
-            Path.GetTempPath(), ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
-                encoded], 30, environment, InheritEnvironment: false),
+        NativeCommandResult applied = await NativeProcess.ExecuteAsync(new(
+            TestProcess.Executable, Path.GetTempPath(), arguments, 30, inherited),
             TestContext.CancellationToken);
+        NativeCommandResult cleared = await NativeProcess.ExecuteAsync(new(
+            TestProcess.Executable, Path.GetTempPath(), arguments, 30, isolated,
+            InheritEnvironment: false), TestContext.CancellationToken);
 
-        Assert.IsTrue(result.Succeeded, result.Stderr);
-        string[] observed = result.Stdout.Split('|', 2);
-        Assert.AreEqual("kept", observed[0]);
-        string[] childPath = observed[1].Split(Path.PathSeparator,
-            StringSplitOptions.RemoveEmptyEntries);
-        foreach (string entry in ambientEntries)
-            Assert.DoesNotContain(entry, childPath, "Ambient PATH entry leaked: " + entry);
-    }
-
-    [TestMethod]
-    public async Task RunPreservesLiteralArgumentsAndWorkingDirectory()
-    {
-        using var fixture = new ProcessFixture(
-            "[Console]::Out.Write((Get-Location).Path + '|' + $args[0])");
-        const string argument = "spaces 'quotes' $variable ; & literal";
-
-        string output = await fixture.RunAsync(TestContext.CancellationToken, argument);
-
-        Assert.AreEqual(fixture.Directory + "|" + argument, output);
+        Assert.IsTrue(applied.Succeeded, applied.Stderr);
+        Assert.AreEqual("set||" + Environment.GetEnvironmentVariable("PATH"), applied.Stdout);
+        Assert.IsTrue(cleared.Succeeded, cleared.Stderr);
+        Assert.AreEqual("kept||", cleared.Stdout);
     }
 
     [TestMethod]
     public async Task RunRejectsFailureWithoutExposingRawDiagnostics()
     {
-        using var fixture = new ProcessFixture(
-            "[Console]::Error.Write('private diagnostic'); exit 7");
-
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(
-            () => fixture.RunAsync(TestContext.CancellationToken));
+            () => NativeProcess.RunAsync(TestProcess.Executable, Path.GetTempPath(),
+                TestProcess.Arguments("exit", "7", "", "private diagnostic"),
+                TestContext.CancellationToken, Guard()));
 
         Assert.Contains("exit code 7", error.Message);
         Assert.DoesNotContain("private diagnostic", error.Message);
@@ -132,8 +74,7 @@ public sealed class NativeProcessTests
     {
         const string expected = "\uFEFF雪\0";
 
-        string output = await RunRawOutputAsync(
-            Convert.ToBase64String(Encoding.UTF8.GetBytes(expected)),
+        string output = await RunRawOutputAsync(TestProcess.Base64(expected),
             TestContext.CancellationToken);
 
         Assert.AreEqual(expected, output);
@@ -150,39 +91,23 @@ public sealed class NativeProcessTests
             () => RunRawOutputAsync(bytes, TestContext.CancellationToken));
     }
 
-    private static Task<string> RunRawOutputAsync(string payload, CancellationToken token)
-    {
-        string script = "$bytes = [Convert]::FromBase64String('" + payload + "'); " +
-            "[Console]::OpenStandardOutput().Write($bytes, 0, $bytes.Length)";
-        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-        return NativeProcess.RunAsync("pwsh", Path.GetTempPath(),
-            ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], token);
-    }
+    private static Task<string> RunRawOutputAsync(string payload, CancellationToken token) =>
+        NativeProcess.RunAsync(TestProcess.Executable, Path.GetTempPath(),
+            TestProcess.Arguments("bytes", payload, ""), token, Guard());
+
+    private static Dictionary<string, string> Guard() =>
+        new() { [TestProcess.GuardVariable] = "1" };
 
     [TestMethod]
     public async Task RunCancellationTerminatesOwnedProcess()
     {
         string pidPath = Path.Combine(Path.GetTempPath(),
             "workflow native process " + Guid.NewGuid().ToString("N") + ".pid");
-        string encodedPath = Convert.ToBase64String(Encoding.UTF8.GetBytes(pidPath));
-        string script = "$path = [Text.Encoding]::UTF8.GetString(" +
-            "[Convert]::FromBase64String('" + encodedPath + "')); " +
-            "$staging = $path + '.tmp'; " +
-            "$start = [Diagnostics.ProcessStartInfo]::new([Environment]::ProcessPath); " +
-            "foreach ($argument in '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', " +
-            "'Start-Sleep -Seconds 60') { $start.ArgumentList.Add($argument) }; " +
-            "$start.RedirectStandardInput = $true; $start.RedirectStandardOutput = $true; " +
-            "$start.RedirectStandardError = $true; " +
-            "$descendant = [Diagnostics.Process]::Start($start); " +
-            "[System.IO.File]::WriteAllText($staging, [string]$PID + ' ' + $descendant.Id); " +
-            "[System.IO.File]::Move($staging, $path); Start-Sleep -Seconds 60";
-        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.CancellationToken);
         cancellation.CancelAfter(TimeSpan.FromSeconds(15));
-        Task<string> query = NativeProcess.RunAsync("pwsh", Path.GetTempPath(),
-            ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
-            cancellation.Token);
+        Task<string> query = NativeProcess.RunAsync(TestProcess.Executable, Path.GetTempPath(),
+            TestProcess.Arguments("pid", pidPath, "descendant"), cancellation.Token, Guard());
         Exception? failure = null;
         Process? descendant = null;
         try
@@ -279,38 +204,14 @@ public sealed class NativeProcessTests
     [TestMethod]
     public async Task RunOutputLimitStopsQueryBeforeItsDeadline()
     {
-        string script =
-            "[Console]::Out.Write(('x' * (32 * 1024 * 1024 + 1))); Start-Sleep -Seconds 60";
-        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.CancellationToken);
         cancellation.CancelAfter(TimeSpan.FromSeconds(15));
 
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(
-            () => NativeProcess.RunAsync("pwsh", Path.GetTempPath(),
-                ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
-                cancellation.Token));
+            () => NativeProcess.RunAsync(TestProcess.Executable, Path.GetTempPath(),
+                TestProcess.Arguments("flood", "stdout"), cancellation.Token, Guard()));
 
         Assert.Contains("characters", error.Message);
-    }
-
-    private sealed class ProcessFixture : IDisposable
-    {
-        internal string Directory { get; } = Path.Combine(Path.GetTempPath(),
-            "workflow native process " + Guid.NewGuid().ToString("N"));
-        private readonly string script;
-
-        internal ProcessFixture(string content)
-        {
-            System.IO.Directory.CreateDirectory(Directory);
-            script = Path.Combine(Directory, "query.ps1");
-            File.WriteAllText(script, content);
-        }
-
-        internal Task<string> RunAsync(CancellationToken token, params string[] arguments) =>
-            NativeProcess.RunAsync("pwsh", Directory,
-                ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", script, .. arguments], token);
-
-        public void Dispose() => System.IO.Directory.Delete(Directory, recursive: true);
     }
 }

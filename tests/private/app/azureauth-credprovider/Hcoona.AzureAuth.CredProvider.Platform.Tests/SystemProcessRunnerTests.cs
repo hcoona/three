@@ -1876,13 +1876,27 @@ public sealed class SystemProcessRunnerTests
         compilerProcess.StartInfo.ArgumentList.Add(sourcePath);
 
         Assert.True(compilerProcess.Start(), "The native test compiler did not start.");
-        string standardOutput = await compilerProcess.StandardOutput.ReadToEndAsync(
-            cancellationToken
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(60));
+        Task<string> standardOutputTask = compilerProcess.StandardOutput.ReadToEndAsync(
+            deadline.Token
         );
-        string standardError = await compilerProcess.StandardError.ReadToEndAsync(
-            cancellationToken
+        Task<string> standardErrorTask = compilerProcess.StandardError.ReadToEndAsync(
+            deadline.Token
         );
-        await compilerProcess.WaitForExitAsync(cancellationToken);
+        try
+        {
+            await compilerProcess.WaitForExitAsync(deadline.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            compilerProcess.Kill(entireProcessTree: true);
+            await compilerProcess.WaitForExitAsync(CancellationToken.None);
+            Assert.Fail("The native test compiler did not exit within 60 seconds.");
+        }
+
+        string standardOutput = await standardOutputTask;
+        string standardError = await standardErrorTask;
 
         Assert.True(
             compilerProcess.ExitCode == 0,
