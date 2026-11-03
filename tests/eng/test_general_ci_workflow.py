@@ -21,6 +21,19 @@ if TYPE_CHECKING:
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHILD_FAILURE = 73
 RETIRED_BUDDY_WORKFLOWS = ("buddy", "release-buddy", "legacy-buddy")
+VALIDATE_NEEDS = [
+    "mise-lock",
+    "conformance",
+    "dotnet-tests",
+    "azureauth-foundation-artifacts",
+    "scholarly-tests",
+    "nuget-native-preparation",
+    "github-release-native-preparation",
+    "python-tests",
+    "native-preparation-tests",
+    "ruby-group",
+    "node-tests",
+]
 NODE_PACKAGE_DIR = "src/public/lib/hexo-renderer-asciidoc"
 NODE_RETAINED = [NODE_PACKAGE_DIR, "src/retained"]
 NODE_ADOPTED = (
@@ -204,6 +217,12 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
         assert not step.get("continue-on-error", False)
     elif key == "python-tests" and "Retain" in step["name"]:
         _python_retention_step(step)
+    elif key == "azureauth-foundation-artifacts" and "&& (matrix." in step.get(
+        "if", ""
+    ):
+        guard, row = step["if"].split(" && (matrix.", 1)
+        _required_step(step | {"if": guard})
+        assert row in {"run-host-tests)", "run-deployment-validation)"}
     elif "Retain" not in step["name"] and step.get("if") != "cancelled()":
         _required_step(step)
 
@@ -387,15 +406,7 @@ def test_required_general_ci_checks_remain_eligible(
                 "always()" if key == "validation" else "${{ !cancelled() }}"
             )
             assert job["needs"] == (
-                [
-                    "conformance",
-                    "scholarly-tests",
-                    "nuget-native-preparation",
-                    "github-release-native-preparation",
-                    "native-preparation-tests",
-                    "ruby-group",
-                    "node-tests",
-                ]
+                VALIDATE_NEEDS
                 if key == "validation"
                 else ["scope", "node-group"]
                 if key == "node-tests"
@@ -1145,44 +1156,37 @@ def test_nuget_preparation_guard_rejects_missing_rows(
     assert not output.exists()
 
 
+def test_validate_transitively_gates_every_ci_job(workflow):
+    """Validate is the only merge gate, so no job may stay outside it."""
+    jobs = workflow["jobs"]
+    reached = set()
+    pending = ["validation"]
+    while pending:
+        key = pending.pop()
+        if key in reached:
+            continue
+        reached.add(key)
+        needs = jobs[key].get("needs", [])
+        pending.extend([needs] if isinstance(needs, str) else needs)
+    assert set(jobs) - reached == set()
+
+
 def test_required_validate_rejects_missing_or_failed_consumers(
     workflow, tmp_path
 ):
     """Keep every selected validation consumer inside the required check."""
     job = workflow["jobs"]["validation"]
     assert job["name"] == "Validate"
-    assert job["needs"] == [
-        "conformance",
-        "scholarly-tests",
-        "nuget-native-preparation",
-        "github-release-native-preparation",
-        "native-preparation-tests",
-        "ruby-group",
-        "node-tests",
-    ]
+    assert job["needs"] == VALIDATE_NEEDS
     assert job["if"] == "always()"
     step = job["steps"][0]
     assert step["if"] == "always()"
     assert not step.get("continue-on-error", False)
     successful = {
-        "needs.conformance.result": "success",
-        "needs.scholarly-tests.result": "success",
-        "needs.nuget-native-preparation.result": "success",
-        "needs.github-release-native-preparation.result": "success",
-        "needs.native-preparation-tests.result": "success",
-        "needs.ruby-group.result": "success",
-        "needs.node-tests.result": "success",
+        f"needs.{dependency}.result": "success" for dependency in VALIDATE_NEEDS
     }
     scenarios = [successful]
-    for dependency in (
-        "conformance",
-        "scholarly-tests",
-        "nuget-native-preparation",
-        "github-release-native-preparation",
-        "native-preparation-tests",
-        "ruby-group",
-        "node-tests",
-    ):
+    for dependency in VALIDATE_NEEDS:
         for result in ("failure", "cancelled", "skipped", ""):
             scenarios.append(
                 successful | {f"needs.{dependency}.result": result}

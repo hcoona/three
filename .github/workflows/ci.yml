@@ -130,22 +130,37 @@ jobs:
   validation:
     name: Validate
     runs-on: ubuntu-latest
-    needs: [conformance, scholarly-tests, nuget-native-preparation, github-release-native-preparation, native-preparation-tests, ruby-group, node-tests]
+    # Validate is the only required check: every other job here must be a direct or
+    # transitive dependency (tests/eng/test_general_ci_workflow.py enforces this).
+    needs: [mise-lock, conformance, dotnet-tests, azureauth-foundation-artifacts, scholarly-tests, nuget-native-preparation, github-release-native-preparation, python-tests, native-preparation-tests, ruby-group, node-tests]
     if: always()
     steps:
       - name: Require complete validation results
         if: always()
         env:
+          MISE_LOCK_RESULT: ${{ needs.mise-lock.result }}
           CONFORMANCE_RESULT: ${{ needs.conformance.result }}
+          DOTNET_RESULT: ${{ needs.dotnet-tests.result }}
+          AZUREAUTH_ARTIFACTS_RESULT: ${{ needs.azureauth-foundation-artifacts.result }}
           SCHOLARLY_RESULT: ${{ needs.scholarly-tests.result }}
           NUGET_PREPARATION_RESULT: ${{ needs.nuget-native-preparation.result }}
           GITHUB_RELEASE_PREPARATION_RESULT: ${{ needs.github-release-native-preparation.result }}
+          PYTHON_RESULT: ${{ needs.python-tests.result }}
           PREPARATION_RESULT: ${{ needs.native-preparation-tests.result }}
           RUBY_RESULT: ${{ needs.ruby-group.result }}
           NODE_MATRIX_RESULT: ${{ needs.node-tests.result }}
         run: |
-          if [[ "$CONFORMANCE_RESULT" != 'success' || "$SCHOLARLY_RESULT" != 'success' || "$NUGET_PREPARATION_RESULT" != 'success' || "$GITHUB_RELEASE_PREPARATION_RESULT" != 'success' || "$PREPARATION_RESULT" != 'success' || "$RUBY_RESULT" != 'success' || "$NODE_MATRIX_RESULT" != 'success' ]]; then
-            echo "Required validation did not complete: source=$CONFORMANCE_RESULT, scholarly=$SCHOLARLY_RESULT, nuget=$NUGET_PREPARATION_RESULT, github-release=$GITHUB_RELEASE_PREPARATION_RESULT, preparation=$PREPARATION_RESULT, ruby=$RUBY_RESULT, node-matrix=$NODE_MATRIX_RESULT." >&2
+          failed=()
+          for result in \
+            "mise-lock=$MISE_LOCK_RESULT" "source=$CONFORMANCE_RESULT" "dotnet=$DOTNET_RESULT" \
+            "azureauth-artifacts=$AZUREAUTH_ARTIFACTS_RESULT" "scholarly=$SCHOLARLY_RESULT" \
+            "nuget=$NUGET_PREPARATION_RESULT" "github-release=$GITHUB_RELEASE_PREPARATION_RESULT" \
+            "python=$PYTHON_RESULT" "preparation=$PREPARATION_RESULT" "ruby=$RUBY_RESULT" \
+            "node-matrix=$NODE_MATRIX_RESULT"; do
+            [[ "${result#*=}" == success ]] || failed+=("$result")
+          done
+          if (( ${#failed[@]} )); then
+            echo "Required validation did not complete: ${failed[*]}." >&2
             exit 1
           fi
       - name: Reject canceled validation

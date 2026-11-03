@@ -56,11 +56,15 @@ The following UML sequence view is at the level of GitHub Actions jobs in the
 root [`ci.yml`](../../../../../../.github/workflows/ci.yml) and the artifacts they
 transfer by same-run immutable artifact ID. It omits steps inside each job and
 the retained jobs that do not exchange Workflow Delivery artifacts. Validate's
-declared `needs` also include the omitted `conformance` and `scholarly-tests`
-jobs. The participant mapping uses YAML job IDs, not displayed check names. The ruleset
-requires Validate and the existing separately named .NET, Python and Node check
+declared `needs` also include the omitted `mise-lock`, `conformance`,
+`azureauth-foundation-artifacts` and `scholarly-tests` jobs; every other job in
+the workflow is a direct or transitive Validate prerequisite, and
+[`test_general_ci_workflow.py`](../../../../../../tests/eng/test_general_ci_workflow.py)
+fails when one is not. The participant mapping uses YAML job IDs, not displayed
+check names. The ruleset requires Validate and, until it is narrowed to
+Validate alone, the existing separately named .NET, Python and Node check
 contexts. Their displayed names come from the linked workflow's `name` fields
-and matrix expansion. Validate also consumes the aggregate `node-tests` result,
+and matrix expansion. Validate consumes the aggregate `node-tests` result,
 so every configured compatibility variant gates merge even when it is not
 separately named in the ruleset. `ruby-group` and
 `node-group` are not directly required; they gate merge through Validate and
@@ -110,6 +114,7 @@ sequenceDiagram
     par .NET
         Store->>DotNet: ci-dotnet-plan
         DotNet->>Store: dotnet-group-results
+        DotNet-->>Validate: job result
     and Ruby
         Store->>Ruby: ci-scope,<br/>ci-dotnet-plan
         Ruby->>Store: ruby-group-results
@@ -124,6 +129,7 @@ sequenceDiagram
     and Python
         Store->>Python: ci-scope,<br/>ci-dotnet-plan
         Python->>Store: python-group-results
+        Python-->>Validate: job result
     and Native preparation
         Store->>Prep: ci-scope,<br/>ci-dotnet-plan
         Prep->>Store: native-preparation-<br/>results
