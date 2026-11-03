@@ -349,17 +349,17 @@ ends a grant. Git and the proposing PR retain the reason and history.
       the only job that runs the AzureAuth host tests on Linux and macOS.
     - A matrix job named in the ruleset breaks when its matrix changes.
 - **Owner decisions:**
-    - `Validate` is the only merge gate. Every other job in `ci.yml` is in
-      its `needs`, including `mise-lock` and
-      `azureauth-foundation-artifacts`.
-    - A repository check fails when a `ci.yml` job is neither in
-      `Validate.needs` nor on an explicit ungated list with a stated reason.
+    - `Validate` is the only merge gate. Every other job in `ci.yml`,
+      including `mise-lock` and `azureauth-foundation-artifacts`, is a direct
+      or transitive dependency of `Validate`; no job is exempt.
+    - A repository check fails when any other `ci.yml` job is not a direct or
+      transitive dependency of `Validate`.
     - The owner authorizes changing the `main` ruleset so that `Validate` is
       its only required status check.
 - **Advancement and outcome:**
-    1. Put every job in `Validate.needs`, make each job report success when
-       it does not apply, and add the enforcing check. Update the records and
-       tests that describe the gated set.
+    1. Make every job a direct or transitive dependency of `Validate`, make
+       each job report success when it does not apply, and add the enforcing
+       check. Update the records and tests that describe the gated set.
     2. After that merges and `Validate` passes on `main`, change the `main`
        ruleset to require only `Validate`, and update the tests and records
        that name the former required checks.
@@ -370,8 +370,8 @@ ends a grant. Git and the proposing PR retain the reason and history.
   classification of material findings. A gated job that fails on `main`
   for a reason outside this entry returns to the owner.
 - **Acceptance:**
-    - Every `ci.yml` job is gated through `Validate` or listed as ungated
-      with a reason, and the enforcing check passes.
+    - Every other `ci.yml` job is a direct or transitive dependency of
+      `Validate`, and the enforcing check passes.
     - The `main` ruleset requires only `Validate`.
     - Delete this entry when accepted.
 - **Effects:** permit source and repository/GitHub inspection,
@@ -431,7 +431,8 @@ ends a grant. Git and the proposing PR retain the reason and history.
   launch Python, Node.js or npm.
 - **Ordering and gates:** merge this entry before any of the work. Accept the
   design record changes before code relies on them. Start execution grouping
-  only after advancement 1 of the `Validate` entry merges. Each pull request
+  only after the `main` ruleset no longer names `Build & Test (.NET 10)`
+  under advancement 2 of the `Validate` entry. Each pull request
   follows the Workflow Delivery engineering and OCR review gates,
   record-system review for record changes, and research-evidence review for
   evidence claims such as the #1501 cause analysis, with independent
@@ -467,16 +468,22 @@ ends a grant. Git and the proposing PR retain the reason and history.
   and its linked pull requests. The repository owner chose committed
   release-schedule data over an online query.
 - **Accepted inputs:** the [engineering principles](engineering/engineering-principles.md),
-  the root and adopted package `package.json` files, root `mise.toml`,
+  the root `package.json` and the `package.json` files of packages the Node
+  group selects, root `mise.toml`,
   `renovate.json`, the GitHub workflows, and Workflow Delivery's
   [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
   [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
   [CI design](../src/private/app/workflow-delivery/docs/design/ci.md) and
   [Node integration](../src/private/app/workflow-delivery/docs/integration/node.md)
   records.
-- **Diagnosis:** the `node-tests` matrix in `ci.yml` is the literal
-  `[22.x, 24.x, 26.x]`, unconnected to the declared `engines.node` range
-  `>=22`, so it drifts silently when either changes.
+- **Diagnosis:**
+    - The `node-tests` matrix in `ci.yml` is the literal
+      `[22.x, 24.x, 26.x]`, unconnected to any declared `engines.node`
+      range, so it drifts silently when either changes.
+    - The declared ranges differ. The root, `hexo-renderer-asciidoc` and
+      `steam-account-history-to-csv` declare `>=22`; the
+      `im-acp-gateway/poc/*` packages declare `>=22.6.0`; the
+      `hcoona-release-smoke-npm` test fixture declares `>=24.0.0`.
 - **Owner decisions:**
     - The matrix is every LTS major from the lowest version satisfying the
       declared `engines.node` up to the newest release, plus the newest
