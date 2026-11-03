@@ -330,9 +330,10 @@ regex custom managers for this file:
   non-LTS release `isStable: false`, and Renovate's update filter honors that
   flag independently of versioning, so `semver` alone would not propose the
   Current line until it enters LTS. An explicit `allowedVersions` of
-  `/^\d+\.\d+\.\d+$/` keeps prereleases out. A Renovate contract case
-  proves that a released, not-yet-LTS major is proposed. Only major updates are
-  proposed.
+  `/^v?\d+\.\d+\.\d+$/` keeps prereleases out; the datasource returns
+  `v`-prefixed upstream versions. A Renovate contract case, using
+  upstream-prefixed versions, proves that a released, not-yet-LTS major is
+  proposed. Only major updates are proposed.
   They follow the existing rule for manually reviewed Node major updates, so
   they are not automerged.
 - `schedule.commit` uses the `git-refs` datasource for branch `main` of
