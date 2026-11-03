@@ -10,7 +10,8 @@ internal sealed record DotNetGraphRequest(string Revision, string Root, string E
 internal sealed record DotNetNodeIdentity(string Project, Dictionary<string, string> Globals);
 internal sealed record DotNetGraphNode(DotNetNodeIdentity Identity, bool OuterBuild,
     MsBuildDimension Dimension, string TargetFrameworks, string RuntimeIdentifiers,
-    string[] OwnedPaths, string TestCapability, string VersionBaseDirectory = "");
+    string[] OwnedPaths, string TestCapability, string VersionBaseDirectory = "",
+    string[]? RequiredTools = null);
 internal sealed record DotNetGraphEdge(DotNetNodeIdentity Consumer, DotNetNodeIdentity Dependency);
 internal sealed record DotNetGraphInput(string Path, string Role, string Stage,
     DotNetNodeIdentity Consumer, DotNetInputProvider? Provider = null);
@@ -110,8 +111,15 @@ internal static class DotNetGraph
                     project.GetPropertyValue("RuntimeIdentifier")),
                 project.GetPropertyValue("TargetFrameworks"),
                 project.GetPropertyValue("RuntimeIdentifiers"), owned[index](),
-                TestCapability(project, identities[node]), VersionBase(project));
+                TestCapability(project, identities[node]), VersionBase(project),
+                RequiredTools(project, identities[node]));
         }).ToArray();
+        foreach (DotNetGraphNode[] variants in nodes.GroupBy(node => node.Identity.Project)
+            .Select(group => group.ToArray()))
+            if (variants.Any(node => !node.RequiredTools!.SequenceEqual(
+                variants[0].RequiredTools!)))
+                throw Unavailable(variants[0].Identity, DotNetTools.Item,
+                    "Variants of one project declare different required tools.");
         DotNetGraphEdge[] edges = retained.SelectMany(node =>
             node.ProjectReferences.Where(dependency => !helpers.Contains(dependency))
             .Select(dependency =>
@@ -195,6 +203,23 @@ internal static class DotNetGraph
                 if (value.Length == 0) return false;
                 if (bool.TryParse(value, out bool enabled)) return enabled;
                 throw Unavailable(identity, name, "Malformed required native Boolean: " + value);
+            }
+        }
+
+        string[] RequiredTools(ProjectInstance project, DotNetNodeIdentity identity)
+        {
+            ProjectItemInstance[] items = project.GetItems(DotNetTools.Item).ToArray();
+            if (items.Length == 0) return [];
+            if (items.Any(item => item.DirectMetadataCount != 0))
+                throw Unavailable(identity, DotNetTools.Item,
+                    "Required tool declarations do not accept metadata.");
+            if (TestCapability(project, identity) == "None")
+                throw Unavailable(identity, DotNetTools.Item,
+                    "Only test projects declare required tools.");
+            try { return DotNetTools.Names(items.Select(item => item.EvaluatedInclude)); }
+            catch (InvalidDataException error)
+            {
+                throw Unavailable(identity, DotNetTools.Item, error.Message);
             }
         }
 

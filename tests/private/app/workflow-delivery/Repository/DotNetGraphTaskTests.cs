@@ -759,6 +759,69 @@ public sealed class DotNetGraphTaskTests(TestContext context)
 
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
+    public async Task NativeRequiredToolsAreSortedPerTestProject()
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", """
+            <Project><ItemGroup>
+              <ProjectReference Include="tools.proj" /><ProjectReference Include="plain.proj" />
+            </ItemGroup></Project>
+            """);
+        fixture.Write("tools.proj", """
+            <Project>
+              <PropertyGroup><IsTestingPlatformApplication>true</IsTestingPlatformApplication></PropertyGroup>
+              <ItemGroup>
+                <ThreeRequiredTool Include="python" /><ThreeRequiredTool Include="npm" />
+                <ThreeRequiredTool Include="node" />
+              </ItemGroup>
+            </Project>
+            """);
+        fixture.Write("plain.proj", """
+            <Project><PropertyGroup><IsTestProject>true</IsTestProject></PropertyGroup></Project>
+            """);
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+        string[] Tools(string project) => response.Nodes.Single(node =>
+            PhysicalPathComparer.Equals(node.Identity.Project, fixture.PathOf(project)))
+            .RequiredTools!;
+        CollectionAssert.AreEqual(Supported, Tools("tools.proj"));
+        Assert.IsEmpty(Tools("plain.proj"));
+        Assert.IsEmpty(Tools("dirs.proj"));
+    }
+
+    private static readonly string[] Supported = ["node", "npm", "python"];
+
+    [TestMethod]
+    [DataRow("<ThreeRequiredTool Include=\"ruby\" />", "true",
+        "Unsupported required external tool: ruby")]
+    [DataRow("<ThreeRequiredTool Include=\"node\" /><ThreeRequiredTool Include=\"node\" />",
+        "true", "Repeated required external tool.")]
+    [DataRow("<ThreeRequiredTool Include=\"npm\" />", "true",
+        "Required external tool npm needs node.")]
+    [DataRow("<ThreeRequiredTool Include=\"node\" Version=\"24\" />", "true",
+        "Required tool declarations do not accept metadata.")]
+    [DataRow("<ThreeRequiredTool Include=\"node\" />", "false",
+        "Only test projects declare required tools.")]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task MalformedRequiredToolsFailWithoutAResponse(string items, string test,
+        string reason)
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", $"""
+            <Project>
+              <PropertyGroup><IsTestingPlatformApplication>{test}</IsTestingPlatformApplication></PropertyGroup>
+              <ItemGroup>{items}</ItemGroup>
+            </Project>
+            """);
+        await fixture.PrepareAsync(context.CancellationToken);
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(context.CancellationToken));
+        Assert.Contains(reason, error.Message);
+        Assert.Contains("role ThreeRequiredTool", error.Message);
+        Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
     public async Task SupportedRepositoryProducersRetainNativeConsumers()
     {
         (string Origin, string Name)[] producers =

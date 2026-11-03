@@ -25,6 +25,7 @@ VALIDATE_NEEDS = [
     "mise-lock",
     "conformance",
     "dotnet-tests",
+    "dotnet-results",
     "azureauth-foundation-artifacts",
     "scholarly-tests",
     "nuget-native-preparation",
@@ -36,6 +37,11 @@ VALIDATE_NEEDS = [
 ]
 SKIPPED_TEST_SUMMARY = "./eng/scripts/Write-SkippedTestSummary.ps1 -Path "
 NODE_PACKAGE_DIR = "src/public/lib/hexo-renderer-asciidoc"
+DOTNET_GROUP = "node+npm+python"
+DOTNET_TOOL_SETUP = {
+    "Setup planned Python": ("setup-python", "python", "python-version"),
+    "Setup planned Node.js": ("setup-node", "node", "node-version"),
+}
 NODE_RETAINED = [NODE_PACKAGE_DIR, "src/retained"]
 NODE_ADOPTED = (
     "tests/private/app/workflow-delivery/fixtures/products/"
@@ -233,6 +239,12 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
         assert not step.get("continue-on-error", False)
     elif key == "python-tests" and "Retain" in step["name"]:
         _python_retention_step(step)
+    elif key == "dotnet-tests" and step["name"] in DOTNET_TOOL_SETUP:
+        action, tool, version = DOTNET_TOOL_SETUP[step["name"]]
+        assert step["if"] == f"matrix.group.tools.{tool}"
+        assert step["uses"] == f"actions/{action}@v7"
+        assert step["with"] == {version: f"${{{{ matrix.group.tools.{tool} }}}}"}
+        assert not step.get("continue-on-error", False)
     elif key == "azureauth-foundation-artifacts" and "&& (matrix." in step.get(
         "if", ""
     ):
@@ -267,6 +279,7 @@ def _bindings(tmp_path: Path) -> dict[str, str]:
         "needs.scope.outputs.base": "a" * 40,
         "needs.scope.outputs.candidate": "d" * 40,
         "needs.scope.outputs.full": "true",
+        "matrix.group.key": DOTNET_GROUP,
         "needs.node-group.outputs.retained_directories": json.dumps(
             NODE_RETAINED
         ),
@@ -413,6 +426,8 @@ def test_required_general_ci_checks_remain_eligible(
                 if key == "validation"
                 else ["scope", "node-group"]
                 if key == "node-tests"
+                else ["scope", "dotnet-tests"]
+                if key == "dotnet-results"
                 else "scope"
             )
         permissions = job.get("permissions", workflow["permissions"])
@@ -736,9 +751,10 @@ def _run_dotnet(
     env: dict[str, str],
     *,
     bindings: dict[str, str] | None = None,
+    name: str = "dotnet-tests",
 ) -> subprocess.CompletedProcess[str]:
     """Exercise required receiver bodies through the maintained shell helper."""
-    job = workflow["jobs"]["dotnet-tests"]
+    job = workflow["jobs"][name]
     result = None
     for step in job["steps"]:
         if "run" not in step or step.get("if") == "cancelled()":
@@ -746,7 +762,7 @@ def _run_dotnet(
         if _skipped_test_summary_step(step):
             continue
         if step.get("continue-on-error", False):
-            _required_context_step("dotnet-tests", step)
+            _required_context_step(name, step)
             continue
         _required_step(step)
         result = run_step(
@@ -958,7 +974,25 @@ def _dotnet_receiver_command(tmp_path: Path) -> list[str]:
         "execute",
         str(tmp_path),
         str(temporary / "dotnet-plan-transfer"),
-        str(temporary / "dotnet-execution"),
+        str(temporary / "dotnet-execution" / DOTNET_GROUP),
+        "a" * 40,
+        "d" * 40,
+        DOTNET_GROUP,
+    ]
+
+
+def _dotnet_join_command(tmp_path: Path) -> list[str]:
+    temporary = tmp_path / "runner-state"
+    return [
+        "dotnet",
+        str(temporary / "dotnet-plan-transfer/control/WorkflowDelivery.dll"),
+        "ci",
+        "caller-dotnet",
+        "join",
+        str(tmp_path),
+        str(temporary / "dotnet-plan-transfer"),
+        str(temporary / "dotnet-group-results"),
+        str(temporary / "dotnet-results"),
         "a" * 40,
         "d" * 40,
     ]
@@ -1015,6 +1049,75 @@ def test_dotnet_check_receives_original_plan_and_complete_control(
     calls = [item["command"] for item in _observations(env)]
     assert calls[-1] == _dotnet_receiver_command(tmp_path)
     assert not any("caller-artifact" in call for call in calls)
+
+
+def test_dotnet_groups_follow_the_plan_and_provision_planned_tools(workflow):
+    """Each planned tool group is one job provisioned from committed versions."""
+    scope = workflow["jobs"]["scope"]
+    job = workflow["jobs"]["dotnet-tests"]
+    assert scope["outputs"]["dotnet_groups"] == (
+        "${{ steps.select.outputs.dotnet_groups }}"
+    )
+    assert job["name"] == ".NET group (${{ matrix.group.key }})"
+    assert job["strategy"] == {
+        "fail-fast": False,
+        "matrix": {
+            "group": "${{ fromJSON(needs.scope.outputs.dotnet_groups) }}"
+        },
+    }
+    setup = [step for step in job["steps"] if step["name"] in DOTNET_TOOL_SETUP]
+    assert [step["name"] for step in setup] == list(DOTNET_TOOL_SETUP)
+    for step in setup:
+        _required_context_step("dotnet-tests", step)
+    execute = next(
+        step for step in job["steps"] if " execute " in step.get("run", "")
+    )
+    assert all(
+        job["steps"].index(step) < job["steps"].index(execute)
+        for step in setup
+    )
+    upload = _action(job, "actions/upload-artifact")
+    assert upload["with"]["name"] == (
+        "dotnet-group-results-${{ matrix.group.key }}"
+    )
+    assert upload["with"]["path"] == "${{ runner.temp }}/dotnet-execution/"
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_dotnet_results_join_every_group_result_against_the_plan(
+    workflow: dict[str, Any],
+    tmp_path: Path,
+    failure: bool,
+) -> None:
+    """A separate Linux job joins every group result for Validate."""
+    job = workflow["jobs"]["dotnet-results"]
+    assert job["runs-on"].startswith("ubuntu-")
+    assert job["permissions"] == {"contents": "read", "actions": "read"}
+    assert job["needs"] == ["scope", "dotnet-tests"]
+    downloads = [
+        step
+        for step in job["steps"]
+        if step.get("uses", "").startswith("actions/download-artifact@")
+    ]
+    assert [step["with"] for step in downloads] == [
+        {
+            "artifact-ids": "${{ needs.scope.outputs.dotnet_artifact_id }}",
+            "path": "${{ runner.temp }}/dotnet-plan-transfer",
+            "merge-multiple": True,
+        },
+        {
+            "pattern": "dotnet-group-results-*",
+            "path": "${{ runner.temp }}/dotnet-group-results",
+            "merge-multiple": True,
+        },
+    ]
+    env = _dotnet_commands(tmp_path)
+    if failure:
+        env["FAIL_COMMAND"] = json.dumps(_dotnet_join_command(tmp_path))
+    result = _run_dotnet(workflow, tmp_path, env, name="dotnet-results")
+    assert result.returncode == (CHILD_FAILURE if failure else 0), result.stderr
+    calls = [item["command"] for item in _observations(env)]
+    assert calls == [_dotnet_join_command(tmp_path)]
 
 
 def test_dotnet_check_propagates_required_command_failure(
@@ -1090,6 +1193,7 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
             "node-group",
             "ruby-group",
             "dotnet-tests",
+            "dotnet-results",
             "python-tests",
             "native-preparation-tests",
         }:
@@ -1210,7 +1314,7 @@ def test_required_validate_rejects_missing_or_failed_consumers(
             assert "Required validation did not complete" in result.stderr
 
 
-def _cancelable_dotnet_step(step):
+def _cancelable_dotnet_step(name, step):
     """Preserve required native result retention and failure handling."""
     if _skipped_test_summary_step(step):
         return
@@ -1219,7 +1323,7 @@ def _cancelable_dotnet_step(step):
         assert step["uses"].startswith("actions/upload-artifact@")
         assert not step.get("continue-on-error", False)
     else:
-        _required_step(step)
+        _required_context_step(name, step)
 
 
 def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
@@ -1232,8 +1336,8 @@ def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
             "always()" if name == "validation" else "${{ !cancelled() }}"
         )
         for step in job["steps"][1:-1]:
-            if name == "dotnet-tests":
-                _cancelable_dotnet_step(step)
+            if name in {"dotnet-tests", "dotnet-results"}:
+                _cancelable_dotnet_step(name, step)
             elif name == "python-tests":
                 _required_context_step(name, step)
             elif name in {

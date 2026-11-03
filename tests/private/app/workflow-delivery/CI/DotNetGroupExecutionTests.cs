@@ -170,6 +170,33 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task MixedToolGroupsFailBeforeEffects()
+    {
+        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        CiPlan retained = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
+            fixture.Candidate, "MTP", project: DotNetPackageFixture.Project);
+        PlannedCheck[] node = [.. retained.Checks.Select(check => check with
+        {
+            Work = check.Work with
+            {
+                Dimensions = new(check.Work.Dimensions)
+                { [DotNetTools.Dimension] = "{\"node\":\"24.1.0\"}" },
+            },
+        })];
+        CiPlan original = fixture.Plan with { Checks = [.. node, .. fixture.Plan.Checks] };
+        Assert.HasCount(1, DotNetTools.Select(original, "node").Checks.Select(check =>
+            check.Work.Key.Target).Distinct());
+        bool effects = false;
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => DotNetGroupExecution.RunAsync(original, fixture.Request, (_, _, _) =>
+            { effects = true; throw new InvalidOperationException("Product effects."); },
+            (_, _, _) => throw new InvalidOperationException("Package effects."),
+                context.CancellationToken));
+        Assert.Contains("one external tool group", error.Message);
+        Assert.IsFalse(effects);
+    }
+
+    [TestMethod]
     public async Task EmptyPlanHasNoSelectedCommands()
     {
         using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);

@@ -440,9 +440,7 @@ missing group leaves failed or missing results. Extra, duplicated or misplaced
 results fail the join even when their statuses passed. Any of these fails
 `Validate`.
 
-Execution grouping starts only after the `main` ruleset no longer names
-`Build & Test (.NET 10)`. Until then, `dotnet-tests` keeps that name and runs
-the whole plan in one job. Qualify the declaration and version reads, including
+Qualify the declaration and version reads, including
 their failure cases; plan reading; partition and exact join with missing,
 extra, duplicated, misplaced, failed and cancelled groups; version readback and
 `PATH` removal; and a hosted run in which the `none` group passes and each

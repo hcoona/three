@@ -37,6 +37,11 @@ internal static class DotNetExecution
         GitMaterialization bound, CancellationToken token) =>
         RunAsync(plan, request, bound, NativeProcess.ExecuteAsync, token);
 
+    internal static Task<DotNetRunResult> RunBoundAsync(CiPlan plan, DotNetRunRequest request,
+        GitMaterialization bound,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token) => RunAsync(plan, request, bound, execute, token);
+
     private static async Task<DotNetRunResult> RunAsync(CiPlan plan, DotNetRunRequest request,
         GitMaterialization? bound,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
@@ -344,11 +349,14 @@ internal static class DotNetExecution
                 item.Work.Key.Check == DotNetChecks.Build) ??
                 throw new InvalidDataException("Missing native Build obligation.");
             CheckSpec[] complete = DotNetChecks.Expand(build.Work.Key.Target,
-                nodes[build.Work.Key]);
+                nodes[build.Work.Key], DotNetTools.Parse(build.Work.Dimensions[
+                    DotNetTools.Dimension]));
             if (identity.Count() != complete.Length || complete.Any(check =>
                     !nodes.TryGetValue(check.Key, out DotNetGraphNode? node) ||
                     node.Dimension != nodes[build.Work.Key].Dimension ||
-                    node.TestCapability != nodes[build.Work.Key].TestCapability))
+                    node.TestCapability != nodes[build.Work.Key].TestCapability) ||
+                identity.Any(item => item.Work.Dimensions[DotNetTools.Dimension] !=
+                    build.Work.Dimensions[DotNetTools.Dimension]))
                 throw new InvalidDataException("Incomplete selected native identity obligations.");
         }
         return nodes;

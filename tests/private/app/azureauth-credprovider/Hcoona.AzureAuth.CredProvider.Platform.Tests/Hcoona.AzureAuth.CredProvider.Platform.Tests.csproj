@@ -27,4 +27,10 @@
     <ProjectReference Include="../../../../../src/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform/Hcoona.AzureAuth.CredProvider.Platform.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ThreeRequiredTool Include="node" />
+    <ThreeRequiredTool Include="npm" />
+    <ThreeRequiredTool Include="python" />
+  </ItemGroup>
+
 </Project>

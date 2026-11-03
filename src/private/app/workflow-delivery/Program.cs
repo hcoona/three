@@ -401,6 +401,8 @@ internal static class Program
 [JsonSerializable(typeof(NodeRunResult))]
 [JsonSerializable(typeof(CiPlan))]
 [JsonSerializable(typeof(CheckResult[]))]
+[JsonSerializable(typeof(DotNetToolGroup[]))]
+[JsonSerializable(typeof(DotNetGroupResultSet))]
 [JsonSerializable(typeof(CiOutcome))]
 internal partial class TransferJson : JsonSerializerContext;
 

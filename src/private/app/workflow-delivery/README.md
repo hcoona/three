@@ -123,8 +123,9 @@ mise selection own runtime variants and the configured packaging context.
 
 ### Native .NET Group Interface
 
-The existing Windows .NET job receives the exact original plan and complete
-candidate control artifact, then executes and collects without replanning.
+One Windows .NET job per planned external-tool group receives the exact original
+plan and complete candidate control artifact, then executes its group without
+replanning. A Linux join job collects every group result against that plan.
 Native MSBuild owns evaluated projects, imports, resources and references;
 NBGV owns version projections. The NBGV auxiliary cache project is the accepted
 bounded native exception, not a business release unit or custom version cache.

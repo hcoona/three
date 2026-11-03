@@ -25,4 +25,8 @@
     <ProjectReference Include="../../../../src/private/app/vscode-copilot-telegram-hook/VSCodeCopilotTelegramHook.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ThreeRequiredTool Include="node" />
+  </ItemGroup>
+
 </Project>

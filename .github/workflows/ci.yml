@@ -42,6 +42,7 @@ jobs:
       full: ${{ steps.select.outputs.full }}
       artifact_id: ${{ steps.retain.outputs.artifact-id }}
       dotnet_artifact_id: ${{ steps.retain-dotnet.outputs.artifact-id }}
+      dotnet_groups: ${{ steps.select.outputs.dotnet_groups }}
     steps:
       # Locked restores are slow in the default profile package folder on C:. The runner
       # temporary folder is outside both endpoint checkouts.
@@ -132,7 +133,21 @@ jobs:
     runs-on: ubuntu-latest
     # Validate is the only required check: every other job here must be a direct or
     # transitive dependency (tests/eng/test_general_ci_workflow.py enforces this).
-    needs: [mise-lock, conformance, dotnet-tests, azureauth-foundation-artifacts, scholarly-tests, nuget-native-preparation, github-release-native-preparation, python-tests, native-preparation-tests, ruby-group, node-tests]
+    needs:
+      [
+        mise-lock,
+        conformance,
+        dotnet-tests,
+        dotnet-results,
+        azureauth-foundation-artifacts,
+        scholarly-tests,
+        nuget-native-preparation,
+        github-release-native-preparation,
+        python-tests,
+        native-preparation-tests,
+        ruby-group,
+        node-tests,
+      ]
     if: always()
     steps:
       - name: Require complete validation results
@@ -141,6 +156,7 @@ jobs:
           MISE_LOCK_RESULT: ${{ needs.mise-lock.result }}
           CONFORMANCE_RESULT: ${{ needs.conformance.result }}
           DOTNET_RESULT: ${{ needs.dotnet-tests.result }}
+          DOTNET_RESULTS_RESULT: ${{ needs.dotnet-results.result }}
           AZUREAUTH_ARTIFACTS_RESULT: ${{ needs.azureauth-foundation-artifacts.result }}
           SCHOLARLY_RESULT: ${{ needs.scholarly-tests.result }}
           NUGET_PREPARATION_RESULT: ${{ needs.nuget-native-preparation.result }}
@@ -153,6 +169,7 @@ jobs:
           failed=()
           for result in \
             "mise-lock=$MISE_LOCK_RESULT" "source=$CONFORMANCE_RESULT" "dotnet=$DOTNET_RESULT" \
+            "dotnet-results=$DOTNET_RESULTS_RESULT" \
             "azureauth-artifacts=$AZUREAUTH_ARTIFACTS_RESULT" "scholarly=$SCHOLARLY_RESULT" \
             "nuget=$NUGET_PREPARATION_RESULT" "github-release=$GITHUB_RELEASE_PREPARATION_RESULT" \
             "python=$PYTHON_RESULT" "preparation=$PREPARATION_RESULT" "ruby=$RUBY_RESULT" \
@@ -329,8 +346,12 @@ jobs:
           exit 1
 
   dotnet-tests:
-    name: Build & Test (.NET 10)
+    name: .NET group (${{ matrix.group.key }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(needs.scope.outputs.dotnet_groups) }}
 
     env:
       NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
@@ -363,6 +384,17 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Setup planned Python
+        if: matrix.group.tools.python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.group.tools.python }}
+
+      - name: Setup planned Node.js
+        if: matrix.group.tools.node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.group.tools.node }}
 
       - name: Receive exact original plan and complete control distribution
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -371,17 +403,18 @@ jobs:
           path: ${{ runner.temp }}/dotnet-plan-transfer
           merge-multiple: true
 
-      - name: Execute and collect the unchanged original native plan
+      - name: Execute and collect the group of the unchanged original native plan
         id: tests
         shell: bash
         env:
           COMPARISON_BASIS: ${{ needs.scope.outputs.base }}
           TESTED_CANDIDATE: ${{ needs.scope.outputs.candidate }}
-          ThreeTestResultsDirectory: ${{ runner.temp }}/dotnet-execution/test-results
+          ThreeTestResultsDirectory: ${{ runner.temp }}/dotnet-execution/${{ matrix.group.key }}/test-results
+          GROUP_KEY: ${{ matrix.group.key }}
           TESTINGPLATFORM_DIAGNOSTIC: '1'
           TESTINGPLATFORM_DIAGNOSTIC_VERBOSITY: Trace
           TESTINGPLATFORM_DIAGNOSTIC_SYNCHRONOUS_WRITE: '1'
-          TESTINGPLATFORM_DIAGNOSTIC_OUTPUT_DIRECTORY: ${{ runner.temp }}/dotnet-execution/mtp-diagnostics
+          TESTINGPLATFORM_DIAGNOSTIC_OUTPUT_DIRECTORY: ${{ runner.temp }}/dotnet-execution/${{ matrix.group.key }}/mtp-diagnostics
         run: |
           control="$RUNNER_TEMP/dotnet-plan-transfer/control/WorkflowDelivery.dll"
           if [[ $(jq '.checks|length' "$RUNNER_TEMP/dotnet-plan-transfer/dotnet-plan.json") -gt 0 ]]; then
@@ -390,20 +423,92 @@ jobs:
               -property:ContinuousIntegrationBuild=true -property:RestoreLockedMode=true
           fi
           dotnet "$control" ci caller-dotnet execute "$GITHUB_WORKSPACE" \
-            "$RUNNER_TEMP/dotnet-plan-transfer" "$RUNNER_TEMP/dotnet-execution" \
-            "$COMPARISON_BASIS" "$TESTED_CANDIDATE"
+            "$RUNNER_TEMP/dotnet-plan-transfer" "$RUNNER_TEMP/dotnet-execution/$GROUP_KEY" \
+            "$COMPARISON_BASIS" "$TESTED_CANDIDATE" "$GROUP_KEY"
 
       - name: Name skipped tests
         if: always() && steps.tests.outcome != 'skipped'
         shell: pwsh
-        run: ./eng/scripts/Write-SkippedTestSummary.ps1 -Path "$env:RUNNER_TEMP/dotnet-execution/test-results"
+        run: ./eng/scripts/Write-SkippedTestSummary.ps1 -Path "$env:RUNNER_TEMP/dotnet-execution/${{ matrix.group.key }}/test-results"
 
       - name: Retain native planning, execution and collection facts
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: dotnet-group-results
+          name: dotnet-group-results-${{ matrix.group.key }}
           path: ${{ runner.temp }}/dotnet-execution/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Reject canceled validation
+        if: cancelled()
+        shell: bash
+        run: |
+          echo 'Validation was canceled before a complete result.' >&2
+          exit 1
+
+  dotnet-results:
+    name: .NET results
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    needs: [scope, dotnet-tests]
+    if: ${{ !cancelled() }}
+
+    steps:
+      - name: Require successful scope and exact native plan artifact
+        shell: bash
+        env:
+          SELECTION_RESULT: ${{ needs.scope.result }}
+          PLAN_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
+        run: |
+          test "$SELECTION_RESULT" = success
+          [[ "$PLAN_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+
+      - name: Checkout tested candidate
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Setup candidate SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Receive exact original plan and complete control distribution
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.scope.outputs.dotnet_artifact_id }}
+          path: ${{ runner.temp }}/dotnet-plan-transfer
+          merge-multiple: true
+
+      - name: Receive every .NET group result
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: dotnet-group-results-*
+          path: ${{ runner.temp }}/dotnet-group-results
+          merge-multiple: true
+
+      - name: Join the group results against the unchanged original native plan
+        shell: bash
+        env:
+          COMPARISON_BASIS: ${{ needs.scope.outputs.base }}
+          TESTED_CANDIDATE: ${{ needs.scope.outputs.candidate }}
+        run: |
+          dotnet "$RUNNER_TEMP/dotnet-plan-transfer/control/WorkflowDelivery.dll" ci caller-dotnet join \
+            "$GITHUB_WORKSPACE" "$RUNNER_TEMP/dotnet-plan-transfer" \
+            "$RUNNER_TEMP/dotnet-group-results" "$RUNNER_TEMP/dotnet-results" \
+            "$COMPARISON_BASIS" "$TESTED_CANDIDATE"
+
+      - name: Retain joined .NET results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dotnet-results
+          path: ${{ runner.temp }}/dotnet-results/
           if-no-files-found: ignore
           retention-days: 7
 
