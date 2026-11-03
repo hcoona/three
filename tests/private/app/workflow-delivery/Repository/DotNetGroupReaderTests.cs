@@ -193,6 +193,7 @@ public sealed class DotNetGroupReaderTests(TestContext context)
     [DataRow("mise.toml")]
     [DataRow("mise.lock")]
     [DataRow(".github/workflows/ci.yml")]
+    [DataRow(CiScope.SkippedTestSummary)]
     public async Task ControlInputsReachAllActualDotNetConsumers(string caller)
     {
         using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);

@@ -212,6 +212,7 @@ public sealed class CiScopeTests
     [DataRow("src/private/lib/scholarly-publication/tests/test_x.py", false, false, true)]
     [DataRow("apm.lock.yaml", false, false, true)]
     [DataRow(".git-blame-ignore-revs", false, false, false)]
+    [DataRow(CiScope.SkippedTestSummary, false, true, false)]
     public void RetainedJobsFollowTheirFiniteInputs(string path, bool mise, bool azure,
         bool scholarly)
     {
@@ -245,6 +246,7 @@ public sealed class CiScopeTests
     [DataRow("global.json", true)]
     [DataRow("stylecop.json", true)]
     [DataRow(".github/workflows/ci.yml", true)]
+    [DataRow(CiScope.SkippedTestSummary, true)]
     [DataRow("pyproject.toml", false)]
     [DataRow("docs/README.md", false)]
     [DataRow("src/private/app/workflow-delivery/README.md", false)]

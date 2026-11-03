@@ -24,7 +24,7 @@ internal static class DotNetGroupReader
         ".config/dotnet-tools.json", "src/private/app/workflow-delivery/CI/Callers/CiCallerCli.cs",
         "src/private/app/workflow-delivery/CI/Callers/CiCallerTransfer.cs",
         "src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs",
-        "mise.toml", "mise.lock"];
+        "mise.toml", "mise.lock", CiScope.SkippedTestSummary];
 
     internal static async Task<DotNetGroupReadback> ReadAsync(DotNetGroupRequest request,
         ScopeInputs scope, CancellationToken token)

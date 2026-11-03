@@ -39,6 +39,7 @@ public sealed class NativePreparationQualificationTests
     [DataRow(".pnpmfile.mjs", false, false, true, true)]
     [DataRow("mise.toml", true, true, true, true)]
     [DataRow(".github/workflows/ci.yml", true, true, true, true)]
+    [DataRow(WorkflowDelivery.Repository.CiScope.SkippedTestSummary, true, true, true, true)]
     [DataRow("tests/private/app/workflow-delivery/fixtures/pnpm-contract/pnpm-lock.yaml",
         true, true, true, true)]
     [DataRow("src/private/app/workflow-delivery/Repository/PnpmGraphReader.cs", true, true,

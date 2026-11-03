@@ -31,6 +31,8 @@ internal static partial class CiScope
     // The root HK configuration; native Pkl imports name the local modules it consumes.
     internal const string HkConfiguration = "hk.pkl";
     internal const string RenovateConfiguration = "renovate.json";
+    // Every CI .NET test job runs this report after its tests.
+    internal const string SkippedTestSummary = "eng/scripts/Write-SkippedTestSummary.ps1";
     private const string RenovateWorkflow = ".github/workflows/renovate.yml";
     private const string Azure = "src/private/app/azureauth-credprovider";
     private const string Scholarly = "src/private/lib/scholarly-publication";
@@ -72,7 +74,8 @@ internal static partial class CiScope
             foreach (string job in Jobs(path, gems).Where(reasons.ContainsKey))
                 reasons[job].Add(path);
             bool shared = AllInputs.Contains(path, StringComparer.Ordinal) ||
-                path == "stylecop.json" || resourceInputs.Contains(path, StringComparer.Ordinal);
+                path is "stylecop.json" or SkippedTestSummary ||
+                resourceInputs.Contains(path, StringComparer.Ordinal);
             nuget.UnionWith(shared ? NuGetUnits : NuGetPreparationUnits(path));
             githubRelease |= shared || GithubReleasePreparationInput(path);
         }
@@ -418,7 +421,7 @@ internal static partial class CiScope
 
     private static bool AzureInput(string path) =>
         DotNetInheritedInputs.Consumes(path, [Azure, "tests/private/app/azureauth-credprovider"]) ||
-        Under(path, "eng/scripts/azureauth-credprovider") ||
+        Under(path, "eng/scripts/azureauth-credprovider") || path == SkippedTestSummary ||
         Under(path, "src/public/lib/nbgv-python") ||
         PythonInputs.Contains(path, StringComparer.Ordinal);
 
