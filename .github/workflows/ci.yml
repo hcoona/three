@@ -372,10 +372,12 @@ jobs:
           merge-multiple: true
 
       - name: Execute and collect the unchanged original native plan
+        id: tests
         shell: bash
         env:
           COMPARISON_BASIS: ${{ needs.scope.outputs.base }}
           TESTED_CANDIDATE: ${{ needs.scope.outputs.candidate }}
+          ThreeTestResultsDirectory: ${{ runner.temp }}/dotnet-execution/test-results
           TESTINGPLATFORM_DIAGNOSTIC: '1'
           TESTINGPLATFORM_DIAGNOSTIC_VERBOSITY: Trace
           TESTINGPLATFORM_DIAGNOSTIC_SYNCHRONOUS_WRITE: '1'
@@ -390,6 +392,11 @@ jobs:
           dotnet "$control" ci caller-dotnet execute "$GITHUB_WORKSPACE" \
             "$RUNNER_TEMP/dotnet-plan-transfer" "$RUNNER_TEMP/dotnet-execution" \
             "$COMPARISON_BASIS" "$TESTED_CANDIDATE"
+
+      - name: Name skipped tests
+        if: always() && steps.tests.outcome != 'skipped'
+        shell: pwsh
+        run: ./eng/scripts/Write-SkippedTestSummary.ps1 -Path "$env:RUNNER_TEMP/dotnet-execution/test-results"
 
       - name: Retain native planning, execution and collection facts
         if: always()
@@ -475,6 +482,7 @@ jobs:
         run: dotnet tool restore
 
       - name: Test AzureAuth host OS behavior
+        id: host-tests
         if: success() && !cancelled() && steps.scope.outputs.run == 'true' && (matrix.run-host-tests)
         timeout-minutes: 15
         shell: pwsh
@@ -485,7 +493,13 @@ jobs:
             --filter-class `
               Hcoona.AzureAuth.CredProvider.Platform.Tests.SystemFileSystemTests `
               Hcoona.AzureAuth.CredProvider.Platform.Tests.SystemProcessRunnerTests `
+            --report-trx --results-directory "$env:RUNNER_TEMP/azureauth-host-tests" `
             -p:RestoreLockedMode=true
+
+      - name: Name skipped tests
+        if: always() && steps.scope.outputs.run == 'true' && steps.host-tests.outcome != 'skipped'
+        shell: pwsh
+        run: ./eng/scripts/Write-SkippedTestSummary.ps1 -Path "$env:RUNNER_TEMP/azureauth-host-tests"
 
       - name: Test foundation artifact script
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
@@ -823,6 +837,7 @@ jobs:
             "-bl:$env:WDV3_NUGET_PREPARATION_EVIDENCE/product-restore.binlog"
           exit $LASTEXITCODE
       - name: Verify native release preparation and clean consumer
+        id: tests
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: pwsh
         env:
@@ -835,6 +850,10 @@ jobs:
             "-bl:$env:WDV3_NUGET_PREPARATION_EVIDENCE/native-preparation.binlog" `
             -- --minimum-expected-tests "$env:TESTS"
           exit $LASTEXITCODE
+      - name: Name skipped tests
+        if: always() && steps.scope.outputs.run == 'true' && steps.tests.outcome != 'skipped'
+        shell: pwsh
+        run: ./eng/scripts/Write-SkippedTestSummary.ps1 -Path "$env:WDV3_NUGET_PREPARATION_EVIDENCE"
       - name: Retain original archives and native evidence
         if: always() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
@@ -882,6 +901,7 @@ jobs:
         with:
           global-json-file: global.json
       - name: Verify the ImageOcclusionEditor recipe and clean consumers
+        id: tests
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: pwsh
         run: |
@@ -891,6 +911,10 @@ jobs:
             "-bl:$env:WDV3_GITHUB_RELEASE_PREPARATION_EVIDENCE/native-preparation.binlog" `
             -- --minimum-expected-tests 1
           exit $LASTEXITCODE
+      - name: Name skipped tests
+        if: always() && steps.scope.outputs.run == 'true' && steps.tests.outcome != 'skipped'
+        shell: pwsh
+        run: ./eng/scripts/Write-SkippedTestSummary.ps1 -Path "$env:WDV3_GITHUB_RELEASE_PREPARATION_EVIDENCE"
       - name: Retain prepared assets and native evidence
         if: always() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
@@ -1095,6 +1119,10 @@ jobs:
             --filter 'TestCategory=BrowserStoreNativePreparation' \
             --report-trx --report-trx-filename preparation.trx \
             --results-directory "$RUNNER_TEMP/native-preparation/browser-store" -- --minimum-expected-tests 1
+      - name: Name skipped tests
+        if: always() && steps.plan.outcome == 'success'
+        shell: pwsh
+        run: ./eng/scripts/Write-SkippedTestSummary.ps1 -Path "$env:RUNNER_TEMP/native-preparation"
       - name: Retain original preparation plans, reports and packages
         if: always()
         uses: actions/upload-artifact@v7

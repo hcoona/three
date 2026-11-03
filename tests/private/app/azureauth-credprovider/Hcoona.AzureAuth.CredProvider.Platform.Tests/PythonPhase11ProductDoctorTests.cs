@@ -195,8 +195,8 @@ public sealed class PythonPhase11ProductDoctorTests
                 ),
                 TestContext.Current.CancellationToken
             );
-        Assert.SkipWhen(
-            result.Status == ProcessExecutionStatus.LaunchFailure,
+        RequiredExternalTool.Require(
+            result.Status != ProcessExecutionStatus.LaunchFailure,
             $"The {pythonCommand} command is required for this integration test."
         );
 
