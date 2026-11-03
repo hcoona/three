@@ -384,10 +384,8 @@ adopted npm fixture). The fixture is a selected member: it is the group's
 adopted package, and it currently runs on every matrix runtime.
 
 **Combining differing ranges (pending an owner decision).** The Wave entry
-returns this product tradeoff to the owner. The reader implements A, the
-recommendation below, but the implementation does not merge until the owner
-records a choice in Issue #1508; choosing another option is a reviewed reader
-change. The options are:
+returns this product tradeoff to the owner. Implementation must not start until
+the owner chooses:
 
 - **A. Lowest minimum (union).** `L` is the smallest input major (22 today).
   Every member runs on every planned major. This keeps today's coverage,

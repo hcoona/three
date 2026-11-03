@@ -100,6 +100,8 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
     [DataRow("invalid-key", InvalidSchedule)]
     [DataRow("leading-zero-key", InvalidSchedule)]
     [DataRow("non-object-row", InvalidSchedule)]
+    [DataRow("non-string-lts", InvalidSchedule)]
+    [DataRow("empty-lts", InvalidSchedule)]
     [DataRow("literal-matrix", Matrix)]
     [DataRow("other-expression", Matrix)]
     [DataRow("matrix-include", Matrix)]
@@ -374,6 +376,8 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
         "invalid-key" => Schedule(extra: ",\n      \"node30\": { \"start\": \"2000-01-01\" }"),
         "leading-zero-key" => Schedule(extra: ",\n      \"v030\": { \"start\": \"2000-01-01\" }"),
         "non-object-row" => Schedule(extra: ",\n      \"v30\": \"2000-01-01\""),
+        "non-string-lts" => Schedule(extra: ",\n      \"v30\": { \"lts\": true }"),
+        "empty-lts" => Schedule(extra: ",\n      \"v30\": { \"lts\": \"\" }"),
         "lower-above-newest" => Schedule(),
         _ => Schedule(),
     };

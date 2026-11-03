@@ -224,9 +224,10 @@ internal sealed class NodeRuntimeReader
             {
                 if (!Release.IsMatch(row.Name) || row.Value.ValueKind != JsonValueKind.Object)
                     throw new InvalidDataException(invalid);
-                bool designated = row.Value.TryGetProperty("lts", out JsonElement value) &&
-                    value.ValueKind == JsonValueKind.String &&
-                    !string.IsNullOrEmpty(value.GetString());
+                bool designated = row.Value.TryGetProperty("lts", out JsonElement value);
+                if (designated && (value.ValueKind != JsonValueKind.String ||
+                    string.IsNullOrEmpty(value.GetString())))
+                    throw new InvalidDataException(invalid);
                 // Pre-1.0 lines (v0.x) are valid schedule rows but no planned major.
                 if (!row.Name.StartsWith("v0.", StringComparison.Ordinal))
                     lts.Add(int.Parse(row.Name[1..], CultureInfo.InvariantCulture), designated);
