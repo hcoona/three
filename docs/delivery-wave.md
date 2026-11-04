@@ -24,8 +24,11 @@ ends a grant. Git and the proposing PR retain the reason and history.
 - **Owner decisions:** LiteAgensh belongs at `src/private/app/lite-agensh/`
   and is written in C#. One local coordinator uses SQLite for collaboration
   state, local Git branches/worktrees for integration and existing native
-  agent processes for reasoning, editing and tool execution. Initially use
-  Copilot's documented ACP stdio contract. Map collaboration MCP capabilities
+  agent processes for reasoning, editing and tool execution. Use an official
+  Copilot native interface selected in accepted project requirements and
+  contracts, including the official .NET SDK or documented ACP. This remains
+  one native backend, not a requirement to implement both adapters or add
+  another model/tool reasoning loop. Map collaboration MCP capabilities
   semantically with names describing their actual local operations, not
   Gitea/Mattermost compatibility names. Do not add hosted collaboration
   services, Docker or process/network sandboxing. The owner selects a trusted
@@ -33,7 +36,7 @@ ends a grant. Git and the proposing PR retain the reason and history.
   credentials, and local review gates do not provide server-enforced isolation.
 - **Advancement and outcome:** establish and complete this local product port,
   including project records, public-source consolidation, requirements,
-  architecture and contracts, C# implementation, SQLite persistence, ACP/MCP
+  architecture and contracts, C# implementation, SQLite persistence, native/MCP
   integration, Git integration, lifecycle/recovery, tests, monorepo integration,
   operator documentation and acceptance. Preserve applicable upstream
   cooperation, board, event-delivery, review and lifecycle policies; identify
