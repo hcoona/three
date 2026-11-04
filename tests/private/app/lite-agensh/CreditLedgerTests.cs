@@ -21,8 +21,9 @@ public sealed class CreditLedgerTests(TestContext testContext)
             Usage(fixture, "first")
         );
         ledger.MarkStarted(first.Id);
-        ledger.AttachSession(first.Id, "saved-session");
-        ledger.ObserveUsage(first.Id, 45);
+        ledger.AttachSession(first.Id, first.SessionId!);
+        ledger.BeginDispatch("run-a", first.Id, 120);
+        ledger.RecordSdkUsage(first.Id, new(first.SessionId!, 45_000_000_000, "complete", 1));
         CreditReservation second = ledger.Reserve(
             "run-a",
             "worker2",
@@ -40,7 +41,11 @@ public sealed class CreditLedgerTests(TestContext testContext)
         Assert.HasCount(2, restarted.Reservations());
         Assert.AreEqual(120m, Amount(restarted.Status("run-a", 120), "runCommitted"));
 
-        restarted.Reconcile(first.Id, 45, "first-final-report");
+        restarted.RecordSdkUsage(
+            first.Id,
+            new(first.SessionId!, 45_000_000_000, "complete", 1),
+            final: true
+        );
         restarted.ReleaseUnstarted(second.Id);
         CreditReservation fresh = restarted.Reserve(
             "run-a",
@@ -50,7 +55,9 @@ public sealed class CreditLedgerTests(TestContext testContext)
             Usage(fixture, "fresh")
         );
         Assert.AreNotEqual(first.Id, fresh.Id);
-        Assert.IsNull(fresh.SessionId);
+        Assert.IsNotNull(fresh.SessionId);
+        Assert.AreNotEqual(first.SessionId, fresh.SessionId);
+        Assert.IsTrue(restarted.HasSdkAssociation(fresh.Id));
         Assert.AreEqual(120m, Amount(restarted.Status("run-a", 120), "runCommitted"));
         Assert.AreEqual(45m, Amount(restarted.Status("run-a", 120), "actualReported"));
 
@@ -97,8 +104,9 @@ public sealed class CreditLedgerTests(TestContext testContext)
             Usage(fixture, "uncertain")
         );
         ledger.MarkStarted(session.Id);
-        ledger.AttachSession(session.Id, "session-a");
-        ledger.ObserveUsage(session.Id, 15);
+        ledger.AttachSession(session.Id, session.SessionId!);
+        ledger.BeginDispatch("run-a", session.Id, 120);
+        ledger.RecordSdkUsage(session.Id, new(session.SessionId!, 15_000_000_000, "complete", 1));
         ledger.MarkUncertain(session.Id);
 
         CreditLedger restarted = new(path, 180);
@@ -109,8 +117,13 @@ public sealed class CreditLedgerTests(TestContext testContext)
         Assert.ThrowsExactly<InvalidOperationException>(() =>
             restarted.ReleaseUnstarted(session.Id)
         );
-        Assert.ThrowsExactly<InvalidOperationException>(() =>
-            restarted.ReleaseFailedStart(session.Id)
+        Assert.AreEqual(
+            "credit_unknown",
+            Assert
+                .ThrowsExactly<OperationException>(() =>
+                    restarted.BeginDispatch("run-a", session.Id, 120)
+                )
+                .Code
         );
         CreditReservation retained = Assert.ContainsSingle(restarted.Reservations());
         Assert.AreEqual("uncertain", retained.State);
@@ -119,7 +132,11 @@ public sealed class CreditLedgerTests(TestContext testContext)
         Assert.IsTrue(uncertain["uncertain"]!.GetValue<bool>());
         Assert.AreEqual(60m, Amount(uncertain, "campaignCommitted"));
 
-        restarted.Reconcile(session.Id, 17.5m, "known-final-report");
+        restarted.RecordSdkUsage(
+            session.Id,
+            new(session.SessionId!, 17_500_000_000, "complete", 1),
+            final: true
+        );
         CreditReservation next = restarted.Reserve(
             "run-a",
             "worker2",
@@ -149,8 +166,9 @@ public sealed class CreditLedgerTests(TestContext testContext)
             Usage(fixture, "overshoot")
         );
         ledger.MarkStarted(session.Id);
-        ledger.AttachSession(session.Id, "session-overshoot");
-        ledger.ObserveUsage(session.Id, 47);
+        ledger.AttachSession(session.Id, session.SessionId!);
+        ledger.BeginDispatch("run-a", session.Id, 60);
+        ledger.RecordSdkUsage(session.Id, new(session.SessionId!, 47_000_000_000, "complete", 1));
 
         OperationException prompt = Assert.ThrowsExactly<OperationException>(() =>
             ledger.RequirePromptAllowance("run-a", session.Id, 60)
@@ -160,21 +178,45 @@ public sealed class CreditLedgerTests(TestContext testContext)
         Assert.AreEqual(47m, Amount(ledger.Status("run-a", 60), "campaignCommitted"));
 
         ledger.MarkUncertain(session.Id);
-        ledger.Reconcile(session.Id, 49.5m, "overshoot-final-report");
+        ledger.RecordSdkUsage(
+            session.Id,
+            new(session.SessionId!, 49_500_000_000, "complete", 1),
+            final: true
+        );
         CreditLedger restarted = new(path, 120);
-        restarted.Reconcile(session.Id, 49.5m, "overshoot-final-report");
-        Assert.ThrowsExactly<InvalidOperationException>(() =>
-            restarted.Reconcile(session.Id, 1, "attempted-revision")
+        restarted.RecordSdkUsage(
+            session.Id,
+            new(session.SessionId!, 49_500_000_000, "complete", 1),
+            final: true
         );
         OperationException fresh = Assert.ThrowsExactly<OperationException>(() =>
             restarted.Reserve("run-a", "worker2", 30, 60, Usage(fixture, "cannot-reset"))
         );
 
         Assert.AreEqual("credit_exhausted", fresh.Code);
+        Assert.AreEqual(
+            "credit_unknown",
+            Assert
+                .ThrowsExactly<OperationException>(() =>
+                    restarted.RecordSdkUsage(
+                        session.Id,
+                        new(session.SessionId!, 1_000_000_000, "complete", 1),
+                        final: true
+                    )
+                )
+                .Code
+        );
+        Assert.AreEqual("uncertain", Assert.ContainsSingle(restarted.Reservations()).State);
+        Assert.AreEqual(49.5m, Assert.ContainsSingle(restarted.Reservations()).Actual);
+        restarted.RecordSdkUsage(
+            session.Id,
+            new(session.SessionId!, 49_500_000_000, "complete", 1),
+            final: true
+        );
         CreditReservation retained = Assert.ContainsSingle(restarted.Reservations("run-a"));
         Assert.AreEqual("reconciled", retained.State);
         Assert.AreEqual(49.5m, retained.Actual);
-        Assert.AreEqual("session-overshoot", retained.SessionId);
+        Assert.AreEqual(session.SessionId, retained.SessionId);
         JsonObject status = restarted.Status("run-a", 60);
         Assert.AreEqual(49.5m, Amount(status, "actualReported"));
         Assert.AreEqual(49.5m, Amount(status, "campaignCommitted"));
@@ -186,7 +228,7 @@ public sealed class CreditLedgerTests(TestContext testContext)
     [DataRow(false)]
     [DataRow(true)]
     public void ContinueExactReopenedLedgerPreservesSessionAndCumulativeUsage(
-        bool incrementalReport
+        bool intermediateSnapshot
     )
     {
         using RunFixture fixture = new();
@@ -200,9 +242,13 @@ public sealed class CreditLedgerTests(TestContext testContext)
             Usage(fixture, "original")
         );
         ledger.MarkStarted(original.Id);
-        ledger.AttachSession(original.Id, "exact-saved-session");
-        ledger.ObserveUsage(original.Id, 20);
-        ledger.Reconcile(original.Id, 20, "original-report");
+        ledger.AttachSession(original.Id, original.SessionId!);
+        ledger.BeginDispatch("run-a", original.Id, 120);
+        ledger.RecordSdkUsage(
+            original.Id,
+            new(original.SessionId!, 20_000_000_000, "complete", 1),
+            final: true
+        );
 
         CreditLedger restarted = new(path, 180);
         CreditReservation continued = restarted.ContinueExact(
@@ -210,26 +256,40 @@ public sealed class CreditLedgerTests(TestContext testContext)
             Usage(fixture, "loaded")
         );
         Assert.AreEqual(original.Id, continued.Id);
-        Assert.AreEqual("exact-saved-session", continued.SessionId);
+        Assert.AreEqual(original.SessionId, continued.SessionId);
         Assert.AreEqual(20m, continued.Actual);
         Assert.AreEqual(60m, continued.Allowance);
         Assert.AreNotEqual(original.UsagePath, continued.UsagePath);
         Assert.AreEqual(60m, Amount(restarted.Status("run-a", 120), "runCommitted"));
         restarted.MarkStarted(continued.Id);
-        restarted.AttachSession(continued.Id, "exact-saved-session");
+        restarted.AttachSession(continued.Id, continued.SessionId!);
+        restarted.BeginDispatch("run-a", continued.Id, 120);
+        if (intermediateSnapshot)
+        {
+            restarted.RecordSdkUsage(
+                continued.Id,
+                new(continued.SessionId!, 22_000_000_000, "complete", 2)
+            );
+            restarted.RequirePromptAllowance("run-a", continued.Id, 120);
+        }
 
+        restarted.RecordSdkUsage(
+            continued.Id,
+            new(continued.SessionId!, 25_000_000_000, "complete", 2),
+            final: true
+        );
         OperationException decreased = Assert.ThrowsExactly<OperationException>(() =>
-            restarted.ObserveUsage(continued.Id, 19)
+            restarted.RecordSdkUsage(
+                continued.Id,
+                new(continued.SessionId!, 19_000_000_000, "complete", 2)
+            )
         );
         Assert.AreEqual("credit_unknown", decreased.Code);
-        Assert.AreEqual(20m, Assert.ContainsSingle(restarted.Reservations()).Actual);
-        restarted.ObserveUsage(continued.Id, 22);
-        restarted.RequirePromptAllowance("run-a", continued.Id, 120);
-        restarted.Reconcile(
+        Assert.AreEqual(25m, Assert.ContainsSingle(restarted.Reservations()).Actual);
+        restarted.RecordSdkUsage(
             continued.Id,
-            incrementalReport ? 5 : 25,
-            "loaded-report",
-            processBaseline: incrementalReport ? 20 : null
+            new(continued.SessionId!, 25_000_000_000, "complete", 2),
+            final: true
         );
 
         CreditReservation result = Assert.ContainsSingle(
@@ -237,7 +297,7 @@ public sealed class CreditLedgerTests(TestContext testContext)
         );
         Assert.AreEqual("reconciled", result.State);
         Assert.AreEqual(25m, result.Actual);
-        Assert.AreEqual("exact-saved-session", result.SessionId);
+        Assert.AreEqual(original.SessionId, result.SessionId);
         Assert.AreEqual(25m, Amount(restarted.Status("run-a", 120), "runCommitted"));
         Assert.AreEqual(0m, Amount(restarted.Status("run-a", 120), "overshoot"));
     }

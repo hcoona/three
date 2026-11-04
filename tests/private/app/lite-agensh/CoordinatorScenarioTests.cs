@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using LiteAgensh;
 using Microsoft.Data.Sqlite;
@@ -13,35 +12,44 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 {
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
-    public async Task ScriptedPreflightReceiptIsRequiredAndBoundToExactDescriptorBeforeDispatch()
+    public async Task ControlledReceiptsRequirePreflightAndCalibrationAndBindExactConfiguration()
     {
         CancellationToken token = testContext.CancellationToken;
         using GitScenario fixture = await GitScenario.CreateAsync(token);
         ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
-        Coordinator coordinator = new(fixture.Database, fixture.Collaboration, fixture.Operations);
+        Coordinator coordinator = native.CreateCoordinator(fixture);
 
         Scenario.Failure(await coordinator.RunAsync("run", token), "unavailable");
         Assert.IsEmpty(native.OrdinaryPrompts());
-        Assert.IsNull(fixture.Database.ReadMetadata("native:credit_preflight_receipt"));
+        Assert.IsNull(fixture.Database.ReadMetadata("native:controlled_preflight_receipt"));
         Scenario.Data(await coordinator.PreflightAsync(token));
-        Assert.IsNotNull(fixture.Database.ReadMetadata("native:credit_preflight_receipt"));
+        Assert.IsNotNull(fixture.Database.ReadMetadata("native:controlled_preflight_receipt"));
         CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
-        CreditReservation preflight = Assert.ContainsSingle(
-            ledger.Reservations(fixture.Database.RunId)
-        );
-        Assert.AreEqual("reconciled", preflight.State);
-        Assert.AreEqual(0m, preflight.Actual);
+        Assert.IsEmpty(ledger.Reservations());
+        Scenario.Failure(await coordinator.RunAsync("run", token), "unavailable");
+        Scenario.Data(await coordinator.CalibrateAsync(token));
+        CreditReservation calibration = Assert.ContainsSingle(ledger.Reservations());
+        Assert.AreEqual("reconciled", calibration.State);
+        Assert.AreEqual(1m, calibration.Actual);
+        Assert.IsTrue(ledger.HasCompleteSdkUsage(calibration.Id));
         Assert.IsEmpty(native.OrdinaryPrompts());
+        JsonObject receipt = JsonNode
+            .Parse(fixture.Database.ReadMetadata("native:controlled_billing_receipt")!)!
+            .AsObject();
+        Assert.AreEqual(
+            "controlled-native-dependency",
+            receipt["nativeEvidenceKind"]!.GetValue<string>()
+        );
+        Assert.IsNull(fixture.Database.ReadMetadata("native:sdk_preflight_receipt"));
+        Assert.IsNull(fixture.Database.ReadMetadata("native:sdk_billing_receipt"));
+        Coordinator production = new(fixture.Database, fixture.Collaboration, fixture.Operations);
+        Scenario.Failure(await production.RunAsync("run", token), "unavailable");
 
-        fixture.Database.WriteMetadata(
-            "native:credit_contract",
-            JsonSerializer.Serialize(
-                ScriptedNative.Contract with
-                {
-                    EvidenceReference = "changed scripted descriptor invalidates the receipt",
-                },
-                Json.Options
-            )
+        fixture.Database.SaveConfiguration(
+            fixture.Database.Configuration with
+            {
+                NativeExecutable = Path.Combine(native.DirectoryPath, "changed-never-launch.exe"),
+            }
         );
         Scenario.Failure(await coordinator.RunAsync("run", token), "unavailable");
         Assert.IsEmpty(native.OrdinaryPrompts());
@@ -52,21 +60,22 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
-    [DataRow("unknown-usage")]
+    [DataRow("identity-mismatch")]
     [DataRow("wrong-limit")]
-    public async Task ScriptedPreflightUnknownUsageOrAppliedLimitNeverAdmitsOrdinaryPrompt(
-        string mode
-    )
+    public async Task ControlledDiagnosticFailureNeverAdmitsOrdinaryPrompt(string mode)
     {
         CancellationToken token = testContext.CancellationToken;
         using GitScenario fixture = await GitScenario.CreateAsync(token);
         ScriptedNative native = await ScriptedNative.BuildAsync(fixture, mode, token);
-        Coordinator coordinator = new(fixture.Database, fixture.Collaboration, fixture.Operations);
+        Coordinator coordinator = native.CreateCoordinator(fixture);
 
         Scenario.Failure(await coordinator.PreflightAsync(token), "credit_unknown");
 
         Assert.IsEmpty(native.OrdinaryPrompts());
-        Assert.IsNull(fixture.Database.ReadMetadata("native:credit_preflight_receipt"));
+        Assert.IsNull(fixture.Database.ReadMetadata("native:controlled_preflight_receipt"));
+        Assert.IsEmpty(
+            new CreditLedger(fixture.Database.Configuration.CampaignLedgerPath, 600).Reservations()
+        );
         Scenario.Failure(await coordinator.RunAsync("run", token), "unavailable");
         Assert.IsEmpty(native.OrdinaryPrompts());
         using SqliteConnection retained = fixture.Database.Open();
@@ -79,36 +88,30 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(180000, CooperativeCancellation = true)]
-    public async Task ScriptedStartupArgumentRejectionRetainsVisibleFailureAndUncertainReservation()
+    public async Task ControlledPaidStartupRejectionRetainsFailureAndUncertainReservation()
     {
         CancellationToken token = testContext.CancellationToken;
         using GitScenario fixture = await GitScenario.CreateAsync(token);
-        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "reject-startup", token);
-        Coordinator coordinator = new(fixture.Database, fixture.Collaboration, fixture.Operations);
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        Scenario.Data(await coordinator.PreflightAsync(token));
+        native.SetMode("reject-startup");
 
-        JsonObject failure = await coordinator.PreflightAsync(token);
+        JsonObject failure = await coordinator.CalibrateAsync(token);
 
-        Scenario.Failure(failure, "unavailable");
-        Assert.Contains(
-            "uncertain reservations remain retained",
-            failure["message"]!.GetValue<string>()
-        );
+        Scenario.Failure(failure, "credit_or_ownership_unknown");
         Assert.AreEqual("unresolved", fixture.Database.ReadMetadata("lifecycle"));
-        Assert.IsNull(fixture.Database.ReadMetadata("native:credit_preflight_receipt"));
-        Assert.IsEmpty(native.Wire());
-        string rejection = Assert.ContainsSingle(
-            Directory.GetFiles(Path.Combine(native.DirectoryPath, "bin"), "rejected-*.txt")
-        );
-        Assert.Contains("--acp together with --usage-output-file", File.ReadAllText(rejection));
+        Assert.IsNull(fixture.Database.ReadMetadata("native:controlled_billing_receipt"));
+        Assert.IsEmpty(native.OrdinaryPrompts());
         CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
         CreditReservation retained = Assert.ContainsSingle(
             ledger.Reservations(fixture.Database.RunId)
         );
         Assert.AreEqual("uncertain", retained.State);
-        Assert.AreEqual(60m, retained.Allowance);
+        Assert.AreEqual(30m, retained.Allowance);
         Assert.IsNull(retained.Actual);
         Assert.AreEqual(
-            60m,
+            30m,
             ledger.Status(fixture.Database.RunId, 120)["campaignCommitted"]!.GetValue<decimal>()
         );
         Assert.IsTrue(ledger.Status(fixture.Database.RunId, 120)["uncertain"]!.GetValue<bool>());
@@ -117,14 +120,10 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             0L,
             Sql.Scalar(connection, "SELECT COUNT(*) FROM process_leases WHERE state<>'exited';")
         );
-        Assert.AreEqual(0L, Sql.Scalar(connection, "SELECT COUNT(*) FROM native_sessions;"));
+        Assert.AreEqual(1L, Sql.Scalar(connection, "SELECT COUNT(*) FROM native_sessions;"));
 
         JsonObject blocked = await coordinator.RunAsync("run", token);
         Scenario.Failure(blocked, "credit_unknown");
-        Assert.Contains(
-            "no retained version negotiation evidence",
-            blocked["message"]!.GetValue<string>()
-        );
         Assert.HasCount(
             1,
             new CreditLedger(fixture.Database.Configuration.CampaignLedgerPath, 600).Reservations(
@@ -141,8 +140,8 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
         CancellationToken token = testContext.CancellationToken;
         using GitScenario fixture = await GitScenario.CreateAsync(token);
         ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "hold", token);
-        Coordinator coordinator = new(fixture.Database, fixture.Collaboration, fixture.Operations);
-        Scenario.Data(await coordinator.PreflightAsync(token));
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
         Scenario.Call(
             fixture.Collaboration,
             "owner",
@@ -179,7 +178,7 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             Assert.AreEqual("owner-pause", paused["stopReason"]!.GetValue<string>());
             AssertSettled(fixture);
 
-            HashSet<string> before = native.CaptureWire();
+            HashSet<string> before = native.CaptureOperations();
             execution = coordinator.RunAsync("resume", stop.Token);
             await WaitUntilAsync(
                 () => native.OrdinaryPrompts(before).Length >= 2,
@@ -272,8 +271,8 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                 PlanningSeconds = 60,
             }
         );
-        Coordinator coordinator = new(fixture.Database, fixture.Collaboration, fixture.Operations);
-        Scenario.Data(await coordinator.PreflightAsync(token));
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
         using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
         Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
         try
@@ -348,12 +347,14 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
         CancellationToken token = testContext.CancellationToken;
         using GitScenario fixture = await GitScenario.CreateAsync(token);
         ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
-        Coordinator coordinator = new(fixture.Database, fixture.Collaboration, fixture.Operations);
-        Scenario.Data(await coordinator.PreflightAsync(token));
+        _ = native.CreateCoordinator(fixture);
+        fixture.Database.WriteMetadata("worker:worker1:session", "previous-controlled-session");
+        fixture.Database.WriteMetadata(
+            "worker:worker1:reservation",
+            "previous-controlled-reservation"
+        );
         string? previousSession = fixture.Database.ReadMetadata("worker:worker1:session");
         string? previousReservation = fixture.Database.ReadMetadata("worker:worker1:reservation");
-        Assert.IsNotNull(previousSession);
-        Assert.IsNotNull(previousReservation);
         using (SqliteConnection connection = fixture.Database.Open())
         {
             Sql.Execute(
@@ -366,13 +367,19 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             );
         }
 
-        JsonObject failed = await coordinator.RunAsync("run", token);
-
-        Scenario.Failure(failed, "unavailable");
-        Assert.Contains(
-            "injected atomic association rejection",
-            failed["message"]!.GetValue<string>()
+        CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+        CreditReservation reservation = ledger.Reserve(
+            fixture.Database.RunId,
+            "worker1",
+            60,
+            120,
+            Path.Combine(fixture.Fixture.StatePath, "before-sdk.evidence")
         );
+        NativeWorker worker = new(fixture.Database, new(fixture.Database), ledger, reservation);
+        SqliteException failed = await Assert.ThrowsExactlyAsync<SqliteException>(() =>
+            worker.StartAsync(fixture.Operations.GetWorkerPath("worker1"), null, token)
+        );
+        Assert.Contains("injected atomic association rejection", failed.Message);
         Assert.IsEmpty(native.OrdinaryPrompts());
         Assert.AreEqual(previousSession, fixture.Database.ReadMetadata("worker:worker1:session"));
         Assert.AreEqual(
@@ -380,7 +387,7 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             fixture.Database.ReadMetadata("worker:worker1:reservation")
         );
         using SqliteConnection retained = fixture.Database.Open();
-        Assert.AreEqual(1L, Sql.Scalar(retained, "SELECT COUNT(*) FROM native_sessions;"));
+        Assert.AreEqual(0L, Sql.Scalar(retained, "SELECT COUNT(*) FROM native_sessions;"));
         Assert.AreEqual(
             0L,
             Sql.Scalar(retained, "SELECT COUNT(*) FROM process_leases WHERE state<>'exited';")
@@ -391,10 +398,11 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                 "SELECT session_id FROM native_attempts ORDER BY rowid DESC LIMIT 1;"
             )
         );
-        CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
-        Assert.IsFalse(ledger.Status(fixture.Database.RunId, 120)["uncertain"]!.GetValue<bool>());
+        Assert.AreEqual("started", Assert.ContainsSingle(ledger.Reservations()).State);
+        await Assert.ThrowsExactlyAsync<OperationException>(() => worker.StopAsync());
+        Assert.IsTrue(ledger.Status(fixture.Database.RunId, 120)["uncertain"]!.GetValue<bool>());
         Assert.AreEqual(
-            0m,
+            60m,
             ledger.Status(fixture.Database.RunId, 120)["campaignCommitted"]!.GetValue<decimal>()
         );
     }
@@ -426,9 +434,9 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                 },
             clock
         );
-        await ScriptedNative.BuildAsync(fixture, "complete", token);
-        Coordinator coordinator = new(fixture.Database, fixture.Collaboration, fixture.Operations);
-        Scenario.Data(await coordinator.PreflightAsync(token));
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
         using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
         Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
         try
@@ -504,8 +512,8 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                 }
         );
         ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "hold", token);
-        Coordinator coordinator = new(fixture.Database, fixture.Collaboration, fixture.Operations);
-        Scenario.Data(await coordinator.PreflightAsync(token));
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
         await fixture.CommitAsync("worker1", "a.txt", "finalization-A-fix", token);
         JsonObject first = await fixture.SubmitAsync("worker1", token);
         await fixture.ApproveAsync(first, "worker2", token);
@@ -527,7 +535,7 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             Assert.IsTrue(finalizedA["accepted"]!.GetValue<bool>());
             string retainedA = finalizedA["finalCommit"]!.GetValue<string>();
 
-            HashSet<string> before = native.CaptureWire();
+            HashSet<string> before = native.CaptureOperations();
             execution = coordinator.RunAsync("resume", stop.Token);
             await WaitUntilAsync(
                 () => native.OrdinaryPrompts(before).Length >= 2,
@@ -640,8 +648,8 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             clock
         );
         ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "hold", token);
-        Coordinator coordinator = new(fixture.Database, fixture.Collaboration, fixture.Operations);
-        Scenario.Data(await coordinator.PreflightAsync(token));
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
         using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
         Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
         try
@@ -727,6 +735,8 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
     [DataRow(true, "torn")]
     [DataRow(true, "cross-worker")]
     [DataRow(true, "session-mismatched")]
+    [DataRow(true, "cross-run")]
+    [DataRow(true, "unsettled-recovery")]
     public async Task CoordinatorCrashReconnectValidatesAssociationBeforeLoadOrFreshSummary(
         bool supportsLoad,
         string corruption
@@ -735,8 +745,9 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
         CancellationToken token = testContext.CancellationToken;
         using GitScenario fixture = await GitScenario.CreateAsync(token);
         ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "hold", token);
-        Coordinator coordinator = new(fixture.Database, fixture.Collaboration, fixture.Operations);
-        Scenario.Data(await coordinator.PreflightAsync(token));
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
+        string host = await native.BuildCrashHostAsync(fixture, token);
         Scenario.Call(
             fixture.Collaboration,
             "owner",
@@ -755,15 +766,7 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
-        foreach (
-            string argument in new[]
-            {
-                typeof(RunDatabase).Assembly.Location,
-                "run",
-                "--state",
-                fixture.Fixture.StatePath,
-            }
-        )
+        foreach (string argument in new[] { host, fixture.Fixture.StatePath, native.DirectoryPath })
         {
             start.ArgumentList.Add(argument);
         }
@@ -782,6 +785,19 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             string first2 = fixture.Database.ReadMetadata("worker:worker2:session")!;
             Assert.IsNotNull(first1);
             Assert.IsNotNull(first2);
+            CreditReservation? foreign =
+                corruption == "cross-run"
+                    ? new CreditLedger(
+                        fixture.Database.Configuration.CampaignLedgerPath,
+                        600
+                    ).Reserve(
+                        "foreign-run",
+                        "worker1",
+                        30,
+                        120,
+                        Path.Combine(fixture.Fixture.StatePath, "foreign-run.evidence")
+                    )
+                    : null;
             child.Kill(entireProcessTree: false);
             await child.WaitForExitAsync(token);
             Assert.AreNotEqual(0, child.ExitCode);
@@ -791,10 +807,56 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             }
 
             native.SetMode(supportsLoad ? "hold" : "no-load");
-            HashSet<string> before = native.CaptureWire();
+            HashSet<string> before = native.CaptureOperations();
+            if (corruption == "unsettled-recovery")
+            {
+                native.SetMode("unsettled-recovery");
+                recovery = coordinator.RunAsync("reconnect", stop.Token);
+                Scenario.Failure(await recovery, "ownership_unresolved");
+                Assert.IsEmpty(native.OrdinaryPrompts(before));
+                Assert.HasCount(
+                    1,
+                    native
+                        .Operations(before)
+                        .Where(item => item["operation"]!.GetValue<string>() == "recover")
+                );
+                Assert.IsFalse(
+                    native
+                        .Operations(before)
+                        .Any(item => item["operation"]!.GetValue<string>() == "recovered-settled")
+                );
+                CreditLedger uncertain = new(
+                    fixture.Database.Configuration.CampaignLedgerPath,
+                    600
+                );
+                CreditReservation[] workers = uncertain
+                    .Reservations(fixture.Database.RunId)
+                    .Where(item => item.Worker != "calibration")
+                    .ToArray();
+                Assert.HasCount(2, workers);
+                Assert.IsTrue(workers.All(item => item.Actual is null));
+                Assert.IsTrue(workers.Any(item => item.State == "uncertain"));
+                Assert.AreEqual(
+                    120m,
+                    uncertain.Status(fixture.Database.RunId, 120)[
+                        "campaignCommitted"
+                    ]!.GetValue<decimal>()
+                );
+                Assert.AreEqual("unresolved", fixture.Database.ReadMetadata("lifecycle"));
+                return;
+            }
+
             if (corruption != "none")
             {
-                if (corruption == "torn")
+                // Association rejection precedes coordinator survivor settlement.
+                // Settle this owned crash fixture's Git children before isolating that guard.
+                await new ProcessRunner(fixture.Database).ResolveSurvivorsAsync(token);
+                if (foreign is not null)
+                {
+                    fixture.Database.WriteMetadata("worker:worker1:session", foreign.SessionId!);
+                    fixture.Database.WriteMetadata("worker:worker1:reservation", foreign.Id);
+                }
+                else if (corruption == "torn")
                 {
                     fixture.Database.WriteMetadata("worker:worker1:reservation", "");
                 }
@@ -822,8 +884,8 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                     "saved native session/reservation association",
                     refused["message"]!.GetValue<string>()
                 );
-                Assert.AreEqual("stopped", fixture.Database.ReadMetadata("lifecycle"));
-                Assert.IsEmpty(native.Wire(before));
+                Assert.AreEqual("running", fixture.Database.ReadMetadata("lifecycle"));
+                Assert.IsEmpty(native.Operations(before));
                 Assert.IsTrue(
                     reservations
                         .ToHashSet(StringComparer.Ordinal)
@@ -840,11 +902,10 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                     )
                 );
                 Assert.AreEqual(
-                    2L,
+                    1L,
                     Sql.Scalar(retainedAssociation, "SELECT COUNT(*) FROM coordinator_segments;")
                 );
-                Assert.AreEqual(
-                    "credit_unknown",
+                Assert.IsNull(
                     Sql.Scalar(
                         retainedAssociation,
                         "SELECT stop_reason FROM coordinator_segments ORDER BY id DESC LIMIT 1;"
@@ -871,10 +932,10 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                     Assert.AreEqual("exact-session-load", label);
                     Assert.IsTrue(
                         native
-                            .Wire()
+                            .Operations(before)
                             .Any(message =>
-                                message["method"]?.GetValue<string>() == "session/load"
-                                && message["params"]!["sessionId"]!.GetValue<string>() == original
+                                message["operation"]?.GetValue<string>() == "resume"
+                                && message["sessionId"]!.GetValue<string>() == original
                             )
                     );
                 }
@@ -966,11 +1027,10 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 
     private static bool HasOrdinaryPrompt(ScriptedNative native, string session) =>
         native
-            .Wire()
+            .Operations()
             .Any(message =>
-                message["method"]?.GetValue<string>() == "session/prompt"
-                && message["params"]!["sessionId"]!.GetValue<string>() == session
-                && message["params"]!["prompt"]![0]!["text"]!.GetValue<string>() != "/usage"
+                message["operation"]?.GetValue<string>() == "prompt"
+                && message["sessionId"]!.GetValue<string>() == session
             );
 
     private static async Task StopExecutionAsync(
