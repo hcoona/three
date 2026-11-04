@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using LiteAgensh;
@@ -132,7 +133,69 @@ public sealed class ApplicationContractTests(TestContext testContext)
     [Timeout(60000, CooperativeCancellation = true)]
     public async Task McpStdioDiscoveryAndActorBoundCallsEnforceSerializedLocalContracts()
     {
-        using RunFixture fixture = new();
+        RunFixture fixture = new();
+        List<McpProcess> children = [];
+        Exception? primaryFailure = null;
+        AggregateException? cleanupFailure = null;
+        try
+        {
+            await VerifyMcpContractsAsync(fixture, children);
+        }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+            throw;
+        }
+        finally
+        {
+            List<Exception> cleanupFailures = [];
+            foreach (McpProcess child in children.AsEnumerable().Reverse())
+            {
+                try
+                {
+                    await SettleMcpProcessAsync(child);
+                }
+                catch (Exception exception)
+                {
+                    cleanupFailures.Add(exception);
+                }
+            }
+
+            if (cleanupFailures.Count == 0)
+            {
+                testContext.WriteLine("Owned MCP children settled before fixture deletion.");
+                try
+                {
+                    fixture.Dispose();
+                }
+                catch (Exception exception)
+                {
+                    cleanupFailures.Add(exception);
+                }
+            }
+            else
+            {
+                testContext.WriteLine($"Retained unsettled MCP fixture: {fixture.RootPath}");
+            }
+
+            if (cleanupFailures.Count > 0)
+            {
+                cleanupFailure = new("MCP contract fixture cleanup failed.", cleanupFailures);
+                if (primaryFailure is not null)
+                {
+                    testContext.WriteLine($"Secondary cleanup failure: {cleanupFailure}");
+                }
+            }
+        }
+
+        if (cleanupFailure is not null)
+        {
+            throw cleanupFailure;
+        }
+    }
+
+    private async Task VerifyMcpContractsAsync(RunFixture fixture, List<McpProcess> children)
+    {
         RunDatabase database = fixture.CreateDatabase();
         CollaborationOperations peers = new(database);
         Scenario.Call(
@@ -141,7 +204,7 @@ public sealed class ApplicationContractTests(TestContext testContext)
             "message_send",
             new { recipient = "worker1", body = "fresh notice from the other peer" }
         );
-        await using McpClient client = await ConnectAsync(fixture, "worker1");
+        await using McpClient client = await ConnectAsync(fixture, "worker1", children);
         IList<McpClientTool> tools = await client.ListToolsAsync(
             cancellationToken: testContext.CancellationToken
         );
@@ -239,7 +302,7 @@ public sealed class ApplicationContractTests(TestContext testContext)
                 new() { ["recipient"] = "owner", ["body"] = "private-stdio-decision" }
             )
         );
-        await using McpClient other = await ConnectAsync(fixture, "worker2");
+        await using McpClient other = await ConnectAsync(fixture, "worker2", children);
         Scenario.Failure(
             await CallAsync(
                 other,
@@ -275,27 +338,87 @@ public sealed class ApplicationContractTests(TestContext testContext)
         );
     }
 
-    private async Task<McpClient> ConnectAsync(RunFixture fixture, string actor) =>
-        await McpClient.CreateAsync(
-            new StdioClientTransport(
-                new StdioClientTransportOptions
+    private async Task<McpClient> ConnectAsync(
+        RunFixture fixture,
+        string actor,
+        List<McpProcess> children
+    )
+    {
+        Process process = new()
+        {
+            StartInfo = new ProcessStartInfo(Scenario.DotnetHost)
+            {
+                ArgumentList =
                 {
-                    Name = "credential-free product stdio",
-                    Command = Scenario.DotnetHost,
-                    Arguments =
-                    [
-                        typeof(RunDatabase).Assembly.Location,
-                        "mcp",
-                        "--state",
-                        fixture.StatePath,
-                        "--actor",
-                        actor,
-                    ],
-                    WorkingDirectory = fixture.RepositoryPath,
-                }
+                    typeof(RunDatabase).Assembly.Location,
+                    "mcp",
+                    "--state",
+                    fixture.StatePath,
+                    "--actor",
+                    actor,
+                },
+                WorkingDirectory = fixture.RepositoryPath,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            },
+        };
+        try
+        {
+            Assert.IsTrue(process.Start());
+        }
+        catch
+        {
+            process.Dispose();
+            throw;
+        }
+
+        children.Add(new(process, process.StandardError.ReadToEndAsync()));
+        testContext.WriteLine(
+            $"Owned MCP child started: {process.Id}; actor: {actor}; "
+                + $"start ticks: {process.StartTime.ToUniversalTime().Ticks}."
+        );
+        return await McpClient.CreateAsync(
+            new StreamClientTransport(
+                serverInput: process.StandardInput.BaseStream,
+                serverOutput: process.StandardOutput.BaseStream
             ),
             cancellationToken: testContext.CancellationToken
         );
+    }
+
+    private async Task SettleMcpProcessAsync(McpProcess child)
+    {
+        using Process process = child.Process;
+        process.StandardInput.BaseStream.Close();
+        using CancellationTokenSource graceful = new(TimeSpan.FromSeconds(5));
+        try
+        {
+            await process.WaitForExitAsync(graceful.Token);
+        }
+        catch (OperationCanceledException) when (graceful.IsCancellationRequested)
+        {
+            testContext.WriteLine($"Terminating retained owned MCP child: {process.Id}.");
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            using CancellationTokenSource killed = new(TimeSpan.FromSeconds(5));
+            await process.WaitForExitAsync(killed.Token);
+        }
+
+        string error = await child.StandardError.WaitAsync(TimeSpan.FromSeconds(5));
+        process.StandardOutput.Close();
+        testContext.WriteLine(
+            $"Owned MCP child settled: {process.Id}; exit: {process.ExitCode}; "
+                + $"stderr: {error[..Math.Min(error.Length, 2000)]}"
+        );
+    }
+
+    private sealed record McpProcess(Process Process, Task<string> StandardError);
 
     private async Task<JsonObject> CallAsync(
         McpClient client,
