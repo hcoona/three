@@ -32,6 +32,49 @@ Tests use the root `MSTest.Sdk` and a project reference from
 `tests/private/app/lite-agensh/LiteAgensh.Tests.csproj`. Existing traversal and
 CI selection remain authoritative. No independent toolchain is introduced.
 
+## Configuration input
+
+`init --config` selects YAML for `.yaml` and `.yml` files, with
+case-insensitive extension matching. Other files retain the existing JSON
+loader; `.json` is its documented filename convention. The input file is an
+initialization source only; subsequent lifecycle commands use the persisted
+run configuration.
+
+- JSON retains the existing camel-case `RunConfiguration` fields, required
+  inline `goal`, strict unknown-field rejection and existing absolute
+  repository/state/ledger requirements. Do not reinterpret its paths.
+- YAML accepts the same configuration fields except that required
+  `goalFile` replaces `goal`. Read that Markdown file as the complete goal;
+  reject a missing or whitespace-only path or body. Reject inline `goal`
+  rather than inventing precedence between two goal authorities.
+- Resolve relative YAML `repositoryPath`, `statePath`,
+  `campaignLedgerPath` and `goalFile` against the absolute input file's
+  directory. Preserve absolute paths. Do not resolve executable names,
+  arguments, protected-path patterns or `baseRevision` as input-file paths.
+- Use the root CPM selection of `YamlDotNet`. Accept one YAML mapping
+  document, reject duplicate keys, unknown fields and wrong value types,
+  then apply existing `RunConfiguration.Validate()` invariants before any
+  run SQLite state is created. Do not introduce a configuration-provider
+  framework.
+- Materialize the loaded Markdown body as `RunConfiguration.Goal` and
+  persist the resolved existing configuration shape. Do not add a
+  goal-file dependency to run recovery or reread it on resume/reconnect.
+  Correcting an input after initialization does not silently reconfigure
+  that run.
+- Publish `schemas/run.schema.json` for the YAML input. Cover accepted
+  field names, required fields, types, descriptions, enum choices,
+  meaningful numeric bounds and strict additional-property rejection.
+  Keep it consistent with the typed input contract and supply an example
+  YAML/Markdown pair with a normal `yaml-language-server` schema
+  association. Editor structure checks do not replace runtime filesystem
+  or cross-field validation. A consumer copying the example elsewhere
+  adjusts its schema reference and paths; no custom VS Code extension
+  or downloaded schema is required to run LiteAgensh.
+
+Input errors produce the existing non-success CLI operation envelope before
+models start. Existing budget, ownership, permission, preflight and billing
+calibration gates remain unchanged by the input format.
+
 ## Shared platform boundary
 
 The following public application contracts permit independent units without a
@@ -250,7 +293,8 @@ review and protected-path owner approval are candidate-bound. HealthGate's
 
 The CLI supports `init`, `run`, `status`, `pause`, `resume`, `reconnect`,
 `finalize`, `cleanup`, local operator tool invocation and an internal `mcp`
-mode. Configuration is explicit JSON; status/delivery are machine-readable.
+mode. Configuration uses the [explicit input contract](#configuration-input);
+status/delivery are machine-readable.
 Help documents actual syntax. Init creates a root task and identities without
 starting models. Optional planning wakes worker1 before peers. Closure by the
 operator and configured fixed-length behavior are classified separately from

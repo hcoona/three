@@ -1,0 +1,166 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LiteAgensh YAML run configuration",
+  "description": "Initialization input. Relative paths resolve from this YAML file's directory. The resolved configuration and Markdown goal are saved in run state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repositoryPath", "statePath", "campaignLedgerPath", "goalFile"],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target Git checkout. Worktrees preserve the owner's checkout, not host permissions."
+    },
+    "statePath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "New owned run directory, outside the target checkout. Use a distinct directory for each run."
+    },
+    "campaignLedgerPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Persistent credit ledger outside the checkout. Reuse it across runs in the same campaign; do not reset it to bypass uncertain usage."
+    },
+    "goalFile": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Path to a nonempty Markdown goal shared by all workers. The entire file is loaded once at init."
+    },
+    "baseRevision": {
+      "type": "string",
+      "minLength": 1,
+      "default": "HEAD",
+      "description": "Git revision to start from. Not resolved as a file path."
+    },
+    "workerCount": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 2,
+      "description": "Equal peers sharing one goal and cooperation template, not permanently assigned roles."
+    },
+    "durationSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1800,
+      "description": "Finite run duration."
+    },
+    "planningSeconds": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Initial planning interval, no longer than durationSeconds. Zero starts peers without a privileged initial planner."
+    },
+    "nativeExecutable": {
+      "type": "string",
+      "minLength": 1,
+      "default": "copilot",
+      "description": "Existing Copilot CLI executable or path; not made relative to the YAML file."
+    },
+    "nativeArguments": {
+      "type": "array",
+      "default": [],
+      "description": "Only one reasoning-effort setting is admitted. Transport, authentication and limits remain host-owned.",
+      "oneOf": [
+        { "maxItems": 0 },
+        {
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^--(effort|reasoning-effort)=(low|medium|high|xhigh|max)$"
+          }
+        },
+        {
+          "minItems": 2,
+          "maxItems": 2,
+          "items": [
+            { "enum": ["--effort", "--reasoning-effort"] },
+            { "enum": ["low", "medium", "high", "xhigh", "max"] }
+          ],
+          "additionalItems": false
+        }
+      ]
+    },
+    "nativeModel": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional existing native model selection. Omit to keep the native default."
+    },
+    "nativePermissionPolicy": {
+      "type": "string",
+      "enum": ["deny", "trusted"],
+      "default": "deny",
+      "description": "trusted explicitly permits native tool use on this host. Worktrees are not a security sandbox."
+    },
+    "runAiCreditAllowance": {
+      "type": "number",
+      "minimum": 30,
+      "default": 10000,
+      "description": "Run credit circuit breaker, including paid calibration. Native soft caps can overshoot in-flight."
+    },
+    "campaignAiCreditAllowance": {
+      "type": "number",
+      "minimum": 30,
+      "default": 150000,
+      "description": "Persistent campaign circuit breaker; must be at least runAiCreditAllowance."
+    },
+    "candidateChecks": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/check" },
+      "default": [],
+      "description": "Checks of submitted changes, executed in the candidate checkout."
+    },
+    "integrationChecks": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/check" },
+      "default": [],
+      "description": "Checks before integrating a candidate."
+    },
+    "finalChecks": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/check" },
+      "default": [],
+      "description": "Checks of final delivery. Configure checks suitable for the target repository."
+    },
+    "requirePeerReview": {
+      "type": "boolean",
+      "default": true,
+      "description": "Require another peer's review of the exact submitted head."
+    },
+    "protectedPaths": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Protected repository path patterns, not configuration-relative file paths."
+    },
+    "createRepository": {
+      "type": "boolean",
+      "default": false,
+      "description": "Explicitly allow creating the target repository instead of requiring an existing checkout."
+    }
+  },
+  "definitions": {
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable"],
+      "properties": {
+        "executable": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Executable used in the check checkout, not resolved relative to this YAML file."
+        },
+        "arguments": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 120
+        }
+      }
+    }
+  }
+}

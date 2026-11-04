@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../schemas/run.schema.json
+# Edit the checkout path; keep state and campaign ledger outside that checkout.
+repositoryPath: 'C:\Work\three'
+statePath: ./run
+campaignLedgerPath: ./campaign/credits.sqlite
+goalFile: ./goal.md
+
+workerCount: 10
+planningSeconds: 0
+durationSeconds: 1800
+
+# Explicit host trust, not isolation. Native workers can execute host tools.
+nativePermissionPolicy: trusted
+runAiCreditAllowance: 10000
+campaignAiCreditAllowance: 150000
+requirePeerReview: true
+
+# This example targets this monorepo. Adjust checks for another repository.
+finalChecks:
+  - executable: dotnet
+    arguments:
+      - test
+      - --project
+      - tests\private\app\lite-agensh\LiteAgensh.Tests.csproj
+    timeoutSeconds: 600

@@ -156,6 +156,22 @@ redistribute or rewrite model credentials, override enterprise policy, or
 automatically publish local diagnostics. Retain the upstream copyright and MIT
 notice for derived material, and separate source findings from runtime evidence.
 
+### LA-REQ-017: Human-editable run configuration
+
+The operator shall be able to initialize a run from YAML configuration and a
+separate Markdown goal, with JSON Schema guidance for ordinary VS Code YAML
+editing. Existing JSON configurations shall remain compatible. Relative
+repository, state, campaign-ledger and goal-file paths in YAML shall resolve
+against the configuration file, not the launching terminal. Existing JSON
+path semantics shall remain unchanged.
+
+Validate input before creating run state or admitting paid work. Report
+malformed, duplicate, unknown, missing or incorrectly typed configuration
+fields and missing or empty goal files as configuration failures. Persist the
+resolved configuration and goal at initialization; later input-file edits
+shall not silently change a running or resumed run. Editor integration shall
+be optional and shall not require a custom LiteAgensh VS Code extension.
+
 ## Explicitly unsupported in this outcome
 
 Other agent backends; multi-host coordination; untrusted/mutually hostile

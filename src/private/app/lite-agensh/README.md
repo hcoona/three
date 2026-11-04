@@ -40,16 +40,34 @@ selected by the [implementation contracts](docs/implementation-contracts.md).
 SDK CLI acquisition and native automatic updates are disabled. Keep the
 existing native authentication and default model; no provider proxy is needed.
 
-Supply an absolute JSON configuration following those contracts, including the
-target repository, goal, owned run state, declared checks, explicit native
-permission policy, finite allowances and one persistent campaign ledger.
+Edit [the YAML example](examples/run.yaml) and its separate
+[Markdown goal](examples/goal.md). Set the target checkout, owned run state,
+checks, explicit native permission policy, finite allowances and one persistent
+campaign ledger. Relative repository, state, ledger and goal paths resolve from
+the YAML file's directory, not the terminal directory. Keep state and ledger
+outside the target checkout. The complete goal is shared by all peers; the
+example starts ten workers with no privileged initial planner or fixed roles.
+
+The YAML example's modeline associates [the JSON Schema](schemas/run.schema.json)
+with the standard Red Hat YAML extension in VS Code for completion, hover and
+validation. No editor extension is required at runtime. If copying the example
+elsewhere, adjust its schema pointer and paths, or configure a YAML schema
+association in the editor. Runtime validation also checks paths and cross-field
+conditions that editor validation cannot establish.
+
+YAML uses `goalFile`, not inline `goal`; JSON configuration remains supported
+with its existing inline `goal` and absolute paths. Initialization snapshots the
+resolved configuration and entire Markdown goal in SQLite. Editing the input
+files later does not change resume/reconnect; initialize a new run to use new
+inputs. See the [input contract](docs/implementation-contracts.md#configuration-input).
+
 Worktrees separate edits, not host permissions. Build once and keep that exact
 binary for preflight, calibration and subsequent lifecycle commands:
 
 ```powershell
 dotnet build src\private\app\lite-agensh\LiteAgensh.csproj
 $app = (Resolve-Path src\private\app\lite-agensh\bin\Debug\net10.0\LiteAgensh.dll).Path
-dotnet $app init --config C:\Work\LiteAgensh\run.json
+dotnet $app init --config C:\Work\LiteAgensh\run.yaml
 dotnet $app preflight --state C:\Work\LiteAgensh\run
 dotnet $app calibrate --state C:\Work\LiteAgensh\run
 dotnet $app run --state C:\Work\LiteAgensh\run
@@ -61,6 +79,9 @@ ordinary dispatch. A changed binary or relied-on configuration needs matching
 receipts. Soft caps can overshoot by an in-flight response.
 
 Use `status` or request `pause` from another terminal with the same `--state`.
+`run` stays in the current terminal and owns native worker subprocesses; it does
+not open ten interactive terminals. Closing that terminal is not a controlled
+pause.
 Wait for actual coordinator/child settlement before `resume`, which creates
 fresh sessions with durable summaries. After a coordinator crash, `reconnect`
 resolves owned children and attempts the exact saved sessions; it does not
@@ -75,17 +96,17 @@ dotnet test --project tests\private\app\lite-agensh\LiteAgensh.Tests.csproj
 
 ## Records and authority
 
-| Reader question                                                     | Authority                                                                     |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| What must the local product do, and what is unsupported?            | [Requirements](docs/requirements.md)                                          |
-| How do C#, SQLite, native processes, MCP and Git fit together?      | [Architecture and integration boundaries](docs/architecture.md)               |
-| What replaces each upstream responsibility and collaboration tool?  | [Complete migration map and source evidence](docs/upstream-migration.md)      |
-| What evidence permits implementation and an eventual support claim? | [Validation basis](docs/validation.md)                                        |
-| Where is upstream attribution retained?                             | [Third-party notice](THIRD-PARTY-NOTICES.txt)                                 |
-| What concrete boundaries do independent implementation units share? | [Implementation contracts](docs/implementation-contracts.md)                  |
-| What exact native observation and credit effects may be executed?   | [Native acceptance protocol](docs/native-acceptance-protocol.md)              |
-| What work is currently authorized?                                  | Repository [Delivery Wave](../../../../docs/delivery-wave.md)                 |
-| Where are progress, reviews and delivery dependencies?              | [Issue #1526](https://github.com/hcoona/three/issues/1526) and its linked PRs |
+| Reader question                                                     | Authority                                                                                                                                                      |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| What must the local product do, and what is unsupported?            | [Requirements](docs/requirements.md)                                                                                                                           |
+| How do C#, SQLite, native processes, MCP and Git fit together?      | [Architecture and integration boundaries](docs/architecture.md)                                                                                                |
+| What replaces each upstream responsibility and collaboration tool?  | [Complete migration map and source evidence](docs/upstream-migration.md)                                                                                       |
+| What evidence permits implementation and an eventual support claim? | [Validation basis](docs/validation.md)                                                                                                                         |
+| Where is upstream attribution retained?                             | [Third-party notice](THIRD-PARTY-NOTICES.txt)                                                                                                                  |
+| What concrete boundaries do independent implementation units share? | [Implementation contracts](docs/implementation-contracts.md)                                                                                                   |
+| What exact native observation and credit effects may be executed?   | [Native acceptance protocol](docs/native-acceptance-protocol.md)                                                                                               |
+| What work is currently authorized?                                  | Repository [Delivery Wave](../../../../docs/delivery-wave.md)                                                                                                  |
+| Where are progress, reviews and delivery dependencies?              | [Refinement #1542](https://github.com/hcoona/three/issues/1542), [original acceptance #1526](https://github.com/hcoona/three/issues/1526) and their linked PRs |
 
 The README owns purpose, user context, current implementation status and routing.
 Requirements own behavior; architecture owns realization; the migration map owns

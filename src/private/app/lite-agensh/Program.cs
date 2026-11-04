@@ -13,7 +13,7 @@ public static class Program
             Console.WriteLine(
                 "LiteAgensh: local C# coordination for native Copilot workers.\n"
                     + "\n"
-                    + "init --config ABSOLUTE_JSON_FILE\n"
+                    + "init --config CONFIG_FILE (.yaml/.yml plus Markdown goal, or JSON)\n"
                     + "run|pause|resume|reconnect|status|preflight|calibrate|finalize|cleanup "
                     + "--state ABSOLUTE_STATE_DIRECTORY\n"
                     + "tool --state ABSOLUTE_STATE_DIRECTORY --name TOOL --json JSON_OBJECT\n"
@@ -48,11 +48,9 @@ public static class Program
             if (args[0] == "init")
             {
                 RequireOptions(options, ["--config"]);
-                string text = await File.ReadAllTextAsync(options["--config"], cancellation.Token)
+                RunConfiguration configuration = await ConfigurationInput
+                    .LoadAsync(options["--config"], cancellation.Token)
                     .ConfigureAwait(false);
-                RunConfiguration configuration =
-                    JsonSerializer.Deserialize<RunConfiguration>(text, Json.Options)
-                    ?? throw new ArgumentException("Configuration must be a JSON object.");
                 configuration.Validate();
                 RunDatabase database = new(configuration.StatePath, configuration);
                 LocalTools tools = new(database);
