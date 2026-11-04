@@ -9,6 +9,7 @@
     <CopilotSkipCliDownload>true</CopilotSkipCliDownload>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="LiteAgensh.Tests" />
     <PackageReference Include="GitHub.Copilot.SDK" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="ModelContextProtocol" />

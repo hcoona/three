@@ -14,11 +14,31 @@ public sealed class Coordinator
     private readonly GitOperations git;
     private readonly ProcessRunner processes;
     private readonly CreditLedger credits;
+    private readonly INativeWorkerFactory nativeWorkers;
+    private readonly string nativeEvidenceKind;
+
+    private string PreflightReceiptKey =>
+        nativeEvidenceKind == "native-sdk"
+            ? "native:sdk_preflight_receipt"
+            : "native:controlled_preflight_receipt";
+
+    private string BillingReceiptKey =>
+        nativeEvidenceKind == "native-sdk"
+            ? "native:sdk_billing_receipt"
+            : "native:controlled_billing_receipt";
 
     public Coordinator(
         RunDatabase database,
         CollaborationOperations collaboration,
         GitOperations git
+    )
+        : this(database, collaboration, git, null) { }
+
+    internal Coordinator(
+        RunDatabase database,
+        CollaborationOperations collaboration,
+        GitOperations git,
+        Func<RunDatabase, ProcessRunner, CreditLedger, INativeWorkerFactory>? nativeWorkerFactory
     )
     {
         this.database = database;
@@ -29,6 +49,9 @@ public sealed class Coordinator
             database.Configuration.CampaignLedgerPath,
             database.Configuration.CampaignAiCreditAllowance
         );
+        nativeEvidenceKind = nativeWorkerFactory is null
+            ? "native-sdk"
+            : "controlled-native-dependency";
         using SqliteConnection connection = database.Open();
         using SqliteTransaction transaction = connection.BeginTransaction();
         string ledgerBinding = Json.SerializePayload(
@@ -86,6 +109,10 @@ public sealed class Coordinator
             transaction
         );
         transaction.Commit();
+        nativeWorkers = nativeWorkerFactory is null
+            ? new NativeWorkerFactory(database, processes, credits)
+            : nativeWorkerFactory(database, processes, credits)
+                ?? throw new ArgumentException("The native worker factory must not be null.");
     }
 
     public async Task<JsonObject> InitializeAsync(CancellationToken cancellationToken = default)
@@ -94,14 +121,14 @@ public sealed class Coordinator
         using FileStream? ownership = TryOwn();
         if (ownership is null)
         {
-            return Operation.Failure("conflict", "Another coordinator owns this run.");
+            return Failure("conflict", "Another coordinator owns this run.");
         }
 
         try
         {
             await SettleRecoveryAsync(cancellationToken).ConfigureAwait(false);
             await git.InitializeAsync(cancellationToken).ConfigureAwait(false);
-            return Operation.Success(
+            return Success(
                 new
                 {
                     runId = database.RunId,
@@ -146,22 +173,19 @@ public sealed class Coordinator
                 database.RunId,
                 database.Configuration.RunAiCreditAllowance
             ),
-            ["nativePreflight"] = ParseMetadata("native:sdk_preflight_receipt"),
-            ["nativeBillingCalibration"] = ParseMetadata("native:sdk_billing_receipt"),
+            ["nativePreflight"] = ParseMetadata(PreflightReceiptKey),
+            ["nativeBillingCalibration"] = ParseMetadata(BillingReceiptKey),
             ["delivery"] = ParseMetadata("lifecycle:delivery"),
             ["failure"] = database.ReadMetadata("lifecycle:failure"),
         };
-        return Operation.Success(data);
+        return Success(data);
     }
 
     public JsonObject RequestControl(string action)
     {
         if (action is not ("pause" or "finalize"))
         {
-            return Operation.Failure(
-                "invalid_arguments",
-                "Control action must be pause or finalize."
-            );
+            return Failure("invalid_arguments", "Control action must be pause or finalize.");
         }
 
         using SqliteConnection connection = database.Open();
@@ -197,7 +221,7 @@ public sealed class Coordinator
             );
         }
         transaction.Commit();
-        return Operation.Success(
+        return Success(
             new
             {
                 requestId = id,
@@ -213,10 +237,10 @@ public sealed class Coordinator
         using FileStream? ownership = TryOwn();
         if (ownership is null)
         {
-            return Operation.Failure("conflict", "Another coordinator owns this run.");
+            return Failure("conflict", "Another coordinator owns this run.");
         }
 
-        NativeWorker? native = null;
+        INativeWorker? native = null;
         JsonObject result;
         try
         {
@@ -224,11 +248,11 @@ public sealed class Coordinator
                 .ConfigureAwait(false);
             database.WriteMetadata("lifecycle", "preflighting");
             await git.InitializeAsync(cancellationToken).ConfigureAwait(false);
-            native = new(database, processes, credits);
+            native = nativeWorkers.Create(null, calibration: false);
             await native
                 .StartAsync(git.GetWorkerPath("worker1"), null, cancellationToken)
                 .ConfigureAwait(false);
-            result = Operation.Success(
+            result = Success(
                 new
                 {
                     sessionId = native.SessionId,
@@ -270,7 +294,7 @@ public sealed class Coordinator
 
         if (database.ReadMetadata("lifecycle") == "unresolved")
         {
-            return Operation.Failure(
+            return Failure(
                 "unavailable",
                 "Preflight did not establish native metadata and settled ownership together. "
                     + "No model prompt was sent; diagnostics and paid associations are retained."
@@ -281,9 +305,10 @@ public sealed class Coordinator
         if (result["ok"]?.GetValue<bool>() == true)
         {
             database.WriteMetadata(
-                "native:sdk_preflight_receipt",
+                PreflightReceiptKey,
                 new JsonObject
                 {
+                    ["nativeEvidenceKind"] = nativeEvidenceKind,
                     ["binding"] = CreditPreflightBinding(),
                     ["sessionId"] = native?.SessionId,
                     ["verifiedAt"] = database.Now.ToString("O"),
@@ -299,10 +324,10 @@ public sealed class Coordinator
         using FileStream? ownership = TryOwn();
         if (ownership is null)
         {
-            return Operation.Failure("conflict", "Another coordinator owns this run.");
+            return Failure("conflict", "Another coordinator owns this run.");
         }
 
-        NativeWorker? native = null;
+        INativeWorker? native = null;
         JsonObject result;
         CreditReservation? reservation = null;
         bool settled = false;
@@ -313,8 +338,8 @@ public sealed class Coordinator
             RequireCreditPreflight();
             if (HasBillingReceipt())
             {
-                return Operation.Success(
-                    ParseMetadata("native:sdk_billing_receipt"),
+                return Success(
+                    ParseMetadata(BillingReceiptKey),
                     "This exact subject already has a complete billing calibration."
                 );
             }
@@ -327,11 +352,16 @@ public sealed class Coordinator
                 database.Configuration.RunAiCreditAllowance,
                 EvidencePath("calibration")
             );
-            native = new(database, processes, credits, reservation, calibration: true);
+            native = nativeWorkers.Create(reservation, calibration: true);
             database.WriteMetadata("lifecycle", "calibrating");
             await native
                 .StartAsync(git.GetWorkerPath("worker1"), null, cancellationToken)
                 .ConfigureAwait(false);
+            credits.RequirePromptAllowance(
+                database.RunId,
+                native.ReservationId,
+                database.Configuration.RunAiCreditAllowance
+            );
             JsonObject response = await native
                 .PromptAsync("Reply with exactly READY and nothing else.", cancellationToken)
                 .ConfigureAwait(false);
@@ -344,7 +374,7 @@ public sealed class Coordinator
                 );
             }
 
-            result = Operation.Success(new { sessionId = native.SessionId });
+            result = Success(new { sessionId = native.SessionId });
         }
         catch (Exception exception) when (IsExpected(exception))
         {
@@ -369,7 +399,7 @@ public sealed class Coordinator
 
         if (reservation is not null && !settled)
         {
-            return Operation.Failure(
+            return Failure(
                 "credit_or_ownership_unknown",
                 "Calibration did not reconcile complete usage and settle its native process."
             );
@@ -382,9 +412,10 @@ public sealed class Coordinator
         )
         {
             database.WriteMetadata(
-                "native:sdk_billing_receipt",
+                BillingReceiptKey,
                 new JsonObject
                 {
+                    ["nativeEvidenceKind"] = nativeEvidenceKind,
                     ["binding"] = CreditPreflightBinding(),
                     ["reservationId"] = reservation.Id,
                     ["sessionId"] = native?.SessionId,
@@ -408,13 +439,13 @@ public sealed class Coordinator
     {
         if (mode is not ("run" or "resume" or "reconnect"))
         {
-            return Operation.Failure("invalid_arguments", "Mode must be run, resume or reconnect.");
+            return Failure("invalid_arguments", "Mode must be run, resume or reconnect.");
         }
 
         using FileStream? ownership = TryOwn();
         if (ownership is null)
         {
-            return Operation.Failure("conflict", "Another coordinator owns this run.");
+            return Failure("conflict", "Another coordinator owns this run.");
         }
 
         try
@@ -446,7 +477,7 @@ public sealed class Coordinator
             return Failure(exception);
         }
 
-        List<NativeWorker> workers = [];
+        List<INativeWorker> workers = [];
         List<Task> loops = [];
         using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken
@@ -494,7 +525,10 @@ public sealed class Coordinator
 
                     foreach (string id in ids)
                     {
-                        NativeWorker native = new(database, processes, credits, allocations[id]);
+                        INativeWorker native = nativeWorkers.Create(
+                            allocations[id],
+                            calibration: false
+                        );
                         workers.Add(native);
                         string? exact = mode == "reconnect" ? allocations[id].SessionId : null;
                         try
@@ -509,7 +543,10 @@ public sealed class Coordinator
                             await native.DisposeAsync().ConfigureAwait(false);
                             workers.Remove(native);
                             CreditReservation fresh = Reserve(id, 1);
-                            NativeWorker replacement = new(database, processes, credits, fresh);
+                            INativeWorker replacement = nativeWorkers.Create(
+                                fresh,
+                                calibration: false
+                            );
                             workers.Add(replacement);
                             await replacement
                                 .StartAsync(
@@ -553,7 +590,7 @@ public sealed class Coordinator
                     await stop.CancelAsync().ConfigureAwait(false);
                 }
 
-                foreach ((string id, NativeWorker native) in ids.Zip(workers))
+                foreach ((string id, INativeWorker native) in ids.Zip(workers))
                 {
                     if (!planning || id == "worker1")
                     {
@@ -697,7 +734,7 @@ public sealed class Coordinator
                 failure ??= exception;
             }
 
-            foreach (NativeWorker worker in workers)
+            foreach (INativeWorker worker in workers)
             {
                 try
                 {
@@ -713,7 +750,7 @@ public sealed class Coordinator
 
             if (database.ReadMetadata("lifecycle") != "unresolved")
             {
-                foreach (NativeWorker worker in workers)
+                foreach (INativeWorker worker in workers)
                 {
                     try
                     {
@@ -763,7 +800,7 @@ public sealed class Coordinator
         if (database.ReadMetadata("lifecycle") == "unresolved")
         {
             EndSegment(segment, "unresolved", reason);
-            return Operation.Failure(
+            return Failure(
                 "ownership_or_usage_unresolved",
                 failure?.Message ?? "Quiescence could not be established."
             );
@@ -791,7 +828,7 @@ public sealed class Coordinator
         else
         {
             database.WriteMetadata("lifecycle", "paused");
-            result = Operation.Success(
+            result = Success(
                 new { lifecycle = "paused", stopReason = reason },
                 "Owned native processes settled; work is retained."
             );
@@ -836,12 +873,12 @@ public sealed class Coordinator
         using FileStream? ownership = TryOwn();
         if (ownership is null)
         {
-            return Operation.Failure("conflict", "Cleanup refuses an active coordinator.");
+            return Failure("conflict", "Cleanup refuses an active coordinator.");
         }
 
         if (database.ReadMetadata("lifecycle") is not ("paused" or "finalized" or "stopped"))
         {
-            return Operation.Failure(
+            return Failure(
                 "ownership_unresolved",
                 "Cleanup requires an inspected, quiescent retained run."
             );
@@ -861,7 +898,7 @@ public sealed class Coordinator
                     ) != 0
                 )
                 {
-                    return Operation.Failure(
+                    return Failure(
                         "ownership_unresolved",
                         "Cleanup refuses unresolved owned process leases."
                     );
@@ -874,13 +911,13 @@ public sealed class Coordinator
                     .Any(row => row.State is not ("reconciled" or "released"))
             )
             {
-                return Operation.Failure(
+                return Failure(
                     "credit_unknown",
                     "Cleanup retains sessions whose native usage is not reconciled."
                 );
             }
 
-            return await git.CleanupAsync(cancellationToken).ConfigureAwait(false);
+            return Classify(await git.CleanupAsync(cancellationToken).ConfigureAwait(false));
         }
         catch (Exception exception) when (IsExpected(exception))
         {
@@ -900,15 +937,27 @@ public sealed class Coordinator
                 or UnauthorizedAccessException
                 or System.ComponentModel.Win32Exception;
 
-    private static JsonObject Failure(Exception exception) =>
-        Operation.Failure(
+    private JsonObject Success(object? data = null, string message = "") =>
+        Classify(Operation.Success(data, message));
+
+    private JsonObject Failure(string code, string message) =>
+        Classify(Operation.Failure(code, message));
+
+    private JsonObject Classify(JsonObject result)
+    {
+        result["nativeEvidenceKind"] = nativeEvidenceKind;
+        return result;
+    }
+
+    private JsonObject Failure(Exception exception) =>
+        Failure(
             exception is OperationException operation ? operation.Code : "unavailable",
             exception.Message
         );
 
     private async Task WorkerLoopAsync(
         string id,
-        NativeWorker native,
+        INativeWorker native,
         Func<bool> enabled,
         bool planner,
         CancellationToken cancellationToken
@@ -974,6 +1023,11 @@ public sealed class Coordinator
                     initialPlanner
                 );
                 modelAttempted = true;
+                credits.RequirePromptAllowance(
+                    database.RunId,
+                    native.ReservationId,
+                    database.Configuration.RunAiCreditAllowance
+                );
                 JsonObject result = await native
                     .PromptAsync(text, cancellationToken)
                     .ConfigureAwait(false);
@@ -1066,6 +1120,7 @@ public sealed class Coordinator
                     sdk = NativeSdkSession.SdkVersion,
                     runtime = NativeSdkSession.RuntimeVersion,
                     accounting = "sdk-session-cumulative-nano-aiu-complete-v1",
+                    nativeEvidenceKind,
                     build = typeof(Coordinator).Assembly.ManifestModule.ModuleVersionId,
                     database.Configuration.NativeExecutable,
                     database.Configuration.NativeArguments,
@@ -1085,9 +1140,12 @@ public sealed class Coordinator
 
     private void RequireCreditPreflight()
     {
-        string? stored = database.ReadMetadata("native:sdk_preflight_receipt");
+        string? stored = database.ReadMetadata(PreflightReceiptKey);
         JsonObject? receipt = stored is null ? null : JsonNode.Parse(stored)?.AsObject();
-        if (receipt?["binding"]?.GetValue<string>() != CreditPreflightBinding())
+        if (
+            receipt?["binding"]?.GetValue<string>() != CreditPreflightBinding()
+            || receipt?["nativeEvidenceKind"]?.GetValue<string>() != nativeEvidenceKind
+        )
         {
             throw new OperationException(
                 "unavailable",
@@ -1099,9 +1157,10 @@ public sealed class Coordinator
 
     private bool HasBillingReceipt()
     {
-        JsonObject? receipt = ParseMetadata("native:sdk_billing_receipt") as JsonObject;
+        JsonObject? receipt = ParseMetadata(BillingReceiptKey) as JsonObject;
         string? reservationId = receipt?["reservationId"]?.GetValue<string>();
         return receipt?["binding"]?.GetValue<string>() == CreditPreflightBinding()
+            && receipt?["nativeEvidenceKind"]?.GetValue<string>() == nativeEvidenceKind
             && reservationId is not null
             && credits.HasCompleteSdkUsage(reservationId)
             && credits
@@ -1241,36 +1300,16 @@ public sealed class Coordinator
             }
         }
 
-        decimal remaining = reservation.Allowance - (reservation.Actual ?? 0);
-        decimal? cap = remaining > 0 ? remaining : null;
-        NativeSdkSession recovery = new(
-            database,
-            processes,
-            git.GetWorkerPath(reservation.Worker == "calibration" ? "worker1" : reservation.Worker),
-            reservation.Worker == "calibration"
-        );
-        NativeUsage usage;
-        try
-        {
-            await recovery
-                .OpenAsync(
-                    reservation.Worker,
-                    reservation.SessionId!,
-                    cap,
-                    reservation.SessionId,
-                    EvidencePath("recovery"),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-            usage = await recovery
-                .ReadAsync(reservation.SessionId!, cap, cancellationToken, validateEvents: false)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            recovery.Quiesce();
-            await recovery.DisposeAsync().ConfigureAwait(false);
-        }
+        NativeUsage usage = await nativeWorkers
+            .ReadSettledUsageAsync(
+                reservation,
+                git.GetWorkerPath(
+                    reservation.Worker == "calibration" ? "worker1" : reservation.Worker
+                ),
+                EvidencePath("recovery"),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         credits.RecordSdkUsage(reservation.Id, usage, final: true);
     }
@@ -1527,7 +1566,9 @@ public sealed class Coordinator
     private async Task<JsonObject> FinalizeOwnedAsync(CancellationToken cancellationToken)
     {
         database.WriteMetadata("lifecycle", "finalizing");
-        JsonObject delivery = await git.FinalizeAsync(cancellationToken).ConfigureAwait(false);
+        JsonObject delivery = Classify(
+            await git.FinalizeAsync(cancellationToken).ConfigureAwait(false)
+        );
         database.WriteMetadata("lifecycle:delivery", delivery.ToJsonString());
         database.WriteMetadata("lifecycle", "finalized");
         return delivery;

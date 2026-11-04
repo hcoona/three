@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 
 namespace LiteAgensh;
 
-internal sealed class NativeWorker : IAsyncDisposable
+internal sealed class NativeWorker : INativeWorker
 {
     private readonly RunDatabase database;
     private readonly ProcessRunner processes;
