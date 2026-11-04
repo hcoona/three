@@ -1,0 +1,7 @@
+{
+  "name": "three-renovate",
+  "private": true,
+  "dependencies": {
+    "renovate": "43.200.1"
+  }
+}

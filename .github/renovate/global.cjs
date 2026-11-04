@@ -3,6 +3,7 @@ module.exports = {
   repositories: ['hcoona/three'],
   onboarding: false,
   requireConfig: 'required',
+  binarySource: 'global',
   allowedCommands: [
     String.raw`^pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts\.ps1$`,
     String.raw`^mise install --locked pnpm$`,
