@@ -12,6 +12,8 @@ cancellation, fresh-summary resume and exact-session crash reconnect.
 [PR #1530](https://github.com/hcoona/three/pull/1530) retains exact builds,
 commands, reported credits, independent reviews and repository acceptance gates.
 These results do not establish another operating system or native backend.
+The MCP 2.3.0 upgrade is covered by controlled stdio contracts, not a new
+native acceptance run; PR #1530 retains the earlier dependency baseline.
 
 The earlier failed ACP startup remains retained evidence, not measured zero
 cost. The owner-approved [SDK baseline](docs/native-acceptance-protocol.md#sdk-campaign-baseline)

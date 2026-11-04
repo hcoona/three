@@ -268,8 +268,12 @@ public sealed class ApplicationContractTests(TestContext testContext)
     }
 
     [TestMethod]
+    [DataRow(null)]
+    [DataRow("2025-11-25")]
     [Timeout(60000, CooperativeCancellation = true)]
-    public async Task McpStdioDiscoveryAndActorBoundCallsEnforceSerializedLocalContracts()
+    public async Task McpStdioDiscoveryAndActorBoundCallsEnforceSerializedLocalContracts(
+        string? protocolVersion
+    )
     {
         RunFixture fixture = new();
         List<McpProcess> children = [];
@@ -277,7 +281,7 @@ public sealed class ApplicationContractTests(TestContext testContext)
         AggregateException? cleanupFailure = null;
         try
         {
-            await VerifyMcpContractsAsync(fixture, children);
+            await VerifyMcpContractsAsync(fixture, children, protocolVersion);
         }
         catch (Exception exception)
         {
@@ -332,7 +336,11 @@ public sealed class ApplicationContractTests(TestContext testContext)
         }
     }
 
-    private async Task VerifyMcpContractsAsync(RunFixture fixture, List<McpProcess> children)
+    private async Task VerifyMcpContractsAsync(
+        RunFixture fixture,
+        List<McpProcess> children,
+        string? protocolVersion
+    )
     {
         RunDatabase database = fixture.CreateDatabase();
         CollaborationOperations peers = new(database);
@@ -342,7 +350,13 @@ public sealed class ApplicationContractTests(TestContext testContext)
             "message_send",
             new { recipient = "worker1", body = "fresh notice from the other peer" }
         );
-        await using McpClient client = await ConnectAsync(fixture, "worker1", children);
+        await using McpClient client = await ConnectAsync(
+            fixture,
+            "worker1",
+            children,
+            protocolVersion
+        );
+        Assert.AreEqual(protocolVersion ?? "2026-07-28", client.NegotiatedProtocolVersion);
         IList<McpClientTool> tools = await client.ListToolsAsync(
             cancellationToken: testContext.CancellationToken
         );
@@ -440,7 +454,13 @@ public sealed class ApplicationContractTests(TestContext testContext)
                 new() { ["recipient"] = "owner", ["body"] = "private-stdio-decision" }
             )
         );
-        await using McpClient other = await ConnectAsync(fixture, "worker2", children);
+        await using McpClient other = await ConnectAsync(
+            fixture,
+            "worker2",
+            children,
+            protocolVersion
+        );
+        Assert.AreEqual(protocolVersion ?? "2026-07-28", other.NegotiatedProtocolVersion);
         Scenario.Failure(
             await CallAsync(
                 other,
@@ -479,7 +499,8 @@ public sealed class ApplicationContractTests(TestContext testContext)
     private async Task<McpClient> ConnectAsync(
         RunFixture fixture,
         string actor,
-        List<McpProcess> children
+        List<McpProcess> children,
+        string? protocolVersion
     )
     {
         Process process = new()
@@ -523,6 +544,13 @@ public sealed class ApplicationContractTests(TestContext testContext)
                 serverInput: process.StandardInput.BaseStream,
                 serverOutput: process.StandardOutput.BaseStream
             ),
+            new McpClientOptions
+            {
+                ProtocolVersion = protocolVersion,
+                // This server supports discovery; slow startup must not select a legacy handshake.
+                // InitializationTimeout and the cooperative test token still bound the connection.
+                DiscoverProbeTimeout = Timeout.InfiniteTimeSpan,
+            },
             cancellationToken: testContext.CancellationToken
         );
     }

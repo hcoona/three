@@ -10,7 +10,7 @@ The capability/source inventory is not a second API contract.
 
 Use one `LiteAgensh.csproj` executable under the project root, namespace
 `LiteAgensh`, target `$(CurrentTargetFramework)`. Use root SDK/CPM/NBGV rules.
-Select `Microsoft.Data.Sqlite` 10.0.14 and `ModelContextProtocol` 1.0.0 through
+Select `Microsoft.Data.Sqlite` 10.0.14 and `ModelContextProtocol` 2.3.0 through
 CPM; retain existing `Microsoft.Extensions.Hosting` selection. Select
 `GitHub.Copilot.SDK` 1.0.28, whose packaged runtime pin is CLI 1.0.105.
 Set `CopilotSkipCliDownload=true` and reuse the installed executable without
