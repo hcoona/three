@@ -8,6 +8,74 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
+### Refine LiteAgensh migration parity and normal user operation
+
+- **Work carrier:** [Issue #1542](https://github.com/hcoona/three/issues/1542)
+  and its linked authorization, design and implementation pull requests.
+  The repository owner requested project-wide adjustment and refinement,
+  including migration reconciliation, normal user experience and
+  engineering-principled simplification, not only one configuration change.
+- **Accepted inputs:** the [governance policy](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [engineering principles](engineering/engineering-principles.md), and
+  LiteAgensh's [project portal](../src/private/app/lite-agensh/README.md),
+  [requirements](../src/private/app/lite-agensh/docs/requirements.md),
+  [architecture](../src/private/app/lite-agensh/docs/architecture.md),
+  [implementation contracts](../src/private/app/lite-agensh/docs/implementation-contracts.md),
+  [migration map](../src/private/app/lite-agensh/docs/upstream-migration.md)
+  and [validation basis](../src/private/app/lite-agensh/docs/validation.md).
+  Preserve the accepted implementation and bounded evidence in
+  [PR #1530](https://github.com/hcoona/three/pull/1530); this is a new
+  development grant, not revival of its closed native acceptance campaign.
+- **Advancement and outcome:** make the existing C# single-machine product
+  coherent and usable for normal human operation while preserving Agensh's
+  equal-peer collaboration model. Reconcile concrete migration gaps, improve
+  configuration, startup, progress inspection, reporting and lifecycle
+  interaction, and simplify implementation where a current scenario
+  demonstrates the benefit. The first selected change is editable YAML
+  configuration with a separate Markdown goal and standard VS Code YAML
+  Schema guidance, retaining existing JSON configuration compatibility.
+  Follow-on changes may cover the whole LiteAgensh project rather than only
+  that first input format; each remains inside this product outcome and its
+  applicable accepted decisions.
+- **Owner decisions and boundaries:** workers share a goal and cooperation
+  template and select work through tasks, advisory claims and peer messages;
+  do not replace that model with permanently assigned worker responsibilities
+  or a central intelligent scheduler. Normal user operation is not a request
+  to rerun the former development acceptance campaign. Questions about
+  calibration, paging, reports and root-task lifecycle require concrete
+  decisions before their behavior changes, not speculative rewrites.
+- **Ordering and gates:** merge this authorization before substantive work.
+  Land changed requirements, architecture, contracts or validation decisions
+  before implementation that depends on them. Keep dependent consumers and
+  navigation consistent. Retain applicable independent engineering,
+  record-system and research-evidence review, independent classification of
+  material findings, explicit-base record checks, focused managed validation
+  and ordinary CI. Recheck a relied-on mutable interface before dependent
+  changes; uncertainty pauses only that dependent work. Do not infer native
+  support from controlled tests or add a new support claim without its
+  required evidence.
+- **Acceptance and closure:** the owner accepts coherent migration semantics,
+  human-usable operation and proportionate implementation within the existing
+  product boundary. Only an explicit further repository-owner request closes
+  or deletes this entry; accepting an individual change does not terminate
+  the broader refinement workstream. Retention does not grant another
+  product, provider or trust boundary. Keep plans, findings and progress in
+  the Issue and PRs rather than the Wave.
+- **Effects:** permit repository and read-only GitHub/public-source inspection,
+  LiteAgensh source, tests and owning records, directly required dependency,
+  schema/editor and record-routing integration, ordinary package restoration,
+  local builds and credential-free managed scenarios, independent delegated
+  review, and ordinary Issue/PR/check operations and their normal CI.
+- **Exclusions:** no new paid native acceptance executions, account or quota
+  inspection, provider/backend substitution, publication, release/proving
+  dispatch, credential, authentication, subscription or access change.
+  Do not reset or delete retained native ledgers, unknown reservations,
+  session/evidence state or owner work. New native observations require
+  separately accepted exact effects and protocol boundaries; this entry
+  does not revive or silently enlarge the former fixture-only protocol.
+  No unrelated project implementation or new hosted collaboration stack.
+
 ### Reconcile Workflow V1, V2 and V3 documentation
 
 - **Work carrier:** [Issue #1406](https://github.com/hcoona/three/issues/1406)
