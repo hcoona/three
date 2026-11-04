@@ -5,13 +5,18 @@ LiteAgensh is a C# single-machine adaptation of
 peer-cooperation approach while replacing hosted collaboration infrastructure
 with SQLite, local Git worktrees and existing native agents.
 
-**Current state:** C# application source and CLI/MCP entry points are implemented
-and controlled local scenarios pass. The accepted design selects the official
-Copilot .NET SDK; replacement of the incompatible ACP adapter is in progress.
-No successful SDK connection, native credit calibration or Copilot-backed
-product acceptance is claimed. Source and scripted results do not establish
-native integration. The existing unknown credit reservation remains retained
-and blocks paid dispatch.
+**Current state:** the C# application uses the official Copilot .NET SDK with
+SQLite, local Git worktrees and worker-bound stdio MCP. Controlled scenarios
+and Windows native observations cover cooperation, checked delivery, active
+cancellation, fresh-summary resume and exact-session crash reconnect.
+[PR #1530](https://github.com/hcoona/three/pull/1530) retains exact builds,
+commands, reported credits, independent reviews and repository acceptance gates.
+These results do not establish another operating system or native backend.
+
+The earlier failed ACP startup remains retained evidence, not measured zero
+cost. The owner-approved [SDK baseline](docs/native-acceptance-protocol.md#sdk-campaign-baseline)
+uses one new persistent ledger. Unknown usage in that active ledger blocks
+further paid work; repeated runs do not reset it.
 
 ## User and primary journey
 
@@ -25,6 +30,46 @@ intervene, pause or resume without losing partial work.
 This context motivates the [requirements](docs/requirements.md). Their
 acceptance evidence belongs in the [validation basis](docs/validation.md), not
 in this overview.
+
+## Running and checking the application
+
+Use the repository-selected .NET SDK and the existing Copilot CLI version
+selected by the [implementation contracts](docs/implementation-contracts.md).
+SDK CLI acquisition and native automatic updates are disabled. Keep the
+existing native authentication and default model; no provider proxy is needed.
+
+Supply an absolute JSON configuration following those contracts, including the
+target repository, goal, owned run state, declared checks, explicit native
+permission policy, finite allowances and one persistent campaign ledger.
+Worktrees separate edits, not host permissions. Build once and keep that exact
+binary for preflight, calibration and subsequent lifecycle commands:
+
+```powershell
+dotnet build src\private\app\lite-agensh\LiteAgensh.csproj
+$app = (Resolve-Path src\private\app\lite-agensh\bin\Debug\net10.0\LiteAgensh.dll).Path
+dotnet $app init --config C:\Work\LiteAgensh\run.json
+dotnet $app preflight --state C:\Work\LiteAgensh\run
+dotnet $app calibrate --state C:\Work\LiteAgensh\run
+dotnet $app run --state C:\Work\LiteAgensh\run
+```
+
+Preflight sends no model prompt. Calibration is a paid, tool-disabled turn
+with a 30-credit native soft cap; successful complete usage is required before
+ordinary dispatch. A changed binary or relied-on configuration needs matching
+receipts. Soft caps can overshoot by an in-flight response.
+
+Use `status` or request `pause` from another terminal with the same `--state`.
+Wait for actual coordinator/child settlement before `resume`, which creates
+fresh sessions with durable summaries. After a coordinator crash, `reconnect`
+resolves owned children and attempts the exact saved sessions; it does not
+silently replace unknown usage. `finalize` retains local delivery/evidence;
+`cleanup` is a separate explicit operation.
+
+Run the controlled suite without native model calls:
+
+```powershell
+dotnet test --project tests\private\app\lite-agensh\LiteAgensh.Tests.csproj
+```
 
 ## Records and authority
 
