@@ -5,7 +5,12 @@ namespace LiteAgensh;
 
 public sealed partial class CollaborationOperations
 {
-    private JsonObject SendMessage(SqliteConnection connection, SqliteTransaction transaction, string actor, JsonObject arguments)
+    private JsonObject SendMessage(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string actor,
+        JsonObject arguments
+    )
     {
         Fields(arguments, "recipient", "body", "threadId", "mentions", "urgent");
         var recipient = Text(arguments, "recipient");
@@ -23,58 +28,103 @@ public sealed partial class CollaborationOperations
             RequireKnownMember(mention);
             if (channel != "team" && mention != actor && mention != recipient)
             {
-                throw new OperationException("not_visible", "A mention cannot widen a direct channel's visibility.");
+                throw new OperationException(
+                    "not_visible",
+                    "A mention cannot widen a direct channel's visibility."
+                );
             }
         }
 
         long? thread = arguments.ContainsKey("threadId") ? Integer(arguments, "threadId") : null;
         if (thread is not null)
         {
-            var root = One(connection, transaction, "SELECT id,channel_id,thread_id FROM messages WHERE id=$id;", ("$id", thread))
-                ?? throw Missing("Thread", thread.Value);
+            var root =
+                One(
+                    connection,
+                    transaction,
+                    "SELECT id,channel_id,thread_id FROM messages WHERE id=$id;",
+                    ("$id", thread)
+                ) ?? throw Missing("Thread", thread.Value);
             var rootChannel = root["channel_id"]!.GetValue<string>();
             _ = Channel(actor, rootChannel);
             if (rootChannel != channel || root["thread_id"]!.GetValue<long>() != thread)
             {
-                throw Invalid("threadId must identify a visible thread root in the destination channel.");
+                throw Invalid(
+                    "threadId must identify a visible thread root in the destination channel."
+                );
             }
         }
 
-        var id = Insert(connection, transaction, """
-            INSERT INTO messages(actor,channel_id,recipient,body,thread_id,mentions,urgent,created_at)
+        var id = Insert(
+            connection,
+            transaction,
+            """
+            INSERT INTO messages(actor,channel_id,recipient,body,thread_id,mentions,
+                urgent,created_at)
             VALUES($actor,$channel,$recipient,$body,$thread,$mentions,$urgent,$now);
-            """, ("$actor", actor), ("$channel", channel), ("$recipient", recipient), ("$body", body),
-            ("$thread", thread), ("$mentions", Array(mentions).ToJsonString()), ("$urgent", urgent), ("$now", Timestamp));
+            """,
+            ("$actor", actor),
+            ("$channel", channel),
+            ("$recipient", recipient),
+            ("$body", body),
+            ("$thread", thread),
+            ("$mentions", Array(mentions).ToJsonString()),
+            ("$urgent", urgent),
+            ("$now", Timestamp)
+        );
         if (thread is null)
         {
-            Sql.Execute(connection, "UPDATE messages SET thread_id=id WHERE id=$id;", transaction, ("$id", id));
+            Sql.Execute(
+                connection,
+                "UPDATE messages SET thread_id=id WHERE id=$id;",
+                transaction,
+                ("$id", id)
+            );
         }
 
-        var message = Message(One(connection, transaction, MessageSelect + " WHERE id=$id;", ("$id", id))!);
-        var recipients = recipient == "team" ? database.Members.Where(member => member != actor) : [recipient];
+        var message = Message(
+            One(connection, transaction, MessageSelect + " WHERE id=$id;", ("$id", id))!
+        );
+        var recipients =
+            recipient == "team" ? database.Members.Where(member => member != actor) : [recipient];
         foreach (var member in recipients)
         {
-            EnqueueEvent(connection, transaction, member, recipient == "team" ? "group" : "dm", $"message:{id}",
+            EnqueueEvent(
+                connection,
+                transaction,
+                member,
+                recipient == "team" ? "group" : "dm",
+                $"message:{id}",
                 new JsonObject
                 {
                     ["messageId"] = id,
                     ["actor"] = actor,
-                    ["urgent"] = urgent || actor == "owner" || mentions.Contains(member, StringComparer.Ordinal),
+                    ["urgent"] =
+                        urgent
+                        || actor == "owner"
+                        || mentions.Contains(member, StringComparer.Ordinal),
                     ["summary"] = $"{actor} in {channel}: {body}",
                     ["message"] = message.DeepClone(),
-                }.ToJsonString(Json.Options));
+                }.ToJsonString(Json.Options)
+            );
         }
 
         return message;
     }
 
     private const string MessageSelect = """
-        SELECT id,actor,channel_id AS channelId,recipient,body,thread_id AS threadId,mentions,urgent,created_at AS createdAt
+        SELECT id,actor,channel_id AS channelId,recipient,body,thread_id AS threadId,
+            mentions,urgent,created_at AS createdAt
         FROM messages
         """;
 
-    private JsonObject ReadMessages(SqliteConnection connection, SqliteTransaction transaction, string actor,
-        string name, JsonObject arguments)
+    private JsonObject ReadMessages(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string actor,
+        string name,
+        JsonObject arguments
+    )
     {
         var field = name switch
         {
@@ -87,7 +137,9 @@ public sealed partial class CollaborationOperations
         var where = "";
         var parameters = new List<(string Name, object? Value)>
         {
-            ("$actor", actor), ("$cursor", cursor), ("$limit", limit + 1),
+            ("$actor", actor),
+            ("$cursor", cursor),
+            ("$limit", limit + 1),
         };
         switch (name)
         {
@@ -99,8 +151,13 @@ public sealed partial class CollaborationOperations
                 break;
             case "message_thread":
                 var thread = Integer(arguments, "threadId");
-                var root = One(connection, transaction, "SELECT channel_id,thread_id FROM messages WHERE id=$id;", ("$id", thread))
-                    ?? throw Missing("Thread", thread);
+                var root =
+                    One(
+                        connection,
+                        transaction,
+                        "SELECT channel_id,thread_id FROM messages WHERE id=$id;",
+                        ("$id", thread)
+                    ) ?? throw Missing("Thread", thread);
                 _ = Channel(actor, root["channel_id"]!.GetValue<string>());
                 if (root["thread_id"]!.GetValue<long>() != thread)
                 {
@@ -116,12 +173,18 @@ public sealed partial class CollaborationOperations
                 break;
         }
 
-        var rows = Rows(connection, transaction, MessageSelect + $"""
+        var rows = Rows(
+            connection,
+            transaction,
+            MessageSelect
+                + $"""
 
-            WHERE id>$cursor AND ({where})
-                AND ($actor='owner' OR channel_id='team' OR actor=$actor OR recipient=$actor)
-            ORDER BY id LIMIT $limit;
-            """, [.. parameters]);
+                WHERE id>$cursor AND ({where})
+                    AND ($actor='owner' OR channel_id='team' OR actor=$actor OR recipient=$actor)
+                ORDER BY id LIMIT $limit;
+                """,
+            [.. parameters]
+        );
         return Page(rows.Select(Message).ToList(), limit);
     }
 
@@ -161,21 +224,32 @@ public sealed partial class CollaborationOperations
     {
         if (channel == "team")
         {
-            return new JsonObject { ["id"] = channel, ["members"] = Array(database.Members), ["kind"] = "team" };
+            return new JsonObject
+            {
+                ["id"] = channel,
+                ["members"] = Array(database.Members),
+                ["kind"] = "team",
+            };
         }
 
         var pair = channel.Split(':');
-        if (pair.Length != 3 || pair[0] != "dm" ||
-            !database.Members.Contains(pair[1], StringComparer.Ordinal) ||
-            !database.Members.Contains(pair[2], StringComparer.Ordinal) ||
-            DirectChannel(pair[1], pair[2]) != channel)
+        if (
+            pair.Length != 3
+            || pair[0] != "dm"
+            || !database.Members.Contains(pair[1], StringComparer.Ordinal)
+            || !database.Members.Contains(pair[2], StringComparer.Ordinal)
+            || DirectChannel(pair[1], pair[2]) != channel
+        )
         {
             throw new OperationException("not_found", "Unknown local channel.");
         }
 
         if (actor != "owner" && actor != pair[1] && actor != pair[2])
         {
-            throw new OperationException("not_visible", "The bound actor cannot read that direct channel.");
+            throw new OperationException(
+                "not_visible",
+                "The bound actor cannot read that direct channel."
+            );
         }
 
         return new JsonObject

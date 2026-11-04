@@ -10,20 +10,24 @@ public static class Program
     {
         if (args.Length == 0 || args[0] is "--help" or "-h" or "help")
         {
-            Console.WriteLine("""
-                LiteAgensh: local C# coordination for native Copilot workers.
-
-                init --config ABSOLUTE_JSON_FILE
-                run|pause|resume|reconnect|status|preflight|finalize|cleanup --state ABSOLUTE_STATE_DIRECTORY
-                tool --state ABSOLUTE_STATE_DIRECTORY --name TOOL --json JSON_OBJECT
-                mcp --state ABSOLUTE_STATE_DIRECTORY --actor MEMBER
-
-                init preserves an existing checkout and does not start models.
-                run/resume/reconnect may spend native Copilot credits; verified limits/usage are required.
-                preflight performs non-model native contract checks only.
-                pause/finalize retain work. cleanup is explicit and owned-resource-specific.
-                Tool invocations are bound to owner; internal MCP helpers are bound at launch.
-                """);
+            Console.WriteLine(
+                "LiteAgensh: local C# coordination for native Copilot workers.\n"
+                    + "\n"
+                    + "init --config ABSOLUTE_JSON_FILE\n"
+                    + "run|pause|resume|reconnect|status|preflight|finalize|cleanup "
+                    + "--state ABSOLUTE_STATE_DIRECTORY\n"
+                    + "tool --state ABSOLUTE_STATE_DIRECTORY --name TOOL --json JSON_OBJECT\n"
+                    + "mcp --state ABSOLUTE_STATE_DIRECTORY --actor MEMBER\n"
+                    + "\n"
+                    + "init preserves an existing checkout and does not start models.\n"
+                    + "run/resume/reconnect may spend native Copilot credits; "
+                    + "verified limits/usage are required.\n"
+                    + "preflight performs non-model native contract checks only.\n"
+                    + "pause/finalize retain work. "
+                    + "cleanup is explicit and owned-resource-specific.\n"
+                    + "Tool invocations are bound to owner; "
+                    + "internal MCP helpers are bound at launch."
+            );
             return 0;
         }
 
@@ -42,28 +46,46 @@ public static class Program
             if (args[0] == "init")
             {
                 RequireOptions(options, ["--config"]);
-                string text = await File.ReadAllTextAsync(options["--config"], cancellation.Token).ConfigureAwait(false);
-                RunConfiguration configuration = JsonSerializer.Deserialize<RunConfiguration>(text, Json.Options)
+                string text = await File.ReadAllTextAsync(options["--config"], cancellation.Token)
+                    .ConfigureAwait(false);
+                RunConfiguration configuration =
+                    JsonSerializer.Deserialize<RunConfiguration>(text, Json.Options)
                     ?? throw new ArgumentException("Configuration must be a JSON object.");
                 configuration.Validate();
                 RunDatabase database = new(configuration.StatePath, configuration);
                 LocalTools tools = new(database);
                 Coordinator coordinator = new(database, tools.Collaboration, tools.Git);
-                result = await coordinator.InitializeAsync(cancellation.Token).ConfigureAwait(false);
+                result = await coordinator
+                    .InitializeAsync(cancellation.Token)
+                    .ConfigureAwait(false);
             }
             else
             {
-                RequireOptions(options, args[0] switch
-                {
-                    "mcp" => ["--state", "--actor"],
-                    "tool" => ["--state", "--name", "--json"],
-                    "run" or "resume" or "reconnect" or "status" or "pause" or "preflight" or "finalize" or "cleanup" => ["--state"],
-                    _ => throw new ArgumentException("Unknown command. Run --help for supported syntax."),
-                });
+                RequireOptions(
+                    options,
+                    args[0] switch
+                    {
+                        "mcp" => ["--state", "--actor"],
+                        "tool" => ["--state", "--name", "--json"],
+                        "run"
+                        or "resume"
+                        or "reconnect"
+                        or "status"
+                        or "pause"
+                        or "preflight"
+                        or "finalize"
+                        or "cleanup" => ["--state"],
+                        _ => throw new ArgumentException(
+                            "Unknown command. Run --help for supported syntax."
+                        ),
+                    }
+                );
                 RunDatabase database = new(options["--state"]);
                 if (isMcp)
                 {
-                    await McpHost.RunAsync(database, options["--actor"], cancellation.Token).ConfigureAwait(false);
+                    await McpHost
+                        .RunAsync(database, options["--actor"], cancellation.Token)
+                        .ConfigureAwait(false);
                     return 0;
                 }
 
@@ -71,16 +93,32 @@ public static class Program
                 Coordinator coordinator = new(database, tools.Collaboration, tools.Git);
                 result = args[0] switch
                 {
-                    "run" or "resume" or "reconnect" => await coordinator.RunAsync(args[0], cancellation.Token).ConfigureAwait(false),
+                    "run" or "resume" or "reconnect" => await coordinator
+                        .RunAsync(args[0], cancellation.Token)
+                        .ConfigureAwait(false),
                     "status" => coordinator.Status(),
                     "pause" => coordinator.RequestControl("pause"),
-                    "preflight" => await coordinator.PreflightAsync(cancellation.Token).ConfigureAwait(false),
-                    "finalize" => await coordinator.FinalizeAsync(cancellation.Token).ConfigureAwait(false),
-                    "cleanup" => await coordinator.CleanupAsync(cancellation.Token).ConfigureAwait(false),
-                    "tool" => await tools.InvokeAsync("owner", options["--name"],
-                        JsonNode.Parse(options["--json"])?.AsObject()
-                        ?? throw new ArgumentException("--json must contain an object."), cancellation.Token).ConfigureAwait(false),
-                    _ => throw new ArgumentException("Unknown command. Run --help for supported syntax."),
+                    "preflight" => await coordinator
+                        .PreflightAsync(cancellation.Token)
+                        .ConfigureAwait(false),
+                    "finalize" => await coordinator
+                        .FinalizeAsync(cancellation.Token)
+                        .ConfigureAwait(false),
+                    "cleanup" => await coordinator
+                        .CleanupAsync(cancellation.Token)
+                        .ConfigureAwait(false),
+                    "tool" => await tools
+                        .InvokeAsync(
+                            "owner",
+                            options["--name"],
+                            JsonNode.Parse(options["--json"])?.AsObject()
+                                ?? throw new ArgumentException("--json must contain an object."),
+                            cancellation.Token
+                        )
+                        .ConfigureAwait(false),
+                    _ => throw new ArgumentException(
+                        "Unknown command. Run --help for supported syntax."
+                    ),
                 };
             }
 
@@ -89,13 +127,30 @@ public static class Program
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
-            WriteError(isMcp, "cancelled", "The operation was cancelled; inspect retained run status before replacement.");
+            WriteError(
+                isMcp,
+                "cancelled",
+                "The operation was cancelled; inspect retained run status before replacement."
+            );
             return 1;
         }
-        catch (Exception exception) when (exception is ArgumentException or IOException or InvalidOperationException or JsonException or
-            OperationException or SqliteException or System.ComponentModel.Win32Exception or TimeoutException)
+        catch (Exception exception)
+            when (exception
+                    is ArgumentException
+                        or IOException
+                        or InvalidOperationException
+                        or JsonException
+                        or OperationException
+                        or SqliteException
+                        or System.ComponentModel.Win32Exception
+                        or TimeoutException
+            )
         {
-            WriteError(isMcp, exception is OperationException operation ? operation.Code : "failed", exception.Message);
+            WriteError(
+                isMcp,
+                exception is OperationException operation ? operation.Code : "failed",
+                exception.Message
+            );
             return 1;
         }
         finally
@@ -114,7 +169,10 @@ public static class Program
         Dictionary<string, string> options = new(StringComparer.Ordinal);
         for (int index = 0; index < args.Length; index += 2)
         {
-            if (!args[index].StartsWith("--", StringComparison.Ordinal) || !options.TryAdd(args[index], args[index + 1]))
+            if (
+                !args[index].StartsWith("--", StringComparison.Ordinal)
+                || !options.TryAdd(args[index], args[index + 1])
+            )
             {
                 throw new ArgumentException("Option names must be unique --name value pairs.");
             }

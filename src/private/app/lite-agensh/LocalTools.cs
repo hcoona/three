@@ -17,12 +17,19 @@ public sealed class LocalTools
 
     public GitOperations Git { get; }
 
-    public async Task<JsonObject> InvokeAsync(string actor, string name, JsonObject arguments,
-        CancellationToken cancellationToken = default)
+    public async Task<JsonObject> InvokeAsync(
+        string actor,
+        string name,
+        JsonObject arguments,
+        CancellationToken cancellationToken = default
+    )
     {
         if (!database.Members.Contains(actor, StringComparer.Ordinal))
         {
-            return Operation.Failure("unknown_actor", "The helper is not bound to a known run member.");
+            return Operation.Failure(
+                "unknown_actor",
+                "The helper is not bound to a known run member."
+            );
         }
 
         JsonObject result = ToolCatalog.IsGitOperation(name)

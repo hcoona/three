@@ -9,7 +9,11 @@ public sealed class RunDatabase
     private const int SchemaVersion = 1;
     private readonly string connectionString;
 
-    public RunDatabase(string statePath, RunConfiguration? configuration = null, TimeProvider? timeProvider = null)
+    public RunDatabase(
+        string statePath,
+        RunConfiguration? configuration = null,
+        TimeProvider? timeProvider = null
+    )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(statePath);
         StatePath = Path.GetFullPath(statePath);
@@ -17,7 +21,10 @@ public sealed class RunDatabase
         string databasePath = Path.Combine(StatePath, "run.sqlite");
         if (configuration is null && !File.Exists(databasePath))
         {
-            throw new FileNotFoundException("No initialized LiteAgensh run exists here.", databasePath);
+            throw new FileNotFoundException(
+                "No initialized LiteAgensh run exists here.",
+                databasePath
+            );
         }
 
         configuration?.Validate();
@@ -33,15 +40,30 @@ public sealed class RunDatabase
         using SqliteConnection connection = Open();
         Sql.Execute(connection, "PRAGMA journal_mode=WAL;");
         using SqliteTransaction transaction = connection.BeginTransaction();
-        Sql.Execute(connection, "CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);", transaction);
-        string? existingVersion = Sql.Scalar(connection, "SELECT value FROM meta WHERE key='schema_version';", transaction) as string;
-        if (existingVersion is not null &&
-            int.Parse(existingVersion, CultureInfo.InvariantCulture) != SchemaVersion)
+        Sql.Execute(
+            connection,
+            "CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+            transaction
+        );
+        string? existingVersion =
+            Sql.Scalar(
+                connection,
+                "SELECT value FROM meta WHERE key='schema_version';",
+                transaction
+            ) as string;
+        if (
+            existingVersion is not null
+            && int.Parse(existingVersion, CultureInfo.InvariantCulture) != SchemaVersion
+        )
         {
-            throw new InvalidOperationException($"Unsupported run schema {existingVersion}; state has not been recreated.");
+            throw new InvalidOperationException(
+                $"Unsupported run schema {existingVersion}; state has not been recreated."
+            );
         }
 
-        string? stored = Sql.Scalar(connection, "SELECT value FROM meta WHERE key='configuration';", transaction) as string;
+        string? stored =
+            Sql.Scalar(connection, "SELECT value FROM meta WHERE key='configuration';", transaction)
+            as string;
         if (stored is null)
         {
             if (configuration is null)
@@ -49,24 +71,39 @@ public sealed class RunDatabase
                 throw new InvalidOperationException("Run configuration is missing.");
             }
 
-            if (!Path.GetFullPath(configuration.StatePath).Equals(StatePath, StringComparison.OrdinalIgnoreCase))
+            if (
+                !Path.GetFullPath(configuration.StatePath)
+                    .Equals(StatePath, StringComparison.OrdinalIgnoreCase)
+            )
             {
-                throw new ArgumentException("Configuration and database state paths disagree.", nameof(configuration));
+                throw new ArgumentException(
+                    "Configuration and database state paths disagree.",
+                    nameof(configuration)
+                );
             }
 
             Configuration = configuration;
-            Sql.Execute(connection, "INSERT INTO meta(key,value) VALUES('configuration',$configuration),('schema_version',$version),('run_id',$run);",
-                transaction, ("$configuration", JsonSerializer.Serialize(configuration, Json.Options)),
-                ("$version", SchemaVersion.ToString(CultureInfo.InvariantCulture)), ("$run", Guid.NewGuid().ToString("N")));
+            Sql.Execute(
+                connection,
+                "INSERT INTO meta(key,value) VALUES('configuration',$configuration),"
+                    + "('schema_version',$version),('run_id',$run);",
+                transaction,
+                ("$configuration", JsonSerializer.Serialize(configuration, Json.Options)),
+                ("$version", SchemaVersion.ToString(CultureInfo.InvariantCulture)),
+                ("$run", Guid.NewGuid().ToString("N"))
+            );
         }
         else
         {
             if (configuration is not null)
             {
-                throw new InvalidOperationException("An initialized run cannot be overwritten by init.");
+                throw new InvalidOperationException(
+                    "An initialized run cannot be overwritten by init."
+                );
             }
 
-            Configuration = JsonSerializer.Deserialize<RunConfiguration>(stored, Json.Options)
+            Configuration =
+                JsonSerializer.Deserialize<RunConfiguration>(stored, Json.Options)
                 ?? throw new InvalidOperationException("Stored run configuration is invalid.");
             Configuration.Validate();
         }
@@ -82,7 +119,8 @@ public sealed class RunDatabase
 
     public DateTimeOffset Now => TimeProvider.GetUtcNow();
 
-    public string RunId => ReadMetadata("run_id") ?? throw new InvalidOperationException("Run identity is missing.");
+    public string RunId =>
+        ReadMetadata("run_id") ?? throw new InvalidOperationException("Run identity is missing.");
 
     public IReadOnlyList<string> Members => ["owner", .. Configuration.WorkerIds];
 
@@ -96,14 +134,21 @@ public sealed class RunDatabase
     public string? ReadMetadata(string key)
     {
         using SqliteConnection connection = Open();
-        return Sql.Scalar(connection, "SELECT value FROM meta WHERE key=$key;", null, ("$key", key)) as string;
+        return Sql.Scalar(connection, "SELECT value FROM meta WHERE key=$key;", null, ("$key", key))
+            as string;
     }
 
     public void WriteMetadata(string key, string value)
     {
         using SqliteConnection connection = Open();
-        Sql.Execute(connection, "INSERT INTO meta(key,value) VALUES($key,$value) ON CONFLICT(key) DO UPDATE SET value=excluded.value;",
-            null, ("$key", key), ("$value", value));
+        Sql.Execute(
+            connection,
+            "INSERT INTO meta(key,value) VALUES($key,$value) ON CONFLICT(key) DO UPDATE "
+                + "SET value=excluded.value;",
+            null,
+            ("$key", key),
+            ("$value", value)
+        );
     }
 
     public void SaveConfiguration(RunConfiguration configuration)
@@ -116,8 +161,12 @@ public sealed class RunDatabase
 
 public static class Sql
 {
-    public static SqliteCommand Command(SqliteConnection connection, string text, SqliteTransaction? transaction = null,
-        params (string Name, object? Value)[] parameters)
+    public static SqliteCommand Command(
+        SqliteConnection connection,
+        string text,
+        SqliteTransaction? transaction = null,
+        params (string Name, object? Value)[] parameters
+    )
     {
         SqliteCommand command = connection.CreateCommand();
         command.CommandText = text;
@@ -130,15 +179,23 @@ public static class Sql
         return command;
     }
 
-    public static int Execute(SqliteConnection connection, string text, SqliteTransaction? transaction = null,
-        params (string Name, object? Value)[] parameters)
+    public static int Execute(
+        SqliteConnection connection,
+        string text,
+        SqliteTransaction? transaction = null,
+        params (string Name, object? Value)[] parameters
+    )
     {
         using SqliteCommand command = Command(connection, text, transaction, parameters);
         return command.ExecuteNonQuery();
     }
 
-    public static object? Scalar(SqliteConnection connection, string text, SqliteTransaction? transaction = null,
-        params (string Name, object? Value)[] parameters)
+    public static object? Scalar(
+        SqliteConnection connection,
+        string text,
+        SqliteTransaction? transaction = null,
+        params (string Name, object? Value)[] parameters
+    )
     {
         using SqliteCommand command = Command(connection, text, transaction, parameters);
         object? result = command.ExecuteScalar();

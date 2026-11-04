@@ -24,8 +24,13 @@ internal sealed class NativeWorker : IAsyncDisposable
     private DateTimeOffset lastStoredUpdate;
     private bool versionVerified;
 
-    public NativeWorker(RunDatabase database, ProcessRunner processes, CreditLedger credits,
-        NativeCreditContract? contract, CreditReservation reservation)
+    public NativeWorker(
+        RunDatabase database,
+        ProcessRunner processes,
+        CreditLedger credits,
+        NativeCreditContract? contract,
+        CreditReservation reservation
+    )
     {
         this.database = database;
         this.processes = processes;
@@ -39,30 +44,50 @@ internal sealed class NativeWorker : IAsyncDisposable
 
     public string ReservationId => reservation.Id;
 
-    public async Task StartAsync(string cwd, string? exactSession, CancellationToken cancellationToken,
-        bool informationalDiscovery = false, string? recoveryLabel = null)
+    public async Task StartAsync(
+        string cwd,
+        string? exactSession,
+        CancellationToken cancellationToken,
+        bool informationalDiscovery = false,
+        string? recoveryLabel = null
+    )
     {
         if (contract is null && !informationalDiscovery)
         {
-            throw new OperationException("unavailable", "Model-enabled native sessions require a reviewed credit contract.");
+            throw new OperationException(
+                "unavailable",
+                "Model-enabled native sessions require a reviewed credit contract."
+            );
         }
 
         RunConfiguration configuration = database.Configuration;
-        ProcessStartInfo start = new(configuration.NativeExecutable) { WorkingDirectory = Path.GetFullPath(cwd) };
+        ProcessStartInfo start = new(configuration.NativeExecutable)
+        {
+            WorkingDirectory = Path.GetFullPath(cwd),
+        };
         for (int i = 0; i < configuration.NativeArguments.Length; i++)
         {
             string argument = configuration.NativeArguments[i];
             string[] parts = argument.Split('=', 2);
             if (parts[0] is not ("--effort" or "--reasoning-effort"))
             {
-                throw new OperationException("invalid_arguments", "Only documented reasoning-effort native options are admitted by this bounded contract.");
+                throw new OperationException(
+                    "invalid_arguments",
+                    "Only documented reasoning-effort native options are admitted by "
+                        + "this bounded contract."
+                );
             }
 
-            string value = parts.Length == 2 ? parts[1] : ++i < configuration.NativeArguments.Length
-                ? configuration.NativeArguments[i] : "";
+            string value =
+                parts.Length == 2 ? parts[1]
+                : ++i < configuration.NativeArguments.Length ? configuration.NativeArguments[i]
+                : "";
             if (value is not ("low" or "medium" or "high" or "xhigh" or "max"))
             {
-                throw new OperationException("invalid_arguments", "Unsupported documented ACP reasoning-effort value.");
+                throw new OperationException(
+                    "invalid_arguments",
+                    "Unsupported documented ACP reasoning-effort value."
+                );
             }
 
             start.ArgumentList.Add(parts[0]);
@@ -71,7 +96,11 @@ internal sealed class NativeWorker : IAsyncDisposable
 
         if (configuration.NativeModel is not null)
         {
-            throw new OperationException("unavailable", "This native contract is bound to the existing default model; a model override is not authorized.");
+            throw new OperationException(
+                "unavailable",
+                "This native contract is bound to the existing default model; a model "
+                    + "override is not authorized."
+            );
         }
 
         start.ArgumentList.Add("--acp");
@@ -84,7 +113,10 @@ internal sealed class NativeWorker : IAsyncDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(reservation.UsagePath)!);
         if (File.Exists(reservation.UsagePath))
         {
-            throw new OperationException("credit_unknown", "A native usage report path cannot be reused.");
+            throw new OperationException(
+                "credit_unknown",
+                "A native usage report path cannot be reused."
+            );
         }
 
         credits.MarkStarted(reservation.Id);
@@ -93,61 +125,135 @@ internal sealed class NativeWorker : IAsyncDisposable
         {
             using (Microsoft.Data.Sqlite.SqliteConnection connection = database.Open())
             {
-                Sql.Execute(connection, """
-                    INSERT INTO native_attempts(usage_path,reservation_id,worker,baseline_usage,created_at)
+                Sql.Execute(
+                    connection,
+                    """
+                    INSERT INTO native_attempts(usage_path,reservation_id,worker,
+                        baseline_usage,created_at)
                     VALUES($path,$reservation,$worker,$baseline,$time);
-                    """, null, ("$path", reservation.UsagePath), ("$reservation", reservation.Id),
-                    ("$worker", worker), ("$baseline", (reservation.Actual ?? 0).ToString(CultureInfo.InvariantCulture)),
-                    ("$time", database.Now.ToString("O")));
+                    """,
+                    null,
+                    ("$path", reservation.UsagePath),
+                    ("$reservation", reservation.Id),
+                    ("$worker", worker),
+                    ("$baseline", (reservation.Actual ?? 0).ToString(CultureInfo.InvariantCulture)),
+                    ("$time", database.Now.ToString("O"))
+                );
             }
 
-            client = AcpClient.Start(start, processes, $"native:{worker}:{reservation.Id}",
-                configuration.NativePermissionPolicy, reservation.UsagePath + ".stderr", RecordUpdate);
-            using CancellationTokenSource handshake = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            client = AcpClient.Start(
+                start,
+                processes,
+                $"native:{worker}:{reservation.Id}",
+                configuration.NativePermissionPolicy,
+                reservation.UsagePath + ".stderr",
+                RecordUpdate
+            );
+            using CancellationTokenSource handshake =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             handshake.CancelAfter(TimeSpan.FromSeconds(30));
-            JsonObject initialize = await client.InitializeAsync(handshake.Token).ConfigureAwait(false);
+            JsonObject initialize = await client
+                .InitializeAsync(handshake.Token)
+                .ConfigureAwait(false);
             using (Microsoft.Data.Sqlite.SqliteConnection connection = database.Open())
             {
-                Sql.Execute(connection, "UPDATE native_attempts SET initialize_json=$initialize WHERE usage_path=$path;",
-                    null, ("$initialize", initialize.ToJsonString()), ("$path", reservation.UsagePath));
+                Sql.Execute(
+                    connection,
+                    "UPDATE native_attempts SET initialize_json=$initialize WHERE "
+                        + "usage_path=$path;",
+                    null,
+                    ("$initialize", initialize.ToJsonString()),
+                    ("$path", reservation.UsagePath)
+                );
             }
 
             contract?.VerifyVersion(initialize);
             versionVerified = contract is not null;
-            string recovery = recoveryLabel ?? (exactSession is null ? "fresh-session-with-durable-summary" : "exact-session-load");
+            string recovery =
+                recoveryLabel
+                ?? (
+                    exactSession is null
+                        ? "fresh-session-with-durable-summary"
+                        : "exact-session-load"
+                );
             if (exactSession is not null && !client.SupportsLoad)
             {
-                database.WriteMetadata($"worker:{worker}:recovery", "fresh-summary-fallback-required: loadSession not advertised");
-                throw new OperationException("session_load_failed", "Exact-session load is not advertised; settle this process before fresh-summary fallback.");
+                database.WriteMetadata(
+                    $"worker:{worker}:recovery",
+                    "fresh-summary-fallback-required: loadSession not advertised"
+                );
+                throw new OperationException(
+                    "session_load_failed",
+                    "Exact-session load is not advertised; settle this process before "
+                        + "fresh-summary fallback."
+                );
             }
 
             try
             {
-                await client.OpenSessionAsync(cwd, McpServers(database, worker), exactSession, handshake.Token).ConfigureAwait(false);
+                await client
+                    .OpenSessionAsync(
+                        cwd,
+                        McpServers(database, worker),
+                        exactSession,
+                        handshake.Token
+                    )
+                    .ConfigureAwait(false);
             }
-            catch (OperationException exception) when (exactSession is not null && exception.Code == "native_error")
+            catch (OperationException exception)
+                when (exactSession is not null && exception.Code == "native_error")
             {
                 // The caller must settle this failed loader before allocating a fresh replacement.
-                database.WriteMetadata($"worker:{worker}:recovery", $"exact-session-load-failed: {exception.Message}");
-                throw new OperationException("session_load_failed", "Exact-session loading failed; settle before fresh-summary recovery.");
+                database.WriteMetadata(
+                    $"worker:{worker}:recovery",
+                    $"exact-session-load-failed: {exception.Message}"
+                );
+                throw new OperationException(
+                    "session_load_failed",
+                    "Exact-session loading failed; settle before fresh-summary recovery."
+                );
             }
 
             credits.AttachSession(reservation.Id, client.SessionId!);
             using (Microsoft.Data.Sqlite.SqliteConnection connection = database.Open())
             {
-                using Microsoft.Data.Sqlite.SqliteTransaction transaction = connection.BeginTransaction();
-                Sql.Execute(connection, """
-                    INSERT INTO native_sessions(reservation_id,worker,session_id,recovery,initialize_json,created_at)
+                using Microsoft.Data.Sqlite.SqliteTransaction transaction =
+                    connection.BeginTransaction();
+                Sql.Execute(
+                    connection,
+                    """
+                    INSERT INTO native_sessions(reservation_id,worker,session_id,recovery,
+                        initialize_json,created_at)
                     VALUES($reservation,$worker,$session,$recovery,$initialize,$time);
-                    """, transaction, ("$reservation", reservation.Id), ("$worker", worker), ("$session", client.SessionId),
-                    ("$recovery", recovery), ("$initialize", initialize.ToJsonString()), ("$time", database.Now.ToString("O")));
-                Sql.Execute(connection, "UPDATE native_attempts SET session_id=$session WHERE usage_path=$path;",
-                    transaction, ("$session", client.SessionId), ("$path", reservation.UsagePath));
-                Sql.Execute(connection, """
-                    INSERT INTO meta(key,value) VALUES($sessionKey,$session),($reservationKey,$reservation)
+                    """,
+                    transaction,
+                    ("$reservation", reservation.Id),
+                    ("$worker", worker),
+                    ("$session", client.SessionId),
+                    ("$recovery", recovery),
+                    ("$initialize", initialize.ToJsonString()),
+                    ("$time", database.Now.ToString("O"))
+                );
+                Sql.Execute(
+                    connection,
+                    "UPDATE native_attempts SET session_id=$session WHERE usage_path=$path;",
+                    transaction,
+                    ("$session", client.SessionId),
+                    ("$path", reservation.UsagePath)
+                );
+                Sql.Execute(
+                    connection,
+                    """
+                    INSERT INTO meta(key,value)
+                    VALUES($sessionKey,$session),($reservationKey,$reservation)
                     ON CONFLICT(key) DO UPDATE SET value=excluded.value;
-                    """, transaction, ("$sessionKey", $"worker:{worker}:session"), ("$session", client.SessionId),
-                    ("$reservationKey", $"worker:{worker}:reservation"), ("$reservation", reservation.Id));
+                    """,
+                    transaction,
+                    ("$sessionKey", $"worker:{worker}:session"),
+                    ("$session", client.SessionId),
+                    ("$reservationKey", $"worker:{worker}:reservation"),
+                    ("$reservation", reservation.Id)
+                );
                 transaction.Commit();
             }
 
@@ -187,15 +293,25 @@ internal sealed class NativeWorker : IAsyncDisposable
     {
         if (!verified || client is null)
         {
-            throw new OperationException("credit_unknown", "No model prompt is permitted before verified native limit and usage evidence.");
+            throw new OperationException(
+                "credit_unknown",
+                "No model prompt is permitted before verified native limit and usage evidence."
+            );
         }
 
         if (lastUsage >= reservation.Allowance)
         {
-            throw new OperationException("credit_exhausted", "The native session's reported credit allowance is spent.");
+            throw new OperationException(
+                "credit_exhausted",
+                "The native session's reported credit allowance is spent."
+            );
         }
 
-        credits.RequirePromptAllowance(database.RunId, reservation.Id, database.Configuration.RunAiCreditAllowance);
+        credits.RequirePromptAllowance(
+            database.RunId,
+            reservation.Id,
+            database.Configuration.RunAiCreditAllowance
+        );
         database.WriteMetadata($"worker:{worker}:lifecycle", "prompting");
         JsonObject result;
         try
@@ -215,7 +331,9 @@ internal sealed class NativeWorker : IAsyncDisposable
 
     public async Task VerifyCreditsAsync(CancellationToken cancellationToken)
     {
-        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken
+        );
         deadline.CancelAfter(TimeSpan.FromSeconds(10));
         try
         {
@@ -224,7 +342,10 @@ internal sealed class NativeWorker : IAsyncDisposable
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             credits.MarkUncertain(reservation.Id);
-            throw new OperationException("credit_unknown", "Native informational credit verification exceeded its finite deadline.");
+            throw new OperationException(
+                "credit_unknown",
+                "Native informational credit verification exceeded its finite deadline."
+            );
         }
         catch (OperationException exception) when (exception.Code == "credit_exhausted")
         {
@@ -241,13 +362,26 @@ internal sealed class NativeWorker : IAsyncDisposable
     {
         verified = false;
         AcpClient connection = client ?? throw new InvalidOperationException("No ACP connection.");
-        NativeCreditContract evidence = contract ?? throw new OperationException("unavailable", "No native credit contract is established.");
-        await connection.WaitForCommandsAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+        NativeCreditContract evidence =
+            contract
+            ?? throw new OperationException(
+                "unavailable",
+                "No native credit contract is established."
+            );
+        await connection
+            .WaitForCommandsAsync(TimeSpan.FromSeconds(5), cancellationToken)
+            .ConfigureAwait(false);
         string advertisedName = evidence.InformationalCommand.Split(' ')[0];
-        if (!connection.AdvertisedCommands.OfType<JsonObject>().Any(command =>
-                command["name"]?.GetValue<string>() == advertisedName))
+        if (
+            !connection
+                .AdvertisedCommands.OfType<JsonObject>()
+                .Any(command => command["name"]?.GetValue<string>() == advertisedName)
+        )
         {
-            throw new OperationException("unavailable", "The documented informational command is not advertised by this ACP session.");
+            throw new OperationException(
+                "unavailable",
+                "The documented informational command is not advertised by this ACP session."
+            );
         }
 
         lock (updateLock)
@@ -259,7 +393,9 @@ internal sealed class NativeWorker : IAsyncDisposable
         JsonObject response;
         try
         {
-            response = await connection.PromptAsync("/" + evidence.InformationalCommand, cancellationToken).ConfigureAwait(false);
+            response = await connection
+                .PromptAsync("/" + evidence.InformationalCommand, cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -275,29 +411,47 @@ internal sealed class NativeWorker : IAsyncDisposable
             text = informationalText.ToString();
         }
 
-        JsonNode information = text.Length == 0 ? response : JsonNode.Parse(text)
-            ?? throw new OperationException("credit_unknown", "The documented informational response did not contain usable JSON.");
+        JsonNode information =
+            text.Length == 0
+                ? response
+                : JsonNode.Parse(text)
+                    ?? throw new OperationException(
+                        "credit_unknown",
+                        "The documented informational response did not contain usable JSON."
+                    );
         lastUsage = evidence.VerifySession(information, reservation.Allowance);
         if (lastUsage < (reservation.Actual ?? 0))
         {
-            throw new OperationException("credit_unknown", "The loaded native session reset or lost previously reported cumulative usage.");
+            throw new OperationException(
+                "credit_unknown",
+                "The loaded native session reset or lost previously reported cumulative usage."
+            );
         }
 
         credits.ObserveUsage(reservation.Id, lastUsage);
         if (lastUsage >= reservation.Allowance)
         {
-            throw new OperationException("credit_exhausted", "The native session's reported credit allowance is spent.");
+            throw new OperationException(
+                "credit_exhausted",
+                "The native session's reported credit allowance is spent."
+            );
         }
 
-        database.WriteMetadata($"worker:{worker}:credit_preflight", Json.SerializePayload(new
-        {
-            evidence.EvidenceReference,
-            evidence.AgentVersion,
-            reservation.Id,
-            reservation.Allowance,
-            actualReported = lastUsage,
-            verifiedAt = database.Now,
-        }).ToJsonString());
+        database.WriteMetadata(
+            $"worker:{worker}:credit_preflight",
+            Json.SerializePayload(
+                    new
+                    {
+                        evidence.EvidenceReference,
+                        evidence.AgentVersion,
+                        reservation.Id,
+                        reservation.Allowance,
+                        actualReported = lastUsage,
+                        verifiedAt = database.Now,
+                    }
+                )
+                .ToJsonString()
+        );
         verified = true;
     }
 
@@ -309,7 +463,9 @@ internal sealed class NativeWorker : IAsyncDisposable
         verified = false;
         if (!started && !reconciled)
         {
-            CreditReservation current = credits.Reservations(database.RunId).Single(row => row.Id == reservation.Id);
+            CreditReservation current = credits
+                .Reservations(database.RunId)
+                .Single(row => row.Id == reservation.Id);
             if (current.State == "reserved")
             {
                 credits.ReleaseUnstarted(reservation.Id);
@@ -327,9 +483,15 @@ internal sealed class NativeWorker : IAsyncDisposable
             catch
             {
                 using Microsoft.Data.Sqlite.SqliteConnection connection = database.Open();
-                Sql.Execute(connection, """
-                    UPDATE process_leases SET state='unresolved' WHERE kind=$kind AND state<>'exited';
-                    """, null, ("$kind", $"native:{worker}:{reservation.Id}"));
+                Sql.Execute(
+                    connection,
+                    """
+                    UPDATE process_leases SET state='unresolved'
+                    WHERE kind=$kind AND state<>'exited';
+                    """,
+                    null,
+                    ("$kind", $"native:{worker}:{reservation.Id}")
+                );
                 credits.MarkUncertain(reservation.Id);
                 throw;
             }
@@ -339,21 +501,42 @@ internal sealed class NativeWorker : IAsyncDisposable
         {
             try
             {
-                NativeCreditContract evidence = contract ??
-                    throw new OperationException("credit_unknown", "Native report schema/application evidence remains unverified; reservation retained.");
+                NativeCreditContract evidence =
+                    contract
+                    ?? throw new OperationException(
+                        "credit_unknown",
+                        "Native report schema/application evidence remains unverified; "
+                            + "reservation retained."
+                    );
                 if (!versionVerified)
                 {
-                    throw new OperationException("credit_unknown", "Native report version was not verified; reservation retained.");
+                    throw new OperationException(
+                        "credit_unknown",
+                        "Native report version was not verified; reservation retained."
+                    );
                 }
 
-                (decimal actual, string identity) = evidence.ReadFinalReport(reservation.UsagePath, SessionId);
+                (decimal actual, string identity) = evidence.ReadFinalReport(
+                    reservation.UsagePath,
+                    SessionId
+                );
                 if (SessionId is null && actual != 0)
                 {
-                    throw new OperationException("credit_unknown", "Native usage before session association was not zero.");
+                    throw new OperationException(
+                        "credit_unknown",
+                        "Native usage before session association was not zero."
+                    );
                 }
 
-                credits.Reconcile(reservation.Id, actual, identity, unassociatedZero: SessionId is null,
-                    processBaseline: evidence.ReportUsageScope == "process-incremental" ? reservation.Actual ?? 0 : null);
+                credits.Reconcile(
+                    reservation.Id,
+                    actual,
+                    identity,
+                    unassociatedZero: SessionId is null,
+                    processBaseline: evidence.ReportUsageScope == "process-incremental"
+                        ? reservation.Actual ?? 0
+                        : null
+                );
                 reconciled = true;
             }
             catch
@@ -384,28 +567,44 @@ internal sealed class NativeWorker : IAsyncDisposable
             if (database.Now - lastStoredUpdate >= TimeSpan.FromSeconds(1))
             {
                 lastStoredUpdate = database.Now;
-                database.WriteMetadata($"worker:{worker}:last_update", lastStoredUpdate.ToString("O"));
+                database.WriteMetadata(
+                    $"worker:{worker}:last_update",
+                    lastStoredUpdate.ToString("O")
+                );
             }
 
-            if (capturingInformation && update["update"] is JsonObject body &&
-                body["sessionUpdate"]?.GetValue<string>() == "agent_message_chunk" &&
-                body["content"]?["type"]?.GetValue<string>() == "text")
+            if (
+                capturingInformation
+                && update["update"] is JsonObject body
+                && body["sessionUpdate"]?.GetValue<string>() == "agent_message_chunk"
+                && body["content"]?["type"]?.GetValue<string>() == "text"
+            )
             {
                 informationalText.Append(body["content"]?["text"]?.GetValue<string>());
             }
-
         }
     }
 
     private async Task DiscoverInformationalUsageAsync(CancellationToken cancellationToken)
     {
         AcpClient connection = client ?? throw new InvalidOperationException("No ACP connection.");
-        await connection.WaitForCommandsAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
-        database.WriteMetadata($"worker:{worker}:advertised_commands", connection.AdvertisedCommands.ToJsonString());
-        if (!connection.AdvertisedCommands.OfType<JsonObject>().Any(command =>
-                command["name"]?.GetValue<string>() == "usage"))
+        await connection
+            .WaitForCommandsAsync(TimeSpan.FromSeconds(5), cancellationToken)
+            .ConfigureAwait(false);
+        database.WriteMetadata(
+            $"worker:{worker}:advertised_commands",
+            connection.AdvertisedCommands.ToJsonString()
+        );
+        if (
+            !connection
+                .AdvertisedCommands.OfType<JsonObject>()
+                .Any(command => command["name"]?.GetValue<string>() == "usage")
+        )
         {
-            throw new OperationException("unavailable", "The documented informational /usage command is not advertised; no prompt was sent.");
+            throw new OperationException(
+                "unavailable",
+                "The documented informational /usage command is not advertised; no prompt was sent."
+            );
         }
 
         lock (updateLock)
@@ -418,7 +617,9 @@ internal sealed class NativeWorker : IAsyncDisposable
         try
         {
             // Official ACP documentation explicitly identifies advertised /usage as non-model.
-            response = await connection.PromptAsync("/usage", cancellationToken).ConfigureAwait(false);
+            response = await connection
+                .PromptAsync("/usage", cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -430,29 +631,48 @@ internal sealed class NativeWorker : IAsyncDisposable
 
         lock (updateLock)
         {
-            database.WriteMetadata($"worker:{worker}:credit_discovery", new JsonObject
-            {
-                ["operation"] = "/usage",
-                ["result"] = response,
-                ["text"] = informationalText.ToString(),
-                ["interpretation"] = "unverified; not used for credit arithmetic or model admission",
-            }.ToJsonString());
+            database.WriteMetadata(
+                $"worker:{worker}:credit_discovery",
+                new JsonObject
+                {
+                    ["operation"] = "/usage",
+                    ["result"] = response,
+                    ["text"] = informationalText.ToString(),
+                    ["interpretation"] =
+                        "unverified; not used for credit arithmetic or model admission",
+                }.ToJsonString()
+            );
         }
     }
 
     private static JsonArray McpServers(RunDatabase database, string worker)
     {
-        string executable = Environment.ProcessPath ?? throw new OperationException("unavailable", "Cannot locate the MCP helper executable.");
+        string executable =
+            Environment.ProcessPath
+            ?? throw new OperationException(
+                "unavailable",
+                "Cannot locate the MCP helper executable."
+            );
         string assembly = typeof(RunDatabase).Assembly.Location;
         List<string> arguments = [];
-        if (!Path.GetFileNameWithoutExtension(executable).Equals(
-                Path.GetFileNameWithoutExtension(assembly), StringComparison.OrdinalIgnoreCase))
+        if (
+            !Path.GetFileNameWithoutExtension(executable)
+                .Equals(
+                    Path.GetFileNameWithoutExtension(assembly),
+                    StringComparison.OrdinalIgnoreCase
+                )
+        )
         {
-            executable = Path.GetFileNameWithoutExtension(executable).Equals("dotnet", StringComparison.OrdinalIgnoreCase)
-                ? executable : Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
+            executable = Path.GetFileNameWithoutExtension(executable)
+                .Equals("dotnet", StringComparison.OrdinalIgnoreCase)
+                ? executable
+                : Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
             if (string.IsNullOrEmpty(assembly))
             {
-                throw new OperationException("unavailable", "The managed MCP helper entry assembly has no executable location.");
+                throw new OperationException(
+                    "unavailable",
+                    "The managed MCP helper entry assembly has no executable location."
+                );
             }
 
             arguments.Add(Path.GetFullPath(assembly));
@@ -465,12 +685,14 @@ internal sealed class NativeWorker : IAsyncDisposable
             args.Add(argument);
         }
 
-        return new JsonArray(new JsonObject
-        {
-            ["name"] = "lite-agensh",
-            ["command"] = executable,
-            ["args"] = args,
-            ["env"] = new JsonArray(),
-        });
+        return new JsonArray(
+            new JsonObject
+            {
+                ["name"] = "lite-agensh",
+                ["command"] = executable,
+                ["args"] = args,
+                ["env"] = new JsonArray(),
+            }
+        );
     }
 }

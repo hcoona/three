@@ -16,48 +16,149 @@ public static class ToolCatalog
         List<Tool> tools =
         [
             Define("run_info", "Read this local run's goal, base, lifecycle and capabilities."),
-            Define("agent_info", "Read a known local run member.", new Parameter("id", Required: true)),
+            Define(
+                "agent_info",
+                "Read a known local run member.",
+                new Parameter("id", Required: true)
+            ),
             Define("agent_list", "List known local run members.", new Parameter("id")),
-            Define("task_write", "Create, update, comment on or close a local task. Claims are advisory, not task locks.",
+            Define(
+                "task_write",
+                "Create, update, comment on or close a local task. "
+                    + "Claims are advisory, not task locks.",
                 new("action", Required: true, Values: ["create", "update", "comment", "close"]),
-                new("id", "integer"), new("title"), new("body")),
-            Define("task_read", "Read a local task, comments and advisory claimants.", new Parameter("id", "integer", true)),
-            Define("task_list", "List local tasks. State omission includes both states.",
-                new("state", Values: ["open", "closed"]), new("cursor", "integer"), new("limit", "integer")),
-            Define("work_search", "Search local tasks and changes, retaining their kind.",
-                new("query", Required: true), new("cursor", "integer"), new("limit", "integer")),
-            Define("message_send", "Send a team/direct message or reply. recipient is team or a known member ID; threadId is a visible root in that channel.",
-                new("recipient", Required: true), new("body", Required: true), new("threadId", "integer"),
-                new("mentions", "string[]"), new("urgent", "boolean")),
-            Define("message_read", "Read visible messages in a local channel.",
-                new("channelId", Required: true), new("cursor", "integer"), new("limit", "integer")),
-            Define("message_thread", "Read a visible root message and replies.",
-                new("threadId", "integer", true), new("cursor", "integer"), new("limit", "integer")),
-            Define("message_search", "Search team history and your visible direct messages.",
-                new("query", Required: true), new("cursor", "integer"), new("limit", "integer")),
-            Define("channel_read", "Read a visible local team/direct channel.", new Parameter("id", Required: true)),
+                new("id", "integer"),
+                new("title"),
+                new("body")
+            ),
+            Define(
+                "task_read",
+                "Read a local task, comments and advisory claimants.",
+                new Parameter("id", "integer", true)
+            ),
+            Define(
+                "task_list",
+                "List local tasks. State omission includes both states.",
+                new("state", Values: ["open", "closed"]),
+                new("cursor", "integer"),
+                new("limit", "integer")
+            ),
+            Define(
+                "work_search",
+                "Search local tasks and changes, retaining their kind.",
+                new("query", Required: true),
+                new("cursor", "integer"),
+                new("limit", "integer")
+            ),
+            Define(
+                "message_send",
+                "Send a team/direct message or reply. recipient is team or a known member ID; "
+                    + "threadId is a visible root in that channel.",
+                new("recipient", Required: true),
+                new("body", Required: true),
+                new("threadId", "integer"),
+                new("mentions", "string[]"),
+                new("urgent", "boolean")
+            ),
+            Define(
+                "message_read",
+                "Read visible messages in a local channel.",
+                new("channelId", Required: true),
+                new("cursor", "integer"),
+                new("limit", "integer")
+            ),
+            Define(
+                "message_thread",
+                "Read a visible root message and replies.",
+                new("threadId", "integer", true),
+                new("cursor", "integer"),
+                new("limit", "integer")
+            ),
+            Define(
+                "message_search",
+                "Search team history and your visible direct messages.",
+                new("query", Required: true),
+                new("cursor", "integer"),
+                new("limit", "integer")
+            ),
+            Define(
+                "channel_read",
+                "Read a visible local team/direct channel.",
+                new Parameter("id", Required: true)
+            ),
             Define("channel_list", "List local channels visible to the bound member."),
-            Define("board_publish", "Publish a typed finding or advisory claim. Admission validates reported text; it does not execute checks.",
-                new("type", Required: true, Values: ["FACT", "OBSERVED", "FAIL", "CLAIM", "PATCH_SUMMARY"]),
-                new("content", Required: true), new("detail"), new("workLabel"), new("ttlSeconds", "integer")),
-            Define("board_recent", "Read the live recent board view, not all admitted history.", new Parameter("limit", "integer")),
-            Define("board_search", "Search retained board history using the source boolean/literal query grammar.",
-                new("query", Required: true), new("cursor", "integer"), new("limit", "integer")),
-            Define("board_expand", "Expand board detail labels with unknown/truncated label information.",
-                new Parameter("labels", "string[]", true)),
-            Define("change_write", "Submit your worker head, update/comment, or queue exact-head integration. Create requires title/body; existing actions require id. Updates preserve omitted fields. integrate requires head and returns pending, not a merge.",
+            Define(
+                "board_publish",
+                "Publish a typed finding or advisory claim. Admission validates reported text; "
+                    + "it does not execute checks.",
+                new(
+                    "type",
+                    Required: true,
+                    Values: ["FACT", "OBSERVED", "FAIL", "CLAIM", "PATCH_SUMMARY"]
+                ),
+                new("content", Required: true),
+                new("detail"),
+                new("workLabel"),
+                new("ttlSeconds", "integer")
+            ),
+            Define(
+                "board_recent",
+                "Read the live recent board view, not all admitted history.",
+                new Parameter("limit", "integer")
+            ),
+            Define(
+                "board_search",
+                "Search retained board history using the source boolean/literal query grammar.",
+                new("query", Required: true),
+                new("cursor", "integer"),
+                new("limit", "integer")
+            ),
+            Define(
+                "board_expand",
+                "Expand board detail labels with unknown/truncated label information.",
+                new Parameter("labels", "string[]", true)
+            ),
+            Define(
+                "change_write",
+                "Submit your worker head, update/comment, or queue exact-head integration. "
+                    + "Create requires title/body; existing actions require id. "
+                    + "Updates preserve omitted fields. integrate requires head "
+                    + "and returns pending, not a merge.",
                 new("action", Required: true, Values: ["submit", "update", "comment", "integrate"]),
-                new("id", "integer"), new("title"), new("body"), new("taskIds", "integer[]"), new("head")),
-            Define("change_read", "Read the exact candidate, diff, reviews, checks and integration request outcomes.",
-                new Parameter("id", "integer", true)),
-            Define("change_list", "List local changes, optionally filtered by state.",
-                new("state", Values: ["open", "integrated"]), new("cursor", "integer"), new("limit", "integer")),
-            Define("change_review", "Review an exact submitted head. A change author cannot supply their own peer approval.",
-                new("id", "integer", true), new("head", Required: true),
+                new("id", "integer"),
+                new("title"),
+                new("body"),
+                new("taskIds", "integer[]"),
+                new("head")
+            ),
+            Define(
+                "change_read",
+                "Read the exact candidate, diff, reviews, checks and integration request outcomes.",
+                new Parameter("id", "integer", true)
+            ),
+            Define(
+                "change_list",
+                "List local changes, optionally filtered by state.",
+                new("state", Values: ["open", "integrated"]),
+                new("cursor", "integer"),
+                new("limit", "integer")
+            ),
+            Define(
+                "change_review",
+                "Review an exact submitted head. "
+                    + "A change author cannot supply their own peer approval.",
+                new("id", "integer", true),
+                new("head", Required: true),
                 new("decision", Required: true, Values: ["approve", "request-changes", "comment"]),
-                new("body", Required: true)),
-            Define("check_read", "Read retained exact-commit check results/log references. Specify exactly one of id or changeId.",
-                new("id", "integer"), new("changeId", "integer")),
+                new("body", Required: true)
+            ),
+            Define(
+                "check_read",
+                "Read retained exact-commit check results/log references. "
+                    + "Specify exactly one of id or changeId.",
+                new("id", "integer"),
+                new("changeId", "integer")
+            ),
         ];
         return tools;
     }
@@ -116,5 +217,10 @@ public static class ToolCatalog
         };
     }
 
-    private sealed record Parameter(string Name, string Type = "string", bool Required = false, string[]? Values = null);
+    private sealed record Parameter(
+        string Name,
+        string Type = "string",
+        bool Required = false,
+        string[]? Values = null
+    );
 }

@@ -10,42 +10,65 @@ namespace LiteAgensh;
 public sealed class Coordinator
 {
     private const string MissingCreditEvidence =
-        "Native ACP credit applicability and final JSON usage fields have not been verified. " +
-        "Launch flags alone are not proof. No model prompt was sent. " +
-        "The official ACP/session-limit documentation does not currently establish those fields; " +
-        "retain a reviewed, version-bound native:credit_contract before dependent execution.";
+        "Native ACP credit applicability and final JSON usage fields have not been verified. "
+        + "Launch flags alone are not proof. No model prompt was sent. "
+        + "The official ACP/session-limit documentation does not currently establish those fields; "
+        + "retain a reviewed, version-bound native:credit_contract before dependent execution.";
     private readonly RunDatabase database;
     private readonly CollaborationOperations collaboration;
     private readonly GitOperations git;
     private readonly ProcessRunner processes;
     private readonly CreditLedger credits;
 
-    public Coordinator(RunDatabase database, CollaborationOperations collaboration, GitOperations git)
+    public Coordinator(
+        RunDatabase database,
+        CollaborationOperations collaboration,
+        GitOperations git
+    )
     {
         this.database = database;
         this.collaboration = collaboration;
         this.git = git;
         processes = new(database);
-        credits = new(database.Configuration.CampaignLedgerPath, database.Configuration.CampaignAiCreditAllowance);
+        credits = new(
+            database.Configuration.CampaignLedgerPath,
+            database.Configuration.CampaignAiCreditAllowance
+        );
         using SqliteConnection connection = database.Open();
         using SqliteTransaction transaction = connection.BeginTransaction();
-        string ledgerBinding = Json.SerializePayload(new
-        {
-            path = Path.GetFullPath(database.Configuration.CampaignLedgerPath),
-            campaignIdentity = credits.Identity,
-            database.Configuration.RunAiCreditAllowance,
-            database.Configuration.CampaignAiCreditAllowance,
-        }).ToJsonString();
-        string? existingBinding = Sql.Scalar(connection,
-            "SELECT value FROM meta WHERE key='native:ledger_binding';", transaction) as string;
+        string ledgerBinding = Json.SerializePayload(
+                new
+                {
+                    path = Path.GetFullPath(database.Configuration.CampaignLedgerPath),
+                    campaignIdentity = credits.Identity,
+                    database.Configuration.RunAiCreditAllowance,
+                    database.Configuration.CampaignAiCreditAllowance,
+                }
+            )
+            .ToJsonString();
+        string? existingBinding =
+            Sql.Scalar(
+                connection,
+                "SELECT value FROM meta WHERE key='native:ledger_binding';",
+                transaction
+            ) as string;
         if (existingBinding is not null && existingBinding != ledgerBinding)
         {
-            throw new InvalidOperationException("The run's campaign identity/path or credit allowances changed; budget reset is blocked.");
+            throw new InvalidOperationException(
+                "The run's campaign identity/path or credit allowances changed; budget "
+                    + "reset is blocked."
+            );
         }
 
-        Sql.Execute(connection, "INSERT OR IGNORE INTO meta(key,value) VALUES('native:ledger_binding',$binding);",
-            transaction, ("$binding", ledgerBinding));
-        Sql.Execute(connection, """
+        Sql.Execute(
+            connection,
+            "INSERT OR IGNORE INTO meta(key,value) VALUES('native:ledger_binding',$binding);",
+            transaction,
+            ("$binding", ledgerBinding)
+        );
+        Sql.Execute(
+            connection,
+            """
             CREATE TABLE IF NOT EXISTS coordinator_segments(
                 id INTEGER PRIMARY KEY AUTOINCREMENT, mode TEXT NOT NULL, state TEXT NOT NULL,
                 started_at TEXT NOT NULL, deadline TEXT NOT NULL, ended_at TEXT, stop_reason TEXT);
@@ -56,13 +79,17 @@ public sealed class Coordinator
                 batch_id INTEGER PRIMARY KEY, worker TEXT NOT NULL, state TEXT NOT NULL,
                 stop_reason TEXT, completed_at TEXT);
             CREATE TABLE IF NOT EXISTS native_sessions(
-                id INTEGER PRIMARY KEY AUTOINCREMENT, reservation_id TEXT NOT NULL, worker TEXT NOT NULL,
+                id INTEGER PRIMARY KEY AUTOINCREMENT, reservation_id TEXT NOT NULL,
+                worker TEXT NOT NULL,
                 session_id TEXT NOT NULL, recovery TEXT NOT NULL, initialize_json TEXT NOT NULL,
                 created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS native_attempts(
                 usage_path TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, worker TEXT NOT NULL,
-                initialize_json TEXT, session_id TEXT, baseline_usage TEXT NOT NULL, created_at TEXT NOT NULL);
-            """, transaction);
+                initialize_json TEXT, session_id TEXT, baseline_usage TEXT NOT NULL,
+                created_at TEXT NOT NULL);
+            """,
+            transaction
+        );
         transaction.Commit();
     }
 
@@ -79,13 +106,16 @@ public sealed class Coordinator
         {
             await SettleRecoveryAsync(cancellationToken).ConfigureAwait(false);
             await git.InitializeAsync(cancellationToken).ConfigureAwait(false);
-            return Operation.Success(new
-            {
-                runId = database.RunId,
-                statePath = database.StatePath,
-                repositoryPath = database.Configuration.RepositoryPath,
-                workers = database.Configuration.WorkerIds,
-            }, "Run initialized; no native agent or model was started.");
+            return Operation.Success(
+                new
+                {
+                    runId = database.RunId,
+                    statePath = database.StatePath,
+                    repositoryPath = database.Configuration.RepositoryPath,
+                    workers = database.Configuration.WorkerIds,
+                },
+                "Run initialized; no native agent or model was started."
+            );
         }
         catch (Exception exception) when (IsExpected(exception))
         {
@@ -98,13 +128,16 @@ public sealed class Coordinator
         JsonArray workers = [];
         foreach (string worker in database.Configuration.WorkerIds)
         {
-            workers.Add(new JsonObject
-            {
-                ["id"] = worker,
-                ["lifecycle"] = database.ReadMetadata($"worker:{worker}:lifecycle") ?? "not-started",
-                ["sessionId"] = database.ReadMetadata($"worker:{worker}:session"),
-                ["recovery"] = database.ReadMetadata($"worker:{worker}:recovery"),
-            });
+            workers.Add(
+                new JsonObject
+                {
+                    ["id"] = worker,
+                    ["lifecycle"] =
+                        database.ReadMetadata($"worker:{worker}:lifecycle") ?? "not-started",
+                    ["sessionId"] = database.ReadMetadata($"worker:{worker}:session"),
+                    ["recovery"] = database.ReadMetadata($"worker:{worker}:recovery"),
+                }
+            );
         }
 
         JsonObject data = new()
@@ -114,7 +147,10 @@ public sealed class Coordinator
             ["active"] = IsOwned(),
             ["stopReason"] = database.ReadMetadata("lifecycle:stop_reason"),
             ["workers"] = workers,
-            ["credits"] = credits.Status(database.RunId, database.Configuration.RunAiCreditAllowance),
+            ["credits"] = credits.Status(
+                database.RunId,
+                database.Configuration.RunAiCreditAllowance
+            ),
             ["nativeCreditEvidence"] = database.ReadMetadata("native:credit_contract") is not null,
             ["delivery"] = ParseMetadata("lifecycle:delivery"),
             ["failure"] = database.ReadMetadata("lifecycle:failure"),
@@ -126,14 +162,22 @@ public sealed class Coordinator
     {
         if (action is not ("pause" or "finalize"))
         {
-            return Operation.Failure("invalid_arguments", "Control action must be pause or finalize.");
+            return Operation.Failure(
+                "invalid_arguments",
+                "Control action must be pause or finalize."
+            );
         }
 
         using SqliteConnection connection = database.Open();
         using SqliteTransaction transaction = connection.BeginTransaction();
-        long? pending = Sql.Scalar(connection,
-            "SELECT id FROM coordinator_controls WHERE action=$action AND state='pending' ORDER BY id LIMIT 1;",
-            transaction, ("$action", action)) as long?;
+        long? pending =
+            Sql.Scalar(
+                connection,
+                "SELECT id FROM coordinator_controls WHERE action=$action AND "
+                    + "state='pending' ORDER BY id LIMIT 1;",
+                transaction,
+                ("$action", action)
+            ) as long?;
         long id;
         if (pending is not null)
         {
@@ -141,14 +185,31 @@ public sealed class Coordinator
         }
         else
         {
-            Sql.Execute(connection, """
-                INSERT INTO coordinator_controls(action,state,requested_at) VALUES($action,'pending',$time);
-                """, transaction, ("$action", action), ("$time", database.Now.ToString("O")));
-            id = (long)(Sql.Scalar(connection, "SELECT last_insert_rowid();", transaction)
-                ?? throw new InvalidOperationException());
+            Sql.Execute(
+                connection,
+                """
+                INSERT INTO coordinator_controls(action,state,requested_at)
+                VALUES($action,'pending',$time);
+                """,
+                transaction,
+                ("$action", action),
+                ("$time", database.Now.ToString("O"))
+            );
+            id = (long)(
+                Sql.Scalar(connection, "SELECT last_insert_rowid();", transaction)
+                ?? throw new InvalidOperationException()
+            );
         }
         transaction.Commit();
-        return Operation.Success(new { requestId = id, action, state = "pending" }, "The coordinator has not completed this request yet.");
+        return Operation.Success(
+            new
+            {
+                requestId = id,
+                action,
+                state = "pending",
+            },
+            "The coordinator has not completed this request yet."
+        );
     }
 
     public async Task<JsonObject> PreflightAsync(CancellationToken cancellationToken = default)
@@ -172,13 +233,21 @@ public sealed class Coordinator
             CreditReservation reservation = Reserve("worker1", database.Configuration.WorkerCount);
             reservationId = reservation.Id;
             native = new(database, processes, credits, contract, reservation);
-            await native.StartAsync(git.GetWorkerPath("worker1"), null, cancellationToken, contract is null).ConfigureAwait(false);
-            result = contract is null ? Operation.Failure("unavailable", MissingCreditEvidence) : Operation.Success(new
-            {
-                sessionId = native.SessionId,
-                modelPromptsSent = 0,
-                contract.EvidenceReference,
-            }, "Documented advertised informational operation verified the actual applied native limit and usage.");
+            await native
+                .StartAsync(git.GetWorkerPath("worker1"), null, cancellationToken, contract is null)
+                .ConfigureAwait(false);
+            result = contract is null
+                ? Operation.Failure("unavailable", MissingCreditEvidence)
+                : Operation.Success(
+                    new
+                    {
+                        sessionId = native.SessionId,
+                        modelPromptsSent = 0,
+                        contract.EvidenceReference,
+                    },
+                    "Documented advertised informational operation verified the actual "
+                        + "applied native limit and usage."
+                );
         }
         catch (OperationCanceledException)
         {
@@ -211,34 +280,53 @@ public sealed class Coordinator
 
         if (database.ReadMetadata("lifecycle") == "unresolved")
         {
-            return Operation.Failure("unavailable",
-                "Preflight did not establish applied-limit/final-usage evidence and settled ownership together. " +
-                "No model prompt was sent; native diagnostics and uncertain reservations remain retained.");
+            return Operation.Failure(
+                "unavailable",
+                "Preflight did not establish applied-limit/final-usage evidence and "
+                    + "settled ownership together. "
+                    + "No model prompt was sent; native diagnostics and uncertain "
+                        + "reservations remain retained."
+            );
         }
 
         database.WriteMetadata("lifecycle", "stopped");
-        if (result["ok"]?.GetValue<bool>() == true && contract is not null && reservationId is not null)
+        if (
+            result["ok"]?.GetValue<bool>() == true
+            && contract is not null
+            && reservationId is not null
+        )
         {
-            CreditReservation reservation = credits.Reservations(database.RunId).Single(row => row.Id == reservationId);
+            CreditReservation reservation = credits
+                .Reservations(database.RunId)
+                .Single(row => row.Id == reservationId);
             if (reservation.State != "reconciled" || reservation.Actual is null)
             {
-                return Operation.Failure("credit_unknown", "Non-model preflight has no reconciled final native report.");
+                return Operation.Failure(
+                    "credit_unknown",
+                    "Non-model preflight has no reconciled final native report."
+                );
             }
 
-            database.WriteMetadata("native:credit_preflight_receipt", new JsonObject
-            {
-                ["binding"] = CreditPreflightBinding(contract),
-                ["reservationId"] = reservationId,
-                ["agentVersion"] = contract.AgentVersion,
-                ["actualReported"] = reservation.Actual,
-                ["verifiedAt"] = database.Now.ToString("O"),
-            }.ToJsonString());
+            database.WriteMetadata(
+                "native:credit_preflight_receipt",
+                new JsonObject
+                {
+                    ["binding"] = CreditPreflightBinding(contract),
+                    ["reservationId"] = reservationId,
+                    ["agentVersion"] = contract.AgentVersion,
+                    ["actualReported"] = reservation.Actual,
+                    ["verifiedAt"] = database.Now.ToString("O"),
+                }.ToJsonString()
+            );
         }
 
         return result;
     }
 
-    public async Task<JsonObject> RunAsync(string mode, CancellationToken cancellationToken = default)
+    public async Task<JsonObject> RunAsync(
+        string mode,
+        CancellationToken cancellationToken = default
+    )
     {
         if (mode is not ("run" or "resume" or "reconnect"))
         {
@@ -271,7 +359,9 @@ public sealed class Coordinator
 
         List<NativeWorker> workers = [];
         List<Task> loops = [];
-        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken
+        );
         string reason = "startup-failed";
         long segment = 0;
         bool finalize = false;
@@ -294,46 +384,80 @@ public sealed class Coordinator
                 await git.InitializeAsync(stop.Token).ConfigureAwait(false);
                 database.WriteMetadata("lifecycle", "preflighting");
                 string[] ids = database.Configuration.WorkerIds;
-                bool planning = database.Configuration.PlanningSeconds > 0 &&
-                    database.ReadMetadata("git:plan_integrated") != "true";
+                bool planning =
+                    database.Configuration.PlanningSeconds > 0
+                    && database.ReadMetadata("git:plan_integrated") != "true";
                 bool released = !planning;
                 Dictionary<string, CreditReservation> allocations = [];
                 try
                 {
                     for (int i = 0; i < ids.Length; i++)
                     {
-                        CreditReservation? previous = mode == "reconnect" ? ReadReconnectReservation(ids[i]) : null;
-                        allocations.Add(ids[i], previous is null ? Reserve(ids[i], ids.Length - i) :
-                            credits.ContinueExact(previous.Id, UsagePath(ids[i])));
+                        CreditReservation? previous =
+                            mode == "reconnect" ? ReadReconnectReservation(ids[i]) : null;
+                        allocations.Add(
+                            ids[i],
+                            previous is null
+                                ? Reserve(ids[i], ids.Length - i)
+                                : credits.ContinueExact(previous.Id, UsagePath(ids[i]))
+                        );
                     }
 
                     foreach (string id in ids)
                     {
-                        NativeWorker native = new(database, processes, credits, contract, allocations[id]);
+                        NativeWorker native = new(
+                            database,
+                            processes,
+                            credits,
+                            contract,
+                            allocations[id]
+                        );
                         workers.Add(native);
                         string? exact = mode == "reconnect" ? allocations[id].SessionId : null;
                         try
                         {
-                            await native.StartAsync(git.GetWorkerPath(id), exact, stop.Token).ConfigureAwait(false);
+                            await native
+                                .StartAsync(git.GetWorkerPath(id), exact, stop.Token)
+                                .ConfigureAwait(false);
                         }
-                        catch (OperationException exception) when (exception.Code == "session_load_failed")
+                        catch (OperationException exception)
+                            when (exception.Code == "session_load_failed")
                         {
                             await native.DisposeAsync().ConfigureAwait(false);
                             workers.Remove(native);
                             CreditReservation fresh = Reserve(id, 1);
-                            NativeWorker replacement = new(database, processes, credits, contract, fresh);
+                            NativeWorker replacement = new(
+                                database,
+                                processes,
+                                credits,
+                                contract,
+                                fresh
+                            );
                             workers.Add(replacement);
-                            await replacement.StartAsync(git.GetWorkerPath(id), null, stop.Token,
-                                recoveryLabel: "fresh-summary-fallback: exact-session load unavailable or failed").ConfigureAwait(false);
+                            await replacement
+                                .StartAsync(
+                                    git.GetWorkerPath(id),
+                                    null,
+                                    stop.Token,
+                                    recoveryLabel: "fresh-summary-fallback: "
+                                        + "exact-session load unavailable or failed"
+                                )
+                                .ConfigureAwait(false);
                         }
                     }
                 }
                 finally
                 {
                     HashSet<string> owned = [.. workers.Select(worker => worker.ReservationId)];
-                    foreach (CreditReservation allocation in allocations.Values.Where(item => !owned.Contains(item.Id)))
+                    foreach (
+                        CreditReservation allocation in allocations.Values.Where(item =>
+                            !owned.Contains(item.Id)
+                        )
+                    )
                     {
-                        CreditReservation current = credits.Reservations(database.RunId).Single(row => row.Id == allocation.Id);
+                        CreditReservation current = credits
+                            .Reservations(database.RunId)
+                            .Single(row => row.Id == allocation.Id);
                         if (current.State == "reserved")
                         {
                             credits.ReleaseUnstarted(allocation.Id);
@@ -342,7 +466,9 @@ public sealed class Coordinator
                 }
 
                 database.WriteMetadata("lifecycle", "running");
-                DateTimeOffset plannerDeadline = database.Now.AddSeconds(database.Configuration.PlanningSeconds);
+                DateTimeOffset plannerDeadline = database.Now.AddSeconds(
+                    database.Configuration.PlanningSeconds
+                );
                 if (database.Now >= deadline)
                 {
                     reason = "deadline";
@@ -354,11 +480,23 @@ public sealed class Coordinator
                 {
                     if (!planning || id == "worker1")
                     {
-                        collaboration.QueueKickoff(id, mode == "run" ? "Initial peer kickoff" : $"Durable {mode}; inspect state before replay");
+                        collaboration.QueueKickoff(
+                            id,
+                            mode == "run"
+                                ? "Initial peer kickoff"
+                                : $"Durable {mode}; inspect state before replay"
+                        );
                     }
 
-                    loops.Add(WorkerLoopAsync(id, native, () => !planning || released || id == "worker1",
-                        planning && id == "worker1", stop.Token));
+                    loops.Add(
+                        WorkerLoopAsync(
+                            id,
+                            native,
+                            () => !planning || released || id == "worker1",
+                            planning && id == "worker1",
+                            stop.Token
+                        )
+                    );
                 }
 
                 HashSet<int> reminders = (deadline - database.Now).TotalSeconds <= 900 ? [900] : [];
@@ -396,28 +534,47 @@ public sealed class Coordinator
                     if (ended is not null)
                     {
                         await ended.ConfigureAwait(false);
-                        throw new OperationException("worker_stopped", "A worker loop ended before run quiescence.");
+                        throw new OperationException(
+                            "worker_stopped",
+                            "A worker loop ended before run quiescence."
+                        );
                     }
 
                     await git.ProcessPendingAsync(stop.Token).ConfigureAwait(false);
-                    if (planning && !released &&
-                        (database.ReadMetadata("git:plan_integrated") == "true" || database.Now >= plannerDeadline))
+                    if (
+                        planning
+                        && !released
+                        && (
+                            database.ReadMetadata("git:plan_integrated") == "true"
+                            || database.Now >= plannerDeadline
+                        )
+                    )
                     {
                         released = true;
                         foreach (string peer in ids.Skip(1))
                         {
-                            collaboration.QueueKickoff(peer, "Planner release: integrated plan or planning deadline reached");
+                            collaboration.QueueKickoff(
+                                peer,
+                                "Planner release: integrated plan or planning deadline reached"
+                            );
                         }
                     }
 
                     PublishReminders(deadline, reminders);
                     PublishCreditWarning();
-                    await Task.Delay(TimeSpan.FromMilliseconds(250), database.TimeProvider, stop.Token).ConfigureAwait(false);
+                    await Task.Delay(
+                            TimeSpan.FromMilliseconds(250),
+                            database.TimeProvider,
+                            stop.Token
+                        )
+                        .ConfigureAwait(false);
                 }
 
                 if (reason == "startup-failed")
                 {
-                    reason = cancellationToken.IsCancellationRequested ? "caller-cancelled" : "deadline";
+                    reason = cancellationToken.IsCancellationRequested
+                        ? "caller-cancelled"
+                        : "deadline";
                     finalize = !cancellationToken.IsCancellationRequested;
                 }
             }
@@ -430,7 +587,9 @@ public sealed class Coordinator
         catch (Exception exception)
         {
             failure = exception;
-            reason = exception is OperationException operation ? operation.Code : "coordinator-failed";
+            reason = exception is OperationException operation
+                ? operation.Code
+                : "coordinator-failed";
         }
         finally
         {
@@ -439,14 +598,22 @@ public sealed class Coordinator
             database.WriteMetadata("lifecycle:stop_reason", reason);
             try
             {
-                collaboration.Invoke("owner", "message_send", new()
-                {
-                    ["recipient"] = "team",
-                    ["body"] = $"Run stopping: {reason}. New dispatch is disabled; native cancellation and owned-process settlement follow. " +
-                        "Committed and partial work, tasks, board findings and session associations are retained. " +
-                        "Explicit resume uses fresh sessions and durable state; a stop reason is not final-check success.",
-                    ["urgent"] = true,
-                });
+                collaboration.Invoke(
+                    "owner",
+                    "message_send",
+                    new()
+                    {
+                        ["recipient"] = "team",
+                        ["body"] =
+                            $"Run stopping: {reason}. New dispatch is disabled; "
+                            + "native cancellation and owned-process settlement follow. "
+                            + "Committed and partial work, tasks, board findings and "
+                            + "session associations are retained. "
+                            + "Explicit resume uses fresh sessions and durable state; "
+                            + "a stop reason is not final-check success.",
+                        ["urgent"] = true,
+                    }
+                );
             }
             catch (Exception exception)
             {
@@ -485,7 +652,9 @@ public sealed class Coordinator
 
             try
             {
-                await Task.WhenAll(loops).WaitAsync(TimeSpan.FromSeconds(15), CancellationToken.None).ConfigureAwait(false);
+                await Task.WhenAll(loops)
+                    .WaitAsync(TimeSpan.FromSeconds(15), CancellationToken.None)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stop.IsCancellationRequested)
             {
@@ -506,8 +675,10 @@ public sealed class Coordinator
             database.WriteMetadata("lifecycle:failure", failure.Message);
         }
 
-        if (!string.IsNullOrEmpty(database.ReadMetadata("lifecycle:completion_ambiguity")) ||
-            !string.IsNullOrEmpty(database.ReadMetadata("lifecycle:ownership_ambiguity")))
+        if (
+            !string.IsNullOrEmpty(database.ReadMetadata("lifecycle:completion_ambiguity"))
+            || !string.IsNullOrEmpty(database.ReadMetadata("lifecycle:ownership_ambiguity"))
+        )
         {
             database.WriteMetadata("lifecycle", "unresolved");
         }
@@ -515,7 +686,10 @@ public sealed class Coordinator
         if (database.ReadMetadata("lifecycle") == "unresolved")
         {
             EndSegment(segment, "unresolved", reason);
-            return Operation.Failure("ownership_or_usage_unresolved", failure?.Message ?? "Quiescence could not be established.");
+            return Operation.Failure(
+                "ownership_or_usage_unresolved",
+                failure?.Message ?? "Quiescence could not be established."
+            );
         }
 
         JsonObject result;
@@ -540,7 +714,10 @@ public sealed class Coordinator
         else
         {
             database.WriteMetadata("lifecycle", "paused");
-            result = Operation.Success(new { lifecycle = "paused", stopReason = reason }, "Owned native processes settled; work is retained.");
+            result = Operation.Success(
+                new { lifecycle = "paused", stopReason = reason },
+                "Owned native processes settled; work is retained."
+            );
         }
 
         CompleteControls(result, "pause");
@@ -587,23 +764,43 @@ public sealed class Coordinator
 
         if (database.ReadMetadata("lifecycle") is not ("paused" or "finalized" or "stopped"))
         {
-            return Operation.Failure("ownership_unresolved", "Cleanup requires an inspected, quiescent retained run.");
+            return Operation.Failure(
+                "ownership_unresolved",
+                "Cleanup requires an inspected, quiescent retained run."
+            );
         }
 
         try
         {
             using (SqliteConnection connection = database.Open())
             {
-                if (Convert.ToInt64(Sql.Scalar(connection,
-                    "SELECT COUNT(*) FROM process_leases WHERE state<>'exited';"), CultureInfo.InvariantCulture) != 0)
+                if (
+                    Convert.ToInt64(
+                        Sql.Scalar(
+                            connection,
+                            "SELECT COUNT(*) FROM process_leases WHERE state<>'exited';"
+                        ),
+                        CultureInfo.InvariantCulture
+                    ) != 0
+                )
                 {
-                    return Operation.Failure("ownership_unresolved", "Cleanup refuses unresolved owned process leases.");
+                    return Operation.Failure(
+                        "ownership_unresolved",
+                        "Cleanup refuses unresolved owned process leases."
+                    );
                 }
             }
 
-            if (credits.Reservations(database.RunId).Any(row => row.State is not ("reconciled" or "released")))
+            if (
+                credits
+                    .Reservations(database.RunId)
+                    .Any(row => row.State is not ("reconciled" or "released"))
+            )
             {
-                return Operation.Failure("credit_unknown", "Cleanup retains sessions whose native usage is not reconciled.");
+                return Operation.Failure(
+                    "credit_unknown",
+                    "Cleanup retains sessions whose native usage is not reconciled."
+                );
             }
 
             return await git.CleanupAsync(cancellationToken).ConfigureAwait(false);
@@ -615,14 +812,30 @@ public sealed class Coordinator
     }
 
     private static bool IsExpected(Exception exception) =>
-        exception is OperationException or IOException or InvalidOperationException or JsonException or SqliteException or
-            ArgumentException or TimeoutException or UnauthorizedAccessException or System.ComponentModel.Win32Exception;
+        exception
+            is OperationException
+                or IOException
+                or InvalidOperationException
+                or JsonException
+                or SqliteException
+                or ArgumentException
+                or TimeoutException
+                or UnauthorizedAccessException
+                or System.ComponentModel.Win32Exception;
 
-    private static JsonObject Failure(Exception exception) => Operation.Failure(
-        exception is OperationException operation ? operation.Code : "unavailable", exception.Message);
+    private static JsonObject Failure(Exception exception) =>
+        Operation.Failure(
+            exception is OperationException operation ? operation.Code : "unavailable",
+            exception.Message
+        );
 
-    private async Task WorkerLoopAsync(string id, NativeWorker native, Func<bool> enabled, bool planner,
-        CancellationToken cancellationToken)
+    private async Task WorkerLoopAsync(
+        string id,
+        NativeWorker native,
+        Func<bool> enabled,
+        bool planner,
+        CancellationToken cancellationToken
+    )
     {
         DateTimeOffset lastWork = database.Now;
         DateTimeOffset lastNudge = database.Now;
@@ -631,21 +844,33 @@ public sealed class Coordinator
         {
             if (!enabled())
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(250), database.TimeProvider, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(
+                        TimeSpan.FromMilliseconds(250),
+                        database.TimeProvider,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
                 continue;
             }
 
             DeliveryBatch? batch = collaboration.ClaimBatch(id);
             if (batch is null)
             {
-                if (database.Now - lastWork >= TimeSpan.FromSeconds(600) &&
-                    database.Now - lastNudge >= TimeSpan.FromSeconds(600))
+                if (
+                    database.Now - lastWork >= TimeSpan.FromSeconds(600)
+                    && database.Now - lastNudge >= TimeSpan.FromSeconds(600)
+                )
                 {
                     collaboration.QueueKickoff(id, WorkerInstructions.Idle(CurrentPhase()));
                     lastNudge = database.Now;
                 }
 
-                await Task.Delay(TimeSpan.FromMilliseconds(250), database.TimeProvider, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(
+                        TimeSpan.FromMilliseconds(250),
+                        database.TimeProvider,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
                 continue;
             }
 
@@ -656,11 +881,25 @@ public sealed class Coordinator
             try
             {
                 string context = Render(collaboration.ReadSharedContext(id));
-                JsonObject changes = await git.InvokeAsync(id, "change_list", new(), cancellationToken).ConfigureAwait(false);
+                JsonObject changes = await git.InvokeAsync(
+                        id,
+                        "change_list",
+                        new(),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
                 context += "\n==== DURABLE CHANGES ====\n" + changes.ToJsonString();
-                string text = WorkerInstructions.Compose(database, id, context, batch.Prompt, initialPlanner);
+                string text = WorkerInstructions.Compose(
+                    database,
+                    id,
+                    context,
+                    batch.Prompt,
+                    initialPlanner
+                );
                 modelAttempted = true;
-                JsonObject result = await native.PromptAsync(text, cancellationToken).ConfigureAwait(false);
+                JsonObject result = await native
+                    .PromptAsync(text, cancellationToken)
+                    .ConfigureAwait(false);
                 nativeCompleted = true;
                 initialPlanner = false;
                 completedStopReason = result["stopReason"]?.GetValue<string>() ?? "unknown";
@@ -674,15 +913,20 @@ public sealed class Coordinator
                 string? stopReason = result["stopReason"]?.GetValue<string>();
                 if (stopReason is not ("end_turn" or "max_turn_requests"))
                 {
-                    throw new OperationException(stopReason == "max_tokens" ? "native_limit" : "native_stopped",
-                        $"Native worker stopped with {stopReason ?? "unknown stop reason"}.");
+                    throw new OperationException(
+                        stopReason == "max_tokens" ? "native_limit" : "native_stopped",
+                        $"Native worker stopped with {stopReason ?? "unknown stop reason"}."
+                    );
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 if (!nativeCompleted)
                 {
-                    collaboration.FailBatch(batch.Id, "Turn interrupted by coordinator stop; durable replay may repeat actions.");
+                    collaboration.FailBatch(
+                        batch.Id,
+                        "Turn interrupted by coordinator stop; durable replay may repeat actions."
+                    );
                 }
 
                 throw;
@@ -703,10 +947,16 @@ public sealed class Coordinator
                     }
                     catch (Exception persistenceFailure) when (IsExpected(persistenceFailure))
                     {
-                        database.WriteMetadata("lifecycle:completion_ambiguity", batch.Id.ToString(CultureInfo.InvariantCulture));
+                        database.WriteMetadata(
+                            "lifecycle:completion_ambiguity",
+                            batch.Id.ToString(CultureInfo.InvariantCulture)
+                        );
                     }
 
-                    throw new OperationException("post_delivery_failed", $"Completed native turn retained without retry: {exception.Message}");
+                    throw new OperationException(
+                        "post_delivery_failed",
+                        $"Completed native turn retained without retry: {exception.Message}"
+                    );
                 }
 
                 collaboration.FailBatch(batch.Id, exception.Message);
@@ -722,27 +972,31 @@ public sealed class Coordinator
         }
     }
 
-    private static string Render(object? value) => value switch
-    {
-        null => "",
-        string text => text,
-        JsonNode node => node.ToJsonString(),
-        _ => JsonSerializer.Serialize(value, Json.Options),
-    };
+    private static string Render(object? value) =>
+        value switch
+        {
+            null => "",
+            string text => text,
+            JsonNode node => node.ToJsonString(),
+            _ => JsonSerializer.Serialize(value, Json.Options),
+        };
 
     private string CreditPreflightBinding(NativeCreditContract contract)
     {
-        string subject = Json.SerializePayload(new
-        {
-            contract,
-            build = typeof(Coordinator).Assembly.ManifestModule.ModuleVersionId,
-            database.Configuration.NativeExecutable,
-            database.Configuration.NativeArguments,
-            database.Configuration.NativeModel,
-            database.Configuration.NativePermissionPolicy,
-            database.Configuration.RunAiCreditAllowance,
-            database.Configuration.CampaignAiCreditAllowance,
-        }).ToJsonString();
+        string subject = Json.SerializePayload(
+                new
+                {
+                    contract,
+                    build = typeof(Coordinator).Assembly.ManifestModule.ModuleVersionId,
+                    database.Configuration.NativeExecutable,
+                    database.Configuration.NativeArguments,
+                    database.Configuration.NativeModel,
+                    database.Configuration.NativePermissionPolicy,
+                    database.Configuration.RunAiCreditAllowance,
+                    database.Configuration.CampaignAiCreditAllowance,
+                }
+            )
+            .ToJsonString();
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(subject)));
     }
 
@@ -751,13 +1005,22 @@ public sealed class Coordinator
         string? stored = database.ReadMetadata("native:credit_preflight_receipt");
         JsonObject? receipt = stored is null ? null : JsonNode.Parse(stored)?.AsObject();
         string? reservationId = receipt?["reservationId"]?.GetValue<string>();
-        if (receipt?["binding"]?.GetValue<string>() != CreditPreflightBinding(contract) ||
-            reservationId is null || !credits.Reservations(database.RunId).Any(row =>
-                row.Id == reservationId && row.State == "reconciled" && row.Actual is not null))
+        if (
+            receipt?["binding"]?.GetValue<string>() != CreditPreflightBinding(contract)
+            || reservationId is null
+            || !credits
+                .Reservations(database.RunId)
+                .Any(row =>
+                    row.Id == reservationId && row.State == "reconciled" && row.Actual is not null
+                )
+        )
         {
-            throw new OperationException("unavailable",
-                "A successful non-model preflight with reconciled final JSON usage is required for this exact " +
-                "build, native invocation and version-bound credit descriptor before any model prompt.");
+            throw new OperationException(
+                "unavailable",
+                "A successful non-model preflight with reconciled final JSON usage is "
+                    + "required for this exact build, native invocation and version-bound "
+                    + "credit descriptor before any model prompt."
+            );
         }
     }
 
@@ -765,8 +1028,12 @@ public sealed class Coordinator
     {
         try
         {
-            return new FileStream(Path.Combine(database.StatePath, "coordinator.lock"),
-                FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            return new FileStream(
+                Path.Combine(database.StatePath, "coordinator.lock"),
+                FileMode.OpenOrCreate,
+                FileAccess.ReadWrite,
+                FileShare.None
+            );
         }
         catch (IOException)
         {
@@ -787,12 +1054,20 @@ public sealed class Coordinator
             await processes.ResolveSurvivorsAsync(cancellationToken).ConfigureAwait(false);
             if (!string.IsNullOrEmpty(database.ReadMetadata("lifecycle:ownership_ambiguity")))
             {
-                throw new OperationException("ownership_unresolved", "A native startup failed to settle an unjournaled child; explicit ownership resolution is required.");
+                throw new OperationException(
+                    "ownership_unresolved",
+                    "A native startup failed to settle an unjournaled child; explicit "
+                        + "ownership resolution is required."
+                );
             }
 
             if (!string.IsNullOrEmpty(database.ReadMetadata("lifecycle:completion_ambiguity")))
             {
-                throw new OperationException("delivery_unresolved", "A completed native turn could not be durably acknowledged; automatic replay/replacement is blocked.");
+                throw new OperationException(
+                    "delivery_unresolved",
+                    "A completed native turn could not be durably acknowledged; "
+                        + "automatic replay/replacement is blocked."
+                );
             }
 
             NativeCreditContract? contract = NativeCreditContract.Read(database);
@@ -807,21 +1082,35 @@ public sealed class Coordinator
                     credits.MarkUncertain(reservation.Id);
                     if (contract is null)
                     {
-                        throw new OperationException("credit_unknown", "A surviving native reservation has no verified final usage contract/session.");
+                        throw new OperationException(
+                            "credit_unknown",
+                            "A surviving native reservation has no verified final usage "
+                                + "contract/session."
+                        );
                     }
 
                     string? initialize;
                     string? session;
                     decimal baseline;
                     using (SqliteConnection connection = database.Open())
-                    using (SqliteCommand command = Sql.Command(connection,
-                        "SELECT initialize_json,session_id,baseline_usage FROM native_attempts WHERE usage_path=$path;",
-                        null, ("$path", reservation.UsagePath)))
+                    using (
+                        SqliteCommand command = Sql.Command(
+                            connection,
+                            "SELECT initialize_json,session_id,baseline_usage FROM "
+                                + "native_attempts WHERE usage_path=$path;",
+                            null,
+                            ("$path", reservation.UsagePath)
+                        )
+                    )
                     using (SqliteDataReader reader = command.ExecuteReader())
                     {
                         if (!reader.Read() || reader.IsDBNull(0))
                         {
-                            throw new OperationException("credit_unknown", "The interrupted native process has no retained version negotiation evidence.");
+                            throw new OperationException(
+                                "credit_unknown",
+                                "The interrupted native process has no retained version "
+                                    + "negotiation evidence."
+                            );
                         }
 
                         initialize = reader.GetString(0);
@@ -829,11 +1118,25 @@ public sealed class Coordinator
                         baseline = decimal.Parse(reader.GetString(2), CultureInfo.InvariantCulture);
                     }
 
-                    contract.VerifyVersion(JsonNode.Parse(initialize)?.AsObject()
-                        ?? throw new InvalidDataException("Interrupted native initialize evidence is invalid."));
-                    (decimal actual, string identity) = contract.ReadFinalReport(reservation.UsagePath, session);
-                    credits.Reconcile(reservation.Id, actual, identity, unassociatedZero: session is null,
-                        processBaseline: contract.ReportUsageScope == "process-incremental" ? baseline : null);
+                    contract.VerifyVersion(
+                        JsonNode.Parse(initialize)?.AsObject()
+                            ?? throw new InvalidDataException(
+                                "Interrupted native initialize evidence is invalid."
+                            )
+                    );
+                    (decimal actual, string identity) = contract.ReadFinalReport(
+                        reservation.UsagePath,
+                        session
+                    );
+                    credits.Reconcile(
+                        reservation.Id,
+                        actual,
+                        identity,
+                        unassociatedZero: session is null,
+                        processBaseline: contract.ReportUsageScope == "process-incremental"
+                            ? baseline
+                            : null
+                    );
                 }
             }
         }
@@ -851,10 +1154,20 @@ public sealed class Coordinator
         using (SqliteConnection connection = database.Open())
         using (SqliteTransaction transaction = connection.BeginTransaction(deferred: true))
         {
-            session = Sql.Scalar(connection, "SELECT value FROM meta WHERE key=$key;", transaction,
-                ("$key", $"worker:{worker}:session")) as string;
-            reservationId = Sql.Scalar(connection, "SELECT value FROM meta WHERE key=$key;", transaction,
-                ("$key", $"worker:{worker}:reservation")) as string;
+            session =
+                Sql.Scalar(
+                    connection,
+                    "SELECT value FROM meta WHERE key=$key;",
+                    transaction,
+                    ("$key", $"worker:{worker}:session")
+                ) as string;
+            reservationId =
+                Sql.Scalar(
+                    connection,
+                    "SELECT value FROM meta WHERE key=$key;",
+                    transaction,
+                    ("$key", $"worker:{worker}:reservation")
+                ) as string;
             transaction.Commit();
         }
 
@@ -863,13 +1176,23 @@ public sealed class Coordinator
             return null;
         }
 
-        CreditReservation? reservation = credits.Reservations(database.RunId).FirstOrDefault(row => row.Id == reservationId);
-        if (string.IsNullOrWhiteSpace(session) || string.IsNullOrWhiteSpace(reservationId) ||
-            reservation is null || reservation.RunId != database.RunId || reservation.Worker != worker ||
-            reservation.SessionId != session)
+        CreditReservation? reservation = credits
+            .Reservations(database.RunId)
+            .FirstOrDefault(row => row.Id == reservationId);
+        if (
+            string.IsNullOrWhiteSpace(session)
+            || string.IsNullOrWhiteSpace(reservationId)
+            || reservation is null
+            || reservation.RunId != database.RunId
+            || reservation.Worker != worker
+            || reservation.SessionId != session
+        )
         {
-            throw new OperationException("credit_unknown",
-                "The saved native session/reservation association is incomplete or disagrees with the campaign run, worker or session.");
+            throw new OperationException(
+                "credit_unknown",
+                "The saved native session/reservation association is incomplete or "
+                    + "disagrees with the campaign run, worker or session."
+            );
         }
 
         return reservation;
@@ -877,17 +1200,34 @@ public sealed class Coordinator
 
     private CreditReservation Reserve(string worker, int remainingWorkers)
     {
-        JsonObject status = credits.Status(database.RunId, database.Configuration.RunAiCreditAllowance);
-        decimal runRemaining = database.Configuration.RunAiCreditAllowance - status["runCommitted"]!.GetValue<decimal>();
-        decimal campaignRemaining = database.Configuration.CampaignAiCreditAllowance - status["campaignCommitted"]!.GetValue<decimal>();
-        decimal allowance = Math.Floor(Math.Min(runRemaining, campaignRemaining) / remainingWorkers * 100) / 100;
+        JsonObject status = credits.Status(
+            database.RunId,
+            database.Configuration.RunAiCreditAllowance
+        );
+        decimal runRemaining =
+            database.Configuration.RunAiCreditAllowance
+            - status["runCommitted"]!.GetValue<decimal>();
+        decimal campaignRemaining =
+            database.Configuration.CampaignAiCreditAllowance
+            - status["campaignCommitted"]!.GetValue<decimal>();
+        decimal allowance =
+            Math.Floor(Math.Min(runRemaining, campaignRemaining) / remainingWorkers * 100) / 100;
         if (allowance < 30)
         {
-            throw new OperationException("credit_exhausted", "Remaining durable allowance is below the native 30-credit minimum per worker.");
+            throw new OperationException(
+                "credit_exhausted",
+                "Remaining durable allowance is below the native 30-credit minimum per worker."
+            );
         }
 
         string path = UsagePath(worker);
-        return credits.Reserve(database.RunId, worker, allowance, database.Configuration.RunAiCreditAllowance, path);
+        return credits.Reserve(
+            database.RunId,
+            worker,
+            allowance,
+            database.Configuration.RunAiCreditAllowance,
+            path
+        );
     }
 
     private string UsagePath(string worker) =>
@@ -896,26 +1236,51 @@ public sealed class Coordinator
     private void ValidateMode(string mode)
     {
         using SqliteConnection connection = database.Open();
-        long count = Convert.ToInt64(Sql.Scalar(connection, "SELECT COUNT(*) FROM coordinator_segments;"), CultureInfo.InvariantCulture);
+        long count = Convert.ToInt64(
+            Sql.Scalar(connection, "SELECT COUNT(*) FROM coordinator_segments;"),
+            CultureInfo.InvariantCulture
+        );
         if (mode == "run" && count != 0)
         {
-            throw new OperationException("conflict", "Run already has lifecycle segments; use explicit resume or crash reconnect.");
+            throw new OperationException(
+                "conflict",
+                "Run already has lifecycle segments; use explicit resume or crash reconnect."
+            );
         }
 
         if (mode != "run" && count == 0)
         {
-            throw new OperationException("conflict", "Resume/reconnect requires a prior run segment.");
+            throw new OperationException(
+                "conflict",
+                "Resume/reconnect requires a prior run segment."
+            );
         }
 
-        if (mode == "resume" && database.ReadMetadata("lifecycle") is not ("paused" or "stopped" or "finalized"))
+        if (
+            mode == "resume"
+            && database.ReadMetadata("lifecycle") is not ("paused" or "stopped" or "finalized")
+        )
         {
-            throw new OperationException("conflict", "Explicit resume requires an already quiescent run.");
+            throw new OperationException(
+                "conflict",
+                "Explicit resume requires an already quiescent run."
+            );
         }
 
-        if (mode == "reconnect" && Sql.Scalar(connection,
-                "SELECT id FROM coordinator_segments WHERE ended_at IS NULL LIMIT 1;") is null)
+        if (
+            mode == "reconnect"
+            && Sql.Scalar(
+                connection,
+                "SELECT id FROM coordinator_segments WHERE ended_at IS NULL LIMIT 1;"
+            )
+                is null
+        )
         {
-            throw new OperationException("conflict", "Crash reconnect requires an interrupted, unfinished segment; use fresh-session resume for a quiescent run.");
+            throw new OperationException(
+                "conflict",
+                "Crash reconnect requires an interrupted, unfinished segment; use "
+                    + "fresh-session resume for a quiescent run."
+            );
         }
     }
 
@@ -926,24 +1291,50 @@ public sealed class Coordinator
         DateTimeOffset deadline = database.Now.AddSeconds(database.Configuration.DurationSeconds);
         if (mode == "reconnect")
         {
-            string? existing = Sql.Scalar(connection,
-                "SELECT deadline FROM coordinator_segments WHERE ended_at IS NULL ORDER BY id DESC LIMIT 1;", transaction) as string;
+            string? existing =
+                Sql.Scalar(
+                    connection,
+                    "SELECT deadline FROM coordinator_segments WHERE ended_at IS NULL "
+                        + "ORDER BY id DESC LIMIT 1;",
+                    transaction
+                ) as string;
             if (existing is not null)
             {
                 deadline = DateTimeOffset.Parse(existing, CultureInfo.InvariantCulture);
             }
 
-            Sql.Execute(connection, """
-                UPDATE coordinator_segments SET state='interrupted',ended_at=$time,stop_reason='crash-reconnect'
+            Sql.Execute(
+                connection,
+                """
+                UPDATE coordinator_segments SET state='interrupted',ended_at=$time,
+                    stop_reason='crash-reconnect'
                 WHERE ended_at IS NULL;
-                """, transaction, ("$time", database.Now.ToString("O")));
+                """,
+                transaction,
+                ("$time", database.Now.ToString("O"))
+            );
         }
 
-        Sql.Execute(connection, """
-            INSERT INTO coordinator_segments(mode,state,started_at,deadline) VALUES($mode,'starting',$time,$deadline);
-            """, transaction, ("$mode", mode), ("$time", database.Now.ToString("O")), ("$deadline", deadline.ToString("O")));
-        long id = (long)(Sql.Scalar(connection, "SELECT last_insert_rowid();", transaction) ?? throw new InvalidOperationException());
-        Sql.Execute(connection, "UPDATE meta SET value='false' WHERE key='git:finalized';", transaction);
+        Sql.Execute(
+            connection,
+            """
+            INSERT INTO coordinator_segments(mode,state,started_at,deadline)
+            VALUES($mode,'starting',$time,$deadline);
+            """,
+            transaction,
+            ("$mode", mode),
+            ("$time", database.Now.ToString("O")),
+            ("$deadline", deadline.ToString("O"))
+        );
+        long id = (long)(
+            Sql.Scalar(connection, "SELECT last_insert_rowid();", transaction)
+            ?? throw new InvalidOperationException()
+        );
+        Sql.Execute(
+            connection,
+            "UPDATE meta SET value='false' WHERE key='git:finalized';",
+            transaction
+        );
         transaction.Commit();
         database.WriteMetadata("lifecycle:deadline", deadline.ToString("O"));
         return (id, deadline);
@@ -957,16 +1348,27 @@ public sealed class Coordinator
         }
 
         using SqliteConnection connection = database.Open();
-        Sql.Execute(connection, """
-            UPDATE coordinator_segments SET state=$state,stop_reason=$reason,ended_at=$time WHERE id=$id;
-            """, null, ("$state", state), ("$reason", reason), ("$time", database.Now.ToString("O")), ("$id", segment));
+        Sql.Execute(
+            connection,
+            """
+            UPDATE coordinator_segments SET state=$state,stop_reason=$reason,ended_at=$time
+            WHERE id=$id;
+            """,
+            null,
+            ("$state", state),
+            ("$reason", reason),
+            ("$time", database.Now.ToString("O")),
+            ("$id", segment)
+        );
     }
 
     private long? PendingControl(out string? action)
     {
         using SqliteConnection connection = database.Open();
-        using SqliteCommand command = Sql.Command(connection,
-            "SELECT id,action FROM coordinator_controls WHERE state='pending' ORDER BY id LIMIT 1;");
+        using SqliteCommand command = Sql.Command(
+            connection,
+            "SELECT id,action FROM coordinator_controls WHERE state='pending' ORDER BY id LIMIT 1;"
+        );
         using SqliteDataReader reader = command.ExecuteReader();
         if (!reader.Read())
         {
@@ -981,10 +1383,17 @@ public sealed class Coordinator
     private void CompleteControls(JsonObject result, string action)
     {
         using SqliteConnection connection = database.Open();
-        Sql.Execute(connection, """
+        Sql.Execute(
+            connection,
+            """
             UPDATE coordinator_controls SET state='completed',completed_at=$time,result=$result
             WHERE state='pending' AND action=$action;
-            """, null, ("$time", database.Now.ToString("O")), ("$result", result.ToJsonString()), ("$action", action));
+            """,
+            null,
+            ("$time", database.Now.ToString("O")),
+            ("$result", result.ToJsonString()),
+            ("$action", action)
+        );
     }
 
     private async Task<JsonObject> FinalizeOwnedAsync(CancellationToken cancellationToken)
@@ -999,25 +1408,43 @@ public sealed class Coordinator
     private void RecordCompletedTurn(long batchId, string worker, string stopReason)
     {
         using SqliteConnection connection = database.Open();
-        Sql.Execute(connection, """
+        Sql.Execute(
+            connection,
+            """
             INSERT INTO coordinator_turns(batch_id,worker,state,stop_reason,completed_at)
             VALUES($batch,$worker,'native-complete',$reason,$time)
             ON CONFLICT(batch_id) DO UPDATE SET state='native-complete',
                 stop_reason=excluded.stop_reason,completed_at=excluded.completed_at;
-            """, null, ("$batch", batchId), ("$worker", worker), ("$reason", stopReason), ("$time", database.Now.ToString("O")));
+            """,
+            null,
+            ("$batch", batchId),
+            ("$worker", worker),
+            ("$reason", stopReason),
+            ("$time", database.Now.ToString("O"))
+        );
     }
 
     private void MarkAcknowledged(long batchId)
     {
         using SqliteConnection connection = database.Open();
-        Sql.Execute(connection, "UPDATE coordinator_turns SET state='acknowledged' WHERE batch_id=$id;", null, ("$id", batchId));
+        Sql.Execute(
+            connection,
+            "UPDATE coordinator_turns SET state='acknowledged' WHERE batch_id=$id;",
+            null,
+            ("$id", batchId)
+        );
     }
 
     private void RecoverCompletedTurns()
     {
         List<long> ids = [];
         using (SqliteConnection connection = database.Open())
-        using (SqliteCommand command = Sql.Command(connection, "SELECT batch_id FROM coordinator_turns WHERE state='native-complete';"))
+        using (
+            SqliteCommand command = Sql.Command(
+                connection,
+                "SELECT batch_id FROM coordinator_turns WHERE state='native-complete';"
+            )
+        )
         using (SqliteDataReader reader = command.ExecuteReader())
         {
             while (reader.Read())
@@ -1036,7 +1463,11 @@ public sealed class Coordinator
     private string CurrentPhase()
     {
         string? text = database.ReadMetadata("lifecycle:deadline");
-        double remaining = text is null ? 0 : (DateTimeOffset.Parse(text, CultureInfo.InvariantCulture) - database.Now).TotalSeconds;
+        double remaining = text is null
+            ? 0
+            : (
+                DateTimeOffset.Parse(text, CultureInfo.InvariantCulture) - database.Now
+            ).TotalSeconds;
         int deliveryWindow = database.Configuration.DurationSeconds > 2700 ? 2700 : 300;
         return remaining <= deliveryWindow ? "delivery" : "development";
     }
@@ -1045,39 +1476,63 @@ public sealed class Coordinator
     {
         foreach (int beforeEnd in new[] { 900 })
         {
-            if (beforeEnd < database.Configuration.DurationSeconds && (deadline - database.Now).TotalSeconds <= beforeEnd &&
-                sent.Add(beforeEnd))
+            if (
+                beforeEnd < database.Configuration.DurationSeconds
+                && (deadline - database.Now).TotalSeconds <= beforeEnd
+                && sent.Add(beforeEnd)
+            )
             {
-                collaboration.Invoke("owner", "message_send", new()
-                {
-                    ["recipient"] = "team",
-                    ["body"] = $"T-{beforeEnd / 60}m: The run will end and retain a checked local delivery. " +
-                        "Integrate what is ready, keep the integration branch passing, avoid new large pieces, " +
-                        "and record unfinished work as tasks. Final checks, not task closure, determine delivery success.",
-                });
+                collaboration.Invoke(
+                    "owner",
+                    "message_send",
+                    new()
+                    {
+                        ["recipient"] = "team",
+                        ["body"] =
+                            $"T-{beforeEnd / 60}m: The run will end "
+                            + "and retain a checked local delivery. "
+                            + "Integrate what is ready, keep the integration branch passing, "
+                            + "avoid new large pieces, and record unfinished work as tasks. "
+                            + "Final checks, not task closure, determine delivery success.",
+                    }
+                );
             }
-
         }
     }
 
     private void PublishCreditWarning()
     {
-        JsonObject status = credits.Status(database.RunId, database.Configuration.RunAiCreditAllowance);
+        JsonObject status = credits.Status(
+            database.RunId,
+            database.Configuration.RunAiCreditAllowance
+        );
         decimal actual = status["actualReported"]!.GetValue<decimal>();
-        if (actual >= database.Configuration.RunAiCreditAllowance * 0.9m &&
-            database.ReadMetadata("lifecycle:credit_warning") != "sent")
+        if (
+            actual >= database.Configuration.RunAiCreditAllowance * 0.9m
+            && database.ReadMetadata("lifecycle:credit_warning") != "sent"
+        )
         {
-            JsonObject result = collaboration.Invoke("owner", "message_send", new()
-            {
-                ["recipient"] = "team",
-                ["body"] = "At least 90% of the run's native-reported AI Credits have been spent. " +
-                    "Wrap up checked work, retain commits and record open tasks/board findings. " +
-                    "Do not start large new pieces. Native soft limits may overshoot one in-flight response.",
-                ["urgent"] = true,
-            });
+            JsonObject result = collaboration.Invoke(
+                "owner",
+                "message_send",
+                new()
+                {
+                    ["recipient"] = "team",
+                    ["body"] =
+                        "At least 90% of the run's native-reported AI Credits have been spent. "
+                        + "Wrap up checked work, retain commits and record open "
+                        + "tasks/board findings. "
+                        + "Do not start large new pieces. Native soft limits may "
+                        + "overshoot one in-flight response.",
+                    ["urgent"] = true,
+                }
+            );
             if (result["ok"]?.GetValue<bool>() != true)
             {
-                throw new OperationException("lifecycle_alert_failed", result["message"]?.GetValue<string>() ?? "Credit warning could not be recorded.");
+                throw new OperationException(
+                    "lifecycle_alert_failed",
+                    result["message"]?.GetValue<string>() ?? "Credit warning could not be recorded."
+                );
             }
 
             database.WriteMetadata("lifecycle:credit_warning", "sent");

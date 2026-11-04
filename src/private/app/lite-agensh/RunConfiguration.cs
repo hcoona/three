@@ -62,41 +62,68 @@ public sealed record RunConfiguration
         ArgumentException.ThrowIfNullOrWhiteSpace(BaseRevision);
         ArgumentException.ThrowIfNullOrWhiteSpace(NativeExecutable);
         ArgumentException.ThrowIfNullOrWhiteSpace(CampaignLedgerPath);
-        if (!Path.IsPathFullyQualified(RepositoryPath) ||
-            !Path.IsPathFullyQualified(StatePath) ||
-            !Path.IsPathFullyQualified(CampaignLedgerPath))
+        if (
+            !Path.IsPathFullyQualified(RepositoryPath)
+            || !Path.IsPathFullyQualified(StatePath)
+            || !Path.IsPathFullyQualified(CampaignLedgerPath)
+        )
         {
-            throw new ArgumentException("Repository, state and campaign ledger paths must be absolute.");
+            throw new ArgumentException(
+                "Repository, state and campaign ledger paths must be absolute."
+            );
         }
 
         string repository = Path.GetFullPath(RepositoryPath).TrimEnd(Path.DirectorySeparatorChar);
         string state = Path.GetFullPath(StatePath).TrimEnd(Path.DirectorySeparatorChar);
-        if (state.Equals(repository, StringComparison.OrdinalIgnoreCase) ||
-            state.StartsWith(repository + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        if (
+            state.Equals(repository, StringComparison.OrdinalIgnoreCase)
+            || state.StartsWith(
+                repository + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
         {
             throw new ArgumentException("Run state must be outside the original checkout.");
         }
 
         string ledger = Path.GetFullPath(CampaignLedgerPath);
-        if (ledger.Equals(repository, StringComparison.OrdinalIgnoreCase) ||
-            ledger.StartsWith(repository + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        if (
+            ledger.Equals(repository, StringComparison.OrdinalIgnoreCase)
+            || ledger.StartsWith(
+                repository + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
         {
-            throw new ArgumentException("The campaign ledger must be outside the original checkout.");
+            throw new ArgumentException(
+                "The campaign ledger must be outside the original checkout."
+            );
         }
 
-        if (WorkerCount < 1 || DurationSeconds <= 0 || PlanningSeconds < 0 ||
-            PlanningSeconds > DurationSeconds || RunAiCreditAllowance < 30 ||
-            CampaignAiCreditAllowance < RunAiCreditAllowance)
+        if (
+            WorkerCount < 1
+            || DurationSeconds <= 0
+            || PlanningSeconds < 0
+            || PlanningSeconds > DurationSeconds
+            || RunAiCreditAllowance < 30
+            || CampaignAiCreditAllowance < RunAiCreditAllowance
+        )
         {
-            throw new ArgumentException("Worker count, deadlines and native credit allowances must be valid.");
+            throw new ArgumentException(
+                "Worker count, deadlines and native credit allowances must be valid."
+            );
         }
 
         if (NativePermissionPolicy is not ("deny" or "trusted"))
         {
-            throw new ArgumentException("Native permission policy must be deny or explicitly trusted.");
+            throw new ArgumentException(
+                "Native permission policy must be deny or explicitly trusted."
+            );
         }
 
-        foreach (CheckCommand check in CandidateChecks.Concat(IntegrationChecks).Concat(FinalChecks))
+        foreach (
+            CheckCommand check in CandidateChecks.Concat(IntegrationChecks).Concat(FinalChecks)
+        )
         {
             ArgumentNullException.ThrowIfNull(check);
             ArgumentException.ThrowIfNullOrWhiteSpace(check.Executable);
