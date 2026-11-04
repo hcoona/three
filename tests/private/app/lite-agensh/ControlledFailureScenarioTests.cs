@@ -181,6 +181,36 @@ public sealed class ControlledFailureScenarioTests(TestContext testContext)
         JsonObject failed = await coordinator.RunAsync("run", token);
 
         Scenario.Failure(failed, "ownership_or_usage_unresolved");
+        JsonObject status = Scenario.Data(coordinator.Status());
+        Assert.AreEqual("unresolved", status["lifecycle"]!.GetValue<string>());
+        Assert.AreEqual(
+            failed["message"]!.GetValue<string>(),
+            status["failure"]!.GetValue<string>()
+        );
+        if (!completed)
+        {
+            using SqliteConnection failures = fixture.Database.Open();
+            Assert.IsGreaterThan(
+                0L,
+                (long)Sql.Scalar(
+                    failures,
+                    "SELECT COUNT(*) FROM delivery_batches WHERE last_error=$message;",
+                    null,
+                    ("$message", failed["message"]!.GetValue<string>())
+                )!
+            );
+        }
+
+        JsonArray settlementFailures = status["settlementFailures"]!.AsArray();
+        Assert.HasCount(2, settlementFailures);
+        Assert.IsTrue(
+            settlementFailures.All(item => item!["phase"]!.GetValue<string>() == "stop")
+        );
+        string[] failedWorkers = settlementFailures
+            .Select(item => item!["worker"]!.GetValue<string>())
+            .ToArray();
+        Assert.Contains("worker1", failedWorkers);
+        Assert.Contains("worker2", failedWorkers);
         string[] prompts = native.OrdinaryPrompts();
         Assert.IsNotEmpty(prompts);
         Assert.IsTrue(prompts.Length <= 2, "A failed/unknown paid turn must not be replayed.");

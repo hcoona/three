@@ -55,6 +55,7 @@ internal sealed class ControlledNativeWorker(
 {
     private readonly CancellationTokenSource stop = new();
     private readonly SemaphoreSlim settlement = new(1, 1);
+    private readonly SemaphoreSlim turn = new(1, 1);
     private TaskCompletionSource turnCompleted = CompletedTurn();
     private bool started;
     private bool stopped;
@@ -162,11 +163,12 @@ internal sealed class ControlledNativeWorker(
             cancellationToken,
             stop.Token
         );
-        Record(directory, calibration ? "calibration-enter" : "prompt-enter", SessionId);
-        turnCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        await turn.WaitAsync(linked.Token);
         try
         {
-            await VerifyCreditsAsync(linked.Token);
+            Record(directory, calibration ? "calibration-enter" : "prompt-enter", SessionId);
+            turnCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            await VerifyCreditsCoreAsync(linked.Token);
             credits.BeginDispatch(
                 database.RunId,
                 reservation.Id,
@@ -220,10 +222,28 @@ internal sealed class ControlledNativeWorker(
         finally
         {
             turnCompleted.TrySetResult();
+            turn.Release();
         }
     }
 
-    public Task VerifyCreditsAsync(CancellationToken cancellationToken)
+    public async Task VerifyCreditsAsync(CancellationToken cancellationToken)
+    {
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            stop.Token
+        );
+        await turn.WaitAsync(linked.Token);
+        try
+        {
+            await VerifyCreditsCoreAsync(linked.Token);
+        }
+        finally
+        {
+            turn.Release();
+        }
+    }
+
+    private Task VerifyCreditsCoreAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (reservation is null || SessionId is null)
@@ -243,6 +263,7 @@ internal sealed class ControlledNativeWorker(
     public async Task StopAsync()
     {
         await settlement.WaitAsync();
+        bool turnOwned = false;
         try
         {
             if (stopped)
@@ -252,6 +273,20 @@ internal sealed class ControlledNativeWorker(
 
             await stop.CancelAsync();
             await turnCompleted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            turnOwned = await turn.WaitAsync(TimeSpan.FromSeconds(10));
+            if (!turnOwned)
+            {
+                if (reservation is not null)
+                {
+                    credits.MarkUncertain(reservation.Id);
+                }
+
+                throw new OperationException(
+                    "ownership_unresolved",
+                    "Controlled credit verification did not quiesce."
+                );
+            }
+
             Record(directory, "stop", SessionId);
             if (Mode(directory) == "unsettled")
             {
@@ -302,6 +337,11 @@ internal sealed class ControlledNativeWorker(
         }
         finally
         {
+            if (turnOwned)
+            {
+                turn.Release();
+            }
+
             settlement.Release();
         }
     }

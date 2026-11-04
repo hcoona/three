@@ -9,6 +9,7 @@ namespace LiteAgensh;
 #pragma warning disable GHCP001
 internal sealed class NativeSdkSession : IAsyncDisposable
 {
+    private const int ProbeTimeoutSeconds = 30;
     private readonly RunDatabase database;
     private readonly NativeRuntime runtime;
     private readonly string cwd;
@@ -158,36 +159,50 @@ internal sealed class NativeSdkSession : IAsyncDisposable
         using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken
         );
-        deadline.CancelAfter(TimeSpan.FromSeconds(10));
-        SessionMetadataSnapshot metadata = await active
-            .Rpc.Metadata.SnapshotAsync(deadline.Token)
-            .ConfigureAwait(false);
-        ValidateMetadata(metadata, active.SessionId, expectedSession, cwd, expectedLimit);
+        deadline.CancelAfter(TimeSpan.FromSeconds(ProbeTimeoutSeconds));
+        string phase = "metadata";
+        try
+        {
+            SessionMetadataSnapshot metadata = await active
+                .Rpc.Metadata.SnapshotAsync(deadline.Token)
+                .ConfigureAwait(false);
+            ValidateMetadata(metadata, active.SessionId, expectedSession, cwd, expectedLimit);
 
-        UsageGetMetricsResult usage = await active
-            .Rpc.Usage.GetMetricsAsync(deadline.Token)
-            .ConfigureAwait(false);
-        Metadata = new()
-        {
-            ["sessionId"] = metadata.SessionId,
-            ["workingDirectory"] = metadata.WorkingDirectory,
-            ["appliedLimit"] = metadata.SessionLimits?.MaxAiCredits,
-            ["selectedModel"] = metadata.SelectedModel,
-            ["alreadyInUse"] = metadata.AlreadyInUse,
-            ["isRemote"] = metadata.IsRemote,
-            ["runtimeVersion"] = actualRuntimeVersion,
-            ["sdkVersion"] = SdkVersion,
-        };
-        if (validateEvents)
-        {
-            CheckEvents();
+            phase = "usage";
+            UsageGetMetricsResult usage = await active
+                .Rpc.Usage.GetMetricsAsync(deadline.Token)
+                .ConfigureAwait(false);
+            Metadata = new()
+            {
+                ["sessionId"] = metadata.SessionId,
+                ["workingDirectory"] = metadata.WorkingDirectory,
+                ["appliedLimit"] = metadata.SessionLimits?.MaxAiCredits,
+                ["selectedModel"] = metadata.SelectedModel,
+                ["alreadyInUse"] = metadata.AlreadyInUse,
+                ["isRemote"] = metadata.IsRemote,
+                ["runtimeVersion"] = actualRuntimeVersion,
+                ["sdkVersion"] = SdkVersion,
+            };
+            if (validateEvents)
+            {
+                CheckEvents();
+            }
+            return new(
+                expectedSession,
+                usage.TotalNanoAiu,
+                usage.AiCreditsStatus?.Value,
+                usage.TotalUserRequests
+            );
         }
-        return new(
-            expectedSession,
-            usage.TotalNanoAiu,
-            usage.AiCreditsStatus?.Value,
-            usage.TotalUserRequests
-        );
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationException(
+                "native_probe_failed",
+                deadline.IsCancellationRequested
+                    ? $"Native {phase} query exceeded its {ProbeTimeoutSeconds}-second deadline."
+                    : $"Native {phase} query was canceled before caller cancellation."
+            );
+        }
     }
 
     internal static void ValidateMetadata(
