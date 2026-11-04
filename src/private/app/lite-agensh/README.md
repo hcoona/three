@@ -5,10 +5,12 @@ LiteAgensh is a C# single-machine adaptation of
 peer-cooperation approach while replacing hosted collaboration infrastructure
 with SQLite, local Git worktrees and existing native agents.
 
-**Current state:** project establishment and design records only. There is no
-application, installed command, successful ACP handshake or runtime acceptance
-claim yet. Examples of operations in the records describe intended behavior,
-not commands available today.
+**Current state:** the accepted design selects the official Copilot .NET SDK.
+The implementation candidate in [PR #1530](https://github.com/hcoona/three/pull/1530)
+contains the local application and controlled scenarios; its ACP integration
+requires replacement. No successful SDK connection, native credit calibration
+or Copilot-backed product acceptance is claimed. Source and scripted results
+do not establish native integration.
 
 ## User and primary journey
 

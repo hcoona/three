@@ -11,16 +11,22 @@ The capability/source inventory is not a second API contract.
 Use one `LiteAgensh.csproj` executable under the project root, namespace
 `LiteAgensh`, target `$(CurrentTargetFramework)`. Use root SDK/CPM/NBGV rules.
 Select `Microsoft.Data.Sqlite` 10.0.14 and `ModelContextProtocol` 1.0.0 through
-CPM; retain existing `Microsoft.Extensions.Hosting` selection. Do not copy SDK
-source or add an HTTP server. The official MCP package supplies stdio framing,
+CPM; retain existing `Microsoft.Extensions.Hosting` selection. Select
+`GitHub.Copilot.SDK` 1.0.28, whose packaged runtime pin is CLI 1.0.105.
+Set `CopilotSkipCliDownload=true` and reuse the installed executable without
+automatic acquisition/update. Its normal transitive AI abstractions do not
+authorize another provider or reasoning layer. Do not copy SDK source or
+implement an application HTTP server. The official MCP package supplies stdio framing,
 initialization, tool discovery and invocation. Use its low-level tool handlers
 with explicit input schemas so operation payloads and notice envelopes remain
 application-owned.
 
-Implement a narrow typed ACP JSON-RPC/NDJSON client using .NET process/JSON
-APIs. Support initialize, new/load session, prompt, updates, permission request
-responses and cancel; negotiate capabilities instead of inventing protocol
-support. This is native-agent hosting, not another model/tool loop.
+Use the official Copilot SDK's typed session, event, permission, cancellation,
+metadata and usage APIs. Replace the handwritten ACP client and configurable
+JSON-pointer credit descriptor; do not maintain two native adapters.
+Experimental SDK APIs receive narrow adapter-scoped acknowledgement, not
+global analyzer suppression. The pinned source and released-package evidence
+are in the [migration map](upstream-migration.md#native-interface-selection).
 
 Tests use the root `MSTest.Sdk` and a project reference from
 `tests/private/app/lite-agensh/LiteAgensh.Tests.csproj`. Existing traversal and
@@ -232,38 +238,72 @@ starting models. Optional planning wakes worker1 before peers. Closure by the
 operator and configured fixed-length behavior are classified separately from
 successful final checks.
 
-Native startup applies documented tool filters/reasoning/credit flags, keeps
-stdout protocol-only and native diagnostics local, and passes local MCP
-configuration to session/new or supported load. Permission responses use the
-explicit trusted-run policy and available permission options; unknown actions
-or enforced native policy are not silently overridden. Disable recursive
-team-spawning where the native interface supports filtering.
+Native startup launches the installed executable with documented headless
+hosting and no-auto-update settings. Register the actual process before using
+its loopback readiness endpoint; use a process-local connection token and
+`RuntimeConnection.ForUri` rather than an SDK-spawned process whose PID the
+application cannot durably identify. Never bind a non-loopback listener or log
+the connection token. SDK connection disposal does not settle this externally
+owned process; the host must do that explicitly.
 
-On crash, settle/resolve known processes before loading the exact saved session
-if advertised. Explicit resume always creates fresh sessions with a durable
-summary. Queue recovery may replay work; do not promise exactly-once actions.
+Create sessions with an explicit unique `SessionId`, `WorkingDirectory`,
+local `McpServers`, `ExcludedTools` including native `task`, and finite
+`SessionLimits.MaxAiCredits`. Leave default model/authentication selection
+unchanged unless the operator's product configuration explicitly selects a
+supported model; acceptance uses the owner's existing default.
+Read `session.Rpc.Metadata.SnapshotAsync()` and verify the actual session,
+working directory and applied limit before dispatch. Missing/mismatched
+metadata or an unexpected limit change stops the affected path.
+Permission callbacks honor the explicit trusted-run policy for known request
+kinds; unknown actions or enforced native policy are not silently overridden.
+
+On crash, settle/resolve known processes before resuming the exact saved session.
+Set `ContinuePendingWork=false` and `AllowTranscriptRecovery=false`; read back
+identity, working directory, limits and cumulative usage before another send.
+Do not silently recover a damaged transcript or continue pending native actions.
+Explicit resume always creates fresh sessions with a durable summary. Queue
+recovery may replay work; do not promise exactly-once actions.
 Pause/finalize retain state; explicit cleanup never removes unrelated refs,
 worktrees, user checkout, credentials or global config.
 
 ## Credit contract and evidence limits
 
-Native help in Copilot 1.0.105 advertises `--max-ai-credits` and
-`--usage-output-file`; `copilot help config` says usage is known after a model
-call returns. Official [session-limit documentation][limits] confirms a minimum
-30-credit setting and a soft limit with possible in-flight-response overshoot.
-These are source/metadata findings, not proof of ACP propagation.
+Use SDK `SessionLimitsConfig.MaxAiCredits`, not the incompatible ACP/usage-file
+flag combination. It is a native soft limit on the current accounting window,
+not a hard prepaid ceiling. Never automatically add, unset or increase a limit
+in response to exhaustion. Request cancellation and report actual overshoot.
 
-Use that native limit rather than a proxy or invented token-to-credit
-conversion. Persist session allowance reservations and actual native-reported
-credits. Fresh sessions consume a new reservation; known exact-session
-continuation retains already consumed usage. Do not free uncertain reservations
-or start another model call when usage/limit applicability is unknown.
-Expose overshoot and credit-stop outcomes truthfully.
+Persist campaign/run allowances and session reservations before paid dispatch.
+Bind each reservation to the exact run, worker and persistent session in one
+transaction. Fresh sessions consume new reservations. Exact continuation
+retains previously charged usage and applies no more than the remaining
+allowance as the native window cap; never reset to the original allocation.
 
-The acceptance campaign's specific limits/owner decision are in its
-[protocol](native-acceptance-protocol.md). Native preflight must establish that
-the selected ACP session really receives its native limit before any model
-prompt. If the interface cannot demonstrate this, dependent live acceptance
-stops for owner disposition; scripted tests still do not supply native proof.
+`session.Rpc.Usage.GetMetricsAsync()` supplies `TotalNanoAiu` and
+`AiCreditsStatus`. Interpret credits as reported nano-AIU divided by
+1,000,000,000. Require finite nonnegative totals and `Complete` before treating
+a subtotal as final or releasing a reservation. `Partial`, `Unavailable` or an
+absent status cannot establish zero cost. Retain the native subtotal and its
+status separately from the conservative reserved charge.
 
-[limits]: https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli/set-session-limit
+Live `assistant.usage` events can provide prompt stop signals but are ephemeral.
+Durable usage checkpoints and cumulative snapshots support recovery; a numeric
+checkpoint alone is not completeness proof. Charge cumulative deltas from a
+persisted known baseline, transactionally and idempotently; never sum events,
+checkpoints and cumulative snapshots as independent charges. Reject regressing
+or unassociated usage. Premium-request `cost`, token counts, context occupancy,
+model-price estimates and account quota are not substitutes.
+
+A newly created, never-prompted session need not report completed-call billing.
+Non-model preflight establishes applied limits and identity, not measured free
+usage. The [native protocol](native-acceptance-protocol.md) separately bounds
+the initial tool-disabled billing calibration, which must obtain complete
+native usage before ordinary work. An outstanding unknown reservation still
+blocks all new paid work: this interface change neither releases it nor
+authorizes conservative carry-forward without repository-owner disposition.
+
+Cancel through `AbortAsync`, collect complete metrics when available, quiesce
+handlers, dispose sessions/client without permanent deletion, and settle the
+host-owned runtime. Local task cancellation or silence does not settle it.
+If final usage, ownership or limit applicability is unknown, retain the
+reservation and stop paid work. Scripted metrics are not native billing proof.
