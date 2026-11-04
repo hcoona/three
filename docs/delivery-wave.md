@@ -8,6 +8,79 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
+### Migrate Agensh to the single-machine C# LiteAgensh application
+
+- **Work carrier:** [Issue #1526](https://github.com/hcoona/three/issues/1526)
+  and its linked pull requests. The repository owner requested establishment
+  and project-local records, then explicitly authorized the entire migration
+  and rewrite, including design, implementation, integration and acceptance.
+- **Accepted inputs:** the [governance policy](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [engineering principles](engineering/engineering-principles.md) and
+  [documentation portal](README.md). The public upstream baseline is
+  `microsoft/Agensh@2dae4e14a653da48549fd9aa093f834841475d6c`.
+  Preparation findings in #1526 are research inputs, not runtime evidence;
+  project records relying on them receive research-evidence review.
+- **Owner decisions:** LiteAgensh belongs at `src/private/app/lite-agensh/`
+  and is written in C#. One local coordinator uses SQLite for collaboration
+  state, local Git branches/worktrees for integration and existing native
+  agent processes for reasoning, editing and tool execution. Initially use
+  Copilot's documented ACP stdio contract. Map collaboration MCP capabilities
+  semantically with names describing their actual local operations, not
+  Gitea/Mattermost compatibility names. Do not add hosted collaboration
+  services, Docker or process/network sandboxing. The owner selects a trusted
+  single-user environment: worktrees separate edits, not host permissions or
+  credentials, and local review gates do not provide server-enforced isolation.
+- **Advancement and outcome:** establish and complete this local product port,
+  including project records, public-source consolidation, requirements,
+  architecture and contracts, C# implementation, SQLite persistence, ACP/MCP
+  integration, Git integration, lifecycle/recovery, tests, monorepo integration,
+  operator documentation and acceptance. Preserve applicable upstream
+  cooperation, board, event-delivery, review and lifecycle policies; identify
+  platform replacements and intentional semantic differences rather than
+  inventing a new scheduling framework. Keep the upstream responsibility and
+  tool mapping complete, with source identity and required attribution.
+- **Ordering and gates:** merge this entry before substantive project work.
+  Accept each implementation slice's requirements, applicable architecture
+  and contracts, validation basis and unsupported cases before implementing
+  that slice. Accept an exact protocol under research-evidence review before
+  any experiment or live native-backend observation; it must bound its subject,
+  environment, observations, finite execution and cumulative effects, stop
+  conditions and cleanup. Live provider use additionally requires owner-approved
+  run/spend bounds in that protocol; this entry is not unrestricted paid usage.
+  Recheck mutable native interfaces before relying on them. Each pull request
+  retains applicable independent record-system, research-evidence and
+  engineering reviews, independent classification of material findings, record
+  checks, affected HK validation and project checks. Order shared root/CI
+  changes with other entries. New product or risk tradeoffs return to the owner.
+- **Acceptance and closure:** the accepted project requirements and validation
+  basis are met for the local Copilot-backed product, including cooperation,
+  state persistence/recovery, candidate-bound validation, local integration,
+  cancellation and retained local delivery. Operator documentation and the
+  full mapping identify actual supported behavior and evidence limits; public
+  desk evidence or scripted workers alone cannot establish live integration.
+  Record progress and evidence in #1526 and its pull requests. Delete this
+  entry when that outcome is accepted or the owner stops the migration.
+- **Effects:** permit repository and read-only GitHub inspection, public-source
+  retrieval, project documentation and routing/catalog changes, C# source and
+  tests, necessary workspace/CPM/lockfile/check/CI integration, locked dependency
+  restoration, isolated local builds and credential-free tests, local owned
+  subprocesses/worktrees/SQLite state and native acceptance runs within the
+  accepted protocols and existing owner-approved backend configuration.
+  Permit Issue/PR/check operations and normal CI, independent delegated review
+  and ordinary merges of reviewed changes. Preserve unrelated work and target
+  repository instructions; cleanup is explicit and limited to owned state.
+- **Exclusions:** no other agent backend in this outcome, hosted collaboration
+  platform, arbitrary multi-repository/team service, remote product delivery,
+  automatic push/PR publication by LiteAgensh, model gateway or credential
+  distribution, equivalent aggregate token-request cutoff without verified
+  support, cross-backend runtime patches, sandbox/security-isolation claims,
+  portable sealed-backup equivalence, history-hiding/private-evaluation or
+  ProgramBench reproduction. No unrelated project behavior or tool-version
+  change, release/proving dispatch, package/product publication, authentication,
+  account, Environment or access change. These exclusions do not prevent
+  ordinary repository delivery of LiteAgensh's reviewed source and records.
+
 ### Reconcile Workflow V1, V2 and V3 documentation
 
 - **Work carrier:** [Issue #1406](https://github.com/hcoona/three/issues/1406)
