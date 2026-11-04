@@ -183,10 +183,10 @@ internal static class NodeCiCaller
             if (!members.TryGetValue(member.Directory, out NodeRuntimeMember? runtimeMember))
                 throw new InvalidDataException("Retained Node member has no engines declaration.");
             if (!group.Runtime.Variants.Any(candidate =>
-                NodeRuntimeInputs.Admits(runtimeMember, candidate)))
+                NodeRuntimeInputs.AdmitsMajor(runtimeMember, candidate)))
                 throw new InvalidDataException(
                     "No planned Node runtime satisfies a retained member's engines range.");
-            return NodeRuntimeInputs.Admits(runtimeMember, variant);
+            return NodeRuntimeInputs.AdmitsMajor(runtimeMember, variant);
         }).Select(member => member.Directory).ToArray();
     }
 

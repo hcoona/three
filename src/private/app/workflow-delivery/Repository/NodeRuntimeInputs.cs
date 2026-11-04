@@ -46,11 +46,11 @@ internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] V
                 !membersByDirectory.TryGetValue(work.Key.Target, out member!))
                 throw new InvalidDataException(
                     "Node project check has no engines member: " + work.Key.Target);
-            if (!Variants.Any(variant => Admits(member, variant)))
+            if (!Variants.Any(variant => AdmitsMajor(member, variant)))
                 throw new InvalidDataException(
                     "No planned Node runtime satisfies a selected member's engines range.");
             foreach (NodeRuntimeVariant variant in Variants.Where(v =>
-                Admits(member, v) &&
+                AdmitsMajor(member, v) &&
                 (!package || v.Key == PackagingVariant)))
             {
                 var dimensions = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -79,7 +79,7 @@ internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] V
                 "node/npm-artifact-contents-v1" or "node/npm-install-import-v1"))
         {
             NodeRuntimeMember member = membersByDirectory[item.Work.Package!.Directory];
-            if (!Admits(member, packaging))
+            if (!SatisfiesExactVersion(member, packaging))
                 throw new InvalidDataException(
                     "Configured packaging runtime is outside the adopted Node engines range.");
         }
@@ -88,11 +88,14 @@ internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] V
         return expanded;
     }
 
-    internal static bool Admits(NodeRuntimeMember member, NodeRuntimeVariant variant) =>
+    internal static bool AdmitsMajor(NodeRuntimeMember member, NodeRuntimeVariant variant) =>
         member.LowerBound.Major <= int.Parse(variant.Selector[..^2],
-            CultureInfo.InvariantCulture) &&
-        (variant.ExactVersion is null ||
-            member.LowerBound <= System.Version.Parse(variant.ExactVersion));
+            CultureInfo.InvariantCulture);
+
+    private static bool SatisfiesExactVersion(NodeRuntimeMember member,
+        NodeRuntimeVariant variant) =>
+        variant.ExactVersion is not null &&
+        member.LowerBound <= System.Version.Parse(variant.ExactVersion);
 }
 
 internal sealed record NodeEnginesManifest(string Path, string? Text);

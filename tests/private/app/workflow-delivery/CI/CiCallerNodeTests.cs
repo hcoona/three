@@ -113,7 +113,7 @@ public sealed class CiCallerNodeTests
     }
 
     [TestMethod]
-    public void RetainedMembersRespectExactPackagingRuntimeMinorAndPatch()
+    public void RetainedMembersUseMovingMajorSelectorsRatherThanPackagingPin()
     {
         NodeGroupReadback original = Group();
         NodeGroupReadback group = original with
@@ -128,7 +128,7 @@ public sealed class CiCallerNodeTests
             },
         };
 
-        CollectionAssert.AreEqual(RetainedOnly,
+        CollectionAssert.AreEqual(LateAndRetained,
             NodeCiCaller.RetainedMembers(group, "node24"));
         CollectionAssert.AreEqual(LateAndRetained,
             NodeCiCaller.RetainedMembers(group, "node26"));
