@@ -579,6 +579,22 @@ bindings:
     carrier: repository-files
     path: docs/engineering/*.md
     format: markdown
+  - id: src-private-app-lite-agensh-interfaces
+    family: project-interfaces
+    namespace: src/private/app/lite-agensh
+    state: current
+    carrier: repository-files
+    path: src/private/app/lite-agensh/*.md
+    format: markdown
+    purpose: LiteAgensh purpose, user context, implementation-status boundary and project-record routing
+  - id: src-private-app-lite-agensh-notice
+    family: project-interfaces
+    namespace: src/private/app/lite-agensh
+    state: current
+    carrier: repository-file
+    path: src/private/app/lite-agensh/THIRD-PARTY-NOTICES.txt
+    format: text
+    purpose: Microsoft Agensh copyright and MIT attribution retained for derived material
   - id: src-private-app-oxforddictextractor-interfaces
     family: project-interfaces
     namespace: src/private/app/OxfordDictExtractor
@@ -859,6 +875,14 @@ bindings:
     path: src/private/app/im-acp-gateway/docs/**/*.md
     format: markdown
     purpose: Gateway source inputs, research and verification evidence
+  - id: src-private-app-lite-agensh-records
+    family: project-concern-records
+    namespace: src/private/app/lite-agensh
+    state: current
+    carrier: repository-files
+    path: src/private/app/lite-agensh/docs/**/*.md
+    format: markdown
+    purpose: LiteAgensh requirements, C# architecture, upstream semantic migration evidence and validation basis
   - id: src-private-app-qidian-novel-downloader-records
     family: project-concern-records
     namespace: src/private/app/qidian-novel-downloader
