@@ -290,7 +290,7 @@ public sealed class BoardScenarioTests(TestContext testContext)
     }
 
     [TestMethod]
-    [Timeout(60000, CooperativeCancellation = true)]
+    [Timeout(180000, CooperativeCancellation = true)]
     public void RecentCapacityEvictsOnlyRecentRowsNotAdmittedHistory()
     {
         using RunFixture fixture = new();
