@@ -70,6 +70,19 @@ internal static class ConfigurationInput
             )
             .ConfigureAwait(false);
         RunConfiguration configuration = input.Deserialize<RunConfiguration>(Json.Options)!;
+        // System.Text.Json does not enforce collection-element nullability.
+        if (
+            configuration.NativeArguments.Any(value => value is null)
+            || configuration.ProtectedPaths.Any(value => value is null)
+            || configuration.CandidateChecks
+                .Concat(configuration.IntegrationChecks)
+                .Concat(configuration.FinalChecks)
+                .Any(check => check is not null && check.Arguments.Any(value => value is null))
+        )
+        {
+            throw new ArgumentException("YAML string arrays cannot contain null items.");
+        }
+
         return configuration with
         {
             RepositoryPath = ResolvePath(configuration.RepositoryPath, directory),
