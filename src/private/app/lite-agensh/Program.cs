@@ -48,9 +48,8 @@ public static class Program
                 configuration.Validate();
                 RunDatabase database = new(configuration.StatePath, configuration);
                 LocalTools tools = new(database);
-                await tools.Git.InitializeAsync(cancellation.Token).ConfigureAwait(false);
-                database.WriteMetadata("lifecycle", "initialized");
-                result = Operation.Success(new { runId = database.RunId, statePath = database.StatePath, lifecycle = "initialized" });
+                Coordinator coordinator = new(database, tools.Collaboration, tools.Git);
+                result = await coordinator.InitializeAsync(cancellation.Token).ConfigureAwait(false);
             }
             else
             {
