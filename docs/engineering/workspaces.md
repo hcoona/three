@@ -17,6 +17,16 @@ runs package builds; the test, lint and format scripts use `--if-present` for
 packages without those scripts. Review needed install scripts with
 `pnpm approve-builds`; do not globally disable the package-manager checks.
 
+The [Renovate CLI](../../eng/renovate/package.json) uses an independent npm
+lock, outside the pnpm workspace. Its `.npmrc` sets a three-day release age
+for dependency resolution, including transitive dependencies; `npm ci` installs
+the committed tree without resolving new versions. The shared
+[Actions setup](../../.github/actions/setup-renovate/action.yml) selects the
+CLI's Node runtime from the lock and verifies it against the installed package.
+Repository tools continue to use the Node version from `mise.lock`. The
+`renovate-compat` CI job checks installation, startup and configuration without
+Renovate App credentials.
+
 ## Python
 
 [pyproject.toml](../../pyproject.toml) owns uv workspace membership. Projects live

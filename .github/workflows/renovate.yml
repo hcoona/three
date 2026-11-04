@@ -43,7 +43,6 @@ jobs:
     permissions:
       contents: read
     env:
-      RENOVATE_VERSION: 43.200.1
       RENOVATE_BASE_DIR: ${{ github.workspace }}/../renovate
       GIT_LFS_SKIP_SMUDGE: 1
     defaults:
@@ -78,11 +77,6 @@ jobs:
         id: tools
         run: python3 eng/scripts/locked_tool_versions.py node >> "$GITHUB_OUTPUT"
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ steps.tools.outputs.node }}
-
       - name: Set up .NET SDK
         uses: actions/setup-dotnet@v6
         with:
@@ -93,6 +87,12 @@ jobs:
         with:
           experimental: true
           install: false
+
+      - name: Set up and validate Renovate
+        id: renovate-runtime
+        uses: ./.github/actions/setup-renovate
+        with:
+          repository-node: ${{ steps.tools.outputs.node }}
 
       - name: Install post-upgrade tools
         env:
@@ -126,26 +126,6 @@ jobs:
           gem --version
           bundle _2.4.20_ --version
           bundle _2.7.2_ --version
-
-      - name: Install Renovate CLI
-        run: npm install --global "renovate@${RENOVATE_VERSION}"
-
-      - name: Force full Renovate fallback clones
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          $renovateGitModule = Join-Path (& npm root --global) 'renovate/dist/util/git/index.js'
-          $content = Get-Content -Path $renovateGitModule -Raw
-          $needle = 'const opts = [];'
-          $matchCount = ([regex]::Matches($content, [regex]::Escape($needle))).Count
-          if ($matchCount -ne 1) {
-            throw "Expected one Renovate clone-options initialization, but found $matchCount."
-          }
-
-          $replacement = "$needle`n`t`t`tconfig.fullClone = true;"
-          Set-Content -Path $renovateGitModule -Value $content.Replace($needle, $replacement) -NoNewline
-          node --check $renovateGitModule
 
       - name: Verify NBGV metadata in full clone
         shell: pwsh
@@ -182,6 +162,8 @@ jobs:
         shell: pwsh
         env:
           RENOVATE_CONFIG_FILE: .github/renovate/global.cjs
+          CLI_NODE: ${{ steps.renovate-runtime.outputs.node }}
+          CLI_ENTRY: ${{ steps.renovate-runtime.outputs.cli }}
           LOG_LEVEL: ${{ github.event.inputs.log_level || 'info' }}
           # The Renovate GitHub App may create dependency branches and PRs, but must not bypass branch protection.
           # Renovate automerge is controlled by renovate.json and remains subject to CI and branch protection.
@@ -194,4 +176,7 @@ jobs:
           execFileSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'Get-Command mise,pkl,pwsh,pnpm,uv,ruby,bundle -ErrorAction Stop | Out-Null'], { stdio: 'inherit' });
           '@
 
-          renovate
+          & $env:CLI_NODE $env:CLI_ENTRY
+          if ($LASTEXITCODE -ne 0) {
+            throw "Renovate failed with exit code $LASTEXITCODE."
+          }

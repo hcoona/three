@@ -271,8 +271,10 @@ root input of the Python caller:
   `AllInputs` (the CI workflow, control bootstrap script, `mise.toml` and
   `mise.lock`) applies every retained job; `PythonInputs` (root Python
   configuration, lock and Python CI scripts) and `RubyInputs` add their
-  caller and special-job responsibilities. These lists select retained jobs and
-  report responsibility only; native facts still own product consumption.
+  caller and special-job responsibilities. Renovate's configuration, workflow,
+  isolated npm project, shared setup and locked-tool reader select its retained
+  compatibility job. These lists select retained jobs and report responsibility
+  only; native facts still own product consumption.
 - **Root shared inputs of an ecosystem caller**: root files that one ecosystem's
   caller treats as inputs of its root owner, such as root pytest configuration;
   the ecosystem's integration file owns them, for example the

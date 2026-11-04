@@ -142,6 +142,7 @@ internal static class DotNetCiCaller
                 ["dotnet"] = dotnet,
                 ["azureauth"] = retained.AzureAuth,
                 ["scholarly"] = retained.Scholarly,
+                ["renovate"] = retained.Renovate,
             },
             ["nuget_native_preparation"] = retained.NuGetNativePreparation,
             ["nuget_native_preparation_units"] = Strings(retained.NuGetPreparationUnits),
@@ -153,7 +154,7 @@ internal static class DotNetCiCaller
         { WriteIndented = true }) + "\n", new System.Text.UTF8Encoding(false, true));
         foreach ((string key, bool value) in new[] { ("validation", true),
                      ("mise", retained.Mise), ("azureauth", retained.AzureAuth),
-                     ("scholarly", retained.Scholarly),
+                     ("scholarly", retained.Scholarly), ("renovate", retained.Renovate),
                      ("nuget_native_preparation", retained.NuGetNativePreparation),
                      ("github_release_native_preparation",
                          retained.GithubReleaseNativePreparation),

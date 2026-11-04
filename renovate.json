@@ -78,6 +78,7 @@
     {
       "description": "Refresh pnpm workspace and example locks only for npm dependency changes.",
       "matchManagers": ["npm"],
+      "matchFileNames": ["!eng/renovate/**"],
       "postUpgradeTasks": {
         "commands": ["mise install --locked pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
         "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
