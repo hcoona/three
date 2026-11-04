@@ -135,17 +135,22 @@ internal sealed class NativeWorker : IAsyncDisposable
             credits.AttachSession(reservation.Id, client.SessionId!);
             using (Microsoft.Data.Sqlite.SqliteConnection connection = database.Open())
             {
+                using Microsoft.Data.Sqlite.SqliteTransaction transaction = connection.BeginTransaction();
                 Sql.Execute(connection, """
                     INSERT INTO native_sessions(reservation_id,worker,session_id,recovery,initialize_json,created_at)
                     VALUES($reservation,$worker,$session,$recovery,$initialize,$time);
-                    """, null, ("$reservation", reservation.Id), ("$worker", worker), ("$session", client.SessionId),
+                    """, transaction, ("$reservation", reservation.Id), ("$worker", worker), ("$session", client.SessionId),
                     ("$recovery", recovery), ("$initialize", initialize.ToJsonString()), ("$time", database.Now.ToString("O")));
                 Sql.Execute(connection, "UPDATE native_attempts SET session_id=$session WHERE usage_path=$path;",
-                    null, ("$session", client.SessionId), ("$path", reservation.UsagePath));
+                    transaction, ("$session", client.SessionId), ("$path", reservation.UsagePath));
+                Sql.Execute(connection, """
+                    INSERT INTO meta(key,value) VALUES($sessionKey,$session),($reservationKey,$reservation)
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+                    """, transaction, ("$sessionKey", $"worker:{worker}:session"), ("$session", client.SessionId),
+                    ("$reservationKey", $"worker:{worker}:reservation"), ("$reservation", reservation.Id));
+                transaction.Commit();
             }
 
-            database.WriteMetadata($"worker:{worker}:session", client.SessionId!);
-            database.WriteMetadata($"worker:{worker}:reservation", reservation.Id);
             database.WriteMetadata($"worker:{worker}:recovery", recovery);
             database.WriteMetadata($"worker:{worker}:initialize", initialize.ToJsonString());
             if (informationalDiscovery)

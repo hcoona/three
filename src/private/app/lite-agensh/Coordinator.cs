@@ -302,15 +302,7 @@ public sealed class Coordinator
                 {
                     for (int i = 0; i < ids.Length; i++)
                     {
-                        string? saved = mode == "reconnect" ? database.ReadMetadata($"worker:{ids[i]}:reservation") : null;
-                        CreditReservation? previous = saved is null ? null :
-                            credits.Reservations(database.RunId).FirstOrDefault(row => row.Id == saved && row.SessionId is not null);
-                        if (mode == "reconnect" && database.ReadMetadata($"worker:{ids[i]}:session") is not null &&
-                            previous is null)
-                        {
-                            throw new OperationException("credit_unknown", "A saved native session has no corresponding durable credit reservation.");
-                        }
-
+                        CreditReservation? previous = mode == "reconnect" ? ReadReconnectReservation(ids[i]) : null;
                         allocations.Add(ids[i], previous is null ? Reserve(ids[i], ids.Length - i) :
                             credits.ContinueExact(previous.Id, UsagePath(ids[i])));
                     }
@@ -408,7 +400,6 @@ public sealed class Coordinator
                     }
 
                     await git.ProcessPendingAsync(stop.Token).ConfigureAwait(false);
-                    await git.EvaluateHealthAsync(stop.Token).ConfigureAwait(false);
                     if (planning && !released &&
                         (database.ReadMetadata("git:plan_integrated") == "true" || database.Now >= plannerDeadline))
                     {
@@ -853,6 +844,37 @@ public sealed class Coordinator
         }
     }
 
+    private CreditReservation? ReadReconnectReservation(string worker)
+    {
+        string? session;
+        string? reservationId;
+        using (SqliteConnection connection = database.Open())
+        using (SqliteTransaction transaction = connection.BeginTransaction(deferred: true))
+        {
+            session = Sql.Scalar(connection, "SELECT value FROM meta WHERE key=$key;", transaction,
+                ("$key", $"worker:{worker}:session")) as string;
+            reservationId = Sql.Scalar(connection, "SELECT value FROM meta WHERE key=$key;", transaction,
+                ("$key", $"worker:{worker}:reservation")) as string;
+            transaction.Commit();
+        }
+
+        if (session is null && reservationId is null)
+        {
+            return null;
+        }
+
+        CreditReservation? reservation = credits.Reservations(database.RunId).FirstOrDefault(row => row.Id == reservationId);
+        if (string.IsNullOrWhiteSpace(session) || string.IsNullOrWhiteSpace(reservationId) ||
+            reservation is null || reservation.RunId != database.RunId || reservation.Worker != worker ||
+            reservation.SessionId != session)
+        {
+            throw new OperationException("credit_unknown",
+                "The saved native session/reservation association is incomplete or disagrees with the campaign run, worker or session.");
+        }
+
+        return reservation;
+    }
+
     private CreditReservation Reserve(string worker, int remainingWorkers)
     {
         JsonObject status = credits.Status(database.RunId, database.Configuration.RunAiCreditAllowance);
@@ -921,6 +943,7 @@ public sealed class Coordinator
             INSERT INTO coordinator_segments(mode,state,started_at,deadline) VALUES($mode,'starting',$time,$deadline);
             """, transaction, ("$mode", mode), ("$time", database.Now.ToString("O")), ("$deadline", deadline.ToString("O")));
         long id = (long)(Sql.Scalar(connection, "SELECT last_insert_rowid();", transaction) ?? throw new InvalidOperationException());
+        Sql.Execute(connection, "UPDATE meta SET value='false' WHERE key='git:finalized';", transaction);
         transaction.Commit();
         database.WriteMetadata("lifecycle:deadline", deadline.ToString("O"));
         return (id, deadline);
