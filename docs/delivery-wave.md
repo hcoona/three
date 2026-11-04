@@ -275,7 +275,12 @@ ends a grant. Git and the proposing PR retain the reason and history.
     - Accept the text-format specification as the project's contract, with a
       normative grammar and, subject to record admission, the recognition
       sidecar interface. Record the ABC comparison evidence available inside
-      W1: an xml2abc/abc2xml round trip and tokenizer counts.
+      W1: tokenizer counts and a capability mapping of each accepted
+      required notation category and invariant to standard ABC 2.1 syntax,
+      citing the specification and using hand-written, self-authored
+      examples where it is unclear. The completed xml2abc/abc2xml round trip
+      confounds format, converter and evaluator; it is retained only as a
+      toolchain observation, not as format-capability evidence.
     - Implement experimental forward (text to MusicXML) and reverse (MusicXML
       to text, for MuseScore, PDMX and OpenScore exports) converters, a grammar
       validator, a round-trip harness using MuseScore import/re-export and
@@ -283,16 +288,17 @@ ends a grant. Git and the proposing PR retain the reason and history.
       toolchain-class findings.
 - **Ordering and gates:** merge this entry before any W1 work. Accept the
   requirements and specification before converter implementation relies on
-  them. Accept each experiment or runtime-observation protocol, including the
-  ABC round trip, tokenizer counts and MuseScore import checks, under
-  research-evidence review before it executes. If the ABC round trip loses
-  under about 1% of in-scope elements, the format choice remains open pending
-  model evidence outside W1; return to the owner before implementing
-  converters. Integration changes to shared root or CI configuration are
-  ordered with other entries changing the same files. Each pull request
-  retains the applicable record-system, research-evidence and engineering
-  reviews, with independent classification of material findings. New
-  feasibility, product or scope tradeoffs return to the owner.
+  them. Accept each experiment or runtime-observation protocol, including
+  tokenizer counts and MuseScore import checks, under research-evidence
+  review before it executes. Perform the ABC capability mapping after the
+  requirements are accepted. If it finds every required category and
+  invariant expressible in standard ABC without ambiguity, the format choice
+  remains open pending model evidence outside W1; return to the owner before
+  implementing converters. Integration changes to shared root or CI
+  configuration are ordered with other entries changing the same files. Each
+  pull request retains the applicable record-system, research-evidence and
+  engineering reviews, with independent classification of material findings.
+  New feasibility, product or scope tradeoffs return to the owner.
 - **Acceptance:** the accepted W1 requirements and validation basis are met,
   including the hard criterion and a zero-difference system-assembly test on
   every accepted private gold piece, at least 99% of in-scope elements

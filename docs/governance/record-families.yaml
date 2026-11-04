@@ -667,6 +667,14 @@ bindings:
     path: src/private/app/qidian-novel-downloader/*.md
     format: markdown
     purpose: Qidian application usage
+  - id: src-private-app-sheet-music-omr-interfaces
+    family: project-interfaces
+    namespace: src/private/app/sheet-music-omr
+    state: current
+    carrier: repository-files
+    path: src/private/app/sheet-music-omr/*.md
+    format: markdown
+    purpose: Sheet-music recognition purpose, status boundary and project-record routing
   - id: src-private-app-supermemo-mcp-interfaces
     family: project-interfaces
     namespace: src/private/app/supermemo-mcp
@@ -891,6 +899,14 @@ bindings:
     path: src/private/app/qidian-novel-downloader/docs/**/*.md
     format: markdown
     purpose: Normative application requirements and informative technical notes
+  - id: src-private-app-sheet-music-omr-records
+    family: project-concern-records
+    namespace: src/private/app/sheet-music-omr
+    state: current
+    carrier: repository-files
+    path: src/private/app/sheet-music-omr/docs/**/*.md
+    format: markdown
+    purpose: Sheet-music text-representation requirements, validation basis and normative text-format specification
   - id: src-private-app-vscode-copilot-telegram-hook-records
     family: project-concern-records
     namespace: src/private/app/vscode-copilot-telegram-hook
