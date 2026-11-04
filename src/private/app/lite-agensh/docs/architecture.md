@@ -8,9 +8,10 @@ belong in the [migration map](upstream-migration.md).
 
 The operator controls a trusted local repository and several native coding
 agents. LiteAgensh coordinates their work; it does not implement their reasoning
-or model/tool loop. Use documented Copilot ACP stdio initially. A model provider
-SDK, another agent framework or a model HTTP proxy is not needed merely to host
-an existing complete agent runtime.
+or model/tool loop. Use the official Copilot .NET SDK to host the existing
+complete runtime, not a model-provider SDK, another agent framework or a model
+HTTP proxy. The [migration findings](upstream-migration.md#native-interface-selection)
+explain why this replaces the initial ACP-only choice.
 
 The platform view below is a C4 container-level view: boxes are applications or
 stores, not Docker containers.
@@ -20,7 +21,7 @@ flowchart LR
     owner[Operator] --> cli[LiteAgensh C# CLI]
     cli --> db[(Run SQLite database)]
     coordinator[LiteAgensh C# coordinator] <--> db
-    coordinator <-->|ACP stdio| agents[Native Copilot workers]
+    coordinator <-->|Official SDK native RPC| agents[Native Copilot workers]
     agents <-->|MCP stdio| helpers[LiteAgensh MCP helper processes]
     helpers <--> db
     coordinator --> git[Git and declared check processes]
@@ -35,16 +36,16 @@ application, not a new server installation. The .NET SDK/target framework,
 central package versions, test infrastructure and NBGV follow existing monorepo
 authorities; do not select a separate toolchain here.
 
-| Dependency                             | Delegated responsibility                                                                                         | Lite-owned responsibility                                                                                                                 |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Copilot runtime                        | Reasoning, editing/shell tools, provider transport/authentication, compaction, supported native session behavior | Process/session association, supported launch settings, capability negotiation, permission responses, dispatch/cancellation and reporting |
-| SQLite through `Microsoft.Data.Sqlite` | Transactions, file locking, persistence and documented busy-timeout behavior                                     | Schema, atomic domain/event changes, dedup/cursor semantics, finite timeouts and useful failure results                                   |
-| Git executable                         | Objects, commits, branches, worktrees, merge/conflict mechanics                                                  | Run refs, serialized candidate integration, exact identities, check/review binding and owner-checkout preservation                        |
-| Host process APIs                      | Process start, redirected pipes and observable process exit                                                      | Ownership, bounded waits, log separation and stopping only owned processes                                                                |
+| Dependency                             | Delegated responsibility                                                                                         | Lite-owned responsibility                                                                                                               |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Copilot runtime and official SDK       | Reasoning, editing/shell tools, provider transport/authentication, compaction, native RPC/session/event behavior | Process/session association, supported settings/readback, permission responses, dispatch/cancellation and reported-usage reconciliation |
+| SQLite through `Microsoft.Data.Sqlite` | Transactions, file locking, persistence and documented busy-timeout behavior                                     | Schema, atomic domain/event changes, dedup/cursor semantics, finite timeouts and useful failure results                                 |
+| Git executable                         | Objects, commits, branches, worktrees, merge/conflict mechanics                                                  | Run refs, serialized candidate integration, exact identities, check/review binding and owner-checkout preservation                      |
+| Host process APIs                      | Process start, redirected pipes and observable process exit                                                      | Ownership, bounded waits, log separation and stopping only owned processes                                                              |
 
 The [implementation contracts](implementation-contracts.md) select exact CPM
-dependencies, the official C# MCP SDK's stdio server and a narrow typed native
-ACP NDJSON/JSON-RPC client. They also own operation inputs/results and shared
+dependencies, the official C# MCP SDK's stdio server and the official Copilot
+.NET SDK's typed native boundary. They also own operation inputs/results and shared
 integration boundaries. Those choices do not establish tested interoperability
 or introduce another model orchestration layer.
 
@@ -81,14 +82,27 @@ MCP/CLI integration and lifecycle operations enqueue requests and return their
 identities; they do not announce a merge or pause as completed before the
 coordinator records the outcome.
 
-## ACP, MCP and instruction boundary
+## Native SDK, MCP and instruction boundary
 
-Start each native worker in its assigned worktree with redirected stdio;
-stdout is ACP NDJSON only and diagnostics use separate stderr/log streams.
-Negotiate protocol/capabilities before session creation. Supply absolute cwd and
-local stdio MCP configuration at the documented session boundary. Apply tool
-filters/reasoning settings at server startup where Copilot requires them; do
-not put unsupported settings into `session/new`.
+Launch and register one owned installed Copilot headless runtime per worker in
+its assigned worktree. Use its documented auto-assigned loopback endpoint and a
+process-local connection token, then connect with the SDK's
+`RuntimeConnection.ForUri`. Keep native readiness/output and stderr separate
+from application output. The host owns the actual process handle and durable
+lease; the SDK owns RPC framing, events and session operations. No application
+HTTP server, SDK-private RPC copy, VS Code installation or AHP host is needed.
+
+Reuse the installed CLI, disable its automatic update, and disable SDK build-time
+CLI acquisition. Verify the matched runtime version, explicit session identity,
+absolute working directory and native applied session limit before paid
+dispatch. Configure local stdio MCP and supported tool filters through typed
+SDK session settings. Disable recursive native team spawning where supported.
+Native policy still overrides an application request.
+
+Use explicit persistent session IDs. Bind reservation/session/worker identity
+atomically before any model send. SDK events are notifications, not the sole
+usage ledger: cumulative typed metrics and their completeness govern charging.
+Neither context occupancy nor a premium-request multiplier is AI-credit spend.
 
 The helper is bound at launch to its run and worker; tool arguments do not
 choose an arbitrary actor/run. It exposes the
@@ -168,21 +182,30 @@ to take over a live writer. After a crash, inspect surviving owned processes
 and worktrees before replacement; ambiguous ownership blocks automation.
 No distributed lease service is needed.
 
-| Path                           | Required behavior                                                                                                                                                 |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Start                          | Validate state/config/backend prerequisites, own the run, allocate worktrees and native sessions, then dispatch                                                   |
-| Crash reconnect                | Resolve old writer ownership; load the exact saved native session only if its advertised capability supports it                                                   |
-| Session load unavailable/fails | Record the failed reconnect and use the explicit fresh-session-with-summary recovery path; never claim an uninterrupted continuation or silently lose queued work |
-| Pause                          | Stop new dispatch, request native cancellation, settle owned processes and retain durable work                                                                    |
-| Explicit resume                | Start fresh native sessions with repository/task/change/board summary and preserved run state                                                                     |
-| Finalize                       | Quiesce workers, perform final checks and retain local delivery and unresolved work                                                                               |
-| Cleanup                        | Require an explicit request; inspect outcomes/ownership and remove only identified owned resources                                                                |
+| Path                           | Required behavior                                                                                                                                                           |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Start                          | Validate state/config/backend prerequisites, own the run, allocate worktrees and native sessions, then dispatch                                                             |
+| Crash reconnect                | Resolve old writer ownership; resume the exact saved native session with pending work continuation and transcript recovery disabled, then verify identity, limits and usage |
+| Session load unavailable/fails | Record the failed reconnect and use the explicit fresh-session-with-summary recovery path; never claim an uninterrupted continuation or silently lose queued work           |
+| Pause                          | Stop new dispatch, request native cancellation, settle owned processes and retain durable work                                                                              |
+| Explicit resume                | Start fresh native sessions with repository/task/change/board summary and preserved run state                                                                               |
+| Finalize                       | Quiesce workers, perform final checks and retain local delivery and unresolved work                                                                                         |
+| Cleanup                        | Require an explicit request; inspect outcomes/ownership and remove only identified owned resources                                                                          |
 
-Use bounded cancellation grace and process-specific cleanup. ACP silence does
+Use bounded cancellation grace and process-specific cleanup. Native silence does
 not prove exit. If a child remains unaccounted for, preserve state and report
 the unresolved operation rather than starting a duplicate or claiming a clean
 pause. Process enumeration is evidence about the local host, not proof about
 every possible external session.
+
+Cancel a turn explicitly through the SDK; cancellation of a local await is not
+proof that native work stopped. Quiesce event handlers, reconcile available
+complete usage, disconnect the SDK and settle the host-owned runtime before
+replacement. SDK disposal preserves on-disk session data; do not call its
+permanent session deletion API during pause, finalization or reconnect.
+On exact resume, use no more than the reservation's remaining allowance as the
+native window limit. Verify cumulative metrics against the saved baseline;
+unknown or regressing usage stops paid work rather than regranting a full cap.
 
 Retain SQLite together with its live journal state and worktrees through
 pause/finalize; do not copy a live main database file and call it a backup.

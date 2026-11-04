@@ -57,9 +57,9 @@ the ACP channel's crash reconnect is a different mechanism.
 | P05 | Gitea Actions and act-runner                                                         | Replace      | Declared host check subprocesses and serialized integration; retain command, candidate identity, outcome and log location.                                |
 | P06 | FastAPI board HTTP service                                                           | Replace      | Shared local board operations through SQLite and stdio MCP; no separate HTTP service.                                                                     |
 | P07 | Router sidecar per worker; `mini-router/src/main.ts`                                 | Replace      | Per-worker serialized dispatch loops inside one C# coordinator.                                                                                           |
-| P08 | ACP Unix socket and Linux bridge                                                     | Replace      | Native Copilot ACP stdio with negotiated capabilities; no Unix socket, UID change or `/proc` dependency.                                                  |
+| P08 | ACP Unix socket and Linux bridge                                                     | Replace      | Official Copilot .NET SDK/native RPC and an owned loopback runtime; no Unix socket, UID change or `/proc` dependency.                                     |
 | P09 | Worker image, entrypoint, private Node and image-version tests                       | Replace      | Installed executable discovery and contract/version preflight; no upstream experimental provider environment or runtime patches.                          |
-| P10 | Compose, Make/profile generation and port/subnet allocation                          | Replace/Omit | Local lifecycle operations and persistent run directory replace startup/control; no images, service ports or subnets.                                     |
+| P10 | Compose, Make/profile generation and port/subnet allocation                          | Replace/Omit | Local lifecycle and persistent run state replace startup/control; only a native auto-assigned loopback endpoint, no hosted service ports/images/subnets.  |
 | P11 | Service bootstrap, secret-service and collaboration-service credentials              | Omit         | No collaboration-service accounts. Existing native backend configuration owns authentication.                                                             |
 | P12 | Nginx edge and Gitea SSE/form authentication                                         | Omit         | No HTTP Git/chat edge or collaboration-service login remains.                                                                                             |
 | P13 | Network overlay, egress-filter, cgroups and systemd guards                           | Omit         | No added isolation/service installation. Preserve actual runtime ownership before replacement.                                                            |
@@ -101,8 +101,8 @@ the ACP channel's crash reconnect is a different mechanism.
 | L09 | Final export/delivery hook                              | Replace      | Retained local branch/report with base/final/check identities; no automatic remote push or GitHub PR.                                                      |
 | L10 | TeamRun segments, control file and lifecycle CLI        | Port/Replace | SQLite lifecycle/segment/end-reason state and local operator requests.                                                                                     |
 | L11 | `schedule.py` and lifecycle prompts                     | Port         | Wall-clock budget, wake/idle timing, notices and reminders where applicable.                                                                               |
-| L12 | Native-journal watchdog and queue inspection            | Replace/Port | Owned processes, ACP activity and queue state; silence alone does not establish process exit.                                                              |
-| L13 | Router reconnect/crash recovery                         | Port         | Resolve ownership and attempt exact-session load when advertised; explicit fresh-summary recovery when unavailable.                                        |
+| L12 | Native-journal watchdog and queue inspection            | Replace/Port | Owned processes, native SDK activity and queue state; silence alone does not establish process exit.                                                       |
+| L13 | Router reconnect/crash recovery                         | Port         | Resolve ownership and resume the exact SDK session with pending work disabled; labeled fresh-summary recovery remains budget-gated.                        |
 | L14 | Explicit pause/resume                                   | Port         | Retain work, then start fresh sessions with durable state summary; not crash reconnect.                                                                    |
 | L15 | Native cancellation/child cleanup                       | Replace      | Cancel, bounded wait and owned-process cleanup using host APIs; no broad name/UID killing.                                                                 |
 | L16 | Full HOME/workspace tar and sealed teardown archive     | Replace      | Preserve local worktrees, SQLite and session associations; separate explicit cleanup. Not portable sealed-backup equivalence.                              |
@@ -173,7 +173,7 @@ coverage, not a frozen wire-compatible shim.
 | V02 | Dispatcher/group/urgent/context scenarios       | Port cases          | Local event/store/tool scenarios protect ordering and dedup behavior.                                                            |
 | V03 | MySQL storage and HTTP integration boundaries   | Replace evidence    | New SQLite transaction, cursor, matching and restart scenarios; upstream green tests cannot validate this translation.           |
 | V04 | Docker smoke and scripted ACP worker            | Replace harness     | Local scripted workers exercise cooperation/check/integration without model calls or services.                                   |
-| V05 | Live native harness                             | Replace environment | Accepted Windows native protocol must establish actual ACP/MCP/cooperation/cancellation/recovery behavior. Stubs cannot.         |
+| V05 | Live native harness                             | Replace environment | Accepted Windows native protocol must establish actual SDK/MCP/cooperation/cancellation/recovery behavior. Stubs cannot.         |
 | V06 | Profile/render/config/CLI snapshots             | Replace cases       | Local configuration/instructions and original-checkout preservation, without deployment-profile compatibility.                   |
 | V07 | Upstream CI/install/build/release scripts       | Replace             | Existing monorepo .NET/CPM/NBGV/HK and project-test paths, not PNPM as a product host or upstream image pipelines.               |
 | V08 | MIT notice and research/demo assets             | Retain attribution  | [Retained notice](../THIRD-PARTY-NOTICES.txt), pinned source links and honest evidence scope; papers/demos are not Lite results. |
@@ -182,6 +182,10 @@ coverage, not a frozen wire-compatible shim.
 
 These are public interface findings retrieved on 2026-11-04, not observed
 integration results:
+
+- The selected native boundary is the pinned official SDK described
+  [below](#native-interface-selection); ACP remains upstream provenance and an
+  investigated alternative, not a second local adapter commitment.
 
 - [Copilot ACP documentation][copilot-acp]: public preview; native stdio uses
   NDJSON, supports cwd/MCP configuration, and places tool filters/reasoning
@@ -212,12 +216,51 @@ The same trigger/evaluator/action/fallback covers SQLite/MCP packages when their
 slice selects versions. The Agensh baseline is immutable; choosing another
 revision requires a source-delta review, not a freshness poll.
 
+## Native interface selection
+
+The initial ACP invocation was actually rejected by installed Copilot 1.0.105:
+`--acp` cannot be used with `--usage-output-file`. The retained
+[counterexample](https://github.com/hcoona/three/pull/1530#issuecomment-6622441256)
+contains the exact candidate/build and stopped-run evidence. It proves that
+combination failed before initialization, not that ACP cannot work or that the
+maintainers intended a particular restriction. Public help and searches did not
+establish that intent. No final native credit report exists for that attempt;
+its reservation remains uncertain, not measured zero.
+
+Select official [Copilot SDK v1.0.28][sdk] at
+`fa108e71ee3025663e0dac20f2a071055d3a6b14`, not moving repository main.
+Its `nodejs/package.json` pins CLI 1.0.105. The separately inspected
+[released NuGet archive][sdk-package] has SHA-256
+`29A9EF27B3ABE58CB056CF47E6733B93B70F2DC58D5A02BC0344F6ED277B9E8A`;
+packaged `build/GitHub.Copilot.SDK.props` pins the same runtime and packaged
+`lib/net10.0/GitHub.Copilot.SDK.xml` confirms the relied-on typed APIs.
+This is package-surface corroboration, not a reproducible-binary claim.
+
+| Source location in the pinned SDK                                                                                                   | Finding and decision impact                                                                                                                                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dotnet/src/Types.cs`, `RuntimeConnection`, `SessionConfig`, `ResumeSessionConfig`                                                  | Supported native stdio/TCP/existing-runtime connections; explicit persistent session IDs; pending-work continuation and transcript recovery can be disabled.                                         |
+| `dotnet/src/Client.cs`, runtime startup                                                                                             | SDK native hosting uses headless mode, not ACP; an installed executable can be reused. Host-owned process plus `ForUri` preserves durable process ownership without copying SDK RPC.                 |
+| `docs/getting-started.md`, `docs/setup/backend-services.md`, `dotnet/src/build/GitHub.Copilot.SDK.targets`                          | Runtime acquisition is optional; the native runtime can expose a local auto-assigned endpoint without VS Code or a hosted collaboration stack.                                                       |
+| `docs/features/session-limits.md`, `SessionLimitsConfig`, metadata snapshot RPC                                                     | Native per-session/window AI-credit soft caps and actual applied-limit metadata exist. Configuration alone is not observed enforcement.                                                              |
+| `dotnet/src/Generated/SessionEvents.cs`, `UsageGetMetricsResult`, `AiCreditsStatus`                                                 | Cumulative nano-AIU and `Complete`/`Partial`/`Unavailable` distinguish a charge from an incomplete subtotal; zero alone is insufficient.                                                             |
+| `dotnet/src/Generated/Rpc.cs`, `TokenPriceUnit.NanoAiu`; `dotnet/src/Generated/SessionEvents.cs`, `ToolExecutionUsage.CopilotUsage` | Generated API documentation explicitly converts nano-AIU to AI Credits by division by 1,000,000,000. Do not derive charges from model token prices.                                                  |
+| `docs/features/usage-and-billing.md`, usage events/checkpoints/RPC                                                                  | Live per-call events, durable checkpoints and cumulative snapshots are different views, not independent charges to add together; premium-request multipliers/context occupancy are not credit spend. |
+| `docs/runtime-supervised-host.md` and [AHP/ACP guide][ahp]                                                                          | AHP synchronizes multiple clients with authoritative host/session state. It is not billing or agent-to-agent cooperation; current LiteAgensh needs no AHP host.                                      |
+
+These are source findings. Empty-session usage completeness, actual limit
+readback/enforcement, cancellation billing and accounting-window behavior on
+resume still need the accepted native observations. Do not replace those gaps
+with guessed JSON pointers, an account/quota query, token estimates or a model
+gateway. Requirements, architecture, contracts and the native protocol own
+their decisions and effects; this evidence does not authorize a paid call.
+
 ## Evidence boundary and material differences
 
 The 68 responsibility rows and 29 tool rows are a migration inventory, not a
-line-by-line port or a completeness proof for runtime behavior. No local
-SQLite, process, ACP/MCP, cancellation, merge or native cooperation observation
-has been completed. [Validation](validation.md) owns how those gaps close.
+line-by-line port or a completeness proof for runtime behavior. Controlled
+SQLite/Git/process results and the failed ACP startup remain evidence in the
+implementation PR, not successful native cooperation. No successful SDK/MCP
+native acceptance is claimed. [Validation](validation.md) owns how those gaps close.
 
 Preserve these differences in all downstream claims:
 
@@ -265,3 +308,6 @@ Implementation ports must retain applicable source notices as well.
 [sqlite-transactions]: https://learn.microsoft.com/dotnet/standard/data/sqlite/transactions
 [sqlite-errors]: https://learn.microsoft.com/dotnet/standard/data/sqlite/database-errors
 [sqlite-async]: https://learn.microsoft.com/dotnet/standard/data/sqlite/async
+[sdk]: https://github.com/github/copilot-sdk/tree/fa108e71ee3025663e0dac20f2a071055d3a6b14
+[sdk-package]: https://api.nuget.org/v3-flatcontainer/github.copilot.sdk/1.0.28/github.copilot.sdk.1.0.28.nupkg
+[ahp]: https://microsoft.github.io/agent-host-protocol/guide/ahp-and-acp
