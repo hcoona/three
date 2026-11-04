@@ -124,7 +124,9 @@ positive JSON integers, except a starting cursor of zero. Member IDs, channel
 IDs, Git refs/hashes and board labels are strings. Text is a string; required
 title/body/query/content fields must not be empty. Reject unknown action names,
 unknown fields and invalid enum/type combinations before committing. An omitted
-array defaults to empty. Pagination uses `cursor?: integer = 0` and
+array defaults to empty on creation. A partial update preserves every omitted
+field, including arrays; only an explicit empty array clears existing links.
+Pagination uses `cursor?: integer = 0` and
 `limit?: integer = 50`, with limits 1 through 200; ascending ID pages return
 `{items: [...], nextCursor: integer|null}`. No filter means all visible matching
 states, not an implicit state transition.
@@ -155,7 +157,7 @@ states, not an implicit state transition.
 | `change_write/update`    | `action: "update", id: integer, title?: string, body?: string, taskIds?: integer[], head?: string`; at least one updated field           | Change object; a new head must be the current bound worker branch head and invalidates prior approvals |
 | `change_write/comment`   | `action: "comment", id: integer, body: string`                                                                                           | Change object including appended comment                                                               |
 | `change_write/integrate` | `action: "integrate", id: integer, head: string`                                                                                         | `{requestId, changeId, head, state: "pending"}`                                                        |
-| `change_read`            | `id: integer`                                                                                                                            | Change object plus `diff: string`                                                                      |
+| `change_read`            | `id: integer`                                                                                                                            | Change object plus `diff: string` and `integrationRequests`                                            |
 | `change_list`            | `state?: "open"\|"integrated"`, pagination                                                                                               | Paginated change objects                                                                               |
 | `change_review`          | `id: integer, head: string, decision: "approve"\|"request-changes"\|"comment", body: string`                                             | `{id, changeId, actor, head, decision, body, createdAt}`                                               |
 | `check_read`             | Exactly one of `id: integer` or `changeId: integer`                                                                                      | `{items: [check objects]}`                                                                             |
@@ -173,6 +175,15 @@ uses the `CheckCommand` shape, and status is `passed`, `failed`, `cancelled`
 or `timed-out`. All times are ISO-8601 UTC strings; absent optional stored
 values are explicitly null in results. Revision labels and admission/TTL/
 detail-expansion semantics remain the pinned board policy, not new text rules.
+
+`change_read.integrationRequests` retains
+`[{requestId, changeId, actor, head, state, resultCode: string|null,
+message: string|null, integratedCommit: string|null, createdAt, updatedAt}]`.
+Request states are `pending`, `running`, `succeeded` and `failed`. Terminal
+results include their success/failure code and explanation even when no check
+could start, for example a conflict or stale head. Only a successful integration
+has an `integratedCommit`. Reads therefore distinguish pending work from failed
+work without adding a separate operation or equating a queued request to a merge.
 
 `message_send.recipient` is either `"team"` or one existing member ID, never a
 caller-supplied arbitrary channel. The team channel ID is `"team"`. A direct
