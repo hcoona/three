@@ -77,6 +77,13 @@ public sealed record RunConfiguration
             throw new ArgumentException("Run state must be outside the original checkout.");
         }
 
+        string ledger = Path.GetFullPath(CampaignLedgerPath);
+        if (ledger.Equals(repository, StringComparison.OrdinalIgnoreCase) ||
+            ledger.StartsWith(repository + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("The campaign ledger must be outside the original checkout.");
+        }
+
         if (WorkerCount < 1 || DurationSeconds <= 0 || PlanningSeconds < 0 ||
             PlanningSeconds > DurationSeconds || RunAiCreditAllowance < 30 ||
             CampaignAiCreditAllowance < RunAiCreditAllowance)
@@ -91,6 +98,7 @@ public sealed record RunConfiguration
 
         foreach (CheckCommand check in CandidateChecks.Concat(IntegrationChecks).Concat(FinalChecks))
         {
+            ArgumentNullException.ThrowIfNull(check);
             ArgumentException.ThrowIfNullOrWhiteSpace(check.Executable);
             if (check.TimeoutSeconds <= 0)
             {

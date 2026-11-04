@@ -49,6 +49,8 @@ public sealed class ProcessRunner
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
 
         cancellationToken.ThrowIfCancellationRequested();
+        using CancellationTokenSource deadline = new(timeout);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         ProcessStartInfo start = new(executable)
         {
             WorkingDirectory = workingDirectory,
@@ -65,12 +67,26 @@ public sealed class ProcessRunner
 
         using Process process = new() { StartInfo = start };
         process.Start();
-        long lease = Register(process, "command");
+        long lease;
+        try
+        {
+            lease = Register(process, "command");
+        }
+        catch
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(CancellationToken.None)
+                    .WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None).ConfigureAwait(false);
+            }
+
+            throw;
+        }
+
         process.StandardInput.Close();
         Task<string> output = process.StandardOutput.ReadToEndAsync(cancellationToken: CancellationToken.None);
         Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken: CancellationToken.None);
-        using CancellationTokenSource deadline = new(timeout);
-        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         bool timedOut = false;
         try
         {

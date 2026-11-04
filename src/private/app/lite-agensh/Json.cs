@@ -10,6 +10,7 @@ public static class Json
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        RespectNullableAnnotations = true,
     };
 
     public static JsonObject SerializePayload(object value) =>
