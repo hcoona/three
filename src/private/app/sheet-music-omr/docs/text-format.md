@@ -405,6 +405,8 @@ Fragments:
   A block whose `to` equals the effective length owns `right`. A block shall not
   carry an option that it does not own.
 - `len` is repeated identically on both fragments of a split measure.
+- A voice line of a block whose `to` is less than the effective length shall
+  not hold a grace note after its last non-grace rhythmic event.
 
 Volta brackets are matched by adjacency of measures, and a continuation
 fragment (`from>0`) is part of the measure that it continues. `ending=N:start`
@@ -557,7 +559,8 @@ Rules for all relations:
 
 - Endpoints with the same label agree in kind and variant. A label that starts
   outside the document is valid only if `carry-in` lists it as open. A relation
-  may stay open at the end of a document, and then appears in its carry-out.
+  may stay open at the end of a system document, and then appears in its
+  carry-out. No relation stays open at the end of an assembled score.
   Arpeggios cannot stay open.
 - Labels are document-scoped and are never reused within a document. A carried
   relation keeps its carry-in label, except that carried relations whose
