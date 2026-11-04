@@ -5,7 +5,7 @@ internal static class WorkerInstructions
     public static string Compose(
         RunDatabase database,
         string worker,
-        string context,
+        string changes,
         string events,
         bool planning
     )
@@ -88,8 +88,8 @@ internal static class WorkerInstructions
                 : "")
             + "\n"
             + "\n"
-            + "==== DURABLE SHARED CONTEXT ====\n"
-            + $"{context}\n"
+            + "==== DURABLE CHANGES ====\n"
+            + $"{changes}\n"
             + "\n"
             + "==== EVENTS ====\n"
             + $"{events}";

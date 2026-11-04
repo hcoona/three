@@ -8,6 +8,66 @@ namespace LiteAgensh.Tests;
 [TestClass]
 public sealed class NativeMetadataTests
 {
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task NativeErrorPreservesItsReasonUnlessTheCallerActuallyCanceled(bool canceled)
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        await using NativeSdkSession native = new(
+            database,
+            new ProcessRunner(database),
+            fixture.RepositoryPath,
+            isolated: false
+        );
+        SessionEvent error = SessionEvent.FromJson(
+            """
+            {
+              "id":"00000000-0000-0000-0000-000000000001",
+              "timestamp":"2026-01-01T00:00:00Z",
+              "type":"session.error",
+              "data":{
+                "errorType":"query",
+                "message":"Prompt exceeds model input budget.",
+                "originatingMessageId":"00000000-0000-0000-0000-000000000002"
+              }
+            }
+            """
+        )!;
+        native.RecordEvent(error);
+        native.RecordEvent(SessionEvent.FromJson(
+            """
+            {
+              "id":"00000000-0000-0000-0000-000000000003",
+              "timestamp":"2026-01-01T00:00:01Z",
+              "type":"session.error",
+              "data":{"errorType":"query","message":"Later abort error."}
+            }
+            """
+        )!);
+        using CancellationTokenSource stop = new();
+        if (canceled)
+        {
+            await stop.CancelAsync();
+            var interrupted = Assert.ThrowsExactly<OperationCanceledException>(
+                () => native.CheckEvents(stop.Token)
+            );
+            Assert.AreEqual(stop.Token, interrupted.CancellationToken);
+        }
+        else
+        {
+            OperationException failed = Assert.ThrowsExactly<OperationException>(
+                () => native.CheckEvents(stop.Token)
+            );
+            Assert.AreEqual("native_stopped", failed.Code);
+            Assert.Contains("query", failed.Message);
+            Assert.Contains("Prompt exceeds model input budget.", failed.Message);
+            Assert.Contains("00000000-0000-0000-0000-000000000002", failed.Message);
+            Assert.DoesNotContain("Later abort error", failed.Message);
+        }
+    }
+
     // Pinned SDK DTOs used by the real application's metadata guard.
 #pragma warning disable GHCP001
     [TestMethod]

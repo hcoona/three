@@ -263,6 +263,22 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
         {
             execution = coordinator.RunAsync("run", stop.Token);
             await WaitUntilAsync(() => native.OrdinaryPrompts().Length >= 2, execution, token);
+            foreach (string prompt in native.OrdinaryPrompts())
+            {
+                string[] sections = prompt.Split("==== EVENTS ====\n", 2);
+                string payload = sections[1];
+                JsonObject envelope = JsonNode.Parse(payload)!.AsObject();
+                JsonArray tasks = envelope["sharedContext"]!["tasks"]!.AsArray();
+                Assert.HasCount(
+                    1,
+                    tasks.Where(task =>
+                        task!["title"]!.GetValue<string>() == "durable-only-project-task"
+                    )
+                );
+                Assert.DoesNotContain("durable-only-project-task", sections[0]);
+                Assert.DoesNotContain("durable-only-peer-finding", sections[0]);
+            }
+
             string first1 = fixture.Database.ReadMetadata("worker:worker1:session")!;
             string first2 = fixture.Database.ReadMetadata("worker:worker2:session")!;
             JsonObject pending = Scenario.Data(coordinator.RequestControl("pause"));

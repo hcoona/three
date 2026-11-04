@@ -243,7 +243,7 @@ internal sealed class NativeSdkSession : IAsyncDisposable
         CancellationToken cancellationToken
     )
     {
-        CheckEvents();
+        CheckEvents(cancellationToken);
         CopilotSession active =
             session ?? throw new InvalidOperationException("No native session.");
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
@@ -255,12 +255,20 @@ internal sealed class NativeSdkSession : IAsyncDisposable
             AssistantMessageEvent? response = await active
                 .SendAndWaitAsync(text, timeout, linked.Token)
                 .ConfigureAwait(false);
-            CheckEvents();
+            CheckEvents(cancellationToken);
             return new() { ["stopReason"] = "end_turn", ["text"] = response?.Data.Content };
         }
         catch
         {
-            await AbortAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await AbortAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            finally
+            {
+                CheckEvents(cancellationToken);
+            }
+
             throw;
         }
     }
@@ -376,11 +384,11 @@ internal sealed class NativeSdkSession : IAsyncDisposable
         }
     }
 
-    private void RecordEvent(SessionEvent update)
+    internal void RecordEvent(SessionEvent update)
     {
         lock (callbacks)
         {
-            if (!acceptingCallbacks)
+            if (!acceptingCallbacks || eventFailure is not null)
             {
                 return;
             }
@@ -389,9 +397,17 @@ internal sealed class NativeSdkSession : IAsyncDisposable
             {
                 eventFailure = "Unexpected tool execution in an isolated native session.";
             }
-            else if (update is SessionErrorEvent)
+            else if (update is SessionErrorEvent error)
             {
-                eventFailure = "Native session reported an error.";
+                eventFailure =
+                    $"Native session {session?.SessionId ?? "(opening)"} "
+                    + $"reported {error.Data.ErrorType}"
+                    + (
+                        error.Data.OriginatingMessageId is { } origin
+                            ? $" for message {origin}"
+                            : ""
+                    )
+                    + $": {error.Data.Message}";
             }
             else if (update is SessionLimitsExhaustedRequestedEvent)
             {
@@ -405,8 +421,9 @@ internal sealed class NativeSdkSession : IAsyncDisposable
         }
     }
 
-    private void CheckEvents()
+    internal void CheckEvents(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         lock (callbacks)
         {
             if (eventFailure is not null)

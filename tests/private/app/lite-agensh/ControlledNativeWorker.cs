@@ -197,6 +197,36 @@ internal sealed class ControlledNativeWorker(
                 throw new OperationException("native_stopped", "Controlled turn failed.");
             }
 
+            if (!calibration && Mode(directory) == "native-error")
+            {
+                File.WriteAllText(Path.Combine(directory, $"native-error-{SessionId}"), "");
+                while (
+                    Directory.EnumerateFiles(directory, "native-error-*").Count()
+                    < database.Configuration.WorkerCount
+                )
+                {
+                    if (linked.IsCancellationRequested)
+                    {
+                        if (
+                            Directory.EnumerateFiles(directory, "native-error-*").Count()
+                            >= database.Configuration.WorkerCount
+                        )
+                        {
+                            break;
+                        }
+
+                        linked.Token.ThrowIfCancellationRequested();
+                    }
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(25), CancellationToken.None);
+                }
+
+                throw new OperationException(
+                    "native_stopped",
+                    $"Native query for {SessionId}: prompt exceeds model input budget."
+                );
+            }
+
             if (
                 Mode(directory) == "unknown-usage"
                 || (!calibration && Mode(directory) == "partial-after-turn")
