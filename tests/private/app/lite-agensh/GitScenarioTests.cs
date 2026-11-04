@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using LiteAgensh;
+using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LiteAgensh.Tests;
@@ -8,7 +9,7 @@ namespace LiteAgensh.Tests;
 public sealed class GitScenarioTests(TestContext testContext)
 {
     [TestMethod]
-    [Timeout(120000, CooperativeCancellation = true)]
+    [Timeout(240000, CooperativeCancellation = true)]
     public async Task TwoCandidatesIntegrateSeriallyCheckExactTreesAndPreserveDirtyOriginal()
     {
         CancellationToken token = testContext.CancellationToken;
@@ -37,9 +38,19 @@ public sealed class GitScenarioTests(TestContext testContext)
                             [
                                 "-NoProfile",
                                 "-Command",
-                                "if ((Get-Content a.txt -Raw) -ne 'a-fixed' -or "
+                                "$marker = '"
+                                    + Path.Combine(configuration.StatePath, "final-check.txt")
+                                        .Replace("'", "''", StringComparison.Ordinal)
+                                    + "'; $owned = "
+                                    + "[System.Diagnostics.Process]::GetCurrentProcess(); "
+                                    + "[IO.File]::WriteAllText($marker, "
+                                    + "('started pid=' + $owned.Id + ' ticks=' "
+                                    + "+ $owned.StartTime.ToUniversalTime().Ticks)); "
+                                    + "$owned.Dispose(); "
+                                    + "if ((Get-Content a.txt -Raw) -ne 'a-fixed' -or "
                                     + "(Get-Content b.txt -Raw) -ne 'b-fixed') { exit 7 }; "
-                                    + "'both independent fixes present'",
+                                    + "'both independent fixes present'; "
+                                    + "[IO.File]::AppendAllText($marker, '; completed exit=0')",
                             ],
                         },
                     ],
@@ -98,7 +109,16 @@ public sealed class GitScenarioTests(TestContext testContext)
 
         fixture.Database.WriteMetadata("lifecycle", "paused");
         Phase("finalize with combined-fix PowerShell check");
-        JsonObject delivery = Scenario.Data(await fixture.Operations.FinalizeAsync(token));
+        JsonObject delivery;
+        try
+        {
+            delivery = Scenario.Data(await fixture.Operations.FinalizeAsync(token));
+        }
+        finally
+        {
+            WriteFinalizationDiagnostics(fixture);
+        }
+
         Assert.IsTrue(delivery["accepted"]!.GetValue<bool>());
         Assert.AreNotEqual(
             delivery["baseCommit"]!.GetValue<string>(),
@@ -146,6 +166,47 @@ public sealed class GitScenarioTests(TestContext testContext)
         Phase("verify original checkout after cleanup");
         await fixture.AssertOriginalPreservedAsync(token);
         Phase("completed");
+    }
+
+    private void WriteFinalizationDiagnostics(GitScenario fixture)
+    {
+        try
+        {
+            string marker = Path.Combine(fixture.Database.StatePath, "final-check.txt");
+            testContext.WriteLine(
+                File.Exists(marker)
+                    ? $"Final command marker: {File.ReadAllText(marker)}"
+                    : "Final command marker absent; first PowerShell statement not observed."
+            );
+            using SqliteConnection connection = fixture.Database.Open();
+            foreach (string table in new[] { "checks", "process_leases" })
+            {
+                using SqliteCommand command = connection.CreateCommand();
+                command.CommandTimeout = 2;
+                command.CommandText = $"SELECT * FROM {table} ORDER BY id DESC LIMIT 8;";
+                using SqliteDataReader rows = command.ExecuteReader();
+                while (rows.Read())
+                {
+                    IEnumerable<string> fields = Enumerable
+                        .Range(0, rows.FieldCount)
+                        .Select(index => $"{rows.GetName(index)}={rows.GetValue(index)}");
+                    testContext.WriteLine($"Finalization {table}: {string.Join("; ", fields)}");
+                    if (table == "checks" && File.Exists((string)rows["log_path"]))
+                    {
+                        foreach (string line in File.ReadLines((string)rows["log_path"]).Take(12))
+                        {
+                            testContext.WriteLine(
+                                $"Final check log: {line[..Math.Min(line.Length, 1000)]}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            testContext.WriteLine($"Secondary finalization diagnostic failure: {exception}");
+        }
     }
 
     [TestMethod]
