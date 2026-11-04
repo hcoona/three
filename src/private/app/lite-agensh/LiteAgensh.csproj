@@ -14,6 +14,7 @@
     <PackageReference Include="GitHub.Copilot.SDK" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="YamlDotNet" />
     <None Update="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
