@@ -42,14 +42,11 @@ authorities; do not select a separate toolchain here.
 | Git executable                         | Objects, commits, branches, worktrees, merge/conflict mechanics                                                  | Run refs, serialized candidate integration, exact identities, check/review binding and owner-checkout preservation                        |
 | Host process APIs                      | Process start, redirected pipes and observable process exit                                                      | Ownership, bounded waits, log separation and stopping only owned processes                                                                |
 
-`Microsoft.Data.Sqlite` is the selected lightweight .NET storage API, not an
-assertion that integration is already tested. Add its exact version through CPM
-only in an accepted implementation slice. Choose a maintained C# MCP library
-against the required stdio contract during that slice; this capability design
-does not freeze a package version or justify writing a general MCP stack.
-ACP framing may use a maintained compatible client or a narrow typed
-NDJSON/JSON-RPC client; resolve that packaging choice before its implementation.
-Neither choice adds another model orchestration layer.
+The [implementation contracts](implementation-contracts.md) select exact CPM
+dependencies, the official C# MCP SDK's stdio server and a narrow typed native
+ACP NDJSON/JSON-RPC client. They also own operation inputs/results and shared
+integration boundaries. Those choices do not establish tested interoperability
+or introduce another model orchestration layer.
 
 ## State and transaction boundary
 

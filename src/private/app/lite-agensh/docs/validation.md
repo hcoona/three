@@ -74,7 +74,9 @@ installation, test skeleton or live agent run is required by these records.
 ## Native observation protocol admission
 
 This validation basis is **not** an executable native-run protocol and does not
-approve a paid/model run. Before such observation, accept a concrete protocol
+approve a paid/model run. The separate [native protocol](native-acceptance-protocol.md)
+owns the concrete initial Windows subject and owner-approved credit effects.
+Before such observation, accept that concrete protocol
 under independent research-evidence review containing:
 
 - Exact implementation/build identity, Windows environment, .NET/Git/Copilot

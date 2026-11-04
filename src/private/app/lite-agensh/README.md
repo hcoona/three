@@ -32,6 +32,8 @@ in this overview.
 | What replaces each upstream responsibility and collaboration tool?  | [Complete migration map and source evidence](docs/upstream-migration.md)      |
 | What evidence permits implementation and an eventual support claim? | [Validation basis](docs/validation.md)                                        |
 | Where is upstream attribution retained?                             | [Third-party notice](THIRD-PARTY-NOTICES.txt)                                 |
+| What concrete boundaries do independent implementation units share? | [Implementation contracts](docs/implementation-contracts.md)                  |
+| What exact native observation and credit effects may be executed?   | [Native acceptance protocol](docs/native-acceptance-protocol.md)              |
 | What work is currently authorized?                                  | Repository [Delivery Wave](../../../../docs/delivery-wave.md)                 |
 | Where are progress, reviews and delivery dependencies?              | [Issue #1526](https://github.com/hcoona/three/issues/1526) and its linked PRs |
 
@@ -51,6 +53,13 @@ incompatible platform substitution, an untracked semantic omission or an
 unsupported acceptance claim. They need distinct carriers because their
 questions and change/review points differ; this portal cannot serve as all four
 authorities.
+
+Independent implementation units also consume the implementation contracts;
+without them their separately produced components could disagree at integration.
+The native executor/reviewer consumes the exact acceptance protocol because a
+general validation basis cannot approve concrete provider effects or credit
+accounting. These two carriers have distinct implementation and observation
+review points, and are maintained by the owner with their authors.
 
 The source baseline and license stay with the map and notice. Review execution,
 checker reports, mutable-source retrievals, findings and progress stay in Issues
