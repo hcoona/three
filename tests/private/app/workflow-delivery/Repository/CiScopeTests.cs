@@ -224,6 +224,45 @@ public sealed class CiScopeTests
     }
 
     [TestMethod]
+    [DataRow("eng/renovate/package.json", true)]
+    [DataRow("eng/renovate/package-lock.json", true)]
+    [DataRow("eng/renovate/.npmrc", true)]
+    [DataRow(".github/actions/setup-renovate/action.yml", true)]
+    [DataRow(".github/workflows/renovate.yml", true)]
+    [DataRow(".github/renovate/global.cjs", true)]
+    [DataRow("renovate.json", true)]
+    [DataRow("eng/scripts/locked_tool_versions.py", true)]
+    [DataRow("mise.lock", true)]
+    [DataRow(".github/workflows/ci.yml", true)]
+    [DataRow("docs/README.md", false)]
+    public void RenovateCompatibilityFollowsItsInputs(string path, bool expected)
+    {
+        CiScopeApplicability result = CiScope.Select([path], Comparison(path), false, []);
+        Assert.AreEqual(expected, result.Renovate);
+        if (expected) Assert.Contains(path, result.Reasons["renovate"]);
+        else Assert.IsEmpty(result.Reasons["renovate"]);
+    }
+
+    [TestMethod]
+    public void RenovateCompatibilityCoversFullValidationAndDeletedInputs()
+    {
+        CiScopeApplicability full = CiScope.Select([], Comparison(), true, []);
+        Assert.IsTrue(full.Renovate);
+        Assert.Contains("explicit full validation", full.Reasons["renovate"]);
+
+        const string path = "eng/renovate/package-lock.json";
+        var comparison = new GitComparison(Revision(path), Revision(), [path]);
+        CiScopeApplicability deleted = CiScope.Select([path], comparison, false, []);
+        Assert.IsTrue(deleted.Renovate);
+        ScopeCoordinate basis = Assert.ContainsSingle(CiScope.Owners(comparison.Basis, [path],
+            [], [], Tasks, Hk));
+        Assert.IsTrue(basis.Reasons.Any(reason => reason.Owner == "renovate" &&
+            reason.Target == ".github/workflows/ci.yml#renovate-compat"));
+        Assert.IsFalse(Assert.ContainsSingle(CiScope.Owners(comparison.Candidate, [path],
+            [], [], Tasks, Hk)).Present);
+    }
+
+    [TestMethod]
     [DataRow("src/private/app/workflow-delivery/Release/NuGetPreparation.cs", true)]
     [DataRow("tests/private/app/workflow-delivery/Release/NuGetPreparationNativeTests.cs", true)]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +

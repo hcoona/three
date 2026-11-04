@@ -58,8 +58,8 @@ root [`ci.yml`](../../../../../../.github/workflows/ci.yml) and the artifacts th
 transfer by same-run immutable artifact ID. It omits steps inside each job and
 the retained jobs that do not exchange Workflow Delivery artifacts. Validate's
 declared `needs` also include the omitted `mise-lock`, `conformance`,
-`azureauth-foundation-artifacts` and `scholarly-tests` jobs; every other job in
-the workflow is a direct or transitive Validate prerequisite, and
+`azureauth-foundation-artifacts`, `scholarly-tests` and `renovate-compat` jobs;
+every other job in the workflow is a direct or transitive Validate prerequisite, and
 [`test_general_ci_workflow.py`](../../../../../../tests/eng/test_general_ci_workflow.py)
 fails when one is not. The participant mapping uses YAML job IDs, not displayed
 check names. The ruleset requires only Validate. Displayed job names come

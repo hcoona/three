@@ -33,6 +33,7 @@ jobs:
       mise: ${{ steps.select.outputs.mise }}
       azureauth: ${{ steps.select.outputs.azureauth }}
       scholarly: ${{ steps.select.outputs.scholarly }}
+      renovate: ${{ steps.select.outputs.renovate }}
       nuget_native_preparation: ${{ steps.select.outputs.nuget_native_preparation }}
       nuget_native_preparation_filter: ${{ steps.select.outputs.nuget_native_preparation_filter }}
       nuget_native_preparation_tests: ${{ steps.select.outputs.nuget_native_preparation_tests }}
@@ -141,6 +142,7 @@ jobs:
         dotnet-results,
         azureauth-foundation-artifacts,
         scholarly-tests,
+        renovate-compat,
         nuget-native-preparation,
         github-release-native-preparation,
         python-tests,
@@ -159,6 +161,7 @@ jobs:
           DOTNET_RESULTS_RESULT: ${{ needs.dotnet-results.result }}
           AZUREAUTH_ARTIFACTS_RESULT: ${{ needs.azureauth-foundation-artifacts.result }}
           SCHOLARLY_RESULT: ${{ needs.scholarly-tests.result }}
+          RENOVATE_RESULT: ${{ needs.renovate-compat.result }}
           NUGET_PREPARATION_RESULT: ${{ needs.nuget-native-preparation.result }}
           GITHUB_RELEASE_PREPARATION_RESULT: ${{ needs.github-release-native-preparation.result }}
           PYTHON_RESULT: ${{ needs.python-tests.result }}
@@ -171,6 +174,7 @@ jobs:
             "mise-lock=$MISE_LOCK_RESULT" "source=$CONFORMANCE_RESULT" "dotnet=$DOTNET_RESULT" \
             "dotnet-results=$DOTNET_RESULTS_RESULT" \
             "azureauth-artifacts=$AZUREAUTH_ARTIFACTS_RESULT" "scholarly=$SCHOLARLY_RESULT" \
+            "renovate=$RENOVATE_RESULT" \
             "nuget=$NUGET_PREPARATION_RESULT" "github-release=$GITHUB_RELEASE_PREPARATION_RESULT" \
             "python=$PYTHON_RESULT" "preparation=$PREPARATION_RESULT" "ruby=$RUBY_RESULT" \
             "node-matrix=$NODE_MATRIX_RESULT"; do
@@ -227,6 +231,50 @@ jobs:
       - name: Validate lockfile
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: mise install --locked --dry-run --monorepo
+
+      - name: Reject canceled validation
+        if: cancelled()
+        shell: bash
+        run: |
+          echo 'Validation was canceled before a complete result.' >&2
+          exit 1
+
+  renovate-compat:
+    name: Renovate compatibility
+    runs-on: ubuntu-latest
+    needs: scope
+    if: ${{ !cancelled() }}
+
+    steps:
+      - name: Require successful scope selection
+        id: scope
+        shell: bash
+        env:
+          SELECTION_RESULT: ${{ needs.scope.result }}
+          APPLICABLE: ${{ needs.scope.outputs.renovate }}
+        run: |
+          case "$SELECTION_RESULT:$APPLICABLE" in
+            success:true) echo 'run=true' >> "$GITHUB_OUTPUT" ;;
+            success:false) echo 'run=false' >> "$GITHUB_OUTPUT"; echo 'Not applicable to this change.' ;;
+            *) echo 'Scope selection failed or omitted applicability.' >&2; exit 1 ;;
+          esac
+
+      - name: Checkout
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Read committed Node version
+        id: tools
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        run: python3 eng/scripts/locked_tool_versions.py node >> "$GITHUB_OUTPUT"
+
+      - name: Set up and validate Renovate
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/setup-renovate
+        with:
+          repository-node: ${{ steps.tools.outputs.node }}
 
       - name: Reject canceled validation
         if: cancelled()

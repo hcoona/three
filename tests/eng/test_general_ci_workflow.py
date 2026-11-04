@@ -28,6 +28,7 @@ VALIDATE_NEEDS = [
     "dotnet-results",
     "azureauth-foundation-artifacts",
     "scholarly-tests",
+    "renovate-compat",
     "nuget-native-preparation",
     "github-release-native-preparation",
     "python-tests",
@@ -1314,6 +1315,238 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
         for step in job["steps"][1:-1]:
             assert "steps.scope.outputs.run == 'true'" in step["if"]
             assert not step.get("continue-on-error", False)
+
+
+def test_renovate_compat_shares_the_credential_free_runtime(workflow):
+    """The retained check and scheduled workflow use the same runtime setup."""
+    jobs = workflow["jobs"]
+    assert jobs["scope"]["outputs"]["renovate"] == (
+        "${{ steps.select.outputs.renovate }}"
+    )
+    job = jobs["renovate-compat"]
+    assert job["steps"][0]["env"]["APPLICABLE"] == (
+        "${{ needs.scope.outputs.renovate }}"
+    )
+    checkout = _action(job, "actions/checkout")
+    assert checkout["with"]["persist-credentials"] is False
+    setup = _action(job, "./.github/actions/setup-renovate")
+    assert setup["with"]["repository-node"] == (
+        "${{ steps.tools.outputs.node }}"
+    )
+    assert "secrets." not in json.dumps(job)
+    assert "RENOVATE_TOKEN" not in json.dumps(job)
+
+    scheduled = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/renovate.yml").read_text()
+    )["jobs"]["renovate"]
+    assert (
+        _action(scheduled, "./.github/actions/setup-renovate")["with"]
+        == (setup["with"])
+    )
+    assert any(
+        step["name"] == "Seed Renovate repository with full clone"
+        for step in scheduled["steps"]
+    )
+    assert any(
+        step["name"] == "Verify NBGV metadata in full clone"
+        for step in scheduled["steps"]
+    )
+    assert "config.fullClone = true" not in json.dumps(scheduled)
+
+    action = yaml.safe_load(
+        (REPO_ROOT / ".github/actions/setup-renovate/action.yml").read_text()
+    )
+    steps = action["runs"]["steps"]
+    node_setups = [
+        step for step in steps if step.get("uses") == "actions/setup-node@v7"
+    ]
+    assert node_setups[0]["with"]["node-version"] == (
+        "${{ steps.engine.outputs.range }}"
+    )
+    assert node_setups[1]["with"]["node-version"] == (
+        "${{ inputs.repository-node }}"
+    )
+    validator = steps[-1]["run"]
+    assert '"$CLI_NODE" "$CLI_ENTRY" --version' in validator
+    assert "--strict --no-global renovate.json" in validator
+    assert "--strict .github/renovate/global.cjs" in validator
+
+
+@pytest.mark.parametrize(
+    ("engine", "succeeds"),
+    [
+        ("^24.11.0", True),
+        (">=26.0.0 <27", True),
+        ("", False),
+        ("^24\nrange=26", False),
+        (None, False),
+    ],
+)
+def test_renovate_node_range_comes_from_the_lock(tmp_path, engine, succeeds):
+    """A missing or multiline engine cannot become a setup-node input."""
+    action = yaml.safe_load(
+        (REPO_ROOT / ".github/actions/setup-renovate/action.yml").read_text()
+    )
+    step = next(s for s in action["runs"]["steps"] if s.get("id") == "engine")
+    project = tmp_path / "eng/renovate"
+    project.mkdir(parents=True)
+    (project / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/renovate": {"engines": {"node": engine}}
+                }
+            }
+        )
+    )
+    output = tmp_path / "output"
+    result = run_step(
+        step,
+        cwd=tmp_path,
+        env={"GITHUB_OUTPUT": str(output)},
+        bindings={},
+    )
+    assert (result.returncode == 0) is succeeds, result.stderr
+    if succeeds:
+        assert output.read_text().strip() == f"range={engine}"
+
+
+@pytest.mark.parametrize(
+    ("case", "succeeds"),
+    [
+        ("matching", True),
+        ("different-engine", False),
+        ("missing-validator", False),
+        ("install-fails", False),
+    ],
+)
+def test_renovate_install_binds_the_runtime_to_the_lock(
+    tmp_path, case, succeeds
+):
+    """An incomplete install or a changed package engine stops the setup."""
+    action = yaml.safe_load(
+        (REPO_ROOT / ".github/actions/setup-renovate/action.yml").read_text()
+    )
+    step = next(s for s in action["runs"]["steps"] if s.get("id") == "install")
+    project = tmp_path / "eng/renovate"
+    package = project / "node_modules/renovate"
+    (package / "dist").mkdir(parents=True)
+    (package / "dist/renovate.js").touch()
+    if case != "missing-validator":
+        (package / "dist/config-validator.js").touch()
+    (package / "package.json").write_text(
+        json.dumps(
+            {
+                "engines": {
+                    "node": "^26" if case == "different-engine" else "^24"
+                },
+                "bin": {
+                    "renovate": "dist/renovate.js",
+                    "renovate-config-validator": "dist/config-validator.js",
+                },
+            }
+        )
+    )
+    tools = tmp_path / "tools"
+    executable(
+        tools / "npm",
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "Path(os.environ['NPM_CALLS']).write_text(json.dumps(sys.argv[1:]))\n"
+        "sys.exit(1 if os.environ['INSTALL_CASE'] == 'install-fails' else 0)",
+    )
+    executable(tools / "node", "print('/fixture/renovate-node')")
+    output = tmp_path / "output"
+    result = run_step(
+        step,
+        cwd=tmp_path,
+        env={
+            "PATH": str(tools) + os.pathsep + os.environ["PATH"],
+            "GITHUB_OUTPUT": str(output),
+            "INSTALL_CASE": case,
+            "NPM_CALLS": str(tmp_path / "npm-calls"),
+        },
+        bindings={"steps.engine.outputs.range": "^24"},
+    )
+    assert (result.returncode == 0) is succeeds, result.stderr
+    assert json.loads((tmp_path / "npm-calls").read_text())[0] == "ci"
+    if succeeds:
+        lines = dict(
+            line.split("=", 1) for line in output.read_text().splitlines()
+        )
+        assert lines == {
+            "cli": str((package / "dist/renovate.js").resolve()),
+            "validator": str((package / "dist/config-validator.js").resolve()),
+            "node": "/fixture/renovate-node",
+        }
+
+
+@pytest.mark.parametrize(
+    ("supported", "age", "before", "exclusions", "failed_get", "succeeds"),
+    [
+        (True, "3", "null", "", "", True),
+        (False, "3", "null", "", "", False),
+        (True, "2", "null", "", "", False),
+        (True, "3", "2026-01-01", "", "", False),
+        (True, "3", "null", "some-package", "", False),
+        (True, "3", "null", "", "min-release-age-exclude", False),
+    ],
+)
+def test_renovate_rejects_unsupported_or_weakened_npm_cooldown(  # noqa: PLR0913, PLR0917
+    tmp_path, supported, age, before, exclusions, failed_get, succeeds
+):
+    """The npm used by repository tasks must enforce the complete policy."""
+    action = yaml.safe_load(
+        (REPO_ROOT / ".github/actions/setup-renovate/action.yml").read_text()
+    )
+    step = next(
+        s
+        for s in action["runs"]["steps"]
+        if s["name"] == "Verify repository npm cooldown"
+    )
+    (tmp_path / "eng/renovate").mkdir(parents=True)
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    tools = tmp_path / "tools"
+    executable(
+        tools / "npm",
+        """
+import json
+import os
+import sys
+if sys.argv[1:3] == ["config", "list"]:
+    config = {}
+    if os.environ["SUPPORTED"] == "yes":
+        config["min-release-age"] = None
+    print(json.dumps(config))
+elif sys.argv[1:3] == ["config", "get"]:
+    if sys.argv[3] == os.environ["FAILED_GET"]:
+        sys.exit(1)
+    values = {
+        "min-release-age": os.environ["AGE"],
+        "before": os.environ["BEFORE"],
+        "min-release-age-exclude": os.environ["EXCLUSIONS"],
+    }
+    print(values[sys.argv[3]])
+else:
+    sys.exit(1)
+""",
+    )
+    result = run_step(
+        step,
+        cwd=tmp_path,
+        env={
+            "PATH": str(tools) + os.pathsep + os.environ["PATH"],
+            "RUNNER_TEMP": str(runner_temp),
+            "SUPPORTED": "yes" if supported else "no",
+            "AGE": age,
+            "BEFORE": before,
+            "EXCLUSIONS": exclusions,
+            "FAILED_GET": failed_get,
+        },
+        bindings={},
+    )
+    assert (result.returncode == 0) is succeeds, result.stderr
 
 
 NUGET_SELECTION = {

@@ -1,0 +1,111 @@
+name: Set up and validate Renovate
+description: Install the locked Renovate CLI on its supported Node runtime.
+
+inputs:
+  repository-node:
+    description: Node version committed for repository tools.
+    required: true
+
+outputs:
+  node:
+    description: Node executable selected for the Renovate CLI.
+    value: ${{ steps.install.outputs.node }}
+  cli:
+    description: Installed Renovate CLI entrypoint.
+    value: ${{ steps.install.outputs.cli }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read the locked Renovate Node range
+      id: engine
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        python3 - <<'PY' >> "$GITHUB_OUTPUT"
+        import json
+
+        with open("eng/renovate/package-lock.json", encoding="utf-8") as stream:
+            lock = json.load(stream)
+        engine = lock["packages"]["node_modules/renovate"]["engines"]["node"]
+        if not isinstance(engine, str) or not engine.strip() or "\n" in engine or "\r" in engine:
+            raise ValueError("The Renovate lock must declare a single-line Node engine range.")
+        print(f"range={engine}")
+        PY
+
+    - name: Set up Renovate Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: ${{ steps.engine.outputs.range }}
+        check-latest: true
+        package-manager-cache: false
+
+    - name: Install locked Renovate
+      id: install
+      shell: bash
+      working-directory: eng/renovate
+      env:
+        LOCKED_ENGINE: ${{ steps.engine.outputs.range }}
+      run: |
+        set -Eeuo pipefail
+        npm ci --no-audit --no-fund
+        node_path="$(node -p 'process.execPath')"
+        python3 - "$node_path" <<'PY' >> "$GITHUB_OUTPUT"
+        import json
+        import os
+        from pathlib import Path
+        import sys
+
+        directory = Path("node_modules/renovate").resolve()
+        with (directory / "package.json").open(encoding="utf-8") as stream:
+            manifest = json.load(stream)
+        if manifest.get("engines", {}).get("node") != os.environ["LOCKED_ENGINE"]:
+            raise ValueError("The installed Renovate Node range differs from the lock.")
+        for output, name in (("cli", "renovate"), ("validator", "renovate-config-validator")):
+            entry = manifest.get("bin", {}).get(name)
+            if not isinstance(entry, str) or not entry or not (directory / entry).is_file():
+                raise ValueError(f"The installed Renovate package lacks {name}.")
+            print(f"{output}={(directory / entry).resolve()}")
+        print(f"node={sys.argv[1]}")
+        PY
+
+    - name: Restore repository Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: ${{ inputs.repository-node }}
+        package-manager-cache: false
+
+    - name: Verify repository npm cooldown
+      shell: bash
+      working-directory: eng/renovate
+      run: |
+        set -Eeuo pipefail
+        (
+          cd "$RUNNER_TEMP"
+          env -u NPM_CONFIG_MIN_RELEASE_AGE -u npm_config_min_release_age \
+            npm config list --long --json \
+              --userconfig="$RUNNER_TEMP/renovate-empty-user.npmrc" \
+              --globalconfig="$RUNNER_TEMP/renovate-empty-global.npmrc" |
+            python3 -c 'import json, sys; sys.exit(
+              0 if "min-release-age" in json.load(sys.stdin)
+              else "Repository npm does not support min-release-age.")'
+        )
+        age="$(npm config get min-release-age)"
+        before="$(npm config get before)"
+        exclusions="$(npm config get min-release-age-exclude)"
+        if [[ "$age" != 3 || "$before" != null || -n "$exclusions" ]]; then
+          echo 'Repository npm must enforce the three-day release age without overrides or exclusions.' >&2
+          exit 1
+        fi
+
+    - name: Start Renovate and validate configuration
+      shell: bash
+      env:
+        CLI_NODE: ${{ steps.install.outputs.node }}
+        CLI_ENTRY: ${{ steps.install.outputs.cli }}
+        VALIDATOR_ENTRY: ${{ steps.install.outputs.validator }}
+      run: |
+        set -Eeuo pipefail
+        "$CLI_NODE" "$CLI_ENTRY" --version
+        "$CLI_NODE" "$VALIDATOR_ENTRY" --strict --no-global renovate.json
+        "$CLI_NODE" "$VALIDATOR_ENTRY" --strict .github/renovate/global.cjs

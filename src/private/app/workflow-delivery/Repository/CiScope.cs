@@ -14,6 +14,7 @@ internal sealed record RecordTaskOwner(string Script, string Rule);
 internal sealed record ToolingConfiguration(string? Hk, string? Renovate);
 // NuGetPreparationUnits lists the registered NuGet units whose native preparation applies.
 internal sealed record CiScopeApplicability(bool Mise, bool AzureAuth, bool Scholarly,
+    bool Renovate,
     string[] NuGetPreparationUnits, bool GithubReleaseNativePreparation,
     SortedDictionary<string, string[]> Reasons)
 {
@@ -66,6 +67,7 @@ internal static partial class CiScope
             ["mise"] = new(StringComparer.Ordinal),
             ["azureauth"] = new(StringComparer.Ordinal),
             ["scholarly"] = new(StringComparer.Ordinal),
+            ["renovate"] = new(StringComparer.Ordinal),
         };
         var nuget = new SortedSet<string>(full ? NuGetUnits : [], StringComparer.Ordinal);
         bool githubRelease = full;
@@ -82,7 +84,8 @@ internal static partial class CiScope
         if (full)
             foreach (SortedSet<string> why in reasons.Values) why.Add("explicit full validation");
         return new(reasons["mise"].Count != 0, reasons["azureauth"].Count != 0,
-            reasons["scholarly"].Count != 0, [.. nuget], githubRelease,
+            reasons["scholarly"].Count != 0, reasons["renovate"].Count != 0,
+            [.. nuget], githubRelease,
             new(reasons.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray()),
                 StringComparer.Ordinal));
     }
@@ -194,6 +197,9 @@ internal static partial class CiScope
             if (jobs.Contains("scholarly"))
                 Add("scholarly", Scholarly, "retained-special-job-input",
                     Scholarly + "/pyproject.toml", "apm.yml");
+            if (jobs.Contains("renovate"))
+                Add("renovate", ".github/workflows/ci.yml#renovate-compat",
+                    "retained-special-job-input", ".github/workflows/ci.yml", path);
             // Record-task scripts, and the matcher the checker imports, run under their mise
             // tasks ('uv run --script'), not as Python group targets.
             RecordTaskOwner[] recordTasks = tasks.Where(task => task.Script == path ||
@@ -379,10 +385,12 @@ internal static partial class CiScope
         return paths.ToArray();
     }
 
-    // Renovate's committed configuration and its dedicated workflow.
+    // Renovate's configuration, runtime and dedicated workflow.
     private static bool RenovateInput(string path) =>
         path == RenovateConfiguration || path == RenovateWorkflow ||
-        Under(path, ".github/renovate");
+        path == "eng/scripts/locked_tool_versions.py" ||
+        Under(path, ".github/renovate") || Under(path, ".github/actions/setup-renovate") ||
+        Under(path, "eng/renovate");
 
     // A complete repository-path token in committed tooling configuration: the characters
     // around it are not path characters, so 'PklProject' does not match
@@ -407,7 +415,7 @@ internal static partial class CiScope
     private static string[] Jobs(string path, string[] gems)
     {
         if (AllInputs.Contains(path, StringComparer.Ordinal))
-            return ["mise", "azureauth", "ruby", "scholarly"];
+            return ["mise", "azureauth", "ruby", "scholarly", "renovate"];
         var jobs = new List<string>();
         if (Name(path) is "mise.toml" or "mise.lock") jobs.Add("mise");
         // The AzureAuth artifact job runs the skipped-test summary; its Python tests do not.
@@ -417,6 +425,7 @@ internal static partial class CiScope
         if (Under(path, Scholarly) ||
             path.StartsWith(".agents/skills/scholarly-", StringComparison.Ordinal) ||
             path is "apm.yml" or "apm.lock.yaml") jobs.Add("scholarly");
+        if (RenovateInput(path)) jobs.Add("renovate");
         return jobs.ToArray();
     }
 
