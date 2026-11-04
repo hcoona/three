@@ -397,6 +397,8 @@ internal static class Program
 [JsonSerializable(typeof(NodePlanRequest))]
 [JsonSerializable(typeof(NodeGroupRequest))]
 [JsonSerializable(typeof(NodeGroupReadback))]
+[JsonSerializable(typeof(Dictionary<string, string[]>),
+    TypeInfoPropertyName = "RetainedDirectories")]
 [JsonSerializable(typeof(NodeRunRequest))]
 [JsonSerializable(typeof(NodeRunResult))]
 [JsonSerializable(typeof(CiPlan))]

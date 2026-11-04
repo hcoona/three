@@ -51,10 +51,16 @@ internal static class NodeCiCaller
             TransferJson.Default.NodeGroupReadback);
         CiCallerTransfer.Write(Path.Combine(directory, "parent-plan.json"), group.Adopted,
             TransferJson.Default.CiPlan);
+        // The complete runtime plan is the retained matrix even when no work applies.
+        CiCallerTransfer.OutputArray("node_versions",
+            group.Runtime.Variants.Select(variant => variant.Selector).ToArray());
+        var retainedByVariant = group.Runtime.Variants.ToDictionary(variant =>
+            variant.Selector, variant => RetainedMembers(group, variant.Key),
+            StringComparer.Ordinal);
+        CiCallerTransfer.OutputJson("retained_directories", retainedByVariant,
+            TransferJson.Default.RetainedDirectories);
         CiCallerTransfer.Output("retained", (group.Retained.Length !=
             0).ToString().ToLowerInvariant());
-        CiCallerTransfer.OutputArray("retained_directories",
-            group.Retained.Select(member => member.Directory).ToArray());
         CiCallerTransfer.Output("adopted_directory", group.AdoptedDirectory);
         CiCallerTransfer.Output("selected", (group.Adopted.Checks.Length !=
             0).ToString().ToLowerInvariant());
@@ -165,6 +171,23 @@ internal static class NodeCiCaller
         }
         CheckResult[] results = sets.SelectMany(result => result.Results).ToArray();
         return (results, ResultCollector.Collect(group.Adopted, results));
+    }
+
+    internal static string[] RetainedMembers(NodeGroupReadback group, string key)
+    {
+        NodeRuntimeVariant variant = Variant(group, key);
+        var members = group.Runtime.Members.ToDictionary(member => member.Directory,
+            StringComparer.Ordinal);
+        return group.Retained.Where(member =>
+        {
+            if (!members.TryGetValue(member.Directory, out NodeRuntimeMember? runtimeMember))
+                throw new InvalidDataException("Retained Node member has no engines declaration.");
+            if (!group.Runtime.Variants.Any(candidate =>
+                NodeRuntimeInputs.AdmitsMajor(runtimeMember, candidate)))
+                throw new InvalidDataException(
+                    "No planned Node runtime satisfies a retained member's engines range.");
+            return NodeRuntimeInputs.AdmitsMajor(runtimeMember, variant);
+        }).Select(member => member.Directory).ToArray();
     }
 
     internal static async Task RetainedAsync(string root, string directory, string[] members,

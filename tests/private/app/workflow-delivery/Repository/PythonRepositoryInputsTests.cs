@@ -245,6 +245,10 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/workflow_delivery_v3_hk.py")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/locked_tool_versions.py")]
+    [DataRow("tests/eng/test_node_release_schedule.py",
+        "eng/scripts/update_node_release_schedule.py")]
+    [DataRow("tests/eng/test_node_release_schedule.py", "eng/node-release-schedule.json")]
+    [DataRow("tests/eng/test_node_release_schedule.py", ".github/renovate/global.cjs")]
     [DataRow("tests/eng/test_python_runtime.py",
         ".github/workflows/workflow-delivery-v3-npm-release.yml")]
     [DataRow("tests/eng/test_python_runtime.py",

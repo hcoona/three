@@ -30,6 +30,24 @@
       "versioningTemplate": "semver",
       "extractVersionTemplate": "^v(?<version>.*)$",
       "autoReplaceStringTemplate": "amends \"package://github.com/jdx/hk/releases/download/v{{newValue}}/hk@{{newValue}}#/Config.pkl\""
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["eng/node-release-schedule.json"],
+      "matchStrings": ["\"newestRelease\": \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""],
+      "depNameTemplate": "node",
+      "datasourceTemplate": "node-version",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v?(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["eng/node-release-schedule.json"],
+      "matchStrings": ["\"commit\": \"(?<currentDigest>[0-9a-f]{40})\""],
+      "depNameTemplate": "nodejs/Release",
+      "packageNameTemplate": "https://github.com/nodejs/Release",
+      "currentValueTemplate": "main",
+      "datasourceTemplate": "git-refs"
     }
   ],
   "ignorePaths": ["**/node_modules/**", "**/bower_components/**", "**/vendor/**"],
@@ -606,11 +624,38 @@
       "automerge": true
     },
     {
-      "description": "Review Node major updates manually and add the packaging major to the CI compatibility matrix while retaining supported engines.",
-      "matchManagers": ["mise"],
+      "description": "Review Node major updates manually. They can change the planned CI matrix, which Workflow Delivery derives from declared engines and eng/node-release-schedule.json.",
+      "matchManagers": ["mise", "custom.regex"],
       "matchDepNames": ["node"],
       "matchUpdateTypes": ["major"],
       "automerge": false
+    },
+    {
+      "description": "Track the newest released Node.js major in eng/node-release-schedule.json, including Current lines before LTS. Only stable MAJOR.MINOR.PATCH releases qualify.",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["node"],
+      "ignoreUnstable": false,
+      "allowedVersions": "/^v?\\d+\\.\\d+\\.\\d+$/"
+    },
+    {
+      "description": "Propose only newest Node.js major changes; minor and patch releases do not change the planned matrix.",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["node"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "enabled": false
+    },
+    {
+      "description": "Refresh the pinned nodejs/Release schedule monthly and review it manually because it can change the planned CI matrix.",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["nodejs/Release"],
+      "schedule": ["* 0-3 1 * *"],
+      "minimumReleaseAge": null,
+      "automerge": false,
+      "postUpgradeTasks": {
+        "commands": ["uv run --no-project python eng/scripts/update_node_release_schedule.py"],
+        "fileFilters": ["eng/node-release-schedule.json"],
+        "executionMode": "branch"
+      }
     },
     {
       "description": "Require manual approval for .NET test platform major updates until the MTP 2 runner migration is ready.",

@@ -69,8 +69,10 @@ public sealed class NpmPackContractTests(TestContext context)
 
         NodeRuntimeInputs inputs = NodeRuntimeReader.Read(new(new string('c', 40), []), root,
             File.ReadAllText(Path.Combine(root, NodeRuntimeReader.Workflow)),
+            File.ReadAllText(Path.Combine(root, NodeRuntimeReader.Schedule)),
             RepositoryToolSelection.MiseToml, RepositoryToolSelection.MiseLock,
-            await Mise("node"), await Mise("pnpm"));
+            RepositoryPinContractsTests.NodeManifests(root), await Mise("node"),
+            await Mise("pnpm"));
 
         Assert.AreEqual(RepositoryToolSelection.Locked("node"), inputs.Variants.Single(variant =>
             variant.Key == inputs.PackagingVariant).ExactVersion);
@@ -78,8 +80,10 @@ public sealed class NpmPackContractTests(TestContext context)
         Assert.ThrowsExactly<InvalidDataException>(() => NodeRuntimeReader.Read(
             new(new string('c', 40), []), Path.Combine(root, "elsewhere"),
             File.ReadAllText(Path.Combine(root, NodeRuntimeReader.Workflow)),
+            File.ReadAllText(Path.Combine(root, NodeRuntimeReader.Schedule)),
             RepositoryToolSelection.MiseToml, RepositoryToolSelection.MiseLock,
-            Mise("node").Result, Mise("pnpm").Result));
+            RepositoryPinContractsTests.NodeManifests(root), Mise("node").Result,
+            Mise("pnpm").Result));
     }
 
     // The CI build/test command runs the script without installing first: the flag disables

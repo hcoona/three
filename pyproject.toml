@@ -203,6 +203,7 @@ testpaths = [
   "tests/eng/test_python_release_caller.py",
   "tests/eng/test_browser_store_release_caller.py",
   "tests/eng/test_general_ci_workflow.py",
+  "tests/eng/test_node_release_schedule.py",
   "tests/eng/test_python_runtime.py",
   "tests/eng/test_release_batch_dispatch.py",
   "tests/eng/test_typos_config.py",

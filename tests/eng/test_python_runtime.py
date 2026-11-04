@@ -141,11 +141,6 @@ VERSION_KEY = re.compile(
     r"[\w-]*VERSION\Z"
 )
 NUMERIC = re.compile(r"\A\d+(?:\.(?:\d+|x|\*))*\Z")
-# The Node CI matrix is the retained packages' engines compatibility roster,
-# not a tool selection; the committed Node selection must occur in it.
-COMPATIBILITY_MATRICES = {
-    ("ci.yml", ("jobs", "node-tests", "strategy", "matrix", "node-version")),
-}
 VERSIONS = importlib.util.spec_from_file_location(
     "locked_tool_versions", ROOT / "eng/scripts/locked_tool_versions.py"
 )
@@ -160,32 +155,24 @@ def guarded_workflows():
     return sorted((ROOT / ".github/workflows").glob("*.yml"))
 
 
-def _version_keys(name, node, path=()):
+def _version_keys(node):
     """Yield literal numeric values of tool-version keys anywhere in YAML."""
     if isinstance(node, dict):
         for key, value in node.items():
-            child = (*path, str(key))
-            if (
-                VERSION_KEY.search(str(key))
-                and (
-                    name,
-                    child,
-                )
-                not in COMPATIBILITY_MATRICES
-            ):
+            if VERSION_KEY.search(str(key)):
                 values = value if isinstance(value, list) else [value]
                 yield from (
                     f"{key} {item}"
                     for item in values
                     if NUMERIC.fullmatch(str(item).strip())
                 )
-            yield from _version_keys(name, value, child)
+            yield from _version_keys(value)
     elif isinstance(node, list):
         for item in node:
-            yield from _version_keys(name, item, path)
+            yield from _version_keys(item)
 
 
-def literal_tool_versions(text, document, name="workflow.yml"):
+def literal_tool_versions(text, document):
     """Find tool/runtime selections written as literals in one workflow."""
     found = []
     for tool in COMMITTED_TOOLS:
@@ -202,7 +189,7 @@ def literal_tool_versions(text, document, name="workflow.yml"):
             value = step.get("with", {}).get(SETUP_VERSION_INPUTS.get(action))
             if value is not None and not str(value).startswith("$" + "{{"):
                 found.append(f"{action} {value}")
-    found.extend(_version_keys(name, document))
+    found.extend(_version_keys(document))
     return sorted(set(found))
 
 
@@ -210,7 +197,7 @@ def test_workflows_take_tool_versions_from_committed_configuration():
     """A routine tool update edits only mise.lock or global.json."""
     for path in guarded_workflows():
         text = path.read_text()
-        found = literal_tool_versions(text, yaml.safe_load(text), path.name)
+        found = literal_tool_versions(text, yaml.safe_load(text))
         assert found == [], path
 
 
@@ -267,12 +254,16 @@ def test_tool_version_guard_accepts_committed_and_unrelated_values(text):
     assert literal_tool_versions(text, yaml.safe_load(text)) == []
 
 
-def test_tool_version_guard_exempts_only_the_node_compatibility_matrix():
-    """The retained engines matrix is not a tool selection."""
+def test_node_compatibility_matrix_is_planned_not_a_literal():
+    """Workflow Delivery plans the Node matrix; no workflow repeats it."""
     text = (ROOT / ".github/workflows/ci.yml").read_text()
     document = yaml.safe_load(text)
-    assert literal_tool_versions(text, document, "ci.yml") == []
-    assert literal_tool_versions(text, document, "other.yml")
+    assert literal_tool_versions(text, document) == []
+    matrix = document["jobs"]["node-tests"]["strategy"]["matrix"]
+    assert matrix == {
+        "node-version": "$"
+        "{{ fromJSON(needs.node-group.outputs.node_versions) }}"
+    }
 
 
 @pytest.mark.parametrize(

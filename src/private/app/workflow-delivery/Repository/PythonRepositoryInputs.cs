@@ -138,6 +138,9 @@ internal static class PythonRepositoryInputs
                 ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml" ||
              BuddyGuardInputs.Contains(path, StringComparer.Ordinal))) ||
         (target == "tests/eng/test_typos_config.py" && path == ".typos.toml") ||
+        (target == "tests/eng/test_node_release_schedule.py" &&
+            path is "renovate.json" or ".github/renovate/global.cjs" or
+                "eng/node-release-schedule.json") ||
         (target == "tests/eng/test_python_release_caller.py" &&
             path is ".github/workflows/workflow-delivery-v3-python-release.yml" or
                 "global.json") ||
@@ -147,6 +150,7 @@ internal static class PythonRepositoryInputs
             path is "eng/scripts/sync_python_version.py" or
                 "eng/scripts/workflow_delivery_v3_hk.py" or "eng/scripts/locked_tool_versions.py" or
                 "eng/scripts/hk_scope_drift.py" or
+                "eng/scripts/update_node_release_schedule.py" or
                 // Retired guard script; a comparison deleting it still needs an owner.
                 "eng/scripts/update_node_mise_lock.py");
 

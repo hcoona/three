@@ -118,8 +118,9 @@ projects and publish directories retain their distinct identities; Workflow
 combines native endpoint facts without parsing or resolving dependencies itself.
 Root CI runs the adopted package and selected retained Node matrix. Planning needs synchronized frozen native
 locks and tool preparation, without endpoint product installation. Execution
-installs selected product dependencies. The existing workflow matrix and native
-mise selection own runtime variants and the configured packaging context.
+installs selected product dependencies. The Node group plans the runtime
+variants from declared engines and the committed release schedule; native mise
+selection owns the configured packaging context.
 
 ### Native .NET Group Interface
 

@@ -650,6 +650,16 @@ def test_mtp_test_configuration_is_classified(repo: Repository) -> None:
     assert entry["classification"] == "configuration-source"
 
 
+def test_node_release_schedule_is_classified(repo: Repository) -> None:
+    """Recognize the committed Node release schedule as planner input."""
+    path = "eng/node-release-schedule.json"
+    repo.write(path, '{"newestRelease": "26.0.0", "schedule": {}}\n')
+    report = repo.check()
+    assert report["diagnostics"] == []
+    entry = next(item for item in report["manifest"] if item["path"] == path)
+    assert entry["classification"] == "configuration-source"
+
+
 @pytest.mark.parametrize(
     "path", ["src/private/app/project/unknown.json", ".github/unknown.json"]
 )

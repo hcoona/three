@@ -684,6 +684,7 @@ jobs:
       retained: ${{ steps.execute.outputs.retained }}
       retained_directories: ${{ steps.execute.outputs.retained_directories }}
       adopted_directory: ${{ steps.execute.outputs.adopted_directory }}
+      node_versions: ${{ steps.execute.outputs.node_versions }}
     steps:
       - name: Require the actual scope artifact
         env:
@@ -759,7 +760,8 @@ jobs:
                 MISE_LOCKED="$runtime_locked" mise exec "$selector" -- dotnet tool restore || exit "$?"
                 MISE_LOCKED="$runtime_locked" mise exec "$selector" -- dotnet "$control" ci caller-node execute "$state" "$runtime"
               ) || status=1
-            done < <(jq -r '.runtime.variants[].key' "$state/group-plan.json")
+            done < <(jq -r '[.adopted.checks[].work.key.variant] | unique[]' \
+              "$state/group-plan.json")
           fi
           dotnet "$control" ci caller-node join "$state" || status=1
           exit "$status"
@@ -785,7 +787,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [22.x, 24.x, 26.x]
+        node-version: ${{ fromJSON(needs.node-group.outputs.node_versions) }}
 
     env:
       NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
@@ -805,9 +807,21 @@ jobs:
           SELECTION_RESULT: ${{ needs.scope.result }}
           GROUP_RESULT: ${{ needs.node-group.result }}
           APPLICABLE: ${{ needs.node-group.outputs.retained }}
+          NODE_VERSION: ${{ matrix.node-version }}
+          RETAINED_DIRECTORIES: ${{ needs.node-group.outputs.retained_directories }}
         run: |
           case "$SELECTION_RESULT:$GROUP_RESULT:$APPLICABLE" in
-            success:success:true) echo 'run=true' >> "$GITHUB_OUTPUT" ;;
+            success:success:true)
+              members=$(jq -ce --arg selector "$NODE_VERSION" \
+                'if type == "object" and has($selector) and (.[$selector] | type == "array") then .[$selector] else error("Missing retained Node variant.") end' \
+                <<< "$RETAINED_DIRECTORIES")
+              if [[ $(jq 'length' <<< "$members") -gt 0 ]]; then
+                echo 'run=true' >> "$GITHUB_OUTPUT"
+              else
+                echo 'run=false' >> "$GITHUB_OUTPUT"
+                echo "No retained members admit Node.js $NODE_VERSION."
+              fi
+              ;;
             success:success:false) echo 'run=false' >> "$GITHUB_OUTPUT"; echo 'Not applicable to this change.' ;;
             *) echo 'Scope selection failed or omitted applicability.' >&2; exit 1 ;;
           esac
@@ -869,10 +883,13 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         env:
           RETAINED_DIRECTORIES: ${{ needs.node-group.outputs.retained_directories }}
+          NODE_VERSION: ${{ matrix.node-version }}
           ADOPTED_DIRECTORY: ${{ needs.node-group.outputs.adopted_directory }}
         run: |
+          retained_members=$(jq -ce --arg selector "$NODE_VERSION" \
+            '.[$selector]' <<< "$RETAINED_DIRECTORIES")
           dotnet "$RUNNER_TEMP/retained-control/control/WorkflowDelivery.dll" ci caller-node retained \
-            "$GITHUB_WORKSPACE" "$RUNNER_TEMP/retained-node" "$RETAINED_DIRECTORIES" \
+            "$GITHUB_WORKSPACE" "$RUNNER_TEMP/retained-node" "$retained_members" \
             "$ADOPTED_DIRECTORY" "$PACKAGE_DIR" "$(command -v pnpm)"
 
       - name: Retain selected Node command diagnostics
