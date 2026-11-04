@@ -21,12 +21,13 @@ implied. It shall not require hosted Git/chat/database services or Docker.
 
 ### LA-REQ-002: Native agent responsibility
 
-The initial backend shall be Copilot through documented ACP stdio. Reasoning,
-editing, shell tools, model calls and compaction remain native-agent
-responsibilities. The host shall negotiate required capabilities, configure
-supported settings at the documented boundary, and report unavailable required
-capabilities rather than patching runtime internals or silently substituting
-another backend.
+The initial backend shall be Copilot through its official .NET SDK and native
+runtime interface. Reasoning, editing, shell tools, model calls and compaction
+remain native-agent responsibilities. The host shall verify required
+capabilities and applied settings at the documented boundary, and report
+unavailable required capabilities rather than patching runtime internals or
+silently substituting another backend. ACP compatibility, AHP hosting and a
+second model/tool loop are not required.
 
 ### LA-REQ-003: Recoverable run identity and state
 
@@ -131,7 +132,7 @@ summaries. These paths shall not be conflated.
 ### LA-REQ-014: Budgets, liveness and stop meaning
 
 Support a finite wall-clock budget, operator stop, lifecycle timing/reminders
-and bounded liveness recovery. ACP silence alone shall not establish that a
+and bounded liveness recovery. Native connection silence alone shall not establish that a
 tool or process is dead. Task closure and budget expiry are stop reasons, not
 proof that final checks passed. Do not claim an aggregate token-request cutoff
 or exact spend metering without a verified native interface.

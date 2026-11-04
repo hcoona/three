@@ -6,11 +6,12 @@ peer-cooperation approach while replacing hosted collaboration infrastructure
 with SQLite, local Git worktrees and existing native agents.
 
 **Current state:** C# application source and CLI/MCP entry points are implemented
-and the executable builds. Automated scenario validation and native acceptance
-are still in progress; this is not an accepted Copilot-backed product yet.
-No successful native ACP handshake, paid model run or native acceptance is
-claimed. Model dispatch remains unavailable without verified native credit
-limit and usage evidence.
+and controlled local scenarios pass. The accepted design selects the official
+Copilot .NET SDK; replacement of the incompatible ACP adapter is in progress.
+No successful SDK connection, native credit calibration or Copilot-backed
+product acceptance is claimed. Source and scripted results do not establish
+native integration. The existing unknown credit reservation remains retained
+and blocks paid dispatch.
 
 ## User and primary journey
 
