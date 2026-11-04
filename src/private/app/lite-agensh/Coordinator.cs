@@ -177,6 +177,8 @@ public sealed class Coordinator
             ["nativeBillingCalibration"] = ParseMetadata(BillingReceiptKey),
             ["delivery"] = ParseMetadata("lifecycle:delivery"),
             ["failure"] = database.ReadMetadata("lifecycle:failure"),
+            ["settlementFailures"] = ParseMetadata("lifecycle:settlement_failures")
+                ?? new JsonArray(),
         };
         return Success(data);
     }
@@ -486,12 +488,14 @@ public sealed class Coordinator
         long segment = 0;
         bool finalize = false;
         Exception? failure = null;
+        JsonArray settlementFailures = [];
         try
         {
             RecoverCompletedTurns();
             collaboration.RecoverInterrupted();
             DateTimeOffset deadline;
             (segment, deadline) = BeginSegment(mode);
+            database.WriteMetadata("lifecycle:settlement_failures", "[]");
             TimeSpan remaining = deadline - database.Now;
             if (remaining <= TimeSpan.Zero)
             {
@@ -743,9 +747,22 @@ public sealed class Coordinator
                 }
                 catch (Exception exception)
                 {
-                    failure = exception;
+                    failure ??= exception;
+                    settlementFailures.Add(
+                        new JsonObject
+                        {
+                            ["worker"] = database.Configuration.WorkerIds[workers.IndexOf(worker)],
+                            ["reservationId"] = worker.ReservationId,
+                            ["phase"] = "stop",
+                            ["message"] = exception.Message,
+                        }
+                    );
+                    database.WriteMetadata(
+                        "lifecycle:settlement_failures",
+                        settlementFailures.ToJsonString()
+                    );
                     database.WriteMetadata("lifecycle", "unresolved");
-                    database.WriteMetadata("lifecycle:failure", exception.Message);
+                    database.WriteMetadata("lifecycle:failure", failure.Message);
                 }
             }
 
@@ -760,6 +777,20 @@ public sealed class Coordinator
                     catch (Exception exception)
                     {
                         failure ??= exception;
+                        settlementFailures.Add(
+                            new JsonObject
+                            {
+                                ["worker"] =
+                                    database.Configuration.WorkerIds[workers.IndexOf(worker)],
+                                ["reservationId"] = worker.ReservationId,
+                                ["phase"] = "dispose",
+                                ["message"] = exception.Message,
+                            }
+                        );
+                        database.WriteMetadata(
+                            "lifecycle:settlement_failures",
+                            settlementFailures.ToJsonString()
+                        );
                         database.WriteMetadata("lifecycle", "unresolved");
                     }
                 }
