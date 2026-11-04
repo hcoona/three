@@ -66,6 +66,33 @@ public sealed class Coordinator
         transaction.Commit();
     }
 
+    public async Task<JsonObject> InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using FileStream? ownership = TryOwn();
+        if (ownership is null)
+        {
+            return Operation.Failure("conflict", "Another coordinator owns this run.");
+        }
+
+        try
+        {
+            await SettleRecoveryAsync(cancellationToken).ConfigureAwait(false);
+            await git.InitializeAsync(cancellationToken).ConfigureAwait(false);
+            return Operation.Success(new
+            {
+                runId = database.RunId,
+                statePath = database.StatePath,
+                repositoryPath = database.Configuration.RepositoryPath,
+                workers = database.Configuration.WorkerIds,
+            }, "Run initialized; no native agent or model was started.");
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+            return Failure(exception);
+        }
+    }
+
     public JsonObject Status()
     {
         JsonArray workers = [];
