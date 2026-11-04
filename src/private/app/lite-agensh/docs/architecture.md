@@ -49,6 +49,30 @@ dependencies, the official C# MCP SDK's stdio server and the official Copilot
 integration boundaries. Those choices do not establish tested interoperability
 or introduce another model orchestration layer.
 
+## Configuration input boundary
+
+Treat YAML plus Markdown as a human-editable initialization input, not a
+second live coordination store. A configuration loader resolves and validates
+the selected input into the existing `RunConfiguration` before opening run
+state. JSON retains its existing inline goal and absolute-path semantics.
+YAML uses a goal-file reference and configuration-directory-relative paths;
+its exact field and failure contract belongs in the
+[implementation contracts](implementation-contracts.md#configuration-input).
+
+Use the repository-selected YamlDotNet parser rather than another
+configuration framework. Existing .NET JSON serialization, typed validation
+and persisted configuration remain the execution boundary. Resume and
+reconnect read that persisted snapshot, not mutable input files. Keep
+executable names, command arguments and Git revisions unchanged by path
+resolution.
+
+A project-owned JSON Schema supplies structural guidance to the existing
+VS Code YAML extension through normal schema association. It is an editor
+consumer of the input contract, not a replacement for runtime path and
+cross-field validation. Editor extensions and network schema retrieval are
+not runtime prerequisites; no Markdown-frontmatter language service or
+custom editor extension is introduced.
+
 ## State and transaction boundary
 
 Keep one database and persistent state directory per run. Conceptual records

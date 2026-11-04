@@ -73,17 +73,17 @@ dotnet test --project tests\private\app\lite-agensh\LiteAgensh.Tests.csproj
 
 ## Records and authority
 
-| Reader question                                                     | Authority                                                                     |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| What must the local product do, and what is unsupported?            | [Requirements](docs/requirements.md)                                          |
-| How do C#, SQLite, native processes, MCP and Git fit together?      | [Architecture and integration boundaries](docs/architecture.md)               |
-| What replaces each upstream responsibility and collaboration tool?  | [Complete migration map and source evidence](docs/upstream-migration.md)      |
-| What evidence permits implementation and an eventual support claim? | [Validation basis](docs/validation.md)                                        |
-| Where is upstream attribution retained?                             | [Third-party notice](THIRD-PARTY-NOTICES.txt)                                 |
-| What concrete boundaries do independent implementation units share? | [Implementation contracts](docs/implementation-contracts.md)                  |
-| What exact native observation and credit effects may be executed?   | [Native acceptance protocol](docs/native-acceptance-protocol.md)              |
-| What work is currently authorized?                                  | Repository [Delivery Wave](../../../../docs/delivery-wave.md)                 |
-| Where are progress, reviews and delivery dependencies?              | [Issue #1526](https://github.com/hcoona/three/issues/1526) and its linked PRs |
+| Reader question                                                     | Authority                                                                                                                                                      |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| What must the local product do, and what is unsupported?            | [Requirements](docs/requirements.md)                                                                                                                           |
+| How do C#, SQLite, native processes, MCP and Git fit together?      | [Architecture and integration boundaries](docs/architecture.md)                                                                                                |
+| What replaces each upstream responsibility and collaboration tool?  | [Complete migration map and source evidence](docs/upstream-migration.md)                                                                                       |
+| What evidence permits implementation and an eventual support claim? | [Validation basis](docs/validation.md)                                                                                                                         |
+| Where is upstream attribution retained?                             | [Third-party notice](THIRD-PARTY-NOTICES.txt)                                                                                                                  |
+| What concrete boundaries do independent implementation units share? | [Implementation contracts](docs/implementation-contracts.md)                                                                                                   |
+| What exact native observation and credit effects may be executed?   | [Native acceptance protocol](docs/native-acceptance-protocol.md)                                                                                               |
+| What work is currently authorized?                                  | Repository [Delivery Wave](../../../../docs/delivery-wave.md)                                                                                                  |
+| Where are progress, reviews and delivery dependencies?              | [Refinement #1542](https://github.com/hcoona/three/issues/1542), [original acceptance #1526](https://github.com/hcoona/three/issues/1526) and their linked PRs |
 
 The README owns purpose, user context, current implementation status and routing.
 Requirements own behavior; architecture owns realization; the migration map owns
