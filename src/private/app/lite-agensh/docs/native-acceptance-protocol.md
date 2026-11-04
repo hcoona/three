@@ -63,6 +63,34 @@ calls. It may create an explicit non-dispatch session with a finite native
 limit, but must never send a prompt or continue pending work. An empty-session
 subtotal is not measured zero-cost usage.
 
+## SDK campaign baseline
+
+The [owner's explicit disposition](https://github.com/hcoona/three/issues/1526#issuecomment-6623726268)
+authorizes one accounting reset: exclude the previous failed ACP startup's
+5,000-credit reservation from the SDK acceptance campaign, rather than carry
+it forward. This is a budget-baseline decision, not a measured zero-cost
+result, cancellation of a provider charge or general permission to reset.
+
+Before initializing the new ledger, confirm that the old coordinator and owned
+children are settled. Preserve the old run, campaign SQLite and its retained
+journals, logs and counterexample unchanged as retired evidence. Retain their
+identities and hashes; do not delete, reconcile, release or overwrite the
+unknown allocation. Keep machine-local locations private.
+
+Initialize one newly named persistent SDK campaign ledger at zero, with the
+same 150,000-credit cumulative allowance and 10,000-credit per-run allowance.
+Record its identity, zero-baseline initialization and owner-disposition link
+in the acceptance carrier before any paid dispatch. Every SDK calibration,
+ordinary run, repetition, restart and fresh session uses this same ledger;
+an existing SDK ledger is continued, never replaced with another empty one.
+The preserved self-authored fixture may be reused after capturing its current
+checkout, index, instructions and dirty-file preservation baseline.
+
+The new ledger does not waive actual native limit readback, billing calibration
+or any acceptance gate. An unknown reservation in it still blocks further
+paid work. Any additional baseline reset requires a new owner disposition and
+accepted protocol amendment; this one-time decision is not a standing escape.
+
 ## Environment and fixture
 
 Create a new persistent, uniquely named acceptance directory outside user
@@ -158,12 +186,11 @@ request cancellation, settle known processes where possible and preserve
 all work/evidence. Do not start a replacement or another paid call to repair
 unknown budget/ownership.
 
-An existing unknown reservation remains unknown and fully retained. This
-protocol does not authorize resetting the campaign, treating startup failure
-as measured zero, releasing that reservation, or bypassing the global paid-work
-gate. Any proposed conservative carry-forward requires an explicit
-repository-owner disposition before dependent paid execution; non-model SDK
-inspection and credential-free implementation remain separate.
+An unknown reservation remains unknown and fully retained. Apart from the
+explicit one-time SDK baseline above, this protocol does not authorize another
+reset, measured-zero inference, release or bypass of the active ledger's
+global paid-work gate. Non-model SDK inspection and credential-free
+implementation remain separate from paid admission.
 
 Keep logs, SQLite/journals, fixture worktrees and native session associations
 local for diagnosis. Cleanup is separately explicit, limited to named owned

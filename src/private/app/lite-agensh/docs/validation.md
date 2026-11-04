@@ -21,6 +21,18 @@ decisions and failures. Actual Windows Copilot acceptance is separate: a
 scripted success cannot establish real SDK/MCP interoperability, native
 cancellation or session persistence.
 
+Use the internal coordinator native-worker factory for in-process controlled
+cooperation, resume and failure scenarios, without binding a test listener or
+adding another SDK transport. Obtain controlled preflight/calibration receipts
+by invoking coordinator operations. Results and receipts automatically identify
+the substitute, and native SDK admission must reject those receipts. Retain
+real SQLite credit admission and association validation, including unknown
+usage and unsettled-stop failures. Test the real worker's association atomicity
+and dependency-use invariants separately where practical; actual SDK settings,
+wire interoperability, billing, cancellation and persistence still require
+their applicable native observations. Do not silently drop those obligations
+when replacing obsolete ACP-specific tests.
+
 Rely on documented SQLite, Git and host contracts within their scope rather
 than re-proving their internals. Test the application's use of those contracts
 and assumptions that could invalidate its design.

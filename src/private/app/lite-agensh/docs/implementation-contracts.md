@@ -84,6 +84,24 @@ exclusive ownership handle protects the run; resolve surviving children before
 recovery. Shared operation dispatch routes to collaboration/Git owners rather
 than duplicating business rules in CLI and MCP handlers.
 
+The internal native dependency has a worker contract for session/reservation
+identity, diagnostics, start, prompt, credit verification, stop and disposal,
+plus a factory for worker creation and settled-session usage recovery.
+Production uses the existing real `NativeWorker`/SDK `ForUri` implementation.
+Keep the public coordinator constructor unchanged; an internal constructor may
+accept a factory builder supplied with the actual run database, process runner
+and credit ledger. Association validation and ledger reconciliation remain
+coordinator responsibilities. Recovery returns usage only after settlement;
+an unsettled outcome cannot release a reservation.
+
+Supplying that factory automatically selects controlled dependency evidence,
+including separate controlled preflight/calibration receipt keys and evidence
+classification in results/bindings. Native SDK admission rejects controlled
+receipts. There is no user-selectable backend, bypass of real credit admission,
+alternate SDK transport or generic extension framework. The
+[architecture](architecture.md#controlled-native-dependency-in-scenarios) owns
+the current scenario rationale and boundary.
+
 Use ordinary SQLite rows, with JSON payload columns where structured bodies
 need them, not mutable flat-file coordination. SQL is parameterized. Core board
 matching/admission and retry/scheduling policies are translated from the pinned

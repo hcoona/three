@@ -125,6 +125,29 @@ report it rather than broadening permissions.
 
 ## Delivery ordering and notices
 
+### Controlled native dependency in scenarios
+
+Keep the coordinator's native-worker dependency internal and replaceable in
+controlled scenarios. Its production factory always constructs the real
+SDK-backed worker and performs settled-session usage recovery through
+`RuntimeConnection.ForUri`. An internal constructor may accept a test factory;
+there is no CLI/configuration backend selector, alternate production transport
+or plugin registry.
+
+This boundary serves the current cooperation/fresh-resume journey and failed
+turn, incomplete-usage and unsettled-stop scenarios without launching models or
+binding a test listener. Keep real SQLite credit admission and coordinator
+association checks above the substitute. The factory's recovery operation may
+return usage only after its session/runtime is settled; otherwise it fails.
+
+Injected execution is automatically classified as controlled dependency
+evidence in results and receipt bindings. Controlled preflight/calibration
+receipts are stored separately and cannot admit production SDK execution.
+Tests obtain them through coordinator operations, not direct receipt insertion.
+These scenarios do not establish the real worker's association atomicity,
+SDK settings/wire behavior, billing, cancellation or persistence. The
+[validation basis](validation.md) retains their separate evidence obligations.
+
 ```mermaid
 sequenceDiagram
     participant Agent as Native worker
