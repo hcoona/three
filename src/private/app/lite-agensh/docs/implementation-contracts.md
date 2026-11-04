@@ -253,16 +253,6 @@ call returns. Official [session-limit documentation][limits] confirms a minimum
 30-credit setting and a soft limit with possible in-flight-response overshoot.
 These are source/metadata findings, not proof of ACP propagation.
 
-The [native startup counterexample][startup-counterexample] establishes that
-1.0.105 rejects combining ACP with the usage-output flag. Do not use that
-combination as an assumed working interface. The protocol's bounded non-model
-discovery variant may inspect documented advertised information commands without
-that flag; it is not a model-enabled fallback or a final report contract.
-Unknown reservations remain fully charged and block model work, while another
-non-model probe may reserve remaining allowance in the same campaign ledger.
-Keep native text observations distinct from host-generated JSON and accept a
-concrete usage adapter before enabling dependent model dispatch.
-
 Use that native limit rather than a proxy or invented token-to-credit
 conversion. Persist session allowance reservations and actual native-reported
 credits. Fresh sessions consume a new reservation; known exact-session
@@ -277,4 +267,3 @@ prompt. If the interface cannot demonstrate this, dependent live acceptance
 stops for owner disposition; scripted tests still do not supply native proof.
 
 [limits]: https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli/set-session-limit
-[startup-counterexample]: https://github.com/hcoona/three/pull/1530#issuecomment-6622441256
