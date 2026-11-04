@@ -56,6 +56,53 @@ limits bound repeated execution without a speculative global run-count limit.
 Credential-free tests and non-model contract preflight do not spend a fictitious
 credit amount; retain actual native reporting even when zero.
 
+## Non-model interface discovery
+
+The [first invocation counterexample][startup-counterexample] shows that
+Copilot 1.0.105 rejects `--acp` together with `--usage-output-file` before
+initialization. An advertised flag is not evidence that it works in every mode.
+This observation does not establish that all official ACP usage paths are
+unavailable.
+
+To investigate that question, an exact recorded product candidate may omit the
+incompatible usage-output flag **only for non-model discovery**. Retain the
+native credit-limit flag, absolute fixture cwd, normal existing configuration,
+owned process tracking and private diagnostic/output paths. Start at most one
+native process per probe, with a three-minute probe deadline inside the existing
+run fuse. No reasoning prompt, tool action or model-enabled turn is allowed.
+
+After initialization and session creation, capture the advertised command
+snapshot. At most four requests may invoke `/usage`, `/context`,
+`/session info` and `/limits`, each at most once and only when its base command
+is advertised. The official ACP documentation identifies the first three as
+informational/direct operations; installed 1.0.105 `copilot help commands`
+describes `/limits` as "View or edit session limits." The no-argument invocation
+is view-only: never send `set`, `unset`, `reset` or another mutation. Do not send
+an unadvertised command or infer that arbitrary slash text is non-model.
+
+Record whether native output actually exposes the applied AI-credit limit and
+session-cumulative credits, its format/unit/scope and any missing fields.
+Capture the native output locally without treating a host-generated wrapper
+as a native JSON schema. Do not read account quota/balance, credentials or other
+sessions. If output unexpectedly contains account data, withhold those values
+from inspection/public evidence and stop the affected command path.
+
+Prior unknown reservations remain retained and fully charged against both
+allowances. They block all model work, but not another strictly non-model probe
+whose additional reservation fits the remaining run/campaign allowances.
+Use the same durable campaign ledger; never reset it or release an unknown
+reservation to enable a probe. No credit amount is inferred from the absence
+of a model prompt. EOF/settlement ends the probe; missing native reports remain
+explicitly unknown.
+
+These observations may support a separately reviewed concrete usage/report
+adapter and invocation update. They do not admit model dispatch, relax the
+applied-limit/final-usage gate, establish crash accounting or constitute product
+acceptance. Paid execution remains stopped until the accepted concrete contract
+and its evidence establish the required native behavior.
+
+[startup-counterexample]: https://github.com/hcoona/three/pull/1530#issuecomment-6622441256
+
 ## Environment and fixture
 
 Create a new persistent, uniquely named acceptance directory outside user
@@ -86,7 +133,9 @@ repository or raw session diagnostics as public evidence.
    operation to verify applied limits/usage; unknown slash text is not sent as
    a presumed non-model command. Establish the exact native usage-report fields
    and version before interpreting credits. If any required limit/report
-   cannot be verified, stop before a model prompt.
+   cannot be verified, stop before a model prompt. The bounded non-model
+   discovery variant above may investigate an incompatible output-file flag;
+   it never substitutes an unverified report for successful preflight.
 2. **Cooperation:** run two native workers on their distinct tasks. Require
    actual local MCP task/claim/message/board operations, peer communication,
    candidate-bound review, checked integration and a retained passing local
