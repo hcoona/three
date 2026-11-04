@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
@@ -131,14 +133,17 @@ public sealed class Coordinator
         }
 
         NativeWorker? native = null;
+        NativeCreditContract? contract = null;
+        string? reservationId = null;
         JsonObject result;
         try
         {
             await SettleRecoveryAsync(cancellationToken).ConfigureAwait(false);
-            NativeCreditContract? contract = NativeCreditContract.Read(database);
+            contract = NativeCreditContract.Read(database);
             database.WriteMetadata("lifecycle", "preflighting");
             await git.InitializeAsync(cancellationToken).ConfigureAwait(false);
             CreditReservation reservation = Reserve("worker1", database.Configuration.WorkerCount);
+            reservationId = reservation.Id;
             native = new(database, processes, credits, contract, reservation);
             await native.StartAsync(git.GetWorkerPath("worker1"), null, cancellationToken, contract is null).ConfigureAwait(false);
             result = contract is null ? Operation.Failure("unavailable", MissingCreditEvidence) : Operation.Success(new
@@ -185,6 +190,24 @@ public sealed class Coordinator
         }
 
         database.WriteMetadata("lifecycle", "stopped");
+        if (result["ok"]?.GetValue<bool>() == true && contract is not null && reservationId is not null)
+        {
+            CreditReservation reservation = credits.Reservations(database.RunId).Single(row => row.Id == reservationId);
+            if (reservation.State != "reconciled" || reservation.Actual is null)
+            {
+                return Operation.Failure("credit_unknown", "Non-model preflight has no reconciled final native report.");
+            }
+
+            database.WriteMetadata("native:credit_preflight_receipt", new JsonObject
+            {
+                ["binding"] = CreditPreflightBinding(contract),
+                ["reservationId"] = reservationId,
+                ["agentVersion"] = contract.AgentVersion,
+                ["actualReported"] = reservation.Actual,
+                ["verifiedAt"] = database.Now.ToString("O"),
+            }.ToJsonString());
+        }
+
         return result;
     }
 
@@ -211,6 +234,8 @@ public sealed class Coordinator
             {
                 return Operation.Failure("unavailable", MissingCreditEvidence);
             }
+
+            RequireCreditPreflight(contract);
         }
         catch (Exception exception) when (IsExpected(exception))
         {
@@ -686,6 +711,37 @@ public sealed class Coordinator
         JsonNode node => node.ToJsonString(),
         _ => JsonSerializer.Serialize(value, Json.Options),
     };
+
+    private string CreditPreflightBinding(NativeCreditContract contract)
+    {
+        string subject = Json.SerializePayload(new
+        {
+            contract,
+            build = typeof(Coordinator).Assembly.ManifestModule.ModuleVersionId,
+            database.Configuration.NativeExecutable,
+            database.Configuration.NativeArguments,
+            database.Configuration.NativeModel,
+            database.Configuration.NativePermissionPolicy,
+            database.Configuration.RunAiCreditAllowance,
+            database.Configuration.CampaignAiCreditAllowance,
+        }).ToJsonString();
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(subject)));
+    }
+
+    private void RequireCreditPreflight(NativeCreditContract contract)
+    {
+        string? stored = database.ReadMetadata("native:credit_preflight_receipt");
+        JsonObject? receipt = stored is null ? null : JsonNode.Parse(stored)?.AsObject();
+        string? reservationId = receipt?["reservationId"]?.GetValue<string>();
+        if (receipt?["binding"]?.GetValue<string>() != CreditPreflightBinding(contract) ||
+            reservationId is null || !credits.Reservations(database.RunId).Any(row =>
+                row.Id == reservationId && row.State == "reconciled" && row.Actual is not null))
+        {
+            throw new OperationException("unavailable",
+                "A successful non-model preflight with reconciled final JSON usage is required for this exact " +
+                "build, native invocation and version-bound credit descriptor before any model prompt.");
+        }
+    }
 
     private FileStream? TryOwn()
     {
