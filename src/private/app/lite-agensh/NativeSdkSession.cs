@@ -159,28 +159,7 @@ internal sealed class NativeSdkSession : IAsyncDisposable
         SessionMetadataSnapshot metadata = await active
             .Rpc.Metadata.SnapshotAsync(deadline.Token)
             .ConfigureAwait(false);
-        if (
-            metadata.SessionId != expectedSession
-            || active.SessionId != expectedSession
-            || !Path.GetFullPath(metadata.WorkingDirectory)
-                .TrimEnd(Path.DirectorySeparatorChar)
-                .Equals(
-                    cwd.TrimEnd(Path.DirectorySeparatorChar),
-                    StringComparison.OrdinalIgnoreCase
-                )
-            || metadata.AlreadyInUse
-            || metadata.IsRemote
-            || (
-                expectedLimit is decimal limit
-                && metadata.SessionLimits?.MaxAiCredits != NativeLimit(limit)
-            )
-        )
-        {
-            throw new OperationException(
-                "credit_unknown",
-                "Native identity, working directory, ownership or applied limit mismatched."
-            );
-        }
+        ValidateMetadata(metadata, active.SessionId, expectedSession, cwd, expectedLimit);
 
         UsageGetMetricsResult usage = await active
             .Rpc.Usage.GetMetricsAsync(deadline.Token)
@@ -206,6 +185,38 @@ internal sealed class NativeSdkSession : IAsyncDisposable
             usage.AiCreditsStatus?.Value,
             usage.TotalUserRequests
         );
+    }
+
+    internal static void ValidateMetadata(
+        SessionMetadataSnapshot metadata,
+        string activeSessionId,
+        string expectedSession,
+        string cwd,
+        decimal? expectedLimit
+    )
+    {
+        if (
+            metadata.SessionId != expectedSession
+            || activeSessionId != expectedSession
+            || !Path.GetFullPath(metadata.WorkingDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar)
+                .Equals(
+                    cwd.TrimEnd(Path.DirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase
+                )
+            || metadata.AlreadyInUse
+            || metadata.IsRemote
+            || (
+                expectedLimit is decimal limit
+                && metadata.SessionLimits?.MaxAiCredits != NativeLimit(limit)
+            )
+        )
+        {
+            throw new OperationException(
+                "credit_unknown",
+                "Native identity, working directory, ownership or applied limit mismatched."
+            );
+        }
     }
 
     public async Task<JsonObject> SendAsync(
