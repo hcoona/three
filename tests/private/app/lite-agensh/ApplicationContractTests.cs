@@ -39,8 +39,12 @@ public sealed class ApplicationContractTests(TestContext testContext)
     };
 
     [TestMethod]
+    [DataRow(".json")]
+    [DataRow(".config")]
     [Timeout(120000, CooperativeCancellation = true)]
-    public async Task CliInitStatusAndToolUseProductRuntimeSerializationWithoutTestHostOverrides()
+    public async Task CliInitStatusAndToolUseProductRuntimeSerializationWithoutTestHostOverrides(
+        string extension
+    )
     {
         CancellationToken token = testContext.CancellationToken;
         using GitScenario fixture = await GitScenario.CreateAsync(token);
@@ -54,7 +58,7 @@ public sealed class ApplicationContractTests(TestContext testContext)
                 "ledger.sqlite"
             ),
         };
-        string configPath = Path.Combine(fixture.Fixture.RootPath, "cli-config.json");
+        string configPath = Path.Combine(fixture.Fixture.RootPath, "cli-config" + extension);
         File.WriteAllText(configPath, JsonSerializer.Serialize(configuration, Json.Options));
         ProcessRunner processes = new(fixture.Database);
 
@@ -127,6 +131,136 @@ public sealed class ApplicationContractTests(TestContext testContext)
         Assert.Contains("unsupportedConfigurationField", failure["message"]!.GetValue<string>());
         Assert.AreEqual(cliDatabase.RunId, new RunDatabase(state).RunId);
         await fixture.AssertOriginalPreservedAsync(token);
+    }
+
+    [TestMethod]
+    [DataRow(".yaml")]
+    [DataRow(".YML")]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task CliYamlInitUsesConfigurationDirectoryAndRetainsGoalSnapshot(
+        string extension
+    )
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario fixture = await GitScenario.CreateAsync(token);
+        string inputs = Path.Combine(fixture.Fixture.RootPath, "inputs");
+        Directory.CreateDirectory(inputs);
+        string configPath = Path.Combine(inputs, "run" + extension);
+        string goalPath = Path.Combine(inputs, "goal.md");
+        const string goal = "# Shared goal\n\nPeers select and review their own work.\n";
+        File.WriteAllText(goalPath, goal);
+        File.WriteAllText(
+            configPath,
+            """
+            repositoryPath: ../repository
+            statePath: ../yaml-state
+            campaignLedgerPath: ../yaml-campaign/credits.sqlite
+            goalFile: goal.md
+            workerCount: 10
+            planningSeconds: 0
+            nativeExecutable: copilot
+            nativeArguments: [--effort, high]
+            requirePeerReview: true
+            finalChecks:
+              - executable: dotnet
+                arguments: [--version]
+                timeoutSeconds: 20
+            """
+        );
+        ProcessRunner processes = new(fixture.Database);
+        JsonObject initialized = Scenario.Data(
+            await CliAsync(
+                processes,
+                fixture.Fixture.RepositoryPath,
+                token,
+                "init",
+                "--config",
+                configPath
+            )
+        );
+        string state = Path.Combine(fixture.Fixture.RootPath, "yaml-state");
+        RunDatabase database = new(state);
+        Assert.AreEqual(database.RunId, initialized["runId"]!.GetValue<string>());
+        RunConfiguration saved = database.Configuration;
+        Assert.AreEqual(fixture.Fixture.RepositoryPath, saved.RepositoryPath);
+        Assert.AreEqual(state, saved.StatePath);
+        Assert.AreEqual(
+            Path.Combine(fixture.Fixture.RootPath, "yaml-campaign", "credits.sqlite"),
+            saved.CampaignLedgerPath
+        );
+        Assert.AreEqual(goal, saved.Goal);
+        Assert.AreEqual(10, saved.WorkerCount);
+        Assert.AreEqual("high", saved.GetReasoningEffort());
+        Assert.AreEqual("copilot", saved.NativeExecutable);
+        CheckCommand check = Assert.ContainsSingle(saved.FinalChecks);
+        Assert.AreEqual("dotnet", check.Executable);
+        Assert.Contains("--version", check.Arguments);
+        Assert.AreEqual(20, check.TimeoutSeconds);
+
+        File.WriteAllText(goalPath, "Edited goal must not change this run.");
+        File.WriteAllText(configPath, "not a valid configuration anymore");
+        JsonObject status = Scenario.Data(
+            await CliAsync(
+                processes,
+                fixture.Fixture.RepositoryPath,
+                token,
+                "status",
+                "--state",
+                state
+            )
+        );
+        Assert.AreEqual("initialized", status["lifecycle"]!.GetValue<string>());
+        Assert.AreEqual(goal, new RunDatabase(state).Configuration.Goal);
+        using SqliteConnection retained = database.Open();
+        Assert.AreEqual(
+            0L,
+            Sql.Scalar(retained, "SELECT COUNT(*) FROM process_leases WHERE kind LIKE 'native:%';")
+        );
+        await fixture.AssertOriginalPreservedAsync(token);
+    }
+
+    [TestMethod]
+    [DataRow("goalFile: goal.md\nunknownField: true")]
+    [DataRow("goalFile: goal.md\nworkerCount: 2\nworkerCount: 3")]
+    [DataRow("goalFile: goal.md\nworkerCount: '2'")]
+    [DataRow("goalFile: goal.md\nworkerCount: 0")]
+    [DataRow("goalFile: goal.md\nrequirePeerReview: 'false'")]
+    [DataRow("goalFile: goal.md\nfinalChecks: [{executable: dotnet, extra: true}]")]
+    [DataRow("goalFile: goal.md\nfinalChecks: [{executable: dotnet, timeoutSeconds: '20'}]")]
+    [DataRow("goalFile: goal.md\ngoal: conflicting inline goal")]
+    [DataRow("goalFile: null")]
+    [DataRow("goalFile: 5")]
+    [DataRow("goalFile: ' '")]
+    [DataRow("goalFile: missing.md")]
+    [DataRow("goalFile: empty.md")]
+    [DataRow("workerCount: 2")]
+    [DataRow("goalFile: goal.md\n---\n{}")]
+    [DataRow("[]")]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task CliYamlInitInvalidInputRejectsBeforeCreatingRunState(string input)
+    {
+        using RunFixture fixture = new();
+        File.WriteAllText(Path.Combine(fixture.RootPath, "goal.md"), "# Shared goal");
+        File.WriteAllText(Path.Combine(fixture.RootPath, "empty.md"), " \n");
+        string state = Path.Combine(fixture.RootPath, "rejected-state");
+        string prefix =
+            $"repositoryPath: {JsonSerializer.Serialize(fixture.RepositoryPath)}\n"
+            + $"statePath: {JsonSerializer.Serialize(state)}\n"
+            + "campaignLedgerPath: ./campaign/credits.sqlite\n";
+        string configPath = Path.Combine(fixture.RootPath, "invalid.yaml");
+        File.WriteAllText(configPath, input == "[]" ? input : prefix + input);
+        ProcessRunner processes = new(fixture.CreateDatabase());
+        ProcessResult result = await processes.RunAsync(
+            Scenario.DotnetHost,
+            [typeof(RunDatabase).Assembly.Location, "init", "--config", configPath],
+            fixture.RepositoryPath,
+            TimeSpan.FromSeconds(30),
+            testContext.CancellationToken
+        );
+        Assert.AreEqual(1, result.ExitCode, result.StandardError);
+        Scenario.Failure(JsonNode.Parse(result.StandardOutput)!.AsObject(), "failed");
+        Assert.IsFalse(Directory.Exists(state), "Rejected input must not create run state.");
+        Assert.IsFalse(Directory.Exists(Path.Combine(fixture.RootPath, "campaign")));
     }
 
     [TestMethod]
