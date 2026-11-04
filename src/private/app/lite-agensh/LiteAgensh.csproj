@@ -6,10 +6,20 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <CopilotSkipCliDownload>true</CopilotSkipCliDownload>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="GitHub.Copilot.SDK" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="ModelContextProtocol" />
     <None Update="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <Target Name="RecordCopilotRuntimeVersion" BeforeTargets="GetAssemblyAttributes">
+    <ItemGroup>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>CopilotCliVersion</_Parameter1>
+        <_Parameter2>$(CopilotCliVersion)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
 </Project>

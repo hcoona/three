@@ -14,7 +14,7 @@ public static class Program
                 "LiteAgensh: local C# coordination for native Copilot workers.\n"
                     + "\n"
                     + "init --config ABSOLUTE_JSON_FILE\n"
-                    + "run|pause|resume|reconnect|status|preflight|finalize|cleanup "
+                    + "run|pause|resume|reconnect|status|preflight|calibrate|finalize|cleanup "
                     + "--state ABSOLUTE_STATE_DIRECTORY\n"
                     + "tool --state ABSOLUTE_STATE_DIRECTORY --name TOOL --json JSON_OBJECT\n"
                     + "mcp --state ABSOLUTE_STATE_DIRECTORY --actor MEMBER\n"
@@ -23,6 +23,8 @@ public static class Program
                     + "run/resume/reconnect may spend native Copilot credits; "
                     + "verified limits/usage are required.\n"
                     + "preflight performs non-model native contract checks only.\n"
+                    + "calibrate is PAID: one tool-disabled READY turn, a 30-credit native "
+                    + "soft cap and a two-minute turn deadline. Unknown usage blocks it.\n"
                     + "pause/finalize retain work. "
                     + "cleanup is explicit and owned-resource-specific.\n"
                     + "Tool invocations are bound to owner; "
@@ -73,6 +75,7 @@ public static class Program
                         or "status"
                         or "pause"
                         or "preflight"
+                        or "calibrate"
                         or "finalize"
                         or "cleanup" => ["--state"],
                         _ => throw new ArgumentException(
@@ -100,6 +103,9 @@ public static class Program
                     "pause" => coordinator.RequestControl("pause"),
                     "preflight" => await coordinator
                         .PreflightAsync(cancellation.Token)
+                        .ConfigureAwait(false),
+                    "calibrate" => await coordinator
+                        .CalibrateAsync(cancellation.Token)
                         .ConfigureAwait(false),
                     "finalize" => await coordinator
                         .FinalizeAsync(cancellation.Token)

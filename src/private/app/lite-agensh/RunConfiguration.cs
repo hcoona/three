@@ -121,6 +121,8 @@ public sealed record RunConfiguration
             );
         }
 
+        _ = GetReasoningEffort();
+
         foreach (
             CheckCommand check in CandidateChecks.Concat(IntegrationChecks).Concat(FinalChecks)
         )
@@ -132,5 +134,31 @@ public sealed record RunConfiguration
                 throw new ArgumentException("Every check requires a finite positive timeout.");
             }
         }
+    }
+
+    public string? GetReasoningEffort()
+    {
+        if (NativeArguments.Length == 0)
+        {
+            return null;
+        }
+
+        string[] parts = NativeArguments[0].Split('=', 2);
+        string? value =
+            parts.Length == 2 && NativeArguments.Length == 1 ? parts[1]
+            : parts.Length == 1 && NativeArguments.Length == 2 ? NativeArguments[1]
+            : null;
+        if (
+            parts[0] is not ("--effort" or "--reasoning-effort")
+            || value is not ("low" or "medium" or "high" or "xhigh" or "max")
+        )
+        {
+            throw new ArgumentException(
+                "NativeArguments admits only one reasoning-effort setting; "
+                    + "transport, authentication and limits are host-owned."
+            );
+        }
+
+        return value;
     }
 }

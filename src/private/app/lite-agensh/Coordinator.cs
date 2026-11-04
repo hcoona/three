@@ -9,11 +9,6 @@ namespace LiteAgensh;
 
 public sealed class Coordinator
 {
-    private const string MissingCreditEvidence =
-        "Native ACP credit applicability and final JSON usage fields have not been verified. "
-        + "Launch flags alone are not proof. No model prompt was sent. "
-        + "The official ACP/session-limit documentation does not currently establish those fields; "
-        + "retain a reviewed, version-bound native:credit_contract before dependent execution.";
     private readonly RunDatabase database;
     private readonly CollaborationOperations collaboration;
     private readonly GitOperations git;
@@ -151,7 +146,8 @@ public sealed class Coordinator
                 database.RunId,
                 database.Configuration.RunAiCreditAllowance
             ),
-            ["nativeCreditEvidence"] = database.ReadMetadata("native:credit_contract") is not null,
+            ["nativePreflight"] = ParseMetadata("native:sdk_preflight_receipt"),
+            ["nativeBillingCalibration"] = ParseMetadata("native:sdk_billing_receipt"),
             ["delivery"] = ParseMetadata("lifecycle:delivery"),
             ["failure"] = database.ReadMetadata("lifecycle:failure"),
         };
@@ -221,33 +217,27 @@ public sealed class Coordinator
         }
 
         NativeWorker? native = null;
-        NativeCreditContract? contract = null;
-        string? reservationId = null;
         JsonObject result;
         try
         {
-            await SettleRecoveryAsync(cancellationToken).ConfigureAwait(false);
-            contract = NativeCreditContract.Read(database);
+            await SettleRecoveryAsync(cancellationToken, allowUnknownUsage: true)
+                .ConfigureAwait(false);
             database.WriteMetadata("lifecycle", "preflighting");
             await git.InitializeAsync(cancellationToken).ConfigureAwait(false);
-            CreditReservation reservation = Reserve("worker1", database.Configuration.WorkerCount);
-            reservationId = reservation.Id;
-            native = new(database, processes, credits, contract, reservation);
+            native = new(database, processes, credits);
             await native
-                .StartAsync(git.GetWorkerPath("worker1"), null, cancellationToken, contract is null)
+                .StartAsync(git.GetWorkerPath("worker1"), null, cancellationToken)
                 .ConfigureAwait(false);
-            result = contract is null
-                ? Operation.Failure("unavailable", MissingCreditEvidence)
-                : Operation.Success(
-                    new
-                    {
-                        sessionId = native.SessionId,
-                        modelPromptsSent = 0,
-                        contract.EvidenceReference,
-                    },
-                    "Documented advertised informational operation verified the actual "
-                        + "applied native limit and usage."
-                );
+            result = Operation.Success(
+                new
+                {
+                    sessionId = native.SessionId,
+                    modelPromptsSent = 0,
+                    diagnostics = native.Diagnostic,
+                },
+                "Native session identity, cwd and applied limit verified without model sends. "
+                    + "Empty-session metrics are not measured zero-cost usage."
+            );
         }
         catch (OperationCanceledException)
         {
@@ -282,42 +272,130 @@ public sealed class Coordinator
         {
             return Operation.Failure(
                 "unavailable",
-                "Preflight did not establish applied-limit/final-usage evidence and "
-                    + "settled ownership together. "
-                    + "No model prompt was sent; native diagnostics and uncertain "
-                        + "reservations remain retained."
+                "Preflight did not establish native metadata and settled ownership together. "
+                    + "No model prompt was sent; diagnostics and paid associations are retained."
             );
         }
 
         database.WriteMetadata("lifecycle", "stopped");
-        if (
-            result["ok"]?.GetValue<bool>() == true
-            && contract is not null
-            && reservationId is not null
-        )
+        if (result["ok"]?.GetValue<bool>() == true)
         {
-            CreditReservation reservation = credits
-                .Reservations(database.RunId)
-                .Single(row => row.Id == reservationId);
-            if (reservation.State != "reconciled" || reservation.Actual is null)
-            {
-                return Operation.Failure(
-                    "credit_unknown",
-                    "Non-model preflight has no reconciled final native report."
-                );
-            }
-
             database.WriteMetadata(
-                "native:credit_preflight_receipt",
+                "native:sdk_preflight_receipt",
                 new JsonObject
                 {
-                    ["binding"] = CreditPreflightBinding(contract),
-                    ["reservationId"] = reservationId,
-                    ["agentVersion"] = contract.AgentVersion,
-                    ["actualReported"] = reservation.Actual,
+                    ["binding"] = CreditPreflightBinding(),
+                    ["sessionId"] = native?.SessionId,
                     ["verifiedAt"] = database.Now.ToString("O"),
                 }.ToJsonString()
             );
+        }
+
+        return result;
+    }
+
+    public async Task<JsonObject> CalibrateAsync(CancellationToken cancellationToken = default)
+    {
+        using FileStream? ownership = TryOwn();
+        if (ownership is null)
+        {
+            return Operation.Failure("conflict", "Another coordinator owns this run.");
+        }
+
+        NativeWorker? native = null;
+        JsonObject result;
+        CreditReservation? reservation = null;
+        bool settled = false;
+        try
+        {
+            await SettleRecoveryAsync(cancellationToken).ConfigureAwait(false);
+            credits.RequirePaidAdmission();
+            RequireCreditPreflight();
+            if (HasBillingReceipt())
+            {
+                return Operation.Success(
+                    ParseMetadata("native:sdk_billing_receipt"),
+                    "This exact subject already has a complete billing calibration."
+                );
+            }
+
+            await git.InitializeAsync(cancellationToken).ConfigureAwait(false);
+            reservation = credits.Reserve(
+                database.RunId,
+                "calibration",
+                30,
+                database.Configuration.RunAiCreditAllowance,
+                EvidencePath("calibration")
+            );
+            native = new(database, processes, credits, reservation, calibration: true);
+            database.WriteMetadata("lifecycle", "calibrating");
+            await native
+                .StartAsync(git.GetWorkerPath("worker1"), null, cancellationToken)
+                .ConfigureAwait(false);
+            JsonObject response = await native
+                .PromptAsync("Reply with exactly READY and nothing else.", cancellationToken)
+                .ConfigureAwait(false);
+            await native.VerifyCreditsAsync(cancellationToken).ConfigureAwait(false);
+            if (response["text"]?.GetValue<string>().Trim() != "READY")
+            {
+                throw new OperationException(
+                    "calibration_failed",
+                    "The single bounded calibration response was not READY."
+                );
+            }
+
+            result = Operation.Success(new { sessionId = native.SessionId });
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+            result = Failure(exception);
+        }
+        finally
+        {
+            if (native is not null)
+            {
+                try
+                {
+                    await native.DisposeAsync().ConfigureAwait(false);
+                    settled = true;
+                }
+                catch (Exception exception) when (IsExpected(exception))
+                {
+                    database.WriteMetadata("lifecycle", "unresolved");
+                    database.WriteMetadata("lifecycle:failure", exception.Message);
+                }
+            }
+        }
+
+        if (reservation is not null && !settled)
+        {
+            return Operation.Failure(
+                "credit_or_ownership_unknown",
+                "Calibration did not reconcile complete usage and settle its native process."
+            );
+        }
+
+        if (
+            result["ok"]?.GetValue<bool>() == true
+            && reservation is not null
+            && credits.HasCompleteSdkUsage(reservation.Id)
+        )
+        {
+            database.WriteMetadata(
+                "native:sdk_billing_receipt",
+                new JsonObject
+                {
+                    ["binding"] = CreditPreflightBinding(),
+                    ["reservationId"] = reservation.Id,
+                    ["sessionId"] = native?.SessionId,
+                    ["verifiedAt"] = database.Now.ToString("O"),
+                }.ToJsonString()
+            );
+        }
+
+        if (settled)
+        {
+            database.WriteMetadata("lifecycle", "stopped");
         }
 
         return result;
@@ -339,18 +417,29 @@ public sealed class Coordinator
             return Operation.Failure("conflict", "Another coordinator owns this run.");
         }
 
-        NativeCreditContract? contract;
         try
         {
             ValidateMode(mode);
-            await SettleRecoveryAsync(cancellationToken).ConfigureAwait(false);
-            contract = NativeCreditContract.Read(database);
-            if (contract is null)
+            if (mode == "reconnect")
             {
-                return Operation.Failure("unavailable", MissingCreditEvidence);
+                foreach (string worker in database.Configuration.WorkerIds)
+                {
+                    _ = ReadReconnectReservation(worker);
+                }
             }
 
-            RequireCreditPreflight(contract);
+            await SettleRecoveryAsync(cancellationToken, recoverNativeUsage: mode == "reconnect")
+                .ConfigureAwait(false);
+            credits.RequirePaidAdmission();
+            RequireCreditPreflight();
+            if (!HasBillingReceipt())
+            {
+                throw new OperationException(
+                    "unavailable",
+                    "A complete paid calibration for this exact build/SDK/runtime/configuration "
+                        + "is required before ordinary model dispatch."
+                );
+            }
         }
         catch (Exception exception) when (IsExpected(exception))
         {
@@ -399,19 +488,13 @@ public sealed class Coordinator
                             ids[i],
                             previous is null
                                 ? Reserve(ids[i], ids.Length - i)
-                                : credits.ContinueExact(previous.Id, UsagePath(ids[i]))
+                                : credits.ContinueExact(previous.Id, EvidencePath(ids[i]))
                         );
                     }
 
                     foreach (string id in ids)
                     {
-                        NativeWorker native = new(
-                            database,
-                            processes,
-                            credits,
-                            contract,
-                            allocations[id]
-                        );
+                        NativeWorker native = new(database, processes, credits, allocations[id]);
                         workers.Add(native);
                         string? exact = mode == "reconnect" ? allocations[id].SessionId : null;
                         try
@@ -426,13 +509,7 @@ public sealed class Coordinator
                             await native.DisposeAsync().ConfigureAwait(false);
                             workers.Remove(native);
                             CreditReservation fresh = Reserve(id, 1);
-                            NativeWorker replacement = new(
-                                database,
-                                processes,
-                                credits,
-                                contract,
-                                fresh
-                            );
+                            NativeWorker replacement = new(database, processes, credits, fresh);
                             workers.Add(replacement);
                             await replacement
                                 .StartAsync(
@@ -981,12 +1058,14 @@ public sealed class Coordinator
             _ => JsonSerializer.Serialize(value, Json.Options),
         };
 
-    private string CreditPreflightBinding(NativeCreditContract contract)
+    private string CreditPreflightBinding()
     {
         string subject = Json.SerializePayload(
                 new
                 {
-                    contract,
+                    sdk = NativeSdkSession.SdkVersion,
+                    runtime = NativeSdkSession.RuntimeVersion,
+                    accounting = "sdk-session-cumulative-nano-aiu-complete-v1",
                     build = typeof(Coordinator).Assembly.ManifestModule.ModuleVersionId,
                     database.Configuration.NativeExecutable,
                     database.Configuration.NativeArguments,
@@ -994,34 +1073,45 @@ public sealed class Coordinator
                     database.Configuration.NativePermissionPolicy,
                     database.Configuration.RunAiCreditAllowance,
                     database.Configuration.CampaignAiCreditAllowance,
+                    database.Configuration.CampaignLedgerPath,
+                    database.Configuration.WorkerCount,
+                    database.Configuration.RepositoryPath,
+                    campaignIdentity = credits.Identity,
                 }
             )
             .ToJsonString();
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(subject)));
     }
 
-    private void RequireCreditPreflight(NativeCreditContract contract)
+    private void RequireCreditPreflight()
     {
-        string? stored = database.ReadMetadata("native:credit_preflight_receipt");
+        string? stored = database.ReadMetadata("native:sdk_preflight_receipt");
         JsonObject? receipt = stored is null ? null : JsonNode.Parse(stored)?.AsObject();
-        string? reservationId = receipt?["reservationId"]?.GetValue<string>();
-        if (
-            receipt?["binding"]?.GetValue<string>() != CreditPreflightBinding(contract)
-            || reservationId is null
-            || !credits
-                .Reservations(database.RunId)
-                .Any(row =>
-                    row.Id == reservationId && row.State == "reconciled" && row.Actual is not null
-                )
-        )
+        if (receipt?["binding"]?.GetValue<string>() != CreditPreflightBinding())
         {
             throw new OperationException(
                 "unavailable",
-                "A successful non-model preflight with reconciled final JSON usage is "
-                    + "required for this exact build, native invocation and version-bound "
-                    + "credit descriptor before any model prompt."
+                "A successful non-model SDK metadata preflight is required for this exact "
+                    + "build, runtime, native invocation and accounting contract."
             );
         }
+    }
+
+    private bool HasBillingReceipt()
+    {
+        JsonObject? receipt = ParseMetadata("native:sdk_billing_receipt") as JsonObject;
+        string? reservationId = receipt?["reservationId"]?.GetValue<string>();
+        return receipt?["binding"]?.GetValue<string>() == CreditPreflightBinding()
+            && reservationId is not null
+            && credits.HasCompleteSdkUsage(reservationId)
+            && credits
+                .Reservations(database.RunId)
+                .Any(row =>
+                    row.Id == reservationId
+                    && row.Worker == "calibration"
+                    && row.Allowance == 30
+                    && row.SessionId == receipt?["sessionId"]?.GetValue<string>()
+                );
     }
 
     private FileStream? TryOwn()
@@ -1047,7 +1137,11 @@ public sealed class Coordinator
         return probe is null;
     }
 
-    private async Task SettleRecoveryAsync(CancellationToken cancellationToken)
+    private async Task SettleRecoveryAsync(
+        CancellationToken cancellationToken,
+        bool allowUnknownUsage = false,
+        bool recoverNativeUsage = false
+    )
     {
         try
         {
@@ -1070,7 +1164,11 @@ public sealed class Coordinator
                 );
             }
 
-            NativeCreditContract? contract = NativeCreditContract.Read(database);
+            if (allowUnknownUsage)
+            {
+                return;
+            }
+
             foreach (CreditReservation reservation in credits.Reservations(database.RunId))
             {
                 if (reservation.State == "reserved")
@@ -1079,64 +1177,23 @@ public sealed class Coordinator
                 }
                 else if (reservation.State is "started" or "active" or "uncertain")
                 {
-                    credits.MarkUncertain(reservation.Id);
-                    if (contract is null)
+                    if (reservation.State != "uncertain")
+                    {
+                        credits.MarkUncertain(reservation.Id);
+                    }
+
+                    if (!recoverNativeUsage || !credits.HasSdkAssociation(reservation.Id))
                     {
                         throw new OperationException(
                             "credit_unknown",
-                            "A surviving native reservation has no verified final usage "
-                                + "contract/session."
+                            "Unknown usage remains reserved. Only exact, non-dispatch SDK "
+                                + "recovery can reconcile known SDK sessions; legacy unknown "
+                                + "reservations require owner disposition."
                         );
                     }
 
-                    string? initialize;
-                    string? session;
-                    decimal baseline;
-                    using (SqliteConnection connection = database.Open())
-                    using (
-                        SqliteCommand command = Sql.Command(
-                            connection,
-                            "SELECT initialize_json,session_id,baseline_usage FROM "
-                                + "native_attempts WHERE usage_path=$path;",
-                            null,
-                            ("$path", reservation.UsagePath)
-                        )
-                    )
-                    using (SqliteDataReader reader = command.ExecuteReader())
-                    {
-                        if (!reader.Read() || reader.IsDBNull(0))
-                        {
-                            throw new OperationException(
-                                "credit_unknown",
-                                "The interrupted native process has no retained version "
-                                    + "negotiation evidence."
-                            );
-                        }
-
-                        initialize = reader.GetString(0);
-                        session = reader.IsDBNull(1) ? null : reader.GetString(1);
-                        baseline = decimal.Parse(reader.GetString(2), CultureInfo.InvariantCulture);
-                    }
-
-                    contract.VerifyVersion(
-                        JsonNode.Parse(initialize)?.AsObject()
-                            ?? throw new InvalidDataException(
-                                "Interrupted native initialize evidence is invalid."
-                            )
-                    );
-                    (decimal actual, string identity) = contract.ReadFinalReport(
-                        reservation.UsagePath,
-                        session
-                    );
-                    credits.Reconcile(
-                        reservation.Id,
-                        actual,
-                        identity,
-                        unassociatedZero: session is null,
-                        processBaseline: contract.ReportUsageScope == "process-incremental"
-                            ? baseline
-                            : null
-                    );
+                    await RecoverSdkUsageAsync(reservation, cancellationToken)
+                        .ConfigureAwait(false);
                 }
             }
         }
@@ -1145,6 +1202,77 @@ public sealed class Coordinator
             database.WriteMetadata("lifecycle", "unresolved");
             throw;
         }
+    }
+
+    private async Task RecoverSdkUsageAsync(
+        CreditReservation reservation,
+        CancellationToken cancellationToken
+    )
+    {
+        using (SqliteConnection connection = database.Open())
+        {
+            string? associated =
+                Sql.Scalar(
+                    connection,
+                    """
+                    SELECT session_id FROM native_attempts WHERE usage_path=$path
+                        AND reservation_id=$reservation AND worker=$worker
+                        AND initialize_json=$initialize;
+                    """,
+                    null,
+                    ("$path", reservation.UsagePath),
+                    ("$reservation", reservation.Id),
+                    ("$worker", reservation.Worker),
+                    ("$initialize", "sdk:" + NativeSdkSession.SdkVersion)
+                ) as string;
+            if (
+                reservation.SessionId is null
+                || associated != reservation.SessionId
+                || (
+                    reservation.Worker != "calibration"
+                    && ReadReconnectReservation(reservation.Worker)?.Id != reservation.Id
+                )
+            )
+            {
+                throw new OperationException(
+                    "credit_unknown",
+                    "Interrupted SDK association is incomplete or disagrees across ledgers."
+                );
+            }
+        }
+
+        decimal remaining = reservation.Allowance - (reservation.Actual ?? 0);
+        decimal? cap = remaining > 0 ? remaining : null;
+        NativeSdkSession recovery = new(
+            database,
+            processes,
+            git.GetWorkerPath(reservation.Worker == "calibration" ? "worker1" : reservation.Worker),
+            reservation.Worker == "calibration"
+        );
+        NativeUsage usage;
+        try
+        {
+            await recovery
+                .OpenAsync(
+                    reservation.Worker,
+                    reservation.SessionId!,
+                    cap,
+                    reservation.SessionId,
+                    EvidencePath("recovery"),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            usage = await recovery
+                .ReadAsync(reservation.SessionId!, cap, cancellationToken, validateEvents: false)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            recovery.Quiesce();
+            await recovery.DisposeAsync().ConfigureAwait(false);
+        }
+
+        credits.RecordSdkUsage(reservation.Id, usage, final: true);
     }
 
     private CreditReservation? ReadReconnectReservation(string worker)
@@ -1220,7 +1348,7 @@ public sealed class Coordinator
             );
         }
 
-        string path = UsagePath(worker);
+        string path = EvidencePath(worker);
         return credits.Reserve(
             database.RunId,
             worker,
@@ -1230,8 +1358,8 @@ public sealed class Coordinator
         );
     }
 
-    private string UsagePath(string worker) =>
-        Path.Combine(database.StatePath, "native", $"{worker}-{Guid.NewGuid():N}.usage.json");
+    private string EvidencePath(string worker) =>
+        Path.Combine(database.StatePath, "native", $"{worker}-{Guid.NewGuid():N}.sdk-evidence");
 
     private void ValidateMode(string mode)
     {

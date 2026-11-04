@@ -1,288 +1,152 @@
-using System.Diagnostics;
 using System.Globalization;
-using System.Text;
 using System.Text.Json.Nodes;
+using Microsoft.Data.Sqlite;
 
 namespace LiteAgensh;
 
 internal sealed class NativeWorker : IAsyncDisposable
 {
     private readonly RunDatabase database;
-    private readonly CreditLedger credits;
-    private readonly NativeCreditContract? contract;
-    private readonly CreditReservation reservation;
     private readonly ProcessRunner processes;
-    private readonly string worker;
-    private readonly StringBuilder informationalText = new();
-    private readonly object updateLock = new();
-    private AcpClient? client;
-    private bool capturingInformation;
-    private bool verified;
-    private decimal lastUsage;
-    private bool reconciled;
+    private readonly CreditLedger credits;
+    private readonly CreditReservation? reservation;
+    private readonly bool calibration;
+    private readonly SemaphoreSlim turn = new(1, 1);
+    private readonly SemaphoreSlim settlement = new(1, 1);
+    private readonly CancellationTokenSource stop = new();
+    private NativeSdkSession? session;
     private bool started;
-    private DateTimeOffset lastStoredUpdate;
-    private bool versionVerified;
+    private bool stopped;
+    private bool verified;
+    private decimal limit;
+    private string? evidencePath;
 
     public NativeWorker(
         RunDatabase database,
         ProcessRunner processes,
         CreditLedger credits,
-        NativeCreditContract? contract,
-        CreditReservation reservation
+        CreditReservation? reservation = null,
+        bool calibration = false
     )
     {
         this.database = database;
         this.processes = processes;
         this.credits = credits;
-        this.contract = contract;
         this.reservation = reservation;
-        worker = reservation.Worker;
+        this.calibration = calibration;
     }
 
-    public string? SessionId => client?.SessionId;
+    public string? SessionId { get; private set; }
 
-    public string ReservationId => reservation.Id;
+    public string ReservationId =>
+        reservation?.Id ?? throw new InvalidOperationException("Non-paid diagnostic session.");
+
+    public JsonObject? Diagnostic { get; private set; }
 
     public async Task StartAsync(
         string cwd,
         string? exactSession,
         CancellationToken cancellationToken,
-        bool informationalDiscovery = false,
         string? recoveryLabel = null
     )
     {
-        if (contract is null && !informationalDiscovery)
+        if (exactSession is not null && exactSession != reservation?.SessionId)
         {
-            throw new OperationException(
-                "unavailable",
-                "Model-enabled native sessions require a reviewed credit contract."
+            throw new OperationException("credit_unknown", "Exact session association mismatched.");
+        }
+
+        string id = reservation?.SessionId ?? Guid.NewGuid().ToString("D");
+        limit =
+            reservation is null ? 30
+            : exactSession is null ? reservation.Allowance
+            : reservation.Allowance - (reservation.Actual ?? 0);
+        if (limit <= 0)
+        {
+            throw new OperationException("credit_exhausted", "No native window allowance remains.");
+        }
+
+        evidencePath =
+            reservation?.UsagePath
+            ?? Path.Combine(database.StatePath, "native", $"preflight-{id}.sdk-evidence");
+        string worker = reservation?.Worker ?? "worker1";
+        string recovery =
+            recoveryLabel
+            ?? (exactSession is null ? "fresh-session-with-durable-summary" : "exact-session-load");
+        if (reservation is not null)
+        {
+            credits.MarkStarted(reservation.Id);
+            started = true;
+            RecordAssociation(id, worker, recovery);
+        }
+        else
+        {
+            database.WriteMetadata(
+                $"native:preflight:{id}",
+                new JsonObject
+                {
+                    ["sessionId"] = id,
+                    ["evidencePrefix"] = evidencePath,
+                    ["state"] = "opening",
+                    ["paidReservation"] = false,
+                }.ToJsonString()
             );
         }
 
-        RunConfiguration configuration = database.Configuration;
-        ProcessStartInfo start = new(configuration.NativeExecutable)
-        {
-            WorkingDirectory = Path.GetFullPath(cwd),
-        };
-        for (int i = 0; i < configuration.NativeArguments.Length; i++)
-        {
-            string argument = configuration.NativeArguments[i];
-            string[] parts = argument.Split('=', 2);
-            if (parts[0] is not ("--effort" or "--reasoning-effort"))
-            {
-                throw new OperationException(
-                    "invalid_arguments",
-                    "Only documented reasoning-effort native options are admitted by "
-                        + "this bounded contract."
-                );
-            }
-
-            string value =
-                parts.Length == 2 ? parts[1]
-                : ++i < configuration.NativeArguments.Length ? configuration.NativeArguments[i]
-                : "";
-            if (value is not ("low" or "medium" or "high" or "xhigh" or "max"))
-            {
-                throw new OperationException(
-                    "invalid_arguments",
-                    "Unsupported documented ACP reasoning-effort value."
-                );
-            }
-
-            start.ArgumentList.Add(parts[0]);
-            start.ArgumentList.Add(value);
-        }
-
-        if (configuration.NativeModel is not null)
-        {
-            throw new OperationException(
-                "unavailable",
-                "This native contract is bound to the existing default model; a model "
-                    + "override is not authorized."
-            );
-        }
-
-        start.ArgumentList.Add("--acp");
-        start.ArgumentList.Add("--stdio");
-        start.ArgumentList.Add("--max-ai-credits");
-        start.ArgumentList.Add(reservation.Allowance.ToString(CultureInfo.InvariantCulture));
-        start.ArgumentList.Add("--usage-output-file");
-        start.ArgumentList.Add(reservation.UsagePath);
-        start.ArgumentList.Add("--excluded-tools=task");
-        Directory.CreateDirectory(Path.GetDirectoryName(reservation.UsagePath)!);
-        if (File.Exists(reservation.UsagePath))
-        {
-            throw new OperationException(
-                "credit_unknown",
-                "A native usage report path cannot be reused."
-            );
-        }
-
-        credits.MarkStarted(reservation.Id);
-        started = true;
+        session = new(database, processes, cwd, calibration);
         try
         {
-            using (Microsoft.Data.Sqlite.SqliteConnection connection = database.Open())
-            {
-                Sql.Execute(
-                    connection,
-                    """
-                    INSERT INTO native_attempts(usage_path,reservation_id,worker,
-                        baseline_usage,created_at)
-                    VALUES($path,$reservation,$worker,$baseline,$time);
-                    """,
-                    null,
-                    ("$path", reservation.UsagePath),
-                    ("$reservation", reservation.Id),
-                    ("$worker", worker),
-                    ("$baseline", (reservation.Actual ?? 0).ToString(CultureInfo.InvariantCulture)),
-                    ("$time", database.Now.ToString("O"))
-                );
-            }
-
-            client = AcpClient.Start(
-                start,
-                processes,
-                $"native:{worker}:{reservation.Id}",
-                configuration.NativePermissionPolicy,
-                reservation.UsagePath + ".stderr",
-                RecordUpdate
-            );
-            using CancellationTokenSource handshake =
-                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            handshake.CancelAfter(TimeSpan.FromSeconds(30));
-            JsonObject initialize = await client
-                .InitializeAsync(handshake.Token)
+            await session
+                .OpenAsync(worker, id, limit, exactSession, evidencePath, cancellationToken)
                 .ConfigureAwait(false);
-            using (Microsoft.Data.Sqlite.SqliteConnection connection = database.Open())
+            SessionId = session.SessionId;
+            NativeUsage usage = await session
+                .ReadAsync(id, limit, cancellationToken)
+                .ConfigureAwait(false);
+            SaveDiagnostic(usage);
+            if (reservation is not null)
             {
-                Sql.Execute(
-                    connection,
-                    "UPDATE native_attempts SET initialize_json=$initialize WHERE "
-                        + "usage_path=$path;",
-                    null,
-                    ("$initialize", initialize.ToJsonString()),
-                    ("$path", reservation.UsagePath)
-                );
+                if (exactSession is not null)
+                {
+                    decimal actual = usage.RequireComplete();
+                    if (actual < (reservation.Actual ?? 0))
+                    {
+                        throw new OperationException(
+                            "credit_unknown",
+                            "Exact resume lost previously observed cumulative native usage."
+                        );
+                    }
+
+                    if (actual + limit > reservation.Allowance)
+                    {
+                        throw new OperationException(
+                            "credit_unknown",
+                            "The resumed cumulative baseline leaves less than the applied window."
+                        );
+                    }
+                }
+                else if (
+                    (usage.TotalNanoAiu is double initial && initial != 0)
+                    || usage.TotalUserRequests != 0
+                )
+                {
+                    throw new OperationException(
+                        "credit_unknown",
+                        "A fresh session unexpectedly reports prior usage."
+                    );
+                }
+
+                credits.AttachSession(reservation.Id, id);
+                credits.RecordSdkUsage(reservation.Id, usage);
+                database.WriteMetadata($"worker:{worker}:lifecycle", "ready");
             }
 
-            contract?.VerifyVersion(initialize);
-            versionVerified = contract is not null;
-            string recovery =
-                recoveryLabel
-                ?? (
-                    exactSession is null
-                        ? "fresh-session-with-durable-summary"
-                        : "exact-session-load"
-                );
-            if (exactSession is not null && !client.SupportsLoad)
-            {
-                database.WriteMetadata(
-                    $"worker:{worker}:recovery",
-                    "fresh-summary-fallback-required: loadSession not advertised"
-                );
-                throw new OperationException(
-                    "session_load_failed",
-                    "Exact-session load is not advertised; settle this process before "
-                        + "fresh-summary fallback."
-                );
-            }
-
-            try
-            {
-                await client
-                    .OpenSessionAsync(
-                        cwd,
-                        McpServers(database, worker),
-                        exactSession,
-                        handshake.Token
-                    )
-                    .ConfigureAwait(false);
-            }
-            catch (OperationException exception)
-                when (exactSession is not null && exception.Code == "native_error")
-            {
-                // The caller must settle this failed loader before allocating a fresh replacement.
-                database.WriteMetadata(
-                    $"worker:{worker}:recovery",
-                    $"exact-session-load-failed: {exception.Message}"
-                );
-                throw new OperationException(
-                    "session_load_failed",
-                    "Exact-session loading failed; settle before fresh-summary recovery."
-                );
-            }
-
-            credits.AttachSession(reservation.Id, client.SessionId!);
-            using (Microsoft.Data.Sqlite.SqliteConnection connection = database.Open())
-            {
-                using Microsoft.Data.Sqlite.SqliteTransaction transaction =
-                    connection.BeginTransaction();
-                Sql.Execute(
-                    connection,
-                    """
-                    INSERT INTO native_sessions(reservation_id,worker,session_id,recovery,
-                        initialize_json,created_at)
-                    VALUES($reservation,$worker,$session,$recovery,$initialize,$time);
-                    """,
-                    transaction,
-                    ("$reservation", reservation.Id),
-                    ("$worker", worker),
-                    ("$session", client.SessionId),
-                    ("$recovery", recovery),
-                    ("$initialize", initialize.ToJsonString()),
-                    ("$time", database.Now.ToString("O"))
-                );
-                Sql.Execute(
-                    connection,
-                    "UPDATE native_attempts SET session_id=$session WHERE usage_path=$path;",
-                    transaction,
-                    ("$session", client.SessionId),
-                    ("$path", reservation.UsagePath)
-                );
-                Sql.Execute(
-                    connection,
-                    """
-                    INSERT INTO meta(key,value)
-                    VALUES($sessionKey,$session),($reservationKey,$reservation)
-                    ON CONFLICT(key) DO UPDATE SET value=excluded.value;
-                    """,
-                    transaction,
-                    ("$sessionKey", $"worker:{worker}:session"),
-                    ("$session", client.SessionId),
-                    ("$reservationKey", $"worker:{worker}:reservation"),
-                    ("$reservation", reservation.Id)
-                );
-                transaction.Commit();
-            }
-
-            database.WriteMetadata($"worker:{worker}:recovery", recovery);
-            database.WriteMetadata($"worker:{worker}:initialize", initialize.ToJsonString());
-            if (informationalDiscovery)
-            {
-                await DiscoverInformationalUsageAsync(handshake.Token).ConfigureAwait(false);
-                database.WriteMetadata($"worker:{worker}:lifecycle", "preflight-unverified");
-                return;
-            }
-
-            await VerifyCreditsAsync(handshake.Token).ConfigureAwait(false);
-            database.WriteMetadata($"worker:{worker}:lifecycle", "ready");
+            verified = true;
         }
-        catch (Exception exception)
+        catch
         {
-            if (exception is OperationException { Code: "native_start_failed" })
+            if (reservation is not null)
             {
-                credits.ReleaseFailedStart(reservation.Id);
-                reconciled = true;
-                started = false;
-                throw;
-            }
-
-            credits.MarkUncertain(reservation.Id);
-            if (exception is OperationException { Code: "ownership_unresolved" })
-            {
-                database.WriteMetadata("lifecycle:ownership_ambiguity", exception.Message);
+                credits.MarkUncertain(reservation.Id);
             }
 
             throw;
@@ -291,32 +155,39 @@ internal sealed class NativeWorker : IAsyncDisposable
 
     public async Task<JsonObject> PromptAsync(string text, CancellationToken cancellationToken)
     {
-        if (!verified || client is null)
+        if (reservation is null || !verified || session is null || stopped)
         {
             throw new OperationException(
                 "credit_unknown",
-                "No model prompt is permitted before verified native limit and usage evidence."
+                "A diagnostic or unverified session cannot send model prompts."
             );
         }
 
-        if (lastUsage >= reservation.Allowance)
-        {
-            throw new OperationException(
-                "credit_exhausted",
-                "The native session's reported credit allowance is spent."
-            );
-        }
-
-        credits.RequirePromptAllowance(
-            database.RunId,
-            reservation.Id,
-            database.Configuration.RunAiCreditAllowance
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            stop.Token
         );
-        database.WriteMetadata($"worker:{worker}:lifecycle", "prompting");
-        JsonObject result;
+        await turn.WaitAsync(linked.Token).ConfigureAwait(false);
         try
         {
-            result = await client.PromptAsync(text, cancellationToken).ConfigureAwait(false);
+            await VerifyCreditsAsync(linked.Token).ConfigureAwait(false);
+            credits.BeginDispatch(
+                database.RunId,
+                reservation.Id,
+                database.Configuration.RunAiCreditAllowance
+            );
+            database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "prompting");
+            JsonObject result = await session
+                .SendAsync(
+                    text,
+                    calibration
+                        ? TimeSpan.FromMinutes(2)
+                        : TimeSpan.FromSeconds(database.Configuration.DurationSeconds),
+                    linked.Token
+                )
+                .ConfigureAwait(false);
+            database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "ready");
+            return result;
         }
         catch
         {
@@ -324,375 +195,244 @@ internal sealed class NativeWorker : IAsyncDisposable
             credits.MarkUncertain(reservation.Id);
             throw;
         }
-
-        database.WriteMetadata($"worker:{worker}:lifecycle", "ready");
-        return result;
+        finally
+        {
+            turn.Release();
+        }
     }
 
     public async Task VerifyCreditsAsync(CancellationToken cancellationToken)
     {
-        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken
-        );
-        deadline.CancelAfter(TimeSpan.FromSeconds(10));
+        if (reservation is null || session is null || SessionId is null)
+        {
+            throw new OperationException("credit_unknown", "No paid native association.");
+        }
+
         try
         {
-            await VerifyCreditsCoreAsync(deadline.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            credits.MarkUncertain(reservation.Id);
-            throw new OperationException(
-                "credit_unknown",
-                "Native informational credit verification exceeded its finite deadline."
+            NativeUsage usage = await session
+                .ReadAsync(SessionId, limit, cancellationToken)
+                .ConfigureAwait(false);
+            SaveDiagnostic(usage);
+            credits.RecordSdkUsage(reservation.Id, usage);
+            credits.RequirePromptAllowance(
+                database.RunId,
+                reservation.Id,
+                database.Configuration.RunAiCreditAllowance
             );
-        }
-        catch (OperationException exception) when (exception.Code == "credit_exhausted")
-        {
-            throw;
         }
         catch
         {
+            verified = false;
             credits.MarkUncertain(reservation.Id);
             throw;
         }
     }
 
-    private async Task VerifyCreditsCoreAsync(CancellationToken cancellationToken)
-    {
-        verified = false;
-        AcpClient connection = client ?? throw new InvalidOperationException("No ACP connection.");
-        NativeCreditContract evidence =
-            contract
-            ?? throw new OperationException(
-                "unavailable",
-                "No native credit contract is established."
-            );
-        await connection
-            .WaitForCommandsAsync(TimeSpan.FromSeconds(5), cancellationToken)
-            .ConfigureAwait(false);
-        string advertisedName = evidence.InformationalCommand.Split(' ')[0];
-        if (
-            !connection
-                .AdvertisedCommands.OfType<JsonObject>()
-                .Any(command => command["name"]?.GetValue<string>() == advertisedName)
-        )
-        {
-            throw new OperationException(
-                "unavailable",
-                "The documented informational command is not advertised by this ACP session."
-            );
-        }
-
-        lock (updateLock)
-        {
-            informationalText.Clear();
-            capturingInformation = true;
-        }
-
-        JsonObject response;
-        try
-        {
-            response = await connection
-                .PromptAsync("/" + evidence.InformationalCommand, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            lock (updateLock)
-            {
-                capturingInformation = false;
-            }
-        }
-
-        string text;
-        lock (updateLock)
-        {
-            text = informationalText.ToString();
-        }
-
-        JsonNode information =
-            text.Length == 0
-                ? response
-                : JsonNode.Parse(text)
-                    ?? throw new OperationException(
-                        "credit_unknown",
-                        "The documented informational response did not contain usable JSON."
-                    );
-        lastUsage = evidence.VerifySession(information, reservation.Allowance);
-        if (lastUsage < (reservation.Actual ?? 0))
-        {
-            throw new OperationException(
-                "credit_unknown",
-                "The loaded native session reset or lost previously reported cumulative usage."
-            );
-        }
-
-        credits.ObserveUsage(reservation.Id, lastUsage);
-        if (lastUsage >= reservation.Allowance)
-        {
-            throw new OperationException(
-                "credit_exhausted",
-                "The native session's reported credit allowance is spent."
-            );
-        }
-
-        database.WriteMetadata(
-            $"worker:{worker}:credit_preflight",
-            Json.SerializePayload(
-                    new
-                    {
-                        evidence.EvidenceReference,
-                        evidence.AgentVersion,
-                        reservation.Id,
-                        reservation.Allowance,
-                        actualReported = lastUsage,
-                        verifiedAt = database.Now,
-                    }
-                )
-                .ToJsonString()
-        );
-        verified = true;
-    }
-
     public Task CancelAsync(CancellationToken cancellationToken = default) =>
-        client?.CancelAsync(cancellationToken) ?? Task.CompletedTask;
+        session?.AbortAsync(cancellationToken) ?? Task.CompletedTask;
 
     public async Task StopAsync()
     {
-        verified = false;
-        if (!started && !reconciled)
+        await settlement.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
         {
-            CreditReservation current = credits
-                .Reservations(database.RunId)
-                .Single(row => row.Id == reservation.Id);
-            if (current.State == "reserved")
+            if (stopped)
             {
-                credits.ReleaseUnstarted(reservation.Id);
+                return;
             }
 
-            reconciled = true;
-        }
-
-        if (client is not null)
-        {
+            verified = false;
+            await stop.CancelAsync().ConfigureAwait(false);
+            Exception? failure = null;
+            NativeUsage? finalUsage = null;
+            bool turnOwned = false;
             try
             {
-                await client.StopAsync().ConfigureAwait(false);
-            }
-            catch
-            {
-                using Microsoft.Data.Sqlite.SqliteConnection connection = database.Open();
-                Sql.Execute(
-                    connection,
-                    """
-                    UPDATE process_leases SET state='unresolved'
-                    WHERE kind=$kind AND state<>'exited';
-                    """,
-                    null,
-                    ("$kind", $"native:{worker}:{reservation.Id}")
-                );
-                credits.MarkUncertain(reservation.Id);
-                throw;
-            }
-        }
+                if (session is not null)
+                {
+                    await session.AbortAsync(CancellationToken.None).ConfigureAwait(false);
+                }
 
-        if (!reconciled)
-        {
-            try
-            {
-                NativeCreditContract evidence =
-                    contract
-                    ?? throw new OperationException(
-                        "credit_unknown",
-                        "Native report schema/application evidence remains unverified; "
-                            + "reservation retained."
-                    );
-                if (!versionVerified)
+                turnOwned = await turn.WaitAsync(TimeSpan.FromSeconds(15), CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (!turnOwned)
                 {
                     throw new OperationException(
-                        "credit_unknown",
-                        "Native report version was not verified; reservation retained."
+                        "ownership_unresolved",
+                        "The native turn did not quiesce before usage reconciliation."
                     );
                 }
 
-                (decimal actual, string identity) = evidence.ReadFinalReport(
-                    reservation.UsagePath,
-                    SessionId
-                );
-                if (SessionId is null && actual != 0)
+                if (reservation is not null && started)
                 {
-                    throw new OperationException(
-                        "credit_unknown",
-                        "Native usage before session association was not zero."
-                    );
+                    finalUsage = await (
+                        session ?? throw new InvalidOperationException("No SDK connection.")
+                    )
+                        .ReadAsync(
+                            reservation.SessionId!,
+                            limit,
+                            CancellationToken.None,
+                            validateEvents: false
+                        )
+                        .ConfigureAwait(false);
+                    SaveDiagnostic(finalUsage);
+                }
+                else if (reservation is not null)
+                {
+                    credits.ReleaseUnstarted(reservation.Id);
+                }
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+                if (reservation is not null)
+                {
+                    credits.MarkUncertain(reservation.Id);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (session is not null)
+                    {
+                        session.Quiesce();
+                        if (calibration)
+                        {
+                            try
+                            {
+                                session.RequireHealthy();
+                            }
+                            catch (Exception exception)
+                            {
+                                failure ??= exception;
+                            }
+                        }
+
+                        await session.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
+                catch (Exception exception)
+                {
+                    failure ??= exception;
                 }
 
-                credits.Reconcile(
-                    reservation.Id,
-                    actual,
-                    identity,
-                    unassociatedZero: SessionId is null,
-                    processBaseline: evidence.ReportUsageScope == "process-incremental"
-                        ? reservation.Actual ?? 0
-                        : null
-                );
-                reconciled = true;
+                if (turnOwned)
+                {
+                    turn.Release();
+                }
             }
-            catch
+
+            stopped = true;
+            if (reservation is not null && finalUsage is not null && failure is null)
             {
-                credits.MarkUncertain(reservation.Id);
-                throw;
+                try
+                {
+                    credits.RecordSdkUsage(reservation.Id, finalUsage, final: true);
+                }
+                catch (Exception exception)
+                {
+                    failure = exception;
+                }
+            }
+
+            if (failure is not null)
+            {
+                if (reservation is not null)
+                {
+                    credits.MarkUncertain(reservation.Id);
+                }
+
+                throw new OperationException(
+                    "credit_or_ownership_unknown",
+                    $"Native settlement retained unresolved evidence: {failure.Message}"
+                );
+            }
+
+            if (reservation is not null)
+            {
+                database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "stopped");
             }
         }
-
-        database.WriteMetadata($"worker:{worker}:lifecycle", "stopped");
+        finally
+        {
+            settlement.Release();
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
         await StopAsync().ConfigureAwait(false);
-        if (client is not null)
-        {
-            await client.DisposeAsync().ConfigureAwait(false);
-        }
-
         GC.SuppressFinalize(this);
     }
 
-    private void RecordUpdate(JsonObject update)
+    private void SaveDiagnostic(NativeUsage usage)
     {
-        lock (updateLock)
-        {
-            if (database.Now - lastStoredUpdate >= TimeSpan.FromSeconds(1))
-            {
-                lastStoredUpdate = database.Now;
-                database.WriteMetadata(
-                    $"worker:{worker}:last_update",
-                    lastStoredUpdate.ToString("O")
-                );
-            }
-
-            if (
-                capturingInformation
-                && update["update"] is JsonObject body
-                && body["sessionUpdate"]?.GetValue<string>() == "agent_message_chunk"
-                && body["content"]?["type"]?.GetValue<string>() == "text"
-            )
-            {
-                informationalText.Append(body["content"]?["text"]?.GetValue<string>());
-            }
-        }
-    }
-
-    private async Task DiscoverInformationalUsageAsync(CancellationToken cancellationToken)
-    {
-        AcpClient connection = client ?? throw new InvalidOperationException("No ACP connection.");
-        await connection
-            .WaitForCommandsAsync(TimeSpan.FromSeconds(5), cancellationToken)
-            .ConfigureAwait(false);
+        Diagnostic =
+            session?.Metadata?.DeepClone().AsObject()
+            ?? throw new InvalidOperationException("No observed native metadata.");
+        Diagnostic["reportedNanoAiu"] = usage.TotalNanoAiu?.ToString(
+            "R",
+            CultureInfo.InvariantCulture
+        );
+        Diagnostic["aiCreditsStatus"] = usage.Status;
+        Diagnostic["totalUserRequests"] = usage.TotalUserRequests;
+        Diagnostic["paidReservation"] = reservation is not null;
         database.WriteMetadata(
-            $"worker:{worker}:advertised_commands",
-            connection.AdvertisedCommands.ToJsonString()
+            reservation is null
+                ? $"native:preflight:{usage.SessionId}"
+                : $"native:session:{usage.SessionId}",
+            Diagnostic.ToJsonString()
         );
-        if (
-            !connection
-                .AdvertisedCommands.OfType<JsonObject>()
-                .Any(command => command["name"]?.GetValue<string>() == "usage")
-        )
-        {
-            throw new OperationException(
-                "unavailable",
-                "The documented informational /usage command is not advertised; no prompt was sent."
-            );
-        }
-
-        lock (updateLock)
-        {
-            informationalText.Clear();
-            capturingInformation = true;
-        }
-
-        JsonObject response;
-        try
-        {
-            // Official ACP documentation explicitly identifies advertised /usage as non-model.
-            response = await connection
-                .PromptAsync("/usage", cancellationToken)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            lock (updateLock)
-            {
-                capturingInformation = false;
-            }
-        }
-
-        lock (updateLock)
-        {
-            database.WriteMetadata(
-                $"worker:{worker}:credit_discovery",
-                new JsonObject
-                {
-                    ["operation"] = "/usage",
-                    ["result"] = response,
-                    ["text"] = informationalText.ToString(),
-                    ["interpretation"] =
-                        "unverified; not used for credit arithmetic or model admission",
-                }.ToJsonString()
-            );
-        }
     }
 
-    private static JsonArray McpServers(RunDatabase database, string worker)
+    private void RecordAssociation(string id, string worker, string recovery)
     {
-        string executable =
-            Environment.ProcessPath
-            ?? throw new OperationException(
-                "unavailable",
-                "Cannot locate the MCP helper executable."
-            );
-        string assembly = typeof(RunDatabase).Assembly.Location;
-        List<string> arguments = [];
-        if (
-            !Path.GetFileNameWithoutExtension(executable)
-                .Equals(
-                    Path.GetFileNameWithoutExtension(assembly),
-                    StringComparison.OrdinalIgnoreCase
-                )
-        )
-        {
-            executable = Path.GetFileNameWithoutExtension(executable)
-                .Equals("dotnet", StringComparison.OrdinalIgnoreCase)
-                ? executable
-                : Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
-            if (string.IsNullOrEmpty(assembly))
-            {
-                throw new OperationException(
-                    "unavailable",
-                    "The managed MCP helper entry assembly has no executable location."
-                );
-            }
-
-            arguments.Add(Path.GetFullPath(assembly));
-        }
-
-        arguments.AddRange(["mcp", "--state", database.StatePath, "--actor", worker]);
-        JsonArray args = [];
-        foreach (string argument in arguments)
-        {
-            args.Add(argument);
-        }
-
-        return new JsonArray(
-            new JsonObject
-            {
-                ["name"] = "lite-agensh",
-                ["command"] = executable,
-                ["args"] = args,
-                ["env"] = new JsonArray(),
-            }
+        CreditReservation allocation =
+            reservation ?? throw new InvalidOperationException("No paid reservation.");
+        using SqliteConnection connection = database.Open();
+        using SqliteTransaction transaction = connection.BeginTransaction();
+        Sql.Execute(
+            connection,
+            """
+            INSERT INTO native_attempts(
+                usage_path,reservation_id,worker,session_id,baseline_usage,
+                initialize_json,created_at)
+            VALUES($path,$reservation,$worker,$session,$baseline,$initialize,$time);
+            INSERT INTO native_sessions(
+                reservation_id,worker,session_id,recovery,initialize_json,created_at)
+            VALUES($reservation,$worker,$session,$recovery,$initialize,$time);
+            """,
+            transaction,
+            ("$path", allocation.UsagePath),
+            ("$reservation", allocation.Id),
+            ("$worker", worker),
+            ("$session", id),
+            ("$baseline", (allocation.Actual ?? 0).ToString(CultureInfo.InvariantCulture)),
+            ("$initialize", "sdk:" + NativeSdkSession.SdkVersion),
+            ("$recovery", recovery),
+            ("$time", database.Now.ToString("O"))
         );
+        if (!calibration)
+        {
+            Sql.Execute(
+                connection,
+                """
+                INSERT INTO meta(key,value)
+                VALUES($sessionKey,$session),($reservationKey,$reservation),($recoveryKey,$recovery)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+                """,
+                transaction,
+                ("$sessionKey", $"worker:{worker}:session"),
+                ("$session", id),
+                ("$reservationKey", $"worker:{worker}:reservation"),
+                ("$reservation", allocation.Id),
+                ("$recoveryKey", $"worker:{worker}:recovery"),
+                ("$recovery", recovery)
+            );
+        }
+
+        transaction.Commit();
     }
 }

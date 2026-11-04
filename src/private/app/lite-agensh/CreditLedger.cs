@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
@@ -59,6 +60,14 @@ public sealed class CreditLedger
                 scope TEXT NOT NULL, created_at TEXT NOT NULL,
                 FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id),
                 UNIQUE(reservation_id,report_identity));
+            CREATE TABLE IF NOT EXISTS credit_sdk_usage(
+                reservation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                reported_nano_aiu TEXT, status TEXT, dispatch_count INTEGER NOT NULL DEFAULT 0,
+                reported_requests INTEGER,
+                FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
+            CREATE TABLE IF NOT EXISTS credit_sdk_owners(
+                reservation_id TEXT PRIMARY KEY, pid INTEGER NOT NULL, start_ticks INTEGER NOT NULL,
+                FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
             """,
             transaction
         );
@@ -102,6 +111,176 @@ public sealed class CreditLedger
 
     public string Identity { get; }
 
+    public void RequirePaidAdmission()
+    {
+        using SqliteConnection connection = Open();
+        if (HasUnknown(connection, null))
+        {
+            throw new OperationException(
+                "credit_unknown",
+                "Unknown campaign usage blocks all new paid work, including calibration."
+            );
+        }
+    }
+
+    public bool HasSdkAssociation(string id)
+    {
+        using SqliteConnection connection = Open();
+        return Sql.Scalar(
+                connection,
+                "SELECT reservation_id FROM credit_sdk_usage WHERE reservation_id=$id;",
+                null,
+                ("$id", id)
+            ) is string;
+    }
+
+    public bool HasCompleteSdkUsage(string id)
+    {
+        using SqliteConnection connection = Open();
+        return Sql.Scalar(
+                connection,
+                """
+                SELECT r.id FROM credit_reservations r
+                JOIN credit_sdk_usage u ON u.reservation_id=r.id AND u.session_id=r.session_id
+                WHERE r.id=$id AND r.state='reconciled' AND r.actual IS NOT NULL
+                    AND u.status='complete' AND u.reported_nano_aiu IS NOT NULL
+                    AND u.dispatch_count>0;
+                """,
+                null,
+                ("$id", id)
+            ) is string;
+    }
+
+    public void RecordSdkUsage(string id, NativeUsage usage, bool final = false)
+    {
+        using SqliteConnection connection = Open();
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        CreditReservation row = Read(connection, transaction).Single(item => item.Id == id);
+        if (
+            row.SessionId != usage.SessionId
+            || Sql.Scalar(
+                connection,
+                "SELECT session_id FROM credit_sdk_usage WHERE reservation_id=$id;",
+                transaction,
+                ("$id", id)
+            ) as string
+                != usage.SessionId
+            || row.State is not ("active" or "uncertain" or "reconciled")
+        )
+        {
+            MarkUnknown(connection, transaction, id);
+            transaction.Commit();
+            throw new OperationException(
+                "credit_unknown",
+                "Native usage is not associated with this durable SDK reservation."
+            );
+        }
+
+        Sql.Execute(
+            connection,
+            """
+            UPDATE credit_sdk_usage SET reported_nano_aiu=$nano,status=$status,
+                reported_requests=$requests
+            WHERE reservation_id=$id;
+            """,
+            transaction,
+            ("$nano", usage.TotalNanoAiu?.ToString("R", CultureInfo.InvariantCulture)),
+            ("$status", usage.Status),
+            ("$requests", usage.TotalUserRequests),
+            ("$id", id)
+        );
+        long dispatches = (long)(
+            Sql.Scalar(
+                connection,
+                "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
+                transaction,
+                ("$id", id)
+            ) ?? throw new InvalidOperationException()
+        );
+        if (dispatches == 0 && !final)
+        {
+            if (
+                (usage.TotalNanoAiu is double initial && initial != 0)
+                || usage.TotalUserRequests != 0
+            )
+            {
+                MarkUnknown(connection, transaction, id);
+                transaction.Commit();
+                throw new OperationException(
+                    "credit_unknown",
+                    "Native usage appeared before this fresh session's first paid dispatch."
+                );
+            }
+
+            // Empty-session metadata is retained, never booked as measured free usage.
+            transaction.Commit();
+            return;
+        }
+
+        decimal actual;
+        try
+        {
+            actual = usage.RequireComplete();
+            if (
+                dispatches == 0
+                || actual < (row.Actual ?? 0)
+                || (row.State == "reconciled" && row.Actual != actual)
+            )
+            {
+                throw new OperationException(
+                    "credit_unknown",
+                    "Usage regressed, revised a final total or lacks completed-call evidence."
+                );
+            }
+        }
+        catch
+        {
+            MarkUnknown(connection, transaction, id);
+            transaction.Commit();
+            throw;
+        }
+
+        string identity =
+            usage.SessionId
+            + ":nano:"
+            + usage.TotalNanoAiu?.ToString("R", CultureInfo.InvariantCulture);
+        Sql.Execute(
+            connection,
+            """
+            INSERT OR IGNORE INTO credit_reports(
+                reservation_id,actual,usage_path,report_identity,scope,created_at)
+            VALUES($id,$actual,$path,$identity,'sdk-session-cumulative',$time);
+            UPDATE credit_reservations SET actual=$actual,report_identity=$identity,
+                state=$state,updated_at=$time WHERE id=$id;
+            """,
+            transaction,
+            ("$id", id),
+            ("$actual", Format(actual)),
+            ("$path", row.UsagePath),
+            ("$identity", identity),
+            ("$state", final || row.State == "reconciled" ? "reconciled" : row.State),
+            ("$time", DateTimeOffset.UtcNow.ToString("O"))
+        );
+        transaction.Commit();
+    }
+
+    public void BeginDispatch(string runId, string id, decimal runAllowance)
+    {
+        using SqliteConnection connection = Open();
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        RequirePromptAllowance(connection, transaction, runId, id, runAllowance);
+        Sql.Execute(
+            connection,
+            """
+            UPDATE credit_sdk_usage SET dispatch_count=dispatch_count+1,status='pending'
+            WHERE reservation_id=$id;
+            """,
+            transaction,
+            ("$id", id)
+        );
+        transaction.Commit();
+    }
+
     public CreditReservation Reserve(
         string runId,
         string worker,
@@ -116,7 +295,7 @@ public sealed class CreditLedger
         if (!Path.IsPathFullyQualified(usagePath))
         {
             throw new ArgumentException(
-                "Native usage output must have an absolute path.",
+                "The native evidence prefix must have an absolute path.",
                 nameof(usagePath)
             );
         }
@@ -124,7 +303,7 @@ public sealed class CreditLedger
         using SqliteConnection connection = Open();
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
         List<CreditReservation> rows = Read(connection, transaction);
-        if (rows.Any(row => row.State == "uncertain"))
+        if (HasUnknown(connection, transaction))
         {
             throw new OperationException(
                 "credit_unknown",
@@ -163,15 +342,17 @@ public sealed class CreditLedger
             allowance,
             "reserved",
             Path.GetFullPath(usagePath),
-            null,
+            Guid.NewGuid().ToString("D"),
             null
         );
         Sql.Execute(
             connection,
             """
             INSERT INTO credit_reservations(id,run_id,worker,allowance,run_allowance,state,
-                usage_path,updated_at)
-            VALUES($id,$run,$worker,$allowance,$runAllowance,'reserved',$path,$time);
+                usage_path,session_id,updated_at)
+            VALUES($id,$run,$worker,$allowance,$runAllowance,'reserved',$path,$session,$time);
+            INSERT INTO credit_sdk_usage(reservation_id,session_id)
+            VALUES($id,$session);
             """,
             transaction,
             ("$id", reservation.Id),
@@ -180,36 +361,15 @@ public sealed class CreditLedger
             ("$allowance", Format(allowance)),
             ("$runAllowance", Format(runAllowance)),
             ("$path", reservation.UsagePath),
+            ("$session", reservation.SessionId),
             ("$time", DateTimeOffset.UtcNow.ToString("O"))
         );
+        RecordOwner(connection, transaction, reservation.Id);
         transaction.Commit();
         return reservation;
     }
 
     public void MarkStarted(string id) => Transition(id, "reserved", "started");
-
-    public void ReleaseFailedStart(string id)
-    {
-        using SqliteConnection connection = Open();
-        if (
-            Sql.Execute(
-                connection,
-                """
-                UPDATE credit_reservations SET state=
-                    CASE WHEN actual IS NULL THEN 'released' ELSE 'reconciled' END,
-                    updated_at=$time WHERE id=$id AND state='started';
-                """,
-                null,
-                ("$id", id),
-                ("$time", DateTimeOffset.UtcNow.ToString("O"))
-            ) != 1
-        )
-        {
-            throw new InvalidOperationException(
-                "The known failed process start is not awaiting rollback."
-            );
-        }
-    }
 
     public void ReleaseUnstarted(string id)
     {
@@ -244,7 +404,7 @@ public sealed class CreditLedger
             previous.State != "reconciled"
             || previous.SessionId is null
             || previous.Actual >= previous.Allowance
-            || rows.Any(row => row.State == "uncertain")
+            || HasUnknown(connection, transaction)
         )
         {
             throw new OperationException(
@@ -289,6 +449,7 @@ public sealed class CreditLedger
             ("$time", DateTimeOffset.UtcNow.ToString("O")),
             ("$id", id)
         );
+        RecordOwner(connection, transaction, id);
         transaction.Commit();
         return previous with { State = "reserved", UsagePath = Path.GetFullPath(usagePath) };
     }
@@ -317,7 +478,7 @@ public sealed class CreditLedger
                 connection,
                 """
                 UPDATE credit_reservations SET session_id=$session,state='active',updated_at=$time
-                WHERE id=$id AND state='started';
+                WHERE id=$id AND state='started' AND session_id=$session;
                 """,
                 null,
                 ("$session", sessionId),
@@ -332,40 +493,35 @@ public sealed class CreditLedger
         }
     }
 
-    public void ObserveUsage(string id, decimal actual)
+    public void RequirePromptAllowance(string runId, string reservationId, decimal runAllowance)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(actual);
         using SqliteConnection connection = Open();
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
-        CreditReservation previous = Read(connection, transaction).Single(row => row.Id == id);
-        if (previous.State != "active" || actual < previous.Actual)
-        {
-            throw new OperationException(
-                "credit_unknown",
-                "Native cumulative usage is not monotonic on an active reservation."
-            );
-        }
-
-        Sql.Execute(
-            connection,
-            "UPDATE credit_reservations SET actual=$actual,updated_at=$time WHERE id=$id;",
-            transaction,
-            ("$id", id),
-            ("$actual", Format(actual)),
-            ("$time", DateTimeOffset.UtcNow.ToString("O"))
-        );
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: true);
+        RequirePromptAllowance(connection, transaction, runId, reservationId, runAllowance);
         transaction.Commit();
     }
 
-    public void RequirePromptAllowance(string runId, string reservationId, decimal runAllowance)
+    private void RequirePromptAllowance(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string runId,
+        string reservationId,
+        decimal runAllowance
+    )
     {
-        IReadOnlyList<CreditReservation> rows = Reservations();
+        IReadOnlyList<CreditReservation> rows = Read(connection, transaction);
         CreditReservation own = rows.Single(row => row.Id == reservationId && row.RunId == runId);
-        if (
-            rows.Any(row => row.State == "uncertain")
-            || own.State != "active"
-            || own.Actual is null
-        )
+        bool ready =
+            Sql.Scalar(
+                connection,
+                """
+                SELECT reservation_id FROM credit_sdk_usage WHERE reservation_id=$id
+                AND (dispatch_count=0 OR (status='complete' AND reported_nano_aiu IS NOT NULL));
+                """,
+                transaction,
+                ("$id", reservationId)
+            ) is string;
+        if (HasUnknown(connection, transaction) || own.State != "active" || !ready)
         {
             throw new OperationException(
                 "credit_unknown",
@@ -386,87 +542,6 @@ public sealed class CreditLedger
         }
     }
 
-    public void Reconcile(
-        string id,
-        decimal actual,
-        string reportIdentity,
-        bool unassociatedZero = false,
-        decimal? processBaseline = null
-    )
-    {
-        ArgumentOutOfRangeException.ThrowIfNegative(actual);
-        ArgumentException.ThrowIfNullOrWhiteSpace(reportIdentity);
-        using SqliteConnection connection = Open();
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
-        CreditReservation row = Read(connection, transaction).Single(item => item.Id == id);
-        if (unassociatedZero && actual != 0)
-        {
-            throw new OperationException(
-                "credit_unknown",
-                "A process without an associated session must explicitly report zero usage."
-            );
-        }
-
-        if (processBaseline is not null)
-        {
-            ArgumentOutOfRangeException.ThrowIfNegative(processBaseline.Value);
-        }
-
-        decimal cumulative = unassociatedZero ? row.Actual ?? 0 : (processBaseline ?? 0) + actual;
-        if (row.State == "reconciled")
-        {
-            if (row.Actual != cumulative)
-            {
-                throw new InvalidOperationException(
-                    "A final native report cannot revise reconciled usage."
-                );
-            }
-
-            return;
-        }
-
-        if (row.State is not ("started" or "active" or "uncertain") || cumulative < row.Actual)
-        {
-            throw new InvalidOperationException(
-                "Only a started native session can report nondecreasing cumulative usage."
-            );
-        }
-
-        Sql.Execute(
-            connection,
-            """
-            INSERT OR IGNORE INTO credit_reports(reservation_id,actual,usage_path,
-                report_identity,scope,created_at)
-            VALUES($id,$actual,$path,$identity,$scope,$time);
-            """,
-            transaction,
-            ("$id", id),
-            ("$actual", Format(actual)),
-            ("$path", row.UsagePath),
-            ("$identity", reportIdentity),
-            (
-                "$scope",
-                unassociatedZero ? "unassociated-process"
-                : processBaseline is null ? "session-cumulative"
-                : "process-incremental"
-            ),
-            ("$time", DateTimeOffset.UtcNow.ToString("O"))
-        );
-        Sql.Execute(
-            connection,
-            """
-            UPDATE credit_reservations SET actual=$actual,report_identity=$identity,
-                state='reconciled',updated_at=$time WHERE id=$id;
-            """,
-            transaction,
-            ("$actual", Format(cumulative)),
-            ("$identity", reportIdentity),
-            ("$id", id),
-            ("$time", DateTimeOffset.UtcNow.ToString("O"))
-        );
-        transaction.Commit();
-    }
-
     public IReadOnlyList<CreditReservation> Reservations(string? runId = null)
     {
         using SqliteConnection connection = Open();
@@ -477,6 +552,37 @@ public sealed class CreditLedger
     {
         IReadOnlyList<CreditReservation> rows = Reservations();
         CreditReservation[] run = [.. rows.Where(row => row.RunId == runId)];
+        using SqliteConnection connection = Open();
+        JsonArray reported = [];
+        using (
+            SqliteCommand command = Sql.Command(
+                connection,
+                """
+                SELECT u.reservation_id,u.session_id,u.reported_nano_aiu,u.status,u.dispatch_count
+                FROM credit_sdk_usage u JOIN credit_reservations r ON r.id=u.reservation_id
+                WHERE r.run_id=$run;
+                """,
+                null,
+                ("$run", runId)
+            )
+        )
+        using (SqliteDataReader reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                reported.Add(
+                    new JsonObject
+                    {
+                        ["reservationId"] = reader.GetString(0),
+                        ["sessionId"] = reader.GetString(1),
+                        ["reportedNanoAiu"] = reader.IsDBNull(2) ? null : reader.GetString(2),
+                        ["status"] = reader.IsDBNull(3) ? null : reader.GetString(3),
+                        ["dispatches"] = reader.GetInt64(4),
+                    }
+                );
+            }
+        }
+
         return Json.SerializePayload(
             new
             {
@@ -487,7 +593,8 @@ public sealed class CreditLedger
                 runCommitted = run.Sum(Charge),
                 actualReported = run.Sum(row => row.Actual ?? 0),
                 overshoot = run.Sum(row => Math.Max(0, (row.Actual ?? 0) - row.Allowance)),
-                uncertain = rows.Any(row => row.State == "uncertain"),
+                uncertain = HasUnknown(connection, null),
+                reported,
                 reservations = run,
             }
         );
@@ -497,6 +604,104 @@ public sealed class CreditLedger
         row.State == "released" ? 0
         : row.State == "reconciled" ? row.Actual!.Value
         : Math.Max(row.Allowance, row.Actual ?? 0);
+
+    private static bool HasUnknown(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        if (
+            (long)(
+                Sql.Scalar(
+                    connection,
+                    """
+                    SELECT EXISTS(SELECT 1 FROM credit_reservations r WHERE state='uncertain'
+                        OR (state IN ('started','active') AND NOT EXISTS(
+                            SELECT 1 FROM credit_sdk_usage u WHERE u.reservation_id=r.id)));
+                    """,
+                    transaction
+                ) ?? 1L
+            ) != 0
+        )
+        {
+            return true;
+        }
+
+        using SqliteCommand command = Sql.Command(
+            connection,
+            """
+            SELECT o.pid,o.start_ticks FROM credit_reservations r
+            LEFT JOIN credit_sdk_owners o ON o.reservation_id=r.id
+            WHERE r.state IN ('started','active');
+            """,
+            transaction
+        );
+        using SqliteDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (reader.IsDBNull(0) || reader.IsDBNull(1))
+            {
+                return true;
+            }
+
+            try
+            {
+                using Process owner = Process.GetProcessById(reader.GetInt32(0));
+                if (
+                    owner.HasExited
+                    || owner.StartTime.ToUniversalTime().Ticks != reader.GetInt64(1)
+                )
+                {
+                    return true;
+                }
+            }
+            catch (Exception exception)
+                when (exception
+                        is ArgumentException
+                            or InvalidOperationException
+                            or System.ComponentModel.Win32Exception
+                )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void RecordOwner(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string id
+    )
+    {
+        using Process owner = Process.GetCurrentProcess();
+        Sql.Execute(
+            connection,
+            """
+            INSERT INTO credit_sdk_owners(reservation_id,pid,start_ticks)
+            VALUES($id,$pid,$ticks)
+            ON CONFLICT(reservation_id) DO UPDATE
+                SET pid=excluded.pid,start_ticks=excluded.start_ticks;
+            """,
+            transaction,
+            ("$id", id),
+            ("$pid", owner.Id),
+            ("$ticks", owner.StartTime.ToUniversalTime().Ticks)
+        );
+    }
+
+    private static void MarkUnknown(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string id
+    ) =>
+        Sql.Execute(
+            connection,
+            """
+            UPDATE credit_reservations SET state='uncertain'
+            WHERE id=$id AND state IN ('started','active','uncertain','reconciled');
+            """,
+            transaction,
+            ("$id", id)
+        );
 
     private static List<CreditReservation> Read(
         SqliteConnection connection,

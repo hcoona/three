@@ -269,8 +269,19 @@
       "liteagensh": {
         "type": "Project",
         "dependencies": {
+          "GitHub.Copilot.SDK": "[1.0.28, )",
           "Microsoft.Data.Sqlite": "[10.0.14, )",
           "ModelContextProtocol": "[1.0.0, )"
+        }
+      },
+      "GitHub.Copilot.SDK": {
+        "type": "CentralTransitive",
+        "requested": "[1.0.28, )",
+        "resolved": "1.0.28",
+        "contentHash": "mYmpMjEHTQBUM71UAtO86e6uZ/ACPOLEhMS00ZqRMdAqmblygMtqo5uJbLFh6FCl0RzdwFH9j9g7EGpdfg6Hcg==",
+        "dependencies": {
+          "Microsoft.Extensions.AI.Abstractions": "10.2.0",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.2"
         }
       },
       "Microsoft.Data.Sqlite": {
