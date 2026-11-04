@@ -87,7 +87,7 @@ internal sealed class NodeExecutionFixture(GitFixture repository, CiPlan plan,
         return new NodeRuntimeInputs(candidate,
             [new("node22", "22.x", null), new("node24", "24.x", "24.21.0")],
             "12.8.2", [], "node24", new string('d', 40), "26.0.0", 22,
-            [new(Source, 22)]).Expand(original);
+            [new(Source, System.Version.Parse("22.0.0"))]).Expand(original);
     }
 
     internal Task<NodeRunResult> RunAsync(CancellationToken token, CiPlan? plan = null,

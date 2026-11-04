@@ -42,7 +42,12 @@ DOTNET_TOOL_SETUP = {
     "Setup planned Python": ("setup-python", "python", "python-version"),
     "Setup planned Node.js": ("setup-node", "node", "node-version"),
 }
-NODE_RETAINED = [NODE_PACKAGE_DIR, "src/retained"]
+NODE_RETAINED = {
+    "22.x": [NODE_PACKAGE_DIR, "src/retained"],
+    "24.x": [NODE_PACKAGE_DIR, "src/retained"],
+    "26.x": [NODE_PACKAGE_DIR, "src/retained"],
+    "28.x": [],
+}
 NODE_ADOPTED = (
     "tests/private/app/workflow-delivery/fixtures/products/"
     ""
@@ -79,6 +84,20 @@ if failure and command[:len(failure)] == failure:
 if "--version" in command:
     print("fixture-version")
 """
+NODE_JQ_COMMAND = (
+    COMMAND_RECORDER
+    + r"""
+if "--arg" in sys.argv:
+    selector = sys.argv[sys.argv.index("--arg") + 2]
+    value = json.loads(os.environ["RETAINED_DIRECTORIES"])[selector]
+    print(json.dumps(value, separators=(",", ":")))
+elif sys.argv[-1] == "length":
+    print(len(json.loads(sys.stdin.read())))
+else:
+    print("unsupported jq fixture command", file=sys.stderr)
+    sys.exit(2)
+"""
+)
 
 
 @pytest.fixture
@@ -286,6 +305,7 @@ def _bindings(tmp_path: Path) -> dict[str, str]:
             NODE_RETAINED
         ),
         "needs.node-group.outputs.adopted_directory": NODE_ADOPTED,
+        "matrix.node-version": "22.x",
         "runner.temp": str(tmp_path / "runner-state"),
     }
 
@@ -315,6 +335,12 @@ def _commands(tmp_path: Path) -> dict[str, str]:
         "RUNNER_TEMP": str(tmp_path / "runner-state"),
         "GITHUB_WORKSPACE": str(tmp_path),
     }
+
+
+def _node_commands(tmp_path: Path) -> dict[str, str]:
+    env = _commands(tmp_path)
+    executable(Path(env["PATH"]) / "jq", NODE_JQ_COMMAND)
+    return env
 
 
 def _observations(env: dict[str, str]) -> list[dict[str, Any]]:
@@ -353,6 +379,7 @@ def _run_bash_steps(
             bindings=_bindings(tmp_path)
             | {
                 "needs.scope.outputs.full": env.get("CI_MODE", "true"),
+                "matrix.node-version": env.get("NODE_VERSION", "22.x"),
             },
             workflow=workflow,
             job=job,
@@ -558,7 +585,7 @@ def test_validation_hk_uses_tested_comparison_and_propagates_failure(
     assert {"small", "medium", "large"} <= set(observed["profile"].split(","))
 
 
-def _retained_command(tmp_path: Path) -> list[str]:
+def _retained_command(tmp_path: Path, version: str) -> list[str]:
     return [
         "dotnet",
         str(
@@ -570,7 +597,7 @@ def _retained_command(tmp_path: Path) -> list[str]:
         "retained",
         str(tmp_path),
         str(tmp_path / "runner-state/retained-node"),
-        json.dumps(NODE_RETAINED),
+        json.dumps(NODE_RETAINED[version], separators=(",", ":")),
         NODE_ADOPTED,
         NODE_PACKAGE_DIR,
         str(tmp_path / "setup tools/pnpm"),
@@ -594,25 +621,25 @@ def test_node_matrix_consumes_the_complete_planned_runtime_selectors(
     assert job["name"] == "Test & Build (Node.js ${{ matrix.node-version }})"
 
 
+@pytest.mark.parametrize("version", ["22.x", "24.x", "26.x"])
 def test_node_checks_execute_selected_retained_members(
     workflow: dict[str, Any],
     tmp_path: Path,
+    version: str,
 ) -> None:
     """Both retained contexts install before native filtered execution."""
     job = workflow["jobs"]["node-tests"]
     setup = _action(job, "actions/setup-node")
-    for version in ("22.x", "24.x", "26.x"):
-        assert (
-            resolve(
-                setup["with"]["node-version"], {"matrix.node-version": version}
-            )
-            == version
-        )
-    env = _commands(tmp_path)
+    assert (
+        resolve(setup["with"]["node-version"], {"matrix.node-version": version})
+        == version
+    )
+    env = _node_commands(tmp_path)
+    env["NODE_VERSION"] = version
     result = _run_bash_steps(job["steps"], workflow, job, tmp_path, env)
     assert result.returncode == 0, result.stderr
     calls = [item["command"] for item in _observations(env)]
-    execution = calls.index(_retained_command(tmp_path))
+    execution = calls.index(_retained_command(tmp_path, version))
     assert calls.index(["pnpm", "install", "--frozen-lockfile"]) < execution
     assert calls.index(["dotnet", "tool", "restore"]) < execution
     assert ["pnpm", "run", "test"] not in calls
@@ -634,13 +661,49 @@ def test_node_check_propagates_required_command_failure(
     failure: tuple[str, ...],
 ) -> None:
     """Fail the retained boundary on dependency or selected work failure."""
-    env = _commands(tmp_path)
+    env = _node_commands(tmp_path)
     env["FAIL_COMMAND"] = json.dumps(failure)
     job = workflow["jobs"]["node-tests"]
     result = _run_bash_steps(job["steps"], workflow, job, tmp_path, env)
     assert result.returncode == CHILD_FAILURE, result.stderr
     calls = [item["command"] for item in _observations(env)]
     assert calls[-1][: len(failure)] == list(failure)
+
+
+def test_node_check_skips_an_empty_runtime_variant(
+    workflow: dict[str, Any], tmp_path: Path
+) -> None:
+    """A valid selector with no retained members does not provision a runner."""
+    job = workflow["jobs"]["node-tests"]
+    guard = job["steps"][0]
+    output = tmp_path / "scope-output"
+    env = _node_commands(tmp_path)
+    env["GITHUB_OUTPUT"] = str(output)
+    applicable = (
+        guard["env"]["APPLICABLE"].removeprefix("${{ ").removesuffix(" }}")
+    )
+
+    result = run_step(
+        guard,
+        cwd=tmp_path,
+        env=env,
+        bindings=_bindings(tmp_path)
+        | {
+            "matrix.node-version": "28.x",
+            "needs.node-group.result": "success",
+            applicable: "true",
+        },
+        workflow=workflow,
+        job=job,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert output.read_text().strip() == "run=false"
+    assert [item["command"][0] for item in _observations(env)] == ["jq", "jq"]
+    assert all(
+        "steps.scope.outputs.run == 'true'" in step["if"]
+        for step in job["steps"][1:-1]
+    )
 
 
 @pytest.mark.parametrize(
@@ -1226,10 +1289,13 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
         key = (
             guard["env"]["APPLICABLE"].removeprefix("${{ ").removesuffix(" }}")
         )
+        env = {"GITHUB_OUTPUT": str(output)}
+        if name == "node-tests":
+            env = _node_commands(tmp_path) | {"GITHUB_OUTPUT": str(output)}
         result = run_step(
             guard,
             cwd=tmp_path,
-            env={"GITHUB_OUTPUT": str(output)},
+            env=env,
             bindings=_bindings(tmp_path)
             | {
                 "needs.scope.result": selection,

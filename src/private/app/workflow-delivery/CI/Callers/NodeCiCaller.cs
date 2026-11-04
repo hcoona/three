@@ -176,20 +176,17 @@ internal static class NodeCiCaller
     internal static string[] RetainedMembers(NodeGroupReadback group, string key)
     {
         NodeRuntimeVariant variant = Variant(group, key);
-        int major = int.Parse(variant.Selector[..^2],
-            System.Globalization.CultureInfo.InvariantCulture);
         var members = group.Runtime.Members.ToDictionary(member => member.Directory,
             StringComparer.Ordinal);
         return group.Retained.Where(member =>
         {
             if (!members.TryGetValue(member.Directory, out NodeRuntimeMember? runtimeMember))
                 throw new InvalidDataException("Retained Node member has no engines declaration.");
-            if (!group.Runtime.Variants.Any(candidate => runtimeMember.LowerBound <=
-                int.Parse(candidate.Selector[..^2],
-                    System.Globalization.CultureInfo.InvariantCulture)))
+            if (!group.Runtime.Variants.Any(candidate =>
+                NodeRuntimeInputs.Admits(runtimeMember, candidate)))
                 throw new InvalidDataException(
                     "No planned Node runtime satisfies a retained member's engines range.");
-            return runtimeMember.LowerBound <= major;
+            return NodeRuntimeInputs.Admits(runtimeMember, variant);
         }).Select(member => member.Directory).ToArray();
     }
 

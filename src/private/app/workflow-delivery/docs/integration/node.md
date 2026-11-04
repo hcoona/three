@@ -349,6 +349,14 @@ regex custom managers for this file:
   requests are not automerged, because they can change the qualification
   matrix.
 
+A successful Renovate run in the monthly window whose logs show that
+`nodejs/Release` was checked and no update was found is the expected no-PR
+outcome. The GitHub Actions run and its logs are the evidence; no separate
+audit artifact or recurring manual review is required. If no successful run
+occurs in the window, the run fails, or its logs do not establish that the
+dependency was checked, investigate using the existing GitHub run record and
+manually review the upstream schedule if needed.
+
 Network access happens only inside Renovate at update time. The planned matrix
 changes only when a reviewed data, engines or mise change merges, and that
 pull request's CI qualifies the new matrix.
@@ -386,7 +394,8 @@ range grammar is a reviewed reader change, not a fallback.
 Current inputs declare `>=22` (root, Hexo renderer, Steam exporter),
 `>=22.6.0` (the three IM ACP gateway proofs of concept) and `>=24.0.0` (the
 adopted npm fixture). The fixture is a selected member: it is the group's
-adopted package, and it currently runs on every matrix runtime.
+adopted package, and its range excludes `22.x`, so it runs on `24.x` and
+`26.x`.
 
 **Combining differing ranges (owner decision recorded in
 [Issue #1508](https://github.com/hcoona/three/issues/1508)).** The owner chose

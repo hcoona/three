@@ -97,7 +97,8 @@ public sealed class CiCallerNodeTests
             {
                 Variants = [new("node20", "20.x", null), new("node22", "22.x", null),
                     new("node24", "24.x", null), new("node26", "26.x", null)],
-                Members = [new("src/late", 26), new("src/retained", 24)],
+                Members = [new("src/late", System.Version.Parse("26.0.0")),
+                    new("src/retained", System.Version.Parse("24.0.0"))],
             },
         };
 
@@ -112,13 +113,38 @@ public sealed class CiCallerNodeTests
     }
 
     [TestMethod]
+    public void RetainedMembersRespectExactPackagingRuntimeMinorAndPatch()
+    {
+        NodeGroupReadback original = Group();
+        NodeGroupReadback group = original with
+        {
+            Retained = [new("src/late", []), new("src/retained", [])],
+            Runtime = original.Runtime with
+            {
+                Variants = [new("node24", "24.x", "24.21.0"),
+                    new("node26", "26.x", null)],
+                Members = [new("src/late", System.Version.Parse("24.21.1")),
+                    new("src/retained", System.Version.Parse("24.0.0"))],
+            },
+        };
+
+        CollectionAssert.AreEqual(RetainedOnly,
+            NodeCiCaller.RetainedMembers(group, "node24"));
+        CollectionAssert.AreEqual(LateAndRetained,
+            NodeCiCaller.RetainedMembers(group, "node26"));
+    }
+
+    [TestMethod]
     public void RetainedMemberWithNoAdmittedRuntimeFailsPlanning()
     {
         NodeGroupReadback original = Group();
         NodeGroupReadback group = original with
         {
             Retained = [new("src/retained", [])],
-            Runtime = original.Runtime with { Members = [new("src/retained", 28)] },
+            Runtime = original.Runtime with
+            {
+                Members = [new("src/retained", System.Version.Parse("28.0.0"))],
+            },
         };
 
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>

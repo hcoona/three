@@ -100,8 +100,8 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
         Assert.AreEqual(20, inputs.LowerBound);
         CollectionAssert.AreEquivalent(new[]
         {
-            new NodeRuntimeMember(Source, 24),
-            new NodeRuntimeMember(retained, 20),
+            new NodeRuntimeMember(Source, System.Version.Parse("24.0.0")),
+            new NodeRuntimeMember(retained, System.Version.Parse("20.0.0")),
         }, inputs.Members);
         Assert.HasCount(15, plan.Checks);
         PlannedCheck[] buildAndTest = plan.Checks.Where(check =>
@@ -137,7 +137,11 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task ConfiguredPackagingVariantMustBeAdmittedByAdoptedMemberRange()
+    [DataRow(">=24.21.0", true)]
+    [DataRow(">=24.21.1", false)]
+    [DataRow(">=24.22.0", false)]
+    public async Task ConfiguredPackagingVariantMustSatisfyTheFullAdoptedMemberRange(
+        string range, bool admitted)
     {
         const string retained = "packages/retained";
         string root = Path.Combine(Path.GetTempPath(), "node-runtime-checkout");
@@ -145,16 +149,25 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
             Workflow, Schedule(), Mise, MiseLock,
             [
                 new("package.json", Manifest(">=22")),
-                new(Source + "/package.json", Manifest(">=26")),
+                new(Source + "/package.json", Manifest(range)),
                 new(retained + "/package.json", Manifest(">=20")),
             ], Tool(root, "node"), Tool(root, "pnpm"));
         CiPlan original = await PackagePlanAsync();
 
-        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            inputs.Expand(original));
-
-        Assert.AreEqual("Configured packaging runtime is outside the adopted Node engines range.",
-            error.Message);
+        if (admitted)
+        {
+            CiPlan plan = inputs.Expand(original);
+            Assert.IsNotEmpty(plan.Checks.Where(check =>
+                check.Work.Key.Check.StartsWith("node/npm-", StringComparison.Ordinal)));
+        }
+        else
+        {
+            InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+                inputs.Expand(original));
+            Assert.AreEqual(
+                "Configured packaging runtime is outside the adopted Node engines range.",
+                error.Message);
+        }
         Assert.IsTrue(inputs.Variants.Any(variant => variant.Key == "node26"));
         Assert.AreEqual("node24", inputs.PackagingVariant);
     }
@@ -484,7 +497,7 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
     private static NodeRuntimeInputs Inputs(string revision) => new(revision,
         [new("node22", "22.x", null), new("node24", "24.x", "24.21.0")], "12.8.2",
         [NodeRuntimeReader.Schedule, "mise.toml", "mise.lock"], "node24", ScheduleCommit,
-        "26.1.0", 22, [new(Source, 22)]);
+        "26.1.0", 22, [new(Source, System.Version.Parse("22.0.0"))]);
 
     private static Task<CiPlan> PackagePlanAsync()
     {

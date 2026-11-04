@@ -9,7 +9,7 @@ using YamlDotNet.Serialization;
 namespace WorkflowDelivery.Repository;
 
 internal sealed record NodeRuntimeVariant(string Key, string Selector, string? ExactVersion);
-internal sealed record NodeRuntimeMember(string Directory, int LowerBound);
+internal sealed record NodeRuntimeMember(string Directory, System.Version LowerBound);
 internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] Variants,
     string PnpmVersion, string[] Sources, string PackagingVariant, string ScheduleCommit,
     string NewestRelease, int LowerBound, NodeRuntimeMember[] Members)
@@ -74,13 +74,12 @@ internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] V
         }
         NodeRuntimeVariant packaging = Variants.Single(variant =>
             variant.Key == PackagingVariant);
-        int packagingMajor = System.Version.Parse(packaging.ExactVersion!).Major;
         foreach (PlannedCheck item in plan.Checks.Where(check =>
             check.Work.Key.Check is "node/npm-artifact-v1" or
                 "node/npm-artifact-contents-v1" or "node/npm-install-import-v1"))
         {
             NodeRuntimeMember member = membersByDirectory[item.Work.Package!.Directory];
-            if (member.LowerBound > packagingMajor)
+            if (!Admits(member, packaging))
                 throw new InvalidDataException(
                     "Configured packaging runtime is outside the adopted Node engines range.");
         }
@@ -89,8 +88,11 @@ internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] V
         return expanded;
     }
 
-    private static bool Admits(NodeRuntimeMember member, NodeRuntimeVariant variant) =>
-        member.LowerBound <= int.Parse(variant.Selector[..^2], CultureInfo.InvariantCulture);
+    internal static bool Admits(NodeRuntimeMember member, NodeRuntimeVariant variant) =>
+        member.LowerBound.Major <= int.Parse(variant.Selector[..^2],
+            CultureInfo.InvariantCulture) &&
+        (variant.ExactVersion is null ||
+            member.LowerBound <= System.Version.Parse(variant.ExactVersion));
 }
 
 internal sealed record NodeEnginesManifest(string Path, string? Text);
@@ -198,13 +200,13 @@ internal sealed class NodeRuntimeReader
             throw new InvalidDataException("Missing root Node engines manifest.");
         // The global minimum plans the matrix; each workspace member retains its own minimum.
         var bounds = manifests.Select(manifest => (Manifest: manifest,
-            Major: LowerMajor(manifest))).ToArray();
-        int lower = bounds.Min(entry => entry.Major);
+            Minimum: LowerBound(manifest))).ToArray();
+        int lower = bounds.Min(entry => entry.Minimum.Major);
         var members = bounds.Where(entry => entry.Manifest.Path != "package.json")
             .Select(entry =>
             {
                 string directory = entry.Manifest.Path[..^"/package.json".Length];
-                return new NodeRuntimeMember(directory, entry.Major);
+                return new NodeRuntimeMember(directory, entry.Minimum);
             }).ToArray();
         if (members.Select(member => member.Directory).Distinct(StringComparer.Ordinal).Count() !=
             members.Length)
@@ -291,7 +293,7 @@ internal sealed class NodeRuntimeReader
         value.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal)
             .SequenceEqual(names.Order(StringComparer.Ordinal), StringComparer.Ordinal);
 
-    private static int LowerMajor(NodeEnginesManifest manifest)
+    private static System.Version LowerBound(NodeEnginesManifest manifest)
     {
         if (manifest.Text is null)
             throw new InvalidDataException("Unreadable Node engines manifest: " + manifest.Path);
@@ -311,10 +313,19 @@ internal sealed class NodeRuntimeReader
                 manifest.Path, error);
         }
         Match match = Engines.Match(range ?? "");
-        if (!match.Success || !int.TryParse(match.Groups[1].Value, NumberStyles.None,
-                CultureInfo.InvariantCulture, out int major))
+        if (!match.Success)
             throw new InvalidDataException("Unsupported Node engines range: " + manifest.Path);
-        return major;
+        string[] components = match.Value[2..].Split('.');
+        string normalized = components.Length switch
+        {
+            1 => components[0] + ".0.0",
+            2 => components[0] + "." + components[1] + ".0",
+            _ => match.Value[2..],
+        };
+        if (!System.Version.TryParse(normalized, out System.Version? lowerBound) ||
+            lowerBound is null)
+            throw new InvalidDataException("Unsupported Node engines range: " + manifest.Path);
+        return lowerBound;
     }
 
     private static string Major(int major) => major.ToString(CultureInfo.InvariantCulture);
