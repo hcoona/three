@@ -12,6 +12,13 @@ public sealed class GitScenarioTests(TestContext testContext)
     public async Task TwoCandidatesIntegrateSeriallyCheckExactTreesAndPreserveDirtyOriginal()
     {
         CancellationToken token = testContext.CancellationToken;
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        void Phase(string name) =>
+            testContext.WriteLine(
+                $"Git scenario phase: {name}; "
+                    + $"elapsed: {System.Diagnostics.Stopwatch.GetElapsedTime(started)}."
+            );
+        Phase("initialize repository and worktrees");
         using GitScenario fixture = await GitScenario.CreateAsync(
             token,
             configuration =>
@@ -36,10 +43,13 @@ public sealed class GitScenarioTests(TestContext testContext)
                             ],
                         },
                     ],
-                }
+                },
+            trace: message => testContext.WriteLine(message)
         );
+        Phase("commit independent worker edits");
         await fixture.CommitAsync("worker1", "a.txt", "a-fixed", token);
         await fixture.CommitAsync("worker2", "b.txt", "b-fixed", token);
+        Phase("submit and approve exact candidates");
         JsonObject first = await fixture.SubmitAsync("worker1", token);
         JsonObject second = await fixture.SubmitAsync("worker2", token);
         await fixture.ApproveAsync(first, "worker2", token);
@@ -53,8 +63,10 @@ public sealed class GitScenarioTests(TestContext testContext)
         );
         await fixture.QueueAsync(second, token);
 
+        Phase("integrate queued candidates and run git diff --check");
         await fixture.Operations.ProcessPendingAsync(token);
 
+        Phase("verify integrated commit and tree checks");
         foreach (JsonObject change in new[] { first, second })
         {
             JsonObject integrated = await fixture.ReadAsync(change, token);
@@ -85,6 +97,7 @@ public sealed class GitScenarioTests(TestContext testContext)
         }
 
         fixture.Database.WriteMetadata("lifecycle", "paused");
+        Phase("finalize with combined-fix PowerShell check");
         JsonObject delivery = Scenario.Data(await fixture.Operations.FinalizeAsync(token));
         Assert.IsTrue(delivery["accepted"]!.GetValue<bool>());
         Assert.AreNotEqual(
@@ -114,7 +127,9 @@ public sealed class GitScenarioTests(TestContext testContext)
             ).Trim()
         );
         Assert.IsTrue(File.Exists(Path.Combine(fixture.Fixture.StatePath, "run.sqlite")));
+        Phase("verify original checkout before cleanup");
         await fixture.AssertOriginalPreservedAsync(token);
+        Phase("cleanup owned worktrees");
         Scenario.Data(await fixture.Operations.CleanupAsync(token));
         Assert.IsFalse(Directory.Exists(fixture.Operations.GetWorkerPath("worker1")));
         Assert.AreEqual(
@@ -128,7 +143,9 @@ public sealed class GitScenarioTests(TestContext testContext)
                 )
             ).Trim()
         );
+        Phase("verify original checkout after cleanup");
         await fixture.AssertOriginalPreservedAsync(token);
+        Phase("completed");
     }
 
     [TestMethod]

@@ -297,18 +297,29 @@ public sealed class BoardScenarioTests(TestContext testContext)
         RunDatabase database = fixture.CreateDatabase();
         CollaborationOperations board = new(database);
         long first = 0;
-        for (int index = 0; index <= 2000; index++)
+        using (SqliteConnection anchor = database.Open())
         {
-            testContext.CancellationToken.ThrowIfCancellationRequested();
-            JsonObject admitted = Scenario.Call(
-                board,
-                "worker1",
-                "board_publish",
-                new { type = "OBSERVED", content = $"unique-finding-{index:D4}" }
-            );
-            if (index == 0)
+            _ = Sql.Scalar(anchor, "SELECT COUNT(*) FROM sqlite_schema;");
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            for (int index = 0; index <= 2000; index++)
             {
-                first = Scenario.Id(admitted);
+                testContext.CancellationToken.ThrowIfCancellationRequested();
+                JsonObject admitted = Scenario.Call(
+                    board,
+                    "worker1",
+                    "board_publish",
+                    new { type = "OBSERVED", content = $"unique-finding-{index:D4}" }
+                );
+                if (index == 0)
+                {
+                    first = Scenario.Id(admitted);
+                }
+
+                if (index % 500 == 0)
+                {
+                    TimeSpan elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(started);
+                    testContext.WriteLine($"Board admissions: {index + 1}; elapsed: {elapsed}.");
+                }
             }
         }
 

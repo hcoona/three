@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using LiteAgensh;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -8,14 +9,20 @@ internal sealed class GitScenario : IDisposable
 {
     private static readonly int[] RootTask = [1];
     private readonly ProcessRunner processes;
+    private readonly Action<string>? trace;
     private string originalHead = "";
     private string originalStatus = "";
     private string originalIndex = "";
     private string originalDiff = "";
     private string originalConfig = "";
 
-    private GitScenario(Func<RunConfiguration, RunConfiguration>? configure, TimeProvider? clock)
+    private GitScenario(
+        Func<RunConfiguration, RunConfiguration>? configure,
+        TimeProvider? clock,
+        Action<string>? trace
+    )
     {
+        this.trace = trace;
         Fixture = new();
         Directory.CreateDirectory(Path.Combine(Fixture.RootPath, "fixture-hooks"));
         RunConfiguration configuration =
@@ -37,10 +44,11 @@ internal sealed class GitScenario : IDisposable
     public static async Task<GitScenario> CreateAsync(
         CancellationToken token,
         Func<RunConfiguration, RunConfiguration>? configure = null,
-        TimeProvider? clock = null
+        TimeProvider? clock = null,
+        Action<string>? trace = null
     )
     {
-        GitScenario scenario = new(configure, clock);
+        GitScenario scenario = new(configure, clock, trace);
         try
         {
             string repository = scenario.Fixture.RepositoryPath;
@@ -185,6 +193,8 @@ internal sealed class GitScenario : IDisposable
         params string[] arguments
     )
     {
+        long started = Stopwatch.GetTimestamp();
+        trace?.Invoke($"Fixture git started: {string.Join(' ', arguments)}");
         ProcessResult result = await processes.RunAsync(
             "git",
             [
@@ -203,6 +213,11 @@ internal sealed class GitScenario : IDisposable
             cwd,
             TimeSpan.FromSeconds(30),
             token
+        );
+        trace?.Invoke(
+            $"Fixture git completed in {Stopwatch.GetElapsedTime(started)}: "
+                + $"{string.Join(' ', arguments)}; exit {result.ExitCode}; "
+                + $"timed out {result.TimedOut}."
         );
         Assert.AreEqual(0, result.ExitCode, result.StandardError);
         Assert.IsFalse(result.TimedOut);
