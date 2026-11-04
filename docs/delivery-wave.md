@@ -601,3 +601,90 @@ ends a grant. Git and the proposing PR retain the reason and history.
     - No ruleset change beyond the `Validate` entry.
     - No release, proving or campaign dispatch, publication, credential,
       Environment, account, publisher or other access change.
+
+### Restore and validate the Renovate scheduled workflow
+
+- **Work carrier:** [Issue #1531](https://github.com/hcoona/three/issues/1531),
+  with #1508 as the related Node-runtime history.
+- **Accepted inputs:** the shared [engineering principles](engineering/engineering-principles.md);
+  the `.github/workflows/renovate.yml`, `.github/workflows/ci.yml`,
+  `renovate.json`, `.github/renovate/**`, `mise.toml`, `mise.lock`, and
+  `eng/renovate/**` inputs; and Workflow Delivery's
+  [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
+  [repository and selection design](../src/private/app/workflow-delivery/docs/design/repository-and-selection.md),
+  [CI design](../src/private/app/workflow-delivery/docs/design/ci.md),
+  [execution boundaries](../src/private/app/workflow-delivery/docs/design/execution-boundaries.md),
+  and [agent handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md).
+- **Diagnosis:**
+    - Scheduled run [41743250099](https://github.com/hcoona/three/actions/runs/41743250099)
+      failed because Renovate 43.200.1 declares Node `^24.11.0` and the workflow
+      ran it with locked Node 26.13.0.
+    - The workflow installs Renovate globally from a version constant, without a
+      lock for its transitive dependencies. The Renovate CLI itself must run on
+      its declared Node range, while repository tools continue to use the
+      repository's locked Node.
+    - A pull request currently has no credential-free check of Renovate's
+      startup and configuration validity. The Workflow Delivery `CiScope`
+      classifies Renovate inputs as handled by the scheduled workflow, not by a
+      retained PR check.
+- **Owner decisions and risk:**
+    - Keep Renovate's CLI package in an independent npm project under
+      `eng/renovate/`, with a committed package lock; do not add it to the pnpm
+      workspace. Renovate manages its own package version, and its compatible
+      dependency updates may automerge after required checks pass.
+    - Require a three-day npm `min-release-age` for Renovate's dependency
+      resolution, including transitive dependencies. Verify that the selected
+      npm installation enforces this for transitive updates; if it cannot be
+      established, stop and return the limitation to the owner rather than
+      silently dropping the delay.
+    - Select the Renovate CLI runtime from its installed package's
+      `engines.node`, independently of the repository's locked Node runtime.
+    - Remove the `fullClone` patch, retain the existing full pre-clone, and
+      accept that Renovate's rare fallback clone may be blobless and fail
+      NBGV-dependent lock generation. Do not add a fallback log gate.
+    - Keep existing Renovate GitHub App permissions unchanged. The PR
+      compatibility check must not receive the App token or exercise
+      credentialed repository writes.
+- **Advancement and outcome:** add the isolated npm manifest, lock and
+  three-day release-age configuration; make the scheduled workflow install
+  from that lock and run Renovate using a runtime selected from its declared
+  range while preserving the locked Node for repository tasks; remove the
+  full-clone patch but retain pre-cloning; add a `renovate-compat` retained CI
+  job selected by `CiScope` and gated by `Validate`; and update #1531 and #1512
+  to reflect the reduced check scope and the future retained-job candidate.
+  The PR check validates locked installation, CLI startup and strict
+  `renovate.json` configuration without credentials.
+- **Ordering and gates:** merge this entry before any implementation. Update
+  #1531 to remove the obsolete patch and Node-satisfaction assertions and
+  retain the credential-free compatibility check. Keep the new job within the
+  existing `Validate` ruleset. Each implementation PR follows Workflow
+  Delivery's applicable CI design, permission-boundary, engineering and OCR
+  reviews, record-system review for record changes, research-evidence review,
+  and independent classification of material findings. A need to expand App
+  permissions, run Renovate with credentials in a PR, or weaken the
+  three-day delay returns to the owner.
+- **Acceptance:**
+    - The scheduled Renovate CLI runs on a Node selected from its package's
+      declared `engines.node`; repository tasks still use the locked Node.
+    - Renovate and its resolved transitive dependencies install from the
+      committed npm lock, and the three-day release age is demonstrated to
+      apply to transitive updates.
+    - Renovate package and lock updates are proposed and may automerge only
+      after the required `Validate` checks, including `renovate-compat`, pass.
+    - Changes to Renovate's package, lock, workflow, configuration, or runtime
+      inputs select the retained job; it starts the CLI and validates the
+      configuration without credentials.
+    - The full-clone patch is absent and the existing pre-clone remains.
+    - Delete this entry when accepted.
+- **Effects:** permit repository and public npm package inspection/download,
+  source, documentation, package-lock, Renovate and CI changes, credential-free
+  local tests, ordinary Issue/PR/check operations and their normal CI, and
+  independent delegated review. Existing scheduled Renovate activity and
+  GitHub App permissions remain unchanged.
+- **Exclusions:**
+    - No pnpm workspace membership or general `#1512` check-unit design or
+      implementation.
+    - No new token, credential, permission, repository access or credentialed
+      PR validation.
+    - No release, proving or campaign dispatch, publication, Environment,
+      account, publisher or upstream feature request.
