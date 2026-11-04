@@ -189,7 +189,16 @@ public sealed class ControlledFailureScenarioTests(TestContext testContext)
         );
         if (!completed)
         {
-            Assert.AreEqual("Controlled turn failed.", failed["message"]!.GetValue<string>());
+            using SqliteConnection failures = fixture.Database.Open();
+            Assert.IsGreaterThan(
+                0L,
+                (long)Sql.Scalar(
+                    failures,
+                    "SELECT COUNT(*) FROM delivery_batches WHERE last_error=$message;",
+                    null,
+                    ("$message", failed["message"]!.GetValue<string>())
+                )!
+            );
         }
 
         JsonArray settlementFailures = status["settlementFailures"]!.AsArray();

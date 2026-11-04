@@ -192,7 +192,7 @@ internal sealed class NativeWorker : INativeWorker
         await turn.WaitAsync(linked.Token).ConfigureAwait(false);
         try
         {
-            await VerifyCreditsAsync(linked.Token).ConfigureAwait(false);
+            await VerifyCreditsCoreAsync(linked.Token).ConfigureAwait(false);
             credits.BeginDispatch(
                 database.RunId,
                 reservation.Id,
@@ -224,6 +224,23 @@ internal sealed class NativeWorker : INativeWorker
     }
 
     public async Task VerifyCreditsAsync(CancellationToken cancellationToken)
+    {
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            stop.Token
+        );
+        await turn.WaitAsync(linked.Token).ConfigureAwait(false);
+        try
+        {
+            await VerifyCreditsCoreAsync(linked.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            turn.Release();
+        }
+    }
+
+    private async Task VerifyCreditsCoreAsync(CancellationToken cancellationToken)
     {
         if (reservation is null || session is null || SessionId is null)
         {
