@@ -406,13 +406,15 @@ Fragments:
   carry an option that it does not own.
 - `len` is repeated identically on both fragments of a split measure.
 
-Volta brackets are matched by adjacency. `ending=N:start` opens a bracket with
-printed number `N`, and `ending=N:single` is a one-measure bracket. The next
-block after a `start` or a `continue` shall carry `ending=continue` or
-`ending=end`, including across a system boundary, and no other block shall
-carry `continue` or `end`. A first block that carries `continue` or `end` is
-checked at assembly. A multi-number bracket is unsupported, and the closing
-hook of a bracket is not encoded.
+Volta brackets are matched by adjacency of measures, and a continuation
+fragment (`from>0`) is part of the measure that it continues. `ending=N:start`
+opens a bracket with printed number `N`, and `ending=N:single` is a
+one-measure bracket. The next measure after a `start` or a `continue` shall
+carry `ending=continue` or `ending=end`, and no other measure shall carry
+`continue` or `end`. A validator checks each pair of adjacent measures whose
+`ending` options are both in its document. Assembly checks every pair of the
+score, including a pair across a system boundary. A multi-number bracket is
+unsupported, and the closing hook of a bracket is not encoded.
 
 ### Voice lines and durations
 
@@ -428,6 +430,8 @@ hook of a bracket is not encoded.
   times the tuplet multiplier.
 - The durations in a voice line shall sum to `to - from` of its block.
 - A tuplet shall contain at least one rhythmic member that is not a grace note.
+- A tuplet lies within one voice line of one measure block, and a tuplet group
+  across a barline or a fragment boundary is unsupported.
 - `x/` is an unprinted timed spacer. It fills time without a printed rest and
   may carry beams. A voice that starts after the measure start begins with a
   spacer.
@@ -485,8 +489,8 @@ A pitch resolves its alteration by the first of these rules that applies:
    scope is the same measure, the same displayed staff and any voice of that
    staff. With `carry: octave` the octave shall also be the same, and with
    `carry: letter` any octave counts. Earlier means a smaller onset, or an
-   equal onset and an earlier position by voice number, then position in the
-   line, with chord members in listed order.
+   equal onset and an earlier position by voice number, then by the staff of
+   the line, then position in the line, with chord members in listed order.
 4. The key signature.
 
 For example, in key `0` with `carry: octave`, `F#4` makes the later `F4` sharp
