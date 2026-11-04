@@ -10,11 +10,19 @@ namespace LiteAgensh.Tests;
 internal sealed class ControlledNativeFactory(
     RunDatabase database,
     CreditLedger credits,
-    string directory
+    string directory,
+    Func<CancellationToken, Task>? onExactLoadSettled = null
 ) : INativeWorkerFactory
 {
     public INativeWorker Create(CreditReservation? reservation, bool calibration) =>
-        new ControlledNativeWorker(database, credits, directory, reservation, calibration);
+        new ControlledNativeWorker(
+            database,
+            credits,
+            directory,
+            reservation,
+            calibration,
+            onExactLoadSettled
+        );
 
     public Task<NativeUsage> ReadSettledUsageAsync(
         CreditReservation reservation,
@@ -41,7 +49,8 @@ internal sealed class ControlledNativeWorker(
     CreditLedger credits,
     string directory,
     CreditReservation? reservation,
-    bool calibration
+    bool calibration,
+    Func<CancellationToken, Task>? onExactLoadSettled = null
 ) : INativeWorker
 {
     private readonly CancellationTokenSource stop = new();
@@ -49,6 +58,8 @@ internal sealed class ControlledNativeWorker(
     private TaskCompletionSource turnCompleted = CompletedTurn();
     private bool started;
     private bool stopped;
+    private bool failedExactLoad;
+    private CancellationToken loadCancellation;
 
     public string? SessionId { get; private set; }
 
@@ -111,6 +122,8 @@ internal sealed class ControlledNativeWorker(
 
         if (exactSession is not null && Mode(directory) == "no-load")
         {
+            failedExactLoad = true;
+            loadCancellation = cancellationToken;
             // Existing paid usage stays recoverable before the coordinator selects fresh fallback.
             throw new OperationException(
                 "session_load_failed",
@@ -282,6 +295,10 @@ internal sealed class ControlledNativeWorker(
             }
 
             Record(directory, "settled", SessionId);
+            if (failedExactLoad && onExactLoadSettled is not null)
+            {
+                await onExactLoadSettled(loadCancellation);
+            }
         }
         finally
         {

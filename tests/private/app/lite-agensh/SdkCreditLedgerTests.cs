@@ -11,6 +11,121 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
 {
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task AlreadyCancelledStartLeavesAllocationUnstartedAndSafelyReleasable(bool exact)
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = NativeDatabase(fixture);
+        CreditLedger ledger = new(fixture.Configuration.CampaignLedgerPath, 180);
+        CreditReservation reservation = exact
+            ? ledger.ContinueExact(
+                CompleteForContinuation(database, ledger, fixture).Id,
+                Evidence(fixture)
+            )
+            : ledger.Reserve(database.RunId, "worker1", 60, 120, Evidence(fixture));
+        NativeWorker worker = new(database, new(database), ledger, reservation);
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
+            testContext.CancellationToken
+        );
+        await stop.CancelAsync();
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            worker.StartAsync(
+                fixture.RepositoryPath,
+                exact ? reservation.SessionId : null,
+                stop.Token
+            )
+        );
+        await worker.DisposeAsync();
+
+        CreditReservation retained = Assert.ContainsSingle(ledger.Reservations());
+        Assert.AreEqual(exact ? "reconciled" : "released", retained.State);
+        Assert.AreEqual(exact ? 10m : 0m, Committed(ledger));
+        ledger.RequirePaidAdmission();
+        using SqliteConnection connection = database.Open();
+        Assert.AreEqual(0L, Sql.Scalar(connection, "SELECT COUNT(*) FROM native_attempts;"));
+        Assert.AreEqual(0L, Sql.Scalar(connection, "SELECT COUNT(*) FROM process_leases;"));
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task CancellationDuringExactStartupPreservesOnlyEstablishedCompleteUsage(
+        bool complete
+    )
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = NativeDatabase(fixture);
+        CreditLedger ledger = new(fixture.Configuration.CampaignLedgerPath, 180);
+        CreditReservation continuation = ledger.ContinueExact(
+            CompleteForContinuation(database, ledger, fixture).Id,
+            Evidence(fixture)
+        );
+        if (!complete)
+        {
+            using SqliteConnection campaign = Open(fixture);
+            Sql.Execute(campaign, "UPDATE credit_sdk_usage SET status='partial';");
+        }
+
+        NativeWorker worker = new(database, new(database), ledger, continuation);
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
+            testContext.CancellationToken
+        );
+        using SqliteConnection connection = database.Open();
+        using SqliteTransaction blockedAssociation = connection.BeginTransaction();
+        Task startup = Task.Run(
+            () => worker.StartAsync(fixture.RepositoryPath, continuation.SessionId, stop.Token),
+            testContext.CancellationToken
+        );
+        try
+        {
+            while (Assert.ContainsSingle(ledger.Reservations()).State != "started")
+            {
+                if (startup.IsCompleted)
+                {
+                    await startup;
+                    Assert.Fail("Startup completed before reaching the association boundary.");
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(10), testContext.CancellationToken);
+            }
+
+            await stop.CancelAsync();
+        }
+        finally
+        {
+            blockedAssociation.Rollback();
+        }
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => startup);
+        if (complete)
+        {
+            await worker.DisposeAsync();
+            ledger.RequirePaidAdmission();
+        }
+        else
+        {
+            OperationException error = await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                worker.StopAsync()
+            );
+            Assert.AreEqual("credit_or_ownership_unknown", error.Code);
+            Assert.AreEqual(
+                "credit_unknown",
+                Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code
+            );
+        }
+
+        CreditReservation retained = Assert.ContainsSingle(ledger.Reservations());
+        Assert.AreEqual(complete ? "reconciled" : "uncertain", retained.State);
+        Assert.AreEqual(10m, retained.Actual);
+        Assert.AreEqual(complete ? 10m : 60m, Committed(ledger));
+        Assert.AreEqual(0L, Sql.Scalar(connection, "SELECT COUNT(*) FROM process_leases;"));
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
     public async Task FailedPreSessionExactLoadSettlesAndPreservesCompleteUsageForFreshAdmission()
     {
         using RunFixture fixture = new();

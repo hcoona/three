@@ -12,6 +12,104 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 {
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task CancelledExactLoadSettlementCannotAllocateFreshFallback(bool deadline)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario fixture = await GitScenario.CreateAsync(token);
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "hold", token);
+        Coordinator initial = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(initial, token);
+        Task<JsonObject> execution = initial.RunAsync("run", token);
+        await WaitUntilAsync(() => native.OrdinaryPrompts().Length >= 2, execution, token);
+        initial.RequestControl("pause");
+        Scenario.Data(await execution);
+
+        using (SqliteConnection connection = fixture.Database.Open())
+        {
+            Sql.Execute(
+                connection,
+                """
+                UPDATE coordinator_segments SET ended_at=NULL,state='running',deadline=$deadline
+                WHERE id=(SELECT MAX(id) FROM coordinator_segments);
+                """,
+                null,
+                ("$deadline", fixture.Database.Now.AddSeconds(deadline ? 15 : 120).ToString("O"))
+            );
+        }
+
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Coordinator recovery = new(
+            fixture.Database,
+            fixture.Collaboration,
+            fixture.Operations,
+            (database, _, credits) =>
+                new ControlledNativeFactory(
+                    database,
+                    credits,
+                    native.DirectoryPath,
+                    async loadToken =>
+                    {
+                        if (deadline)
+                        {
+                            try
+                            {
+                                await Task.Delay(Timeout.InfiniteTimeSpan, loadToken);
+                            }
+                            catch (OperationCanceledException)
+                                when (loadToken.IsCancellationRequested)
+                            {
+                                // The original load has settled when its run deadline arrives.
+                            }
+                        }
+                        else
+                        {
+                            await stop.CancelAsync();
+                        }
+                    }
+                )
+        );
+        CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+        string[] reservations = ledger.Reservations().Select(row => row.Id).ToArray();
+        HashSet<string> before = native.CaptureOperations();
+        native.SetMode("no-load");
+
+        if (deadline)
+        {
+            Scenario.Data(await recovery.RunAsync("reconnect", stop.Token));
+        }
+        else
+        {
+            await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+                recovery.RunAsync("reconnect", stop.Token)
+            );
+        }
+
+        Assert.AreEqual(
+            deadline ? "deadline" : "caller-cancelled",
+            fixture.Database.ReadMetadata("lifecycle:stop_reason")
+        );
+        Assert.IsTrue(
+            reservations
+                .ToHashSet(StringComparer.Ordinal)
+                .SetEquals(ledger.Reservations().Select(row => row.Id)),
+            "Cancellation must not allocate a replacement reservation."
+        );
+        Assert.Contains(
+            "resume",
+            native
+                .Operations(before)
+                .Select(operation => operation["operation"]!.GetValue<string>())
+        );
+        Assert.IsTrue(ledger.Reservations().All(row => row.State == "reconciled"));
+        Assert.IsEmpty(native.OrdinaryPrompts(before));
+        ledger.RequirePaidAdmission();
+        AssertSettled(fixture);
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
     public async Task ControlledReceiptsRequirePreflightAndCalibrationAndBindExactConfiguration()
     {
         CancellationToken token = testContext.CancellationToken;

@@ -542,6 +542,7 @@ public sealed class Coordinator
                         {
                             await native.DisposeAsync().ConfigureAwait(false);
                             workers.Remove(native);
+                            stop.Token.ThrowIfCancellationRequested();
                             CreditReservation fresh = Reserve(id, 1);
                             INativeWorker replacement = nativeWorkers.Create(
                                 fresh,

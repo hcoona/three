@@ -136,7 +136,8 @@ internal sealed class NativeSdkSession : IAsyncDisposable
                     )
                     .ConfigureAwait(false);
         }
-        catch (Exception exception) when (exactSession is not null)
+        catch (Exception exception)
+            when (exactSession is not null && exception is not OperationCanceledException)
         {
             throw new OperationException(
                 "session_load_failed",

@@ -52,6 +52,7 @@ internal sealed class NativeWorker : INativeWorker
         string? recoveryLabel = null
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (exactSession is not null && exactSession != reservation?.SessionId)
         {
             throw new OperationException("credit_unknown", "Exact session association mismatched.");
@@ -158,6 +159,7 @@ internal sealed class NativeWorker : INativeWorker
                 && (
                     exception is OperationException { Code: "session_load_failed" }
                     || exception is Win32Exception { NativeErrorCode: 2 or 3 }
+                    || exception is OperationCanceledException
                 )
             )
             {
