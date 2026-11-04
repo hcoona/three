@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 using LiteAgensh;
 using Microsoft.Data.Sqlite;
@@ -6,8 +7,128 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace LiteAgensh.Tests;
 
 [TestClass]
-public sealed class SdkCreditLedgerTests
+public sealed class SdkCreditLedgerTests(TestContext testContext)
 {
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task FailedPreSessionExactLoadSettlesAndPreservesCompleteUsageForFreshAdmission()
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = NativeDatabase(fixture);
+        CreditLedger ledger = new(fixture.Configuration.CampaignLedgerPath, 180);
+        CreditReservation previous = CompleteForContinuation(database, ledger, fixture);
+        CreditReservation continuation = ledger.ContinueExact(previous.Id, Evidence(fixture));
+        NativeWorker worker = new(database, new(database), ledger, continuation);
+
+        await Assert.ThrowsExactlyAsync<Win32Exception>(() =>
+            worker.StartAsync(
+                fixture.RepositoryPath,
+                continuation.SessionId,
+                testContext.CancellationToken
+            )
+        );
+        Assert.IsNull(worker.SessionId);
+        Assert.AreEqual("uncertain", Assert.ContainsSingle(ledger.Reservations()).State);
+        Assert.AreEqual(60m, Committed(ledger));
+
+        await worker.DisposeAsync();
+        await worker.DisposeAsync();
+
+        CreditReservation settled = Assert.ContainsSingle(ledger.Reservations());
+        Assert.AreEqual("reconciled", settled.State);
+        Assert.AreEqual(10m, settled.Actual);
+        Assert.AreEqual(previous.SessionId, settled.SessionId);
+        Assert.AreEqual(10m, Committed(ledger));
+        Assert.IsTrue(ledger.HasCompleteSdkUsage(settled.Id));
+        ledger.RequirePaidAdmission();
+        CreditReservation fresh = ledger.Reserve(
+            database.RunId,
+            "worker1",
+            60,
+            120,
+            Evidence(fixture)
+        );
+        Assert.AreNotEqual(previous.SessionId, fresh.SessionId);
+        Assert.AreEqual(70m, Committed(ledger));
+        using SqliteConnection connection = database.Open();
+        Assert.AreEqual(0L, Sql.Scalar(connection, "SELECT COUNT(*) FROM process_leases;"));
+        using SqliteConnection campaign = Open(fixture);
+        Assert.AreEqual(1L, Sql.Scalar(campaign, "SELECT COUNT(*) FROM credit_reports;"));
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("new")]
+    [DataRow("partial")]
+    [DataRow("pending-dispatch")]
+    [DataRow("changed-after-failure")]
+    public async Task PreSessionFailureCannotReleaseNewUnknownOrPendingUsage(string scenario)
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = NativeDatabase(fixture);
+        CreditLedger ledger = new(fixture.Configuration.CampaignLedgerPath, 180);
+        CreditReservation reservation =
+            scenario == "new"
+                ? ledger.Reserve(database.RunId, "worker1", 60, 120, Evidence(fixture))
+                : ledger.ContinueExact(
+                    CompleteForContinuation(database, ledger, fixture).Id,
+                    Evidence(fixture)
+                );
+        if (scenario is "partial" or "pending-dispatch")
+        {
+            using SqliteConnection campaign = Open(fixture);
+            Sql.Execute(
+                campaign,
+                """
+                UPDATE credit_sdk_usage SET status=$status,
+                    dispatch_count=dispatch_count+$extra WHERE reservation_id=$id;
+                """,
+                null,
+                ("$status", scenario == "partial" ? "partial" : "pending"),
+                ("$extra", scenario == "pending-dispatch" ? 1 : 0),
+                ("$id", reservation.Id)
+            );
+        }
+
+        NativeWorker worker = new(database, new(database), ledger, reservation);
+        await Assert.ThrowsExactlyAsync<Win32Exception>(() =>
+            worker.StartAsync(
+                fixture.RepositoryPath,
+                reservation.SessionId,
+                testContext.CancellationToken
+            )
+        );
+        if (scenario == "changed-after-failure")
+        {
+            using SqliteConnection campaign = Open(fixture);
+            Sql.Execute(
+                campaign,
+                """
+                UPDATE credit_sdk_usage SET status='pending',dispatch_count=dispatch_count+1
+                WHERE reservation_id=$id;
+                """,
+                null,
+                ("$id", reservation.Id)
+            );
+        }
+
+        OperationException error = await Assert.ThrowsExactlyAsync<OperationException>(() =>
+            worker.StopAsync()
+        );
+
+        Assert.AreEqual("credit_or_ownership_unknown", error.Code);
+        CreditReservation retained = Assert.ContainsSingle(ledger.Reservations());
+        Assert.AreEqual("uncertain", retained.State);
+        Assert.AreEqual(scenario == "new" ? (decimal?)null : 10m, retained.Actual);
+        Assert.AreEqual(60m, Committed(ledger));
+        Assert.AreEqual(
+            "credit_unknown",
+            Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code
+        );
+        using SqliteConnection connection = database.Open();
+        Assert.AreEqual(0L, Sql.Scalar(connection, "SELECT COUNT(*) FROM process_leases;"));
+    }
+
     [TestMethod]
     public void MinimumWindowRejectsBelowThirtyBeforePersistingAnyAssociation()
     {
@@ -361,6 +482,46 @@ public sealed class SdkCreditLedgerTests
         Assert.AreEqual("active", Assert.ContainsSingle(ledger.Reservations()).State);
         Assert.AreEqual(60m, Committed(ledger));
         Assert.IsNull(Assert.ContainsSingle(ledger.Reservations()).Actual);
+    }
+
+    private static RunDatabase NativeDatabase(RunFixture fixture)
+    {
+        RunDatabase database = new(
+            fixture.StatePath,
+            fixture.Configuration with
+            {
+                NativeExecutable = Path.Combine(fixture.RootPath, "missing-native-runtime.exe"),
+                RunAiCreditAllowance = 120,
+                CampaignAiCreditAllowance = 180,
+            }
+        );
+        CollaborationOperations collaboration = new(database);
+        _ = new Coordinator(database, collaboration, new(database, collaboration));
+        return database;
+    }
+
+    private static CreditReservation CompleteForContinuation(
+        RunDatabase database,
+        CreditLedger ledger,
+        RunFixture fixture
+    )
+    {
+        CreditReservation row = ledger.Reserve(
+            database.RunId,
+            "worker1",
+            60,
+            120,
+            Evidence(fixture)
+        );
+        ledger.MarkStarted(row.Id);
+        ledger.AttachSession(row.Id, row.SessionId!);
+        ledger.BeginDispatch(database.RunId, row.Id, 120);
+        ledger.RecordSdkUsage(
+            row.Id,
+            new(row.SessionId!, 10_000_000_000, "complete", 1),
+            final: true
+        );
+        return row;
     }
 
     private static CreditReservation Activate(CreditLedger ledger, RunFixture fixture)

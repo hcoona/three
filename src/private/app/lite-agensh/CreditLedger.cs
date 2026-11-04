@@ -151,6 +151,49 @@ public sealed class CreditLedger
             ) is string;
     }
 
+    internal (NativeUsage Usage, long Dispatches)? ReadCompleteSdkUsage(string id)
+    {
+        using SqliteConnection connection = Open();
+        using SqliteCommand command = Sql.Command(
+            connection,
+            """
+            SELECT r.session_id,r.actual,u.reported_nano_aiu,u.reported_requests,u.dispatch_count
+            FROM credit_reservations r
+            JOIN credit_sdk_usage u ON u.reservation_id=r.id AND u.session_id=r.session_id
+            WHERE r.id=$id AND r.actual IS NOT NULL AND u.status='complete'
+                AND u.reported_nano_aiu IS NOT NULL AND u.reported_requests IS NOT NULL
+                AND u.dispatch_count>0;
+            """,
+            null,
+            ("$id", id)
+        );
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (
+            !reader.Read()
+            || !double.TryParse(
+                reader.GetString(2),
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out double nano
+            )
+        )
+        {
+            return null;
+        }
+
+        NativeUsage usage = new(reader.GetString(0), nano, "complete", reader.GetInt64(3));
+        try
+        {
+            return usage.RequireComplete() == Parse(reader.GetString(1))
+                ? (usage, reader.GetInt64(4))
+                : null;
+        }
+        catch (OperationException)
+        {
+            return null;
+        }
+    }
+
     public void RecordSdkUsage(string id, NativeUsage usage, bool final = false)
     {
         using SqliteConnection connection = Open();

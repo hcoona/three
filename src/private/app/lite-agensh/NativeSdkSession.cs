@@ -51,6 +51,8 @@ internal sealed class NativeSdkSession : IAsyncDisposable
     public string SessionId =>
         session?.SessionId ?? throw new InvalidOperationException("No native session.");
 
+    public bool HasSession => session is not null;
+
     public JsonObject? Metadata { get; private set; }
 
     public async Task OpenAsync(

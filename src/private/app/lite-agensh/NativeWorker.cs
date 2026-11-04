@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
@@ -20,6 +21,7 @@ internal sealed class NativeWorker : INativeWorker
     private bool verified;
     private decimal limit;
     private string? evidencePath;
+    private (NativeUsage Usage, long Dispatches)? undispatchedBaseline;
 
     public NativeWorker(
         RunDatabase database,
@@ -93,8 +95,14 @@ internal sealed class NativeWorker : INativeWorker
         }
 
         session = new(database, processes, cwd, calibration);
+        (NativeUsage Usage, long Dispatches)? priorUsage = null;
         try
         {
+            if (exactSession is not null && reservation is not null)
+            {
+                priorUsage = credits.ReadCompleteSdkUsage(reservation.Id);
+            }
+
             await session
                 .OpenAsync(worker, id, limit, exactSession, evidencePath, cancellationToken)
                 .ConfigureAwait(false);
@@ -142,8 +150,20 @@ internal sealed class NativeWorker : INativeWorker
 
             verified = true;
         }
-        catch
+        catch (Exception exception)
         {
+            if (
+                !session.HasSession
+                && priorUsage is not null
+                && (
+                    exception is OperationException { Code: "session_load_failed" }
+                    || exception is Win32Exception { NativeErrorCode: 2 or 3 }
+                )
+            )
+            {
+                undispatchedBaseline = priorUsage;
+            }
+
             if (reservation is not null)
             {
                 credits.MarkUncertain(reservation.Id);
@@ -266,17 +286,29 @@ internal sealed class NativeWorker : INativeWorker
 
                 if (reservation is not null && started)
                 {
-                    finalUsage = await (
-                        session ?? throw new InvalidOperationException("No SDK connection.")
+                    if (
+                        undispatchedBaseline is { } baseline
+                        && session is { HasSession: false }
+                        && credits.ReadCompleteSdkUsage(reservation.Id) is { } current
+                        && current == baseline
                     )
-                        .ReadAsync(
-                            reservation.SessionId!,
-                            limit,
-                            CancellationToken.None,
-                            validateEvents: false
+                    {
+                        finalUsage = baseline.Usage;
+                    }
+                    else
+                    {
+                        finalUsage = await (
+                            session ?? throw new InvalidOperationException("No SDK connection.")
                         )
-                        .ConfigureAwait(false);
-                    SaveDiagnostic(finalUsage);
+                            .ReadAsync(
+                                reservation.SessionId!,
+                                limit,
+                                CancellationToken.None,
+                                validateEvents: false
+                            )
+                            .ConfigureAwait(false);
+                        SaveDiagnostic(finalUsage);
+                    }
                 }
                 else if (reservation is not null)
                 {
@@ -298,7 +330,7 @@ internal sealed class NativeWorker : INativeWorker
                     if (session is not null)
                     {
                         session.Quiesce();
-                        if (calibration)
+                        if (calibration || undispatchedBaseline is not null)
                         {
                             try
                             {
