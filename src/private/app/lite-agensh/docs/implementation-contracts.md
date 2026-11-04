@@ -115,6 +115,88 @@ history and their direct messages, not another worker's direct messages through
 ordinary tools. The operator can inspect all local state. Same-user database
 access remains outside tamper-resistant security claims.
 
+### Concrete operation payloads
+
+The table above summarizes capabilities; the field contracts below govern their
+JSON boundary. Object keys use the exact camel-case spellings shown here.
+An unmarked field is required; `?` means optional, not nullable. IDs/cursors are
+positive JSON integers, except a starting cursor of zero. Member IDs, channel
+IDs, Git refs/hashes and board labels are strings. Text is a string; required
+title/body/query/content fields must not be empty. Reject unknown action names,
+unknown fields and invalid enum/type combinations before committing. An omitted
+array defaults to empty. Pagination uses `cursor?: integer = 0` and
+`limit?: integer = 50`, with limits 1 through 200; ascending ID pages return
+`{items: [...], nextCursor: integer|null}`. No filter means all visible matching
+states, not an implicit state transition.
+
+| Tool/action              | Exact request fields                                                                                                           | Successful `data`                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `run_info`               | `{}`                                                                                                                           | `{goal, baseCommit, lifecycle, members, repositoryPath, statePath, capabilities}`                      |
+| `agent_info`             | `id: string`                                                                                                                   | `{id, worktreePath, lifecycle}`                                                                        |
+| `agent_list`             | `id?: string`                                                                                                                  | `{items: [{id, worktreePath, lifecycle}]}`                                                             |
+| `task_write/create`      | `action: "create", title: string, body: string`                                                                                | Task object                                                                                            |
+| `task_write/update`      | `action: "update", id: integer, title?: string, body?: string`; at least one updated field                                     | Task object                                                                                            |
+| `task_write/comment`     | `action: "comment", id: integer, body: string`                                                                                 | Task object including appended comment                                                                 |
+| `task_write/close`       | `action: "close", id: integer`                                                                                                 | Task object with closing actor; repeated closure is unchanged success                                  |
+| `task_read`              | `id: integer`                                                                                                                  | Task object                                                                                            |
+| `task_list`              | `state?: "open"                                                                                                                | "closed"`, pagination                                                                                  | Paginated tasks              |
+| `work_search`            | `query: string`, pagination                                                                                                    | Paginated `{kind: "task"                                                                               | "change", id, title, state}` |
+| `message_send`           | `recipient: string, body: string, threadId?: integer, mentions?: string[], urgent?: boolean = false`                           | Message object                                                                                         |
+| `message_read`           | `channelId: string`, pagination                                                                                                | Paginated messages                                                                                     |
+| `message_thread`         | `threadId: integer`, pagination                                                                                                | Paginated messages in the visible root thread, including its root                                      |
+| `message_search`         | `query: string`, pagination                                                                                                    | Paginated visible messages                                                                             |
+| `channel_read`           | `id: string`                                                                                                                   | `{id, members: string[], kind: "team"                                                                  | "direct"}`                   |
+| `channel_list`           | `{}`                                                                                                                           | `{items: [channel objects]}`                                                                           |
+| `board_publish`          | `type: "FACT"                                                                                                                  | "OBSERVED"                                                                                             | "FAIL"                       | "CLAIM"                                                  | "PATCH_SUMMARY", content: string, detail?: string, workLabel?: string, ttlSeconds?: integer` | `{id, label, type, content, detail, workLabel, expiresAt, createdAt}` |
+| `board_recent`           | `limit?: integer = 50`                                                                                                         | `{items: [board revision objects]}`                                                                    |
+| `board_search`           | `query: string`, pagination                                                                                                    | Paginated board revisions                                                                              |
+| `board_expand`           | `labels: string[]`                                                                                                             | `{items: [board revision objects], unknownLabels: string[], truncated: boolean}`                       |
+| `change_write/submit`    | `action: "submit", title: string, body: string, taskIds?: integer[]`                                                           | Change object, capturing the bound worker branch's current head                                        |
+| `change_write/update`    | `action: "update", id: integer, title?: string, body?: string, taskIds?: integer[], head?: string`; at least one updated field | Change object; a new head must be the current bound worker branch head and invalidates prior approvals |
+| `change_write/comment`   | `action: "comment", id: integer, body: string`                                                                                 | Change object including appended comment                                                               |
+| `change_write/integrate` | `action: "integrate", id: integer, head: string`                                                                               | `{requestId, changeId, head, state: "pending"}`                                                        |
+| `change_read`            | `id: integer`                                                                                                                  | Change object plus `diff: string`                                                                      |
+| `change_list`            | `state?: "open"                                                                                                                | "integrated"`, pagination                                                                              | Paginated change objects     |
+| `change_review`          | `id: integer, head: string, decision: "approve"                                                                                | "request-changes"                                                                                      | "comment", body: string`     | `{id, changeId, actor, head, decision, body, createdAt}` |
+| `check_read`             | Exactly one of `id: integer` or `changeId: integer`                                                                            | `{items: [check objects]}`                                                                             |
+
+A task object contains `{id, title, body, state, author, closedBy: string|null,
+createdAt, updatedAt, comments: [{id, actor, body, createdAt}],
+assignees: string[]}`. Assignees are derived from live advisory claims; task
+writes cannot create an exclusive assignee. A change object contains
+`{id, author, branch, head, title, body, taskIds: integer[], state, createdAt,
+updatedAt, comments: [{id, actor, body, createdAt}], reviews: [review objects],
+checks: [check objects]}`. A check object contains
+`{id, changeId: integer|null, kind: "candidate"|"integration"|"final", commit,
+tree, command, status, exitCode: integer|null, logPath, createdAt}`; command
+uses the `CheckCommand` shape, and status is `passed`, `failed`, `cancelled`
+or `timed-out`. All times are ISO-8601 UTC strings; absent optional stored
+values are explicitly null in results. Revision labels and admission/TTL/
+detail-expansion semantics remain the pinned board policy, not new text rules.
+
+`message_send.recipient` is either `"team"` or one existing member ID, never a
+caller-supplied arbitrary channel. The team channel ID is `"team"`. A direct
+channel ID is `"dm:"` followed by the two member IDs in ordinal order separated
+by `":"`; it needs no separate creation operation. A new message without
+`threadId` becomes its own thread root. A supplied `threadId` must name a
+visible root in the derived destination channel; otherwise reject the send.
+Mentions must be known members visible in that channel and do not widen
+visibility. A message object contains
+`{id, actor, channelId, recipient, body, threadId, mentions: string[], urgent,
+createdAt}`. Replies and roots share the channel's visibility. Requests for an
+invisible channel/thread fail without returning its messages.
+
+Only a change's author may update it or submit that worker's branch; reviewers
+can comment and record their own candidate-bound decision. All referenced tasks
+must exist. Integration requests require the exact recorded head and are
+deduplicated while pending. The operator uses its explicit approval/control
+path rather than pretending to own a worker branch. `board_publish.ttlSeconds`
+is accepted only for claims and must be positive; omission uses the source
+default. `board_expand` accepts source detail labels, not arbitrary paths.
+Expected error codes are `invalid_arguments`, `unknown_actor`, `not_found`,
+`not_visible`, `conflict`, `stale_candidate`, `review_required`, `check_failed`,
+and `unavailable`; unhandled defects are not silently converted to success.
+
 Each collaboration tool result can include a separate `notices` envelope.
 Acquire a finite recipient lease and snapshot, render eligible messages/gists,
 record shown notices/cursors only for that envelope, and reconcile queued
