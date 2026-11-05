@@ -2540,7 +2540,9 @@ public sealed class GitOperations
         {
             throw new OperationException(
                 "unavailable",
-                $"Git {arguments[0]} failed: {result.StandardError.Trim()}"
+                $"Git {arguments[0]} failed "
+                    + $"(exit: {result.ExitCode}; timeout: {result.TimedOut}): "
+                    + result.StandardError.Trim()
             );
         }
 
