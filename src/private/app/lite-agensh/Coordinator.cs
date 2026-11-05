@@ -596,7 +596,10 @@ public sealed class Coordinator
                         );
                     }
 
-                    if (database.Configuration.WorkerStartIntervalSeconds == 0)
+                    bool incrementalAdmission =
+                        database.Configuration.WorkerStartIntervalSeconds > 0
+                        || database.Configuration.CreditAllocation == "shared";
+                    if (!incrementalAdmission)
                     {
                         foreach (string id in ids)
                         {
@@ -684,7 +687,7 @@ public sealed class Coordinator
                         }
 
                         if (
-                            database.Configuration.WorkerStartIntervalSeconds > 0
+                            incrementalAdmission
                             && admission is null
                             && workers.Count < ids.Length
                             && database.Now >= nextAdmission

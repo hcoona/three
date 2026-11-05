@@ -12,6 +12,112 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 {
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
+    public async Task SharedZeroIntervalDispatchReturnsBackingBeforeTheNextAdmissionCompletes()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario fixture = await GitScenario.CreateAsync(token);
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        fixture.Database.SaveConfiguration(
+            fixture.Database.Configuration with { CreditAllocation = "shared" }
+        );
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        using CancellationTokenSource progress =
+            CancellationTokenSource.CreateLinkedTokenSource(token);
+        progress.CancelAfter(TimeSpan.FromSeconds(15));
+        Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
+        try
+        {
+            await WaitUntilAsync(
+                () => AcknowledgedWorkers(fixture) == 2,
+                execution,
+                progress.Token
+            );
+            coordinator.RequestControl("pause");
+            Scenario.Data(await execution);
+            AssertSettled(fixture);
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            await StopExecutionAsync(stop, execution);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task SharedZeroIntervalPauseCancelsAnAdmissionWaitingOnInflightBacking()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario fixture = await GitScenario.CreateAsync(token);
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "hold", token);
+        fixture.Database.SaveConfiguration(
+            fixture.Database.Configuration with { CreditAllocation = "shared" }
+        );
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
+        HashSet<string> before = native.CaptureOperations();
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
+        try
+        {
+            await WaitUntilAsync(
+                () => native.OrdinaryPrompts(before).Length == 1
+                    && native.Operations(before).Count(operation =>
+                        operation["operation"]?.GetValue<string>() == "start") == 2,
+                execution,
+                token
+            );
+            coordinator.RequestControl("pause");
+            Scenario.Data(await execution);
+            CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+            Assert.AreEqual(
+                "released",
+                ledger.Reservations().Single(row => row.Worker == "worker2").State
+            );
+            Assert.IsTrue(ledger.Reservations().All(row =>
+                row.State is "reconciled" or "released"));
+            Assert.IsFalse(
+                ledger.Status(fixture.Database.RunId, 120)["uncertain"]!.GetValue<bool>()
+            );
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            await StopExecutionAsync(stop, execution);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task SharedZeroIntervalInsufficientActualCreditStopsBeforeSessionAssociation()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario fixture = await GitScenario.CreateAsync(token);
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        fixture.Database.SaveConfiguration(
+            fixture.Database.Configuration with
+            {
+                CreditAllocation = "shared",
+                RunAiCreditAllowance = 30,
+            }
+        );
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
+        JsonObject result = await coordinator.RunAsync("run", token);
+        Assert.AreEqual("credit_exhausted", result["code"]!.GetValue<string>());
+        Assert.IsEmpty(native.OrdinaryPrompts());
+        Assert.IsNull(fixture.Database.ReadMetadata("worker:worker1:session"));
+        Assert.IsNull(fixture.Database.ReadMetadata("worker:worker2:session"));
+        CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+        Assert.IsFalse(ledger.Status(fixture.Database.RunId, 30)["uncertain"]!.GetValue<bool>());
+        Assert.AreEqual(2, ledger.Reservations().Count(row => row.State == "released"));
+        await fixture.AssertOriginalPreservedAsync(token);
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
     [DataRow("per-session")]
     [DataRow("shared")]
     public async Task PartialRampReconnectLoadsOnlyAssociatedPeersAndStartsUnadmittedPeersFresh(
