@@ -328,6 +328,31 @@ recovery may replay work; do not promise exactly-once actions.
 Pause/finalize retain state; explicit cleanup never removes unrelated refs,
 worktrees, user checkout, credentials or global config.
 
+### Native prompt lifecycle
+
+A new native session receives the shared goal, cooperation/lifecycle guidance,
+bounded durable task/board state and change summary with its first event batch.
+Avoid duplicating the goal and cooperation text inside that bootstrap's
+shared-context prefix; the root task remains a real task, not a second goal
+authority.
+
+After a completed bootstrap turn, persist confirmation keyed by exact native
+session identity before batch acknowledgement. Further turns in that same
+session carry pending events and the canonical fresh unread board prefix.
+Do not repeat static instructions, goal, members or unchanged full task/change
+snapshots; peers can use the existing read tools for current state. Preserve
+event ordering, full backlog access, direct/urgent visibility, notice
+deduplication and post-turn acknowledgement. Do not suppress CLAIM events or
+change idle/wake scheduling as part of this context reduction.
+
+Exact reconnect uses the saved session-bound confirmation, not the first
+iteration of a new worker loop. A fresh explicit-resume or load-fallback session
+receives a new durable bootstrap. If bootstrap completion was not confirmed,
+it may replay with interrupted work, including for older retained sessions
+without that marker. A failed or canceled send cannot create confirmation.
+This does not change pending-work/transcript-recovery flags, reservations,
+model selection, native compaction ownership or failure classification.
+
 ## Credit contract and evidence limits
 
 Use SDK `SessionLimitsConfig.MaxAiCredits`, not the incompatible ACP/usage-file

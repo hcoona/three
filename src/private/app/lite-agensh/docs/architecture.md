@@ -137,9 +137,20 @@ complete semantic map, not a frozen JSON schema or an upstream compatibility
 promise.
 
 Compose upstream cooperation/focus/lifecycle instructions with local tool
-descriptions, and supply them as runtime kickoff/continuation context. Preserve
-the target repository's own instructions. Do not write a generated cooperation
-guide over tracked `AGENTS.md`.
+descriptions for a new native session's bootstrap. After confirmed bootstrap,
+same-session turns carry pending events and fresh unread board context, not
+another copy of the goal, cooperation guide or whole task/change snapshot.
+Full state remains available through the local tools. This limits
+application-owned redundancy without replacing native context compaction.
+Preserve the target repository's own instructions. Do not write a generated
+cooperation guide over tracked `AGENTS.md`.
+
+Bootstrap confirmation belongs to the exact native session and is retained
+after a completed turn, independently of event acknowledgement. Exact-session
+reconnect reuses that confirmation; explicit fresh-summary resume and a fresh
+load-fallback session require bootstrap again. An unconfirmed bootstrap may
+replay with interrupted events; do not infer native history from a new
+coordinator loop or claim exactly-once presentation.
 
 Permission callbacks honor the operator's explicit run policy and native
 enterprise policy. The trusted-host choice does not mean automatically
