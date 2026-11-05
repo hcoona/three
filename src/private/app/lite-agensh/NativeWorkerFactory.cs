@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Text.Json.Nodes;
 
 namespace LiteAgensh;
@@ -30,6 +31,13 @@ internal interface INativeWorkerFactory
 {
     INativeWorker Create(CreditReservation? reservation, bool calibration);
 
+    Task<JsonObject> PreflightAsync(
+        IReadOnlyList<(string Worker, string Cwd)> peers,
+        CancellationToken cancellationToken
+    );
+
+    Task CompleteAsync();
+
     Task<NativeUsage> ReadSettledUsageAsync(
         CreditReservation reservation,
         string cwd,
@@ -44,8 +52,204 @@ internal sealed class NativeWorkerFactory(
     CreditLedger credits
 ) : INativeWorkerFactory
 {
-    public INativeWorker Create(CreditReservation? reservation, bool calibration) =>
-        new NativeWorker(database, processes, credits, reservation, calibration);
+    private readonly object lifecycle = new();
+    private readonly List<NativeWorker> workers = [];
+    private NativeSdkHost? host;
+    private bool closing;
+
+    public INativeWorker Create(CreditReservation? reservation, bool calibration)
+    {
+        lock (lifecycle)
+        {
+            NativeWorker worker = new(database, GetHost(), credits, reservation, calibration);
+            workers.Add(worker);
+            return worker;
+        }
+    }
+
+    public async Task<JsonObject> PreflightAsync(
+        IReadOnlyList<(string Worker, string Cwd)> peers,
+        CancellationToken cancellationToken
+    )
+    {
+        NativeSdkHost backend = GetHost();
+        List<NativeSdkSession> sessions = [];
+        JsonArray diagnostics = [];
+        JsonObject? result = null;
+        Exception? failure = null;
+        try
+        {
+            foreach ((string worker, string cwd) in peers)
+            {
+                NativeSdkSession session = new(database, backend, cwd, isolated: false);
+                sessions.Add(session);
+                string id = Guid.NewGuid().ToString("D");
+                await session.OpenAsync(
+                    worker, id, 30, null,
+                    Path.Combine(database.StatePath, "native", $"preflight-{id}.sdk-evidence"),
+                    cancellationToken
+                ).ConfigureAwait(false);
+                RequireUnprompted(await session.ReadAsync(id, 30, cancellationToken)
+                    .ConfigureAwait(false));
+            }
+
+            NativeSdkSession first = sessions[0];
+            foreach (decimal limit in new decimal[] { 60, 30 })
+            {
+                RequireUnprompted(await first.UpdateLimitAsync(
+                    first.SessionId, limit, cancellationToken
+                ).ConfigureAwait(false));
+                foreach (NativeSdkSession other in sessions.Skip(1))
+                {
+                    RequireUnprompted(await other.ReadAsync(
+                        other.SessionId, 30, cancellationToken
+                    ).ConfigureAwait(false));
+                }
+            }
+            diagnostics.Add(first.Metadata!.DeepClone());
+            first.Quiesce();
+            await first.DisposeAsync().ConfigureAwait(false);
+            foreach (NativeSdkSession other in sessions.Skip(1))
+            {
+                RequireUnprompted(await other.ReadAsync(
+                    other.SessionId, 30, cancellationToken
+                ).ConfigureAwait(false));
+                diagnostics.Add(other.Metadata!.DeepClone());
+            }
+
+            result = new()
+            {
+                ["sessionId"] = first.SessionId,
+                ["modelPromptsSent"] = 0,
+                ["diagnostics"] = first.Metadata!.DeepClone(),
+                ["sessions"] = diagnostics,
+                ["runtimeId"] = backend.Id,
+                ["runtimeLeaseId"] = backend.LeaseId,
+            };
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+        finally
+        {
+            foreach (NativeSdkSession session in sessions)
+            {
+                try
+                {
+                    session.Quiesce();
+                    await session.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    failure ??= new OperationException(
+                        "ownership_unresolved",
+                        $"Native preflight session close failed: {exception.Message}"
+                    );
+                }
+            }
+        }
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+        return result!;
+    }
+
+    public async Task CompleteAsync()
+    {
+        NativeWorker[] cohort;
+        NativeSdkHost? backend;
+        lock (lifecycle)
+        {
+            closing = true;
+            cohort = workers.ToArray();
+            backend = host;
+        }
+        Exception? failure = null;
+        foreach (NativeWorker worker in cohort)
+        {
+            try
+            {
+                await worker.StopAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+            }
+        }
+
+        bool runtimeSettled = false;
+        try
+        {
+            if (backend is not null)
+            {
+                await backend.DisposeAsync().ConfigureAwait(false);
+            }
+            runtimeSettled = true;
+        }
+        catch (Exception exception)
+        {
+            failure ??= exception;
+        }
+
+        foreach (NativeWorker worker in cohort)
+        {
+            try
+            {
+                if (runtimeSettled)
+                {
+                    worker.CompleteUsage();
+                }
+                else
+                {
+                    worker.RetainUncertainty();
+                }
+            }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+            }
+        }
+        if (failure is not null)
+        {
+            throw new OperationException(
+                "credit_or_ownership_unknown",
+                $"Native cohort settlement retained unresolved evidence: {failure.Message}"
+            );
+        }
+        lock (lifecycle)
+        {
+            workers.Clear();
+            host = null;
+            closing = false;
+        }
+    }
+
+    private NativeSdkHost GetHost()
+    {
+        lock (lifecycle)
+        {
+            if (closing)
+            {
+                throw new OperationException(
+                    "ownership_unresolved",
+                    "The operation's native runtime is closing or unresolved."
+                );
+            }
+            return host ??= new(database, processes);
+        }
+    }
+
+    private static void RequireUnprompted(NativeUsage usage)
+    {
+        if (usage.TotalUserRequests != 0 || (usage.TotalNanoAiu is double total && total != 0))
+        {
+            throw new OperationException(
+                "credit_unknown", "A non-model session preflight unexpectedly created native usage."
+            );
+        }
+    }
 
     public async Task<NativeUsage> ReadSettledUsageAsync(
         CreditReservation reservation,

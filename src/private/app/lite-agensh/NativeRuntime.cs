@@ -43,6 +43,8 @@ internal sealed partial class NativeRuntime : IAsyncDisposable
 
     public string ConnectionToken => token;
 
+    public long? LeaseId => lease;
+
     public async Task<string> StartAsync(
         string kind,
         string evidencePath,
