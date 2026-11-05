@@ -9,6 +9,50 @@ namespace LiteAgensh.Tests;
 public sealed class GitScenarioTests(TestContext testContext)
 {
     [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task InitializeWithFailedGitIdentityCheckRetainsExitTimeoutAndStderr(
+        bool silentFailure
+    )
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario fixture = await GitScenario.CreateAsync(token);
+        string worker = fixture.Operations.GetWorkerPath("worker1");
+        if (silentFailure)
+        {
+            await fixture.GitAsync(worker, token, "checkout", "--detach", "--quiet");
+        }
+        else
+        {
+            File.SetAttributes(Path.Combine(worker, ".git"), FileAttributes.Normal);
+            File.WriteAllText(
+                Path.Combine(worker, ".git"),
+                "gitdir: " + Path.Combine(fixture.Fixture.RootPath, "missing-git-directory")
+            );
+        }
+
+        OperationException failure = await Assert.ThrowsExactlyAsync<OperationException>(
+            () => fixture.Operations.InitializeAsync(token)
+        );
+
+        Assert.AreEqual("unavailable", failure.Code);
+        string message = failure.Message;
+        Assert.Contains(
+            silentFailure ? "Git symbolic-ref failed" : "Git rev-parse failed",
+            message
+        );
+        Assert.Contains(silentFailure ? "exit: 1" : "exit: 128", message);
+        Assert.Contains("timeout: False", message);
+        if (!silentFailure)
+        {
+            Assert.Contains("fatal:", message);
+        }
+
+        await fixture.AssertOriginalPreservedAsync(token);
+    }
+
+    [TestMethod]
     [Timeout(240000, CooperativeCancellation = true)]
     public async Task TwoCandidatesIntegrateSeriallyCheckExactTreesAndPreserveDirtyOriginal()
     {
