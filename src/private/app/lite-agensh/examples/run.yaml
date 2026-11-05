@@ -6,6 +6,7 @@ campaignLedgerPath: ./campaign/credits.sqlite
 goalFile: ./goal.md
 
 workerCount: 10
+workerStartIntervalSeconds: 30
 planningSeconds: 0
 durationSeconds: 1800
 

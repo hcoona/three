@@ -12,6 +12,268 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 {
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow("pause")]
+    [DataRow("finalize")]
+    [DataRow("worker-failure")]
+    public async Task PendingColdAdmissionDoesNotBlockControlOrAdmittedWorkerFailure(string action)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        ScenarioClock clock = new();
+        using GitScenario fixture = await GitScenario.CreateAsync(
+            token,
+            configuration => configuration with { WorkerCount = 3 },
+            clock
+        );
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        fixture.Database.SaveConfiguration(
+            fixture.Database.Configuration with { WorkerStartIntervalSeconds = 30 }
+        );
+        TaskCompletionSource pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Coordinator coordinator = new(
+            fixture.Database,
+            fixture.Collaboration,
+            fixture.Operations,
+            (database, _, credits) => new ControlledNativeFactory(
+                database,
+                credits,
+                native.DirectoryPath,
+                onStart: async (reservation, cancellationToken) =>
+                {
+                    if (reservation.Worker == "worker2")
+                    {
+                        pending.TrySetResult();
+                        await release.Task.WaitAsync(cancellationToken);
+                    }
+                }
+            )
+        );
+        await native.PrepareAsync(coordinator, token);
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
+        try
+        {
+            await WaitUntilAsync(() => AcknowledgedWorkers(fixture) == 1, execution, token);
+            clock.Advance(TimeSpan.FromSeconds(30));
+            await pending.Task.WaitAsync(TimeSpan.FromSeconds(10), token);
+            if (action == "worker-failure")
+            {
+                native.SetMode("failed-turn");
+                Scenario.Call(
+                    fixture.Collaboration,
+                    "owner",
+                    "message_send",
+                    new { recipient = "worker1", body = "fail-while-peer-starting" }
+                );
+            }
+            else
+            {
+                coordinator.RequestControl(action);
+            }
+
+            JsonObject result = await execution.WaitAsync(TimeSpan.FromSeconds(10), token);
+            Assert.AreEqual(action != "worker-failure", result["ok"]!.GetValue<bool>());
+            Assert.AreEqual(
+                action == "worker-failure" ? "native_stopped" : $"owner-{action}",
+                fixture.Database.ReadMetadata("lifecycle:stop_reason")
+            );
+            Assert.IsFalse(release.Task.IsCompleted);
+            using SqliteConnection retained = fixture.Database.Open();
+            Assert.AreEqual(
+                0L,
+                Sql.Scalar(
+                    retained,
+                    "SELECT COUNT(*) FROM coordinator_turns WHERE worker='worker2';"
+                )
+            );
+            Assert.IsNull(fixture.Database.ReadMetadata("worker:worker3:session"));
+            CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+            Assert.AreEqual(
+                "reconciled",
+                Assert.ContainsSingle(
+                    ledger.Reservations(fixture.Database.RunId)
+                        .Where(reservation => reservation.Worker == "worker2")
+                ).State
+            );
+            Assert.AreEqual(
+                "released",
+                Assert.ContainsSingle(
+                    ledger.Reservations(fixture.Database.RunId)
+                        .Where(reservation => reservation.Worker == "worker3")
+                ).State
+            );
+            Assert.IsFalse(
+                ledger.Status(fixture.Database.RunId, 120)["uncertain"]!.GetValue<bool>()
+            );
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await StopExecutionAsync(stop, execution);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task RampedPeersStayColdWhileAdmittedPeersCooperateAndPlanningReleases(
+        bool planning
+    )
+    {
+        CancellationToken token = testContext.CancellationToken;
+        ScenarioClock clock = new();
+        using GitScenario fixture = await GitScenario.CreateAsync(
+            token,
+            configuration => configuration with { WorkerCount = 3 },
+            clock
+        );
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        fixture.Database.SaveConfiguration(
+            fixture.Database.Configuration with
+            {
+                WorkerStartIntervalSeconds = 30,
+                PlanningSeconds = planning ? 60 : 0,
+            }
+        );
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
+        HashSet<string> before = native.CaptureOperations();
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
+        try
+        {
+            await WaitUntilAsync(() => AcknowledgedWorkers(fixture) == 1, execution, token);
+            Assert.IsNull(fixture.Database.ReadMetadata("worker:worker2:session"));
+            Assert.IsNull(fixture.Database.ReadMetadata("worker:worker3:session"));
+            Scenario.Call(
+                fixture.Collaboration,
+                "owner",
+                "message_send",
+                new { recipient = "worker1", body = "cooperation-during-ramp" }
+            );
+            await WaitUntilAsync(
+                () => native.OrdinaryPrompts(before).Any(text =>
+                    text.Contains("cooperation-during-ramp", StringComparison.Ordinal)
+                ),
+                execution,
+                token
+            );
+            clock.Advance(TimeSpan.FromSeconds(30) - TimeSpan.FromMilliseconds(1));
+            await Task.Delay(TimeSpan.FromMilliseconds(350), token);
+            Assert.IsNull(fixture.Database.ReadMetadata("worker:worker2:session"));
+
+            clock.Advance(TimeSpan.FromSeconds(30) + TimeSpan.FromMilliseconds(1));
+            await WaitUntilAsync(() => AcknowledgedWorkers(fixture) == 2, execution, token);
+            Assert.IsNull(fixture.Database.ReadMetadata("worker:worker3:session"));
+            clock.Advance(TimeSpan.FromSeconds(30) - TimeSpan.FromMilliseconds(1));
+            await Task.Delay(TimeSpan.FromMilliseconds(350), token);
+            Assert.IsNull(fixture.Database.ReadMetadata("worker:worker3:session"));
+            clock.Advance(TimeSpan.FromMilliseconds(1));
+            await WaitUntilAsync(() => AcknowledgedWorkers(fixture) == 3, execution, token);
+            Assert.HasCount(
+                3,
+                native.Operations(before)
+                    .Where(operation => operation["operation"]?.GetValue<string>() == "start")
+            );
+
+            coordinator.RequestControl("pause");
+            Scenario.Data(await execution);
+            AssertSettled(fixture);
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            await StopExecutionAsync(stop, execution);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task StopDuringRampReleasesOnlyUnstartedPeersWithoutCreatingTheirSessions(
+        bool deadline
+    )
+    {
+        CancellationToken token = testContext.CancellationToken;
+        ScenarioClock clock = new();
+        using GitScenario fixture = await GitScenario.CreateAsync(
+            token,
+            configuration => configuration with { WorkerCount = 3 },
+            clock
+        );
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        fixture.Database.SaveConfiguration(
+            fixture.Database.Configuration with { WorkerStartIntervalSeconds = 60 }
+        );
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
+        HashSet<string> before = native.CaptureOperations();
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
+        try
+        {
+            await WaitUntilAsync(() => AcknowledgedWorkers(fixture) == 1, execution, token);
+            if (deadline)
+            {
+                clock.Advance(TimeSpan.FromSeconds(120));
+            }
+            else
+            {
+                coordinator.RequestControl("pause");
+            }
+
+            Scenario.Data(await execution);
+            Assert.AreEqual(
+                deadline ? "deadline" : "owner-pause",
+                fixture.Database.ReadMetadata("lifecycle:stop_reason")
+            );
+            Assert.IsNull(fixture.Database.ReadMetadata("worker:worker2:session"));
+            Assert.IsNull(fixture.Database.ReadMetadata("worker:worker3:session"));
+            Assert.HasCount(
+                1,
+                native.Operations(before)
+                    .Where(operation => operation["operation"]?.GetValue<string>() == "start")
+            );
+            CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+            using SqliteConnection retained = fixture.Database.Open();
+            foreach (string worker in new[] { "worker2", "worker3" })
+            {
+                CreditReservation pending = Assert.ContainsSingle(
+                    ledger.Reservations(fixture.Database.RunId)
+                        .Where(reservation => reservation.Worker == worker)
+                );
+                Assert.AreEqual("released", pending.State);
+                Assert.AreEqual(
+                    0L,
+                    Sql.Scalar(
+                        retained,
+                        "SELECT COUNT(*) FROM native_sessions WHERE session_id=$session;",
+                        null,
+                        ("$session", pending.SessionId)
+                    )
+                );
+            }
+
+            Assert.IsFalse(
+                ledger.Status(fixture.Database.RunId, 120)["uncertain"]!.GetValue<bool>()
+            );
+            Assert.AreEqual(
+                0L,
+                Sql.Scalar(retained, "SELECT COUNT(*) FROM process_leases WHERE state<>'exited';")
+            );
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            await StopExecutionAsync(stop, execution);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
     [DataRow("reconnect")]
     [DataRow("resume")]
     [DataRow("fallback")]
@@ -257,7 +519,11 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
-    public async Task ControlledReceiptsRequirePreflightAndCalibrationAndBindExactConfiguration()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ControlledReceiptsRequirePreflightAndCalibrationAndBindExactConfiguration(
+        bool ramp
+    )
     {
         CancellationToken token = testContext.CancellationToken;
         using GitScenario fixture = await GitScenario.CreateAsync(token);
@@ -291,10 +557,15 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
         Scenario.Failure(await production.RunAsync("run", token), "unavailable");
 
         fixture.Database.SaveConfiguration(
-            fixture.Database.Configuration with
-            {
-                NativeExecutable = Path.Combine(native.DirectoryPath, "changed-never-launch.exe"),
-            }
+            ramp
+                ? fixture.Database.Configuration with { WorkerStartIntervalSeconds = 30 }
+                : fixture.Database.Configuration with
+                {
+                    NativeExecutable = Path.Combine(
+                        native.DirectoryPath,
+                        "changed-never-launch.exe"
+                    ),
+                }
         );
         Scenario.Failure(await coordinator.RunAsync("run", token), "unavailable");
         Assert.IsEmpty(native.OrdinaryPrompts());

@@ -38,6 +38,12 @@
       "default": 2,
       "description": "Equal peers sharing one goal and cooperation template, not permanently assigned roles."
     },
+    "workerStartIntervalSeconds": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Seconds between ordinary worker admissions. Zero preserves immediate eligibility; a positive interval starts native workers gradually while admitted peers cooperate. Waiting time remains inside durationSeconds."
+    },
     "durationSeconds": {
       "type": "integer",
       "minimum": 1,

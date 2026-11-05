@@ -48,6 +48,14 @@ the YAML file's directory, not the terminal directory. Keep state and ledger
 outside the target checkout. The complete goal is shared by all peers; the
 example starts ten workers with no privileged initial planner or fixed roles.
 
+Set `workerStartIntervalSeconds` to control ramp-up. The example uses 30 seconds;
+omitting it or setting zero retains immediate eligibility. With a positive
+interval, the first peer starts immediately and later native workers start
+gradually while earlier peers cooperate. Waiting workers do not hold started
+native sessions. Startup and ramp-up count against the finite run deadline;
+a stop may occur before every configured worker is admitted. This constant
+interval is not the upstream experiment's two-stage deployment schedule.
+
 The YAML example's modeline associates [the JSON Schema](schemas/run.schema.json)
 with the standard Red Hat YAML extension in VS Code for completion, hover and
 validation. No editor extension is required at runtime. If copying the example

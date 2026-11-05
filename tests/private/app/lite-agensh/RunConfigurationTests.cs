@@ -18,6 +18,7 @@ public sealed class RunConfigurationTests
     [DataRow("ledger-below-checkout")]
     [DataRow("empty-goal")]
     [DataRow("zero-workers")]
+    [DataRow("negative-worker-start-interval")]
     [DataRow("zero-duration")]
     [DataRow("planning-after-deadline")]
     [DataRow("insufficient-session-allowance")]
@@ -56,6 +57,10 @@ public sealed class RunConfigurationTests
             },
             "empty-goal" => fixture.Configuration with { Goal = " " },
             "zero-workers" => fixture.Configuration with { WorkerCount = 0 },
+            "negative-worker-start-interval" => fixture.Configuration with
+            {
+                WorkerStartIntervalSeconds = -1,
+            },
             "zero-duration" => fixture.Configuration with { DurationSeconds = 0 },
             "planning-after-deadline" => fixture.Configuration with
             {
@@ -115,18 +120,20 @@ public sealed class RunConfigurationTests
     }
 
     [TestMethod]
-    [DataRow(1, 0, "deny")]
-    [DataRow(2, 60, "trusted")]
+    [DataRow(1, 0, "deny", 0)]
+    [DataRow(2, 60, "trusted", 30)]
     public void InitializeValidBoundaryConfigurationCreatesRecoverableRun(
         int workers,
         int planningSeconds,
-        string policy
+        string policy,
+        int workerStartIntervalSeconds
     )
     {
         using RunFixture fixture = new();
         RunConfiguration configuration = fixture.Configuration with
         {
             WorkerCount = workers,
+            WorkerStartIntervalSeconds = workerStartIntervalSeconds,
             DurationSeconds = 60,
             PlanningSeconds = planningSeconds,
             RunAiCreditAllowance = 30,
@@ -143,6 +150,10 @@ public sealed class RunConfigurationTests
         Assert.Contains("worker1", recovered.Members);
         Assert.AreEqual(database.RunId, recovered.RunId);
         Assert.AreEqual(planningSeconds, recovered.Configuration.PlanningSeconds);
+        Assert.AreEqual(
+            workerStartIntervalSeconds,
+            recovered.Configuration.WorkerStartIntervalSeconds
+        );
         Assert.AreEqual(policy, recovered.Configuration.NativePermissionPolicy);
         Assert.IsTrue(File.Exists(Path.Combine(fixture.StatePath, "run.sqlite")));
         Assert.IsFalse(File.Exists(configuration.CampaignLedgerPath));
