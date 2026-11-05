@@ -114,6 +114,13 @@ and diagnose through the accepted non-dispatch reconciliation path.
    Board and peer-message activity, actual completed turns and interruptions.
    Do not inject a central task partition or treat progress counters as an
    audit conclusion. Observe the configured deadline, credit limits and stops.
+   For the owner-requested autonomous follow-up, configure the accepted
+   worker admission interval explicitly and retain its actual timing. Do not
+   pause merely because an initial report exists or a historical file/message
+   pair matches. Let peers perform review and latest-report synchronization
+   until they finish their work or an existing finite/safety stop applies.
+   Operator export is not evidence of autonomous report synchronization;
+   retain any incomplete review or mismatched latest output as incomplete.
 5. **Inspect and repair:** preserve each failure and establish process/usage
    settlement before any safe repetition. Diagnose only the exact owned run,
    leases, session identities and necessary private native diagnostics.

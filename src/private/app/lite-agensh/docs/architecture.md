@@ -160,6 +160,22 @@ report it rather than broadening permissions.
 
 ## Delivery ordering and notices
 
+### Worker admission ramp-up
+
+The coordinator owns configurable admission timing, not intelligent task
+assignment. With a positive start interval, start each ordinary native session
+only when its admission is due and begin that peer's loop without waiting for
+the whole team. Poll existing controls, process peer work and observe deadlines
+between admissions. Do not warm every session and merely delay its first prompt:
+an interrupted, never-dispatched native session has different accounting
+requirements from a reservation whose native worker was never started.
+
+Keep the existing all-session startup path when the interval is zero. Planning
+release still gates peers; a positive interval does not admit waiting peers
+before that release. Exact recovery, budget admission and native settlement
+retain their existing contracts. No new scheduler service or worker role is
+introduced.
+
 ### Controlled native dependency in scenarios
 
 Keep the coordinator's native-worker dependency internal and replaceable in
