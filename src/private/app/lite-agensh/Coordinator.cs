@@ -282,6 +282,9 @@ public sealed class Coordinator
             {
                 database.WriteMetadata("lifecycle", "unresolved");
                 database.WriteMetadata("lifecycle:failure", exception.Message);
+                database.WriteMetadata(
+                    "lifecycle:settlement_failures", nativeWorkers.SettlementFailures.ToJsonString()
+                );
             }
         }
 
@@ -402,6 +405,9 @@ public sealed class Coordinator
             {
                 database.WriteMetadata("lifecycle", "unresolved");
                 database.WriteMetadata("lifecycle:failure", exception.Message);
+                database.WriteMetadata(
+                    "lifecycle:settlement_failures", nativeWorkers.SettlementFailures.ToJsonString()
+                );
             }
         }
 
@@ -904,13 +910,21 @@ public sealed class Coordinator
             catch (Exception exception)
             {
                 failure ??= exception;
-                settlementFailures.Add(
-                    new JsonObject
+                if (nativeWorkers.SettlementFailures.Count == 0)
+                {
+                    settlementFailures.Add(new JsonObject
                     {
                         ["phase"] = "native-runtime",
                         ["message"] = exception.Message,
+                    });
+                }
+                foreach (JsonNode? item in nativeWorkers.SettlementFailures)
+                {
+                    if (!settlementFailures.Any(existing => JsonNode.DeepEquals(existing, item)))
+                    {
+                        settlementFailures.Add(item!.DeepClone());
                     }
-                );
+                }
                 database.WriteMetadata(
                     "lifecycle:settlement_failures", settlementFailures.ToJsonString()
                 );

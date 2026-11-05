@@ -17,7 +17,10 @@ internal sealed class ControlledNativeFactory(
     Func<Task>? onHostSettlement = null
 ) : INativeWorkerFactory
 {
-    private readonly List<ControlledNativeWorker> workers = [];
+    private readonly List<(ControlledNativeWorker Worker, CreditReservation? Reservation)> workers =
+        [];
+
+    public JsonArray SettlementFailures { get; } = [];
 
     public INativeWorker Create(CreditReservation? reservation, bool calibration)
     {
@@ -30,7 +33,7 @@ internal sealed class ControlledNativeFactory(
             onExactLoadSettled,
             onStart
         );
-        workers.Add(worker);
+        workers.Add((worker, reservation));
         return worker;
     }
 
@@ -60,8 +63,10 @@ internal sealed class ControlledNativeFactory(
 
     public async Task CompleteAsync()
     {
+        SettlementFailures.Clear();
+        HashSet<ControlledNativeWorker> unsettled = [];
         Exception? failure = null;
-        foreach (ControlledNativeWorker worker in workers)
+        foreach ((ControlledNativeWorker worker, CreditReservation? reservation) in workers)
         {
             try
             {
@@ -70,33 +75,56 @@ internal sealed class ControlledNativeFactory(
             catch (Exception exception)
             {
                 failure ??= exception;
+                unsettled.Add(worker);
+                SettlementFailures.Add(NativeWorkerFactory.CreateSettlementFailure(
+                    reservation, "stop", exception
+                ));
             }
         }
         RecordHost("host-closing");
-        if (onHostSettlement is not null)
+        bool runtimeSettled = false;
+        try
         {
-            await onHostSettlement();
-        }
-        if (ControlledNativeWorker.Mode(directory) == "unsettled-host")
-        {
-            foreach (ControlledNativeWorker worker in workers)
+            if (onHostSettlement is not null)
             {
-                worker.RetainUncertainty();
+                await onHostSettlement();
             }
-            throw new OperationException(
-                "ownership_unresolved", "Controlled common host unsettled."
-            );
+            if (ControlledNativeWorker.Mode(directory) == "unsettled-host")
+            {
+                throw new OperationException(
+                    "ownership_unresolved", "Controlled common host unsettled."
+                );
+            }
+            RecordHost("host-settled");
+            runtimeSettled = true;
         }
-        RecordHost("host-settled");
-        foreach (ControlledNativeWorker worker in workers)
+        catch (Exception exception)
         {
+            failure ??= exception;
+            SettlementFailures.Add(NativeWorkerFactory.CreateSettlementFailure(
+                null, "native-runtime", exception
+            ));
+        }
+        foreach ((ControlledNativeWorker worker, CreditReservation? reservation) in workers)
+        {
+            bool finalize = runtimeSettled && !unsettled.Contains(worker);
             try
             {
-                worker.CompleteUsage();
+                if (finalize)
+                {
+                    worker.CompleteUsage();
+                }
+                else
+                {
+                    worker.RetainUncertainty();
+                }
             }
             catch (Exception exception)
             {
                 failure ??= exception;
+                SettlementFailures.Add(NativeWorkerFactory.CreateSettlementFailure(
+                    reservation, finalize ? "final-usage" : "retain-uncertainty", exception
+                ));
             }
         }
         if (failure is not null)

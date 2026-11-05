@@ -75,6 +75,14 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                     .All(row => row.State == "uncertain"));
                 Assert.AreEqual("credit_unknown",
                     Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
+                JsonNode? evidence = Assert.ContainsSingle(
+                    Scenario.Data(coordinator.Status())["settlementFailures"]!.AsArray()
+                );
+                Assert.IsNotNull(evidence);
+                Assert.AreEqual("native-runtime", evidence["phase"]!.GetValue<string>());
+                Assert.IsNull(evidence["worker"]);
+                Assert.AreEqual("Controlled common host unsettled.",
+                    evidence["message"]!.GetValue<string>());
                 Assert.IsNotEmpty(native.Operations().Where(operation =>
                     operation["operation"]?.GetValue<string>() == "settled"));
             }

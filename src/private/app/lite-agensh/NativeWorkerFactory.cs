@@ -29,6 +29,8 @@ internal interface INativeWorker : IAsyncDisposable
 
 internal interface INativeWorkerFactory
 {
+    JsonArray SettlementFailures { get; }
+
     INativeWorker Create(CreditReservation? reservation, bool calibration);
 
     Task<JsonObject> PreflightAsync(
@@ -53,16 +55,18 @@ internal sealed class NativeWorkerFactory(
 ) : INativeWorkerFactory
 {
     private readonly object lifecycle = new();
-    private readonly List<NativeWorker> workers = [];
+    private readonly List<(NativeWorker Worker, CreditReservation? Reservation)> workers = [];
     private NativeSdkHost? host;
     private bool closing;
+
+    public JsonArray SettlementFailures { get; } = [];
 
     public INativeWorker Create(CreditReservation? reservation, bool calibration)
     {
         lock (lifecycle)
         {
             NativeWorker worker = new(database, GetHost(), credits, reservation, calibration);
-            workers.Add(worker);
+            workers.Add((worker, reservation));
             return worker;
         }
     }
@@ -158,7 +162,7 @@ internal sealed class NativeWorkerFactory(
 
     public async Task CompleteAsync()
     {
-        NativeWorker[] cohort;
+        (NativeWorker Worker, CreditReservation? Reservation)[] cohort;
         NativeSdkHost? backend;
         lock (lifecycle)
         {
@@ -166,8 +170,10 @@ internal sealed class NativeWorkerFactory(
             cohort = workers.ToArray();
             backend = host;
         }
+        SettlementFailures.Clear();
+        HashSet<NativeWorker> unsettled = [];
         Exception? failure = null;
-        foreach (NativeWorker worker in cohort)
+        foreach ((NativeWorker worker, CreditReservation? reservation) in cohort)
         {
             try
             {
@@ -176,6 +182,8 @@ internal sealed class NativeWorkerFactory(
             catch (Exception exception)
             {
                 failure ??= exception;
+                unsettled.Add(worker);
+                SettlementFailures.Add(CreateSettlementFailure(reservation, "stop", exception));
             }
         }
 
@@ -191,13 +199,15 @@ internal sealed class NativeWorkerFactory(
         catch (Exception exception)
         {
             failure ??= exception;
+            SettlementFailures.Add(CreateSettlementFailure(null, "native-runtime", exception));
         }
 
-        foreach (NativeWorker worker in cohort)
+        foreach ((NativeWorker worker, CreditReservation? reservation) in cohort)
         {
+            bool finalize = runtimeSettled && !unsettled.Contains(worker);
             try
             {
-                if (runtimeSettled)
+                if (finalize)
                 {
                     worker.CompleteUsage();
                 }
@@ -209,6 +219,9 @@ internal sealed class NativeWorkerFactory(
             catch (Exception exception)
             {
                 failure ??= exception;
+                SettlementFailures.Add(CreateSettlementFailure(
+                    reservation, finalize ? "final-usage" : "retain-uncertainty", exception
+                ));
             }
         }
         if (failure is not null)
@@ -224,6 +237,23 @@ internal sealed class NativeWorkerFactory(
             host = null;
             closing = false;
         }
+    }
+
+    internal static JsonObject CreateSettlementFailure(
+        CreditReservation? reservation, string phase, Exception exception
+    )
+    {
+        JsonObject failure = new()
+        {
+            ["phase"] = phase,
+            ["message"] = exception.Message,
+        };
+        if (reservation is not null)
+        {
+            failure["worker"] = reservation.Worker;
+            failure["reservationId"] = reservation.Id;
+        }
+        return failure;
     }
 
     private NativeSdkHost GetHost()
