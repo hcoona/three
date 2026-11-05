@@ -18,7 +18,7 @@ process has accepted. Its identity and content stay private.
 ### OMR-REQ-001: Recognition target
 
 The target shall be the printed content of one grand-staff system of a piano
-score, written as one system document. System documents of consecutive systems
+score, with the heading text printed above it, written as one system document. System documents of consecutive systems
 shall assemble into one assembled score, which deterministic converters turn
 into MusicXML for the existing editable-score workflow. The format is for piano
 music on two staves. It is not a general music language and not a replacement
@@ -41,7 +41,7 @@ Category encodings section of the format defines:
 - grouping and relations: `beam`, `tie`, `slur`, `arpeggio`, `tremolo`,
   `ornament`
 - marks: `articulation_fermata`, `fingering`, `dynamic`, `hairpin`, `pedal`
-- text and structure: `text`, `tempo_rehearsal`, `repeat_ending`
+- text and structure: `text`, `tempo_rehearsal`, `repeat_ending`, `heading`
 
 A required printed distinction that the format cannot encode shall appear under
 Unsupported content below instead of being omitted silently. The format
@@ -93,6 +93,14 @@ Assembly shall report an unfilled range of a measure instead of inventing rests,
 and shall report an extended trill whose wavy line continues into a later
 system and stops there before any note for a person to resolve instead of
 completing it.
+
+Printed content whose reading the page leaves undetermined, as the format's
+transcription rules define it, shall be held in the document by a review marker
+instead of being guessed, and the marker may carry candidate readings. A
+validator shall accept such a document and list each marker with its location
+and candidates. Assembly and the converters shall report each marker in the
+same way and shall not report success.
+
 Finer coverage or confidence information (a recognition sidecar) is not part of
 this format and needs its own record admission.
 
@@ -128,7 +136,7 @@ accepted under research-evidence review before it executes. The protocol shall
 fix the tools and their versions, define an in-scope element and _identical_,
 state the denominator of every percentage and say how generated identifiers are
 treated, since an identifier difference alone is not a content difference. It
-shall assign every difference to exactly one of the 26 content categories or to
+shall assign every difference to exactly one of the 27 content categories or to
 layout. A difference that cannot be assigned is a protocol defect, never
 agreement. Missing content and extra content both count as differences.
 
@@ -215,17 +223,13 @@ converter reports such content as OMR-REQ-006 and OMR-REQ-008 state.
   or two different such digits on a pitch of a trill;
 - a whole-measure rest in a split measure, and beams or tuplet groups across a
   barline or a fragment boundary;
-- notes that fill their measure only in tuplet groups with no printed tuplet
-  number, when the transcription rules of the format leave no grouping or more
-  than one;
+- heading text above a system that starts inside a measure;
 - metronome units other than quarter, half, eighth, dotted quarter and dotted
-  half;
-- printed content that the source image shows only in part, such as a mark cut
-  off at the edge of a scan, when its visible part and its context leave more
-  than one reading; it is reported for a person to resolve and not guessed.
+  half.
 
-Playback-only data and engraving coordinates are neither content nor unsupported
-content. A reverse converter ignores them.
+Undetermined content is not unsupported content: a review marker holds it as
+OMR-REQ-006 states. Playback-only data and engraving coordinates are neither
+content nor unsupported content. A reverse converter ignores them.
 
 ## Validation basis
 
@@ -258,7 +262,7 @@ tools that were actually tested.
 
 This section is informative and adds no requirement. The recognition workflow's
 category identifiers, as [Issue #1489](https://github.com/hcoona/three/issues/1489)
-lists them when this record was written, relate to the 26 content categories as
+lists them when this record was written, relate to the 27 content categories as
 follows, so that later scoring work can keep its per-category vocabulary:
 
 - `P1` pitch and chord membership: `pitch` and `chord_membership`
@@ -277,7 +281,7 @@ follows, so that later scoring work can keep its per-category vocabulary:
   `text`; `N4` tempo and `N7` rehearsal marks: `tempo_rehearsal`; `N5` pedal:
   `pedal`; `N6` fingering: `fingering`; `N8` barlines, repeats and voltas:
   `repeat_ending`
-- `N9` title and footer text is supplied by OCR or a user. The format records
-  an optional title and composer only in an assembled score, and it records no
-  footer.
+- `N9` title and footer text: title text printed above a system is `heading`,
+  and the format records no footer. The optional title and composer lines of
+  an assembled score are metadata that OCR or a user supplies.
 - `Y1` layout is the layout hints, which are never scored as content.
