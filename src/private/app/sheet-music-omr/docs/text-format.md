@@ -26,6 +26,8 @@ every semantic rule in this record. A conforming tool:
   class (lexical, grammar, semantic, assembly or unsupported) and the location
   in the original text;
 - never repairs, guesses or silently drops content;
+- reports every review marker with its location and candidates, as described
+  under review markers;
 - writes only canonical form.
 
 The number in `format: text-score/2` is the major version. A change that alters
@@ -44,8 +46,8 @@ Terms used throughout:
   encodes content, plus a few layout hints that never count as content.
 - _Voice line_: the line for staff `S` (1 is the upper staff, 2 the lower) and
   voice `V` (1 to 4) within a measure block, written `S.V`.
-- _Event_: a direction, note, chord, rest, spacer or whole-measure rest in a
-  voice line. A tuplet is a container, not an event.
+- _Event_: a direction, note, chord, rest, spacer, whole-measure rest or timed
+  review marker in a voice line. A tuplet is a container, not an event.
 - _Onset_: the position of an event in its measure, as a reduced rational
   number of whole notes from the measure start.
 - _Fragment_: a measure block that covers only part of its measure.
@@ -64,9 +66,12 @@ in this fixed order:
 - `page: P` and `system: S`, positive integers that order the system within the
   piece
 - `carry-in: {...}`, the carry state at the start of the system
+- zero or more `heading: "..."` lines, the heading text printed above the
+  system
 - one or more measure blocks
 
-The header lines are required, and there are no defaults. `key`, `time` and
+The lines from `format` to `carry-in` are required, and there are no
+defaults. `key`, `time` and
 `clefs` give the state in effect at the carry-in position, and measure blocks
 are transitions from that state. `carry` fixes how an accidental stays in force
 and is constant across a piece. This record does not say which party supplies
@@ -74,11 +79,13 @@ each header line to a recognizer.
 
 An _assembled score_ transcribes a whole piece. Its lines are `format`, an
 optional `title: "..."`, an optional `composer: "..."`, `key`, `time`, `clefs`
-and `carry`, followed by measure blocks. The header gives the state at the
-start of measure 1, there is no `page`, `system` or `carry-in` line, and every
-block is a complete measure. Assembly produces an assembled score from system
-documents, and a converter may also produce one directly. Title and composer
-are optional metadata and are not part of any system document.
+and `carry`, followed by measure blocks, each of which may be preceded by
+`heading` lines. The header gives the state at the start of measure 1, there is
+no `page`, `system` or `carry-in` line, and every block is a complete measure.
+Assembly produces an assembled score from system documents, and a converter may
+also produce one directly. Title and composer are optional metadata that OCR or
+a user supplies, and they are not part of any system document. Heading lines
+record printed text.
 
 ### Examples
 
@@ -201,14 +208,15 @@ explicit. Its notation is:
 ```ebnf
 (* Documents. Each line is terminated by lf. *)
 system_document = format_line, key_line, time_line, clefs_line, carry_line,
-    page_line, system_line, carry_in_line, measure_block+
+    page_line, system_line, carry_in_line, heading_line*, measure_block+
 assembled_score = format_line, [title_line], [composer_line], key_line,
-    time_line, clefs_line, carry_line, measure_block+
+    time_line, clefs_line, carry_line, (heading_line*, measure_block)+
 
 (* Header lines *)
 format_line = "format: text-score/2", lf
 title_line = "title: ", nonempty_quoted, lf
 composer_line = "composer: ", nonempty_quoted, lf
+heading_line = "heading: ", nonempty_quoted, lf
 key_line = "key: ", fifths, lf
 time_line = "time: ", meter, lf
 clefs_line = "clefs: ", clef, sp, clef, lf
@@ -233,13 +241,15 @@ ending = pos_int, ":", ("start" | "single") | "continue" | "end"
 voice_line = staff_no, ".", voice_no, ":", sp, event, (sp, event)*, lf
 
 (* Events *)
-event = direction | tuplet | note | rest | mrest
+event = direction | tuplet | note | rest | mrest | review_span
 tuplet = pos_int, ":", pos_int, "{", tuplet_item, (sp, tuplet_item)*, "}"
 tuplet_item = direction | tuplet | note | rest
 note = pitch, ("+", pitch)*, "/", duration, [note_flags]
 rest = "r/", duration, [rest_flags]
     | "x/", duration, [beam_flags]
 mrest = "mrest", ["[", fermata, "]"]
+review_span = "?(", positive_rational, ")", [candidates]
+candidates = "[", nonempty_quoted, (",", nonempty_quoted)*, "]"
 duration = ("1" | "2" | "4" | "8" | "16" | "32" | "64" | "128"), "."*
 
 (* Pitches *)
@@ -281,6 +291,7 @@ event_relation = "rel=slur@", label, ":", ("start" | "end")
 
 (* Directions *)
 direction = "<", plain_body, ">"
+    | "<?>", [candidates]
     | "<cresc(>[rel=hairpin@", label, ":start:cresc]"
     | "<dim(>[rel=hairpin@", label, ":start:dim]"
     | "<hairpin)>[rel=hairpin@", label, ":end]"
@@ -339,7 +350,8 @@ sounding = '{"step":"', step, '","octave":', octave,
 clef = ("G" | "F" | "C"), "1".."5", [("+" | "-"), "8"]
 fifths = "0" | ["-"], "1".."7"
 meter = pos_int, "/", ("1" | "2" | "4" | "8" | "16" | "32" | "64" | "128")
-rational = "0" | pos_int | pos_int, "/", pos_int
+rational = "0" | positive_rational
+positive_rational = pos_int | pos_int, "/", pos_int
 staff_no = "1" | "2"
 voice_no = "1".."4"
 pos_int = "1".."9", ("0".."9")*
@@ -378,6 +390,15 @@ number `4/2`. A document is valid only when it also satisfies every rule below.
   of an assembled score, and of a system document whose `carry-in` has
   `measure` 1 and `offset` `"0"`, a `key` or `time` option shall be a reprint
   and no `clef` direction shall have onset `0`.
+
+### Heading lines
+
+A `heading` line records one printed line of heading text, as the
+transcription rules define it, and the lines keep their reading order. A system
+document with heading lines shall have a `carry-in` offset of `"0"`: heading
+text above a system that starts inside a measure is unsupported. In an
+assembled score, the heading lines of a system precede the block of the measure
+where that system starts.
 
 ### Measure blocks and options
 
@@ -436,7 +457,8 @@ unsupported, and the closing hook of a bracket is not encoded.
   `2 - 1/2^d` for `d` dots. A tuplet `N:M{...}` multiplies each member by `M/N`
   (`N` notes in the time of `M`), and the ratios of nested tuplet containers
   multiply.
-- Directions and grace notes last nothing.
+- Directions and grace notes last nothing, and a timed review marker `?(R)`
+  lasts `R`.
 - The two endpoints of a two-note tremolo each last half of their written value
   times the tuplet multiplier.
 - The durations in a voice line shall sum to `to - from` of its block.
@@ -683,6 +705,31 @@ an event boundary in its line.
   also records the text, and ends with `<dashes)>[rel=dashes@rN:end]`.
 - `<trill)>[rel=ornament@rN:end:extended-trill]` ends a carried extended trill
   without a note, as described under relations.
+- `<?>` is an untimed review marker, as described below.
+
+### Review markers
+
+A review marker holds the place of printed content whose reading the page
+leaves undetermined, as the transcription rules decide, for a person to
+resolve. A marker is neither content nor a layout hint.
+
+- `?(R)` is a timed marker. It is a rhythmic event that lasts `R` whole notes,
+  a positive rational, and holds the content of that time in its voice line.
+  It holds no pitch and carries no flag, so no beam, tie mark or relation
+  endpoint lies on it, and it is never inside a tuplet.
+- `<?>` is an untimed marker. It is a direction and holds content that has no
+  duration, such as a mark or the kind of a barline.
+- Either marker may carry candidates, `["...","..."]`: one or more readings of
+  the held content, most likely first. Candidates are auxiliary text. A
+  validator checks only that they are lexically valid and that no two
+  candidates of one marker are equal.
+- A document that holds a marker is valid but is not a complete transcription.
+  Accidental state and carry state after a marker are derived as if the held
+  content printed nothing, and they hold only until a person replaces the
+  marker.
+- A validator accepts such a document and lists each marker with its location
+  and candidates. Assembly and the converters report each marker in the same
+  way and do not report success. An assembled score keeps its markers.
 
 ### Event indexing
 
@@ -756,7 +803,8 @@ Assembly orders system documents by `page` and `system` and then:
    joined voice line to fill the whole measure, so a gap fails with the
    unfilled range;
 5. takes `key`, `time`, `time-symbol`, `left` and `ending` from the first
-   fragment and `right` from the last, and drops `from` and `to`;
+   fragment and `right` from the last, drops `from` and `to`, and places the
+   heading lines of each document before the block of its first measure;
 6. closes a bracket left open at the end of a system document: when the last
    measure of a document carries `ending=N:start` or `ending=continue` and the
    next measure carries no `ending` option, the option becomes `ending=N:single`
@@ -765,7 +813,8 @@ Assembly orders system documents by `page` and `system` and then:
    and checks every deferred alteration, gives every arc the kind of its end,
    and renames relation labels globally;
 8. reports every extended trill that ends on `<trill)>`, with the locations of
-   its start and end, for a person to resolve, and does not report success.
+   its start and end, and every review marker, with its location and
+   candidates, for a person to resolve, and does not report success.
 
 The result is an assembled score. Assembly never fills a missing event with an
 invented rest, infers an unprinted accidental or discards an unsupported mark
@@ -775,8 +824,10 @@ while reporting success.
 
 A tool shall write one spelling of a valid document.
 
-- Header lines keep the grammar's order. Blocks are in id order, voice lines
-  are in staff, then voice order, and events keep their line order.
+- Header lines keep the grammar's order. Heading lines keep their reading
+  order. Blocks are in id order, voice lines are in staff, then voice order,
+  and events keep their line order. The candidates of a marker keep their
+  written order.
 - Items are separated by single spaces, lines end with LF, and there are no
   comments, blank lines or trailing spaces.
 - Block options follow the order `len`, `key`, `time`, `time-symbol`, `left`,
@@ -810,8 +861,8 @@ validity and omit the layout hints that a transcription writes. Handwritten
 additions to a printed copy are not transcribed. Printed content that the
 source image shows only in part, such as a mark cut off at the edge of a scan,
 is transcribed as the content that its visible part and its context make clear.
-When they leave more than one reading, it is unsupported content, which is
-reported for a person to resolve and not guessed.
+When they leave more than one reading, the content is undetermined, and a
+review marker holds its place, as described under undetermined content below.
 
 Horizontal positions on the page decide several rules below. The _extent_ of
 an event is the horizontal extent of its noteheads, or of its rest glyph; stems,
@@ -820,12 +871,21 @@ middle of its extent. An event lies at or to the right of a point when the right
 end of its extent does, and the first event at or to the right of a point is the
 one of these in the earliest measure with the earliest onset in that measure.
 
+Positions are compared with a tolerance of a quarter of a staff space, the
+distance between two adjacent lines of a staff. Two positions closer than that
+are equal, and so are two distances that differ by less than that. A rule that
+compares positions or distances applies its case for equality, or its
+tie-break, to them.
+
 ### Voices and staves
 
 - Noteheads on one stem form one event. A notehead with both an up-stem and a
   down-stem belongs to two voices.
-- A staff that prints one voice throughout a measure writes it as voice 1,
-  whatever the voices of the neighboring measures.
+- A staff prints more than one voice in a measure only when two non-grace
+  rhythmic events that belong to it in that measure overlap in time, that is,
+  one starts before the other ends. Stem directions alone never make a second
+  voice. A staff that prints one voice throughout a measure writes it as voice
+  1, whatever its stem directions and the voices of the neighboring measures.
 - Where a staff prints more than one voice in a measure, an event with an
   up-stem belongs to voice 1 and one with a down-stem to voice 2. With three or
   four voices, the up-stem voices are 1 and 3 and the down-stem voices 2 and 4,
@@ -867,6 +927,20 @@ one of these in the earliest measure with the earliest onset in that measure.
   below two equal two-note chords are two ties. An arc that carries a tuplet
   number and spans exactly the events of a tuplet group is the bracket of that
   group, not a slur.
+- An arc end belongs to a notehead of a note displayed on the staff where the
+  end lies. The note is found horizontally: the notes whose extents hold the
+  end or, when none does, the note whose center is nearest to it, or at equal
+  distance the one nearer to the arc's other end. Among their noteheads, the
+  end belongs to the one vertically nearest to it, or at equal distance to the
+  higher one when the arc bends upward and the lower one when it bends
+  downward. At the right edge of a system, when no extent holds the end, the
+  end of the staff lines counts as a center as well, and an arc end nearest to
+  it reaches the right edge. At the left edge, the right end of the clef, key
+  and time signatures printed at the start of the system counts in the same
+  way, and an arc end nearest to it continues an arc from the previous system.
+- Only a vertical wavy line beside the noteheads that it spans is an arpeggio.
+  A smooth curve or a bracket there is not, and when the page does not
+  establish what it is, it is undetermined.
 - An extended trill ends on the last note of its voice line whose extent starts
   at or to the left of the right end of its wavy line, counting notes that a tie
   continues. A wavy line that ends within the system of its trilled note before
@@ -874,12 +948,23 @@ one of these in the earliest measure with the earliest onset in that measure.
   `orn=trill` alone. A wavy line that continues a trill that `carry-in` lists
   as open, and that ends before any note of its voice line in the system
   starts, ends the trill on `<trill)>`.
-- Printed words are encoded as printed. Words in an upright typeface above
+- Heading text is the words printed above the top staff of a system that name
+  a piece, a movement or a section, or a person such as its composer, or that
+  give dates, an opus or catalogue number or a dedication. A word that gives a
+  tempo is tempo, not heading text. Each printed line of heading text is one
+  `heading` line, in reading order: from top to bottom, and from left to right
+  among lines whose vertical extents overlap. Page numbers, running headers
+  repeated on later pages, footers and copyright notices are not encoded.
+- Other printed words are encoded as printed. Words in an upright typeface above
   staff 1, and words printed with a metronome mark, are `tempo`. Other words are
   text, and so are words for a gradual change of tempo or dynamics, such as
   "rit.", "rall.", "accel.", "cresc." and "dim.", navigation words, such as
   "D.C." and "Fine", and "loco".
   "loco" at the end of an ottava line is `<"loco">` besides the ottava end.
+- A word printed as syllables separated by dashes, such as "cre - scen - do",
+  is one dashes line. Its start records the syllables joined without the dashes
+  and the spaces between them, as in `<"crescendo"(>`. The line starts at the
+  left edge of the first syllable and ends at the right end of the last one.
 - A `Ped.` glyph that begins a pedal line is the start of that line.
   `<pedal-sign down>` and `<pedal-sign up>` record only glyphs that are not
   joined to a line.
@@ -909,7 +994,8 @@ one of these in the earliest measure with the earliest onset in that measure.
   it ends on a notehead that the rule for ties above joins to its pitch, and
   otherwise a slur. A relation that `carry-in` lists as open and that shows no
   continuation in the system ends at the first event of the system that can
-  hold its end. A continuation printed at the start of
+  hold its end. An arc whose left end the rule for arc ends gives to the start
+  of the system is a continuation. A continuation printed at the start of
   the system that `carry-in` does not list as open, or that cannot continue the
   relation that it lists, shows that `carry-in` does not match the page. No
   document transcribes the system with that `carry-in`, and a tool reports the
@@ -932,7 +1018,9 @@ one of these in the earliest measure with the earliest onset in that measure.
   other direction in the first such line of the other staff. A fifth voice line
   is unsupported, as more than four voices on a staff are. In its line a
   direction follows any grace notes at its onset and precedes the rhythmic
-  event there, if any. Directions at one onset of a line are written in the
+  event there, if any. Where a tuplet group starts at its onset, it precedes
+  the outermost such group and any grace notes inside it. Directions at one
+  onset of a line are written in the
   ASCII order of their spellings with relation labels ignored, and those whose
   spellings then agree in ascending label order.
 
@@ -949,8 +1037,12 @@ one of these in the earliest measure with the earliest onset in that measure.
   `1/D` of the meter `N/D`, or `3/D` in a compound meter, where `N` is 6, 9 or
   12 and `D` is at least 8. When some groupings use only `3:2` groups in a
   simple meter, or only `2:3` groups in a compound meter, only those count.
-  Exactly one grouping shall remain, and a measure with none or several is
-  unsupported.
+  Exactly one grouping shall remain. When none or several remain, the line is
+  determined only in its longest start, and its longest end after that start,
+  that each fill whole beats at their printed values, split no level-1 beam
+  run, hold no event that a remaining grouping places in a group, and leave a
+  positive time between them. Its other events are undetermined, and any
+  remaining groupings may be candidates.
 - `len` is written only when the printed content of a measure is shorter or
   longer than its meter, as in a pickup. When the voice lines of such a measure
   have different lengths at their printed values, with printed tuplet numbers
@@ -958,10 +1050,35 @@ one of these in the earliest measure with the earliest onset in that measure.
   longest in a compound meter, and the other lines are placed in groups that
   fill it.
 
+### Undetermined content
+
+- Printed content is undetermined when the page and these rules leave more than
+  one reading of it, or none: content that the source image shows only in
+  part, a line whose tuplet grouping the rule above does not settle, and a sign
+  whose identity the page does not establish. Content whose every reading is
+  unsupported is unsupported, not undetermined.
+- Determined content is written as these rules require, and review markers hold
+  the undetermined content. A marker's candidates give the readings of what it
+  holds, most likely first, in the spelling of this format where it has one and
+  otherwise in words.
+- A timed marker holds a run of consecutive rhythmic events of one voice line:
+  every undetermined event, every event of a beam run, tuplet group or
+  two-note tremolo that holds one, and every event whose onset or duration
+  they leave open. It lasts the time that the run spans. Grace notes and directions whose onsets the run
+  leaves open, and every relation with an endpoint in the run, are not written.
+  Each voice line holds its own markers.
+- An untimed marker holds content without duration, such as a mark. It takes
+  its onset, staff and line as a dynamic at its position would.
+- A closing barline whose kind is undetermined is written as an ordinary
+  barline, with no `right` option. An untimed marker at the end of its measure,
+  in the first voice line of staff 1 after its rhythmic events, holds the
+  kind, with candidates such as `"right=double"`.
+
 ## Category encodings
 
-The format covers 26 content categories. Each bullet gives the encoding and a
-witness, a string that the grammar accepts.
+The format covers 27 content categories. Each bullet gives the encoding and a
+witness, a string that the grammar accepts. Review markers are not a content
+category.
 
 - `pitch`: step, optional accidental and octave, in parentheses for a
   parenthesized notehead. Witnesses: `C4/4`; `F3+(A3)/2`.
@@ -1014,6 +1131,7 @@ witness, a string that the grammar accepts.
   `<dashes)>[rel=dashes@r1:end]`.
 - `tempo_rehearsal`: tempo and rehearsal directions. Witnesses:
   `<tempo "Allegro" q=120>`; `<rehearsal "A">`.
+- `heading`: heading lines. Witness: `heading: "First Waltz"`.
 
 ## Layout, unsupported content and open points
 
@@ -1026,7 +1144,8 @@ the closing hook of a volta bracket.
 
 The requirements record lists unsupported content. This format has no spelling
 for it. A validator rejects a document that carries it, and no tool shall drop
-or approximate it while reporting success.
+or approximate it while reporting success. Undetermined content is not
+unsupported: review markers hold it, as the transcription rules describe.
 
 Open points:
 
