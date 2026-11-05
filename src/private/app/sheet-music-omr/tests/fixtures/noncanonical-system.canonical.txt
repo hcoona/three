@@ -1,0 +1,15 @@
+// Self-authored for this project; it transcribes no existing score.
+format: text-score/2
+key: 0
+time: 3/4
+clefs: G2 F4+8
+carry: letter
+page: 2
+system: 1
+carry-in: {"measure":7,"offset":"0","event_counts":{},"accidental_scope":"letter","accidentals":[],"open":[]}
+heading: "À la / 🎵"
+m 7
+1.1: E4+G4/4[stacc,ten^,beam1=start,rel=arpeggio@r1:member,rel=slur@r2:start] <"x"> C5/4 C5/4
+2.1: C3/2.
+m 8 time=2/4 ending=continue
+1.1: <"a\"//b"> D4/4[acc,ferm,up] r/4[ferm_,beam1=end]

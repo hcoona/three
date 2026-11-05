@@ -1,0 +1,17 @@
+// Self-authored for this project; it transcribes no existing score.
+format: text-score/2
+key: 0
+time: 3/4
+
+// Header comments and blank lines disappear.
+clefs: G2 F4+8
+carry: letter
+page: 2
+system: 1
+carry-in: {"measure":7,"offset":"0","event_counts":{},"accidental_scope":"letter","accidentals":[],"open":[]}
+heading: "\u00c0 la \/ \ud83c\udfb5"  // trailing comment
+m 7 to=3/4 time-symbol=numeric from=0 len=3/4 time=3/4 key=0
+2.1:   C3/2.
+1.1: E4+G4/4[rel=slur@r2:start,beam1=start,rel=arpeggio@r1:member,stacc,ten^]   <"x">  C5/4  C5/4
+m 8 ending=continue to=1/2 time=2/4
+1.1: <"a\"//b"> D4/4[up,ferm,acc] r/4[beam1=end,ferm_]

@@ -6,10 +6,26 @@ into text, and deterministic tools validate, assemble and convert that text to
 MusicXML. The records here define the text representation and the evidence its
 tools must meet.
 
-**Current state:** design records only. There is no parser, validator,
-converter, recognizer, model or runtime, and no implementation language,
-packaging or release is selected. Examples in the records describe the intended
-format, not commands that exist today.
+**Current state:** experimental. A standard-library Python package parses
+Text Score 2 documents, reports lexical and grammar errors with their rule class
+and location, lists review markers and writes canonical text. There is no
+semantic validator, assembler, converter, recognizer or model yet, so a
+document that this package accepts can still be invalid. No packaging or
+release is selected.
+
+## Usage
+
+From the repository root:
+
+```shell
+uv run --package sheet-music-omr sheet-music-omr validate FILE...
+uv run --package sheet-music-omr sheet-music-omr canonicalize FILE
+uv run --package sheet-music-omr --group dev pytest src/private/app/sheet-music-omr/tests
+```
+
+`validate` prints one `path:line:column: class/rule: message` line for each
+error and one `review:` line for each review marker, and exits with 1 when a
+file is invalid. `canonicalize` writes the canonical text of one valid file.
 
 ## User and primary journey
 

@@ -23,6 +23,7 @@ members = [
     "nbgv-hatch-demo",
     "nbgv-python",
     "rag-postgresql-openai",
+    "sheet-music-omr",
     "supermemo-mcp",
     "transcribe",
 ]
@@ -3980,6 +3981,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/46/f5af3402b579fd5e11573ce652019a67074317e18c1935cc0b4ba9b35552/secretstorage-3.5.0-py3-none-any.whl", hash = "sha256:0ce65888c0725fcb2c5bc0fdb8e5438eece02c523557ea40ce0703c266248137", size = 15554, upload-time = "2025-11-23T19:02:51.545Z" },
 ]
+
+[[package]]
+name = "sheet-music-omr"
+version = "0.0.0.dev0"
+source = { editable = "src/private/app/sheet-music-omr" }
 
 [[package]]
 name = "shellingham"

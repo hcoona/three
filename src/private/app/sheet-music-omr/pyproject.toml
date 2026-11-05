@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling>=1.24.2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sheet-music-omr"
+version = "0.0.0-dev"
+description = "Experimental Text Score 2 tools for sheet-music recognition."
+readme = "README.md"
+authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
+requires-python = ">=3.14"
+license = "GPL-3.0-or-later"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = []
+
+[project.scripts]
+sheet-music-omr = "sheet_music_omr.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sheet_music_omr"]
+
+[tool.ruff]
+extend = "../../../../pyproject.toml"

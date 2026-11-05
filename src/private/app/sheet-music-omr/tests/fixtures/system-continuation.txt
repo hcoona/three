@@ -1,0 +1,18 @@
+// Self-authored for this project; it transcribes no existing score.
+format: text-score/2
+key: -1
+time: 3/4
+clefs: G2 F4
+carry: octave
+page: 1
+system: 2
+carry-in: {"measure":3,"offset":"1/2","event_counts":{"1.1":3,"2.1":3},"accidental_scope":"octave","accidentals":[{"staff":1,"step":"F","octave":5,"alter":1},{"staff":2,"step":"B","alter":0}],"open":[{"id":"r1","kind":"tie","start":{"measure":3,"offset":"1/4","staff":1,"voice":1,"event_index":2,"member_index":null},"pitch":{"step":"E","octave":5,"alter":0}},{"id":"r2","kind":"pedal","start":{"measure":2,"offset":"0","staff":2,"voice":1,"event_index":1,"member_index":null}},{"id":"r3","kind":"ottava","start":{"measure":3,"offset":"0","staff":1,"voice":1,"event_index":1,"member_index":null},"variant":"8va"},{"id":"r4","kind":"tremolo","start":{"measure":3,"offset":"1/4","staff":2,"voice":1,"event_index":3,"member_index":2},"variant":"3","written":"1/4","scale":"1/2"},{"id":"r5","kind":"arc","start":{"measure":3,"offset":"1/4","staff":1,"voice":1,"event_index":2,"member_index":null},"pitch":{"step":"G","octave":4,"alter":"tie-in"}},{"id":"r6","kind":"hairpin","start":{"measure":3,"offset":"0","staff":2,"voice":1,"event_index":1,"member_index":null},"variant":"dim"},{"id":"r7","kind":"dashes","start":{"measure":3,"offset":"0","staff":1,"voice":1,"event_index":1,"member_index":null}},{"id":"r8","kind":"ornament","start":{"measure":3,"offset":"1/4","staff":1,"voice":1,"event_index":2,"member_index":null},"variant":"extended-trill"},{"id":"r9","kind":"slur","start":{"measure":2,"offset":"1/2","staff":1,"voice":1,"event_index":3,"member_index":null}}]}
+m 3 right=double from=1/2
+1.1: <8va)>[rel=ottava@r3:end:8va] <dashes)>[rel=dashes@r7:end] <trill)>[rel=ornament@r8:end:extended-trill] E5{tie@r1:end}/4[rel=slur@r9:end]
+2.1: <hairpin)>[rel=hairpin@r6:end] <?>["sfz","sf"] ?(1/4)["B2/4","Bb2/4"]
+m 4 key=0 time=2/4
+1.1: <"dolce"> 3:2{C5/8 5:4{D5/32 E5/32 F5/32 G5/32 A5/32} B5/8} ?(1/4)
+2.1: <ped)>[rel=pedal@r2:line-release] <?> C3/2[tremolo=single:3]
+m 5 to=1/4
+1.1: (C5)f13/4[orn=trill]
+2.1: <pedal-sign down> E3+B(b)3+G##4/4
