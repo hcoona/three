@@ -367,6 +367,10 @@ internal sealed class NativeWorker : INativeWorker
         {
             if (stopped)
             {
+                if (settlementFailure is not null)
+                {
+                    throw settlementFailure;
+                }
                 return;
             }
 
@@ -483,16 +487,16 @@ internal sealed class NativeWorker : INativeWorker
 
             if (failure is not null)
             {
-                settlementFailure = failure;
+                settlementFailure = new OperationException(
+                    "credit_or_ownership_unknown",
+                    $"Native settlement retained unresolved evidence: {failure.Message}"
+                );
                 if (reservation is not null && usageFinalized)
                 {
                     credits.MarkUncertain(reservation.Id);
                 }
 
-                throw new OperationException(
-                    "credit_or_ownership_unknown",
-                    $"Native settlement retained unresolved evidence: {failure.Message}"
-                );
+                throw settlementFailure;
             }
 
             if (reservation is not null)

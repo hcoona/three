@@ -113,6 +113,11 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
                 worker.StopAsync()
             );
             Assert.AreEqual("credit_or_ownership_unknown", error.Code);
+            OperationException repeated = await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                worker.StopAsync()
+            );
+            Assert.AreEqual(error.Code, repeated.Code);
+            Assert.AreEqual(error.Message, repeated.Message);
             Assert.AreEqual(
                 "credit_unknown",
                 Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code

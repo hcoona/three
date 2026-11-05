@@ -179,6 +179,7 @@ internal sealed class ControlledNativeWorker(
     private NativeSdkSession? failedSession;
     private NativeUsage? pendingFinalUsage;
     private bool usageFinalized;
+    private Exception? settlementFailure;
 
     public string? SessionId { get; private set; }
 
@@ -487,6 +488,10 @@ internal sealed class ControlledNativeWorker(
         {
             if (stopped)
             {
+                if (settlementFailure is not null)
+                {
+                    throw settlementFailure;
+                }
                 return;
             }
 
@@ -555,6 +560,12 @@ internal sealed class ControlledNativeWorker(
             {
                 await onExactLoadSettled(loadCancellation);
             }
+        }
+        catch (Exception exception) when (!stopped)
+        {
+            stopped = true;
+            settlementFailure = exception;
+            throw;
         }
         finally
         {
