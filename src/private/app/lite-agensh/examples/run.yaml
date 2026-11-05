@@ -12,6 +12,7 @@ durationSeconds: 1800
 
 # Explicit host trust, not isolation. Native workers can execute host tools.
 nativePermissionPolicy: trusted
+creditAllocation: shared
 runAiCreditAllowance: 10000
 campaignAiCreditAllowance: 150000
 requirePeerReview: true

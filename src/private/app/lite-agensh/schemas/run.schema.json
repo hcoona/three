@@ -104,6 +104,12 @@
       "default": 10000,
       "description": "Run credit circuit breaker, including paid calibration. Native soft caps can overshoot in-flight."
     },
+    "creditAllocation": {
+      "type": "string",
+      "enum": ["per-session", "shared"],
+      "default": "per-session",
+      "description": "Shared mode draws renewable native spending windows from the run/campaign pool instead of fixed equal worker shares. In-flight native responses can still overshoot."
+    },
     "campaignAiCreditAllowance": {
       "type": "number",
       "minimum": 30,

@@ -596,7 +596,10 @@ public sealed class Coordinator
                         );
                     }
 
-                    if (database.Configuration.WorkerStartIntervalSeconds == 0)
+                    bool incrementalAdmission =
+                        database.Configuration.WorkerStartIntervalSeconds > 0
+                        || database.Configuration.CreditAllocation == "shared";
+                    if (!incrementalAdmission)
                     {
                         foreach (string id in ids)
                         {
@@ -684,7 +687,7 @@ public sealed class Coordinator
                         }
 
                         if (
-                            database.Configuration.WorkerStartIntervalSeconds > 0
+                            incrementalAdmission
                             && admission is null
                             && workers.Count < ids.Length
                             && database.Now >= nextAdmission
@@ -1266,6 +1269,7 @@ public sealed class Coordinator
                     database.Configuration.NativeArguments,
                     database.Configuration.NativeModel,
                     database.Configuration.NativePermissionPolicy,
+                    database.Configuration.CreditAllocation,
                     database.Configuration.RunAiCreditAllowance,
                     database.Configuration.CampaignAiCreditAllowance,
                     database.Configuration.CampaignLedgerPath,
@@ -1508,6 +1512,18 @@ public sealed class Coordinator
 
     private CreditReservation Reserve(string worker, int remainingWorkers)
     {
+        if (database.Configuration.CreditAllocation == "shared")
+        {
+            return credits.Reserve(
+                database.RunId,
+                worker,
+                0,
+                database.Configuration.RunAiCreditAllowance,
+                EvidencePath(worker),
+                shared: true
+            );
+        }
+
         JsonObject status = credits.Status(
             database.RunId,
             database.Configuration.RunAiCreditAllowance

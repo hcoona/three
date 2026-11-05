@@ -136,6 +136,139 @@ public sealed class NativeMetadataTests(TestContext testContext)
     // Pinned SDK DTOs used by the real application's metadata guard.
 #pragma warning disable GHCP001
     [TestMethod]
+    [DataRow("supported")]
+    [DataRow("unsupported")]
+    [DataRow("mismatched")]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task ExhaustedSendUsesBackedFiniteSetAndRetainsBackingOnApplicationFailure(
+        string application
+    )
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        CreditLedger ledger = new(fixture.Configuration.CampaignLedgerPath, 200);
+        CreditReservation first = ledger.Reserve(
+            "shared", "worker1", 0, 200,
+            Path.Combine(fixture.StatePath, "exhausted"), shared: true
+        );
+        CreditReservation second = ledger.Reserve(
+            "shared", "worker2", 0, 200,
+            Path.Combine(fixture.StatePath, "waiting"), shared: true
+        );
+        await ledger.AcquireSharedWindowAsync(first.Id, token);
+        ledger.MarkStarted(first.Id);
+        ledger.AttachSession(first.Id, first.SessionId!);
+        ledger.BeginDispatch("shared", first.Id, 200);
+        double? appliedLimit = 100;
+        Task handling = NativeSdkSession.HandleExhaustedLimitAsync(
+            "controlled-request",
+            async cancellationToken =>
+            {
+                ledger.RecordSdkUsage(
+                    first.Id, new(first.SessionId!, 110_000_000_000, "complete", 1)
+                );
+                CreditReservation renewed = await ledger.AcquireSharedWindowAsync(
+                    first.Id, cancellationToken, renew: true
+                );
+                return renewed.Allowance;
+            },
+            (requestId, response, _) =>
+            {
+                Assert.AreEqual("controlled-request", requestId);
+                Assert.AreEqual(UISessionLimitsExhaustedResponseAction.Set, response.Action);
+                Assert.AreEqual(200d, response.MaxAiCredits);
+                if (application == "unsupported")
+                {
+                    throw new OperationException("unavailable", "Controlled limit rejection.");
+                }
+                appliedLimit = application == "mismatched" ? 201 : response.MaxAiCredits;
+                return Task.CompletedTask;
+            },
+            (limit, _) =>
+            {
+                NativeSdkSession.ValidateMetadata(
+                    new SessionMetadataSnapshot
+                    {
+                        SessionId = first.SessionId!,
+                        WorkingDirectory = fixture.RepositoryPath,
+                        SessionLimits = new SessionLimitsConfig { MaxAiCredits = appliedLimit },
+                    },
+                    first.SessionId!, first.SessionId!, fixture.RepositoryPath, limit
+                );
+                return Task.CompletedTask;
+            },
+            token
+        );
+        if (application == "supported")
+        {
+            await handling;
+        }
+        else
+        {
+            Assert.AreEqual(
+                application == "unsupported" ? "unavailable" : "credit_unknown",
+                (await Assert.ThrowsExactlyAsync<OperationException>(() => handling)).Code
+            );
+        }
+
+        CreditReservation retained = ledger.Reservations().Single(row => row.Id == first.Id);
+        Assert.IsTrue(retained.GrantOpen);
+        Assert.AreEqual(200m, retained.Allowance);
+        Assert.AreEqual(110m, retained.Actual);
+        Assert.AreEqual(1L, ledger.ReadCompleteSdkUsage(first.Id)!.Value.Dispatches);
+        if (application != "supported")
+        {
+            using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
+                token
+            );
+            Task<CreditReservation> waiting = ledger.AcquireSharedWindowAsync(
+                second.Id, stop.Token
+            );
+            Assert.IsFalse(waiting.IsCompleted);
+            await stop.CancelAsync();
+            await Assert.ThrowsAsync<OperationCanceledException>(() => waiting);
+            return;
+        }
+
+        ledger.RecordSdkUsage(first.Id, new(first.SessionId!, 150_000_000_000, "complete", 1));
+        ledger.CloseSharedWindow(first.Id);
+        Assert.AreEqual(1L, ledger.ReadCompleteSdkUsage(first.Id)!.Value.Dispatches);
+        Assert.AreEqual(50m, (await ledger.AcquireSharedWindowAsync(second.Id, token)).Allowance);
+    }
+
+    [TestMethod]
+    [DataRow("gpt-6.1-terra", true)]
+    [DataRow("Gpt-6.1-Terra", true)]
+    [DataRow("another-model", false)]
+    [DataRow(null, false)]
+    public void RequestedNativeModelRequiresMatchingReadback(string? selected, bool accepted)
+    {
+        using RunFixture fixture = new();
+        SessionMetadataSnapshot metadata = new()
+        {
+            SessionId = "controlled-session",
+            WorkingDirectory = fixture.RepositoryPath,
+            SessionLimits = new SessionLimitsConfig { MaxAiCredits = 30 },
+            SelectedModel = selected,
+        };
+        void Validate() => NativeSdkSession.ValidateMetadata(
+            metadata, "controlled-session", "controlled-session", fixture.RepositoryPath,
+            30, "gpt-6.1-terra"
+        );
+        if (accepted)
+        {
+            Validate();
+        }
+        else
+        {
+            Assert.AreEqual(
+                "credit_unknown",
+                Assert.ThrowsExactly<OperationException>(Validate).Code
+            );
+        }
+    }
+
+    [TestMethod]
     [DataRow("metadata-session")]
     [DataRow("active-session")]
     [DataRow("cwd")]

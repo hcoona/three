@@ -10,7 +10,7 @@ internal sealed class NativeWorker : INativeWorker
     private readonly RunDatabase database;
     private readonly ProcessRunner processes;
     private readonly CreditLedger credits;
-    private readonly CreditReservation? reservation;
+    private CreditReservation? reservation;
     private readonly bool calibration;
     private readonly SemaphoreSlim turn = new(1, 1);
     private readonly SemaphoreSlim settlement = new(1, 1);
@@ -20,6 +20,8 @@ internal sealed class NativeWorker : INativeWorker
     private bool stopped;
     private bool verified;
     private decimal limit;
+    private decimal windowBaseline;
+    private bool nativeIdle;
     private string? evidencePath;
     private (NativeUsage Usage, long Dispatches)? undispatchedBaseline;
 
@@ -61,6 +63,12 @@ internal sealed class NativeWorker : INativeWorker
         }
 
         string id = reservation?.SessionId ?? Guid.NewGuid().ToString("D");
+        if (reservation is { Shared: true })
+        {
+            reservation = await credits
+                .AcquireSharedWindowAsync(reservation.Id, cancellationToken)
+                .ConfigureAwait(false);
+        }
         limit =
             reservation is null ? 30
             : exactSession is null ? reservation.Allowance
@@ -113,6 +121,25 @@ internal sealed class NativeWorker : INativeWorker
             NativeUsage usage = await session
                 .ReadAsync(id, limit, cancellationToken)
                 .ConfigureAwait(false);
+            if (reservation is null && database.Configuration.CreditAllocation == "shared")
+            {
+                foreach (decimal probeLimit in new decimal[] { 60, 30 })
+                {
+                    usage = await session
+                        .UpdateLimitAsync(id, probeLimit, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (
+                        usage.TotalUserRequests != 0
+                        || (usage.TotalNanoAiu is double total && total != 0)
+                    )
+                    {
+                        throw new OperationException(
+                            "credit_unknown",
+                            "A non-model limit preflight unexpectedly created native usage."
+                        );
+                    }
+                }
+            }
             SaveDiagnostic(usage);
             if (reservation is not null)
             {
@@ -148,6 +175,7 @@ internal sealed class NativeWorker : INativeWorker
 
                 credits.AttachSession(reservation.Id, id);
                 credits.RecordSdkUsage(reservation.Id, usage);
+                windowBaseline = exactSession is null ? 0 : usage.RequireComplete();
                 database.WriteMetadata($"worker:{worker}:lifecycle", "ready");
             }
 
@@ -195,11 +223,24 @@ internal sealed class NativeWorker : INativeWorker
         try
         {
             await VerifyCreditsCoreAsync(linked.Token).ConfigureAwait(false);
+            if (reservation.Shared)
+            {
+                reservation = await credits
+                    .AcquireSharedWindowAsync(reservation.Id, linked.Token)
+                    .ConfigureAwait(false);
+                limit = reservation.Allowance - windowBaseline;
+                NativeUsage usage = await session
+                    .UpdateLimitAsync(SessionId!, limit, linked.Token)
+                    .ConfigureAwait(false);
+                SaveDiagnostic(usage);
+                credits.RecordSdkUsage(reservation.Id, usage);
+            }
             credits.BeginDispatch(
                 database.RunId,
                 reservation.Id,
                 database.Configuration.RunAiCreditAllowance
             );
+            nativeIdle = false;
             database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "prompting");
             JsonObject result = await session
                 .SendAsync(
@@ -207,9 +248,11 @@ internal sealed class NativeWorker : INativeWorker
                     calibration
                         ? TimeSpan.FromMinutes(2)
                         : TimeSpan.FromSeconds(database.Configuration.DurationSeconds),
-                    linked.Token
+                    linked.Token,
+                    reservation.Shared ? RenewLimitAsync : null
                 )
                 .ConfigureAwait(false);
+            nativeIdle = true;
             database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "ready");
             return result;
         }
@@ -256,6 +299,10 @@ internal sealed class NativeWorker : INativeWorker
                 .ConfigureAwait(false);
             SaveDiagnostic(usage);
             credits.RecordSdkUsage(reservation.Id, usage);
+            if (reservation.Shared && nativeIdle)
+            {
+                credits.CloseSharedWindow(reservation.Id);
+            }
             credits.RequirePromptAllowance(
                 database.RunId,
                 reservation.Id,
@@ -268,6 +315,20 @@ internal sealed class NativeWorker : INativeWorker
             credits.MarkUncertain(reservation.Id);
             throw;
         }
+    }
+
+    private async Task<decimal> RenewLimitAsync(CancellationToken cancellationToken)
+    {
+        NativeUsage usage = await session!
+            .ReadAsync(SessionId!, limit, cancellationToken)
+            .ConfigureAwait(false);
+        SaveDiagnostic(usage);
+        credits.RecordSdkUsage(reservation!.Id, usage);
+        reservation = await credits
+            .AcquireSharedWindowAsync(reservation.Id, cancellationToken, renew: true)
+            .ConfigureAwait(false);
+        limit = reservation.Allowance - windowBaseline;
+        return limit;
     }
 
     public Task CancelAsync(CancellationToken cancellationToken = default) =>

@@ -13,7 +13,10 @@ public sealed record CreditReservation(
     string State,
     string UsagePath,
     string? SessionId,
-    decimal? Actual
+    decimal? Actual,
+    bool Shared = false,
+    bool GrantOpen = false,
+    decimal Overshoot = 0
 );
 
 public sealed class CreditLedger
@@ -53,7 +56,9 @@ public sealed class CreditLedger
                 id TEXT PRIMARY KEY, run_id TEXT NOT NULL, worker TEXT NOT NULL,
                 allowance TEXT NOT NULL, run_allowance TEXT NOT NULL,
                 state TEXT NOT NULL, usage_path TEXT NOT NULL, session_id TEXT,
-                actual TEXT, report_identity TEXT, updated_at TEXT NOT NULL);
+                actual TEXT, report_identity TEXT, updated_at TEXT NOT NULL,
+                shared INTEGER NOT NULL DEFAULT 0, grant_open INTEGER NOT NULL DEFAULT 0,
+                overshoot TEXT NOT NULL DEFAULT '0');
             CREATE TABLE IF NOT EXISTS credit_reports(
                 id INTEGER PRIMARY KEY AUTOINCREMENT, reservation_id TEXT NOT NULL,
                 actual TEXT NOT NULL, usage_path TEXT NOT NULL, report_identity TEXT NOT NULL,
@@ -75,7 +80,7 @@ public sealed class CreditLedger
             connection,
             """
             INSERT OR IGNORE INTO credit_campaign(singleton,schema_version,allowance,identity)
-            VALUES(1,1,$allowance,$identity);
+            VALUES(1,2,$allowance,$identity);
             """,
             transaction,
             ("$allowance", Format(allowance)),
@@ -92,7 +97,7 @@ public sealed class CreditLedger
         {
             if (
                 !reader.Read()
-                || reader.GetInt32(0) != 1
+                || reader.GetInt32(0) is not (1 or 2)
                 || Parse(reader.GetString(1)) != allowance
             )
             {
@@ -100,6 +105,24 @@ public sealed class CreditLedger
                     "Campaign schema or allowance differs; the durable budget cannot be reset."
                 );
             }
+        }
+
+        if ((long)Sql.Scalar(
+                connection,
+                "SELECT schema_version FROM credit_campaign WHERE singleton=1;",
+                transaction
+            )! == 1)
+        {
+            Sql.Execute(
+                connection,
+                """
+                ALTER TABLE credit_reservations ADD COLUMN shared INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE credit_reservations ADD COLUMN grant_open INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE credit_reservations ADD COLUMN overshoot TEXT NOT NULL DEFAULT '0';
+                UPDATE credit_campaign SET schema_version=2 WHERE singleton=1;
+                """,
+                transaction
+            );
         }
 
         transaction.Commit();
@@ -219,11 +242,20 @@ public sealed class CreditLedger
             );
         }
 
+        long? previousRequests = Sql.Scalar(
+            connection,
+            "SELECT reported_requests FROM credit_sdk_usage WHERE reservation_id=$id;",
+            transaction,
+            ("$id", id)
+        ) as long?;
         Sql.Execute(
             connection,
             """
             UPDATE credit_sdk_usage SET reported_nano_aiu=$nano,status=$status,
-                reported_requests=$requests
+                reported_requests=CASE
+                    WHEN $requests IS NULL THEN reported_requests
+                    WHEN reported_requests IS NULL OR $requests > reported_requests THEN $requests
+                    ELSE reported_requests END
             WHERE reservation_id=$id;
             """,
             transaction,
@@ -267,6 +299,7 @@ public sealed class CreditLedger
             if (
                 dispatches == 0
                 || actual < (row.Actual ?? 0)
+                || usage.TotalUserRequests < (previousRequests ?? 0)
                 || (row.State == "reconciled" && row.Actual != actual)
             )
             {
@@ -287,6 +320,22 @@ public sealed class CreditLedger
             usage.SessionId
             + ":nano:"
             + usage.TotalNanoAiu?.ToString("R", CultureInfo.InvariantCulture);
+        decimal overshoot = row.Overshoot;
+        if (row.Shared)
+        {
+            if (!row.GrantOpen && actual != row.Actual)
+            {
+                MarkUnknown(connection, transaction, id);
+                transaction.Commit();
+                throw new OperationException(
+                    "credit_unknown",
+                    "Native usage changed outside its backed shared spending window."
+                );
+            }
+
+            overshoot += Math.Max(0, actual - row.Allowance)
+                - Math.Max(0, (row.Actual ?? 0) - row.Allowance);
+        }
         Sql.Execute(
             connection,
             """
@@ -294,11 +343,14 @@ public sealed class CreditLedger
                 reservation_id,actual,usage_path,report_identity,scope,created_at)
             VALUES($id,$actual,$path,$identity,'sdk-session-cumulative',$time);
             UPDATE credit_reservations SET actual=$actual,report_identity=$identity,
-                state=$state,updated_at=$time WHERE id=$id;
+                state=$state,updated_at=$time,overshoot=$overshoot,
+                grant_open=CASE WHEN $final THEN 0 ELSE grant_open END WHERE id=$id;
             """,
             transaction,
             ("$id", id),
             ("$actual", Format(actual)),
+            ("$overshoot", Format(overshoot)),
+            ("$final", final),
             ("$path", row.UsagePath),
             ("$identity", identity),
             ("$state", final || row.State == "reconciled" ? "reconciled" : row.State),
@@ -311,7 +363,9 @@ public sealed class CreditLedger
     {
         using SqliteConnection connection = Open();
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
-        RequirePromptAllowance(connection, transaction, runId, id, runAllowance);
+        RequirePromptAllowance(
+            connection, transaction, runId, id, runAllowance, requireGrant: true
+        );
         Sql.Execute(
             connection,
             """
@@ -329,12 +383,16 @@ public sealed class CreditLedger
         string worker,
         decimal allowance,
         decimal runAllowance,
-        string usagePath
+        string usagePath,
+        bool shared = false
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
         ArgumentException.ThrowIfNullOrWhiteSpace(worker);
-        ArgumentOutOfRangeException.ThrowIfLessThan(allowance, 30);
+        if (shared ? allowance != 0 : allowance < 30)
+        {
+            throw new ArgumentOutOfRangeException(nameof(allowance));
+        }
         if (!Path.IsPathFullyQualified(usagePath))
         {
             throw new ArgumentException(
@@ -386,14 +444,16 @@ public sealed class CreditLedger
             "reserved",
             Path.GetFullPath(usagePath),
             Guid.NewGuid().ToString("D"),
-            null
+            null,
+            Shared: shared
         );
         Sql.Execute(
             connection,
             """
             INSERT INTO credit_reservations(id,run_id,worker,allowance,run_allowance,state,
-                usage_path,session_id,updated_at)
-            VALUES($id,$run,$worker,$allowance,$runAllowance,'reserved',$path,$session,$time);
+                usage_path,session_id,updated_at,shared)
+            VALUES($id,$run,$worker,$allowance,$runAllowance,'reserved',
+                $path,$session,$time,$shared);
             INSERT INTO credit_sdk_usage(reservation_id,session_id)
             VALUES($id,$session);
             """,
@@ -401,6 +461,7 @@ public sealed class CreditLedger
             ("$id", reservation.Id),
             ("$run", runId),
             ("$worker", worker),
+            ("$shared", shared),
             ("$allowance", Format(allowance)),
             ("$runAllowance", Format(runAllowance)),
             ("$path", reservation.UsagePath),
@@ -414,6 +475,145 @@ public sealed class CreditLedger
 
     public void MarkStarted(string id) => Transition(id, "reserved", "started");
 
+    internal async Task<CreditReservation> AcquireSharedWindowAsync(
+        string id,
+        CancellationToken cancellationToken,
+        bool renew = false
+    )
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CreditReservation? grant = TryAcquireSharedWindow(id, renew);
+            if (grant is not null)
+            {
+                return grant;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private CreditReservation? TryAcquireSharedWindow(string id, bool renew)
+    {
+        using SqliteConnection connection = Open();
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        List<CreditReservation> rows = Read(connection, transaction);
+        CreditReservation own = rows.Single(row => row.Id == id);
+        bool ready = Sql.Scalar(
+            connection,
+            """
+            SELECT reservation_id FROM credit_sdk_usage WHERE reservation_id=$id
+                AND (dispatch_count=0 OR (status='complete' AND reported_nano_aiu IS NOT NULL));
+            """,
+            transaction,
+            ("$id", id)
+        ) is string;
+        if (
+            !own.Shared
+            || own.State is not ("reserved" or "active")
+            || !ready
+            || HasUnknown(connection, transaction)
+        )
+        {
+            throw new OperationException(
+                "credit_unknown",
+                "A shared grant needs known ownership, complete usage and its saved association."
+            );
+        }
+
+        if (own.GrantOpen && !renew)
+        {
+            transaction.Commit();
+            return own;
+        }
+
+        decimal runAllowance = Parse((string)Sql.Scalar(
+            connection,
+            "SELECT run_allowance FROM credit_reservations WHERE id=$id;",
+            transaction,
+            ("$id", id)
+        )!);
+        CreditReservation[] run = [.. rows.Where(row => row.RunId == own.RunId)];
+        decimal actual = own.Actual ?? 0;
+        decimal actualRemaining = Math.Min(
+            runAllowance - run.Sum(row => row.Actual ?? 0),
+            campaignAllowance - rows.Sum(row => row.Actual ?? 0)
+        );
+        if (actualRemaining < 30)
+        {
+            throw new OperationException(
+                "credit_exhausted",
+                "The shared run or campaign cannot fund another 30-credit native window."
+            );
+        }
+
+        decimal available = Math.Min(
+            runAllowance - run.Sum(Charge),
+            campaignAllowance - rows.Sum(Charge)
+        );
+        decimal grant = Math.Min(100, available + Math.Max(0, Charge(own) - actual));
+        if (available < 0 || grant < 30)
+        {
+            transaction.Commit();
+            return null;
+        }
+
+        Sql.Execute(
+            connection,
+            """
+            UPDATE credit_reservations SET allowance=$allowance,grant_open=1,updated_at=$time
+                WHERE id=$id;
+            """,
+            transaction,
+            ("$allowance", Format(actual + grant)),
+            ("$time", DateTimeOffset.UtcNow.ToString("O")),
+            ("$id", id)
+        );
+        transaction.Commit();
+        return own with { Allowance = actual + grant, GrantOpen = true };
+    }
+
+    internal void CloseSharedWindow(string id)
+    {
+        using SqliteConnection connection = Open();
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        CreditReservation own = Read(connection, transaction).Single(row => row.Id == id);
+        if (!own.Shared || !own.GrantOpen)
+        {
+            return;
+        }
+
+        if (
+            own.State != "active"
+            || own.Actual is null
+            || Sql.Scalar(
+                connection,
+                """
+                SELECT reservation_id FROM credit_sdk_usage WHERE reservation_id=$id
+                    AND status='complete' AND dispatch_count>0 AND reported_nano_aiu IS NOT NULL;
+                """,
+                transaction,
+                ("$id", id)
+            ) is not string
+        )
+        {
+            throw new OperationException(
+                "credit_unknown",
+                "An unfinished shared window cannot return its spending authority."
+            );
+        }
+
+        Sql.Execute(
+            connection,
+            "UPDATE credit_reservations SET grant_open=0 WHERE id=$id;",
+            transaction,
+            ("$id", id)
+        );
+        transaction.Commit();
+    }
+
     public void ReleaseUnstarted(string id)
     {
         using SqliteConnection connection = Open();
@@ -423,7 +623,7 @@ public sealed class CreditLedger
                 """
                 UPDATE credit_reservations SET state=
                     CASE WHEN actual IS NULL THEN 'released' ELSE 'reconciled' END,
-                    updated_at=$time WHERE id=$id AND state='reserved';
+                    updated_at=$time,grant_open=0 WHERE id=$id AND state='reserved';
                 """,
                 null,
                 ("$id", id),
@@ -446,7 +646,7 @@ public sealed class CreditLedger
         if (
             previous.State != "reconciled"
             || previous.SessionId is null
-            || previous.Actual >= previous.Allowance
+            || (!previous.Shared && previous.Actual >= previous.Allowance)
             || HasUnknown(connection, transaction)
         )
         {
@@ -467,7 +667,7 @@ public sealed class CreditLedger
                 ) ?? throw new InvalidOperationException()
             )
         );
-        decimal extra = previous.Allowance - previous.Actual!.Value;
+        decimal extra = previous.Shared ? 0 : previous.Allowance - previous.Actual!.Value;
         if (
             rows.Sum(Charge) + extra > campaignAllowance
             || rows.Where(row => row.RunId == previous.RunId).Sum(Charge) + extra > runAllowance
@@ -549,7 +749,8 @@ public sealed class CreditLedger
         SqliteTransaction transaction,
         string runId,
         string reservationId,
-        decimal runAllowance
+        decimal runAllowance,
+        bool requireGrant = false
     )
     {
         IReadOnlyList<CreditReservation> rows = Read(connection, transaction);
@@ -564,7 +765,12 @@ public sealed class CreditLedger
                 transaction,
                 ("$id", reservationId)
             ) is string;
-        if (HasUnknown(connection, transaction) || own.State != "active" || !ready)
+        if (
+            HasUnknown(connection, transaction)
+            || own.State != "active"
+            || !ready
+            || (requireGrant && own.Shared && !own.GrantOpen)
+        )
         {
             throw new OperationException(
                 "credit_unknown",
@@ -573,7 +779,7 @@ public sealed class CreditLedger
         }
 
         if (
-            own.Actual >= own.Allowance
+            (!own.Shared && own.Actual >= own.Allowance)
             || rows.Sum(row => row.Actual ?? 0) >= campaignAllowance
             || rows.Where(row => row.RunId == runId).Sum(row => row.Actual ?? 0) >= runAllowance
         )
@@ -635,7 +841,12 @@ public sealed class CreditLedger
                 runAllowance,
                 runCommitted = run.Sum(Charge),
                 actualReported = run.Sum(row => row.Actual ?? 0),
-                overshoot = run.Sum(row => Math.Max(0, (row.Actual ?? 0) - row.Allowance)),
+                overshoot = run.Sum(row => row.Shared
+                    ? row.Overshoot
+                    : Math.Max(0, (row.Actual ?? 0) - row.Allowance)),
+                outstandingAuthorization = run.Where(row =>
+                    row.Shared && row.GrantOpen && row.State is not ("reconciled" or "released")
+                ).Sum(row => Math.Max(0, row.Allowance - (row.Actual ?? 0))),
                 uncertain = HasUnknown(connection, null),
                 reported,
                 reservations = run,
@@ -646,6 +857,7 @@ public sealed class CreditLedger
     private static decimal Charge(CreditReservation row) =>
         row.State == "released" ? 0
         : row.State == "reconciled" ? row.Actual!.Value
+        : row.Shared && !row.GrantOpen ? row.Actual ?? 0
         : Math.Max(row.Allowance, row.Actual ?? 0);
 
     private static bool HasUnknown(SqliteConnection connection, SqliteTransaction? transaction)
@@ -755,7 +967,8 @@ public sealed class CreditLedger
         using SqliteCommand command = Sql.Command(
             connection,
             """
-            SELECT id,run_id,worker,allowance,state,usage_path,session_id,actual
+            SELECT id,run_id,worker,allowance,state,usage_path,session_id,actual,
+                shared,grant_open,overshoot
             FROM credit_reservations ORDER BY rowid;
             """,
             transaction
@@ -772,7 +985,10 @@ public sealed class CreditLedger
                     reader.GetString(4),
                     reader.GetString(5),
                     reader.IsDBNull(6) ? null : reader.GetString(6),
-                    reader.IsDBNull(7) ? null : Parse(reader.GetString(7))
+                    reader.IsDBNull(7) ? null : Parse(reader.GetString(7)),
+                    reader.GetBoolean(8),
+                    reader.GetBoolean(9),
+                    Parse(reader.GetString(10))
                 )
             );
         }

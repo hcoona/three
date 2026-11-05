@@ -39,6 +39,8 @@ public sealed record RunConfiguration
 
     public decimal CampaignAiCreditAllowance { get; init; } = 150000;
 
+    public string CreditAllocation { get; init; } = "per-session";
+
     public required string CampaignLedgerPath { get; init; }
 
     public CheckCommand[] CandidateChecks { get; init; } = [];
@@ -122,6 +124,11 @@ public sealed record RunConfiguration
             throw new ArgumentException(
                 "Native permission policy must be deny or explicitly trusted."
             );
+        }
+
+        if (CreditAllocation is not ("per-session" or "shared"))
+        {
+            throw new ArgumentException("Credit allocation must be per-session or shared.");
         }
 
         _ = GetReasoningEffort();

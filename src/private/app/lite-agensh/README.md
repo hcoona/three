@@ -14,8 +14,10 @@ commands, reported credits, independent reviews and repository acceptance gates.
 These results do not establish another operating system or native backend.
 The accepted shared-credit design is specified in the
 [credit contract](docs/implementation-contracts.md#shared-spending-windows).
-Its implementation and native window-renewal evidence are still pending;
-the existing runtime uses per-session allocation. Do not treat the design
+The application implements opt-in shared allocation with controlled accounting
+and lifecycle scenarios; installed-native limit mutation and renewal remain
+unobserved until a separately recorded user-audit run. Per-session allocation
+remains the default for existing inputs. Do not treat the implementation
 or the owner's one-time ledger transition as a successful autonomous audit.
 The MCP 2.3.0 upgrade is covered by controlled stdio contracts, not a new
 native acceptance run; PR #1530 retains the earlier dependency baseline.
@@ -62,6 +64,13 @@ gradually while earlier peers cooperate. Waiting workers do not hold started
 native sessions. Startup and ramp-up count against the finite run deadline;
 a stop may occur before every configured worker is admitted. This constant
 interval is not the upstream experiment's two-stage deployment schedule.
+
+Set `creditAllocation: shared` to let active peers draw renewable windows of
+up to 100 credits from the same run/campaign pool. Cold peers do not reserve
+fixed shares. Complete, idle turns return unused backing; peers wait cancellably
+when other in-flight work holds the pool. Native caps remain soft, and an
+unsupported limit change or unknown usage stops further paid admission.
+The YAML example opts in; omitted values retain `per-session` behavior.
 
 The YAML example's modeline associates [the JSON Schema](schemas/run.schema.json)
 with the standard Red Hat YAML extension in VS Code for completion, hover and

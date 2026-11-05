@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using LiteAgensh;
+using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LiteAgensh.Tests;
@@ -7,6 +8,277 @@ namespace LiteAgensh.Tests;
 [TestClass]
 public sealed class CreditLedgerTests(TestContext testContext)
 {
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task ExistingVersionOneCampaignMigratesWithoutLosingIdentityOrConfirmedSpend()
+    {
+        using RunFixture fixture = new();
+        string path = fixture.Configuration.CampaignLedgerPath;
+        CreditLedger ledger = new(path, 180);
+        CreditReservation old = ledger.Reserve(
+            "old", "worker1", 60, 120, Usage(fixture, "legacy")
+        );
+        ledger.MarkStarted(old.Id);
+        ledger.AttachSession(old.Id, old.SessionId!);
+        ledger.BeginDispatch("old", old.Id, 120);
+        ledger.RecordSdkUsage(
+            old.Id, new(old.SessionId!, 45_000_000_000, "complete", 1), final: true
+        );
+        using (SqliteConnection connection = new(new SqliteConnectionStringBuilder
+        {
+            DataSource = path,
+            Pooling = false,
+        }.ToString()))
+        {
+            connection.Open();
+            Sql.Execute(connection, """
+                ALTER TABLE credit_reservations DROP COLUMN shared;
+                ALTER TABLE credit_reservations DROP COLUMN grant_open;
+                ALTER TABLE credit_reservations DROP COLUMN overshoot;
+                UPDATE credit_campaign SET schema_version=1;
+                """);
+        }
+
+        CreditLedger migrated = new(path, 180);
+        Assert.AreEqual(ledger.Identity, migrated.Identity);
+        Assert.AreEqual(45m, Assert.ContainsSingle(migrated.Reservations()).Actual);
+        CreditReservation next = migrated.Reserve(
+            "new", "worker1", 0, 120, Usage(fixture, "new"), shared: true
+        );
+        CreditReservation granted = await migrated.AcquireSharedWindowAsync(
+            next.Id, testContext.CancellationToken
+        );
+        Assert.AreEqual(100m, granted.Allowance);
+        Assert.AreEqual(145m, Amount(migrated.Status("new", 120), "campaignCommitted"));
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("partial")]
+    [DataRow("regressing-cost")]
+    [DataRow("regressing-requests")]
+    [DataRow("unbacked-usage")]
+    public async Task SharedIncompleteOrRegressingUsageBlocksFurtherPaidAdmission(string failure)
+    {
+        using RunFixture fixture = new();
+        CreditLedger ledger = new(fixture.Configuration.CampaignLedgerPath, 300);
+        CreditReservation first = ledger.Reserve(
+            "shared", "worker1", 0, 300, Usage(fixture, "uncertain-shared"), shared: true
+        );
+        CreditReservation second = ledger.Reserve(
+            "shared", "worker2", 0, 300, Usage(fixture, "blocked-shared"), shared: true
+        );
+        await ledger.AcquireSharedWindowAsync(first.Id, testContext.CancellationToken);
+        ledger.MarkStarted(first.Id);
+        ledger.AttachSession(first.Id, first.SessionId!);
+        ledger.BeginDispatch("shared", first.Id, 300);
+        ledger.RecordSdkUsage(first.Id, new(first.SessionId!, 20_000_000_000, "complete", 2));
+        if (failure == "unbacked-usage")
+        {
+            ledger.CloseSharedWindow(first.Id);
+        }
+        NativeUsage observation = new(
+            first.SessionId!,
+            failure == "regressing-cost" ? 19_000_000_000 : 30_000_000_000,
+            failure == "partial" ? "pending" : "complete",
+            failure == "regressing-requests" ? 1 : 3
+        );
+        Assert.AreEqual(
+            "credit_unknown",
+            Assert.ThrowsExactly<OperationException>(() =>
+                ledger.RecordSdkUsage(first.Id, observation)).Code
+        );
+        ledger = new(fixture.Configuration.CampaignLedgerPath, 300);
+        foreach (bool final in new[] { false, true, true })
+        {
+            Assert.AreEqual(
+                "credit_unknown",
+                Assert.ThrowsExactly<OperationException>(() =>
+                    ledger.RecordSdkUsage(first.Id, observation, final)).Code
+            );
+            Assert.IsTrue(ledger.Status("shared", 300)["uncertain"]!.GetValue<bool>());
+        }
+        Assert.AreEqual(
+            "credit_unknown",
+            (await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                ledger.AcquireSharedWindowAsync(second.Id, testContext.CancellationToken))).Code
+        );
+        Assert.AreEqual(20m, ledger.Reservations().Single(row => row.Id == first.Id).Actual);
+        Assert.IsTrue(ledger.Status("shared", 300)["uncertain"]!.GetValue<bool>());
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task SharedRampLetsAnEarlyPeerReuseIdleBackingBeyondItsFormerEqualShare()
+    {
+        using RunFixture fixture = new();
+        CreditLedger ledger = new(fixture.Configuration.CampaignLedgerPath, 4000);
+        CreditReservation[] peers = [.. Enumerable.Range(1, 32).Select(index =>
+            ledger.Reserve("shared", $"worker{index}", 0, 2000, Usage(fixture, $"shared-{index}"),
+                shared: true))];
+        CreditReservation first = await ledger.AcquireSharedWindowAsync(
+            peers[0].Id, testContext.CancellationToken
+        );
+        Assert.AreEqual(100m, Amount(ledger.Status("shared", 2000), "runCommitted"));
+        ledger.MarkStarted(first.Id);
+        ledger.AttachSession(first.Id, first.SessionId!);
+        for (int turn = 1; turn <= 5; turn++)
+        {
+            CreditReservation grant = await ledger.AcquireSharedWindowAsync(
+                first.Id, testContext.CancellationToken
+            );
+            Assert.AreEqual(100m, grant.Allowance - (grant.Actual ?? 0));
+            ledger.BeginDispatch("shared", first.Id, 2000);
+            ledger.RecordSdkUsage(
+                first.Id, new(first.SessionId!, turn * 45_000_000_000d, "complete", turn)
+            );
+            ledger.CloseSharedWindow(first.Id);
+        }
+
+        JsonObject status = ledger.Status("shared", 2000);
+        Assert.AreEqual(225m, Amount(status, "actualReported"));
+        Assert.AreEqual(225m, Amount(status, "runCommitted"));
+        Assert.AreEqual(0m, Amount(status, "outstandingAuthorization"));
+        Assert.AreEqual(31, ledger.Reservations().Count(row =>
+            row.State == "reserved" && row.Allowance == 0));
+        Assert.AreEqual(
+            "credit_unknown",
+            Assert.ThrowsExactly<OperationException>(() =>
+                ledger.BeginDispatch("shared", first.Id, 2000)).Code
+        );
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task SharedWaitDoesNotLendInflightAuthorityAndCanBeCanceled(bool cancel)
+    {
+        using RunFixture fixture = new();
+        CreditLedger ledger = new(fixture.Configuration.CampaignLedgerPath, 120);
+        CreditReservation first = ledger.Reserve(
+            "shared", "worker1", 0, 120, Usage(fixture, "held"), shared: true
+        );
+        CreditReservation second = ledger.Reserve(
+            "shared", "worker2", 0, 120, Usage(fixture, "waiting"), shared: true
+        );
+        await ledger.AcquireSharedWindowAsync(first.Id, testContext.CancellationToken);
+        ledger.MarkStarted(first.Id);
+        ledger.AttachSession(first.Id, first.SessionId!);
+        ledger.BeginDispatch("shared", first.Id, 120);
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
+            testContext.CancellationToken
+        );
+        Task<CreditReservation> waiting = ledger.AcquireSharedWindowAsync(second.Id, stop.Token);
+        Assert.IsFalse(waiting.IsCompleted);
+        Assert.AreEqual(100m, Amount(ledger.Status("shared", 120), "runCommitted"));
+        if (cancel)
+        {
+            await stop.CancelAsync();
+            await Assert.ThrowsAsync<OperationCanceledException>(() => waiting);
+            Assert.AreEqual(100m, Amount(ledger.Status("shared", 120), "runCommitted"));
+        }
+        else
+        {
+            Assert.ThrowsExactly<OperationException>(() => ledger.CloseSharedWindow(first.Id));
+            ledger.RecordSdkUsage(first.Id, new(first.SessionId!, 20_000_000_000, "complete", 1));
+            Assert.IsFalse(waiting.IsCompleted);
+            ledger.CloseSharedWindow(first.Id);
+            Assert.AreEqual(100m, (await waiting).Allowance);
+            Assert.AreEqual(120m, Amount(ledger.Status("shared", 120), "runCommitted"));
+            ledger.MarkStarted(second.Id);
+            ledger.AttachSession(second.Id, second.SessionId!);
+            ledger.BeginDispatch("shared", second.Id, 120);
+            ledger.RecordSdkUsage(second.Id, new(second.SessionId!, 90_000_000_000, "complete", 1));
+            ledger.CloseSharedWindow(second.Id);
+            Assert.AreEqual(
+                "credit_exhausted",
+                (await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                    ledger.AcquireSharedWindowAsync(first.Id, testContext.CancellationToken))).Code
+            );
+        }
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task SharedConcurrentPeersCannotOverbookAndWaitWithoutSpending()
+    {
+        using RunFixture fixture = new();
+        CreditLedger ledger = new(fixture.Configuration.CampaignLedgerPath, 200);
+        CreditReservation[] peers = [.. Enumerable.Range(1, 4).Select(index =>
+            ledger.Reserve("shared", $"worker{index}", 0, 200, Usage(fixture, $"race-{index}"),
+                shared: true))];
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
+            testContext.CancellationToken
+        );
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<CreditReservation>[] acquisitions = [.. peers.Select(peer => Task.Run(async () =>
+        {
+            await release.Task.WaitAsync(stop.Token);
+            return await ledger.AcquireSharedWindowAsync(peer.Id, stop.Token);
+        }, stop.Token))];
+        release.SetResult();
+        Task<CreditReservation> first = await Task.WhenAny(acquisitions);
+        await first;
+        Task<CreditReservation> second = await Task.WhenAny(
+            acquisitions.Where(task => task != first)
+        );
+        await second;
+        Assert.AreEqual(200m, Amount(ledger.Status("shared", 200), "campaignCommitted"));
+        await stop.CancelAsync();
+        foreach (Task<CreditReservation> acquisition in acquisitions)
+        {
+            try
+            {
+                await acquisition;
+            }
+            catch (OperationCanceledException) { }
+        }
+        Assert.AreEqual(2, ledger.Reservations().Count(peer => peer.GrantOpen));
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task SharedWindowRecyclingRetainsOvershootAndRecoverySpendsOnlyTheRemainingPool(
+        bool exact
+    )
+    {
+        using RunFixture fixture = new();
+        CreditLedger ledger = new(fixture.Configuration.CampaignLedgerPath, 300);
+        CreditReservation original = ledger.Reserve(
+            "shared", "worker1", 0, 300, Usage(fixture, "recycled"), shared: true
+        );
+        await ledger.AcquireSharedWindowAsync(original.Id, testContext.CancellationToken);
+        ledger.MarkStarted(original.Id);
+        ledger.AttachSession(original.Id, original.SessionId!);
+        for (int turn = 1; turn <= 2; turn++)
+        {
+            await ledger.AcquireSharedWindowAsync(original.Id, testContext.CancellationToken);
+            ledger.BeginDispatch("shared", original.Id, 300);
+            ledger.RecordSdkUsage(
+                original.Id, new(original.SessionId!, turn * 110_000_000_000d, "complete", turn)
+            );
+            ledger.CloseSharedWindow(original.Id);
+        }
+        ledger.RecordSdkUsage(
+            original.Id, new(original.SessionId!, 220_000_000_000, "complete", 2), final: true
+        );
+        CreditReservation next = exact
+            ? ledger.ContinueExact(original.Id, Usage(fixture, "exact-next"))
+            : ledger.Reserve(
+                "shared", "worker1", 0, 300, Usage(fixture, "fresh"), shared: true
+            );
+        CreditReservation grant = await ledger.AcquireSharedWindowAsync(
+            next.Id, testContext.CancellationToken
+        );
+        Assert.AreEqual(80m, grant.Allowance - (grant.Actual ?? 0));
+        Assert.AreEqual(300m, Amount(ledger.Status("shared", 300), "runCommitted"));
+        Assert.AreEqual(20m, Amount(ledger.Status("shared", 300), "overshoot"));
+        Assert.AreEqual(exact, original.SessionId == grant.SessionId);
+    }
+
     [TestMethod]
     public void ReserveRestartAndFreshSessionsRespectRunAndCampaignAllowances()
     {
