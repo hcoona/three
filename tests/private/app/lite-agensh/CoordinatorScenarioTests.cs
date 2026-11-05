@@ -12,6 +12,153 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 {
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow("reconnect")]
+    [DataRow("resume")]
+    [DataRow("fallback")]
+    public async Task ConfirmedSessionContinuesWithEventsAndFreshRecoveryBootstraps(string mode)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario fixture = await GitScenario.CreateAsync(token);
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
+        Scenario.Call(
+            fixture.Collaboration,
+            "owner",
+            "task_write",
+            new { action = "create", title = "bootstrap-only-task", body = "Retained work." }
+        );
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject>? execution = null;
+        try
+        {
+            execution = coordinator.RunAsync("run", stop.Token);
+            await WaitUntilAsync(
+                () =>
+                {
+                    using SqliteConnection connection = fixture.Database.Open();
+                    return (long)Sql.Scalar(
+                        connection,
+                        "SELECT COUNT(DISTINCT worker) FROM coordinator_turns "
+                            + "WHERE state='acknowledged';"
+                    )! == 2;
+                },
+                execution,
+                token
+            );
+            string first1 = fixture.Database.ReadMetadata("worker:worker1:session")!;
+            string first2 = fixture.Database.ReadMetadata("worker:worker2:session")!;
+            Assert.IsTrue(
+                native.OrdinaryPrompts().All(text =>
+                    text.Contains("bootstrap-only-task", StringComparison.Ordinal)
+                )
+            );
+
+            HashSet<string> before = native.CaptureOperations();
+            Scenario.Call(
+                fixture.Collaboration,
+                "owner",
+                "task_write",
+                new { action = "create", title = "continuation-event-task", body = "New work." }
+            );
+            Scenario.Call(
+                fixture.Collaboration,
+                "worker2",
+                "board_publish",
+                new { type = "FACT", content = "continuation-unread-peer-fact" }
+            );
+            await WaitUntilAsync(
+                () => native.OrdinaryPrompts(before).Any(text =>
+                    text.Contains("continuation-unread-peer-fact", StringComparison.Ordinal)
+                ),
+                execution,
+                token
+            );
+            string[] continuation = native.OrdinaryPrompts(before);
+            Assert.IsTrue(continuation.Any(text =>
+                text.Contains("continuation-event-task", StringComparison.Ordinal)
+            ));
+            foreach (string text in continuation)
+            {
+                Assert.DoesNotContain("bootstrap-only-task", text);
+                Assert.DoesNotContain("Goal: ", text);
+                Assert.DoesNotContain("==== DURABLE CHANGES ====", text);
+                JsonObject envelope = JsonNode.Parse(
+                    text.Split("==== EVENTS ====\n", 2)[1]
+                )!.AsObject();
+                Assert.IsNull(envelope["sharedContext"]!["tasks"]);
+                Assert.IsNull(envelope["sharedContext"]!["goal"]);
+            }
+            coordinator.RequestControl("pause");
+            Scenario.Data(await execution);
+            AssertSettled(fixture);
+
+            if (mode != "resume")
+            {
+                using SqliteConnection connection = fixture.Database.Open();
+                Sql.Execute(
+                    connection,
+                    """
+                    UPDATE coordinator_segments
+                    SET ended_at=NULL,state='running',deadline=$deadline
+                    WHERE id=(SELECT MAX(id) FROM coordinator_segments);
+                    """,
+                    null,
+                    ("$deadline", fixture.Database.Now.AddSeconds(90).ToString("O"))
+                );
+            }
+            native.SetMode(mode == "fallback" ? "no-load" : "hold");
+            before = native.CaptureOperations();
+            execution = coordinator.RunAsync(mode == "resume" ? "resume" : "reconnect", stop.Token);
+            await WaitUntilAsync(
+                () => native.OrdinaryPrompts(before).Length >= 2,
+                execution,
+                token
+            );
+            foreach ((string worker, string previous) in new[]
+            {
+                ("worker1", first1), ("worker2", first2),
+            })
+            {
+                string recovered = fixture.Database.ReadMetadata($"worker:{worker}:session")!;
+                if (mode == "reconnect")
+                {
+                    Assert.AreEqual(previous, recovered);
+                }
+                else
+                {
+                    Assert.AreNotEqual(previous, recovered);
+                }
+            }
+            foreach (string text in native.OrdinaryPrompts(before))
+            {
+                if (mode == "reconnect")
+                {
+                    Assert.DoesNotContain("bootstrap-only-task", text);
+                    Assert.DoesNotContain("Goal: ", text);
+                }
+                else
+                {
+                    Assert.Contains("bootstrap-only-task", text);
+                    Assert.Contains("Goal: ", text);
+                }
+            }
+            coordinator.RequestControl("pause");
+            Scenario.Data(await execution);
+            AssertSettled(fixture);
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            if (execution is not null)
+            {
+                await StopExecutionAsync(stop, execution);
+            }
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
     [DataRow(false)]
     [DataRow(true)]
     public async Task CancelledExactLoadSettlementCannotAllocateFreshFallback(bool deadline)

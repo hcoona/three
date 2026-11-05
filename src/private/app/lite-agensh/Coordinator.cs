@@ -1033,6 +1033,8 @@ public sealed class Coordinator
         DateTimeOffset lastWork = database.Now;
         DateTimeOffset lastNudge = database.Now;
         bool initialPlanner = planner;
+        string bootstrapKey = $"native:bootstrap:{native.SessionId}";
+        bool bootstrap = database.ReadMetadata(bootstrapKey) != "true";
         while (!cancellationToken.IsCancellationRequested)
         {
             if (!enabled())
@@ -1046,7 +1048,7 @@ public sealed class Coordinator
                 continue;
             }
 
-            DeliveryBatch? batch = collaboration.ClaimBatch(id);
+            DeliveryBatch? batch = collaboration.ClaimBatch(id, bootstrap);
             if (batch is null)
             {
                 if (
@@ -1073,20 +1075,23 @@ public sealed class Coordinator
             string completedStopReason = "unknown";
             try
             {
-                JsonObject changes = await git.InvokeAsync(
-                        id,
-                        "change_list",
-                        new(),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                string changes = "";
+                if (bootstrap)
+                {
+                    changes = (
+                        await git.InvokeAsync(id, "change_list", new(), cancellationToken)
+                            .ConfigureAwait(false)
+                    ).ToJsonString();
+                }
                 string text = WorkerInstructions.Compose(
                     database,
                     id,
-                    changes.ToJsonString(),
+                    changes,
                     batch.Prompt,
-                    initialPlanner
+                    initialPlanner,
+                    bootstrap
                 );
+                cancellationToken.ThrowIfCancellationRequested();
                 modelAttempted = true;
                 credits.RequirePromptAllowance(
                     database.RunId,
@@ -1099,6 +1104,11 @@ public sealed class Coordinator
                 nativeCompleted = true;
                 initialPlanner = false;
                 completedStopReason = result["stopReason"]?.GetValue<string>() ?? "unknown";
+                if (bootstrap)
+                {
+                    database.WriteMetadata(bootstrapKey, "true");
+                    bootstrap = false;
+                }
                 RecordCompletedTurn(batch.Id, id, completedStopReason);
                 collaboration.CompleteBatch(batch.Id);
                 MarkAcknowledged(batch.Id);
