@@ -14,7 +14,7 @@ product using Copilot first. Its full upstream treatment is recorded in the
 ### LA-REQ-001: Local single-user host
 
 The product shall operate on one machine with one coordinator per run, local
-persistent coordination state and native worker processes. Its implementation
+persistent coordination state and owned native runtimes hosting worker sessions. Its implementation
 shall be C#. Initial real-platform acceptance shall target Windows and the
 repository-selected .NET toolchain; no other operating-system support is
 implied. It shall not require hosted Git/chat/database services or Docker.
@@ -28,6 +28,12 @@ capabilities and applied settings at the documented boundary, and report
 unavailable required capabilities rather than patching runtime internals or
 silently substituting another backend. ACP compatibility, AHP hosting and a
 second model/tool loop are not required.
+
+Each admitted peer retains its own conversation, working directory, local MCP
+actor, applied settings, finite credit window and cumulative usage. Reusing an
+owned runtime must not merge these identities or serialize all peers behind
+one conversation. A session-scoped operation must not dispose another peer's
+healthy session; loss of the shared runtime stops its affected cohort.
 
 ### LA-REQ-003: Recoverable run identity and state
 
@@ -135,6 +141,12 @@ children shall remain visible and block replacement/cleanup, not establish
 success. Crash reconnect attempts the exact saved session when supported;
 explicit resume starts fresh native sessions with durable project-state
 summaries. These paths shall not be conflated.
+
+When sessions share a runtime, stop dispatch and settle their session operations
+before stopping that runtime once. Final accounting and a quiescent outcome
+require settlement of the owned runtime, not merely disposal of one session.
+Unknown ownership or usage blocks replacement; reuse is not permission to
+weaken the existing recovery or accounting guarantees.
 
 ### LA-REQ-014: Budgets, liveness and stop meaning
 

@@ -21,7 +21,7 @@ flowchart LR
     owner[Operator] --> cli[LiteAgensh C# CLI]
     cli --> db[(Run SQLite database)]
     coordinator[LiteAgensh C# coordinator] <--> db
-    coordinator <-->|Official SDK native RPC| agents[Native Copilot workers]
+    coordinator <-->|Official SDK native RPC| agents[One owned Copilot runtime with peer sessions]
     agents <-->|MCP stdio| helpers[LiteAgensh MCP helper processes]
     helpers <--> db
     coordinator --> git[Git and declared check processes]
@@ -108,13 +108,31 @@ coordinator records the outcome.
 
 ## Native SDK, MCP and instruction boundary
 
-Launch and register one owned installed Copilot headless runtime per worker in
-its assigned worktree. Use its documented auto-assigned loopback endpoint and a
+Launch and register one owned installed Copilot headless runtime for the
+operation, with one SDK client and independent sessions for admitted peers.
+The existing native-worker factory owns that runtime/client; individual session
+adapters borrow it rather than each launching a CLI. This is in-process
+ownership inside the existing coordinator, not a persistent service or a
+configurable backend pool. Use its documented auto-assigned loopback endpoint and a
 process-local connection token, then connect with the SDK's
 `RuntimeConnection.ForUri`. Keep native readiness/output and stderr separate
 from application output. The host owns the actual process handle and durable
 lease; the SDK owns RPC framing, events and session operations. No application
 HTTP server, SDK-private RPC copy, VS Code installation or AHP host is needed.
+
+The pinned [SDK package's multiple-session reference][sdk-multiple-sessions]
+documents independent sessions on one client. Use that supported abstraction,
+not shared conversation state or a second model/tool loop. Runtime reuse is
+the selected response to the real 32-peer resource scenario; it does not
+establish a memory saving, a native concurrency limit or 32-peer success.
+
+Set and verify each session's working directory through SDK session settings;
+the runtime process's startup directory is not the peer's authoritative cwd.
+Keep permission/event handlers, local MCP configuration, abort, mutable caps
+and usage queries bound to the exact session. Closing a peer session must not
+dispose the shared client/runtime. Calibration, preflight and settled-usage
+recovery have their own bounded operation lifetime; none leaves a persistent
+runtime for a later CLI invocation.
 
 Reuse the installed CLI, disable its automatic update, and disable SDK build-time
 CLI acquisition. Verify the matched runtime version, explicit session identity,
@@ -128,11 +146,19 @@ atomically before any model send. SDK events are notifications, not the sole
 usage ledger: cumulative typed metrics and their completeness govern charging.
 Neither context occupancy nor a premium-request multiplier is AI-credit spend.
 
+Persist the runtime's exact process lease and each session-to-runtime
+association before paid dispatch. A process lease may own several sessions;
+one session may not acquire a second writer. Stop the affected cohort on a
+shared connection/runtime failure and preserve all unresolved reservations.
+Do not silently restart a backend beneath live or unknown sessions.
+
+[sdk-multiple-sessions]: https://www.nuget.org/packages/GitHub.Copilot.SDK/1.0.28#readme-body-tab
+
 ### Shared credit allocation
 
 The opt-in shared mode keeps credit allocation in the existing coordinator,
 worker adapter and transactional campaign SQLite ledger. It does not add a
-service, model proxy, central task scheduler or native cross-session pool.
+service, model proxy, central task scheduler or native cross-session credit pool.
 The host backs each active native spending window from the smaller remaining
 run/campaign allowance; no waiting peer owns a permanent equal share.
 
@@ -203,7 +229,10 @@ between admissions. Do not warm every session and merely delay its first prompt:
 an interrupted, never-dispatched native session has different accounting
 requirements from a reservation whose native worker was never started.
 
-Keep the existing all-session startup path when the interval is zero. Planning
+At zero interval, keep the legacy all-session startup path for per-session
+credit allocation. Shared allocation uses incremental admission without an
+artificial interval, so ready peers can progress while later peers await
+backing. Planning
 release still gates peers; a positive interval does not admit waiting peers
 before that release. Exact recovery, budget admission and native settlement
 retain their existing contracts. No new scheduler service or worker role is
@@ -308,7 +337,20 @@ every possible external session.
 Cancel a turn explicitly through the SDK; cancellation of a local await is not
 proof that native work stopped. Quiesce event handlers, reconcile available
 complete usage, disconnect the SDK and settle the host-owned runtime before
-replacement. SDK disposal preserves on-disk session data; do not call its
+replacement. Stage each peer's final usage while aborting its turn, fencing
+callbacks and closing its session. The factory then closes the shared client
+and settles the owned runtime once; only after that barrier may the staged
+complete usage become final reconciled accounting. A session, callback, client
+or process settlement failure retains affected authorization as unresolved.
+No single peer's session disposal establishes whole-cohort quiescence.
+
+An exact-load failure with no opened session may retain the existing
+undispatched complete-baseline recovery path; it does not dispose a healthy
+cohort's runtime or permit a send with unknown usage. Settled-usage recovery
+may use a temporary single-session runtime and must settle it before returning
+its final reading.
+
+SDK disposal preserves on-disk session data; do not call its
 permanent session deletion API during pause, finalization or reconnect.
 On exact resume, use no more than the reservation's remaining allowance as the
 native window limit. Verify cumulative metrics against the saved baseline;
