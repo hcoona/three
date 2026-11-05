@@ -250,9 +250,10 @@ accidental = "##" | "bb" | "#" | "b" | "n"
     | "(##)" | "(bb)" | "(#)" | "(b)" | "(n)"
 octave = "0".."9"
 fingering = "f", "1".."5", ["1".."5"]
-tie_marks = "{", (tie_start | tie_end | tie_end, ",", tie_start
-    | "tie-in" | "tie-in", ",", tie_start), "}"
-tie_start = "tie@", label, ":start"
+tie_marks = "{", (tie_starts | tie_end | tie_end, ",", tie_starts
+    | "tie-in" | "tie-in", ",", tie_starts), "}"
+tie_starts = "tie@", label, ":start" | arc_start, (",", arc_start)*
+arc_start = "arc@", label, ":start"
 tie_end = "tie@", label, ":end"
 label = "r", pos_int
 
@@ -290,6 +291,7 @@ direction = "<", plain_body, ">"
     | "<ped)>[rel=pedal@", label, ":line-release]"
     | "<", nonempty_quoted, "(>[rel=dashes@", label, ":start]"
     | "<dashes)>[rel=dashes@", label, ":end]"
+    | "<trill)>[rel=ornament@", label, ":end:extended-trill]"
 ottava_sign = "8va" | "8vb" | "15ma" | "15mb"
 plain_body = ["^"], dynamic
     | "clef ", clef
@@ -314,8 +316,8 @@ acc_entry = '{"staff":', staff_no, ',"step":"', step, '"',
     [',"octave":', octave], ',"alter":', alter, "}"
 alter = "-2" | "-1" | "0" | "1" | "2"
 open_entry = '{"id":"', label, '","kind":"slur","start":', endpoint, "}"
-    | '{"id":"', label, '","kind":"tie","start":', endpoint,
-        ',"pitch":', sounding, "}"
+    | '{"id":"', label, '","kind":"', ("tie" | "arc"), '","start":',
+        endpoint, ',"pitch":', sounding, "}"
     | '{"id":"', label, '","kind":"tremolo","start":', endpoint,
         ',"variant":"', stroke, '","written":"', rational,
         '","scale":"', rational, '"}'
@@ -359,9 +361,9 @@ number `4/2`. A document is valid only when it also satisfies every rule below.
 ### Headers and state
 
 - A system document's `key`, `time` and `clefs` lines give the state at the
-  start of its first block: measure `carry-in.measure`, offset
-  `carry-in.offset`. An assembled score's lines give the state at the start of
-  measure 1.
+  start of its first block, measure `carry-in.measure` and offset
+  `carry-in.offset`, before that block's options and directions take effect.
+  An assembled score's lines give the state at the start of measure 1.
 - `key=K` on a block sets the key signature from that measure on, `time=N/D`
   sets the meter from that measure on, and a `clef` direction sets the clef of
   its line's staff from its onset on. The state after a document is its header
@@ -564,21 +566,34 @@ label `rN`.
   adjacent measures that each carry an `ending` option, and its _source
   measure_ is the measure before the group. The pitch lies in the first
   non-grace rhythmic event of its voice line in the first measure of a bracket
-  other than the group's first. Its _source_ is a pitch with the same sounding
-  step and octave in a non-grace rhythmic event of the same staff that ends at
-  the end of the source measure. At least one source shall exist, all sources
-  shall have the same alteration, and the tie-in pitch shall resolve to that
-  alteration, whether it inherits it or prints an accidental. A tie-in is not a
-  relation and has no
-  label, and its pitch may also start a tie: `{tie-in,tie@r2:start}`. A
-  validator checks the source when the document contains it, and assembly
-  checks every tie-in. When the document does not contain the source, the
-  alteration of a tie-in pitch without a printed accidental is _deferred_, and
-  so is that of each pitch that inherits it through ties, including from a
-  carried tie whose `pitch` has `"alter":"tie-in"`. The document's validator
-  does not check a deferred alteration, a tie still open from such a pitch at
-  the end of the document carries `"alter":"tie-in"`, and assembly resolves
-  and checks every deferred alteration.
+  other than the group's first. When the group's last measure carries
+  `right=repeat` and the next measure carries no `ending` option, that next
+  measure is an unlabeled last ending, and a tie-in pitch may also lie in the
+  first non-grace rhythmic event of a voice line there. The _source_ of a tie-in
+  pitch is a pitch with the same sounding step and octave in a non-grace
+  rhythmic event of the same staff that ends at the end of the source measure.
+  At least one source shall exist, all sources shall have the same alteration,
+  and the tie-in pitch shall resolve to that alteration, whether it inherits it
+  or prints an accidental. A tie-in is not a relation and has no label, and its
+  pitch may also start a tie: `{tie-in,tie@r2:start}`. A validator checks the
+  source when the document contains it, and assembly checks every tie-in. When
+  the document does not contain the source, the alteration of a tie-in pitch
+  without a printed accidental is _deferred_, and so is that of each pitch that
+  inherits it through ties, including from a carried tie or arc whose `pitch`
+  has `"alter":"tie-in"`. The document's validator does not check a deferred
+  alteration, a tie or arc still open from such a pitch at the end of the
+  document carries `"alter":"tie-in"`, and assembly resolves and checks every
+  deferred alteration.
+- `{arc@rN:start}` marks a pitch that an arc leaves at the end of a system
+  document when that system cannot show whether the arc is a tie or a slur. A
+  pitch may start more than one arc, in ascending label order, as in
+  `{arc@r1:start,arc@r2:start}`, but not an arc and a tie. An arc stays open at
+  the end of its document. A later document that carries it in ends it as a
+  tie, with `{tie@rN:end}` on a pitch that meets the rules for the end of a tie
+  from its pitch, or as a slur, with `rel=slur@rN:end`. Until then it stays
+  open as an arc, and only its end decides its kind. Assembly gives the start
+  the kind of the end, writing a slur start on the event of its pitch, so an
+  assembled score has no arc.
 - A slur uses `rel=slur@rN:start` and `rel=slur@rN:end` on two different notes,
   the start before the end.
 - A two-note tremolo uses `rel=tremolo@rN:two-start:S` and
@@ -587,6 +602,10 @@ label `rN`.
   between them.
 - An extended trill uses `rel=ornament@rN:start:extended-trill` on a note that
   carries `orn=trill`, and `rel=ornament@rN:end:extended-trill` on a later note.
+  A trill that `carry-in` lists as open may instead end on the direction
+  `<trill)>[rel=ornament@rN:end:extended-trill]`, which records a wavy line
+  that stops before any note that can end it. An assembled score has no such
+  end, and assembly reports it for a person to resolve.
 - An arpeggio uses `rel=arpeggio@rN:member` on each member event. It has at
   least two members at the same onset, possibly on different staves, and is
   never open across a system boundary. `arp` is the unrelated flag for a rolled
@@ -596,7 +615,8 @@ label `rN`.
 
 Rules for all relations:
 
-- Endpoints with the same label agree in kind and variant. A label that starts
+- Endpoints with the same label agree in kind and variant, except that a
+  carried arc ends as a tie or a slur. A label that starts
   outside the document is valid only if `carry-in` lists it as open. A relation
   may stay open at the end of a system document, and then appears in its
   carry-out. No relation stays open at the end of an assembled score.
@@ -612,7 +632,7 @@ Rules for all relations:
   last endpoint in the document (a relation that stays open follows those that
   end), then variant. Assembly renames every label to `r1`, `r2`, ... in the
   same order, following carry links.
-- A tie endpoint always names its member, so `member_index` is 1 for a
+- A tie or arc endpoint always names its member, so `member_index` is 1 for a
   single-pitch note. Every other kind is event-level, and `member_index` is
   null.
 - Two relations that are identical in kind, endpoints and variant are invalid,
@@ -641,7 +661,9 @@ an event boundary in its line.
   positive number of units per minute.
 - `<rehearsal "A">` is a rehearsal mark.
 - `<pedal-sign down>` and `<pedal-sign up>` record the pedal glyphs, which are
-  distinct from pedal lines.
+  distinct from pedal lines. When both are at one onset of a line, the release
+  takes effect before the press, whatever their order in the line: the pair is
+  a pedal change.
 - A hairpin starts with `<cresc(>[rel=hairpin@rN:start:cresc]` or
   `<dim(>[rel=hairpin@rN:start:dim]` and ends with
   `<hairpin)>[rel=hairpin@rN:end]`.
@@ -659,6 +681,8 @@ an event boundary in its line.
 - A dashes line is the dashed extension of expression text, such as "dim."
   followed by dashes. It starts with `<"dim."(>[rel=dashes@rN:start]`, which
   also records the text, and ends with `<dashes)>[rel=dashes@rN:end]`.
+- `<trill)>[rel=ornament@rN:end:extended-trill]` ends a carried extended trill
+  without a note, as described under relations.
 
 ### Event indexing
 
@@ -691,8 +715,8 @@ this order:
 - `open`: the relations that are open at the carry position, in ascending label
   order. An entry has `id`, `kind` and `start`, followed by fields for its kind.
   `start` is an endpoint with `measure`, `offset`, `staff`, `voice`,
-  `event_index` and `member_index`. A tie adds `pitch`, the sounding step,
-  octave and alteration, with `"alter":"tie-in"` when the alteration is
+  `event_index` and `member_index`. A tie or an arc adds `pitch`, the sounding
+  step, octave and alteration, with `"alter":"tie-in"` when the alteration is
   deferred to a tie-in source. A tremolo adds `variant` (the stroke count),
   `written` (the written duration of its first note) and `scale` (its tuplet
   multiplier). An ornament adds `variant` `extended-trill`, a hairpin adds
@@ -714,7 +738,8 @@ from the parsed text and is never written in the document.
   the carry-in counts when that block is also the first block, omitting zero
   counts. `accidentals` holds the state at the end of the block.
 - `open` holds every relation still open after the last block. The carried
-  kinds are tie, slur, tremolo, ornament, hairpin, ottava, pedal and dashes.
+  kinds are arc, tie, slur, tremolo, ornament, hairpin, ottava, pedal and
+  dashes.
 
 ### Assembly
 
@@ -737,7 +762,10 @@ Assembly orders system documents by `page` and `system` and then:
    next measure carries no `ending` option, the option becomes `ending=N:single`
    or `ending=end`;
 7. checks volta adjacency and every tie-in across the whole score, resolves
-   and checks every deferred alteration, and renames relation labels globally.
+   and checks every deferred alteration, gives every arc the kind of its end,
+   and renames relation labels globally;
+8. reports every extended trill that ends on `<trill)>`, with the locations of
+   its start and end, for a person to resolve, and does not report success.
 
 The result is an assembled score. Assembly never fills a missing event with an
 invented rest, infers an unprinted accidental or discards an unsupported mark
@@ -779,7 +807,18 @@ text. A validator cannot check them from the text alone, and they add no
 validity rule: a valid document that breaks them is still valid, but it is not
 the transcription of that page. The examples elsewhere in this record show
 validity and omit the layout hints that a transcription writes. Handwritten
-additions to a printed copy are not transcribed.
+additions to a printed copy are not transcribed. Printed content that the
+source image shows only in part, such as a mark cut off at the edge of a scan,
+is transcribed as the content that its visible part and its context make clear.
+When they leave more than one reading, it is unsupported content, which is
+reported for a person to resolve and not guessed.
+
+Horizontal positions on the page decide several rules below. The _extent_ of
+an event is the horizontal extent of its noteheads, or of its rest glyph; stems,
+flags, dots, accidentals and marks are not part of it. Its _center_ is the
+middle of its extent. An event lies at or to the right of a point when the right
+end of its extent does, and the first event at or to the right of a point is the
+one of these in the earliest measure with the earliest onset in that measure.
 
 ### Voices and staves
 
@@ -797,6 +836,9 @@ additions to a printed copy are not transcribed.
   that displays most of its non-grace events, or its first one when the counts
   are equal. Its events on the other staff carry `xsN`. Every other event
   belongs to the staff that displays it.
+- All events of one beam group belong to one voice. When their stems point
+  both ways, it is the voice that the rules above give to the group's first
+  non-grace event displayed on the group's staff.
 
 ### Marks and words
 
@@ -804,38 +846,79 @@ additions to a printed copy are not transcribed.
   articulation carries `^` or `_`, as printed. A dynamic printed above its staff
   carries `^`.
 - A mark of an event (an articulation, fermata, ornament or fingering) that is
-  printed between two events belongs to the event whose notehead or rest is
-  horizontally nearest to the mark's center, or to the earlier one at equal
-  distance.
-- An arc that joins two consecutive single notes of the same pitch in one voice
-  line is a tie, unless the second note carries an articulation, in which case
-  it is a slur.
-- Printed words are encoded as printed. "loco" at the end of an ottava line is
-  `<"loco">` besides the ottava end. Words for a gradual tempo change, such as
-  "rit.", "rall." and "accel.", are text and never `tempo`.
+  printed between two events belongs to the event whose center is horizontally
+  nearest to the mark's center, or to the earlier one at equal distance.
+- Fingering digits printed above or below the noteheads at one horizontal
+  position of a staff belong to those noteheads, whether they form one chord or
+  belong to events of several voices. The digits above go, from the top, to the
+  highest noteheads in order, and the digits below go, from the bottom, to the
+  lowest. A digit printed beside one notehead belongs to it. A notehead shared
+  by events of two voices takes its digit on its pitch in the event with the
+  lower voice number. Two digits over a single pitch whose event carries
+  `orn=trill` are its trill fingering. Otherwise, more digits on one side than
+  the noteheads there, or digits from both sides for one notehead, are
+  unsupported fingering.
+- An arc that joins a notehead to one of the same pitch in the next non-grace
+  rhythmic event of its voice line, or in an event of another voice line of the
+  same staff that starts when the first event ends, is a tie of those two
+  pitches, unless the later event carries an articulation, in which case it is
+  a slur. Every other arc between two notes is a slur. Between two chords, an
+  arc joins the noteheads nearest to its ends, so two arcs printed above and
+  below two equal two-note chords are two ties. An arc that carries a tuplet
+  number and spans exactly the events of a tuplet group is the bracket of that
+  group, not a slur.
+- An extended trill ends on the last note of its voice line whose extent starts
+  at or to the left of the right end of its wavy line, counting notes that a tie
+  continues. A wavy line that ends within the system of its trilled note before
+  any note after that one starts is not encoded, and the trilled note carries
+  `orn=trill` alone. A wavy line that continues a trill that `carry-in` lists
+  as open, and that ends before any note of its voice line in the system
+  starts, ends the trill on `<trill)>`.
+- Printed words are encoded as printed. Words in an upright typeface above
+  staff 1, and words printed with a metronome mark, are `tempo`. Other words are
+  text, and so are words for a gradual change of tempo or dynamics, such as
+  "rit.", "rall.", "accel.", "cresc." and "dim.", navigation words, such as
+  "D.C." and "Fine", and "loco".
+  "loco" at the end of an ottava line is `<"loco">` besides the ottava end.
 - A `Ped.` glyph that begins a pedal line is the start of that line.
   `<pedal-sign down>` and `<pedal-sign up>` record only glyphs that are not
   joined to a line.
 
 ### Directions
 
-- Onset: a dynamic takes the onset of the event nearest to its center, or of
-  the earlier one at equal distance. Any other direction, and the start of a
-  hairpin or line, takes the onset of the first event at or to the right of its
-  left edge. The end of a hairpin or line, and a pedal change, take the onset of
-  the first event at or to the right of the end or change point. The events
-  counted are the notes and rests of both staves, except that a clef or ottava
-  direction counts only events displayed on its own staff.
+- Onset: a dynamic takes the onset of the event whose center is nearest to its
+  own center, or of the earlier one at equal distance. Any other direction, and
+  the start of a hairpin or line, takes the onset of the first event at or to
+  the right of its left edge. The end of a hairpin, of a line or of a wavy line
+  written `<trill)>`, and a pedal change, take the onset of the first event at
+  or to the right of the end or change point. The events counted are the notes
+  and rests of both staves, except that a clef or ottava direction counts only
+  events displayed on its own staff, and that a whole-measure rest, whose glyph
+  does not mark its onset, counts for a dynamic, and for any other point only in
+  a measure whose counted events are all whole-measure rests. There it lies at
+  or to the right of every point in its measure.
 - System edges: a point whose onset rule takes the first event at or to the
   right of it, when the system has no such counted event, takes the end of the
   last block as its onset, and its direction is written after the rhythmic
-  events of its line. A hairpin or line that reaches the right edge of the
-  system without an end stays open into the next system, and one that visibly
-  ends before that edge ends in the system. A relation that `carry-in` lists as
-  open and that shows no continuation in the system ends at the first event of
-  the system that can hold its end. A volta bracket that reaches the right edge
-  of the system without a closing hook is written `start` or `continue`, and
-  one that ends there with a hook is written `single` or `end`.
+  events of its line. A hairpin, a line or the wavy line of an extended trill
+  that reaches the right edge of the system without an end stays open into the
+  next system, and one that visibly ends before that edge ends in the system.
+  An arc that leaves a note and reaches the right edge of the system stays
+  open. It is a slur when it passes over a later event of its voice line, and
+  otherwise an `arc` from the pitch that it leaves. A carried arc is a tie when
+  it ends on a notehead that the rule for ties above joins to its pitch, and
+  otherwise a slur. A relation that `carry-in` lists as open and that shows no
+  continuation in the system ends at the first event of the system that can
+  hold its end. A continuation printed at the start of
+  the system that `carry-in` does not list as open, or that cannot continue the
+  relation that it lists, shows that `carry-in` does not match the page. No
+  document transcribes the system with that `carry-in`, and a tool reports the
+  mismatch. A volta bracket that reaches the right edge of the system without a
+  closing hook is written `start` or `continue`, and one that ends there with a
+  hook is written `single` or `end`.
+- Signatures at a system start: a key or time signature printed at the start of
+  the system that differs from the `key` or `time` line is a change, written as
+  `key=` or `time=` on the first block.
 - Reprints at a system start: an unchanged clef is recorded only in the `clefs`
   line, and a `tr` sign or text reprinted over a trill or dashes line that
   `carry-in` lists as open continues that relation and is not encoded.
@@ -869,7 +952,11 @@ additions to a printed copy are not transcribed.
   Exactly one grouping shall remain, and a measure with none or several is
   unsupported.
 - `len` is written only when the printed content of a measure is shorter or
-  longer than its meter, as in a pickup.
+  longer than its meter, as in a pickup. When the voice lines of such a measure
+  have different lengths at their printed values, with printed tuplet numbers
+  applied, `len` is the shortest of these lengths in a simple meter and the
+  longest in a compound meter, and the other lines are placed in groups that
+  fill it.
 
 ## Category encodings
 
@@ -892,9 +979,9 @@ witness, a string that the grammar accepts.
   options. Witnesses: `m 5 time=2/2 time-symbol=cut`; `m 1 len=1/4`.
 - `beam`: beam states by level. Witness: `C5/8[beam1=start] D5/8[beam1=end]`.
 - `tuplet`: `N:M{...}`. Witness: `3:2{C4/8 D4/8 E4/8}`.
-- `tie`: tie marks on a pitch. Witnesses: `C4{tie@r1:start}/2`;
-  `C4{tie-in}/2`.
-- `slur`: slur relation flags. Witness:
+- `tie`: tie marks on a pitch, and an arc that ends as a tie. Witnesses:
+  `C4{tie@r1:start}/2`; `C4{tie-in}/2`; `C4{arc@r1:start}/2`.
+- `slur`: slur relation flags, and an arc that ends as a slur. Witness:
   `C4/4[rel=slur@r1:start] D4/4[rel=slur@r1:end]`.
 - `grace`: `grace` and `grace/`. Witness: `D5/16[grace/] C5/4`.
 - `articulation_fermata`: articulations and fermatas. Witnesses:
@@ -902,7 +989,8 @@ witness, a string that the grammar accepts.
 - `ornament`: `orn=` and the extended-trill relation. Witnesses:
   `C5/4[orn=trill]`;
   `C5/2[orn=trill,rel=ornament@r1:start:extended-trill]`;
-  `D5/2[rel=ornament@r1:end:extended-trill]`.
+  `D5/2[rel=ornament@r1:end:extended-trill]`;
+  `<trill)>[rel=ornament@r1:end:extended-trill]`.
 - `tremolo`: single-note and two-note tremolos. Witnesses:
   `C4/2[tremolo=single:3]`; `C4/2[rel=tremolo@r1:two-start:3]`;
   `E4/2[rel=tremolo@r1:two-end:3]`.
@@ -933,7 +1021,8 @@ Layout hints are encoded and never count as content differences: the `up` and
 `down` stem flags, the `^` and `_` placement suffixes, `ferm_` against `ferm`,
 and the `^` on a dynamic. Some printed layout has no encoding at all: curve
 shape, spacing, fonts, cautionary key-signature glyphs, a reprinted unchanged
-key or numeric time signature, and the closing hook of a volta bracket.
+key or numeric time signature, the printed number and bracket of a tuplet, and
+the closing hook of a volta bracket.
 
 The requirements record lists unsupported content. This format has no spelling
 for it. A validator rejects a document that carries it, and no tool shall drop

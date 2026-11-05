@@ -89,7 +89,10 @@ converter may still return the result for the in-scope content. Conversion and
 assembly shall never invent a rest, infer an unprinted accidental or drop a
 mark while reporting success.
 
-Assembly shall report an unfilled range of a measure instead of inventing rests.
+Assembly shall report an unfilled range of a measure instead of inventing rests,
+and shall report an extended trill whose wavy line continues into a later
+system and stops there before any note for a person to resolve instead of
+completing it.
 Finer coverage or confidence information (a recognition sidecar) is not part of
 this format and needs its own record admission.
 
@@ -101,8 +104,9 @@ across systems, the events already written there and the relationships that are
 still open. The carry state at the end of one system shall equal the carry state
 at the start of the next. A split shall not reset timing or accidental state.
 
-Assembly shall restore one score with no duplicated or lost event or
-relationship, and with the same content as an unsplit transcription.
+Except where OMR-REQ-006 requires assembly to report an extended trill, assembly
+shall restore one score with no duplicated or lost event or relationship, and
+with the same content as an unsplit transcription.
 
 ## Conversion and comparison
 
@@ -215,7 +219,10 @@ converter reports such content as OMR-REQ-006 and OMR-REQ-008 state.
   number, when the transcription rules of the format leave no grouping or more
   than one;
 - metronome units other than quarter, half, eighth, dotted quarter and dotted
-  half.
+  half;
+- printed content that the source image shows only in part, such as a mark cut
+  off at the edge of a scan, when its visible part and its context leave more
+  than one reading; it is reported for a person to resolve and not guessed.
 
 Playback-only data and engraving coordinates are neither content nor unsupported
 content. A reverse converter ignores them.
