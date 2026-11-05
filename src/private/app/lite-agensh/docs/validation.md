@@ -77,6 +77,24 @@ readback/mutation, exhausted-window renewal, cumulative baselines and final
 settlement. A source-level API or scripted grant does not establish those
 observations; retain any naturally unexercised renewal as not observed.
 
+Shared-runtime scenarios additionally exercise independent peer conversations,
+working directories, actor-bound MCP configuration, events, limits and usage
+on one owned host. Changing or closing one session must not change its peer's
+settings or dispose the common client. Exercise overlap, a failed admission,
+exact-load fallback and cohort cancellation. Keep real SQLite reservation
+state conservative until the shared process-settlement barrier; a failed
+session stop or host settlement must not produce early final reconciliation.
+Include a later operation and legacy per-session credit allocation without
+adding another production backend.
+
+Use controlled session/owned-host scenarios for application behavior and
+review the production use of the pinned SDK contracts. The separate non-model
+preflight must observe distinct sessions, session-scoped readback/mutation and
+host lifetime before relying on sharing in paid work. Neither those empty
+sessions nor managed tests establish native concurrent reasoning, complete
+billing, memory savings or 32-peer success; retain those as actual-journey
+observations under the accepted operational protocol.
+
 ## Implementation and evidence ordering
 
 The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) selects the

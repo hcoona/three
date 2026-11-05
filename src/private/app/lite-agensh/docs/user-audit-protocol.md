@@ -38,6 +38,12 @@ No account balance, personal usage, quota, credential or authentication-material
 inspection is allowed. The owner accepts repository processing by this existing
 model service and native soft-limit overshoot by in-flight responses.
 
+The accepted shared-runtime implementation uses one owned backend/client and
+independent admitted-peer sessions. Record the exact runtime process lease
+and session associations; do not count one running backend as 32 dispatches.
+Verify the shared boundary through the non-model preflight below before paid
+admission. This changes neither peer equality, model selection nor allowances.
+
 ## Repository, collaboration and output scope
 
 Create a clean, named worktree of the recorded accepted revision, separate from
@@ -142,8 +148,14 @@ failure. Retain the missing allocation stack/peak as a limitation when absent.
    verify the supported options update and readback with finite diagnostic
    caps of 30, 60 and 30 credits in the same never-prompted session. Preserve
    its identity and zero request count; an empty-session metric is not billing
-   completeness. No prompt, pending-work continuation, account-usage query or
-   paid replacement is permitted by this phase. Settle its processes.
+   completeness. For the shared runtime, create a second never-prompted session
+   for another declared peer on that same backend. Verify distinct session and
+   working-directory identities, model and finite limit readbacks. Changing
+   the first session's cap must leave the second's cap unchanged; closing the
+   first session must leave the second readable. Retain both zero request
+   counts and the single backend identity, then close both sessions and settle
+   the backend. No prompt, pending-work continuation, account-usage query or
+   paid replacement is permitted by this phase.
 3. **Calibrate:** reserve within the run/campaign allowances, verify the real
    session and 30-credit native soft cap, and send the existing tool-disabled
    `READY` calibration once under its two-minute deadline. Require complete
@@ -184,7 +196,9 @@ failure. Retain the missing allocation stack/peak as a limitation when absent.
    classifications, checks actually run, missing coverage, unresolved
    disagreements and owner decisions, and a bounded semantic conclusion.
    Verify original-source preservation, no active coordinator or owned
-   children, complete native usage and ledger reconciliation. Retain product
+   children, complete native usage and ledger reconciliation. Session closure
+   alone is not shared-host settlement: stage final readings, settle the common
+   runtime once, and only then finalize their accounting. Retain product
    delivery/check status truthfully; empty final checks are not acceptance.
 
 Actual dispatch, meaningful cooperation, substantive audit output and complete

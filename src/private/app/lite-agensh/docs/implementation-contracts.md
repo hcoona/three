@@ -88,8 +88,11 @@ defaulting to zero for existing configurations and persisted runs. It is
 persisted with the resolved configuration and participates in the existing
 preflight/calibration identity. Schema guidance and examples use the same name.
 
-- Zero preserves the existing startup sequence and immediate eligibility of
-  all ordinary worker loops after their sessions are ready.
+- Zero preserves immediate eligibility without an artificial interval.
+  Per-session credit allocation retains the legacy all-session startup path.
+  Shared allocation admits incrementally: ready peers run while later
+  admissions may wait for backing, rather than blocking all loops behind
+  a whole-team session-start barrier.
 - With a positive interval, admit the first ordinary worker without an
   artificial delay. Start its native session, queue its kickoff and run its
   loop while the coordinator continues handling controls and peer work.
@@ -355,6 +358,14 @@ application cannot durably identify. Never bind a non-loopback listener or log
 the connection token. SDK connection disposal does not settle this externally
 owned process; the host must do that explicitly.
 
+The production native-worker factory owns one runtime and one SDK client for
+an operation's admitted peers. Initialize them once even if session creation
+overlaps. A session adapter owns only its session, callbacks and turn state;
+disposing it must not close that shared client. The factory's explicit
+operation-settlement boundary disposes the client and owned runtime after
+the workers stop. A later operation obtains a new host only after the previous
+one is settled. Do not silently fall back to one CLI per worker.
+
 Create sessions with an explicit unique `SessionId`, `WorkingDirectory`,
 local `McpServers`, `ExcludedTools` including native `task`, and finite
 `SessionLimits.MaxAiCredits`. Leave default model/authentication selection
@@ -367,6 +378,19 @@ An unavailable requested model is not permission to fall back. Missing/mismatche
 metadata or an unexpected limit change stops the affected path.
 Permission callbacks honor the explicit trusted-run policy for known request
 kinds; unknown actions or enforced native policy are not silently overridden.
+
+Persist the session-to-runtime association alongside the existing session and
+process identities before dispatch. Multiple sessions may name the same exact
+runtime lease, but retain distinct worker/reservation/session bindings.
+Credit-ledger SDK-owner rows continue identifying the owning coordinator,
+not separate backend processes. Keep session IDs on all typed RPC operations:
+metadata, options, UI renewal, usage and abort. One session's event or permission
+callback must not be applied to another session.
+
+Cold peers still have no native session or grant. A running backend for an
+admitted peer is not evidence that every configured worker has been admitted.
+The host process uses an explicit owned startup directory; peer tool execution
+uses the separately configured and verified session working directory.
 
 On crash, settle/resolve known processes before resuming the exact saved session.
 Set `ContinuePendingWork=false` and `AllowTranscriptRecovery=false`; read back
@@ -501,8 +525,22 @@ the [user-audit protocol](user-audit-protocol.md#continuing-accounting-and-finit
 it preserves historical unknowns rather than reconciling or releasing them.
 It is not a general exception for uncertainty within the active campaign.
 
-Cancel through `AbortAsync`, collect complete metrics when available, quiesce
-handlers, dispose sessions/client without permanent deletion, and settle the
-host-owned runtime. Local task cancellation or silence does not settle it.
+Cancel through each session's `AbortAsync`, collect complete metrics when
+available, quiesce its handlers and close that session without permanent
+deletion. Preserve its backing while the shared operation is still settling.
+After all worker stop attempts, close the shared client and settle the
+host-owned runtime once, even when a peer stop failed. Only then finalize
+the staged complete readings; do not release reservations early because one
+session was disposed. A failed barrier leaves affected reservations uncertain
+and blocks replacement. Retain all stop failures rather than hiding them
+behind an otherwise successful host exit.
+
+Keep the existing special case for an exact-load failure that opened no
+session and dispatched nothing, with an unchanged persisted complete baseline.
+That case may settle its old reservation without tearing down healthy peers.
+Non-dispatch usage recovery uses a separately bounded temporary runtime and
+returns its reading only after that runtime settles.
+
+Local task cancellation or silence does not settle an operation.
 If final usage, ownership or limit applicability is unknown, retain the
 reservation and stop paid work. Scripted metrics are not native billing proof.

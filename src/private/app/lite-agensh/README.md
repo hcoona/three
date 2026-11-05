@@ -22,6 +22,12 @@ or the owner's one-time ledger transition as a successful autonomous audit.
 The MCP 2.3.0 upgrade is covered by controlled stdio contracts, not a new
 native acceptance run; PR #1530 retains the earlier dependency baseline.
 
+The [native-host design](docs/architecture.md#native-sdk-mcp-and-instruction-boundary)
+specifies one owned runtime/client with independent peer sessions and a
+cohort-settlement barrier. The current implementation still launches a runtime
+per worker; the design is a prerequisite for its separately reviewed repair,
+not evidence of lower memory use or a completed 32-peer audit.
+
 The earlier failed ACP startup remains retained evidence, not measured zero
 cost. The owner-approved [SDK baseline](docs/native-acceptance-protocol.md#sdk-campaign-baseline)
 uses one new persistent ledger. Unknown usage in that active ledger blocks
