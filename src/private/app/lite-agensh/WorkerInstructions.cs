@@ -7,9 +7,15 @@ internal static class WorkerInstructions
         string worker,
         string changes,
         string events,
-        bool planning
+        bool planning,
+        bool bootstrap
     )
     {
+        if (!bootstrap)
+        {
+            return "==== EVENTS ====\n" + events;
+        }
+
         return $"You are {worker}, one of {database.Configuration.WorkerCount} equal "
             + "local coding peers.\n"
             + $"Goal: {database.Configuration.Goal}\n"

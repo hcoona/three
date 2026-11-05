@@ -27,7 +27,7 @@ public sealed partial class CollaborationOperations
         transaction.Commit();
     }
 
-    public DeliveryBatch? ClaimBatch(string recipient)
+    public DeliveryBatch? ClaimBatch(string recipient, bool bootstrap = true)
     {
         RequireWorker(recipient);
         using var connection = database.Open();
@@ -123,9 +123,17 @@ public sealed partial class CollaborationOperations
         }
 
         var context = SharedContext(connection, transaction, recipient);
+        context.Remove("goal");
+        context.Remove("cooperation");
         // Ordinary queued messages arrive in their ordered batch, not again in the board prefix.
         context["messages"] = new JsonArray();
         context["limits"]!["messages"] = 0;
+        if (!bootstrap)
+        {
+            context.Remove("members");
+            context.Remove("tasks");
+            context["limits"]!.AsObject().Remove("tasks");
+        }
         var eventGists = rows.Where(row => row["kind"]!.GetValue<string>() == "board")
             .Select(row => Payload(row["payload"]!.GetValue<string>())["gistId"]!.GetValue<long>())
             .ToHashSet();
