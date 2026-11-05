@@ -105,6 +105,7 @@ dotnet test --project tests\private\app\lite-agensh\LiteAgensh.Tests.csproj
 | Where is upstream attribution retained?                             | [Third-party notice](THIRD-PARTY-NOTICES.txt)                                                                                                                  |
 | What concrete boundaries do independent implementation units share? | [Implementation contracts](docs/implementation-contracts.md)                                                                                                   |
 | What exact native observation and credit effects may be executed?   | [Native acceptance protocol](docs/native-acceptance-protocol.md)                                                                                               |
+| What governs the owner's actual 32-peer user-audit execution loop?  | [Real user audit protocol](docs/user-audit-protocol.md); separate from the closed development acceptance campaign                                              |
 | What work is currently authorized?                                  | Repository [Delivery Wave](../../../../docs/delivery-wave.md)                                                                                                  |
 | Where are progress, reviews and delivery dependencies?              | [Refinement #1542](https://github.com/hcoona/three/issues/1542), [original acceptance #1526](https://github.com/hcoona/three/issues/1526) and their linked PRs |
 
@@ -127,10 +128,13 @@ authorities.
 
 Independent implementation units also consume the implementation contracts;
 without them their separately produced components could disagree at integration.
-The native executor/reviewer consumes the exact acceptance protocol because a
+The native executor/reviewer consumes the applicable exact acceptance or
+user-audit protocol because a
 general validation basis cannot approve concrete provider effects or credit
-accounting. These two carriers have distinct implementation and observation
-review points, and are maintained by the owner with their authors.
+accounting. The user-audit protocol separates current real-repository operation
+from the closed fixture-only campaign. These contracts and protocols have
+distinct implementation and observation review points, and are maintained by
+the owner with their authors.
 
 The source baseline and license stay with the map and notice. Review execution,
 checker reports, mutable-source retrievals, findings and progress stay in Issues

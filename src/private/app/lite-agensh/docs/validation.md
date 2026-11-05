@@ -90,6 +90,14 @@ installation, test skeleton or live agent run is required by these records.
 
 ## Native observation protocol admission
 
+The owner's real 32-peer repository audit and execution/repair loop follows the
+separately accepted [user-audit protocol](user-audit-protocol.md) and its own
+Delivery Wave grant. It is normal product use, not a repeat of the former
+development acceptance campaign. Its declared repository input and private
+outputs must not be presented as a public fixture acceptance result. Retain
+the operational protocol's continuing ledger, stops and evidence limits;
+neither a test pass nor mechanical finalization establishes audit completeness.
+
 This validation basis is **not** an executable native-run protocol and does not
 approve a paid/model run. The separate [native protocol](native-acceptance-protocol.md)
 owns the concrete initial Windows subject and owner-approved credit effects.
