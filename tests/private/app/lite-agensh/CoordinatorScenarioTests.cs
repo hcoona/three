@@ -12,6 +12,97 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 {
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
+    public async Task PartialRampReconnectLoadsOnlyAssociatedPeersAndStartsUnadmittedPeersFresh()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        ScenarioClock clock = new();
+        using GitScenario fixture = await GitScenario.CreateAsync(token, clock: clock);
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        fixture.Database.SaveConfiguration(
+            fixture.Database.Configuration with { WorkerStartIntervalSeconds = 30 }
+        );
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
+        try
+        {
+            await WaitUntilAsync(() => AcknowledgedWorkers(fixture) == 1, execution, token);
+            coordinator.RequestControl("pause");
+            Scenario.Data(await execution);
+            string first = fixture.Database.ReadMetadata("worker:worker1:session")!;
+            Assert.IsNotNull(first);
+            Assert.IsNull(fixture.Database.ReadMetadata("worker:worker2:session"));
+            using (SqliteConnection retained = fixture.Database.Open())
+            {
+                // Isolate retained prefix recovery; separate crash scenarios cover live ownership.
+                Sql.Execute(
+                    retained,
+                    "UPDATE coordinator_segments SET ended_at=NULL WHERE id="
+                        + "(SELECT MAX(id) FROM coordinator_segments);"
+                );
+            }
+
+            HashSet<string> before = native.CaptureOperations();
+            execution = coordinator.RunAsync("reconnect", stop.Token);
+            await WaitUntilAsync(
+                () => native.OrdinaryPrompts(before).Length >= 1,
+                execution,
+                token
+            );
+            clock.Advance(TimeSpan.FromSeconds(30));
+            await WaitUntilAsync(() => AcknowledgedWorkers(fixture) == 2, execution, token);
+            string second = fixture.Database.ReadMetadata("worker:worker2:session")!;
+            Assert.IsNotNull(second);
+            Assert.AreEqual(first, fixture.Database.ReadMetadata("worker:worker1:session"));
+            Assert.AreEqual(
+                first,
+                Assert.ContainsSingle(
+                    native.Operations(before)
+                        .Where(operation => operation["operation"]?.GetValue<string>() == "resume")
+                )["sessionId"]!.GetValue<string>()
+            );
+            Assert.AreEqual(
+                second,
+                Assert.ContainsSingle(
+                    native.Operations(before)
+                        .Where(operation => operation["operation"]?.GetValue<string>() == "start")
+                )["sessionId"]!.GetValue<string>()
+            );
+            Assert.AreEqual(
+                "fresh-session-with-durable-summary",
+                fixture.Database.ReadMetadata("worker:worker2:recovery")
+            );
+            coordinator.RequestControl("pause");
+            Scenario.Data(await execution);
+            CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+            Assert.HasCount(
+                1,
+                ledger.Reservations(fixture.Database.RunId)
+                    .Where(reservation => reservation.State == "released")
+            );
+            Assert.IsTrue(
+                ledger.Reservations(fixture.Database.RunId)
+                    .All(reservation => reservation.State is "released" or "reconciled")
+            );
+            Assert.IsFalse(
+                ledger.Status(fixture.Database.RunId, 120)["uncertain"]!.GetValue<bool>()
+            );
+            using SqliteConnection settled = fixture.Database.Open();
+            Assert.AreEqual(
+                0L,
+                Sql.Scalar(settled, "SELECT COUNT(*) FROM process_leases WHERE state<>'exited';")
+            );
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            await StopExecutionAsync(stop, execution);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
     [DataRow("pause")]
     [DataRow("finalize")]
     [DataRow("worker-failure")]

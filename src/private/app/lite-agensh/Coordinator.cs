@@ -513,6 +513,7 @@ public sealed class Coordinator
                     && database.ReadMetadata("git:plan_integrated") != "true";
                 bool released = !planning;
                 Dictionary<string, CreditReservation> allocations = [];
+                HashSet<string> reconnecting = [];
                 Task? admission = null;
                 string? admissionId = null;
                 async Task StartWorkerAsync(string id)
@@ -522,7 +523,7 @@ public sealed class Coordinator
                         calibration: false
                     );
                     workers.Add(native);
-                    string? exact = mode == "reconnect" ? allocations[id].SessionId : null;
+                    string? exact = reconnecting.Contains(id) ? allocations[id].SessionId : null;
                     try
                     {
                         await native
@@ -582,6 +583,11 @@ public sealed class Coordinator
                     {
                         CreditReservation? previous =
                             mode == "reconnect" ? ReadReconnectReservation(ids[i]) : null;
+                        if (previous is not null)
+                        {
+                            reconnecting.Add(ids[i]);
+                        }
+
                         allocations.Add(
                             ids[i],
                             previous is null
@@ -674,6 +680,7 @@ public sealed class Coordinator
                                 database.Configuration.WorkerStartIntervalSeconds
                             );
                             StartLoop(admissionId!, workers[^1]);
+                            continue;
                         }
 
                         if (
