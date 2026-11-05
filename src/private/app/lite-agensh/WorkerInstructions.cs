@@ -35,6 +35,8 @@ internal static class WorkerInstructions
             + "and message_send to\n"
             + "settle overlapping edits with a peer. Claims are advisory, expiring "
             + "and non-exclusive.\n"
+            + "Cite #<task-id> in CLAIM content to appear as an advisory task "
+            + "assignee; workLabel links patch revisions, not ownership.\n"
             + "Use team messages for shared decisions and direct messages for "
             + "collisions; do not assume\n"
             + "a direct message interrupts a running tool. New notices arrive at "
