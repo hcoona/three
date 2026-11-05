@@ -250,9 +250,10 @@ accidental = "##" | "bb" | "#" | "b" | "n"
     | "(##)" | "(bb)" | "(#)" | "(b)" | "(n)"
 octave = "0".."9"
 fingering = "f", "1".."5", ["1".."5"]
-tie_marks = "{", (tie_start | tie_end | tie_end, ",", tie_start
-    | "tie-in" | "tie-in", ",", tie_start), "}"
-tie_start = ("tie" | "arc"), "@", label, ":start"
+tie_marks = "{", (tie_starts | tie_end | tie_end, ",", tie_starts
+    | "tie-in" | "tie-in", ",", tie_starts), "}"
+tie_starts = "tie@", label, ":start" | arc_start, (",", arc_start)*
+arc_start = "arc@", label, ":start"
 tie_end = "tie@", label, ":end"
 label = "r", pos_int
 
@@ -290,6 +291,7 @@ direction = "<", plain_body, ">"
     | "<ped)>[rel=pedal@", label, ":line-release]"
     | "<", nonempty_quoted, "(>[rel=dashes@", label, ":start]"
     | "<dashes)>[rel=dashes@", label, ":end]"
+    | "<trill)>[rel=ornament@", label, ":end:extended-trill]"
 ottava_sign = "8va" | "8vb" | "15ma" | "15mb"
 plain_body = ["^"], dynamic
     | "clef ", clef
@@ -583,13 +585,14 @@ label `rN`.
   document carries `"alter":"tie-in"`, and assembly resolves and checks every
   deferred alteration.
 - `{arc@rN:start}` marks a pitch that an arc leaves at the end of a system
-  document when that system cannot show whether the arc is a tie or a slur. An
-  arc stays open at the end of its document. The document that carries it in
-  ends it as a tie, with `{tie@rN:end}` on a pitch that meets the rules for the
-  end of a tie from its pitch, or as a slur, with `rel=slur@rN:end`. When that
-  document does not end it, it is a slur that stays open, and its carry-out
-  entry has kind `slur` and the event of its pitch as `start`, with
-  `member_index` null. Assembly gives the start the kind of the end, so an
+  document when that system cannot show whether the arc is a tie or a slur. A
+  pitch may start more than one arc, in ascending label order, as in
+  `{arc@r1:start,arc@r2:start}`, but not an arc and a tie. An arc stays open at
+  the end of its document. A later document that carries it in ends it as a
+  tie, with `{tie@rN:end}` on a pitch that meets the rules for the end of a tie
+  from its pitch, or as a slur, with `rel=slur@rN:end`. Until then it stays
+  open as an arc, and only its end decides its kind. Assembly gives the start
+  the kind of the end, writing a slur start on the event of its pitch, so an
   assembled score has no arc.
 - A slur uses `rel=slur@rN:start` and `rel=slur@rN:end` on two different notes,
   the start before the end.
@@ -599,6 +602,10 @@ label `rN`.
   between them.
 - An extended trill uses `rel=ornament@rN:start:extended-trill` on a note that
   carries `orn=trill`, and `rel=ornament@rN:end:extended-trill` on a later note.
+  A trill that `carry-in` lists as open may instead end on the direction
+  `<trill)>[rel=ornament@rN:end:extended-trill]`, which records a wavy line
+  that stops before any note that can end it. An assembled score has no such
+  end, and assembly reports it for a person to resolve.
 - An arpeggio uses `rel=arpeggio@rN:member` on each member event. It has at
   least two members at the same onset, possibly on different staves, and is
   never open across a system boundary. `arp` is the unrelated flag for a rolled
@@ -674,6 +681,8 @@ an event boundary in its line.
 - A dashes line is the dashed extension of expression text, such as "dim."
   followed by dashes. It starts with `<"dim."(>[rel=dashes@rN:start]`, which
   also records the text, and ends with `<dashes)>[rel=dashes@rN:end]`.
+- `<trill)>[rel=ornament@rN:end:extended-trill]` ends a carried extended trill
+  without a note, as described under relations.
 
 ### Event indexing
 
@@ -754,7 +763,9 @@ Assembly orders system documents by `page` and `system` and then:
    or `ending=end`;
 7. checks volta adjacency and every tie-in across the whole score, resolves
    and checks every deferred alteration, gives every arc the kind of its end,
-   and renames relation labels globally.
+   and renames relation labels globally;
+8. reports every extended trill that ends on `<trill)>`, with the locations of
+   its start and end, for a person to resolve, and does not report success.
 
 The result is an assembled score. Assembly never fills a missing event with an
 invented rest, infers an unprinted accidental or discards an unsupported mark
@@ -858,9 +869,11 @@ one of these in the earliest measure with the earliest onset in that measure.
   group, not a slur.
 - An extended trill ends on the last note of its voice line whose extent starts
   at or to the left of the right end of its wavy line, counting notes that a tie
-  continues. A wavy line that ends within the system before any note after the
-  trilled one starts is not encoded, and the trilled note carries `orn=trill`
-  alone.
+  continues. A wavy line that ends within the system of its trilled note before
+  any note after that one starts is not encoded, and the trilled note carries
+  `orn=trill` alone. A wavy line that continues a trill that `carry-in` lists
+  as open, and that ends before any note of its voice line in the system
+  starts, ends the trill on `<trill)>`.
 - Printed words are encoded as printed. Words in an upright typeface above
   staff 1, and words printed with a metronome mark, are `tempo`. Other words are
   text, and so are words for a gradual change of tempo or dynamics, such as
@@ -876,12 +889,14 @@ one of these in the earliest measure with the earliest onset in that measure.
 - Onset: a dynamic takes the onset of the event whose center is nearest to its
   own center, or of the earlier one at equal distance. Any other direction, and
   the start of a hairpin or line, takes the onset of the first event at or to
-  the right of its left edge. The end of a hairpin or line, and a pedal
-  change, take the onset of the first event at or to the right of the end or
-  change point. The events counted are the notes and rests of both staves,
-  except that a clef or ottava direction counts only events displayed on its own
-  staff, and that a whole-measure rest, whose glyph does not mark its onset,
-  counts only for a dynamic.
+  the right of its left edge. The end of a hairpin, of a line or of a wavy line
+  written `<trill)>`, and a pedal change, take the onset of the first event at
+  or to the right of the end or change point. The events counted are the notes
+  and rests of both staves, except that a clef or ottava direction counts only
+  events displayed on its own staff, and that a whole-measure rest, whose glyph
+  does not mark its onset, counts for a dynamic, and for any other point only in
+  a measure whose counted events are all whole-measure rests. There it lies at
+  or to the right of every point in its measure.
 - System edges: a point whose onset rule takes the first event at or to the
   right of it, when the system has no such counted event, takes the end of the
   last block as its onset, and its direction is written after the rhythmic
@@ -974,7 +989,8 @@ witness, a string that the grammar accepts.
 - `ornament`: `orn=` and the extended-trill relation. Witnesses:
   `C5/4[orn=trill]`;
   `C5/2[orn=trill,rel=ornament@r1:start:extended-trill]`;
-  `D5/2[rel=ornament@r1:end:extended-trill]`.
+  `D5/2[rel=ornament@r1:end:extended-trill]`;
+  `<trill)>[rel=ornament@r1:end:extended-trill]`.
 - `tremolo`: single-note and two-note tremolos. Witnesses:
   `C4/2[tremolo=single:3]`; `C4/2[rel=tremolo@r1:two-start:3]`;
   `E4/2[rel=tremolo@r1:two-end:3]`.

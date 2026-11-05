@@ -89,7 +89,10 @@ converter may still return the result for the in-scope content. Conversion and
 assembly shall never invent a rest, infer an unprinted accidental or drop a
 mark while reporting success.
 
-Assembly shall report an unfilled range of a measure instead of inventing rests.
+Assembly shall report an unfilled range of a measure instead of inventing rests,
+and shall report an extended trill whose wavy line continues into a later
+system and stops there before any note for a person to resolve instead of
+completing it.
 Finer coverage or confidence information (a recognition sidecar) is not part of
 this format and needs its own record admission.
 
@@ -101,8 +104,9 @@ across systems, the events already written there and the relationships that are
 still open. The carry state at the end of one system shall equal the carry state
 at the start of the next. A split shall not reset timing or accidental state.
 
-Assembly shall restore one score with no duplicated or lost event or
-relationship, and with the same content as an unsplit transcription.
+Except where OMR-REQ-006 requires assembly to report an extended trill, assembly
+shall restore one score with no duplicated or lost event or relationship, and
+with the same content as an unsplit transcription.
 
 ## Conversion and comparison
 
