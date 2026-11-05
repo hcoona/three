@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -63,6 +65,19 @@ def test_canonicalize_writes_canonical_text(
     )
     assert main(["canonicalize", str(source)]) == 0
     assert capsys.readouterr().out == expected.split("\n", 1)[1]
+
+
+def test_canonicalize_writes_lf_only_bytes() -> None:
+    """Write LF-only UTF-8 bytes from a separate process on every platform."""
+    source = FIXTURES / "noncanonical-system.txt"
+    expected = (FIXTURES / "noncanonical-system.canonical.txt").read_bytes()
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-m", "sheet_music_omr", "canonicalize", str(source)],
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert result.stdout == expected.split(b"\n", 1)[1]
 
 
 def test_canonicalize_rejects_invalid_input(

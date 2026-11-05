@@ -64,7 +64,11 @@ def _canonicalize(path: str) -> int:
         for diagnostic in error.diagnostics:
             sys.stderr.write(diagnostic.format(path) + "\n")
         return 1
-    sys.stdout.write(write_document(document))
+    # Write bytes so that text-mode newline translation, such as CRLF on
+    # Windows, cannot break the LF-only canonical form.
+    sys.stdout.flush()
+    sys.stdout.buffer.write(write_document(document).encode("utf-8"))
+    sys.stdout.buffer.flush()
     return 0
 
 

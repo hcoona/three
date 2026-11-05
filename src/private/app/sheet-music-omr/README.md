@@ -18,9 +18,9 @@ release is selected.
 From the repository root:
 
 ```shell
-uv run sheet-music-omr validate FILE...
-uv run sheet-music-omr canonicalize FILE
-uv run pytest src/private/app/sheet-music-omr/tests
+uv run --package sheet-music-omr sheet-music-omr validate FILE...
+uv run --package sheet-music-omr sheet-music-omr canonicalize FILE
+uv run --package sheet-music-omr --group dev pytest src/private/app/sheet-music-omr/tests
 ```
 
 `validate` prints one `path:line:column: class/rule: message` line for each
