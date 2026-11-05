@@ -818,6 +818,41 @@ public sealed class Coordinator
 
         if (failure is not null)
         {
+            IEnumerable<string> loopFailures = loops
+                .SelectMany(
+                    (loop, index) =>
+                        loop.IsFaulted
+                            ? loop.Exception!.Flatten().InnerExceptions
+                                .Where(exception => exception.Message != failure.Message)
+                                .Select(exception =>
+                                    database.Configuration.WorkerIds[index]
+                                    + ": "
+                                    + exception.Message
+                                )
+                            : []
+                );
+            string[] otherFailures = loopFailures
+                .Concat(
+                    workers.SelectMany(
+                        (worker, index) =>
+                            worker.NativeFailure is { } nativeFailure
+                            && nativeFailure != failure.Message
+                                ? [database.Configuration.WorkerIds[index] + ": " + nativeFailure]
+                                : Array.Empty<string>()
+                    )
+                )
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (otherFailures.Length > 0)
+            {
+                failure = new OperationException(
+                    failure is OperationException operation ? operation.Code : "unavailable",
+                    failure.Message
+                        + "\nOther worker failures:\n"
+                        + string.Join("\n", otherFailures)
+                );
+            }
+
             database.WriteMetadata("lifecycle:failure", failure.Message);
         }
 
@@ -1038,7 +1073,6 @@ public sealed class Coordinator
             string completedStopReason = "unknown";
             try
             {
-                string context = Render(collaboration.ReadSharedContext(id));
                 JsonObject changes = await git.InvokeAsync(
                         id,
                         "change_list",
@@ -1046,11 +1080,10 @@ public sealed class Coordinator
                         cancellationToken
                     )
                     .ConfigureAwait(false);
-                context += "\n==== DURABLE CHANGES ====\n" + changes.ToJsonString();
                 string text = WorkerInstructions.Compose(
                     database,
                     id,
-                    context,
+                    changes.ToJsonString(),
                     batch.Prompt,
                     initialPlanner
                 );
@@ -1134,15 +1167,6 @@ public sealed class Coordinator
             }
         }
     }
-
-    private static string Render(object? value) =>
-        value switch
-        {
-            null => "",
-            string text => text,
-            JsonNode node => node.ToJsonString(),
-            _ => JsonSerializer.Serialize(value, Json.Options),
-        };
 
     private string CreditPreflightBinding()
     {

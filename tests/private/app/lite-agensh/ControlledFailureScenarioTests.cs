@@ -10,6 +10,46 @@ public sealed class ControlledFailureScenarioTests(TestContext testContext)
 {
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
+    public async Task NativeFailuresRemainVisibleWhenAnotherWorkerFailureIsSelected()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario fixture = await GitScenario.CreateAsync(token);
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
+        native.SetMode("native-error");
+
+        JsonObject failed = await coordinator.RunAsync("run", token);
+
+        Scenario.Failure(failed, "native_stopped");
+        string message = failed["message"]!.GetValue<string>();
+        foreach (string worker in fixture.Database.Configuration.WorkerIds)
+        {
+            Assert.Contains(
+                fixture.Database.ReadMetadata($"worker:{worker}:session")!,
+                message
+            );
+        }
+
+        Assert.AreEqual(
+            message,
+            Scenario.Data(coordinator.Status())["failure"]!.GetValue<string>()
+        );
+        Assert.HasCount(2, native.OrdinaryPrompts());
+        Assert.HasCount(
+            1,
+            native.Operations()
+                .Where(item => item["operation"]!.GetValue<string>() == "native-error-canceled")
+                .ToArray()
+        );
+        CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+        Assert.IsTrue(ledger.Reservations().All(row => row.State == "reconciled"));
+        ledger.RequirePaidAdmission();
+        await fixture.AssertOriginalPreservedAsync(token);
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
     public async Task CoordinatorChecksRealCreditGateBeforeEnteringControlledPrompt()
     {
         CancellationToken token = testContext.CancellationToken;
@@ -194,7 +234,11 @@ public sealed class ControlledFailureScenarioTests(TestContext testContext)
                 0L,
                 (long)Sql.Scalar(
                     failures,
-                    "SELECT COUNT(*) FROM delivery_batches WHERE last_error=$message;",
+                    """
+                    SELECT COUNT(*) FROM delivery_batches
+                    WHERE last_error IS NOT NULL
+                        AND substr($message,1,length(last_error))=last_error;
+                    """,
                     null,
                     ("$message", failed["message"]!.GetValue<string>())
                 )!

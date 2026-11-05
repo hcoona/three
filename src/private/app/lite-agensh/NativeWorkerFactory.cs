@@ -10,6 +10,8 @@ internal interface INativeWorker : IAsyncDisposable
 
     JsonObject? Diagnostic { get; }
 
+    string? NativeFailure { get; }
+
     Task StartAsync(
         string cwd,
         string? exactSession,

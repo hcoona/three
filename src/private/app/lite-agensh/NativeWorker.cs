@@ -45,6 +45,8 @@ internal sealed class NativeWorker : INativeWorker
 
     public JsonObject? Diagnostic { get; private set; }
 
+    public string? NativeFailure => session?.NativeFailure;
+
     public async Task StartAsync(
         string cwd,
         string? exactSession,
