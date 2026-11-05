@@ -312,7 +312,35 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
         fixture.Database.SaveConfiguration(
             fixture.Database.Configuration with { WorkerStartIntervalSeconds = 60 }
         );
-        Coordinator coordinator = native.CreateCoordinator(fixture);
+        CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+        TaskCompletionSource<int> cancelled = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        CancellationTokenRegistration registration = default;
+        Coordinator coordinator = new(
+            fixture.Database,
+            fixture.Collaboration,
+            fixture.Operations,
+            (database, _, credits) => new ControlledNativeFactory(
+                database,
+                credits,
+                native.DirectoryPath,
+                onStart: (reservation, cancellationToken) =>
+                {
+                    if (reservation.Worker == "worker1")
+                    {
+                        registration = cancellationToken.Register(() =>
+                            cancelled.TrySetResult(
+                                ledger.Reservations(fixture.Database.RunId)
+                                    .Count(item => item.State == "reserved")
+                            )
+                        );
+                    }
+
+                    return Task.CompletedTask;
+                }
+            )
+        );
         await native.PrepareAsync(coordinator, token);
         HashSet<string> before = native.CaptureOperations();
         using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -330,6 +358,7 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             }
 
             Scenario.Data(await execution);
+            Assert.AreEqual(2, await cancelled.Task.WaitAsync(token));
             Assert.AreEqual(
                 deadline ? "deadline" : "owner-pause",
                 fixture.Database.ReadMetadata("lifecycle:stop_reason")
@@ -341,7 +370,6 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                 native.Operations(before)
                     .Where(operation => operation["operation"]?.GetValue<string>() == "start")
             );
-            CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
             using SqliteConnection retained = fixture.Database.Open();
             foreach (string worker in new[] { "worker2", "worker3" })
             {
@@ -373,6 +401,7 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
         finally
         {
             await StopExecutionAsync(stop, execution);
+            registration.Dispose();
         }
     }
 

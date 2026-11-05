@@ -739,9 +739,9 @@ public sealed class Coordinator
                 {
                     try
                     {
+                        await stop.CancelAsync().ConfigureAwait(false);
                         if (admission is not null)
                         {
-                            await stop.CancelAsync().ConfigureAwait(false);
                             try
                             {
                                 await admission.ConfigureAwait(false);
