@@ -136,6 +136,38 @@ public sealed class NativeMetadataTests(TestContext testContext)
     // Pinned SDK DTOs used by the real application's metadata guard.
 #pragma warning disable GHCP001
     [TestMethod]
+    [DataRow("gpt-6.1-terra", true)]
+    [DataRow("Gpt-6.1-Terra", true)]
+    [DataRow("another-model", false)]
+    [DataRow(null, false)]
+    public void RequestedNativeModelRequiresMatchingReadback(string? selected, bool accepted)
+    {
+        using RunFixture fixture = new();
+        SessionMetadataSnapshot metadata = new()
+        {
+            SessionId = "controlled-session",
+            WorkingDirectory = fixture.RepositoryPath,
+            SessionLimits = new SessionLimitsConfig { MaxAiCredits = 30 },
+            SelectedModel = selected,
+        };
+        void Validate() => NativeSdkSession.ValidateMetadata(
+            metadata, "controlled-session", "controlled-session", fixture.RepositoryPath,
+            30, "gpt-6.1-terra"
+        );
+        if (accepted)
+        {
+            Validate();
+        }
+        else
+        {
+            Assert.AreEqual(
+                "credit_unknown",
+                Assert.ThrowsExactly<OperationException>(Validate).Code
+            );
+        }
+    }
+
+    [TestMethod]
     [DataRow("metadata-session")]
     [DataRow("active-session")]
     [DataRow("cwd")]

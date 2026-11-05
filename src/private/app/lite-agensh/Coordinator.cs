@@ -1508,6 +1508,18 @@ public sealed class Coordinator
 
     private CreditReservation Reserve(string worker, int remainingWorkers)
     {
+        if (database.Configuration.CreditAllocation == "shared")
+        {
+            return credits.Reserve(
+                database.RunId,
+                worker,
+                0,
+                database.Configuration.RunAiCreditAllowance,
+                EvidencePath(worker),
+                shared: true
+            );
+        }
+
         JsonObject status = credits.Status(
             database.RunId,
             database.Configuration.RunAiCreditAllowance

@@ -24,6 +24,7 @@ public sealed class RunConfigurationTests
     [DataRow("insufficient-session-allowance")]
     [DataRow("campaign-smaller-than-run")]
     [DataRow("unknown-permission-policy")]
+    [DataRow("unknown-credit-allocation")]
     public void InitializeInvalidConfigurationRejectsBeforeCreatingState(string scenario)
     {
         using RunFixture fixture = new();
@@ -80,6 +81,10 @@ public sealed class RunConfigurationTests
             {
                 NativePermissionPolicy = "approve-everything",
             },
+            "unknown-credit-allocation" => fixture.Configuration with
+            {
+                CreditAllocation = "unbounded",
+            },
             _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
         };
         string instructions = Path.Combine(fixture.RepositoryPath, "AGENTS.md");
@@ -120,13 +125,14 @@ public sealed class RunConfigurationTests
     }
 
     [TestMethod]
-    [DataRow(1, 0, "deny", 0)]
-    [DataRow(2, 60, "trusted", 30)]
+    [DataRow(1, 0, "deny", 0, "per-session")]
+    [DataRow(2, 60, "trusted", 30, "shared")]
     public void InitializeValidBoundaryConfigurationCreatesRecoverableRun(
         int workers,
         int planningSeconds,
         string policy,
-        int workerStartIntervalSeconds
+        int workerStartIntervalSeconds,
+        string creditAllocation
     )
     {
         using RunFixture fixture = new();
@@ -134,6 +140,7 @@ public sealed class RunConfigurationTests
         {
             WorkerCount = workers,
             WorkerStartIntervalSeconds = workerStartIntervalSeconds,
+            CreditAllocation = creditAllocation,
             DurationSeconds = 60,
             PlanningSeconds = planningSeconds,
             RunAiCreditAllowance = 30,
@@ -144,6 +151,7 @@ public sealed class RunConfigurationTests
 
         RunDatabase database = new(fixture.StatePath, configuration);
         RunDatabase recovered = new(fixture.StatePath);
+        Assert.AreEqual(creditAllocation, recovered.Configuration.CreditAllocation);
 
         Assert.HasCount(workers + 1, recovered.Members);
         Assert.Contains("owner", recovered.Members);

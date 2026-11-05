@@ -12,14 +12,22 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 {
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
-    public async Task PartialRampReconnectLoadsOnlyAssociatedPeersAndStartsUnadmittedPeersFresh()
+    [DataRow("per-session")]
+    [DataRow("shared")]
+    public async Task PartialRampReconnectLoadsOnlyAssociatedPeersAndStartsUnadmittedPeersFresh(
+        string allocation
+    )
     {
         CancellationToken token = testContext.CancellationToken;
         ScenarioClock clock = new();
         using GitScenario fixture = await GitScenario.CreateAsync(token, clock: clock);
         ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
         fixture.Database.SaveConfiguration(
-            fixture.Database.Configuration with { WorkerStartIntervalSeconds = 30 }
+            fixture.Database.Configuration with
+            {
+                WorkerStartIntervalSeconds = 30,
+                CreditAllocation = allocation,
+            }
         );
         Coordinator coordinator = native.CreateCoordinator(fixture);
         await native.PrepareAsync(coordinator, token);

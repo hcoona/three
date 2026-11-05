@@ -64,6 +64,7 @@ internal sealed class ControlledNativeWorker(
     private bool started;
     private bool stopped;
     private bool failedExactLoad;
+    private bool completedSharedTurn;
     private CancellationToken loadCancellation;
     private NativeSdkSession? failedSession;
 
@@ -93,6 +94,13 @@ internal sealed class ControlledNativeWorker(
 
         if (reservation is not null)
         {
+            if (reservation.Shared)
+            {
+                reservation = await credits.AcquireSharedWindowAsync(
+                    reservation.Id,
+                    cancellationToken
+                );
+            }
             credits.MarkStarted(reservation.Id);
             started = true;
             RecordAssociation(
@@ -179,6 +187,11 @@ internal sealed class ControlledNativeWorker(
             Record(directory, calibration ? "calibration-enter" : "prompt-enter", SessionId);
             turnCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
             await VerifyCreditsCoreAsync(linked.Token);
+            if (reservation.Shared)
+            {
+                reservation = await credits.AcquireSharedWindowAsync(reservation.Id, linked.Token);
+            }
+            completedSharedTurn = false;
             credits.BeginDispatch(
                 database.RunId,
                 reservation.Id,
@@ -291,6 +304,7 @@ internal sealed class ControlledNativeWorker(
             }
 
             Record(directory, "completed", SessionId);
+            completedSharedTurn = true;
             database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "ready");
             return new()
             {
@@ -341,6 +355,10 @@ internal sealed class ControlledNativeWorker(
         }
 
         credits.RecordSdkUsage(reservation.Id, ReadUsage(directory, SessionId));
+        if (reservation.Shared && completedSharedTurn)
+        {
+            credits.CloseSharedWindow(reservation.Id);
+        }
         credits.RequirePromptAllowance(
             database.RunId,
             reservation.Id,

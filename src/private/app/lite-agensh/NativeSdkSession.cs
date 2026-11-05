@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json.Nodes;
+using System.Threading.Channels;
 using GitHub.Copilot;
 using GitHub.Copilot.Rpc;
 
@@ -22,6 +23,7 @@ internal sealed class NativeSdkSession : IAsyncDisposable
     private string? eventFailure;
     private string? actualRuntimeVersion;
     private bool disposed;
+    private Channel<SessionLimitsExhaustedRequestedData>? limitRequests;
 
     public NativeSdkSession(
         RunDatabase database,
@@ -177,7 +179,14 @@ internal sealed class NativeSdkSession : IAsyncDisposable
             SessionMetadataSnapshot metadata = await active
                 .Rpc.Metadata.SnapshotAsync(deadline.Token)
                 .ConfigureAwait(false);
-            ValidateMetadata(metadata, active.SessionId, expectedSession, cwd, expectedLimit);
+            ValidateMetadata(
+                metadata,
+                active.SessionId,
+                expectedSession,
+                cwd,
+                expectedLimit,
+                database.Configuration.NativeModel
+            );
 
             phase = "usage";
             UsageGetMetricsResult usage = await active
@@ -221,7 +230,8 @@ internal sealed class NativeSdkSession : IAsyncDisposable
         string activeSessionId,
         string expectedSession,
         string cwd,
-        decimal? expectedLimit
+        decimal? expectedLimit,
+        string? expectedModel = null
     )
     {
         if (
@@ -236,6 +246,10 @@ internal sealed class NativeSdkSession : IAsyncDisposable
             || metadata.AlreadyInUse
             || metadata.IsRemote
             || (
+                expectedModel is not null
+                && !expectedModel.Equals(metadata.SelectedModel, StringComparison.OrdinalIgnoreCase)
+            )
+            || (
                 expectedLimit is decimal limit
                 && metadata.SessionLimits?.MaxAiCredits != NativeLimit(limit)
             )
@@ -243,15 +257,35 @@ internal sealed class NativeSdkSession : IAsyncDisposable
         {
             throw new OperationException(
                 "credit_unknown",
-                "Native identity, working directory, ownership or applied limit mismatched."
+                "Native identity, working directory, ownership, model or applied limit mismatched."
             );
         }
+    }
+
+    public async Task<NativeUsage> UpdateLimitAsync(
+        string expectedSession,
+        decimal limit,
+        CancellationToken cancellationToken
+    )
+    {
+        CopilotSession active =
+            session ?? throw new InvalidOperationException("No native session.");
+        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken
+        );
+        deadline.CancelAfter(TimeSpan.FromSeconds(ProbeTimeoutSeconds));
+        await active.Rpc.Options.UpdateAsync(
+            sessionLimits: new SessionLimitsConfig { MaxAiCredits = NativeLimit(limit) },
+            cancellationToken: deadline.Token
+        ).ConfigureAwait(false);
+        return await ReadAsync(expectedSession, limit, deadline.Token).ConfigureAwait(false);
     }
 
     public async Task<JsonObject> SendAsync(
         string text,
         TimeSpan timeout,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task<decimal>>? renewLimit = null
     )
     {
         CheckEvents(cancellationToken);
@@ -261,11 +295,42 @@ internal sealed class NativeSdkSession : IAsyncDisposable
             cancellationToken,
             eventStop.Token
         );
+        Channel<SessionLimitsExhaustedRequestedData>? requests = renewLimit is null
+            ? null
+            : Channel.CreateBounded<SessionLimitsExhaustedRequestedData>(
+                new BoundedChannelOptions(1) { SingleReader = true, SingleWriter = true }
+            );
+        lock (callbacks)
+        {
+            limitRequests = requests;
+        }
+        Task<AssistantMessageEvent?>? sending = null;
+        Task<SessionLimitsExhaustedRequestedData>? pending = null;
         try
         {
-            AssistantMessageEvent? response = await active
-                .SendAndWaitAsync(text, timeout, linked.Token)
-                .ConfigureAwait(false);
+            sending = active.SendAndWaitAsync(text, timeout, linked.Token);
+            while (requests is not null && !sending.IsCompleted)
+            {
+                pending = requests.Reader.ReadAsync(linked.Token).AsTask();
+                if (await Task.WhenAny(sending, pending).ConfigureAwait(false) == sending)
+                {
+                    break;
+                }
+
+                SessionLimitsExhaustedRequestedData request = await pending.ConfigureAwait(false);
+                decimal limit = await renewLimit!(linked.Token).ConfigureAwait(false);
+                await active.Rpc.Ui.HandlePendingSessionLimitsExhaustedAsync(
+                    request.RequestId,
+                    new UISessionLimitsExhaustedResponse
+                    {
+                        Action = UISessionLimitsExhaustedResponseAction.Set,
+                        MaxAiCredits = NativeLimit(limit),
+                    },
+                    linked.Token
+                ).ConfigureAwait(false);
+                await ReadAsync(SessionId, limit, linked.Token).ConfigureAwait(false);
+            }
+            AssistantMessageEvent? response = await sending.ConfigureAwait(false);
             CheckEvents(cancellationToken);
             return new() { ["stopReason"] = "end_turn", ["text"] = response?.Data.Content };
         }
@@ -277,6 +342,33 @@ internal sealed class NativeSdkSession : IAsyncDisposable
                 )
                 .ConfigureAwait(false);
             throw;
+        }
+        finally
+        {
+            lock (callbacks)
+            {
+                limitRequests = null;
+            }
+            await linked.CancelAsync().ConfigureAwait(false);
+            if (sending is not null)
+            {
+                try
+                {
+                    await sending.ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // The send's original failure is preserved above.
+                }
+            }
+            if (pending is not null)
+            {
+                try
+                {
+                    await pending.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) { }
+            }
         }
     }
 
@@ -431,9 +523,17 @@ internal sealed class NativeSdkSession : IAsyncDisposable
                     )
                     + $": {error.Data.Message}";
             }
-            else if (update is SessionLimitsExhaustedRequestedEvent)
+            else if (update is SessionLimitsExhaustedRequestedEvent exhausted)
             {
-                eventFailure = "Native session credit limit exhausted.";
+                if (
+                    isolated
+                    || limitRequests is null
+                    || !limitRequests.Writer.TryWrite(exhausted.Data)
+                )
+                {
+                    eventFailure = "Native session credit limit exhausted "
+                        + "without a backed renewal.";
+                }
             }
 
             if (eventFailure is not null)
