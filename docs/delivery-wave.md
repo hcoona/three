@@ -76,6 +76,75 @@ ends a grant. Git and the proposing PR retain the reason and history.
   does not revive or silently enlarge the former fixture-only protocol.
   No unrelated project implementation or new hosted collaboration stack.
 
+### Run and repair the LiteAgensh 32-peer user audit
+
+- **Work carrier:** [Issue #1552](https://github.com/hcoona/three/issues/1552)
+  and its linked authorization, protocol, implementation and outcome PRs.
+  The repository owner requests repeated actual execution and repair until
+  the real user scenario works, rather than stopping at managed tests.
+- **Accepted inputs:** the repository governance and record policies,
+  [engineering principles](engineering/engineering-principles.md), and
+  LiteAgensh's [portal](../src/private/app/lite-agensh/README.md),
+  [requirements](../src/private/app/lite-agensh/docs/requirements.md),
+  [architecture](../src/private/app/lite-agensh/docs/architecture.md),
+  [contracts](../src/private/app/lite-agensh/docs/implementation-contracts.md),
+  [migration map](../src/private/app/lite-agensh/docs/upstream-migration.md)
+  and [validation basis](../src/private/app/lite-agensh/docs/validation.md).
+- **Advancement and outcome:** accept a project-local user-audit protocol,
+  execute the actual read-only migration review with 32 equal peers and one
+  shared Chinese goal in a foreground psmux coordinator, diagnose retained
+  failures, and repeat after bounded, reviewed repairs until the user journey
+  works. Keep runtime usability distinct from the audit's semantic conclusion
+  about migration completeness; a test pass or merely launched coordinator is
+  not completion. Source repairs use the existing refinement entry and its
+  accepted product decisions, not a new product or recovery architecture.
+- **Owner risk decision and effects:** the owner requests paid use of the
+  existing Windows Copilot SDK/CLI, existing authentication/default model and
+  trusted-host policy for this actual repository audit. Workers may process
+  the declared repository through that model service; worktrees are not a
+  host-permission sandbox. Permit owned worktree/state/process creation,
+  worker-bound local MCP cooperation, private audit output, read-only public
+  upstream inspection, and required non-model preflight and paid calibration.
+  Workers must not edit source/records/dependencies/workflows, commit/push,
+  mutate GitHub, invoke nested agents/models or inspect unrelated host,
+  credential, account or historical-session data. The executor may inspect
+  only this campaign's exact owned diagnostics to diagnose failures.
+- **Finite execution boundary:** retain 32 workers, no privileged planner,
+  a 1,800-second per-run deadline, 10,000 AI Credits per initialized attempt
+  and 150,000 AI Credits cumulatively. Continue the latest fully reconciled
+  user-audit campaign ledger, including existing spend; calibration, runs,
+  repetitions, fresh sessions and repairs never create another zero baseline.
+  There is no separate run-count quota. Native limits remain soft, with
+  possible in-flight overshoot accepted and recorded; tokens or elapsed time
+  do not prove exact spend. Unknown usage or ownership blocks further paid
+  work until established by the accepted reconciliation path, never by reset.
+- **Ordering and gates:** this Wave must merge before newly authorized work.
+  Author and separately accept the exact project-local operational protocol
+  before any native observation. It must cover the subject/build identities,
+  environment and interface rechecks, repository and owned-state scope,
+  actions, expected observations, finite bounds, stops, cleanup and evidence
+  limits; the old fixture-only protocol is not a substitute. Retain independent
+  record-system, research-evidence and applicable engineering review, separate
+  material-finding classification, exact-base record checks, relevant managed
+  validation and ordinary CI. Failed attempts retain their outcomes and all
+  ledger/session/evidence state before any safe repetition.
+- **Acceptance and closure:** require actual native dispatch and peer
+  coordination, substantive source-backed audit outputs with independent
+  finding classification, a Chinese final summary in team state and the
+  owned private output, and complete process/usage settlement. A run deadline,
+  mechanical finalization or tests alone do not satisfy the journey. Keep
+  missing coverage, unresolved findings and unsupported behavior explicit.
+  Record commands, identities, outcomes and sanitized limitations in #1552
+  and its PRs; keep private paths and raw transcripts local. Close this grant
+  by an accepted Wave deletion after owner acceptance or explicit stop.
+- **Exclusions:** no reopening the former development acceptance campaign,
+  general 32-worker/backend support claim, provider substitution, account or
+  quota inspection, authentication/subscription/access change, release,
+  publication or proving dispatch. No reset/deletion of any old ledger,
+  unknown reservation, session evidence or owner work. New implementation,
+  dependency or recovery-policy decisions retain their existing prerequisites;
+  repeated paid execution does not authorize bypassing them.
+
 ### Reconcile Workflow V1, V2 and V3 documentation
 
 - **Work carrier:** [Issue #1406](https://github.com/hcoona/three/issues/1406)
