@@ -47,8 +47,8 @@ packages:
   '@adobe/css-tools@4.3.3':
     resolution: {integrity: sha512-rE0Pygv0sEZ4vBWHlAgJLGDU7Pm8xoO6p3wsEceb7GYAjScrOHpEo8KK/eVkAcnSM+slAEtXjA2JpdjLp4fJQQ==}
 
-  '@asciidoctor/core@4.1.1':
-    resolution: {integrity: sha512-kwynyx6FXXi985Q9tfIPUitZ/2vzISYmcUVVZXkSamwD91I5nL7TJt33HXjnBYwfzugLu36RZuhNA/DB4fogEA==}
+  '@asciidoctor/core@4.2.1':
+    resolution: {integrity: sha512-c/LvM4nnkeLhHryAQOI41AL7UlOowmydMhNaVoH4zecKo2HkyalaNodeVqueR2RVU0/MOg4HPikYtFMHdVXa4A==}
     engines: {node: '>=20'}
     peerDependencies:
       highlight.js: ^11.0.0
@@ -788,7 +788,7 @@ snapshots:
 
   '@adobe/css-tools@4.3.3': {}
 
-  '@asciidoctor/core@4.1.1(highlight.js@11.12.0)':
+  '@asciidoctor/core@4.2.1(highlight.js@11.12.0)':
     optionalDependencies:
       highlight.js: 11.12.0
 
@@ -1110,7 +1110,7 @@ snapshots:
 
   hexo-renderer-asciidoc@file:../..(hexo@8.1.2(chokidar@3.6.0))(highlight.js@11.12.0):
     dependencies:
-      '@asciidoctor/core': 4.1.1(highlight.js@11.12.0)
+      '@asciidoctor/core': 4.2.1(highlight.js@11.12.0)
       cheerio: 1.2.0
       entities: 9.0.0
       hexo: 8.1.2(chokidar@3.6.0)
