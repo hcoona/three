@@ -46,6 +46,13 @@ locks or introduce a central intelligent scheduler. When planning is enabled,
 wake the initial planner before peers and release peers on plan integration or
 the configured planning timeout.
 
+Support an operator-configurable interval between ordinary worker admissions.
+An omitted or zero interval preserves simultaneous dispatch eligibility; a
+positive interval admits the first worker immediately and subsequent workers
+gradually, without preassigning their work. Admitted peers continue cooperating
+while later peers wait. Stops remain responsive during ramp-up, and workers
+not yet admitted shall not acquire native sessions that require usage settlement.
+
 ### LA-REQ-005: Local communication and owner control
 
 The product shall support task creation/update/comment/closure, message

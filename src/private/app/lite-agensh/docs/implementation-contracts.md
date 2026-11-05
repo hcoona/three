@@ -75,6 +75,46 @@ Input errors produce the existing non-success CLI operation envelope before
 models start. Existing budget, ownership, permission, preflight and billing
 calibration gates remain unchanged by the input format.
 
+## Worker admission ramp-up
+
+`workerStartIntervalSeconds` is a nonnegative integer in both JSON and YAML,
+defaulting to zero for existing configurations and persisted runs. It is
+persisted with the resolved configuration and participates in the existing
+preflight/calibration identity. Schema guidance and examples use the same name.
+
+- Zero preserves the existing startup sequence and immediate eligibility of
+  all ordinary worker loops after their sessions are ready.
+- With a positive interval, admit the first ordinary worker without an
+  artificial delay. Start its native session, queue its kickoff and run its
+  loop while the coordinator continues handling controls and peer work.
+  Start each following native worker no sooner than the configured interval
+  after the preceding admission completes. Do not catch up missed intervals
+  by bursting several admissions.
+- Reserve through the existing fair allocation policy. A waiting worker may
+  hold an unstarted reservation but must not have a started native session,
+  process lease or model dispatch. Release only reservations that remain
+  unstarted when the segment stops; do not infer free usage for a native
+  session that was started.
+- Deadline, cancellation, control requests and admitted-worker failures remain
+  effective during ramp-up. The finite segment deadline is not extended by
+  startup or waiting. Stops can leave fewer than the configured workers
+  admitted; report the actual count rather than asserting full-team execution.
+- With planning enabled, admit the planner first, begin its planning window
+  when its session is ready, and admit later peers only after existing plan
+  integration or planning-timeout release, while respecting the start interval.
+- Apply the interval anew to each lifecycle segment after existing recovery
+  ownership and accounting checks. Do not silently replace an unavailable exact
+  reconnect identity or change explicit fresh-summary resume semantics.
+
+This is a configurable constant interval, not the upstream experiment's full
+two-stage deployment schedule. The [paper, Appendix C][agensh-paper], uses
+30 seconds during its first hour and 3 seconds thereafter to reduce scope
+contention; a local 32-peer run can select 30 without introducing another
+deployment service. This source rationale does not establish a measured local
+quality or cost improvement.
+
+[agensh-paper]: https://arxiv.org/html/2609.26781v1
+
 ## Shared platform boundary
 
 The following public application contracts permit independent units without a
