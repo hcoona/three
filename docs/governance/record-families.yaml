@@ -906,7 +906,7 @@ bindings:
     carrier: repository-files
     path: src/private/app/sheet-music-omr/docs/**/*.md
     format: markdown
-    purpose: Sheet-music text-representation requirements, validation basis and normative text-format specification
+    purpose: Sheet-music text-representation requirements, validation basis, normative text-format specification and round-trip comparison protocol
   - id: src-private-app-vscode-copilot-telegram-hook-records
     family: project-concern-records
     namespace: src/private/app/vscode-copilot-telegram-hook
