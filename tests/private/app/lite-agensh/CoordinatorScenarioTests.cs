@@ -54,6 +54,19 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
         try
         {
             await WaitUntilAsync(() => AcknowledgedWorkers(fixture) == 1, execution, token);
+            Scenario.Call(
+                fixture.Collaboration,
+                "owner",
+                "message_send",
+                new { recipient = "worker1", body = "first-admission-ready" }
+            );
+            await WaitUntilAsync(
+                () => native.OrdinaryPrompts().Any(text =>
+                    text.Contains("first-admission-ready", StringComparison.Ordinal)
+                ),
+                execution,
+                token
+            );
             clock.Advance(TimeSpan.FromSeconds(30));
             await pending.Task.WaitAsync(TimeSpan.FromSeconds(10), token);
             if (action == "worker-failure")
@@ -72,7 +85,7 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             }
 
             JsonObject result = await execution.WaitAsync(TimeSpan.FromSeconds(10), token);
-            Assert.AreEqual(action != "worker-failure", result["ok"]!.GetValue<bool>());
+            Scenario.Failure(result, "ownership_or_usage_unresolved");
             Assert.AreEqual(
                 action == "worker-failure" ? "native_stopped" : $"owner-{action}",
                 fixture.Database.ReadMetadata("lifecycle:stop_reason")
@@ -89,7 +102,7 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             Assert.IsNull(fixture.Database.ReadMetadata("worker:worker3:session"));
             CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
             Assert.AreEqual(
-                "reconciled",
+                "uncertain",
                 Assert.ContainsSingle(
                     ledger.Reservations(fixture.Database.RunId)
                         .Where(reservation => reservation.Worker == "worker2")
@@ -102,7 +115,7 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                         .Where(reservation => reservation.Worker == "worker3")
                 ).State
             );
-            Assert.IsFalse(
+            Assert.IsTrue(
                 ledger.Status(fixture.Database.RunId, 120)["uncertain"]!.GetValue<bool>()
             );
             await fixture.AssertOriginalPreservedAsync(token);
