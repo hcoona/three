@@ -144,6 +144,15 @@ tool or process is dead. Task closure and budget expiry are stop reasons, not
 proof that final checks passed. Do not claim an aggregate token-request cutoff
 or exact spend metering without a verified native interface.
 
+Support an explicitly selected shared AI-credit allocation mode. Workers draw
+from one finite run allowance and the same continuing campaign allowance,
+not permanent equal per-worker shares. A local spending window may be renewed
+only against available shared credit; exhausting that window alone shall not
+stop the team while the shared pool can fund further work. Waiting workers
+shall not lock fixed shares of the pool. Preserve cancellation, complete
+cumulative usage, unknown-usage stops and the native soft-limit evidence
+boundary. Existing configurations retain their per-session allocation mode.
+
 ### LA-REQ-015: Retained local delivery
 
 Finalization shall retain the local delivery branch, partial work, SQLite state

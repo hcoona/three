@@ -75,6 +75,12 @@ Input errors produce the existing non-success CLI operation envelope before
 models start. Existing budget, ownership, permission, preflight and billing
 calibration gates remain unchanged by the input format.
 
+`creditAllocation` accepts `per-session` or `shared` in JSON and YAML, defaulting
+to `per-session` for existing inputs and retained runs. Persist it with the
+resolved configuration and receipt identity. Reject other values. Shared mode
+changes how the finite allowances are allocated, not their magnitude or the
+native soft-limit semantics; it has no independent per-worker budget field.
+
 ## Worker admission ramp-up
 
 `workerStartIntervalSeconds` is a nonnegative integer in both JSON and YAML,
@@ -90,11 +96,12 @@ preflight/calibration identity. Schema guidance and examples use the same name.
   Start each following native worker no sooner than the configured interval
   after the preceding admission completes. Do not catch up missed intervals
   by bursting several admissions.
-- Reserve through the existing fair allocation policy. A waiting worker may
-  hold an unstarted reservation but must not have a started native session,
-  process lease or model dispatch. Release only reservations that remain
-  unstarted when the segment stops; do not infer free usage for a native
-  session that was started.
+- In per-session mode, retain the existing fair allocation policy. In shared
+  mode, a waiting worker may have a durable preassigned identity but holds no
+  spending grant until actual admission. Neither mode starts a waiting
+  worker's native session, process lease or model dispatch. Release only
+  reservations known to remain unstarted; do not infer free usage for a
+  native session that was started.
 - Deadline, cancellation, control requests and admitted-worker failures remain
   effective during ramp-up. The finite segment deadline is not extended by
   startup or waiting. Stops can leave fewer than the configured workers
@@ -352,9 +359,11 @@ Create sessions with an explicit unique `SessionId`, `WorkingDirectory`,
 local `McpServers`, `ExcludedTools` including native `task`, and finite
 `SessionLimits.MaxAiCredits`. Leave default model/authentication selection
 unchanged unless the operator's product configuration explicitly selects a
-supported model; acceptance uses the owner's existing default.
+supported model; the closed development acceptance used the owner's existing
+default. The separately accepted user-audit protocol owns its model selection.
 Read `session.Rpc.Metadata.SnapshotAsync()` and verify the actual session,
-working directory and applied limit before dispatch. Missing/mismatched
+working directory, explicitly requested model and applied limit before dispatch.
+An unavailable requested model is not permission to fall back. Missing/mismatched
 metadata or an unexpected limit change stops the affected path.
 Permission callbacks honor the explicit trusted-run policy for known request
 kinds; unknown actions or enforced native policy are not silently overridden.
@@ -397,14 +406,73 @@ model selection, native compaction ownership or failure classification.
 
 Use SDK `SessionLimitsConfig.MaxAiCredits`, not the incompatible ACP/usage-file
 flag combination. It is a native soft limit on the current accounting window,
-not a hard prepaid ceiling. Never automatically add, unset or increase a limit
-in response to exhaustion. Request cancellation and report actual overshoot.
+not a hard prepaid ceiling. Per-session mode never automatically adds, unsets
+or increases a limit in response to exhaustion. Shared mode may renew a finite
+window only as specified below, without increasing the run/campaign allowances.
+Never unset a paid session's cap to keep it working. Report actual overshoot.
 
 Persist campaign/run allowances and session reservations before paid dispatch.
 Bind each reservation to the exact run, worker and persistent session in one
 transaction. Fresh sessions consume new reservations. Exact continuation
 retains previously charged usage and applies no more than the remaining
-allowance as the native window cap; never reset to the original allocation.
+backed allowance as the native window cap; never reset cumulative usage.
+Per-session mode retains its original lifetime allocation.
+
+### Shared spending windows
+
+The campaign ledger remains the single accounting authority. Persist allocation
+mode and grant state with exact run/worker/session associations; retain
+idempotent cumulative reports and reject incompatible state before dispatch.
+Keep confirmed spend distinct from outstanding authorization. Within each
+immediate SQLite transaction, require confirmed spend plus backed outstanding
+grants not to exceed either finite allowance before approving another grant.
+Actual in-flight soft-cap overshoot is retained even when it crosses a bound.
+
+For ordinary shared workers, grant at most 100 credits from the available
+pool and require at least 30 for a new grant. Grant only when a worker is
+actually admitted or needs a turn/renewal, not up front for all configured
+workers. Calibration keeps its separate once-only 30-credit native soft cap
+and its spend counts against the same finite allowances.
+
+Before a new paid send, acquire backing, apply a finite current-window cap
+through `session.Rpc.Options.UpdateAsync`, and verify metadata and the
+unchanged cumulative baseline. During the supported exhausted-limit flow,
+record complete cumulative usage, obtain additional backing and use
+`session.Rpc.Ui.HandlePendingSessionLimitsExhaustedAsync` with an explicit
+finite `Set` response. Verify the applied cap and retained baseline; never
+use `Unset` or an unbacked `Add`. Unsupported or inconsistent behavior fails
+closed rather than silently reverting to fixed shares or replacing sessions.
+
+Save the current native accounting-window baseline on create/exact resume.
+Subtract it when deriving a cap from cumulative session spend; changing a cap
+does not authorize resetting that baseline. A completed SDK turn with complete,
+nonregressing cumulative metrics may close its grant and return unused backing.
+A cap still present in an idle native session does not authorize another send:
+the host must obtain and verify a newly backed window first. A failed or
+canceled send cannot release backing merely because its local await ended.
+
+Preserve grant ownership through cancellation and crash settlement. An exact
+reconnect may acquire another backed window after previous usage and ownership
+are established; it never restores a spent original allocation. Fresh-summary
+resume uses fresh session identities and the same remaining shared pool.
+Preserve overshoot observations when closing or renewing a grant.
+
+If enough actual credit remains but is committed to in-flight calls, wait
+without dispatching until backing is available or existing cancellation,
+deadline, unknown-usage or exhaustion conditions apply. Do not equate
+temporarily unavailable backing with spent credit.
+
+The typed mutable limit, metadata, complete-usage and exhausted-limit APIs are
+available in the pinned SDK package. The public
+[session-limits guide][sdk-session-limits] describes per-session current-window
+soft caps, post-response enforcement and exhausted-limit events; it does not
+provide a native pool across independent sessions. Typed/public source
+availability is not installed-runtime verification. The applicable operational
+protocol owns that observation.
+
+[sdk-session-limits]: https://github.com/github/copilot-sdk/blob/99d90edf504f824c77dcdf0faa978f4b35848a87/docs/features/session-limits.md
+
+### Usage evidence and settlement
 
 `session.Rpc.Usage.GetMetricsAsync()` supplies `TotalNanoAiu` and
 `AiCreditsStatus`. Interpret credits as reported nano-AIU divided by
@@ -428,6 +496,10 @@ the initial tool-disabled billing calibration, which must obtain complete
 native usage before ordinary work. An outstanding unknown reservation still
 blocks all new paid work: this interface change neither releases it nor
 authorizes conservative carry-forward without repository-owner disposition.
+The owner's explicitly authorized one-time audit ledger transition follows
+the [user-audit protocol](user-audit-protocol.md#continuing-accounting-and-finite-effects);
+it preserves historical unknowns rather than reconciling or releasing them.
+It is not a general exception for uncertainty within the active campaign.
 
 Cancel through `AbortAsync`, collect complete metrics when available, quiesce
 handlers, dispose sessions/client without permanent deletion, and settle the

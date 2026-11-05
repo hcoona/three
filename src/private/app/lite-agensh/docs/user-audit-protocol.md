@@ -29,10 +29,14 @@ metadata, limits and usage contracts, and recheck required installed CLI flags.
 Pause affected work if an interface changed. Disable native automatic updates
 and SDK runtime acquisition; do not install another backend or CLI.
 
-Use only existing authentication, entitlement and default model configuration.
+Use only existing authentication and entitlement, explicitly selecting
+GPT-6.1 Terra through its supported native model identifier. Verify actual model
+readback before paid dispatch; an unavailable model is not permission to fall
+back. The non-model preflight may read the supported model catalog solely to
+resolve that identifier; retain the selected identifier, not account details.
 No account balance, personal usage, quota, credential or authentication-material
 inspection is allowed. The owner accepts repository processing by this existing
-model service and native soft-limit overshoot by an in-flight response.
+model service and native soft-limit overshoot by in-flight responses.
 
 ## Repository, collaboration and output scope
 
@@ -69,20 +73,28 @@ form. Repository records remain English.
 
 ## Continuing accounting and finite effects
 
-Use the latest fully reconciled real-user audit's existing campaign ledger,
-including all its previously reported spend. Before the first new dispatch,
-record its exact private identity and a retained baseline snapshot, verify
-paid admission and absence of uncertain reservations, and confirm the prior
-coordinator and owned processes are inactive. Earlier retired ledgers,
-including their unknown reservations, remain separate and unchanged. Do not
-reclassify that historical uncertainty or initialize a new zero baseline.
+The owner explicitly authorizes one new forward-only campaign ledger despite
+retained uncertainty in the old campaign. Before this single transition,
+verify all known old owned coordinator/process identities are quiescent.
+Preserve old ledgers, unknown reservations and evidence unchanged; use SQLite
+backup semantics for a retained live-database snapshot, not a raw file copy.
+Record the owner disposition, accepted Wave/protocol identities, old/new ledger
+identities and source/process baselines in private transition evidence. Do not
+reconcile, release or declare free any historical unknown usage.
 
-Each newly initialized attempt has a 10,000-AI-Credit run allowance and a
-1,800-second run deadline; the one continuing campaign has a cumulative
-150,000-AI-Credit allowance. Calibration, ordinary turns, repeats, fresh
-sessions and recovery all count in that same ledger. There is no separate
-run-count quota; cumulative credit and per-run worker/time bounds are accident
-fuses, not unlimited execution permission.
+Initialize exactly one new campaign ledger with a cumulative
+100,000-AI-Credit allowance for all subsequent trials. Record and reuse its
+identity/path; if the transition has already occurred, reuse that ledger
+rather than creating another. Do not spend old remaining allowances or create
+parallel budgets. No subsequent reset is authorized.
+
+Each newly initialized attempt has a 20,000-AI-Credit total run allowance and
+a 1,800-second run deadline. Use `creditAllocation: shared` after its source
+repair is accepted; do not repeat the fixed equal-share failure by silently
+using the legacy mode. Calibration, all workers, failed attempts, repeats,
+fresh sessions and paid diagnostics count in that same new campaign ledger.
+There is no separate run-count quota; cumulative credit and per-run worker/time
+bounds are accident fuses, not unlimited execution permission.
 
 Retain the existing reservation, native limit readback, cumulative-delta and
 ownership contracts. Require complete native-reported metrics before final
@@ -91,17 +103,47 @@ elapsed time or account balance. Native limits are soft, not exact prepaid
 ceilings. Unknown usage, unsupported limit application or ambiguous ownership
 blocks replacement and further paid work. Preserve the affected reservation
 and diagnose through the accepted non-dispatch reconciliation path.
+This ordinary admission rule applies to every uncertainty in the new ledger;
+the one historical transition does not supply another exception.
+
+## Owned memory observations
+
+The actual audit, not a synthetic stress/crash test, is the observation subject.
+Retain timestamped aggregate host physical-memory, commit/limit and pagefile
+counters and current/available peak memory counters for exact owned coordinator,
+native and registered descendant identities. Verify PID plus process creation
+time before attribution. Sample approximately every two seconds across startup,
+ramp-up and execution, with a finite observation deadline no longer than
+2,400 seconds. Record missing/failed samples as unknown, not zero.
+
+The launcher may set `RUST_BACKTRACE=full` only in its owned child environment
+to improve retained native stderr. Do not change global environment, host or
+pagefile settings, induce allocation failure, kill unrelated processes,
+enumerate unrelated process command lines, install diagnostic tools or enable
+system-wide dump collection. A naturally occurring failure may be correlated
+with its exact owned Windows error event/report; raw diagnostics remain private.
+
+Distinguish failure-time samples from post-failure snapshots and aggregate
+pressure from process attribution. An allocation-error size is the failed
+request, not total process usage. A `runtime.node` fail-fast event does not by
+itself establish a leak, exhausted host commit or the cause of an earlier Git
+failure. Retain the missing allocation stack/peak as a limitation when absent.
 
 ## Execution and expected observations
 
-1. **Prepare:** verify previous quiescence and campaign admission. Retain the
+1. **Prepare:** verify previous quiescence and the one-time transition record
+   or continuing new-campaign admission. Retain the
    exact source/build/configuration/goal identities and repository baseline.
    Initialize fresh owned attempt state pointing to the continuing ledger,
    not a cloned or reset active ledger.
 2. **Preflight:** use the unchanged product's non-model operation to verify
-   actual SDK/runtime/session identity, working directory, configured limits
-   and worker-bound local MCP. No prompt, pending-work continuation, account
-   query or paid replacement is permitted by this phase. Settle its processes.
+   actual SDK/runtime/session identity, working directory, explicit Terra
+   selection, configured limits and worker-bound local MCP. For shared mode,
+   verify the supported options update and readback with finite diagnostic
+   caps of 30, 60 and 30 credits in the same never-prompted session. Preserve
+   its identity and zero request count; an empty-session metric is not billing
+   completeness. No prompt, pending-work continuation, account-usage query or
+   paid replacement is permitted by this phase. Settle its processes.
 3. **Calibrate:** reserve within the run/campaign allowances, verify the real
    session and 30-credit native soft cap, and send the existing tool-disabled
    `READY` calibration once under its two-minute deadline. Require complete
@@ -121,6 +163,10 @@ and diagnose through the accepted non-dispatch reconciliation path.
    until they finish their work or an existing finite/safety stop applies.
    Operator export is not evidence of autonomous report synchronization;
    retain any incomplete review or mismatched latest output as incomplete.
+   Retain shared-grant and applied-window evidence when peers exceed a former
+   equal share or naturally request a renewal, including complete cumulative
+   baselines and any overshoot. An unexercised renewal remains unobserved, not
+   inferred successful. Do not add a separate paid exhaustion test.
 5. **Inspect and repair:** preserve each failure and establish process/usage
    settlement before any safe repetition. Diagnose only the exact owned run,
    leases, session identities and necessary private native diagnostics.
