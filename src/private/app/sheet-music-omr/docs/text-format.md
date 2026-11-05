@@ -826,16 +826,16 @@ additions to a printed copy are not transcribed.
   the first event at or to the right of the end or change point. The events
   counted are the notes and rests of both staves, except that a clef or ottava
   direction counts only events displayed on its own staff.
-- System edges: a point with no counted event at or to the right of it in the
-  system takes the end of the last block as its onset, and its direction is
-  written after the rhythmic events of its line. A hairpin or line that reaches
-  the right edge of the system without an end stays open into the next system,
-  and one that visibly ends before that edge ends in the system. A relation
-  that `carry-in` lists as open and that shows no continuation in the system
-  ends at the first event of the system that can hold its end. A volta bracket
-  that reaches the right edge of the system without a closing hook is written
-  `start` or `continue`, and one that ends there with a hook is written
-  `single` or `end`.
+- System edges: a point whose onset rule takes the first event at or to the
+  right of it, when the system has no such counted event, takes the end of the
+  last block as its onset, and its direction is written after the rhythmic
+  events of its line. A hairpin or line that reaches the right edge of the
+  system without an end stays open into the next system, and one that visibly
+  ends before that edge ends in the system. A relation that `carry-in` lists as
+  open and that shows no continuation in the system ends at the first event of
+  the system that can hold its end. A volta bracket that reaches the right edge
+  of the system without a closing hook is written `start` or `continue`, and
+  one that ends there with a hook is written `single` or `end`.
 - Reprints at a system start: an unchanged clef is recorded only in the `clefs`
   line, and a `tr` sign or text reprinted over a trill or dashes line that
   `carry-in` lists as open continues that relation and is not encoded.
@@ -858,15 +858,16 @@ additions to a printed copy are not transcribed.
 - Notes whose printed values fill their measure only in tuplet groups are
   written in tuplet groups even when no tuplet number is printed. A _grouping_
   places some rhythmic events of a voice line in groups so that the line fills
-  its measure. Beams decide first: no group contains two consecutive events
-  that both carry beams but share no level-1 beam. Within that limit, each
-  group starts on a beat, covers the fewest whole beats that its events fill,
-  and has the reduced ratio of its written duration to that time, such as
-  `3:2` for three eighth notes in one quarter-note beat. A beat is `1/D` of the
-  meter `N/D`, or `3/D` in a compound meter, where `N` is 6, 9 or 12 and `D` is
-  at least 8. When some groupings use only `3:2` groups in a simple meter, or
-  only `2:3` groups in a compound meter, only those count. Exactly one grouping
-  shall remain, and a measure with none or several is unsupported.
+  its measure. Beams decide first: no group contains events of two different
+  level-1 beam runs, even when unbeamed events lie between them. Within that
+  limit, each group starts on a beat, covers the fewest whole beats that its
+  events fill, and has the reduced ratio of its written duration to that time,
+  such as `3:2` for three eighth notes in one quarter-note beat. A beat is
+  `1/D` of the meter `N/D`, or `3/D` in a compound meter, where `N` is 6, 9 or
+  12 and `D` is at least 8. When some groupings use only `3:2` groups in a
+  simple meter, or only `2:3` groups in a compound meter, only those count.
+  Exactly one grouping shall remain, and a measure with none or several is
+  unsupported.
 - `len` is written only when the printed content of a measure is shorter or
   longer than its meter, as in a pickup.
 
