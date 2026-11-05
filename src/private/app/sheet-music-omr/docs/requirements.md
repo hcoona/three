@@ -22,7 +22,9 @@ score, written as one system document. System documents of consecutive systems
 shall assemble into one assembled score, which deterministic converters turn
 into MusicXML for the existing editable-score workflow. The format is for piano
 music on two staves. It is not a general music language and not a replacement
-for MusicXML.
+for MusicXML. Handwritten additions to a printed copy, such as pencil
+annotations, are not part of that content, and a transcription neither encodes
+nor reports them.
 
 Which header values of a system document (key, meter, clefs, carry mode,
 position and carry state) a recognizer is given instead of producing is outside
@@ -196,7 +198,8 @@ converter reports such content as OMR-REQ-006 and OMR-REQ-008 state.
   lyrics, chord symbols, figured bass and cue notes;
 - multi-measure rests, measure-repeat signs, additive and unmetered meters, and
   key or meter changes inside a measure;
-- segno and coda signs and word-spanner extension lines;
+- segno and coda signs, and extension lines of words other than a dashed line
+  after expression text;
 - breves, microtonal pitches, percussion, tablature and historical notation;
 - barline types other than ordinary, final, double and repeat, and
   multi-number endings;
@@ -204,9 +207,12 @@ converter reports such content as OMR-REQ-006 and OMR-REQ-008 state.
   octave up or down;
 - more than four voices on a staff, mixed-staff chords and duplicate chord
   members;
-- unmeasured tremolo, and fingering other than one digit from 1 to 5 per pitch;
+- unmeasured tremolo, and fingering other than one digit from 1 to 5 per pitch
+  or two different such digits on a pitch of a trill;
 - a whole-measure rest in a split measure, and beams or tuplet groups across a
   barline or a fragment boundary;
+- a tie that stays open at the end of a system document from a pitch whose
+  alteration comes from a tie-in source in an earlier system document;
 - metronome units other than quarter, half, eighth, dotted quarter and dotted
   half.
 
