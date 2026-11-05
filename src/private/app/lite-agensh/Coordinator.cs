@@ -670,10 +670,10 @@ public sealed class Coordinator
                                 );
                             }
 
-                            StartLoop(admissionId!, workers[^1]);
                             nextAdmission = database.Now.AddSeconds(
                                 database.Configuration.WorkerStartIntervalSeconds
                             );
+                            StartLoop(admissionId!, workers[^1]);
                         }
 
                         if (
