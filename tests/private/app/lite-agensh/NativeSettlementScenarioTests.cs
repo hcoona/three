@@ -10,6 +10,62 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 {
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow(1, "per-session", false)]
+    [DataRow(2, "shared", true)]
+    public async Task ProductionPreflightRetainsObservedUsageInDiagnosticsAndReceipt(
+        int peerCount, string allocation, bool missingMetrics
+    )
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario fixture = await GitScenario.CreateAsync(token, configuration =>
+            configuration with
+            {
+                WorkerCount = peerCount,
+                CreditAllocation = allocation,
+                NativeExecutable = Path.Combine(
+                    configuration.RepositoryPath, "missing-native-runtime.exe"
+                ),
+            });
+        ControlledSdkHost host = new("none", token, missingMetrics);
+        host.Release.TrySetResult();
+        Coordinator coordinator = new(
+            fixture.Database, fixture.Collaboration, fixture.Operations,
+            (database, processes, credits) => new NativeWorkerFactory(
+                database, processes, credits, () => host
+            )
+        );
+
+        JsonObject data = Scenario.Data(await coordinator.PreflightAsync(token));
+        JsonObject receipt = JsonNode.Parse(
+            fixture.Database.ReadMetadata("native:controlled_preflight_receipt")!
+        )!.AsObject();
+        JsonArray sessions = data["sessions"]!.AsArray();
+        Assert.HasCount(peerCount, sessions);
+        Assert.IsTrue(JsonNode.DeepEquals(sessions, receipt["sessions"]));
+        Assert.IsTrue(JsonNode.DeepEquals(sessions[0], data["diagnostics"]));
+        foreach (JsonNode? session in sessions)
+        {
+            Assert.IsNotNull(session);
+            Assert.IsTrue(session.AsObject().ContainsKey("totalUserRequests"));
+            Assert.AreEqual(0L, session["totalUserRequests"]!.GetValue<long>());
+            if (missingMetrics)
+            {
+                Assert.IsTrue(session.AsObject().ContainsKey("reportedNanoAiu"));
+                Assert.IsNull(session["reportedNanoAiu"]);
+                Assert.IsNull(session["aiCreditsStatus"]);
+            }
+            else
+            {
+                Assert.AreEqual("0", session["reportedNanoAiu"]!.GetValue<string>());
+                Assert.AreEqual("complete", session["aiCreditsStatus"]!.GetValue<string>());
+            }
+        }
+        Assert.IsTrue(host.Settled);
+        Assert.IsTrue(host.Sessions.All(session => session.CloseAttempted));
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
     [DataRow("per-session", "none")]
     [DataRow("shared", "none")]
     [DataRow("shared", "host")]
@@ -135,7 +191,9 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     }
 
     // Controlled SDK effects only; production workers, cohort and SQLite accounting remain real.
-    private sealed class ControlledSdkHost(string failure, CancellationToken token) : INativeSdkHost
+    private sealed class ControlledSdkHost(
+        string failure, CancellationToken token, bool missingMetrics = false
+    ) : INativeSdkHost
     {
         public string Id => "controlled-sdk-host";
 
@@ -155,7 +213,9 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
         public INativeSdkSession CreateSession(string cwd, bool isolated)
         {
-            ControlledSdkSession session = new(failure == "session" && Sessions.Count == 0);
+            ControlledSdkSession session = new(
+                failure == "session" && Sessions.Count == 0, missingMetrics
+            );
             Sessions.Add(session);
             return session;
         }
@@ -172,7 +232,9 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         }
     }
 
-    private sealed class ControlledSdkSession(bool failDispose) : INativeSdkSession
+    private sealed class ControlledSdkSession(
+        bool failDispose, bool missingMetrics = false
+    ) : INativeSdkSession
     {
         private long requests;
 
@@ -205,7 +267,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(new NativeUsage(
-                SessionId, requests * 1_000_000_000d, "complete", requests
+                SessionId, missingMetrics ? null : requests * 1_000_000_000d,
+                missingMetrics ? null : "complete", requests
             ));
         }
 

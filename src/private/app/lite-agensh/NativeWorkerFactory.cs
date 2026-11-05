@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Text.Json.Nodes;
 
@@ -99,9 +100,10 @@ internal sealed class NativeWorkerFactory(
             }
 
             INativeSdkSession first = sessions[0];
+            JsonObject? firstDiagnostic = null;
             foreach (decimal limit in new decimal[] { 60, 30 })
             {
-                RequireUnprompted(await first.UpdateLimitAsync(
+                firstDiagnostic = PreflightDiagnostic(first, await first.UpdateLimitAsync(
                     first.SessionId, limit, cancellationToken
                 ).ConfigureAwait(false));
                 foreach (INativeSdkSession other in sessions.Skip(1))
@@ -111,22 +113,21 @@ internal sealed class NativeWorkerFactory(
                     ).ConfigureAwait(false));
                 }
             }
-            diagnostics.Add(first.Metadata!.DeepClone());
+            diagnostics.Add(firstDiagnostic);
             first.Quiesce();
             await first.DisposeAsync().ConfigureAwait(false);
             foreach (INativeSdkSession other in sessions.Skip(1))
             {
-                RequireUnprompted(await other.ReadAsync(
+                diagnostics.Add(PreflightDiagnostic(other, await other.ReadAsync(
                     other.SessionId, 30, cancellationToken
-                ).ConfigureAwait(false));
-                diagnostics.Add(other.Metadata!.DeepClone());
+                ).ConfigureAwait(false)));
             }
 
             result = new()
             {
                 ["sessionId"] = first.SessionId,
                 ["modelPromptsSent"] = 0,
-                ["diagnostics"] = first.Metadata!.DeepClone(),
+                ["diagnostics"] = firstDiagnostic!.DeepClone(),
                 ["sessions"] = diagnostics,
                 ["runtimeId"] = backend.Id,
                 ["runtimeLeaseId"] = backend.LeaseId,
@@ -270,6 +271,18 @@ internal sealed class NativeWorkerFactory(
             }
             return host ??= createHost?.Invoke() ?? new NativeSdkHost(database, processes);
         }
+    }
+
+    private static JsonObject PreflightDiagnostic(INativeSdkSession session, NativeUsage usage)
+    {
+        RequireUnprompted(usage);
+        JsonObject diagnostic = session.Metadata!.DeepClone().AsObject();
+        diagnostic["reportedNanoAiu"] = usage.TotalNanoAiu?.ToString(
+            "R", CultureInfo.InvariantCulture
+        );
+        diagnostic["aiCreditsStatus"] = usage.Status;
+        diagnostic["totalUserRequests"] = usage.TotalUserRequests;
+        return diagnostic;
     }
 
     private static void RequireUnprompted(NativeUsage usage)
