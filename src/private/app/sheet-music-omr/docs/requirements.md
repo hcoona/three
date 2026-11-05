@@ -216,8 +216,9 @@ converter reports such content as OMR-REQ-006 and OMR-REQ-008 state.
   than one;
 - metronome units other than quarter, half, eighth, dotted quarter and dotted
   half;
-- printed content that the source image does not show legibly, such as a mark
-  cut off at the edge of a scan, which is not guessed.
+- printed content that the source image shows only in part, such as a mark cut
+  off at the edge of a scan, when its visible part and its context leave more
+  than one reading; it is reported for a person to resolve and not guessed.
 
 Playback-only data and engraving coordinates are neither content nor unsupported
 content. A reverse converter ignores them.
