@@ -211,8 +211,9 @@ converter reports such content as OMR-REQ-006 and OMR-REQ-008 state.
   or two different such digits on a pitch of a trill;
 - a whole-measure rest in a split measure, and beams or tuplet groups across a
   barline or a fragment boundary;
-- a tie that stays open at the end of a system document from a pitch whose
-  alteration comes from a tie-in source in an earlier system document;
+- notes that fill their measure only in tuplet groups with no printed tuplet
+  number, when the transcription rules of the format leave no grouping or more
+  than one;
 - metronome units other than quarter, half, eighth, dotted quarter and dotted
   half.
 

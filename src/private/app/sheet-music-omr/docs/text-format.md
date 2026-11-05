@@ -330,7 +330,8 @@ open_entry = '{"id":"', label, '","kind":"slur","start":', endpoint, "}"
 endpoint = '{"measure":', pos_int, ',"offset":"', rational,
     '","staff":', staff_no, ',"voice":', voice_no, ',"event_index":', pos_int,
     ',"member_index":', (pos_int | "null"), "}"
-sounding = '{"step":"', step, '","octave":', octave, ',"alter":', alter, "}"
+sounding = '{"step":"', step, '","octave":', octave,
+    ',"alter":', (alter | '"tie-in"'), "}"
 
 (* Shared lexical rules *)
 clef = ("G" | "F" | "C"), "1".."5", [("+" | "-"), "8"]
@@ -493,7 +494,8 @@ A pitch resolves its alteration by the first of these rules that applies:
 2. Tie inheritance: a pitch that ends a tie and has no printed accidental takes
    the alteration of the pitch where the tie started, including across a
    barline. A `tie-in` pitch without a printed accidental takes the alteration
-   of its source, as described under relations.
+   of its source, as described under relations, which may defer it to
+   assembly.
 3. The most recent earlier printed accidental on the same step in scope. The
    scope is the same measure, the same displayed staff and any voice of that
    staff. With `carry: octave` the octave shall also be the same, and with
@@ -555,7 +557,8 @@ label `rN`.
   `{tie@r1:end,tie@r2:start}`. The end pitch lies in the next non-grace
   rhythmic event of the same voice line, or in a non-grace rhythmic event of
   another voice line of the same staff that starts when the start event ends,
-  across barlines. It has the same sounding step, octave and alteration.
+  across barlines. It has the same sounding step, octave and alteration, and
+  assembly checks the alteration when that of the start is deferred.
 - `{tie-in}` marks a pitch that a tie enters at the start of a later volta
   bracket, as in a tie into a second ending. A _volta group_ is a run of
   adjacent measures that each carry an `ending` option, and its _source
@@ -563,14 +566,19 @@ label `rN`.
   non-grace rhythmic event of its voice line in the first measure of a bracket
   other than the group's first. Its _source_ is a pitch with the same sounding
   step and octave in a non-grace rhythmic event of the same staff that ends at
-  the end of the source measure. At least one source shall exist, and all
-  sources shall have the same alteration. A tie-in is not a relation and has no
+  the end of the source measure. At least one source shall exist, all sources
+  shall have the same alteration, and the tie-in pitch shall resolve to that
+  alteration, whether it inherits it or prints an accidental. A tie-in is not a
+  relation and has no
   label, and its pitch may also start a tie: `{tie-in,tie@r2:start}`. A
   validator checks the source when the document contains it, and assembly
   checks every tie-in. When the document does not contain the source, the
-  alteration of a tie-in pitch without a printed accidental, and of each pitch
-  tied from it, is known only after assembly, and such a pitch shall not start
-  a tie that stays open at the end of the document.
+  alteration of a tie-in pitch without a printed accidental is _deferred_, and
+  so is that of each pitch that inherits it through ties, including from a
+  carried tie whose `pitch` has `"alter":"tie-in"`. The document's validator
+  does not check a deferred alteration, a tie still open from such a pitch at
+  the end of the document carries `"alter":"tie-in"`, and assembly resolves
+  and checks every deferred alteration.
 - A slur uses `rel=slur@rN:start` and `rel=slur@rN:end` on two different notes,
   the start before the end.
 - A two-note tremolo uses `rel=tremolo@rN:two-start:S` and
@@ -684,7 +692,8 @@ this order:
   order. An entry has `id`, `kind` and `start`, followed by fields for its kind.
   `start` is an endpoint with `measure`, `offset`, `staff`, `voice`,
   `event_index` and `member_index`. A tie adds `pitch`, the sounding step,
-  octave and alteration. A tremolo adds `variant` (the stroke count),
+  octave and alteration, with `"alter":"tie-in"` when the alteration is
+  deferred to a tie-in source. A tremolo adds `variant` (the stroke count),
   `written` (the written duration of its first note) and `scale` (its tuplet
   multiplier). An ornament adds `variant` `extended-trill`, a hairpin adds
   `cresc` or `dim`, and an ottava adds its sign. Slurs, pedal lines and dashes
@@ -727,8 +736,8 @@ Assembly orders system documents by `page` and `system` and then:
    measure of a document carries `ending=N:start` or `ending=continue` and the
    next measure carries no `ending` option, the option becomes `ending=N:single`
    or `ending=end`;
-7. checks volta adjacency and every tie-in across the whole score, and renames
-   relation labels globally.
+7. checks volta adjacency and every tie-in across the whole score, resolves
+   and checks every deferred alteration, and renames relation labels globally.
 
 The result is an assembled score. Assembly never fills a missing event with an
 invented rest, infers an unprinted accidental or discards an unsupported mark
@@ -799,8 +808,8 @@ additions to a printed copy are not transcribed.
   horizontally nearest to the mark's center, or to the earlier one at equal
   distance.
 - An arc that joins two consecutive single notes of the same pitch in one voice
-  line is a tie, unless either note carries an articulation, in which case it
-  is a slur.
+  line is a tie, unless the second note carries an articulation, in which case
+  it is a slur.
 - Printed words are encoded as printed. "loco" at the end of an ottava line is
   `<"loco">` besides the ottava end. Words for a gradual tempo change, such as
   "rit.", "rall." and "accel.", are text and never `tempo`.
@@ -817,12 +826,16 @@ additions to a printed copy are not transcribed.
   the first event at or to the right of the end or change point. The events
   counted are the notes and rests of both staves, except that a clef or ottava
   direction counts only events displayed on its own staff.
-- System edges: when no event follows in the system, a hairpin or line stays
-  open into the next system. A relation that `carry-in` lists as open and that
-  shows no continuation in the system ends at the first event of the system
-  that can hold its end. A volta bracket that reaches the right edge of the
-  system without a closing hook is written `start` or `continue`, and one that
-  ends there with a hook is written `single` or `end`.
+- System edges: a point with no counted event at or to the right of it in the
+  system takes the end of the last block as its onset, and its direction is
+  written after the rhythmic events of its line. A hairpin or line that reaches
+  the right edge of the system without an end stays open into the next system,
+  and one that visibly ends before that edge ends in the system. A relation
+  that `carry-in` lists as open and that shows no continuation in the system
+  ends at the first event of the system that can hold its end. A volta bracket
+  that reaches the right edge of the system without a closing hook is written
+  `start` or `continue`, and one that ends there with a hook is written
+  `single` or `end`.
 - Reprints at a system start: an unchanged clef is recorded only in the `clefs`
   line, and a `tr` sign or text reprinted over a trill or dashes line that
   `carry-in` lists as open continues that relation and is not encoded.
@@ -830,21 +843,30 @@ additions to a printed copy are not transcribed.
   direction belongs to staff 2 when it is printed on or below staff 2, and
   otherwise to staff 1, including when it is printed between the staves.
 - Line: a direction is written in the first voice line of its staff, by voice
-  number, that has an event boundary at its onset, or failing that in the first
-  such line of the other staff. In that line it follows any grace notes at its
-  onset and precedes the rhythmic event there. Directions at one onset of a line
-  are written in the ASCII order of their spellings with relation labels
-  ignored, and those whose spellings then agree in ascending label order.
+  number, that has an event boundary at its onset. Failing that, a clef or
+  ottava direction is written in a new voice line of its staff with the lowest
+  unused voice number, which holds only spacers and the direction, and any
+  other direction in the first such line of the other staff. A fifth voice line
+  is unsupported, as more than four voices on a staff are. In its line a
+  direction follows any grace notes at its onset and precedes the rhythmic
+  event there, if any. Directions at one onset of a line are written in the
+  ASCII order of their spellings with relation labels ignored, and those whose
+  spellings then agree in ascending label order.
 
 ### Rhythm
 
 - Notes whose printed values fill their measure only in tuplet groups are
-  written in tuplet groups even when no tuplet number is printed. Each such
-  group starts on a
-  beat, covers the fewest whole beats that its notes fill, and has the reduced
-  ratio of its written duration to that time, such as `3:2` for three eighth
-  notes in one quarter-note beat. A beat is `1/D` of the meter `N/D`, or `3/D`
-  when `N` is 6, 9 or 12 and `D` is at least 8.
+  written in tuplet groups even when no tuplet number is printed. A _grouping_
+  places some rhythmic events of a voice line in groups so that the line fills
+  its measure. Beams decide first: no group contains two consecutive events
+  that both carry beams but share no level-1 beam. Within that limit, each
+  group starts on a beat, covers the fewest whole beats that its events fill,
+  and has the reduced ratio of its written duration to that time, such as
+  `3:2` for three eighth notes in one quarter-note beat. A beat is `1/D` of the
+  meter `N/D`, or `3/D` in a compound meter, where `N` is 6, 9 or 12 and `D` is
+  at least 8. When some groupings use only `3:2` groups in a simple meter, or
+  only `2:3` groups in a compound meter, only those count. Exactly one grouping
+  shall remain, and a measure with none or several is unsupported.
 - `len` is written only when the printed content of a measure is shorter or
   longer than its meter, as in a pickup.
 
