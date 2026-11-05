@@ -12,7 +12,8 @@ internal sealed class ControlledNativeFactory(
     RunDatabase database,
     CreditLedger credits,
     string directory,
-    Func<CancellationToken, Task>? onExactLoadSettled = null
+    Func<CancellationToken, Task>? onExactLoadSettled = null,
+    Func<CreditReservation, CancellationToken, Task>? onStart = null
 ) : INativeWorkerFactory
 {
     public INativeWorker Create(CreditReservation? reservation, bool calibration) =>
@@ -22,7 +23,8 @@ internal sealed class ControlledNativeFactory(
             directory,
             reservation,
             calibration,
-            onExactLoadSettled
+            onExactLoadSettled,
+            onStart
         );
 
     public Task<NativeUsage> ReadSettledUsageAsync(
@@ -51,7 +53,8 @@ internal sealed class ControlledNativeWorker(
     string directory,
     CreditReservation? reservation,
     bool calibration,
-    Func<CancellationToken, Task>? onExactLoadSettled = null
+    Func<CancellationToken, Task>? onExactLoadSettled = null,
+    Func<CreditReservation, CancellationToken, Task>? onStart = null
 ) : INativeWorker
 {
     private readonly CancellationTokenSource stop = new();
@@ -73,7 +76,7 @@ internal sealed class ControlledNativeWorker(
 
     public string? NativeFailure => failedSession?.NativeFailure;
 
-    public Task StartAsync(
+    public async Task StartAsync(
         string cwd,
         string? exactSession,
         CancellationToken cancellationToken,
@@ -123,6 +126,10 @@ internal sealed class ControlledNativeWorker(
         {
             credits.AttachSession(reservation.Id, id);
             credits.RecordSdkUsage(reservation.Id, ReadUsage(directory, id));
+            if (onStart is not null)
+            {
+                await onStart(reservation, cancellationToken);
+            }
         }
 
         if (exactSession is not null && Mode(directory) == "no-load")
@@ -153,7 +160,6 @@ internal sealed class ControlledNativeWorker(
             database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "ready");
         }
 
-        return Task.CompletedTask;
     }
 
     public async Task<JsonObject> PromptAsync(string text, CancellationToken cancellationToken)

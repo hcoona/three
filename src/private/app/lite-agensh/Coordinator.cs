@@ -513,91 +513,50 @@ public sealed class Coordinator
                     && database.ReadMetadata("git:plan_integrated") != "true";
                 bool released = !planning;
                 Dictionary<string, CreditReservation> allocations = [];
-                try
+                HashSet<string> reconnecting = [];
+                Task? admission = null;
+                string? admissionId = null;
+                async Task StartWorkerAsync(string id)
                 {
-                    for (int i = 0; i < ids.Length; i++)
+                    INativeWorker native = nativeWorkers.Create(
+                        allocations[id],
+                        calibration: false
+                    );
+                    workers.Add(native);
+                    string? exact = reconnecting.Contains(id) ? allocations[id].SessionId : null;
+                    try
                     {
-                        CreditReservation? previous =
-                            mode == "reconnect" ? ReadReconnectReservation(ids[i]) : null;
-                        allocations.Add(
-                            ids[i],
-                            previous is null
-                                ? Reserve(ids[i], ids.Length - i)
-                                : credits.ContinueExact(previous.Id, EvidencePath(ids[i]))
-                        );
+                        await native
+                            .StartAsync(git.GetWorkerPath(id), exact, stop.Token)
+                            .ConfigureAwait(false);
                     }
-
-                    foreach (string id in ids)
+                    catch (OperationException exception)
+                        when (exception.Code == "session_load_failed")
                     {
-                        INativeWorker native = nativeWorkers.Create(
-                            allocations[id],
+                        await native.DisposeAsync().ConfigureAwait(false);
+                        workers.Remove(native);
+                        stop.Token.ThrowIfCancellationRequested();
+                        CreditReservation fresh = Reserve(id, 1);
+                        INativeWorker replacement = nativeWorkers.Create(
+                            fresh,
                             calibration: false
                         );
-                        workers.Add(native);
-                        string? exact = mode == "reconnect" ? allocations[id].SessionId : null;
-                        try
-                        {
-                            await native
-                                .StartAsync(git.GetWorkerPath(id), exact, stop.Token)
-                                .ConfigureAwait(false);
-                        }
-                        catch (OperationException exception)
-                            when (exception.Code == "session_load_failed")
-                        {
-                            await native.DisposeAsync().ConfigureAwait(false);
-                            workers.Remove(native);
-                            stop.Token.ThrowIfCancellationRequested();
-                            CreditReservation fresh = Reserve(id, 1);
-                            INativeWorker replacement = nativeWorkers.Create(
-                                fresh,
-                                calibration: false
-                            );
-                            workers.Add(replacement);
-                            await replacement
-                                .StartAsync(
-                                    git.GetWorkerPath(id),
-                                    null,
-                                    stop.Token,
-                                    recoveryLabel: "fresh-summary-fallback: "
-                                        + "exact-session load unavailable or failed"
-                                )
-                                .ConfigureAwait(false);
-                        }
-                    }
-                }
-                finally
-                {
-                    HashSet<string> owned = [.. workers.Select(worker => worker.ReservationId)];
-                    foreach (
-                        CreditReservation allocation in allocations.Values.Where(item =>
-                            !owned.Contains(item.Id)
-                        )
-                    )
-                    {
-                        CreditReservation current = credits
-                            .Reservations(database.RunId)
-                            .Single(row => row.Id == allocation.Id);
-                        if (current.State == "reserved")
-                        {
-                            credits.ReleaseUnstarted(allocation.Id);
-                        }
+                        workers.Add(replacement);
+                        await replacement
+                            .StartAsync(
+                                git.GetWorkerPath(id),
+                                null,
+                                stop.Token,
+                                recoveryLabel: "fresh-summary-fallback: "
+                                    + "exact-session load unavailable or failed"
+                            )
+                            .ConfigureAwait(false);
                     }
                 }
 
-                database.WriteMetadata("lifecycle", "running");
-                DateTimeOffset plannerDeadline = database.Now.AddSeconds(
-                    database.Configuration.PlanningSeconds
-                );
-                if (database.Now >= deadline)
+                void StartLoop(string id, INativeWorker native)
                 {
-                    reason = "deadline";
-                    finalize = true;
-                    await stop.CancelAsync().ConfigureAwait(false);
-                }
-
-                foreach ((string id, INativeWorker native) in ids.Zip(workers))
-                {
-                    if (!planning || id == "worker1")
+                    if (!planning || released || id == "worker1")
                     {
                         collaboration.QueueKickoff(
                             id,
@@ -618,83 +577,198 @@ public sealed class Coordinator
                     );
                 }
 
-                HashSet<int> reminders = (deadline - database.Now).TotalSeconds <= 900 ? [900] : [];
-                while (!stop.IsCancellationRequested)
+                try
                 {
+                    for (int i = 0; i < ids.Length; i++)
+                    {
+                        CreditReservation? previous =
+                            mode == "reconnect" ? ReadReconnectReservation(ids[i]) : null;
+                        if (previous is not null)
+                        {
+                            reconnecting.Add(ids[i]);
+                        }
+
+                        allocations.Add(
+                            ids[i],
+                            previous is null
+                                ? Reserve(ids[i], ids.Length - i)
+                                : credits.ContinueExact(previous.Id, EvidencePath(ids[i]))
+                        );
+                    }
+
+                    if (database.Configuration.WorkerStartIntervalSeconds == 0)
+                    {
+                        foreach (string id in ids)
+                        {
+                            await StartWorkerAsync(id).ConfigureAwait(false);
+                        }
+                    }
+
+                    database.WriteMetadata("lifecycle", "running");
+                    DateTimeOffset plannerDeadline = database.Now.AddSeconds(
+                        database.Configuration.PlanningSeconds
+                    );
+                    DateTimeOffset nextAdmission = database.Now;
                     if (database.Now >= deadline)
                     {
                         reason = "deadline";
                         finalize = true;
-                        break;
+                        await stop.CancelAsync().ConfigureAwait(false);
                     }
 
-                    long? control = PendingControl(out string? action);
-                    if (control is not null)
+                    foreach ((string id, INativeWorker native) in ids.Zip(workers))
                     {
-                        reason = action == "pause" ? "owner-pause" : "owner-finalize";
-                        finalize = action == "finalize";
-                        break;
+                        StartLoop(id, native);
                     }
 
-                    string? closedBy = database.ReadMetadata("lifecycle:root_closed_by");
-                    if (closedBy == "owner")
+                    HashSet<int> reminders =
+                        (deadline - database.Now).TotalSeconds <= 900 ? [900] : [];
+                    while (!stop.IsCancellationRequested)
                     {
-                        reason = "owner-root-closure";
-                        finalize = true;
-                        break;
-                    }
-
-                    if (closedBy is not null)
-                    {
-                        collaboration.ReopenWorkerClosedRoot();
-                    }
-
-                    Task? ended = loops.FirstOrDefault(task => task.IsCompleted);
-                    if (ended is not null)
-                    {
-                        await ended.ConfigureAwait(false);
-                        throw new OperationException(
-                            "worker_stopped",
-                            "A worker loop ended before run quiescence."
-                        );
-                    }
-
-                    await git.ProcessPendingAsync(stop.Token).ConfigureAwait(false);
-                    if (
-                        planning
-                        && !released
-                        && (
-                            database.ReadMetadata("git:plan_integrated") == "true"
-                            || database.Now >= plannerDeadline
-                        )
-                    )
-                    {
-                        released = true;
-                        foreach (string peer in ids.Skip(1))
+                        if (database.Now >= deadline)
                         {
-                            collaboration.QueueKickoff(
-                                peer,
-                                "Planner release: integrated plan or planning deadline reached"
+                            reason = "deadline";
+                            finalize = true;
+                            break;
+                        }
+
+                        long? control = PendingControl(out string? action);
+                        if (control is not null)
+                        {
+                            reason = action == "pause" ? "owner-pause" : "owner-finalize";
+                            finalize = action == "finalize";
+                            break;
+                        }
+
+                        string? closedBy = database.ReadMetadata("lifecycle:root_closed_by");
+                        if (closedBy == "owner")
+                        {
+                            reason = "owner-root-closure";
+                            finalize = true;
+                            break;
+                        }
+
+                        if (closedBy is not null)
+                        {
+                            collaboration.ReopenWorkerClosedRoot();
+                        }
+
+                        Task? ended = loops.FirstOrDefault(task => task.IsCompleted);
+                        if (ended is not null)
+                        {
+                            await ended.ConfigureAwait(false);
+                            throw new OperationException(
+                                "worker_stopped",
+                                "A worker loop ended before run quiescence."
                             );
                         }
+
+                        if (admission is { IsCompleted: true })
+                        {
+                            Task completedAdmission = admission;
+                            admission = null;
+                            await completedAdmission.ConfigureAwait(false);
+                            stop.Token.ThrowIfCancellationRequested();
+                            if (workers.Count == 1)
+                            {
+                                plannerDeadline = database.Now.AddSeconds(
+                                    database.Configuration.PlanningSeconds
+                                );
+                            }
+
+                            nextAdmission = database.Now.AddSeconds(
+                                database.Configuration.WorkerStartIntervalSeconds
+                            );
+                            StartLoop(admissionId!, workers[^1]);
+                            continue;
+                        }
+
+                        if (
+                            database.Configuration.WorkerStartIntervalSeconds > 0
+                            && admission is null
+                            && workers.Count < ids.Length
+                            && database.Now >= nextAdmission
+                            && (!planning || released || workers.Count == 0)
+                        )
+                        {
+                            admissionId = ids[workers.Count];
+                            admission = StartWorkerAsync(admissionId);
+                            continue;
+                        }
+
+                        await git.ProcessPendingAsync(stop.Token).ConfigureAwait(false);
+                        if (
+                            planning
+                            && !released
+                            && loops.Count > 0
+                            && (
+                                database.ReadMetadata("git:plan_integrated") == "true"
+                                || database.Now >= plannerDeadline
+                            )
+                        )
+                        {
+                            released = true;
+                            foreach (string peer in ids.Skip(1))
+                            {
+                                collaboration.QueueKickoff(
+                                    peer,
+                                    "Planner release: integrated plan or planning deadline reached"
+                                );
+                            }
+                        }
+
+                        PublishReminders(deadline, reminders);
+                        PublishCreditWarning();
+                        await Task.Delay(
+                                TimeSpan.FromMilliseconds(250),
+                                database.TimeProvider,
+                                stop.Token
+                            )
+                            .ConfigureAwait(false);
                     }
 
-                    PublishReminders(deadline, reminders);
-                    PublishCreditWarning();
-                    await Task.Delay(
-                            TimeSpan.FromMilliseconds(250),
-                            database.TimeProvider,
-                            stop.Token
-                        )
-                        .ConfigureAwait(false);
+                    if (reason == "startup-failed")
+                    {
+                        reason = cancellationToken.IsCancellationRequested
+                            ? "caller-cancelled"
+                            : "deadline";
+                        finalize = !cancellationToken.IsCancellationRequested;
+                    }
                 }
-
-                if (reason == "startup-failed")
+                finally
                 {
-                    reason = cancellationToken.IsCancellationRequested
-                        ? "caller-cancelled"
-                        : "deadline";
-                    finalize = !cancellationToken.IsCancellationRequested;
+                    try
+                    {
+                        await stop.CancelAsync().ConfigureAwait(false);
+                        if (admission is not null)
+                        {
+                            try
+                            {
+                                await admission.ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException) when (stop.IsCancellationRequested)
+                            {
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        HashSet<string> owned = [.. workers.Select(worker => worker.ReservationId)];
+                        foreach (
+                            CreditReservation allocation in allocations.Values.Where(item =>
+                                !owned.Contains(item.Id)
+                            )
+                        )
+                        {
+                            CreditReservation current = credits
+                                .Reservations(database.RunId)
+                                .Single(row => row.Id == allocation.Id);
+                            if (current.State == "reserved")
+                            {
+                                credits.ReleaseUnstarted(allocation.Id);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1196,6 +1270,7 @@ public sealed class Coordinator
                     database.Configuration.CampaignAiCreditAllowance,
                     database.Configuration.CampaignLedgerPath,
                     database.Configuration.WorkerCount,
+                    database.Configuration.WorkerStartIntervalSeconds,
                     database.Configuration.RepositoryPath,
                     campaignIdentity = credits.Identity,
                 }

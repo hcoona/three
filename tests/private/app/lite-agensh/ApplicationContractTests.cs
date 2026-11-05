@@ -157,6 +157,7 @@ public sealed class ApplicationContractTests(TestContext testContext)
             campaignLedgerPath: ../yaml-campaign/credits.sqlite
             goalFile: goal.md
             workerCount: 10
+            workerStartIntervalSeconds: 30
             planningSeconds: 0
             nativeExecutable: copilot
             nativeArguments: [--effort, high]
@@ -190,6 +191,7 @@ public sealed class ApplicationContractTests(TestContext testContext)
         );
         Assert.AreEqual(goal, saved.Goal);
         Assert.AreEqual(10, saved.WorkerCount);
+        Assert.AreEqual(30, saved.WorkerStartIntervalSeconds);
         Assert.AreEqual("high", saved.GetReasoningEffort());
         Assert.AreEqual("copilot", saved.NativeExecutable);
         CheckCommand check = Assert.ContainsSingle(saved.FinalChecks);
@@ -224,6 +226,9 @@ public sealed class ApplicationContractTests(TestContext testContext)
     [DataRow("goalFile: goal.md\nworkerCount: 2\nworkerCount: 3")]
     [DataRow("goalFile: goal.md\nworkerCount: '2'")]
     [DataRow("goalFile: goal.md\nworkerCount: 0")]
+    [DataRow("goalFile: goal.md\nworkerStartIntervalSeconds: -1")]
+    [DataRow("goalFile: goal.md\nworkerStartIntervalSeconds: '30'")]
+    [DataRow("goalFile: goal.md\nworkerStartIntervalSeconds: 0.5")]
     [DataRow("goalFile: goal.md\nrequirePeerReview: 'false'")]
     [DataRow("goalFile: goal.md\nprotectedPaths: [null]")]
     [DataRow("goalFile: goal.md\nprotectedPaths:\n  -")]

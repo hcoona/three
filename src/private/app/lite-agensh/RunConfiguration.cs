@@ -21,6 +21,8 @@ public sealed record RunConfiguration
 
     public int WorkerCount { get; init; } = 2;
 
+    public int WorkerStartIntervalSeconds { get; init; }
+
     public int DurationSeconds { get; init; } = 1800;
 
     public int PlanningSeconds { get; init; }
@@ -102,6 +104,7 @@ public sealed record RunConfiguration
 
         if (
             WorkerCount < 1
+            || WorkerStartIntervalSeconds < 0
             || DurationSeconds <= 0
             || PlanningSeconds < 0
             || PlanningSeconds > DurationSeconds
