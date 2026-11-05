@@ -6,9 +6,45 @@ using GitHub.Copilot.Rpc;
 
 namespace LiteAgensh;
 
+internal interface INativeSdkSession : IAsyncDisposable
+{
+    string SessionId { get; }
+
+    bool HasSession { get; }
+
+    string? NativeFailure { get; }
+
+    JsonObject? Metadata { get; }
+
+    Task OpenAsync(
+        string worker, string sessionId, decimal? limit, string? exactSession,
+        string evidencePath, CancellationToken cancellationToken
+    );
+
+    Task<NativeUsage> ReadAsync(
+        string expectedSession, decimal? expectedLimit, CancellationToken cancellationToken,
+        bool validateEvents = true
+    );
+
+    Task<NativeUsage> UpdateLimitAsync(
+        string expectedSession, decimal limit, CancellationToken cancellationToken
+    );
+
+    Task<JsonObject> SendAsync(
+        string text, TimeSpan timeout, CancellationToken cancellationToken,
+        Func<CancellationToken, Task<decimal>>? renewLimit = null
+    );
+
+    Task AbortAsync(CancellationToken cancellationToken);
+
+    void Quiesce();
+
+    void RequireHealthy();
+}
+
 // These pinned, typed native metadata/limits/usage APIs are experimental in SDK 1.0.28.
 #pragma warning disable GHCP001
-internal sealed class NativeSdkSession : IAsyncDisposable
+internal sealed class NativeSdkSession : INativeSdkSession
 {
     private const int ProbeTimeoutSeconds = 30;
     private readonly RunDatabase database;

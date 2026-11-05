@@ -3,10 +3,19 @@ using GitHub.Copilot;
 
 namespace LiteAgensh;
 
+internal interface INativeSdkHost : IAsyncDisposable
+{
+    string Id { get; }
+
+    long LeaseId { get; }
+
+    INativeSdkSession CreateSession(string cwd, bool isolated);
+}
+
 internal sealed class NativeSdkHost(
     RunDatabase database,
     ProcessRunner processes
-) : IAsyncDisposable
+) : INativeSdkHost
 {
     private readonly SemaphoreSlim lifecycle = new(1, 1);
     private NativeRuntime? runtime;
@@ -21,6 +30,9 @@ internal sealed class NativeSdkHost(
 
     public long LeaseId =>
         runtime?.LeaseId ?? throw new InvalidOperationException("No owned native runtime.");
+
+    public INativeSdkSession CreateSession(string cwd, bool isolated) =>
+        new NativeSdkSession(database, this, cwd, isolated);
 
     public async Task<CopilotClient> GetClientAsync(
         string cwd,

@@ -8,14 +8,14 @@ namespace LiteAgensh;
 internal sealed class NativeWorker : INativeWorker
 {
     private readonly RunDatabase database;
-    private readonly NativeSdkHost host;
+    private readonly INativeSdkHost host;
     private readonly CreditLedger credits;
     private CreditReservation? reservation;
     private readonly bool calibration;
     private readonly SemaphoreSlim turn = new(1, 1);
     private readonly SemaphoreSlim settlement = new(1, 1);
     private readonly CancellationTokenSource stop = new();
-    private NativeSdkSession? session;
+    private INativeSdkSession? session;
     private bool started;
     private bool stopped;
     private bool verified;
@@ -30,7 +30,7 @@ internal sealed class NativeWorker : INativeWorker
 
     public NativeWorker(
         RunDatabase database,
-        NativeSdkHost host,
+        INativeSdkHost host,
         CreditLedger credits,
         CreditReservation? reservation = null,
         bool calibration = false
@@ -131,7 +131,7 @@ internal sealed class NativeWorker : INativeWorker
             );
         }
 
-        session = new(database, host, cwd, calibration);
+        session = host.CreateSession(cwd, calibration);
         (NativeUsage Usage, long Dispatches)? priorUsage = null;
         try
         {
@@ -491,7 +491,7 @@ internal sealed class NativeWorker : INativeWorker
                     "credit_or_ownership_unknown",
                     $"Native settlement retained unresolved evidence: {failure.Message}"
                 );
-                if (reservation is not null && usageFinalized)
+                if (reservation is not null)
                 {
                     credits.MarkUncertain(reservation.Id);
                 }

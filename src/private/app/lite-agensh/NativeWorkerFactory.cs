@@ -51,12 +51,13 @@ internal interface INativeWorkerFactory
 internal sealed class NativeWorkerFactory(
     RunDatabase database,
     ProcessRunner processes,
-    CreditLedger credits
+    CreditLedger credits,
+    Func<INativeSdkHost>? createHost = null
 ) : INativeWorkerFactory
 {
     private readonly object lifecycle = new();
     private readonly List<(NativeWorker Worker, CreditReservation? Reservation)> workers = [];
-    private NativeSdkHost? host;
+    private INativeSdkHost? host;
     private bool closing;
 
     public JsonArray SettlementFailures { get; } = [];
@@ -76,8 +77,8 @@ internal sealed class NativeWorkerFactory(
         CancellationToken cancellationToken
     )
     {
-        NativeSdkHost backend = GetHost();
-        List<NativeSdkSession> sessions = [];
+        INativeSdkHost backend = GetHost();
+        List<INativeSdkSession> sessions = [];
         JsonArray diagnostics = [];
         JsonObject? result = null;
         Exception? failure = null;
@@ -85,7 +86,7 @@ internal sealed class NativeWorkerFactory(
         {
             foreach ((string worker, string cwd) in peers)
             {
-                NativeSdkSession session = new(database, backend, cwd, isolated: false);
+                INativeSdkSession session = backend.CreateSession(cwd, isolated: false);
                 sessions.Add(session);
                 string id = Guid.NewGuid().ToString("D");
                 await session.OpenAsync(
@@ -97,13 +98,13 @@ internal sealed class NativeWorkerFactory(
                     .ConfigureAwait(false));
             }
 
-            NativeSdkSession first = sessions[0];
+            INativeSdkSession first = sessions[0];
             foreach (decimal limit in new decimal[] { 60, 30 })
             {
                 RequireUnprompted(await first.UpdateLimitAsync(
                     first.SessionId, limit, cancellationToken
                 ).ConfigureAwait(false));
-                foreach (NativeSdkSession other in sessions.Skip(1))
+                foreach (INativeSdkSession other in sessions.Skip(1))
                 {
                     RequireUnprompted(await other.ReadAsync(
                         other.SessionId, 30, cancellationToken
@@ -113,7 +114,7 @@ internal sealed class NativeWorkerFactory(
             diagnostics.Add(first.Metadata!.DeepClone());
             first.Quiesce();
             await first.DisposeAsync().ConfigureAwait(false);
-            foreach (NativeSdkSession other in sessions.Skip(1))
+            foreach (INativeSdkSession other in sessions.Skip(1))
             {
                 RequireUnprompted(await other.ReadAsync(
                     other.SessionId, 30, cancellationToken
@@ -137,7 +138,7 @@ internal sealed class NativeWorkerFactory(
         }
         finally
         {
-            foreach (NativeSdkSession session in sessions)
+            foreach (INativeSdkSession session in sessions)
             {
                 try
                 {
@@ -163,7 +164,7 @@ internal sealed class NativeWorkerFactory(
     public async Task CompleteAsync()
     {
         (NativeWorker Worker, CreditReservation? Reservation)[] cohort;
-        NativeSdkHost? backend;
+        INativeSdkHost? backend;
         lock (lifecycle)
         {
             closing = true;
@@ -256,7 +257,7 @@ internal sealed class NativeWorkerFactory(
         return failure;
     }
 
-    private NativeSdkHost GetHost()
+    private INativeSdkHost GetHost()
     {
         lock (lifecycle)
         {
@@ -267,7 +268,7 @@ internal sealed class NativeWorkerFactory(
                     "The operation's native runtime is closing or unresolved."
                 );
             }
-            return host ??= new(database, processes);
+            return host ??= createHost?.Invoke() ?? new NativeSdkHost(database, processes);
         }
     }
 
