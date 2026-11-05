@@ -818,7 +818,7 @@ public sealed class Coordinator
 
         if (failure is not null)
         {
-            string[] otherFailures = loops
+            IEnumerable<string> loopFailures = loops
                 .SelectMany(
                     (loop, index) =>
                         loop.IsFaulted
@@ -830,6 +830,16 @@ public sealed class Coordinator
                                     + exception.Message
                                 )
                             : []
+                );
+            string[] otherFailures = loopFailures
+                .Concat(
+                    workers.SelectMany(
+                        (worker, index) =>
+                            worker.NativeFailure is { } nativeFailure
+                            && nativeFailure != failure.Message
+                                ? [database.Configuration.WorkerIds[index] + ": " + nativeFailure]
+                                : Array.Empty<string>()
+                    )
                 )
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();

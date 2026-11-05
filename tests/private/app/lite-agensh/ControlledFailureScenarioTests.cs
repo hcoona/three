@@ -36,6 +36,12 @@ public sealed class ControlledFailureScenarioTests(TestContext testContext)
             Scenario.Data(coordinator.Status())["failure"]!.GetValue<string>()
         );
         Assert.HasCount(2, native.OrdinaryPrompts());
+        Assert.HasCount(
+            1,
+            native.Operations()
+                .Where(item => item["operation"]!.GetValue<string>() == "native-error-canceled")
+                .ToArray()
+        );
         CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
         Assert.IsTrue(ledger.Reservations().All(row => row.State == "reconciled"));
         ledger.RequirePaidAdmission();

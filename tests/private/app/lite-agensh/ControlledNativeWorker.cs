@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using GitHub.Copilot;
 using LiteAgensh;
 using Microsoft.Data.Sqlite;
 
@@ -61,6 +62,7 @@ internal sealed class ControlledNativeWorker(
     private bool stopped;
     private bool failedExactLoad;
     private CancellationToken loadCancellation;
+    private NativeSdkSession? failedSession;
 
     public string? SessionId { get; private set; }
 
@@ -68,6 +70,8 @@ internal sealed class ControlledNativeWorker(
         reservation?.Id ?? throw new InvalidOperationException("Controlled diagnostic session.");
 
     public JsonObject? Diagnostic { get; private set; }
+
+    public string? NativeFailure => failedSession?.NativeFailure;
 
     public Task StartAsync(
         string cwd,
@@ -199,6 +203,31 @@ internal sealed class ControlledNativeWorker(
 
             if (!calibration && Mode(directory) == "native-error")
             {
+                failedSession = new(
+                    database,
+                    new ProcessRunner(database),
+                    directory,
+                    isolated: false
+                );
+                failedSession.RecordEvent(
+                    SessionEvent.FromJson(
+                        JsonSerializer.Serialize(
+                            new
+                            {
+                                id = Guid.NewGuid(),
+                                timestamp = DateTimeOffset.UtcNow,
+                                type = "session.error",
+                                data = new
+                                {
+                                    errorType = "query",
+                                    message =
+                                        $"Native query for {SessionId}: "
+                                        + "prompt exceeds model input budget.",
+                                },
+                            }
+                        )
+                    )!
+                );
                 File.WriteAllText(Path.Combine(directory, $"native-error-{SessionId}"), "");
                 while (
                     Directory.EnumerateFiles(directory, "native-error-*").Count()
@@ -221,10 +250,29 @@ internal sealed class ControlledNativeWorker(
                     await Task.Delay(TimeSpan.FromMilliseconds(25), CancellationToken.None);
                 }
 
-                throw new OperationException(
-                    "native_stopped",
-                    $"Native query for {SessionId}: prompt exceeds model input budget."
-                );
+                string abortMarker = Path.Combine(directory, "native-abort-entered");
+                if (reservation.Worker == "worker2")
+                {
+                    await failedSession.AbortFailedSendAsync(
+                        async () =>
+                        {
+                            File.WriteAllText(abortMarker, "");
+                            await Task.Delay(Timeout.InfiniteTimeSpan, linked.Token);
+                        },
+                        linked.Token
+                    );
+                }
+                else
+                {
+                    while (!File.Exists(abortMarker))
+                    {
+                        await Task.Delay(TimeSpan.FromMilliseconds(25), linked.Token);
+                    }
+
+                    failedSession.CheckEvents(linked.Token);
+                }
+
+                throw new InvalidOperationException("The prepared native error did not stop.");
             }
 
             if (
@@ -244,8 +292,13 @@ internal sealed class ControlledNativeWorker(
                 ["stopReason"] = "end_turn",
             };
         }
-        catch
+        catch (Exception exception)
         {
+            if (exception is OperationCanceledException && NativeFailure is not null)
+            {
+                Record(directory, "native-error-canceled", SessionId);
+            }
+
             credits.MarkUncertain(reservation.Id);
             throw;
         }
@@ -376,7 +429,14 @@ internal sealed class ControlledNativeWorker(
         }
     }
 
-    public async ValueTask DisposeAsync() => await StopAsync();
+    public async ValueTask DisposeAsync()
+    {
+        await StopAsync();
+        if (failedSession is not null)
+        {
+            await failedSession.DisposeAsync();
+        }
+    }
 
     internal static string Mode(string directory) =>
         File.ReadAllText(Path.Combine(directory, "mode.txt"));

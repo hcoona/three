@@ -6,8 +6,73 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace LiteAgensh.Tests;
 
 [TestClass]
-public sealed class NativeMetadataTests
+public sealed class NativeMetadataTests(TestContext testContext)
 {
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task NativeCleanupRetainsItsCauseWithoutReplacingCallerCancellation(
+        bool nativeError
+    )
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        await using NativeSdkSession native = new(
+            database,
+            new ProcessRunner(database),
+            fixture.RepositoryPath,
+            isolated: false
+        );
+        if (nativeError)
+        {
+            native.RecordEvent(SessionEvent.FromJson(
+                """
+                {
+                  "id":"00000000-0000-0000-0000-000000000001",
+                  "timestamp":"2026-01-01T00:00:00Z",
+                  "type":"session.error",
+                  "data":{"errorType":"query","message":"Prompt exceeds model input budget."}
+                }
+                """
+            )!);
+        }
+
+        string? failure = native.NativeFailure;
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
+            token
+        );
+        TaskCompletionSource abortEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource releaseAbort = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task cleanup = native.AbortFailedSendAsync(
+            async () =>
+            {
+                abortEntered.TrySetResult();
+                await releaseAbort.Task.WaitAsync(token);
+            },
+            stop.Token
+        );
+        try
+        {
+            await abortEntered.Task.WaitAsync(token);
+            await stop.CancelAsync();
+            Assert.IsFalse(cleanup.IsCompleted);
+        }
+        finally
+        {
+            releaseAbort.TrySetResult();
+        }
+
+        var canceled = await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => cleanup);
+        Assert.AreEqual(stop.Token, canceled.CancellationToken);
+        Assert.AreEqual(failure, native.NativeFailure);
+        if (nativeError)
+        {
+            Assert.Contains("Prompt exceeds model input budget.", native.NativeFailure!);
+        }
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]

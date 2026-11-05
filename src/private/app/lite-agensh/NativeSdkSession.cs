@@ -54,6 +54,17 @@ internal sealed class NativeSdkSession : IAsyncDisposable
 
     public bool HasSession => session is not null;
 
+    public string? NativeFailure
+    {
+        get
+        {
+            lock (callbacks)
+            {
+                return eventFailure;
+            }
+        }
+    }
+
     public JsonObject? Metadata { get; private set; }
 
     public async Task OpenAsync(
@@ -260,16 +271,27 @@ internal sealed class NativeSdkSession : IAsyncDisposable
         }
         catch
         {
-            try
-            {
-                await AbortAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-            finally
-            {
-                CheckEvents(cancellationToken);
-            }
-
+            await AbortFailedSendAsync(
+                    () => AbortAsync(CancellationToken.None),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
             throw;
+        }
+    }
+
+    internal async Task AbortFailedSendAsync(
+        Func<Task> abort,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await abort().ConfigureAwait(false);
+        }
+        finally
+        {
+            CheckEvents(cancellationToken);
         }
     }
 

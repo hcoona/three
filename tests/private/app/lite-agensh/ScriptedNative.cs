@@ -104,6 +104,7 @@ internal sealed class ScriptedNative
         );
         string app = typeof(RunDatabase).Assembly.Location;
         string sqlite = typeof(Microsoft.Data.Sqlite.SqliteConnection).Assembly.Location;
+        string sdk = typeof(GitHub.Copilot.SessionEvent).Assembly.Location;
         File.WriteAllText(
             Path.Combine(host, "CrashHost.csproj"),
             $$"""
@@ -122,6 +123,9 @@ internal sealed class ScriptedNative
                 </Reference>
                 <Reference Include="Microsoft.Data.Sqlite">
                   <HintPath>{{SecurityElement.Escape(sqlite)}}</HintPath>
+                </Reference>
+                <Reference Include="GitHub.Copilot.SDK">
+                  <HintPath>{{SecurityElement.Escape(sdk)}}</HintPath>
                 </Reference>
                 <Reference Include="{{SecurityElement.Escape(Path.Combine(
                         Path.GetDirectoryName(app)!, "SQLitePCLRaw.*.dll"))}}" />
