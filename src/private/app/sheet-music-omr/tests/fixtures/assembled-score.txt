@@ -1,0 +1,25 @@
+// Self-authored for this project; it transcribes no existing score.
+format: text-score/2
+title: "Tiny Canon"
+composer: "A. N. Author"
+key: 2
+time: 2/4
+clefs: G2 G2
+carry: letter
+heading: "Tiny Canon"
+m 1 left=repeat
+1.1: <rehearsal "A"> <f> D5/8[stacc,beam1=start] E5/8[stacc,beam1=end] F#5/4[acc^]
+2.1: D4/4 A3+D4/4[grace/] D4/4
+m 2 right=repeat ending=1:single
+1.1: G5/4[rel=tremolo@r1:two-start:2] B5/4[rel=tremolo@r1:two-end:2]
+2.1: mrest
+m 3 ending=2:start
+1.1: <dim(>[rel=hairpin@r1:start:dim] C#5/2[marc_,port^]
+2.1: <15mb(>[rel=ottava@r2:start:15mb] A3/4[down] r/4[ferm]
+m 4 right=final ending=end
+1.1: <hairpin)>[rel=hairpin@r1:end] <pp> D5/2[ferm_]
+2.1: <15mb)>[rel=ottava@r2:end:15mb] <ped(>[rel=pedal@r3:line-start] D4/4 <ped(>[rel=pedal@r3:line-change] D4/4
+heading: "Coda"
+m 5 time=3/4 time-symbol=common
+1.1: <tempo "" h=40> mrest[ferm]
+2.1: <ped)>[rel=pedal@r3:line-release] C4/4[grace] D4/2.[orn=inverted-turn]
