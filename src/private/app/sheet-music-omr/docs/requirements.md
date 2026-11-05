@@ -215,7 +215,9 @@ converter reports such content as OMR-REQ-006 and OMR-REQ-008 state.
   number, when the transcription rules of the format leave no grouping or more
   than one;
 - metronome units other than quarter, half, eighth, dotted quarter and dotted
-  half.
+  half;
+- printed content that the source image does not show legibly, such as a mark
+  cut off at the edge of a scan, which is not guessed.
 
 Playback-only data and engraving coordinates are neither content nor unsupported
 content. A reverse converter ignores them.

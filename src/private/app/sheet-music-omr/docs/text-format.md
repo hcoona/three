@@ -359,9 +359,9 @@ number `4/2`. A document is valid only when it also satisfies every rule below.
 ### Headers and state
 
 - A system document's `key`, `time` and `clefs` lines give the state at the
-  start of its first block: measure `carry-in.measure`, offset
-  `carry-in.offset`. An assembled score's lines give the state at the start of
-  measure 1.
+  start of its first block, measure `carry-in.measure` and offset
+  `carry-in.offset`, before that block's options and directions take effect.
+  An assembled score's lines give the state at the start of measure 1.
 - `key=K` on a block sets the key signature from that measure on, `time=N/D`
   sets the meter from that measure on, and a `clef` direction sets the clef of
   its line's staff from its onset on. The state after a document is its header
@@ -564,7 +564,11 @@ label `rN`.
   adjacent measures that each carry an `ending` option, and its _source
   measure_ is the measure before the group. The pitch lies in the first
   non-grace rhythmic event of its voice line in the first measure of a bracket
-  other than the group's first. Its _source_ is a pitch with the same sounding
+  other than the group's first. When the group's last measure carries
+  `right=repeat` and the next measure carries no `ending` option, that next
+  measure is an unlabeled last ending, and a tie-in pitch may also lie in the
+  first non-grace rhythmic event of a voice line there. The _source_ of a tie-in
+  pitch is a pitch with the same sounding
   step and octave in a non-grace rhythmic event of the same staff that ends at
   the end of the source measure. At least one source shall exist, all sources
   shall have the same alteration, and the tie-in pitch shall resolve to that
@@ -641,7 +645,9 @@ an event boundary in its line.
   positive number of units per minute.
 - `<rehearsal "A">` is a rehearsal mark.
 - `<pedal-sign down>` and `<pedal-sign up>` record the pedal glyphs, which are
-  distinct from pedal lines.
+  distinct from pedal lines. When both are at one onset of a line, the release
+  takes effect before the press, whatever their order in the line: the pair is
+  a pedal change.
 - A hairpin starts with `<cresc(>[rel=hairpin@rN:start:cresc]` or
   `<dim(>[rel=hairpin@rN:start:dim]` and ends with
   `<hairpin)>[rel=hairpin@rN:end]`.
@@ -779,7 +785,16 @@ text. A validator cannot check them from the text alone, and they add no
 validity rule: a valid document that breaks them is still valid, but it is not
 the transcription of that page. The examples elsewhere in this record show
 validity and omit the layout hints that a transcription writes. Handwritten
-additions to a printed copy are not transcribed.
+additions to a printed copy are not transcribed. Printed content that the
+source image does not show legibly, such as a mark cut off at the edge of a
+scan, is unsupported content and is not guessed.
+
+Horizontal positions on the page decide several rules below. The _extent_ of
+an event is the horizontal extent of its noteheads, or of its rest glyph; stems,
+flags, dots, accidentals and marks are not part of it. Its _center_ is the
+middle of its extent. An event lies at or to the right of a point when the right
+end of its extent does, and the first event at or to the right of a point is the
+one of these with the earliest onset.
 
 ### Voices and staves
 
@@ -797,6 +812,9 @@ additions to a printed copy are not transcribed.
   that displays most of its non-grace events, or its first one when the counts
   are equal. Its events on the other staff carry `xsN`. Every other event
   belongs to the staff that displays it.
+- All events of one beam group belong to one voice. When their stems point
+  both ways, it is the voice that the rules above give to the group's first
+  non-grace event displayed on the group's staff.
 
 ### Marks and words
 
@@ -804,38 +822,71 @@ additions to a printed copy are not transcribed.
   articulation carries `^` or `_`, as printed. A dynamic printed above its staff
   carries `^`.
 - A mark of an event (an articulation, fermata, ornament or fingering) that is
-  printed between two events belongs to the event whose notehead or rest is
-  horizontally nearest to the mark's center, or to the earlier one at equal
-  distance.
-- An arc that joins two consecutive single notes of the same pitch in one voice
-  line is a tie, unless the second note carries an articulation, in which case
-  it is a slur.
-- Printed words are encoded as printed. "loco" at the end of an ottava line is
-  `<"loco">` besides the ottava end. Words for a gradual tempo change, such as
-  "rit.", "rall." and "accel.", are text and never `tempo`.
+  printed between two events belongs to the event whose center is horizontally
+  nearest to the mark's center, or to the earlier one at equal distance.
+- Fingering digits printed above or below the noteheads at one horizontal
+  position of a staff belong to those noteheads, whether they form one chord or
+  belong to events of several voices. The digits above go, from the top, to the
+  highest noteheads in order, and the digits below go, from the bottom, to the
+  lowest. A digit printed beside one notehead belongs to it. A notehead shared
+  by events of two voices takes its digit on its pitch in the event with the
+  lower voice number. Two digits over a single pitch whose event carries
+  `orn=trill` are its trill fingering. Otherwise, more digits on one side than
+  the noteheads there, or digits from both sides for one notehead, are
+  unsupported fingering.
+- An arc that joins a notehead to one of the same pitch in the next non-grace
+  rhythmic event of its voice line, or in an event of another voice line of the
+  same staff that starts when the first event ends, is a tie of those two
+  pitches, unless the later event carries an articulation, in which case it is
+  a slur. Every other arc between two notes is a slur. Between two chords, an
+  arc joins the noteheads nearest to its ends, so two arcs printed above and
+  below two equal two-note chords are two ties. An arc that carries a tuplet
+  number and spans exactly the events of a tuplet group is the bracket of that
+  group, not a slur.
+- An extended trill ends on the last note of its voice line whose extent starts
+  at or to the left of the right end of its wavy line, counting notes that a tie
+  continues. A wavy line that reaches no note after the trilled one is not
+  encoded, and the trilled note carries `orn=trill` alone.
+- Printed words are encoded as printed. Words in an upright typeface above
+  staff 1, and words printed with a metronome mark, are `tempo`. Other words are
+  text, and so are words for a gradual tempo change, such as "rit.", "rall."
+  and "accel.", navigation words, such as "D.C." and "Fine", and "loco".
+  "loco" at the end of an ottava line is `<"loco">` besides the ottava end.
 - A `Ped.` glyph that begins a pedal line is the start of that line.
   `<pedal-sign down>` and `<pedal-sign up>` record only glyphs that are not
   joined to a line.
 
 ### Directions
 
-- Onset: a dynamic takes the onset of the event nearest to its center, or of
-  the earlier one at equal distance. Any other direction, and the start of a
-  hairpin or line, takes the onset of the first event at or to the right of its
-  left edge. The end of a hairpin or line, and a pedal change, take the onset of
-  the first event at or to the right of the end or change point. The events
-  counted are the notes and rests of both staves, except that a clef or ottava
-  direction counts only events displayed on its own staff.
+- Onset: a dynamic takes the onset of the event whose center is nearest to its
+  own center, or of the earlier one at equal distance. Any other direction, and
+  the start of a hairpin or line, takes the onset of the first event at or to
+  the right of its left edge. The end of a hairpin or line, and a pedal
+  change, take the onset of the first event at or to the right of the end or
+  change point. The events counted are the notes and rests of both staves,
+  except that a clef or ottava direction counts only events displayed on its own
+  staff, and that a whole-measure rest, whose glyph does not mark its onset,
+  counts only for a dynamic.
 - System edges: a point whose onset rule takes the first event at or to the
   right of it, when the system has no such counted event, takes the end of the
   last block as its onset, and its direction is written after the rhythmic
-  events of its line. A hairpin or line that reaches the right edge of the
-  system without an end stays open into the next system, and one that visibly
-  ends before that edge ends in the system. A relation that `carry-in` lists as
-  open and that shows no continuation in the system ends at the first event of
-  the system that can hold its end. A volta bracket that reaches the right edge
-  of the system without a closing hook is written `start` or `continue`, and
-  one that ends there with a hook is written `single` or `end`.
+  events of its line. A hairpin, a line or the wavy line of an extended trill
+  that reaches the right edge of the system without an end stays open into the
+  next system, and one that visibly ends before that edge ends in the system.
+  An arc that leaves a note and reaches the right edge of the system stays
+  open. It is a slur when it passes over a later event of its voice line, and
+  otherwise a tie of the pitch that it leaves. A relation that `carry-in` lists
+  as open and that shows no continuation in the system ends at the first event
+  of the system that can hold its end. A continuation printed at the start of
+  the system that `carry-in` does not list as open, or that cannot continue the
+  relation that it lists, shows that `carry-in` does not match the page. No
+  document transcribes the system with that `carry-in`, and a tool reports the
+  mismatch. A volta bracket that reaches the right edge of the system without a
+  closing hook is written `start` or `continue`, and one that ends there with a
+  hook is written `single` or `end`.
+- Signatures at a system start: a key or time signature printed at the start of
+  the system that differs from the `key` or `time` line is a change, written as
+  `key=` or `time=` on the first block.
 - Reprints at a system start: an unchanged clef is recorded only in the `clefs`
   line, and a `tr` sign or text reprinted over a trill or dashes line that
   `carry-in` lists as open continues that relation and is not encoded.
@@ -860,16 +911,23 @@ additions to a printed copy are not transcribed.
   places some rhythmic events of a voice line in groups so that the line fills
   its measure. Beams decide first: no group contains events of two different
   level-1 beam runs, even when unbeamed events lie between them. Within that
-  limit, each group starts on a beat, covers the fewest whole beats that its
-  events fill, and has the reduced ratio of its written duration to that time,
-  such as `3:2` for three eighth notes in one quarter-note beat. A beat is
-  `1/D` of the meter `N/D`, or `3/D` in a compound meter, where `N` is 6, 9 or
-  12 and `D` is at least 8. When some groupings use only `3:2` groups in a
-  simple meter, or only `2:3` groups in a compound meter, only those count.
-  Exactly one grouping shall remain, and a measure with none or several is
-  unsupported.
+  limit, each group has a _unit_, which is the beat or the beat halved one or
+  more times. A group starts on a multiple of its unit from the start of the
+  measure, covers the fewest whole units that its events fill, and has the
+  reduced ratio of its written duration to that time, such as `3:2` for three
+  eighth notes in one quarter-note beat or for three 32nd notes in one sixteenth
+  of it. A beat is `1/D` of the meter `N/D`, or `3/D` in a compound meter, where
+  `N` is 6, 9 or 12 and `D` is at least 8. When some groupings use only `3:2`
+  groups in a simple meter, or only `2:3` groups in a compound meter, only those
+  count, and of the groupings that then count, only those with the fewest groups
+  count. Exactly one grouping shall remain, and a measure with none or several
+  is unsupported.
 - `len` is written only when the printed content of a measure is shorter or
-  longer than its meter, as in a pickup.
+  longer than its meter, as in a pickup. When the voice lines of such a measure
+  have different lengths at their printed values, with printed tuplet numbers
+  applied, `len` is the shortest of these lengths in a simple meter and the
+  longest in a compound meter, and the other lines are placed in groups that
+  fill it.
 
 ## Category encodings
 
@@ -933,7 +991,8 @@ Layout hints are encoded and never count as content differences: the `up` and
 `down` stem flags, the `^` and `_` placement suffixes, `ferm_` against `ferm`,
 and the `^` on a dynamic. Some printed layout has no encoding at all: curve
 shape, spacing, fonts, cautionary key-signature glyphs, a reprinted unchanged
-key or numeric time signature, and the closing hook of a volta bracket.
+key or numeric time signature, the printed number and bracket of a tuplet, and
+the closing hook of a volta bracket.
 
 The requirements record lists unsupported content. This format has no spelling
 for it. A validator rejects a document that carries it, and no tool shall drop
