@@ -99,8 +99,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
   not completion. Source repairs use the existing refinement entry and its
   accepted product decisions, not a new product or recovery architecture.
 - **Owner risk decision and effects:** the owner requests paid use of the
-  existing Windows Copilot SDK/CLI, existing authentication/default model and
-  trusted-host policy for this actual repository audit. Workers may process
+  existing Windows Copilot SDK/CLI, existing authentication and trusted-host
+  policy for this actual repository audit, explicitly selecting the supported
+  GPT-6.1 Terra model without provider substitution. Workers may process
   the declared repository through that model service; worktrees are not a
   host-permission sandbox. Permit owned worktree/state/process creation,
   worker-bound local MCP cooperation, private audit output, read-only public
@@ -108,16 +109,27 @@ ends a grant. Git and the proposing PR retain the reason and history.
   Workers must not edit source/records/dependencies/workflows, commit/push,
   mutate GitHub, invoke nested agents/models or inspect unrelated host,
   credential, account or historical-session data. The executor may inspect
-  only this campaign's exact owned diagnostics to diagnose failures.
+  only this campaign's exact owned diagnostics to diagnose failures, plus
+  aggregate host physical/commit/pagefile counters and memory counters bound
+  to its owned process identities. Do not inspect unrelated processes or
+  change host/pagefile settings.
 - **Finite execution boundary:** retain 32 workers, no privileged planner,
-  a 1,800-second per-run deadline, 10,000 AI Credits per initialized attempt
-  and 150,000 AI Credits cumulatively. Continue the latest fully reconciled
-  user-audit campaign ledger, including existing spend; calibration, runs,
-  repetitions, fresh sessions and repairs never create another zero baseline.
-  There is no separate run-count quota. Native limits remain soft, with
-  possible in-flight overshoot accepted and recorded; tokens or elapsed time
-  do not prove exact spend. Unknown usage or ownership blocks further paid
-  work until established by the accepted reconciliation path, never by reset.
+  a 1,800-second per-run deadline, 20,000 AI Credits in total per initialized
+  attempt and 100,000 AI Credits cumulatively across all subsequent trials.
+  Include every worker, calibration, failed attempt, repetition, fresh session
+  and paid diagnostic in those allowances; they are not per-worker budgets.
+  The owner explicitly authorizes one new forward-only campaign ledger now,
+  despite the old ledger's retained uncertain usage. First verify old owned
+  processes are quiescent and preserve the old ledger, unknown reservations
+  and evidence unchanged. Their usage remains unknown, not zero or reconciled.
+  Record the one-time transition privately; after it, every subsequent trial
+  uses that same new ledger and its 100,000-credit cumulative allowance.
+  Do not continue spending from old ledgers, create parallel budgets or reset
+  again. This exception does not change ordinary unknown-usage admission:
+  uncertainty in the new ledger blocks further paid work until resolved by
+  the accepted reconciliation path. There is no separate run-count quota.
+  Native limits remain soft, with possible in-flight overshoot accepted and
+  recorded; tokens or elapsed time do not prove exact spend.
 - **Ordering and gates:** this Wave must merge before newly authorized work.
   Author and separately accept the exact project-local operational protocol
   before any native observation. It must cover the subject/build identities,
@@ -140,8 +152,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
 - **Exclusions:** no reopening the former development acceptance campaign,
   general 32-worker/backend support claim, provider substitution, account or
   quota inspection, authentication/subscription/access change, release,
-  publication or proving dispatch. No reset/deletion of any old ledger,
-  unknown reservation, session evidence or owner work. New implementation,
+  publication or proving dispatch. No deletion or rewriting of any old ledger,
+  unknown reservation, session evidence or owner work, and no ledger reset
+  beyond the single transition explicitly granted above. New implementation,
   dependency or recovery-policy decisions retain their existing prerequisites;
   repeated paid execution does not authorize bypassing them.
 
