@@ -766,10 +766,11 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
-    [DataRow(false)]
-    [DataRow(true)]
+    [DataRow("invocation")]
+    [DataRow("ramp")]
+    [DataRow("allocation")]
     public async Task ControlledReceiptsRequirePreflightAndCalibrationAndBindExactConfiguration(
-        bool ramp
+        string change
     )
     {
         CancellationToken token = testContext.CancellationToken;
@@ -804,17 +805,31 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
         Scenario.Failure(await production.RunAsync("run", token), "unavailable");
 
         fixture.Database.SaveConfiguration(
-            ramp
-                ? fixture.Database.Configuration with { WorkerStartIntervalSeconds = 30 }
-                : fixture.Database.Configuration with
+            change switch
+            {
+                "ramp" => fixture.Database.Configuration with
+                {
+                    WorkerStartIntervalSeconds = 30,
+                },
+                "allocation" => fixture.Database.Configuration with
+                {
+                    CreditAllocation = "shared",
+                },
+                _ => fixture.Database.Configuration with
                 {
                     NativeExecutable = Path.Combine(
                         native.DirectoryPath,
                         "changed-never-launch.exe"
                     ),
-                }
+                },
+            }
         );
         Scenario.Failure(await coordinator.RunAsync("run", token), "unavailable");
+        if (change == "allocation")
+        {
+            Scenario.Data(await coordinator.PreflightAsync(token));
+            Scenario.Failure(await coordinator.RunAsync("run", token), "unavailable");
+        }
         Assert.IsEmpty(native.OrdinaryPrompts());
         Assert.HasCount(1, ledger.Reservations(fixture.Database.RunId));
         using SqliteConnection retained = fixture.Database.Open();

@@ -318,17 +318,16 @@ internal sealed class NativeSdkSession : IAsyncDisposable
                 }
 
                 SessionLimitsExhaustedRequestedData request = await pending.ConfigureAwait(false);
-                decimal limit = await renewLimit!(linked.Token).ConfigureAwait(false);
-                await active.Rpc.Ui.HandlePendingSessionLimitsExhaustedAsync(
+                await HandleExhaustedLimitAsync(
                     request.RequestId,
-                    new UISessionLimitsExhaustedResponse
+                    renewLimit!,
+                    active.Rpc.Ui.HandlePendingSessionLimitsExhaustedAsync,
+                    async (limit, token) =>
                     {
-                        Action = UISessionLimitsExhaustedResponseAction.Set,
-                        MaxAiCredits = NativeLimit(limit),
+                        await ReadAsync(SessionId, limit, token).ConfigureAwait(false);
                     },
                     linked.Token
                 ).ConfigureAwait(false);
-                await ReadAsync(SessionId, limit, linked.Token).ConfigureAwait(false);
             }
             AssistantMessageEvent? response = await sending.ConfigureAwait(false);
             CheckEvents(cancellationToken);
@@ -370,6 +369,27 @@ internal sealed class NativeSdkSession : IAsyncDisposable
                 catch (OperationCanceledException) { }
             }
         }
+    }
+
+    internal static async Task HandleExhaustedLimitAsync(
+        string requestId,
+        Func<CancellationToken, Task<decimal>> renewLimit,
+        Func<string, UISessionLimitsExhaustedResponse, CancellationToken, Task> apply,
+        Func<decimal, CancellationToken, Task> verify,
+        CancellationToken cancellationToken
+    )
+    {
+        decimal limit = await renewLimit(cancellationToken).ConfigureAwait(false);
+        await apply(
+            requestId,
+            new UISessionLimitsExhaustedResponse
+            {
+                Action = UISessionLimitsExhaustedResponseAction.Set,
+                MaxAiCredits = NativeLimit(limit),
+            },
+            cancellationToken
+        ).ConfigureAwait(false);
+        await verify(limit, cancellationToken).ConfigureAwait(false);
     }
 
     internal async Task AbortFailedSendAsync(

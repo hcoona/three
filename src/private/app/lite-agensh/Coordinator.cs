@@ -1269,6 +1269,7 @@ public sealed class Coordinator
                     database.Configuration.NativeArguments,
                     database.Configuration.NativeModel,
                     database.Configuration.NativePermissionPolicy,
+                    database.Configuration.CreditAllocation,
                     database.Configuration.RunAiCreditAllowance,
                     database.Configuration.CampaignAiCreditAllowance,
                     database.Configuration.CampaignLedgerPath,

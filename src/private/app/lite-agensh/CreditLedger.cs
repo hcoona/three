@@ -252,7 +252,10 @@ public sealed class CreditLedger
             connection,
             """
             UPDATE credit_sdk_usage SET reported_nano_aiu=$nano,status=$status,
-                reported_requests=$requests
+                reported_requests=CASE
+                    WHEN $requests IS NULL THEN reported_requests
+                    WHEN reported_requests IS NULL OR $requests > reported_requests THEN $requests
+                    ELSE reported_requests END
             WHERE reservation_id=$id;
             """,
             transaction,

@@ -88,6 +88,16 @@ public sealed class CreditLedgerTests(TestContext testContext)
             Assert.ThrowsExactly<OperationException>(() =>
                 ledger.RecordSdkUsage(first.Id, observation)).Code
         );
+        ledger = new(fixture.Configuration.CampaignLedgerPath, 300);
+        foreach (bool final in new[] { false, true, true })
+        {
+            Assert.AreEqual(
+                "credit_unknown",
+                Assert.ThrowsExactly<OperationException>(() =>
+                    ledger.RecordSdkUsage(first.Id, observation, final)).Code
+            );
+            Assert.IsTrue(ledger.Status("shared", 300)["uncertain"]!.GetValue<bool>());
+        }
         Assert.AreEqual(
             "credit_unknown",
             (await Assert.ThrowsExactlyAsync<OperationException>(() =>
