@@ -62,6 +62,21 @@ Passing these does not imply other backends, operating systems, security
 isolation, model-proxy guarantees, remote delivery or benchmark equivalence.
 For unimplemented scenarios, the result is **not run**, not inferred success.
 
+Shared-credit scenarios additionally require a peer to exceed its former equal
+share while others start through ramp-up, without exceeding backed run/campaign
+authorization; unused completed-turn grants become available to another peer.
+Exercise simultaneous requests against real SQLite, temporarily committed
+credit, cancellation while waiting, unsupported/mismatched cap application,
+partial or regressing usage and exact/fresh recovery. Preserve legacy
+per-session behavior and reject invalid allocation input before initialization.
+Use focused ledger invariants and controlled journeys, not tests of private
+method order or native implementation internals.
+
+Native evidence must separately retain actual model selection, live limit
+readback/mutation, exhausted-window renewal, cumulative baselines and final
+settlement. A source-level API or scripted grant does not establish those
+observations; retain any naturally unexercised renewal as not observed.
+
 ## Implementation and evidence ordering
 
 The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) selects the

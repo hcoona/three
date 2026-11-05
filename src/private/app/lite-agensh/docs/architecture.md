@@ -128,6 +128,39 @@ atomically before any model send. SDK events are notifications, not the sole
 usage ledger: cumulative typed metrics and their completeness govern charging.
 Neither context occupancy nor a premium-request multiplier is AI-credit spend.
 
+### Shared credit allocation
+
+The opt-in shared mode keeps credit allocation in the existing coordinator,
+worker adapter and transactional campaign SQLite ledger. It does not add a
+service, model proxy, central task scheduler or native cross-session pool.
+The host backs each active native spending window from the smaller remaining
+run/campaign allowance; no waiting peer owns a permanent equal share.
+
+Use renewable grants of at most 100 credits, and at least the existing
+30-credit application admission minimum. This bounds concurrent authorization
+without making 100 a worker's lifetime budget. Persist the grant before applying
+the native cap. While a call is in flight, its unused authorization remains
+committed; never lend it to another worker. A completed SDK turn with complete
+cumulative usage closes that grant and returns its unused backing. Every
+subsequent send needs fresh backing and a verified finite cap. Trust the SDK's
+documented completed-turn boundary; silence or canceled awaits are not closure.
+
+Use the supported mutable session-limit and exhausted-limit response APIs.
+For a running session, relate its cap to the saved current-window baseline,
+not the session's entire historical cumulative total. A renewal must preserve
+the session, cumulative spend and run/campaign ceilings; it is not permission
+to clear a native limit or reset usage. Missing/mismatched readback,
+incomplete usage or unsupported mutation stops the affected path.
+
+When credit is temporarily committed to other in-flight calls, wait
+cancellably for their settlement rather than declaring the pool spent.
+The existing run deadline and stop controls still apply. If the remaining
+allowance cannot fund the application minimum, report credit exhaustion.
+Native limits check after model responses and can overshoot; backing grants
+do not establish a hard aggregate prepaid ceiling.
+
+### Local cooperation and instructions
+
 The helper is bound at launch to its run and worker; tool arguments do not
 choose an arbitrary actor/run. It exposes the
 [local capability vocabulary](upstream-migration.md#collaboration-mcp-map).

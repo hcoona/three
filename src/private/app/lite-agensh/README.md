@@ -12,6 +12,11 @@ cancellation, fresh-summary resume and exact-session crash reconnect.
 [PR #1530](https://github.com/hcoona/three/pull/1530) retains exact builds,
 commands, reported credits, independent reviews and repository acceptance gates.
 These results do not establish another operating system or native backend.
+The accepted shared-credit design is specified in the
+[credit contract](docs/implementation-contracts.md#shared-spending-windows).
+Its implementation and native window-renewal evidence are still pending;
+the existing runtime uses per-session allocation. Do not treat the design
+or the owner's one-time ledger transition as a successful autonomous audit.
 The MCP 2.3.0 upgrade is covered by controlled stdio contracts, not a new
 native acceptance run; PR #1530 retains the earlier dependency baseline.
 
@@ -38,7 +43,9 @@ in this overview.
 Use the repository-selected .NET SDK and the existing Copilot CLI version
 selected by the [implementation contracts](docs/implementation-contracts.md).
 SDK CLI acquisition and native automatic updates are disabled. Keep the
-existing native authentication and default model; no provider proxy is needed.
+existing native authentication and default model unless an explicitly selected
+supported model is required by the owning operational protocol; no provider
+proxy is needed.
 
 Edit [the YAML example](examples/run.yaml) and its separate
 [Markdown goal](examples/goal.md). Set the target checkout, owned run state,
