@@ -12,6 +12,97 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 {
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow("per-session", false)]
+    [DataRow("shared", false)]
+    [DataRow("shared", true)]
+    public async Task PeerUsageRemainsBackedUntilTheCommonRuntimeSettles(
+        string allocation, bool hostFailure
+    )
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario fixture = await GitScenario.CreateAsync(token);
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        fixture.Database.SaveConfiguration(fixture.Database.Configuration with
+        {
+            CreditAllocation = allocation,
+            RunAiCreditAllowance = 300,
+            PlanningSeconds = 0,
+        });
+        TaskCompletionSource closing = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool armed = false;
+        Coordinator coordinator = new(
+            fixture.Database, fixture.Collaboration, fixture.Operations,
+            (database, _, credits) => new ControlledNativeFactory(
+                database, credits, native.DirectoryPath,
+                onHostSettlement: async () =>
+                {
+                    if (armed)
+                    {
+                        closing.TrySetResult();
+                        await release.Task.WaitAsync(token);
+                    }
+                }
+            )
+        );
+        await native.PrepareAsync(coordinator, token);
+        native.SetMode("hold");
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
+        CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+        try
+        {
+            await WaitUntilAsync(() => native.OrdinaryPrompts().Length == 2, execution, token);
+            armed = true;
+            native.SetMode(hostFailure ? "unsettled-host" : "complete");
+            coordinator.RequestControl("pause");
+            await closing.Task.WaitAsync(token);
+
+            CreditReservation[] peers = ledger.Reservations()
+                .Where(row => row.Worker != "calibration").ToArray();
+            Assert.HasCount(2, peers);
+            Assert.IsTrue(peers.All(row => row.State != "reconciled"));
+            Assert.IsTrue(peers.All(row => row.Actual == 1m));
+            Assert.IsFalse(execution.IsCompleted);
+
+            release.TrySetResult();
+            JsonObject result = await execution;
+            if (hostFailure)
+            {
+                Scenario.Failure(result, "ownership_or_usage_unresolved");
+                Assert.IsTrue(ledger.Reservations()
+                    .Where(row => row.Worker != "calibration")
+                    .All(row => row.State == "uncertain"));
+                Assert.AreEqual("credit_unknown",
+                    Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
+                JsonNode? evidence = Assert.ContainsSingle(
+                    Scenario.Data(coordinator.Status())["settlementFailures"]!.AsArray()
+                );
+                Assert.IsNotNull(evidence);
+                Assert.AreEqual("native-runtime", evidence["phase"]!.GetValue<string>());
+                Assert.IsNull(evidence["worker"]);
+                Assert.AreEqual("Controlled common host unsettled.",
+                    evidence["message"]!.GetValue<string>());
+                Assert.IsNotEmpty(native.Operations().Where(operation =>
+                    operation["operation"]?.GetValue<string>() == "settled"));
+            }
+            else
+            {
+                Scenario.Data(result);
+                Assert.IsTrue(ledger.Reservations().All(row => row.State == "reconciled"));
+                ledger.RequirePaidAdmission();
+            }
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await StopExecutionAsync(stop, execution);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
     public async Task SharedZeroIntervalDispatchReturnsBackingBeforeTheNextAdmissionCompletes()
     {
         CancellationToken token = testContext.CancellationToken;
@@ -1169,7 +1260,8 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             120,
             Path.Combine(fixture.Fixture.StatePath, "before-sdk.evidence")
         );
-        NativeWorker worker = new(fixture.Database, new(fixture.Database), ledger, reservation);
+        await using NativeSdkHost host = new(fixture.Database, new(fixture.Database));
+        NativeWorker worker = new(fixture.Database, host, ledger, reservation);
         SqliteException failed = await Assert.ThrowsExactlyAsync<SqliteException>(() =>
             worker.StartAsync(fixture.Operations.GetWorkerPath("worker1"), null, token)
         );

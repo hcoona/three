@@ -247,14 +247,20 @@ public sealed class ControlledFailureScenarioTests(TestContext testContext)
 
         JsonArray settlementFailures = status["settlementFailures"]!.AsArray();
         Assert.HasCount(2, settlementFailures);
-        Assert.IsTrue(
-            settlementFailures.All(item => item!["phase"]!.GetValue<string>() == "stop")
-        );
-        string[] failedWorkers = settlementFailures
-            .Select(item => item!["worker"]!.GetValue<string>())
-            .ToArray();
-        Assert.Contains("worker1", failedWorkers);
-        Assert.Contains("worker2", failedWorkers);
+        CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+        CreditReservation[] peers = ledger.Reservations()
+            .Where(row => row.Worker != "calibration").ToArray();
+        Assert.HasCount(2, peers);
+        foreach (CreditReservation peer in peers)
+        {
+            JsonNode? evidence = Assert.ContainsSingle(settlementFailures.Where(item =>
+                item!["worker"]?.GetValue<string>() == peer.Worker
+                && item["reservationId"]?.GetValue<string>() == peer.Id));
+            Assert.IsNotNull(evidence);
+            Assert.IsTrue(evidence["phase"]!.GetValue<string>() is "stop" or "final-usage");
+            Assert.IsNotEmpty(evidence["message"]!.GetValue<string>());
+            Assert.AreEqual("uncertain", peer.State);
+        }
         string[] prompts = native.OrdinaryPrompts();
         Assert.IsNotEmpty(prompts);
         Assert.IsTrue(prompts.Length <= 2, "A failed/unknown paid turn must not be replayed.");

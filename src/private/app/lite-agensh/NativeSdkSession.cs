@@ -6,13 +6,50 @@ using GitHub.Copilot.Rpc;
 
 namespace LiteAgensh;
 
+internal interface INativeSdkSession : IAsyncDisposable
+{
+    string SessionId { get; }
+
+    bool HasSession { get; }
+
+    string? NativeFailure { get; }
+
+    JsonObject? Metadata { get; }
+
+    Task OpenAsync(
+        string worker, string sessionId, decimal? limit, string? exactSession,
+        string evidencePath, CancellationToken cancellationToken
+    );
+
+    Task<NativeUsage> ReadAsync(
+        string expectedSession, decimal? expectedLimit, CancellationToken cancellationToken,
+        bool validateEvents = true
+    );
+
+    Task<NativeUsage> UpdateLimitAsync(
+        string expectedSession, decimal limit, CancellationToken cancellationToken
+    );
+
+    Task<JsonObject> SendAsync(
+        string text, TimeSpan timeout, CancellationToken cancellationToken,
+        Func<CancellationToken, Task<decimal>>? renewLimit = null
+    );
+
+    Task AbortAsync(CancellationToken cancellationToken);
+
+    void Quiesce();
+
+    void RequireHealthy();
+}
+
 // These pinned, typed native metadata/limits/usage APIs are experimental in SDK 1.0.28.
 #pragma warning disable GHCP001
-internal sealed class NativeSdkSession : IAsyncDisposable
+internal sealed class NativeSdkSession : INativeSdkSession
 {
     private const int ProbeTimeoutSeconds = 30;
     private readonly RunDatabase database;
-    private readonly NativeRuntime runtime;
+    private readonly NativeSdkHost host;
+    private readonly bool ownsHost;
     private readonly string cwd;
     private readonly bool isolated;
     private readonly object callbacks = new();
@@ -31,11 +68,22 @@ internal sealed class NativeSdkSession : IAsyncDisposable
         string cwd,
         bool isolated
     )
+        : this(database, new NativeSdkHost(database, processes), cwd, isolated)
+    {
+        ownsHost = true;
+    }
+
+    public NativeSdkSession(
+        RunDatabase database,
+        NativeSdkHost host,
+        string cwd,
+        bool isolated
+    )
     {
         this.database = database;
+        this.host = host;
         this.cwd = Path.GetFullPath(cwd);
         this.isolated = isolated;
-        runtime = new(database, processes, this.cwd);
     }
 
     public static string RuntimeVersion =>
@@ -78,32 +126,15 @@ internal sealed class NativeSdkSession : IAsyncDisposable
         CancellationToken cancellationToken
     )
     {
-        string endpoint = await runtime
-            .StartAsync($"native:{worker}:{sessionId}", evidencePath, cancellationToken)
+        client = await host
+            .GetClientAsync(cwd, evidencePath, cancellationToken)
             .ConfigureAwait(false);
-        client = new(
-            new CopilotClientOptions
-            {
-                Connection = RuntimeConnection.ForUri(endpoint, runtime.ConnectionToken),
-                Mode = CopilotClientMode.Empty,
-            }
-        );
+        host.Associate(worker, sessionId, cwd);
         using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken
         );
         deadline.CancelAfter(TimeSpan.FromSeconds(30));
-        await client.StartAsync(deadline.Token).ConfigureAwait(false);
-        GetStatusResponse status = await client
-            .GetStatusAsync(deadline.Token)
-            .ConfigureAwait(false);
-        if (status.Version != RuntimeVersion)
-        {
-            throw new OperationException(
-                "unavailable",
-                "The installed native runtime does not match the SDK package's CLI pin."
-            );
-        }
-        actualRuntimeVersion = status.Version;
+        actualRuntimeVersion = host.ActualRuntimeVersion;
 
         SessionConfigBase settings = exactSession is null
             ? new SessionConfig { SessionId = sessionId }
@@ -202,6 +233,8 @@ internal sealed class NativeSdkSession : IAsyncDisposable
                 ["isRemote"] = metadata.IsRemote,
                 ["runtimeVersion"] = actualRuntimeVersion,
                 ["sdkVersion"] = SdkVersion,
+                ["runtimeId"] = host.Id,
+                ["runtimeLeaseId"] = host.LeaseId,
             };
             if (validateEvents)
             {
@@ -474,20 +507,9 @@ internal sealed class NativeSdkSession : IAsyncDisposable
         }
         finally
         {
-            try
+            if (ownsHost)
             {
-                if (client is not null)
-                {
-                    await client
-                        .DisposeAsync()
-                        .AsTask()
-                        .WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
-                        .ConfigureAwait(false);
-                }
-            }
-            finally
-            {
-                await runtime.DisposeAsync().ConfigureAwait(false);
+                await host.DisposeAsync().ConfigureAwait(false);
             }
         }
     }

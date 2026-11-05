@@ -24,7 +24,8 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
                 Evidence(fixture)
             )
             : ledger.Reserve(database.RunId, "worker1", 60, 120, Evidence(fixture));
-        NativeWorker worker = new(database, new(database), ledger, reservation);
+        await using NativeSdkHost host = new(database, new(database));
+        NativeWorker worker = new(database, host, ledger, reservation);
         using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
             testContext.CancellationToken
         );
@@ -69,7 +70,8 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
             Sql.Execute(campaign, "UPDATE credit_sdk_usage SET status='partial';");
         }
 
-        NativeWorker worker = new(database, new(database), ledger, continuation);
+        await using NativeSdkHost host = new(database, new(database));
+        NativeWorker worker = new(database, host, ledger, continuation);
         using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
             testContext.CancellationToken
         );
@@ -111,6 +113,11 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
                 worker.StopAsync()
             );
             Assert.AreEqual("credit_or_ownership_unknown", error.Code);
+            OperationException repeated = await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                worker.StopAsync()
+            );
+            Assert.AreEqual(error.Code, repeated.Code);
+            Assert.AreEqual(error.Message, repeated.Message);
             Assert.AreEqual(
                 "credit_unknown",
                 Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code
@@ -133,7 +140,8 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
         CreditLedger ledger = new(fixture.Configuration.CampaignLedgerPath, 180);
         CreditReservation previous = CompleteForContinuation(database, ledger, fixture);
         CreditReservation continuation = ledger.ContinueExact(previous.Id, Evidence(fixture));
-        NativeWorker worker = new(database, new(database), ledger, continuation);
+        await using NativeSdkHost host = new(database, new(database));
+        NativeWorker worker = new(database, host, ledger, continuation);
 
         await Assert.ThrowsExactlyAsync<Win32Exception>(() =>
             worker.StartAsync(
@@ -205,7 +213,8 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
             );
         }
 
-        NativeWorker worker = new(database, new(database), ledger, reservation);
+        await using NativeSdkHost host = new(database, new(database));
+        NativeWorker worker = new(database, host, ledger, reservation);
         await Assert.ThrowsExactlyAsync<Win32Exception>(() =>
             worker.StartAsync(
                 fixture.RepositoryPath,

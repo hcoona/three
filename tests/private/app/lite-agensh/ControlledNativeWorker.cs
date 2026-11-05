@@ -13,11 +13,18 @@ internal sealed class ControlledNativeFactory(
     CreditLedger credits,
     string directory,
     Func<CancellationToken, Task>? onExactLoadSettled = null,
-    Func<CreditReservation, CancellationToken, Task>? onStart = null
+    Func<CreditReservation, CancellationToken, Task>? onStart = null,
+    Func<Task>? onHostSettlement = null
 ) : INativeWorkerFactory
 {
-    public INativeWorker Create(CreditReservation? reservation, bool calibration) =>
-        new ControlledNativeWorker(
+    private readonly List<(ControlledNativeWorker Worker, CreditReservation? Reservation)> workers =
+        [];
+
+    public JsonArray SettlementFailures { get; } = [];
+
+    public INativeWorker Create(CreditReservation? reservation, bool calibration)
+    {
+        ControlledNativeWorker worker = new(
             database,
             credits,
             directory,
@@ -26,6 +33,109 @@ internal sealed class ControlledNativeFactory(
             onExactLoadSettled,
             onStart
         );
+        workers.Add((worker, reservation));
+        return worker;
+    }
+
+    public async Task<JsonObject> PreflightAsync(
+        IReadOnlyList<(string Worker, string Cwd)> peers,
+        CancellationToken cancellationToken
+    )
+    {
+        JsonArray sessions = [];
+        foreach ((string worker, string cwd) in peers)
+        {
+            INativeWorker native = Create(null, calibration: false);
+            await native.StartAsync(cwd, null, cancellationToken);
+            JsonObject diagnostic = native.Diagnostic!.DeepClone().AsObject();
+            diagnostic["worker"] = worker;
+            sessions.Add(diagnostic);
+            await native.StopAsync();
+        }
+        return new()
+        {
+            ["sessionId"] = sessions[0]!["sessionId"]!.DeepClone(),
+            ["modelPromptsSent"] = 0,
+            ["diagnostics"] = sessions[0]!.DeepClone(),
+            ["sessions"] = sessions,
+        };
+    }
+
+    public async Task CompleteAsync()
+    {
+        SettlementFailures.Clear();
+        HashSet<ControlledNativeWorker> unsettled = [];
+        Exception? failure = null;
+        foreach ((ControlledNativeWorker worker, CreditReservation? reservation) in workers)
+        {
+            try
+            {
+                await worker.StopAsync();
+            }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+                unsettled.Add(worker);
+                SettlementFailures.Add(NativeWorkerFactory.CreateSettlementFailure(
+                    reservation, "stop", exception
+                ));
+            }
+        }
+        RecordHost("host-closing");
+        bool runtimeSettled = false;
+        try
+        {
+            if (onHostSettlement is not null)
+            {
+                await onHostSettlement();
+            }
+            if (ControlledNativeWorker.Mode(directory) == "unsettled-host")
+            {
+                throw new OperationException(
+                    "ownership_unresolved", "Controlled common host unsettled."
+                );
+            }
+            RecordHost("host-settled");
+            runtimeSettled = true;
+        }
+        catch (Exception exception)
+        {
+            failure ??= exception;
+            SettlementFailures.Add(NativeWorkerFactory.CreateSettlementFailure(
+                null, "native-runtime", exception
+            ));
+        }
+        foreach ((ControlledNativeWorker worker, CreditReservation? reservation) in workers)
+        {
+            bool finalize = runtimeSettled && !unsettled.Contains(worker);
+            try
+            {
+                if (finalize)
+                {
+                    worker.CompleteUsage();
+                }
+                else
+                {
+                    worker.RetainUncertainty();
+                }
+            }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+                SettlementFailures.Add(NativeWorkerFactory.CreateSettlementFailure(
+                    reservation, finalize ? "final-usage" : "retain-uncertainty", exception
+                ));
+            }
+        }
+        if (failure is not null)
+        {
+            throw new OperationException("credit_or_ownership_unknown", failure.Message);
+        }
+        workers.Clear();
+    }
+
+    private void RecordHost(string operation) =>
+        ControlledNativeWorker.Record(directory, operation, null);
 
     public Task<NativeUsage> ReadSettledUsageAsync(
         CreditReservation reservation,
@@ -67,6 +177,9 @@ internal sealed class ControlledNativeWorker(
     private bool completedSharedTurn;
     private CancellationToken loadCancellation;
     private NativeSdkSession? failedSession;
+    private NativeUsage? pendingFinalUsage;
+    private bool usageFinalized;
+    private Exception? settlementFailure;
 
     public string? SessionId { get; private set; }
 
@@ -375,6 +488,10 @@ internal sealed class ControlledNativeWorker(
         {
             if (stopped)
             {
+                if (settlementFailure is not null)
+                {
+                    throw settlementFailure;
+                }
                 return;
             }
 
@@ -422,11 +539,13 @@ internal sealed class ControlledNativeWorker(
                 else
                 {
                     // This is controlled worker accounting, not proof of real SDK settlement.
+                    pendingFinalUsage = ReadUsage(directory, SessionId);
                     credits.RecordSdkUsage(
                         reservation.Id,
-                        ReadUsage(directory, SessionId),
-                        final: true
+                        pendingFinalUsage,
+                        final: failedExactLoad
                     );
+                    usageFinalized = failedExactLoad;
                 }
             }
 
@@ -441,6 +560,12 @@ internal sealed class ControlledNativeWorker(
             {
                 await onExactLoadSettled(loadCancellation);
             }
+        }
+        catch (Exception exception) when (!stopped)
+        {
+            stopped = true;
+            settlementFailure = exception;
+            throw;
         }
         finally
         {
@@ -459,6 +584,29 @@ internal sealed class ControlledNativeWorker(
         if (failedSession is not null)
         {
             await failedSession.DisposeAsync();
+        }
+    }
+
+    internal void CompleteUsage()
+    {
+        if (reservation is null || !started || usageFinalized)
+        {
+            return;
+        }
+        if (!stopped || pendingFinalUsage is null)
+        {
+            RetainUncertainty();
+            throw new OperationException("ownership_unresolved", "Controlled peer did not settle.");
+        }
+        credits.RecordSdkUsage(reservation.Id, pendingFinalUsage, final: true);
+        usageFinalized = true;
+    }
+
+    internal void RetainUncertainty()
+    {
+        if (reservation is not null && started && !usageFinalized)
+        {
+            credits.MarkUncertain(reservation.Id);
         }
     }
 

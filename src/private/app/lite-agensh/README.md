@@ -24,9 +24,11 @@ native acceptance run; PR #1530 retains the earlier dependency baseline.
 
 The [native-host design](docs/architecture.md#native-sdk-mcp-and-instruction-boundary)
 specifies one owned runtime/client with independent peer sessions and a
-cohort-settlement barrier. The current implementation still launches a runtime
-per worker; the design is a prerequisite for its separately reviewed repair,
-not evidence of lower memory use or a completed 32-peer audit.
+cohort-settlement barrier. The application shares the operation's runtime and
+client, stages peer usage until common-host settlement, and checks session
+independence in its non-model preflight. Controlled scenarios are not evidence
+of lower native memory use or a completed 32-peer audit; those claims still
+require separately recorded observations of the accepted implementation.
 
 The earlier failed ACP startup remains retained evidence, not measured zero
 cost. The owner-approved [SDK baseline](docs/native-acceptance-protocol.md#sdk-campaign-baseline)

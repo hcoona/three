@@ -242,7 +242,7 @@ public sealed class Coordinator
             return Failure("conflict", "Another coordinator owns this run.");
         }
 
-        INativeWorker? native = null;
+        JsonObject? diagnostic = null;
         JsonObject result;
         try
         {
@@ -250,18 +250,17 @@ public sealed class Coordinator
                 .ConfigureAwait(false);
             database.WriteMetadata("lifecycle", "preflighting");
             await git.InitializeAsync(cancellationToken).ConfigureAwait(false);
-            native = nativeWorkers.Create(null, calibration: false);
-            await native
-                .StartAsync(git.GetWorkerPath("worker1"), null, cancellationToken)
+            diagnostic = await nativeWorkers
+                .PreflightAsync(
+                    database.Configuration.WorkerIds.Take(2)
+                        .Select(id => (id, git.GetWorkerPath(id))).ToArray(),
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
             result = Success(
-                new
-                {
-                    sessionId = native.SessionId,
-                    modelPromptsSent = 0,
-                    diagnostics = native.Diagnostic,
-                },
-                "Native session identity, cwd and applied limit verified without model sends. "
+                diagnostic,
+                "Native peer identity, cwd, independent limits and session closure verified "
+                    + "without model sends. "
                     + "Empty-session metrics are not measured zero-cost usage."
             );
         }
@@ -275,17 +274,17 @@ public sealed class Coordinator
         }
         finally
         {
-            if (native is not null)
+            try
             {
-                try
-                {
-                    await native.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (Exception exception) when (IsExpected(exception))
-                {
-                    database.WriteMetadata("lifecycle", "unresolved");
-                    database.WriteMetadata("lifecycle:failure", exception.Message);
-                }
+                await nativeWorkers.CompleteAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception) when (IsExpected(exception))
+            {
+                database.WriteMetadata("lifecycle", "unresolved");
+                database.WriteMetadata("lifecycle:failure", exception.Message);
+                database.WriteMetadata(
+                    "lifecycle:settlement_failures", nativeWorkers.SettlementFailures.ToJsonString()
+                );
             }
         }
 
@@ -312,7 +311,8 @@ public sealed class Coordinator
                 {
                     ["nativeEvidenceKind"] = nativeEvidenceKind,
                     ["binding"] = CreditPreflightBinding(),
-                    ["sessionId"] = native?.SessionId,
+                    ["sessionId"] = diagnostic?["sessionId"]?.DeepClone(),
+                    ["sessions"] = diagnostic?["sessions"]?.DeepClone(),
                     ["verifiedAt"] = database.Now.ToString("O"),
                 }.ToJsonString()
             );
@@ -389,13 +389,25 @@ public sealed class Coordinator
                 try
                 {
                     await native.DisposeAsync().ConfigureAwait(false);
-                    settled = true;
                 }
                 catch (Exception exception) when (IsExpected(exception))
                 {
                     database.WriteMetadata("lifecycle", "unresolved");
                     database.WriteMetadata("lifecycle:failure", exception.Message);
                 }
+            }
+            try
+            {
+                await nativeWorkers.CompleteAsync().ConfigureAwait(false);
+                settled = native is not null && database.ReadMetadata("lifecycle") != "unresolved";
+            }
+            catch (Exception exception) when (IsExpected(exception))
+            {
+                database.WriteMetadata("lifecycle", "unresolved");
+                database.WriteMetadata("lifecycle:failure", exception.Message);
+                database.WriteMetadata(
+                    "lifecycle:settlement_failures", nativeWorkers.SettlementFailures.ToJsonString()
+                );
             }
         }
 
@@ -890,6 +902,34 @@ public sealed class Coordinator
                 {
                     database.WriteMetadata("lifecycle", "unresolved");
                 }
+            }
+            try
+            {
+                await nativeWorkers.CompleteAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+                if (nativeWorkers.SettlementFailures.Count == 0)
+                {
+                    settlementFailures.Add(new JsonObject
+                    {
+                        ["phase"] = "native-runtime",
+                        ["message"] = exception.Message,
+                    });
+                }
+                foreach (JsonNode? item in nativeWorkers.SettlementFailures)
+                {
+                    if (!settlementFailures.Any(existing => JsonNode.DeepEquals(existing, item)))
+                    {
+                        settlementFailures.Add(item!.DeepClone());
+                    }
+                }
+                database.WriteMetadata(
+                    "lifecycle:settlement_failures", settlementFailures.ToJsonString()
+                );
+                database.WriteMetadata("lifecycle", "unresolved");
+                database.WriteMetadata("lifecycle:failure", failure.Message);
             }
         }
 

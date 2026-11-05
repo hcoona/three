@@ -8,14 +8,14 @@ namespace LiteAgensh;
 internal sealed class NativeWorker : INativeWorker
 {
     private readonly RunDatabase database;
-    private readonly ProcessRunner processes;
+    private readonly INativeSdkHost host;
     private readonly CreditLedger credits;
     private CreditReservation? reservation;
     private readonly bool calibration;
     private readonly SemaphoreSlim turn = new(1, 1);
     private readonly SemaphoreSlim settlement = new(1, 1);
     private readonly CancellationTokenSource stop = new();
-    private NativeSdkSession? session;
+    private INativeSdkSession? session;
     private bool started;
     private bool stopped;
     private bool verified;
@@ -24,17 +24,20 @@ internal sealed class NativeWorker : INativeWorker
     private bool nativeIdle;
     private string? evidencePath;
     private (NativeUsage Usage, long Dispatches)? undispatchedBaseline;
+    private NativeUsage? pendingFinalUsage;
+    private Exception? settlementFailure;
+    private bool usageFinalized;
 
     public NativeWorker(
         RunDatabase database,
-        ProcessRunner processes,
+        INativeSdkHost host,
         CreditLedger credits,
         CreditReservation? reservation = null,
         bool calibration = false
     )
     {
         this.database = database;
-        this.processes = processes;
+        this.host = host;
         this.credits = credits;
         this.reservation = reservation;
         this.calibration = calibration;
@@ -54,6 +57,29 @@ internal sealed class NativeWorker : INativeWorker
         string? exactSession,
         CancellationToken cancellationToken,
         string? recoveryLabel = null
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, stop.Token
+        );
+        await turn.WaitAsync(linked.Token).ConfigureAwait(false);
+        try
+        {
+            await StartCoreAsync(cwd, exactSession, recoveryLabel, linked.Token)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            turn.Release();
+        }
+    }
+
+    private async Task StartCoreAsync(
+        string cwd,
+        string? exactSession,
+        string? recoveryLabel,
+        CancellationToken cancellationToken
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -105,7 +131,7 @@ internal sealed class NativeWorker : INativeWorker
             );
         }
 
-        session = new(database, processes, cwd, calibration);
+        session = host.CreateSession(cwd, calibration);
         (NativeUsage Usage, long Dispatches)? priorUsage = null;
         try
         {
@@ -341,6 +367,10 @@ internal sealed class NativeWorker : INativeWorker
         {
             if (stopped)
             {
+                if (settlementFailure is not null)
+                {
+                    throw settlementFailure;
+                }
                 return;
             }
 
@@ -443,7 +473,11 @@ internal sealed class NativeWorker : INativeWorker
             {
                 try
                 {
-                    credits.RecordSdkUsage(reservation.Id, finalUsage, final: true);
+                    // A failed unopened resume still belongs to the already-settled old runtime.
+                    bool final = undispatchedBaseline is not null && !session!.HasSession;
+                    credits.RecordSdkUsage(reservation.Id, finalUsage, final: final);
+                    usageFinalized = final;
+                    pendingFinalUsage = finalUsage;
                 }
                 catch (Exception exception)
                 {
@@ -453,15 +487,16 @@ internal sealed class NativeWorker : INativeWorker
 
             if (failure is not null)
             {
+                settlementFailure = new OperationException(
+                    "credit_or_ownership_unknown",
+                    $"Native settlement retained unresolved evidence: {failure.Message}"
+                );
                 if (reservation is not null)
                 {
                     credits.MarkUncertain(reservation.Id);
                 }
 
-                throw new OperationException(
-                    "credit_or_ownership_unknown",
-                    $"Native settlement retained unresolved evidence: {failure.Message}"
-                );
+                throw settlementFailure;
             }
 
             if (reservation is not null)
@@ -479,6 +514,42 @@ internal sealed class NativeWorker : INativeWorker
     {
         await StopAsync().ConfigureAwait(false);
         GC.SuppressFinalize(this);
+    }
+
+    internal void CompleteUsage()
+    {
+        if (reservation is null || !started || usageFinalized)
+        {
+            return;
+        }
+        if (!stopped || settlementFailure is not null || pendingFinalUsage is null)
+        {
+            RetainUncertainty();
+            throw new OperationException(
+                "credit_or_ownership_unknown",
+                "A peer's session did not establish complete, quiescent final usage."
+            );
+        }
+
+        try
+        {
+            credits.RecordSdkUsage(reservation.Id, pendingFinalUsage, final: true);
+            usageFinalized = true;
+            database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "stopped");
+        }
+        catch
+        {
+            RetainUncertainty();
+            throw;
+        }
+    }
+
+    internal void RetainUncertainty()
+    {
+        if (reservation is not null && started && !usageFinalized)
+        {
+            credits.MarkUncertain(reservation.Id);
+        }
     }
 
     private void SaveDiagnostic(NativeUsage usage)
