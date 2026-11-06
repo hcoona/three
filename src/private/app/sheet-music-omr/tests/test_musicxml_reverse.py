@@ -84,6 +84,11 @@ def refusal(data: bytes | str) -> MusicXmlError:
             id="ties-slurs-and-endings",
         ),
         pytest.param(
+            "m 1\n1.1: C5{tie@r1:start}/4 C5{tie@r2:end}/4\n"
+            "1.2: C5{tie@r2:start}/4 C5{tie@r1:end}/4\n2.1: C3/2\n",
+            id="crossing-unison-ties",
+        ),
+        pytest.param(
             "m 1\n1.1: 3:2{C5/4 D5/4 3:2{E5/8 F5/8 G5/8}}\n2.1: C3/2\n",
             id="nested-tuplets",
         ),

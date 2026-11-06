@@ -536,6 +536,8 @@ class _Member:
     fingering: list[int] = field(default_factory=list)
     tie_start: bool = False
     tie_stop: bool = False
+    start_number: str | None = None
+    stop_number: str | None = None
     start_label: int | None = None
     end_label: int | None = None
     tie_in: bool = False
@@ -1399,7 +1401,12 @@ class _Notations:
 
     def tied(self, element: ET.Element) -> None:
         assert self.member is not None  # noqa: S101
-        _set_tie(self.member, element.get("type"), self.at)
+        kind = element.get("type")
+        _set_tie(self.member, kind, self.at)
+        if kind == _START:
+            self.member.start_number = element.get("number")
+        else:
+            self.member.stop_number = element.get("number")
 
     def slur(self, element: ET.Element) -> None:
         kind = element.get("type")
@@ -2061,12 +2068,17 @@ class _Matcher:
             and other.staff == leaf.staff
             and self.time(other) == end
             and target.sounding == member.sounding
+            and (
+                None in {member.start_number, target.stop_number}
+                or target.stop_number == member.start_number
+            )
         ]
         if not candidates:
             msg = "a tie that reaches no note of the same pitch"
             _unsupported("tie", msg, member.at)
         candidates.sort(
             key=lambda item: (
+                item[1].stop_number != member.start_number,
                 (item[0].staff, item[0].voice) != (leaf.staff, leaf.voice),
                 item[0].order,
             ),
