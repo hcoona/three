@@ -4,7 +4,8 @@
 lists the review markers of each valid file. ``canonicalize`` writes the
 canonical text of one valid file. ``assemble`` joins system documents into
 an assembled score; its exit status tells success, failure and results that
-need a person apart.
+need a person apart. ``to-musicxml`` converts one valid assembled score
+without review markers to MusicXML 4.0.
 """
 
 from __future__ import annotations
@@ -15,9 +16,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sheet_music_omr.assembly import AssemblyStatus, assemble
-from sheet_music_omr.diagnostics import TextScoreError
+from sheet_music_omr.diagnostics import (
+    Diagnostic,
+    Location,
+    RuleClass,
+    TextScoreError,
+)
 from sheet_music_omr.lexical import decode_source, format_rational
-from sheet_music_omr.model import TimedReview
+from sheet_music_omr.model import AssembledScore, TimedReview
+from sheet_music_omr.musicxml_forward import ReviewRequiredError, to_musicxml
 from sheet_music_omr.parser import parse_document
 from sheet_music_omr.review import review_markers
 from sheet_music_omr.semantics import check_document
@@ -131,12 +138,44 @@ def _assemble(
     return _EXIT[result.status]
 
 
+def _to_musicxml(path: str, output: str | None) -> int:
+    try:
+        document = parse_document(decode_source(Path(path).read_bytes()))
+        if not isinstance(document, AssembledScore):
+            message = "only an assembled score converts to MusicXML"
+            location = document.location or Location(1, 1)
+            diagnostic = Diagnostic(
+                RuleClass.ASSEMBLY,
+                "not_assembled",
+                message,
+                location,
+            )
+            raise TextScoreError((diagnostic,))  # noqa: TRY301
+        data = to_musicxml(document)
+    except TextScoreError as error:
+        for diagnostic in error.diagnostics:
+            sys.stderr.write(diagnostic.format(path) + "\n")
+        return 1
+    except ReviewRequiredError as error:
+        for marker in error.markers:
+            sys.stderr.write(_describe(path, marker))
+        return 1
+    if output is not None:
+        Path(output).write_bytes(data)
+        return 0
+    sys.stdout.flush()
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sheet-music-omr",
         description=(
             "Check and canonicalize Text Score 2 documents against the"
-            " lexical, grammar and semantic rules."
+            " lexical, grammar and semantic rules, and convert assembled"
+            " scores to MusicXML."
         ),
     )
     commands = parser.add_subparsers(dest="command", required=True)
@@ -164,6 +203,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     assembler.add_argument("--title", help="the title of the score")
     assembler.add_argument("--composer", help="the composer of the score")
+    musicxml = commands.add_parser(
+        "to-musicxml",
+        help="convert an assembled score to MusicXML 4.0",
+    )
+    musicxml.add_argument("file", metavar="FILE")
+    musicxml.add_argument(
+        "-o",
+        "--output",
+        metavar="OUT",
+        help="write the MusicXML file here instead of standard output",
+    )
     return parser
 
 
@@ -188,4 +238,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             arguments.title,
             arguments.composer,
         )
+    if arguments.command == "to-musicxml":
+        return _to_musicxml(arguments.file, arguments.output)
     return _canonicalize(arguments.file)

@@ -1,0 +1,30 @@
+// Self-authored for this project; it transcribes no existing score.
+format: text-score/2
+title: "Study"
+composer: "Test Author"
+key: -1
+time: 4/4
+clefs: G2 F4
+carry: octave
+heading: "Study in F"
+heading: "for piano"
+m 1 len=1/4
+1.1: <mf> <tempo "Allegro" q=96> G4f1/8[up,beam1=start] A4f2/8[up,beam1=end]
+2.1: C3/4[down]
+m 2
+1.1: 3:2{C5/8[beam1=start,rel=slur@r1:start] D5/8[beam1=continue] E5/8[beam1=end]} F5/4[stacc^,rel=slur@r1:end] Bn4/16[beam1=start,beam2=start] A4/16[beam1=continue,beam2=end] G4/8[beam1=end] C5{tie@r3:start}/4
+2.1: C3+G3/2[arp] <cresc(>[rel=hairpin@r2:start:cresc] E3/4 <hairpin)>[rel=hairpin@r2:end] F3/4
+m 3 left=repeat
+1.1: C5{tie@r3:end}/2[up] A4f13/4[up,orn=trill,rel=ornament@r5:start:extended-trill] G4/4[up,rel=ornament@r5:end:extended-trill]
+1.2: x/2 F4/4[down] E4/4[down]
+2.1: <8vb(>[rel=ottava@r4:start:8vb] F2/2 <8vb)>[rel=ottava@r4:end:8vb] <clef G2> A4/4 <clef F4> C3/4
+m 4 right=repeat ending=1:single
+1.1: <"dolce"> D5/2[rel=tremolo@r6:two-start:3] F5/2[rel=tremolo@r6:two-end:3] C5/2[tremolo=single:2]
+2.1: <ped(>[rel=pedal@r7:line-start] B(b)2/4 D3/4 <ped(>[rel=pedal@r7:line-change] F3/4 <ped)>[rel=pedal@r7:line-release] r/4[ferm]
+heading: "Second part"
+m 5 ending=2:start
+1.1: G4{tie-in}/4 <"dim."(>[rel=dashes@r8:start] A4/4 (B4)/4 <dashes)>[rel=dashes@r8:end] C5/4
+2.1: C3/1
+m 6 time=3/4 right=final ending=end
+1.1: <^ff> <rehearsal "B"> E5/4[marc_,stacciss^,orn=mordent] D5/8[grace/] C5/2
+2.1: C3/4 E3/8[beam1=start] G3/8[xs1,beam1=end] C3/4

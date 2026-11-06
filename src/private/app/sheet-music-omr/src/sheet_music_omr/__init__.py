@@ -4,7 +4,7 @@ The package parses Text Score 2 system documents and assembled scores into an
 immutable syntax tree, reports lexical, grammar and semantic violations as
 diagnostics, derives the carry-out state of a system document, assembles
 system documents into an assembled score and writes the canonical spelling of
-a tree. MusicXML conversion is not implemented yet.
+a tree. It converts a valid assembled score to MusicXML 4.0.
 """
 
 from sheet_music_omr.assembly import (
@@ -23,6 +23,11 @@ from sheet_music_omr.diagnostics import (
     TextScoreError,
 )
 from sheet_music_omr.lexical import decode_source
+from sheet_music_omr.musicxml_forward import (
+    ReviewRequiredError,
+    to_musicxml,
+    to_musicxml_text,
+)
 from sheet_music_omr.parser import parse_document
 from sheet_music_omr.review import ReviewMarker, review_markers
 from sheet_music_omr.semantics import (
@@ -39,6 +44,7 @@ __all__ = [
     "Location",
     "MarkerReview",
     "ReviewMarker",
+    "ReviewRequiredError",
     "RuleClass",
     "SourceDiagnostic",
     "SourceLocation",
@@ -50,6 +56,8 @@ __all__ = [
     "decode_source",
     "parse_document",
     "review_markers",
+    "to_musicxml",
+    "to_musicxml_text",
     "validate_document",
     "write_document",
 ]

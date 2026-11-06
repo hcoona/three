@@ -10,7 +10,9 @@ tools must meet.
 Text Score 2 documents, validates their grammar and semantics, reports each
 error with its rule class and location, lists review markers, writes canonical
 text, derives the carry-out state of a system document and assembles system
-documents into one score. There is no converter, recognizer or model yet. No
+documents into one score. A forward converter turns a valid assembled score
+without review markers into MusicXML 4.0. There is no reverse converter,
+recognizer or model yet. No
 packaging or release is selected.
 
 ## Usage
@@ -21,6 +23,7 @@ From the repository root:
 uv run --package sheet-music-omr sheet-music-omr validate FILE...
 uv run --package sheet-music-omr sheet-music-omr canonicalize FILE
 uv run --package sheet-music-omr sheet-music-omr assemble FILE... [-o OUTPUT]
+uv run --package sheet-music-omr sheet-music-omr to-musicxml FILE [-o OUT]
 uv run --package sheet-music-omr --group dev pytest src/private/app/sheet-music-omr/tests
 ```
 
@@ -31,6 +34,10 @@ file is invalid. `canonicalize` writes the canonical text of one valid file.
 reports errors and review items on standard error. It exits with 0 on
 success, 1 on failure and 3 when review markers or extended trills need a
 person.
+`to-musicxml` writes the MusicXML 4.0 of one valid assembled score to standard
+output or to `OUT`. It exits with 1 and writes no MusicXML when the score is
+invalid, holds review markers or holds content that the converter cannot
+convert faithfully.
 
 ## User and primary journey
 
