@@ -671,7 +671,10 @@ def _ottava_spans(analysis: RelationAnalysis) -> list[OttavaSpan]:
                 start.placed.staff,
                 start.placed.time,
             )
-        elif relation.carried is not None:
+        elif (
+            relation.carried is not None
+            and relation.carried.kind.value == OTTAVA
+        ):
             sign = OttavaSign(relation.carried.variant)
             staff, begin = relation.carried.start.staff, timeline.start_time
         else:

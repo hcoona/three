@@ -350,6 +350,11 @@ INVALID = [
         "semantic/relation_kind@10:48",
     ),
     (
+        "m 5\n1.1: <8va)>[rel=ottava@r1:end:8va] C4/2",
+        carry(open_relations=ARC),
+        "semantic/relation_kind@10:6",
+    ),
+    (
         (
             "m 1\n1.1: C4/2[rel=tremolo@r1:two-start:2]"
             " D4/2[rel=tremolo@r1:two-end:3]"
