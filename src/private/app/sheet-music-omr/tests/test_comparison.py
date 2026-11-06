@@ -108,6 +108,19 @@ _M5_REPRINTS = _attributes(
     "          <line>4</line>\n"
     "        </clef>\n",
 )
+_M5_CUT_REPRINTS = _M5_REPRINTS.replace(
+    "<beats>4</beats>",
+    "<beats>2</beats>",
+).replace(
+    "<beat-type>4</beat-type>",
+    "<beat-type>2</beat-type>",
+)
+_COMMON_TIME = BASE.replace("<time>", '<time symbol="common">', 1)
+_CUT_TIME = (
+    BASE.replace("<beats>4</beats>", "<beats>2</beats>")
+    .replace("<beat-type>4</beat-type>", "<beat-type>2</beat-type>")
+    .replace("<time>", '<time symbol="cut">', 1)
+)
 
 
 def _rule_2_pair() -> str:
@@ -591,6 +604,14 @@ NO_DIFFERENCE_PAIRS: dict[str, tuple[str, str]] = {
         BASE,
     ),
     "reprints": (_variant((_M5_REPRINTS, "")), BASE),
+    "reprints-after-common-time": (
+        _variant((_M5_REPRINTS, ""), base=_COMMON_TIME),
+        _COMMON_TIME,
+    ),
+    "reprints-after-cut-time": (
+        _variant((_M5_CUT_REPRINTS, ""), base=_CUT_TIME),
+        _CUT_TIME,
+    ),
 }
 
 

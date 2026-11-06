@@ -731,7 +731,14 @@ def _is_reprint(
 
 
 def _signature(extra: AnnExtra) -> tuple[object, ...]:
-    return (extra.content, extra.symbolic, sorted(extra.infodict.items()))
+    info = extra.infodict
+    if extra.kind == "timesig":
+        symbol = info.get("symbol")
+        if symbol == "common":
+            info = {"numerator": "4", "denominator": "4"}
+        elif symbol == "cut":
+            info = {"numerator": "2", "denominator": "2"}
+    return (extra.content, extra.symbolic, sorted(info.items()))
 
 
 def _remove_reprints(annotated: AnnScore, score: m21.stream.Score) -> None:
