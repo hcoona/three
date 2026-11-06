@@ -431,11 +431,81 @@ def test_chord_symbol_is_refused() -> None:
             "lexical/dtd",
         ),
         (b"PK\x03\x04broken", "lexical/mxl"),
+        (
+            score(
+                '<measure number="1"/>',
+                extra="<work><work-title>&eacute;</work-title></work>",
+            ),
+            "lexical/xml",
+        ),
     ],
 )
 def test_unreadable_input_is_refused(data: str | bytes, rule: str) -> None:
     """Refuse malformed XML, entity declarations and broken archives."""
     assert refusal(data).diagnostics[0].code == rule
+
+
+def test_corrupt_compressed_member_is_refused() -> None:
+    """Refuse an ``.mxl`` whose deflated root file does not inflate."""
+    name = "score.musicxml"
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "META-INF/container.xml",
+            f'<container><rootfiles><rootfile full-path="{name}"/>'
+            "</rootfiles></container>",
+        )
+        archive.writestr(name, score('<measure number="1"/>'))
+    data = bytearray(buffer.getvalue())
+    start = data.index(name.encode()) + len(name)
+    data[start : start + 16] = b"\xff" * 16
+    assert refusal(bytes(data)).diagnostics[0].code == "lexical/mxl"
+
+
+def credit(attributes: str, content: str) -> str:
+    """Return a title credit."""
+    return (
+        f"<credit {attributes}><credit-type>title</credit-type>{content}"
+        "</credit>"
+    )
+
+
+HIDDEN_BEAMED_REST = (
+    '<note print-object="no"><rest/><duration>4</duration><voice>1</voice>'
+    '<staff>1</staff><beam number="1">begin</beam></note>'
+)
+
+
+@pytest.mark.parametrize(
+    ("staff_one", "extra", "rule"),
+    [
+        (HIDDEN_BEAMED_REST, "", "unsupported/spacer"),
+        (
+            note("C5", 4, "half", 1, 1),
+            credit('page="1"', "<credit-symbol>segno</credit-symbol>"),
+            "unsupported/credit",
+        ),
+        (
+            note("C5", 4, "half", 1, 1),
+            credit(
+                'page="x"',
+                '<credit-words default-x="1" default-y="1">T</credit-words>',
+            ),
+            "grammar/credit",
+        ),
+    ],
+)
+def test_childless_and_malformed_elements_are_refused(
+    staff_one: str, extra: str, rule: str
+) -> None:
+    """Refuse a beamed spacer, a symbol credit and a non-numeric position."""
+    measure = (
+        f'<measure number="1">{ATTRIBUTES}{staff_one}'
+        "<backup><duration>4</duration></backup>"
+        + note("C3", 4, "half", 5, 2)
+        + "</measure>"
+    )
+    assert refusal(score(measure, extra=extra)).diagnostics[0].code == rule
 
 
 def test_cli_converts_and_refuses(

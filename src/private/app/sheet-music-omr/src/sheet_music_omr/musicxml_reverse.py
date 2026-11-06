@@ -20,9 +20,11 @@ ignored.
 from __future__ import annotations
 
 import io
+import lzma
 import re
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from typing import TYPE_CHECKING, Final, NoReturn
@@ -258,8 +260,9 @@ class MusicXmlDiagnostic:
 
     Attributes:
         rule_class: ``lexical`` for unreadable input, ``grammar`` for
-            inconsistent MusicXML, ``unsupported`` for content that the format
-            cannot represent, or the class of a validator finding.
+            inconsistent MusicXML, ``unsupported`` for content that the
+            converter cannot convert faithfully, or the class of a validator
+            finding.
         rule: A stable rule name within the class.
         message: A human-readable description.
         measure: The MusicXML ``number`` of the measure, if known.
@@ -351,7 +354,7 @@ def from_musicxml(data: bytes | str) -> AssembledScore:
 
     Raises:
         MusicXmlError: The input is unreadable, inconsistent or holds content
-            that the format cannot represent. No partial result is returned.
+            that it cannot convert faithfully. No partial result is returned.
     """
     root = _load(data)
     score = _Reader(root).read()
@@ -371,10 +374,12 @@ class _DeclarationError(Exception):
 
 
 def _load(data: bytes | str) -> ET.Element:
-    raw = data.encode("utf-8") if isinstance(data, str) else data
-    _check_size(len(raw))
-    if raw.startswith(_ZIP_MAGIC):
-        raw = _unzip(raw)
+    if isinstance(data, str):
+        _check_size(len(data.encode("utf-8")))
+        raw: bytes | str = data
+    else:
+        _check_size(len(data))
+        raw = _unzip(data) if data.startswith(_ZIP_MAGIC) else data
     root = _parse_xml(raw)
     if root.tag == "score-timewise":
         msg = "a score-timewise document is not supported"
@@ -404,7 +409,15 @@ def _unzip(raw: bytes) -> bytes:
                 msg = f"{_CONTAINER} names no rootfile"
                 _fail(RuleClass.LEXICAL, "mxl", msg, None)
             return _zip_member(archive, path)
-    except (zipfile.BadZipFile, KeyError) as error:
+    except (
+        zipfile.BadZipFile,
+        KeyError,
+        EOFError,
+        OSError,
+        RuntimeError,
+        zlib.error,
+        lzma.LZMAError,
+    ) as error:
         msg = f"the compressed MusicXML file is unreadable: {error}"
         _fail(RuleClass.LEXICAL, "mxl", msg, None)
 
@@ -416,7 +429,7 @@ def _zip_member(archive: zipfile.ZipFile, name: str) -> bytes:
     return data
 
 
-def _parse_xml(raw: bytes) -> ET.Element:
+def _parse_xml(raw: bytes | str) -> ET.Element:
     """Parse XML that declares no entities and has no internal DTD subset."""
 
     def doctype(
@@ -443,8 +456,13 @@ def _parse_xml(raw: bytes) -> ET.Element:
         msg = "the document declares a DTD internal subset or an entity"
         _fail(RuleClass.LEXICAL, "dtd", msg, None)
     # The scan above has refused every entity declaration, and ElementTree
-    # never fetches an external DTD.
-    return ET.fromstring(raw)  # noqa: S314
+    # never fetches an external DTD. It still fails on a reference to an
+    # entity that an external DTD would declare, such as ``&eacute;``.
+    try:
+        return ET.fromstring(raw)  # noqa: S314
+    except ET.ParseError as error:
+        msg = f"the document is not well-formed XML: {error}"
+        _fail(RuleClass.LEXICAL, "xml", msg, None)
 
 
 def _int(text: str | None, rule: str, what: str, at: _At | None) -> int:
@@ -987,7 +1005,11 @@ def _time(element: ET.Element, at: _At) -> tuple[Meter, TimeSymbol]:
         _unsupported("time_symbol", msg, at)
     beats = element.findall("beats")
     types = element.findall("beat-type")
-    if len(beats) != 1 or len(types) != 1 or element.find("senza-misura"):
+    if (
+        len(beats) != 1
+        or len(types) != 1
+        or element.find("senza-misura") is not None
+    ):
         _unsupported("time", "a composite or free time signature", at)
     numerator = (beats[0].text or "").strip()
     denominator = (types[0].text or "").strip()
@@ -1067,8 +1089,9 @@ def _headings(root: ET.Element) -> list[str]:
         if not types <= _HEADING_CREDITS:
             msg = f"credit types {sorted(types)} are not supported"
             _unsupported("credit_type", msg, at)
-        if credit.find("credit-image") is not None or credit.find(
-            "credit-symbol",
+        if (
+            credit.find("credit-image") is not None
+            or credit.find("credit-symbol") is not None
         ):
             _unsupported("credit", "an image or symbol credit", at)
         found.append((credit, position))
@@ -1088,12 +1111,16 @@ def _credit_place(item: tuple[ET.Element, int]) -> tuple[float, ...]:
     credit, position = item
     words = credit.find("credit-words[@default-y]")
     assert words is not None  # noqa: S101
-    return (
-        float(credit.get("page", "1")),
-        -float(words.get("default-y", "0")),
-        float(words.get("default-x", "0")),
-        position,
-    )
+    try:
+        return (
+            float(credit.get("page", "1")),
+            -float(words.get("default-y", "0")),
+            float(words.get("default-x", "0")),
+            position,
+        )
+    except ValueError:
+        at = _At(element=f"credit[{position}]")
+        _malformed("credit", "a credit position is not a number", at)
 
 
 # Notes.
@@ -1199,7 +1226,10 @@ class _NoteReader:
         written = self._written(element, required=False)
         leaf.modification = _modification(element, self.at)
         if hidden and written is None:
-            if element.find("notations") is not None or element.find("beam"):
+            if (
+                element.find("notations") is not None
+                or element.find("beam") is not None
+            ):
                 _unsupported("spacer", "a hidden rest without type", self.at)
             onset = leaf.onset
             for value in _values(leaf.duration, self.at):

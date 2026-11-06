@@ -42,7 +42,7 @@ convert faithfully.
 `from-musicxml` reads a `.musicxml` or compressed `.mxl` file and writes the
 canonical text of the assembled score to standard output or to `OUT`. It exits
 with 1 and writes no score when the file is unreadable, is not one part on two
-staves or holds content that the format cannot represent.
+staves or holds content that the converter cannot convert faithfully.
 
 ## User and primary journey
 
