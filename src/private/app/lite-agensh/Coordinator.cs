@@ -735,11 +735,19 @@ public sealed class Coordinator
                             continue;
                         }
 
+                        DateTimeOffset admissionTime = database.Now;
+                        if (admissionTime >= deadline)
+                        {
+                            reason = "deadline";
+                            finalize = true;
+                            break;
+                        }
+
                         if (
                             incrementalAdmission
                             && admission is null
                             && workers.Count < ids.Length
-                            && database.Now >= nextAdmission
+                            && admissionTime >= nextAdmission
                             && (!planning || released || workers.Count == 0)
                         )
                         {
@@ -1518,7 +1526,9 @@ public sealed class Coordinator
                         );
                     }
 
-                    await RecoverSdkUsageAsync(reservation, cancellationToken)
+                    CreditReservation current = credits.Reservations()
+                        .Single(row => row.Id == reservation.Id);
+                    await RecoverSdkUsageAsync(current, cancellationToken)
                         .ConfigureAwait(false);
                 }
             }
@@ -1567,7 +1577,7 @@ public sealed class Coordinator
             }
         }
 
-        NativeUsage usage = await nativeWorkers
+        RecoveredNativeUsage usage = await nativeWorkers
             .ReadSettledUsageAsync(
                 reservation,
                 git.GetWorkerPath(
@@ -1578,7 +1588,7 @@ public sealed class Coordinator
             )
             .ConfigureAwait(false);
 
-        credits.RecordSdkUsage(reservation.Id, usage, final: true);
+        credits.RecordRecoveredSdkUsage(usage);
     }
 
     private CreditReservation? ReadReconnectReservation(string worker)

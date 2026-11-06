@@ -21,9 +21,13 @@ remains the default for existing inputs. Do not treat the implementation
 or the owner's one-time ledger transition as a successful autonomous audit.
 The [settlement contract](docs/implementation-contracts.md#usage-evidence-and-settlement)
 also distinguishes user-turn completion from background compaction and bounds
-complete final recovery of an uncertain closed window. These refinements still
-require implementation and validation; the retained failed audit and independent
-finding classifications are carried by [#1552](https://github.com/hcoona/three/issues/1552).
+complete final recovery of an uncertain closed window. The application implements
+session-local usage fencing and evidence-bound recovery with controlled compaction,
+stale-reading and accounting scenarios. Interrupted sends without a delivered
+terminal boundary retain uncertainty and backing. Installed-native
+ordering and a repaired autonomous journey remain unverified; the retained failed
+audit and independent finding classifications are carried by
+[#1552](https://github.com/hcoona/three/issues/1552).
 The MCP 2.3.0 upgrade is covered by controlled stdio contracts, not a new
 native acceptance run; PR #1530 retains the earlier dependency baseline.
 

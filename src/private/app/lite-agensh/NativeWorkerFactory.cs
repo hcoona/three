@@ -43,7 +43,7 @@ internal interface INativeWorkerFactory
 
     Task CompleteAsync();
 
-    Task<NativeUsage> ReadSettledUsageAsync(
+    Task<RecoveredNativeUsage> ReadSettledUsageAsync(
         CreditReservation reservation,
         string cwd,
         string evidencePrefix,
@@ -313,24 +313,31 @@ internal sealed class NativeWorkerFactory(
         }
     }
 
-    public async Task<NativeUsage> ReadSettledUsageAsync(
+    public async Task<RecoveredNativeUsage> ReadSettledUsageAsync(
         CreditReservation reservation,
         string cwd,
         string evidencePrefix,
         CancellationToken cancellationToken
     )
     {
-        decimal remaining = reservation.Allowance - (reservation.Actual ?? 0);
-        decimal? cap = remaining > 0 ? remaining : null;
-        NativeSdkSession recovery = new(
-            database,
-            processes,
-            cwd,
-            reservation.Worker == "calibration"
-        );
-        NativeUsage usage;
+        decimal cap = reservation.Allowance - (reservation.Actual ?? 0);
+        if (cap <= 0)
+        {
+            throw new OperationException(
+                "credit_unknown", "Exact recovery has no remaining finite backed native cap."
+            );
+        }
+        using CancellationTokenSource deadline =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        INativeSdkHost recoveryHost =
+            createHost?.Invoke() ?? new NativeSdkHost(database, processes);
+        INativeSdkSession? recovery = null;
+        NativeUsage? usage = null;
+        List<Exception> failures = [];
         try
         {
+            recovery = recoveryHost.CreateSession(cwd, reservation.Worker == "calibration");
             await recovery
                 .OpenAsync(
                     reservation.Worker,
@@ -338,19 +345,52 @@ internal sealed class NativeWorkerFactory(
                     cap,
                     reservation.SessionId,
                     evidencePrefix,
-                    cancellationToken
+                    deadline.Token
                 )
                 .ConfigureAwait(false);
             usage = await recovery
-                .ReadAsync(reservation.SessionId!, cap, cancellationToken, validateEvents: false)
+                .ReadSettledAsync(reservation.SessionId!, cap, deadline.Token)
                 .ConfigureAwait(false);
+            recovery.RequireHealthy();
+        }
+        catch (Exception exception)
+        {
+            failures.Add(exception);
         }
         finally
         {
-            recovery.Quiesce();
-            await recovery.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                if (recovery is not null)
+                {
+                    recovery.Quiesce();
+                    await recovery.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+            catch (Exception exception)
+            {
+                failures.Add(exception);
+            }
+            try
+            {
+                await recoveryHost.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                failures.Add(exception);
+            }
+        }
+        if (failures.Count != 0)
+        {
+            throw new OperationException(
+                "credit_or_ownership_unknown",
+                "Exact native recovery retained unresolved evidence.",
+                new AggregateException(failures)
+            );
         }
 
-        return usage;
+        recovery!.RequireHealthy();
+        recovery.WithSettledUsage(usage!, () => { });
+        return new(reservation, usage!);
     }
 }

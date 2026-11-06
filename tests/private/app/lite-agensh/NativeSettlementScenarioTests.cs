@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
+using GitHub.Copilot;
 using LiteAgensh;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -17,6 +18,337 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         "SELECT * FROM coordinator_turns ORDER BY batch_id;",
         "SELECT * FROM process_leases ORDER BY id;",
     ];
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("verify")]
+    [DataRow("stop")]
+    public async Task CompletedTurnRetainsBackingUntilBackgroundCompactionSettles(string operation)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        LocalTools tools = new(database);
+        _ = new Coordinator(database, tools.Collaboration, tools.Git);
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        ControlledSdkHost host = new("none", token, evidenceDatabase: database);
+        NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
+        CreditReservation reservation = ledger.Reserve(
+            database.RunId, "worker1", 0, 300,
+            Path.Combine(fixture.RootPath, "compaction.sdk-evidence"), shared: true
+        );
+        INativeWorker peer = factory.Create(reservation, calibration: false);
+        await peer.StartAsync(fixture.RepositoryPath, null, token);
+        await peer.PromptAsync("Controlled request.", token);
+        ControlledSdkSession session = Assert.ContainsSingle(host.Sessions);
+        session.BeginCompaction();
+        Task reading = operation == "verify"
+            ? peer.VerifyCreditsAsync(token) : factory.CompleteAsync();
+        try
+        {
+            await session.SettlementReadStarted.Task.WaitAsync(token);
+            Assert.IsFalse(reading.IsCompleted);
+            Assert.IsFalse(host.Closing.Task.IsCompleted);
+            Assert.IsTrue(Assert.ContainsSingle(ledger.Reservations()).GrantOpen);
+            session.CompleteCompaction();
+            if (operation == "verify")
+            {
+                await reading;
+                CreditReservation closed = Assert.ContainsSingle(ledger.Reservations());
+                Assert.AreEqual(3.422970m, closed.Actual);
+                Assert.IsFalse(closed.GrantOpen);
+                reading = factory.CompleteAsync();
+            }
+            await host.Closing.Task.WaitAsync(token);
+            Assert.AreNotEqual("reconciled", Assert.ContainsSingle(ledger.Reservations()).State);
+            host.Release.TrySetResult();
+            await reading;
+            CreditReservation final = Assert.ContainsSingle(ledger.Reservations());
+            Assert.AreEqual("reconciled", final.State);
+            Assert.AreEqual(3.422970m, final.Actual);
+            ledger.RequirePaidAdmission();
+        }
+        finally
+        {
+            session.CompleteCompaction();
+            host.Release.TrySetResult();
+            try
+            {
+                await reading;
+                await factory.CompleteAsync();
+            }
+            catch (OperationException)
+            {
+                // Preserve a failed settlement for the scenario's assertions.
+            }
+        }
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task InterruptedSendCannotSettleWithUndeliveredCompactionEvents()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        LocalTools tools = new(database);
+        _ = new Coordinator(database, tools.Collaboration, tools.Git);
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        ControlledSdkHost host = new("none", token, evidenceDatabase: database,
+            onClose: session => session.CompleteCompaction(deliver: false));
+        NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
+        CreditReservation reservation = ledger.Reserve(
+            database.RunId, "worker1", 0, 300,
+            Path.Combine(fixture.RootPath, "interrupted.sdk-evidence"), shared: true);
+        INativeWorker peer = factory.Create(reservation, calibration: false);
+        await peer.StartAsync(fixture.RepositoryPath, null, token);
+        ControlledSdkSession session = Assert.ContainsSingle(host.Sessions);
+        session.OnSend = () =>
+        {
+            session.BeginCompaction(deliver: false);
+            throw new OperationCanceledException(token);
+        };
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            peer.PromptAsync("Controlled interrupted request.", token));
+        host.Release.TrySetResult();
+        await Assert.ThrowsExactlyAsync<OperationException>(() => factory.CompleteAsync());
+        Assert.IsTrue(session.CloseAttempted);
+        Assert.IsTrue(host.Settled);
+        CreditReservation retained = Assert.ContainsSingle(ledger.Reservations());
+        Assert.AreEqual("uncertain", retained.State);
+        Assert.IsTrue(retained.GrantOpen);
+        Assert.AreEqual("credit_unknown",
+            Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("read")]
+    [DataRow("session-close")]
+    [DataRow("host-close")]
+    public async Task WorkChangingDuringCaptureOrFinalStagingCannotBeFinalized(string phase)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        LocalTools tools = new(database);
+        _ = new Coordinator(database, tools.Collaboration, tools.Git);
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        static void ChangeWork(ControlledSdkSession session)
+        {
+            session.BeginCompaction();
+            session.CompleteCompaction();
+        }
+        ControlledSdkHost host = new("none", token, evidenceDatabase: database,
+            onClose: phase == "session-close" ? ChangeWork : null);
+        NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
+        CreditReservation reservation = ledger.Reserve(
+            database.RunId, "worker1", 0, 300,
+            Path.Combine(fixture.RootPath, "race.sdk-evidence"), shared: true);
+        INativeWorker peer = factory.Create(reservation, calibration: false);
+        await peer.StartAsync(fixture.RepositoryPath, null, token);
+        await peer.PromptAsync("Controlled request.", token);
+        ControlledSdkSession session = Assert.ContainsSingle(host.Sessions);
+        Task completion;
+        if (phase == "read")
+        {
+            session.OnRead = () => ChangeWork(session);
+            await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                peer.VerifyCreditsAsync(token));
+            Assert.AreEqual("uncertain", Assert.ContainsSingle(ledger.Reservations()).State);
+            Assert.IsTrue(Assert.ContainsSingle(ledger.Reservations()).GrantOpen);
+            session.OnRead = null;
+            completion = factory.CompleteAsync();
+        }
+        else
+        {
+            completion = factory.CompleteAsync();
+        }
+        await host.Closing.Task.WaitAsync(token);
+        if (phase == "host-close")
+        {
+            ChangeWork(session);
+        }
+        host.Release.TrySetResult();
+        if (phase == "read")
+        {
+            await completion;
+            Assert.AreEqual(3.422970m, Assert.ContainsSingle(ledger.Reservations()).Actual);
+        }
+        else
+        {
+            await Assert.ThrowsExactlyAsync<OperationException>(() => completion);
+            Assert.AreEqual("uncertain", Assert.ContainsSingle(ledger.Reservations()).State);
+            Assert.AreEqual("credit_unknown",
+                Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("cancel")]
+    [DataRow("failed")]
+    [DataRow("unmatched")]
+    public async Task MissingOrContradictoryCompactionEvidenceRetainsUncertainty(string failure)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        NativeUsageFence fence = new();
+        fence.Observe(CompactionEvent(start: true));
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        bool read = false;
+        Task<NativeUsage> capture = fence.CaptureAsync(_ =>
+        {
+            read = true;
+            return Task.FromResult(new NativeUsage("controlled", 1_000_000_000, "complete", 1));
+        }, stop.Token);
+        Assert.IsFalse(read);
+        if (failure == "cancel")
+        {
+            await stop.CancelAsync();
+            await Assert.ThrowsAsync<OperationCanceledException>(() => capture);
+        }
+        else
+        {
+            fence.Observe(CompactionEvent(start: false, success: failure != "failed",
+                attempt: failure == "unmatched" ? "another-attempt" : "controlled-compaction"));
+            await Assert.ThrowsExactlyAsync<OperationException>(() => capture);
+        }
+        Assert.IsFalse(read);
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow(62.422970d)]
+    [DataRow(150d)]
+    public async Task ExactRecoveryBooksClosedWindowDeltaOnlyAfterTemporaryHostSettles(double total)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        CreditReservation other = ledger.Reserve(
+            "another-run", "worker2", 30, 60, Path.Combine(fixture.RootPath, "other.sdk-evidence"));
+        CreditReservation reservation =
+            await ClosedReservationAsync(fixture, database, ledger, token);
+        ledger.MarkStarted(other.Id);
+        ledger.MarkUncertain(other.Id);
+        ControlledSdkHost host = new("none", token, onCreate: session =>
+            session.Readings.Enqueue(new(
+                reservation.SessionId!, total * 1_000_000_000, "complete", 10)));
+        NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
+        Task<RecoveredNativeUsage> recovery = factory.ReadSettledUsageAsync(
+            reservation, fixture.RepositoryPath, "controlled-recovery", token);
+        await host.Closing.Task.WaitAsync(token);
+        Assert.IsFalse(recovery.IsCompleted);
+        Assert.AreEqual(60m, ledger.Reservations().Single(row => row.Id == reservation.Id).Actual);
+        host.Release.TrySetResult();
+        RecoveredNativeUsage recovered = await recovery;
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            ledger = new(database.Configuration.CampaignLedgerPath, 600);
+            ledger.RecordRecoveredSdkUsage(recovered);
+        }
+        CreditReservation final = ledger.Reservations().Single(row => row.Id == reservation.Id);
+        Assert.AreEqual((decimal)total, final.Actual);
+        Assert.AreEqual(Math.Max(0, (decimal)total - 100), final.Overshoot);
+        Assert.AreEqual("reconciled", final.State);
+        Assert.IsFalse(final.GrantOpen);
+        Assert.AreEqual("uncertain", ledger.Reservations().Single(row => row.Id == other.Id).State);
+        Assert.AreEqual("credit_unknown",
+            Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
+        using SqliteConnection campaign = Campaign(database);
+        Assert.AreEqual(2L, Sql.Scalar(campaign, "SELECT COUNT(*) FROM credit_reports;"));
+        Assert.AreEqual(1L, Sql.Scalar(campaign,
+            "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
+            null, ("$id", reservation.Id)));
+        Assert.IsFalse(Assert.ContainsSingle(host.Sessions).Sent);
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("host")]
+    [DataRow("session")]
+    [DataRow("late-work")]
+    [DataRow("partial")]
+    [DataRow("regressing")]
+    [DataRow("requests")]
+    [DataRow("association")]
+    public async Task ExactRecoveryRejectsFailedSettlementOrInvalidFinalUsage(string failure)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        CreditReservation reservation =
+            await ClosedReservationAsync(fixture, database, ledger, token);
+        ControlledSdkHost host = new(failure, token,
+            onClose: failure == "late-work" ? session =>
+            {
+                session.BeginCompaction();
+                session.CompleteCompaction();
+            }
+        : null,
+            onCreate: session => session.Readings.Enqueue(new(
+                reservation.SessionId!, failure == "regressing" ? 59_000_000_000 : 62_000_000_000,
+                failure == "partial" ? "partial" : "complete", failure == "requests" ? 9 : 10)));
+        host.Release.TrySetResult();
+        NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
+        Task<RecoveredNativeUsage> recovery = factory.ReadSettledUsageAsync(
+            reservation, fixture.RepositoryPath, "controlled-recovery", token);
+        if (failure is "host" or "session" or "late-work")
+        {
+            await Assert.ThrowsExactlyAsync<OperationException>(() => recovery);
+        }
+        else
+        {
+            RecoveredNativeUsage recovered = await recovery;
+            if (failure == "association")
+            {
+                recovered = recovered with
+                {
+                    Reservation = reservation with { Worker = "worker2" },
+                };
+            }
+            Assert.ThrowsExactly<OperationException>(() =>
+                ledger.RecordRecoveredSdkUsage(recovered));
+            using SqliteConnection campaign = Campaign(database);
+            Assert.AreEqual(failure == "partial" ? "partial" : "complete",
+                Sql.Scalar(campaign, "SELECT status FROM credit_sdk_usage;"));
+        }
+        CreditReservation retained = Assert.ContainsSingle(ledger.Reservations());
+        Assert.AreEqual("uncertain", retained.State);
+        Assert.AreEqual(60m, retained.Actual);
+        Assert.IsFalse(retained.GrantOpen);
+        Assert.AreEqual("credit_unknown",
+            Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
+    }
+
+    private static async Task<CreditReservation> ClosedReservationAsync(
+        RunFixture fixture, RunDatabase database, CreditLedger ledger, CancellationToken token
+    )
+    {
+        CreditReservation reservation = ledger.Reserve(database.RunId, "worker1", 0, 300,
+            Path.Combine(fixture.RootPath, "closed.sdk-evidence"), shared: true);
+        await ledger.AcquireSharedWindowAsync(reservation.Id, token);
+        ledger.MarkStarted(reservation.Id);
+        ledger.AttachSession(reservation.Id, reservation.SessionId!);
+        ledger.BeginDispatch(database.RunId, reservation.Id, 300);
+        ledger.RecordSdkUsage(reservation.Id,
+            new(reservation.SessionId!, 60_000_000_000, "complete", 10));
+        ledger.CloseSharedWindow(reservation.Id);
+        ledger.MarkUncertain(reservation.Id);
+        return ledger.Reservations().Single(row => row.Id == reservation.Id);
+    }
+
+    private static SessionEvent CompactionEvent(
+        bool start, bool success = true, string attempt = "controlled-compaction"
+    ) => SessionEvent.FromJson(new JsonObject
+    {
+        ["id"] = Guid.NewGuid().ToString("D"),
+        ["timestamp"] = "2026-01-01T00:00:00Z",
+        ["type"] = start ? "session.compaction_start" : "session.compaction_complete",
+        ["data"] = new JsonObject { ["compactionAttemptId"] = attempt, ["success"] = success },
+    }.ToJsonString())!;
 
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
@@ -1050,7 +1382,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         string failure, CancellationToken token, bool missingMetrics = false,
         RunDatabase? evidenceDatabase = null, bool emptyStatus = false,
         string? modelReadback = null, double? limitReadback = null,
-        Action<ControlledSdkSession>? onClose = null
+        Action<ControlledSdkSession>? onClose = null,
+        Action<ControlledSdkSession>? onCreate = null
     ) : INativeSdkHost
     {
         public string Id { get; } = "controlled-sdk-host-" + Guid.NewGuid().ToString("N");
@@ -1084,6 +1417,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 onClose
             );
             Sessions.Add(session);
+            onCreate?.Invoke(session);
             return session;
         }
 
@@ -1121,6 +1455,41 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     ) : INativeSdkSession
     {
         private long requests;
+        private readonly NativeUsageFence usageFence = new();
+        private bool compacting;
+        private double compactionNanoAiu;
+
+        public TaskCompletionSource SettlementReadStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public void BeginCompaction(bool deliver = true)
+        {
+            compacting = true;
+            if (deliver)
+            {
+                usageFence.Observe(CompactionEvent(start: true));
+            }
+        }
+
+        public void CompleteCompaction(bool deliver = true)
+        {
+            if (compacting)
+            {
+                compactionNanoAiu = 2_422_970_000;
+                compacting = false;
+                if (deliver)
+                {
+                    usageFence.Observe(CompactionEvent(start: false));
+                }
+            }
+        }
+
+        public Action? OnRead { get; set; }
+
+        public Action? OnSend { get; set; }
+
+        public bool Sent { get; private set; }
 
         public string SessionId { get; private set; } = "";
 
@@ -1180,12 +1549,17 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (compacting)
+            {
+                SettlementReadStarted.TrySetResult();
+            }
+            OnRead?.Invoke();
             if (Readings.TryDequeue(out NativeUsage? reading))
             {
                 return Task.FromResult(reading);
             }
             return Task.FromResult(new NativeUsage(
-                SessionId, missingMetrics ? null : requests * 1_000_000_000d,
+                SessionId, missingMetrics ? null : requests * 1_000_000_000d + compactionNanoAiu,
                 missingMetrics || (emptyStatus && requests == 0) ? null : "complete", requests
             ));
         }
@@ -1194,13 +1568,31 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             string expectedSession, decimal limit, CancellationToken cancellationToken
         ) => ReadAsync(expectedSession, limit, cancellationToken);
 
+        public async Task<NativeUsage> ReadSettledAsync(
+            string expectedSession, decimal? expectedLimit, CancellationToken cancellationToken,
+            bool validateEvents = true
+        )
+        {
+            SettlementReadStarted.TrySetResult();
+            return await usageFence.CaptureAsync(
+                token => ReadAsync(expectedSession, expectedLimit, token, validateEvents),
+                cancellationToken);
+        }
+
+        public void WithSettledUsage(NativeUsage usage, Action record) =>
+            usageFence.Use(usage, record);
+
         public Task<JsonObject> SendAsync(
             string text, TimeSpan timeout, CancellationToken cancellationToken,
             Func<CancellationToken, Task<decimal>>? renewLimit = null
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Sent = true;
             requests++;
+            usageFence.SetTurnPending(true);
+            OnSend?.Invoke();
+            usageFence.SetTurnPending(false);
             return Task.FromResult(new JsonObject
             {
                 ["text"] = text == "Reply with exactly READY and nothing else."

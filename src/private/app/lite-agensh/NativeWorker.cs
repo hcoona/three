@@ -329,14 +329,25 @@ internal sealed class NativeWorker : INativeWorker
 
         try
         {
-            NativeUsage usage = await session
-                .ReadAsync(SessionId, limit, cancellationToken)
-                .ConfigureAwait(false);
-            SaveDiagnostic(usage);
-            credits.RecordSdkUsage(reservation.Id, usage);
-            if (reservation.Shared && nativeIdle)
+            NativeUsage usage = await (nativeIdle
+                ? session.ReadSettledAsync(SessionId, limit, cancellationToken)
+                : session.ReadAsync(SessionId, limit, cancellationToken)).ConfigureAwait(false);
+            void Record()
             {
-                credits.CloseSharedWindow(reservation.Id);
+                SaveDiagnostic(usage);
+                credits.RecordSdkUsage(reservation.Id, usage);
+                if (reservation.Shared && nativeIdle)
+                {
+                    credits.CloseSharedWindow(reservation.Id);
+                }
+            }
+            if (nativeIdle)
+            {
+                session.WithSettledUsage(usage, Record);
+            }
+            else
+            {
+                Record();
             }
             credits.RequirePromptAllowance(
                 database.RunId,
@@ -418,13 +429,14 @@ internal sealed class NativeWorker : INativeWorker
                     }
                     else
                     {
+                        using CancellationTokenSource deadline = new(TimeSpan.FromSeconds(30));
                         finalUsage = await (
                             session ?? throw new InvalidOperationException("No SDK connection.")
                         )
-                            .ReadAsync(
+                            .ReadSettledAsync(
                                 reservation.SessionId!,
                                 limit,
-                                CancellationToken.None,
+                                deadline.Token,
                                 validateEvents: false
                             )
                             .ConfigureAwait(false);
@@ -484,7 +496,16 @@ internal sealed class NativeWorker : INativeWorker
                 {
                     // A failed unopened resume still belongs to the already-settled old runtime.
                     bool final = undispatchedBaseline is not null && !session!.HasSession;
-                    credits.RecordSdkUsage(reservation.Id, finalUsage, final: final);
+                    void Record() =>
+                        credits.RecordSdkUsage(reservation.Id, finalUsage, final: final);
+                    if (final)
+                    {
+                        Record();
+                    }
+                    else
+                    {
+                        session!.WithSettledUsage(finalUsage, Record);
+                    }
                     usageFinalized = final;
                     pendingFinalUsage = finalUsage;
                 }
@@ -543,19 +564,22 @@ internal sealed class NativeWorker : INativeWorker
 
         try
         {
-            if (
-                pendingFinalUsage.TotalUserRequests == 0
-                && pendingFinalUsage.TotalNanoAiu == 0
-            )
+            session!.WithSettledUsage(pendingFinalUsage, () =>
             {
-                _ = NoDispatchCancellation.Cancel(
-                    database, credits, reservation.Id, retained: false
-                );
-            }
-            else
-            {
-                credits.RecordSdkUsage(reservation.Id, pendingFinalUsage, final: true);
-            }
+                if (
+                    pendingFinalUsage.TotalUserRequests == 0
+                    && pendingFinalUsage.TotalNanoAiu == 0
+                )
+                {
+                    _ = NoDispatchCancellation.Cancel(
+                        database, credits, reservation.Id, retained: false
+                    );
+                }
+                else
+                {
+                    credits.RecordSdkUsage(reservation.Id, pendingFinalUsage, final: true);
+                }
+            });
             usageFinalized = true;
             database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "stopped");
         }

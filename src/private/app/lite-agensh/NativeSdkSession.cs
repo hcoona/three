@@ -26,6 +26,13 @@ internal interface INativeSdkSession : IAsyncDisposable
         bool validateEvents = true
     );
 
+    Task<NativeUsage> ReadSettledAsync(
+        string expectedSession, decimal? expectedLimit, CancellationToken cancellationToken,
+        bool validateEvents = true
+    );
+
+    void WithSettledUsage(NativeUsage usage, Action record);
+
     Task<NativeUsage> UpdateLimitAsync(
         string expectedSession, decimal limit, CancellationToken cancellationToken
     );
@@ -53,6 +60,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
     private readonly string cwd;
     private readonly bool isolated;
     private readonly object callbacks = new();
+    private readonly NativeUsageFence usageFence = new();
     private readonly CancellationTokenSource eventStop = new();
     private CopilotClient? client;
     private CopilotSession? session;
@@ -258,6 +266,22 @@ internal sealed class NativeSdkSession : INativeSdkSession
         }
     }
 
+    public async Task<NativeUsage> ReadSettledAsync(
+        string expectedSession, decimal? expectedLimit, CancellationToken cancellationToken,
+        bool validateEvents = true
+    )
+    {
+        using CancellationTokenSource deadline =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(database.Configuration.DurationSeconds));
+        return await usageFence.CaptureAsync(
+            token => ReadAsync(expectedSession, expectedLimit, token, validateEvents),
+            deadline.Token
+        ).ConfigureAwait(false);
+    }
+
+    public void WithSettledUsage(NativeUsage usage, Action record) => usageFence.Use(usage, record);
+
     internal static void ValidateMetadata(
         SessionMetadataSnapshot metadata,
         string activeSessionId,
@@ -341,6 +365,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
         Task<SessionLimitsExhaustedRequestedData>? pending = null;
         try
         {
+            usageFence.SetTurnPending(true);
             sending = active.SendAndWaitAsync(text, timeout, linked.Token);
             while (requests is not null && !sending.IsCompleted)
             {
@@ -387,6 +412,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
                 try
                 {
                     await sending.ConfigureAwait(false);
+                    usageFence.SetTurnPending(false);
                 }
                 catch (Exception)
                 {
@@ -544,12 +570,18 @@ internal sealed class NativeSdkSession : INativeSdkSession
     {
         lock (callbacks)
         {
+            // Permission/tool handlers stop at quiescence; late work still invalidates usage.
+            usageFence.Observe(update);
             if (!acceptingCallbacks || eventFailure is not null)
             {
                 return;
             }
 
-            if (isolated && update is ToolExecutionStartEvent)
+            if (usageFence.Failure is { } settlementFailure)
+            {
+                eventFailure = settlementFailure;
+            }
+            else if (isolated && update is ToolExecutionStartEvent)
             {
                 eventFailure = "Unexpected tool execution in an isolated native session.";
             }

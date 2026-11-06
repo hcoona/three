@@ -152,7 +152,7 @@ internal sealed class ControlledNativeFactory(
     private void RecordHost(string operation) =>
         ControlledNativeWorker.Record(directory, operation, null);
 
-    public Task<NativeUsage> ReadSettledUsageAsync(
+    public Task<RecoveredNativeUsage> ReadSettledUsageAsync(
         CreditReservation reservation,
         string cwd,
         string evidencePrefix,
@@ -168,7 +168,7 @@ internal sealed class ControlledNativeFactory(
 
         NativeUsage usage = ControlledNativeWorker.ReadUsage(directory, reservation.SessionId!);
         ControlledNativeWorker.Record(directory, "recovered-settled", reservation.SessionId);
-        return Task.FromResult(usage);
+        return Task.FromResult(new RecoveredNativeUsage(reservation, usage));
     }
 }
 
