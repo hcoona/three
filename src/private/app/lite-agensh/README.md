@@ -138,10 +138,12 @@ silently replace unknown usage. `finalize` retains local delivery/evidence;
 
 The [closed failed-run reconnect contract](docs/implementation-contracts.md#closed-failed-run-reconnect)
 also specifies settlement-only recovery through this existing command without
-restarting workers or rewriting an ended failed audit. That entrypoint
-extension is not yet implemented; the existing crash-only mode cannot recover
-an already-ended unresolved run. Contract acceptance alone is not permission
-to invoke an unavailable path or reuse old paid receipts.
+restarting workers or rewriting an ended failed audit. This branch is
+implemented with controlled coverage; installed-native recovery effectiveness
+remains unverified. It returns a distinct `usage-settlement` result before
+paid admission, while later paid operations still require matching receipts.
+Native use remains subject to the owning operational protocol and exact
+invocation/effects review.
 
 For an authorized retained reservation, use the targeted offline accounting path:
 

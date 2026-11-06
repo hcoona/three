@@ -262,6 +262,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
             null, ("$id", reservation.Id)));
         Assert.IsFalse(Assert.ContainsSingle(host.Sessions).Sent);
+        Assert.IsTrue(Assert.ContainsSingle(host.IsolationRequests));
     }
 
     [TestMethod]
@@ -323,12 +324,232 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
     }
 
-    private static async Task<CreditReservation> ClosedReservationAsync(
-        RunFixture fixture, RunDatabase database, CreditLedger ledger, CancellationToken token
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow(62.422970d)]
+    [DataRow(150d)]
+    public async Task ClosedReconnectSettlesUsageWithoutRestartingOrReplacingFailedRun(double total)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        LocalTools tools = new(database);
+        List<ControlledSdkHost> hosts = [];
+        Coordinator coordinator = new(database, tools.Collaboration, tools.Git, (state, runner,
+            accounting) => new NativeWorkerFactory(state, runner, accounting, () =>
+            {
+                ControlledSdkHost host = new("none", token, onCreate: session =>
+                    session.OnRead = () => session.Readings.Enqueue(new(
+                        session.SessionId, total * 1_000_000_000, "complete", 10)));
+                host.Release.TrySetResult();
+                hosts.Add(host);
+                return host;
+            }));
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        CreditReservation other = ledger.Reserve("another-run", "worker2", 30, 60,
+            Path.Combine(fixture.RootPath, "other.sdk-evidence"));
+        CreditReservation reservation =
+            await ClosedReservationAsync(fixture, database, ledger, token);
+        PrepareClosedReconnect(database, reservation);
+        ledger.MarkStarted(other.Id);
+        ledger.MarkUncertain(other.Id);
+        string retained = RetainedState(database);
+        string reportPath = Path.Combine(fixture.RootPath, "review.zh.md");
+        File.WriteAllText(reportPath, "Original failed audit report.");
+        using (FileStream ownership = new(Path.Combine(database.StatePath, "coordinator.lock"),
+            FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+        {
+            Scenario.Failure(await coordinator.RunAsync("reconnect", token), "conflict");
+        }
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            JsonObject result = Scenario.Data(await coordinator.RunAsync("reconnect", token));
+            Assert.AreEqual("usage-settlement", result["operation"]!.GetValue<string>());
+            Assert.IsFalse(result["runUncertain"]!.GetValue<bool>());
+            Assert.IsTrue(result["accounting"]!["uncertain"]!.GetValue<bool>());
+            Assert.AreEqual(retained, RetainedState(database));
+            Assert.AreEqual("Original failed audit report.", File.ReadAllText(reportPath));
+            Assert.HasCount(1, hosts);
+            Assert.IsTrue(hosts[0].Settled);
+            Assert.IsFalse(Assert.ContainsSingle(hosts[0].Sessions).Sent);
+            Assert.IsTrue(Assert.ContainsSingle(hosts[0].IsolationRequests));
+            CreditReservation final = ledger.Reservations().Single(row => row.Id == reservation.Id);
+            Assert.AreEqual("reconciled", final.State);
+            Assert.AreEqual((decimal)total, final.Actual);
+            Assert.AreEqual(Math.Max(0, (decimal)total - 100), final.Overshoot);
+            Assert.AreEqual("uncertain",
+                ledger.Reservations().Single(row => row.Id == other.Id).State);
+            using SqliteConnection campaign = Campaign(database);
+            Assert.AreEqual(2L, Sql.Scalar(campaign, "SELECT COUNT(*) FROM credit_reports;"));
+        }
+        Scenario.Failure(await coordinator.RunAsync("resume", token), "conflict");
+        Assert.AreEqual("credit_unknown",
+            Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("association")]
+    [DataRow("missing-association")]
+    [DataRow("partial")]
+    [DataRow("regressing")]
+    [DataRow("session")]
+    [DataRow("host")]
+    public async Task ClosedReconnectRetainsPartialSuccessAndOriginalFailure(string failure)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        LocalTools tools = new(database);
+        string? rejectedSession = null;
+        List<ControlledSdkHost> hosts = [];
+        Coordinator coordinator = new(database, tools.Collaboration, tools.Git, (state, runner,
+            accounting) => new NativeWorkerFactory(state, runner, accounting, () =>
+            {
+                ControlledSdkHost host = new(hosts.Count == 1 ? failure : "none", token,
+                    onCreate: session => session.OnRead = () => session.Readings.Enqueue(new(
+                        session.SessionId,
+                        session.SessionId == rejectedSession && failure == "regressing"
+                            ? 59_000_000_000 : 62_422_970_000,
+                        session.SessionId == rejectedSession && failure == "partial"
+                            ? "partial" : "complete", 10)));
+                host.Release.TrySetResult();
+                hosts.Add(host);
+                return host;
+            }));
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        await ClosedReservationAsync(fixture, database, ledger, token, "worker1", uncertain: false);
+        await ClosedReservationAsync(fixture, database, ledger, token, "worker2", uncertain: false);
+        CreditReservation[] reservations = ledger.Reservations(database.RunId).ToArray();
+        foreach (CreditReservation reservation in reservations)
+        {
+            PrepareClosedReconnect(database, reservation);
+            ledger.MarkUncertain(reservation.Id);
+        }
+        rejectedSession = reservations[1].SessionId;
+        if (failure is "association" or "missing-association")
+        {
+            using SqliteConnection connection = database.Open();
+            Sql.Execute(connection,
+                failure == "association"
+                    ? "UPDATE native_attempts SET session_id='wrong' WHERE reservation_id=$id;"
+                    : "DELETE FROM native_attempts WHERE reservation_id=$id;",
+                null, ("$id", reservations[1].Id));
+        }
+        JsonObject response = await coordinator.RunAsync("reconnect", token);
+        Scenario.Failure(response, failure is "session" or "host"
+            ? "credit_or_ownership_unknown" : "credit_unknown");
+        JsonObject result = response["data"]!.AsObject();
+        Assert.AreEqual("usage-settlement", result["operation"]!.GetValue<string>());
+        Assert.IsTrue(result["runUncertain"]!.GetValue<bool>());
+        Assert.AreEqual(62.422970m, ledger.Reservations()[0].Actual);
+        Assert.AreEqual("reconciled", ledger.Reservations()[0].State);
+        Assert.AreEqual(60m, ledger.Reservations()[1].Actual);
+        Assert.AreEqual("uncertain", ledger.Reservations()[1].State);
+        Assert.HasCount(failure is "association" or "missing-association" ? 1 : 2, hosts);
+        Assert.IsTrue(hosts.All(host => host.Sessions.All(session => !session.Sent)));
+        Assert.IsTrue(hosts[0].Settled);
+        Assert.AreEqual(failure != "host", hosts[^1].Settled);
+        Assert.AreEqual("unresolved", database.ReadMetadata("lifecycle"));
+        Assert.AreEqual("Original accounting failure.", database.ReadMetadata("lifecycle:failure"));
+        Assert.AreEqual("Original failed delivery.",
+            database.ReadMetadata("lifecycle:completion_ambiguity"));
+        Assert.AreEqual("{\"binding\":\"old-build\"}",
+            database.ReadMetadata("native:controlled_billing_receipt"));
+        using SqliteConnection retained = database.Open();
+        Assert.AreEqual(1L, Sql.Scalar(retained,
+            "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at='end' "
+                + "AND stop_reason='credit_unknown';"));
+        Assert.AreEqual(0L, Sql.Scalar(retained, "SELECT COUNT(*) FROM coordinator_turns;"));
+        Assert.IsNotNull(Sql.Scalar(retained,
+            "SELECT value FROM meta WHERE key LIKE 'native:recovery_failure_details:%';"));
+        Assert.DoesNotContain("\"stackTrace\"", response.ToJsonString());
+        Assert.AreEqual("credit_unknown",
+            Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("paused")]
+    [DataRow("stopped")]
+    [DataRow("finalized")]
+    [DataRow("no-segments")]
+    [DataRow("ownership")]
+    [DataRow("cancelled")]
+    public async Task ClosedReconnectRejectsIneligibleStateBeforeNativeRecovery(string state)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        LocalTools tools = new(database);
+        Coordinator coordinator = new(database, tools.Collaboration, tools.Git, (run, runner,
+            accounting) => new NativeWorkerFactory(run, runner, accounting, () =>
+                throw new AssertFailedException("No native host creation is expected.")));
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        CreditReservation reservation =
+            await ClosedReservationAsync(fixture, database, ledger, token);
+        PrepareClosedReconnect(database, reservation);
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        if (state == "no-segments")
+        {
+            using SqliteConnection connection = database.Open();
+            Sql.Execute(connection, "DELETE FROM coordinator_segments;");
+        }
+        else if (state == "ownership")
+        {
+            database.WriteMetadata("lifecycle:ownership_ambiguity", "Owned child is ambiguous.");
+        }
+        else if (state == "cancelled")
+        {
+            await stop.CancelAsync();
+        }
+        else
+        {
+            database.WriteMetadata("lifecycle", state);
+        }
+        JsonObject response = await coordinator.RunAsync("reconnect", stop.Token);
+        Scenario.Failure(response, state == "ownership" ? "ownership_unresolved"
+            : state == "cancelled" ? "cancelled" : "conflict");
+        Assert.AreEqual("uncertain", Assert.ContainsSingle(ledger.Reservations()).State);
+        Assert.AreEqual(state is "ownership" or "no-segments" or "cancelled" ? "unresolved" : state,
+            database.ReadMetadata("lifecycle"));
+    }
+
+    private static void PrepareClosedReconnect(
+        RunDatabase database, CreditReservation reservation
     )
     {
-        CreditReservation reservation = ledger.Reserve(database.RunId, "worker1", 0, 300,
-            Path.Combine(fixture.RootPath, "closed.sdk-evidence"), shared: true);
+        database.WriteMetadata("lifecycle", "unresolved");
+        database.WriteMetadata("lifecycle:failure", "Original accounting failure.");
+        database.WriteMetadata("lifecycle:completion_ambiguity", "Original failed delivery.");
+        database.WriteMetadata("native:controlled_preflight_receipt",
+            "{\"binding\":\"old-build\"}");
+        database.WriteMetadata("native:controlled_billing_receipt", "{\"binding\":\"old-build\"}");
+        database.WriteMetadata($"worker:{reservation.Worker}:session", reservation.SessionId!);
+        database.WriteMetadata($"worker:{reservation.Worker}:reservation", reservation.Id);
+        using SqliteConnection state = database.Open();
+        Sql.Execute(state,
+            """
+            INSERT INTO coordinator_segments(
+                mode,state,started_at,deadline,ended_at,stop_reason)
+            SELECT 'run','unresolved','start','deadline','end','credit_unknown'
+            WHERE NOT EXISTS(SELECT 1 FROM coordinator_segments);
+            INSERT INTO native_attempts(
+                usage_path,reservation_id,worker,initialize_json,session_id,
+                baseline_usage,created_at)
+            VALUES($path,$id,$worker,$sdk,$session,'{}','earlier');
+            """, null, ("$path", reservation.UsagePath), ("$id", reservation.Id),
+            ("$worker", reservation.Worker), ("$sdk", "sdk:" + NativeSdkSession.SdkVersion),
+            ("$session", reservation.SessionId));
+    }
+
+    private static async Task<CreditReservation> ClosedReservationAsync(
+        RunFixture fixture, RunDatabase database, CreditLedger ledger, CancellationToken token,
+        string worker = "worker1", bool uncertain = true
+    )
+    {
+        CreditReservation reservation = ledger.Reserve(database.RunId, worker, 0, 300,
+            Path.Combine(fixture.RootPath, $"closed-{worker}.sdk-evidence"), shared: true);
         await ledger.AcquireSharedWindowAsync(reservation.Id, token);
         ledger.MarkStarted(reservation.Id);
         ledger.AttachSession(reservation.Id, reservation.SessionId!);
@@ -336,7 +557,10 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         ledger.RecordSdkUsage(reservation.Id,
             new(reservation.SessionId!, 60_000_000_000, "complete", 10));
         ledger.CloseSharedWindow(reservation.Id);
-        ledger.MarkUncertain(reservation.Id);
+        if (uncertain)
+        {
+            ledger.MarkUncertain(reservation.Id);
+        }
         return ledger.Reservations().Single(row => row.Id == reservation.Id);
     }
 
@@ -1392,6 +1616,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
         public List<ControlledSdkSession> Sessions { get; } = [];
 
+        public List<bool> IsolationRequests { get; } = [];
+
         public TaskCompletionSource Closing { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
@@ -1404,6 +1630,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
         public INativeSdkSession CreateSession(string cwd, bool isolated)
         {
+            IsolationRequests.Add(isolated);
             if (evidenceDatabase is not null && Sessions.Count == 0)
             {
                 using Process process = Process.GetCurrentProcess();

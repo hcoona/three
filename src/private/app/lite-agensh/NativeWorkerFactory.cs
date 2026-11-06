@@ -337,7 +337,7 @@ internal sealed class NativeWorkerFactory(
         List<Exception> failures = [];
         try
         {
-            recovery = recoveryHost.CreateSession(cwd, reservation.Worker == "calibration");
+            recovery = recoveryHost.CreateSession(cwd, isolated: true);
             await recovery
                 .OpenAsync(
                     reservation.Worker,
