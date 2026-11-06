@@ -75,7 +75,7 @@ from sheet_music_omr.model import (
 )
 from sheet_music_omr.musicxml_tree import Element, serialize
 from sheet_music_omr.pitches import resolve_pitches
-from sheet_music_omr.relations import analyze_relations
+from sheet_music_omr.relations import END, analyze_relations
 from sheet_music_omr.review import review_markers
 from sheet_music_omr.semantics import validate_document
 from sheet_music_omr.timeline import build_timeline, first_option
@@ -93,7 +93,7 @@ if TYPE_CHECKING:
         TupletItem,
     )
     from sheet_music_omr.pitches import PitchResolver
-    from sheet_music_omr.relations import RelationAnalysis
+    from sheet_music_omr.relations import Point, Relation, RelationAnalysis
     from sheet_music_omr.review import ReviewMarker
     from sheet_music_omr.timeline import Frame, Line, Placed, Timeline
 
@@ -466,6 +466,7 @@ class _Converter:
     def _numbers(self) -> dict[int, int]:
         families: dict[str, list[tuple[int, int, int, Location | None]]] = {}
         arpeggios: dict[tuple[int, Fraction], list[_ArpeggioItem]] = {}
+        ties: list[tuple[int, Relation]] = []
         for label, relation in sorted(self.relations.relations.items()):
             kind = relation.kind
             if kind in _UNNUMBERED:
@@ -477,6 +478,9 @@ class _Converter:
             indices = [
                 self.order[point.placed.ident] for point in relation.points
             ]
+            if kind == "tie":
+                ties.append((label, relation))
+                continue
             if kind == "arpeggio":
                 placed = relation.points[0].placed
                 arpeggios.setdefault((placed.frame.index, placed.onset), [])
@@ -487,12 +491,31 @@ class _Converter:
             families.setdefault(family, []).append(
                 (min(indices), max(indices), label, relation.location),
             )
+        families["tied"] = self._tie_intervals(ties)
         self._refuse_pedal_signs(families.get("pedal", []))
         numbers: dict[int, int] = {}
         for family, intervals in sorted(families.items()):
             numbers.update(_allocate(intervals, family))
         self._number_arpeggios(arpeggios, numbers)
         return numbers
+
+    def _tie_intervals(
+        self,
+        ties: Sequence[tuple[int, Relation]],
+    ) -> list[tuple[int, int, int, Location | None]]:
+        """Span each tie in written pitch order, with a stop before a start."""
+
+        def key(point: Point) -> tuple[int, int, int]:
+            phase = 0 if point.role == END else 1
+            return (self.order[point.placed.ident], point.member or 0, phase)
+
+        keys = sorted({key(point) for _, tie in ties for point in tie.points})
+        rank = {written: index for index, written in enumerate(keys)}
+        intervals: list[tuple[int, int, int, Location | None]] = []
+        for label, tie in ties:
+            ranks = [rank[key(point)] for point in tie.points]
+            intervals.append((min(ranks), max(ranks), label, tie.location))
+        return intervals
 
     def _number_arpeggios(
         self,

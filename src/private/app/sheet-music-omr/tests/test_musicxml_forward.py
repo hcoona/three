@@ -339,6 +339,38 @@ def test_crossing_unison_ties_have_numbers() -> None:
     assert number(start1) != number(start2)
 
 
+def test_tied_chord_chain_reuses_stopped_numbers() -> None:
+    """Free a tie number at its stop for the next start on that pitch."""
+
+    def chord(pitches: str, end: int | None, start: int | None) -> str:
+        members = []
+        for index, name in enumerate(pitches.split()):
+            marks = []
+            if end is not None:
+                marks.append(f"tie@r{end + index}:end")
+            if start is not None:
+                marks.append(f"tie@r{start + index}:start")
+            members.append(f"{name}{{{','.join(marks)}}}")
+        return "+".join(members) + "/2"
+
+    treble, bass = "C4 E4 G4 C5 E5 G5", "C2 E2 G2 C3 E3 G3"
+    root = convert(
+        f"m 1\n1.1: {chord(treble, None, 1)}\n2.1: {chord(bass, None, 7)}\n"
+        f"m 2\n1.1: {chord(treble, 1, 13)}\n2.1: {chord(bass, 7, 19)}\n"
+        f"m 3\n1.1: {chord(treble, 13, None)}\n2.1: {chord(bass, 19, None)}\n",
+    )
+    open_numbers: set[str] = set()
+    for note in root.iter("note"):
+        for tied in note.findall("notations/tied"):
+            number = tied.get("number", "")
+            if tied.get("type") == "stop":
+                open_numbers.remove(number)
+            else:
+                assert number not in open_numbers
+                open_numbers.add(number)
+    assert not open_numbers
+
+
 def test_nested_tuplets() -> None:
     """Write time modifications and nested tuplet starts and stops."""
     root = convert("m 1\n1.1: 3:2{C5/4 D5/4 3:2{E5/8 F5/8 G5/8}}\n2.1: C3/2\n")
