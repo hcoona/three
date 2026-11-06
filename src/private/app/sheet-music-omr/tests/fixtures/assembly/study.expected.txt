@@ -1,0 +1,26 @@
+// Self-authored for this project; it transcribes no existing score.
+format: text-score/2
+key: 0
+time: 3/4
+clefs: G2 F4
+carry: octave
+heading: "Assembly Study"
+m 1
+1.1: <p> C5/4[rel=slur@r1:start] D5/4 E5/4
+2.1: <ped(>[rel=pedal@r2:line-start] C3/2.
+m 2
+1.1: <cresc(>[rel=hairpin@r3:start:cresc] F5/4 G5/4 A5/4[rel=slur@r1:end]
+2.1: F3/2.
+m 3
+1.1: <8va(>[rel=ottava@r4:start:8va] B5/4[rel=slur@r5:start] C6{tie@r7:start}/4 <hairpin)>[rel=hairpin@r3:end] C6{tie@r7:end}/4[rel=slur@r5:end]
+2.1: E3/4[rel=slur@r6:start] G3{tie@r8:start}/4 G3{tie@r8:end}/4[rel=slur@r6:end]
+m 4
+1.1: <8va)>[rel=ottava@r4:end:8va] B4/2[rel=slur@r9:start] C#5/4[rel=slur@r9:end]
+2.1: <ped)>[rel=pedal@r2:line-release] A2/2.
+m 5 right=repeat ending=1:single
+1.1: D5/2.
+2.1: D3/2.
+heading: "Coda"
+m 6 right=final
+1.1: C5{tie-in}/2.
+2.1: C3/2.

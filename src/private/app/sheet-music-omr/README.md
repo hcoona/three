@@ -9,9 +9,9 @@ tools must meet.
 **Current state:** experimental. A standard-library Python package parses
 Text Score 2 documents, validates their grammar and semantics, reports each
 error with its rule class and location, lists review markers, writes canonical
-text and derives the carry-out state of a system document. There is no
-assembler, converter, recognizer or model yet. No packaging or release is
-selected.
+text, derives the carry-out state of a system document and assembles system
+documents into one score. There is no converter, recognizer or model yet. No
+packaging or release is selected.
 
 ## Usage
 
@@ -20,12 +20,17 @@ From the repository root:
 ```shell
 uv run --package sheet-music-omr sheet-music-omr validate FILE...
 uv run --package sheet-music-omr sheet-music-omr canonicalize FILE
+uv run --package sheet-music-omr sheet-music-omr assemble FILE... [-o OUTPUT]
 uv run --package sheet-music-omr --group dev pytest src/private/app/sheet-music-omr/tests
 ```
 
 `validate` prints one `path:line:column: class/rule: message` line for each
 error and one `review:` line for each review marker, and exits with 1 when a
 file is invalid. `canonicalize` writes the canonical text of one valid file.
+`assemble` writes the assembled score to standard output or `OUTPUT`, and
+reports errors and review items on standard error. It exits with 0 on
+success, 1 on failure and 3 when review markers or extended trills need a
+person.
 
 ## User and primary journey
 

@@ -760,7 +760,8 @@ def _check_duplicates(analysis: RelationAnalysis) -> None:
         )
 
 
-def _new_order(relation: Relation) -> tuple[object, ...]:
+def new_order(relation: Relation) -> tuple[object, ...]:
+    """Return the key that orders new relations for label numbering."""
     ending: tuple[object, ...] = (
         (1,) if relation.is_open else (0, relation.last_key)
     )
@@ -795,7 +796,7 @@ def _check_numbering(analysis: RelationAnalysis) -> None:
                     relation.end.location if relation.end else None,
                 )
     used = {r.label for r in relations if r.carried is not None}
-    new = sorted((r for r in relations if r.carried is None), key=_new_order)
+    new = sorted((r for r in relations if r.carried is None), key=new_order)
     for relation in new:
         expected = next(n for n in range(1, len(used) + 2) if n not in used)
         used.add(expected)

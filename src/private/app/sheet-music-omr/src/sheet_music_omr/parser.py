@@ -1161,6 +1161,8 @@ class _DocumentParser:
         self._end = end_location(text)
         self._lines = lines
         self._index = 0
+        self._key_location: Location | None = None
+        self._page_location: Location | None = None
 
     def _peek(self) -> SourceLine | None:
         if self._index < len(self._lines):
@@ -1210,6 +1212,7 @@ class _DocumentParser:
         self,
     ) -> tuple[int, Meter, tuple[Clef, Clef], CarryMode]:
         c = self._header("key: ", "key_line")
+        self._key_location = c.loc()
         key = _fifths(c, "fifths")
         c.expect_end("key_line")
         c = self._header("time: ", "time_line")
@@ -1279,6 +1282,9 @@ class _DocumentParser:
         )
         if assembled:
             return self._assembled(title, composer, key, time, clefs, carry)
+        line = self._peek()
+        if line is not None:
+            self._page_location = Location(line.number, len("page: ") + 1)
         page = self._pos_int_header("page: ", "page_line")
         system = self._pos_int_header("system: ", "system_line")
         c = self._header("carry-in: ", "carry_in_line")
@@ -1299,6 +1305,8 @@ class _DocumentParser:
             tuple(headings),
             tuple(blocks),
             location=Location(1, 1),
+            key_location=self._key_location,
+            page_location=self._page_location,
         )
 
     def _assembled(  # noqa: PLR0913, PLR0917
