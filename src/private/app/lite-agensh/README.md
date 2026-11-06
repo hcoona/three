@@ -19,6 +19,11 @@ and lifecycle scenarios; installed-native limit mutation and renewal remain
 unobserved until a separately recorded user-audit run. Per-session allocation
 remains the default for existing inputs. Do not treat the implementation
 or the owner's one-time ledger transition as a successful autonomous audit.
+The [settlement contract](docs/implementation-contracts.md#usage-evidence-and-settlement)
+also distinguishes user-turn completion from background compaction and bounds
+complete final recovery of an uncertain closed window. These refinements still
+require implementation and validation; the retained failed audit and independent
+finding classifications are carried by [#1552](https://github.com/hcoona/three/issues/1552).
 The MCP 2.3.0 upgrade is covered by controlled stdio contracts, not a new
 native acceptance run; PR #1530 retains the earlier dependency baseline.
 

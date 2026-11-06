@@ -72,10 +72,34 @@ per-session behavior and reject invalid allocation input before initialization.
 Use focused ledger invariants and controlled journeys, not tests of private
 method order or native implementation internals.
 
+Exercise a completed user turn whose background compaction is still pending:
+its complete observed subtotal must not return backing. After compaction
+settles, a fresh complete cumulative reading includes its reported charge,
+closes the window and makes unused backing available to a peer. Cover work
+changing during a usage read, cancellation/stop with compaction outstanding,
+failed or missing terminal evidence and bounded-wait failure. Final staging
+must not become valid merely because the shared host later exits. Keep native
+compaction in the native dependency and preserve ordinary no-compaction and
+legacy per-session behavior.
+
+Exercise the existing exact-session recovery with a previously uncertain,
+dispatched, closed-window reservation and a monotonic complete final increase.
+Use real SQLite and controlled native session/host settlement to establish
+eligibility, exact delta/overshoot accounting and idempotence without grants or
+prompts. Reject a live changed reading, a final flag without settled evidence,
+regression, revised reconciled totals, partial usage, mismatched associations
+and failed ownership/background/session/host settlement. Preserve unrelated
+unknowns, source/receipt bindings and paid-admission gates. Do not test this
+through pre-dispatch cancellation or add an incident-specific recovery command.
+
 Native evidence must separately retain actual model selection, live limit
 readback/mutation, exhausted-window renewal, cumulative baselines and final
 settlement. A source-level API or scripted grant does not establish those
 observations; retain any naturally unexercised renewal as not observed.
+For compaction, retain the native start/terminal ordering, complete cumulative
+reading after settlement, grant closure and final accounting. Managed event
+substitutes alone do not establish the installed runtime's callback/usage
+ordering or a successful repaired user journey.
 
 Shared-runtime scenarios additionally exercise independent peer conversations,
 working directories, actor-bound MCP configuration, events, limits and usage
