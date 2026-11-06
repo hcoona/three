@@ -76,7 +76,8 @@ internal static class NoDispatchCancellation
             && Text(attempt, "session_id") == reservation.SessionId
             && Text(attempt, "usage_path") == reservation.UsagePath
             && Text(attempt, "baseline_usage") == "0"
-            && Text(association, "recovery") == "fresh-session-with-durable-summary"
+            && (Text(association, "recovery") is "fresh-session-with-durable-summary"
+                or "fresh-summary-fallback: exact-session load unavailable or failed")
             && Text(attempt, "initialize_json") == Text(association, "initialize_json")
             && (long)Sql.Scalar(connection,
                 "SELECT COUNT(*) FROM native_sessions WHERE session_id=$id;",
@@ -96,8 +97,10 @@ internal static class NoDispatchCancellation
             && diagnostic["isRemote"]?.GetValue<bool>() == false
             && !string.IsNullOrWhiteSpace(Text(diagnostic, "selectedModel"))
             && (database.Configuration.NativeModel is null
-                || Text(diagnostic, "selectedModel") == database.Configuration.NativeModel)
-            && diagnostic["appliedLimit"]?.GetValue<decimal>() == reservation.Allowance
+                || Text(diagnostic, "selectedModel").Equals(
+                    database.Configuration.NativeModel, StringComparison.OrdinalIgnoreCase))
+            && diagnostic["appliedLimit"]?.GetValue<double>() ==
+                NativeSdkSession.NativeLimit(reservation.Allowance)
             && Text(association, "initialize_json") == "sdk:" + Text(diagnostic, "sdkVersion"),
             "Observed session identity, locality, model or limit does not match."
         );

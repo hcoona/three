@@ -474,6 +474,75 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("fallback", true)]
+    [DataRow("model-case", true)]
+    [DataRow("fractional", true)]
+    [DataRow("different-model", false)]
+    [DataRow("adjacent-cap", false)]
+    [DataRow("exact-label", false)]
+    public async Task CancellationPreservesAcceptedFreshSessionMetadata(
+        string variant, bool accepted
+    )
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = new(fixture.StatePath, fixture.Configuration with
+        {
+            NativeExecutable = Path.Combine(fixture.RootPath, "missing-native-runtime.exe"),
+            NativeModel = "gpt-6.1-terra",
+            RunAiCreditAllowance = 300,
+            CampaignAiCreditAllowance = 600,
+        });
+        LocalTools tools = new(database);
+        _ = new Coordinator(database, tools.Collaboration, tools.Git);
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        double? cap = variant switch
+        {
+            "fractional" => 30.123456789012287d,
+            "adjacent-cap" => 30.12345678901229d,
+            _ => null,
+        };
+        ControlledSdkHost host = new("none", token,
+            evidenceDatabase: database, emptyStatus: true,
+            modelReadback: variant switch
+            {
+                "model-case" => "Gpt-6.1-Terra",
+                "different-model" => "another-model",
+                _ => null,
+            }, limitReadback: cap);
+        host.Release.TrySetResult();
+        NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
+        decimal allowance = cap is null ? 60 : 30.12345678901229m;
+        CreditReservation reservation = ledger.Reserve(database.RunId, "worker1", allowance, 300,
+            Path.Combine(fixture.RootPath, "metadata.sdk-evidence"));
+        INativeWorker peer = factory.Create(reservation, calibration: false);
+        string? recovery = variant switch
+        {
+            "fallback" => "fresh-summary-fallback: exact-session load unavailable or failed",
+            "exact-label" => "exact-session-load",
+            _ => null,
+        };
+        await peer.StartAsync(fixture.RepositoryPath, null, token, recovery);
+        if (accepted)
+        {
+            await factory.CompleteAsync();
+            Assert.AreEqual("released", ledger.Reservations()[0].State);
+            ledger.RequirePaidAdmission();
+        }
+        else
+        {
+            await Assert.ThrowsExactlyAsync<OperationException>(() => factory.CompleteAsync());
+            Assert.AreEqual("uncertain", ledger.Reservations()[0].State);
+        }
+        Assert.IsNull(ledger.Reservations()[0].Actual);
+        using SqliteConnection campaign = Campaign(database);
+        Assert.AreEqual(0L, Sql.Scalar(campaign, "SELECT COUNT(*) FROM credit_reports;"));
+        Assert.AreEqual(0L, Sql.Scalar(campaign,
+            "SELECT dispatch_count FROM credit_sdk_usage;"));
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
     [DataRow(1d, "complete")]
     [DataRow(double.NaN, "complete")]
     [DataRow(null, "complete")]
@@ -814,7 +883,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     // Controlled SDK effects only; production workers, cohort and SQLite accounting remain real.
     private sealed class ControlledSdkHost(
         string failure, CancellationToken token, bool missingMetrics = false,
-        RunDatabase? evidenceDatabase = null, bool emptyStatus = false
+        RunDatabase? evidenceDatabase = null, bool emptyStatus = false,
+        string? modelReadback = null, double? limitReadback = null
     ) : INativeSdkHost
     {
         public string Id { get; } = "controlled-sdk-host-" + Guid.NewGuid().ToString("N");
@@ -844,7 +914,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             }
             ControlledSdkSession session = new(
                 failure == "session" && Sessions.Count == 0, missingMetrics,
-                evidenceDatabase, emptyStatus, cwd, Id, LeaseId
+                evidenceDatabase, emptyStatus, cwd, Id, LeaseId, modelReadback, limitReadback
             );
             Sessions.Add(session);
             return session;
@@ -878,7 +948,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     private sealed class ControlledSdkSession(
         bool failDispose, bool missingMetrics = false, RunDatabase? evidenceDatabase = null,
-        bool emptyStatus = false, string cwd = "", string runtimeId = "", long runtimeLeaseId = 1
+        bool emptyStatus = false, string cwd = "", string runtimeId = "", long runtimeLeaseId = 1,
+        string? modelReadback = null, double? limitReadback = null
     ) : INativeSdkSession
     {
         private long requests;
@@ -908,7 +979,12 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             {
                 Metadata["workingDirectory"] = cwd;
                 Metadata["appliedLimit"] = limit;
-                Metadata["selectedModel"] = evidenceDatabase.Configuration.NativeModel
+                if (limitReadback is double observed)
+                {
+                    Metadata["appliedLimit"] = observed;
+                }
+                Metadata["selectedModel"] = modelReadback
+                    ?? evidenceDatabase.Configuration.NativeModel
                     ?? "controlled-model";
                 Metadata["alreadyInUse"] = false;
                 Metadata["isRemote"] = false;

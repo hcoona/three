@@ -461,7 +461,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
 
     public void RequireHealthy() => CheckEvents();
 
-    private static double NativeLimit(decimal allowance)
+    internal static double NativeLimit(decimal allowance)
     {
         double result = (double)allowance;
         try
