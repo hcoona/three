@@ -270,6 +270,11 @@ def _event(event: Event) -> str:
     return _EVENT_WRITERS[type(event)](event)
 
 
+def write_event(event: Event) -> str:
+    """Return the canonical spelling of one event."""
+    return _event(event)
+
+
 def _voice_line(voice: VoiceLine) -> str:
     events = " ".join(_event(event) for event in voice.events)
     return f"{voice.staff}.{voice.voice}: {events}"

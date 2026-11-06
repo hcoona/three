@@ -6,6 +6,8 @@ canonical text of one valid file. ``assemble`` joins system documents into
 an assembled score; its exit status tells success, failure and results that
 need a person apart. ``to-musicxml`` converts one valid assembled score
 without review markers to MusicXML 4.0.
+``from-musicxml`` converts one MusicXML piano score to the canonical text of
+an assembled score.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from sheet_music_omr.diagnostics import (
 from sheet_music_omr.lexical import decode_source, format_rational
 from sheet_music_omr.model import AssembledScore, TimedReview
 from sheet_music_omr.musicxml_forward import ReviewRequiredError, to_musicxml
+from sheet_music_omr.musicxml_reverse import MusicXmlError, from_musicxml_text
 from sheet_music_omr.parser import parse_document
 from sheet_music_omr.review import review_markers
 from sheet_music_omr.semantics import check_document
@@ -169,13 +172,30 @@ def _to_musicxml(path: str, output: str | None) -> int:
     return 0
 
 
+def _from_musicxml(path: str, output: str | None) -> int:
+    try:
+        text = from_musicxml_text(Path(path).read_bytes())
+    except MusicXmlError as error:
+        for diagnostic in error.diagnostics:
+            sys.stderr.write(diagnostic.format(path) + "\n")
+        return 1
+    data = text.encode("utf-8")
+    if output is not None:
+        Path(output).write_bytes(data)
+        return 0
+    sys.stdout.flush()
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sheet-music-omr",
         description=(
             "Check and canonicalize Text Score 2 documents against the"
             " lexical, grammar and semantic rules, and convert assembled"
-            " scores to MusicXML."
+            " scores to and from MusicXML."
         ),
     )
     commands = parser.add_subparsers(dest="command", required=True)
@@ -214,6 +234,17 @@ def _parser() -> argparse.ArgumentParser:
         metavar="OUT",
         help="write the MusicXML file here instead of standard output",
     )
+    reverse = commands.add_parser(
+        "from-musicxml",
+        help="convert a MusicXML piano score to an assembled score",
+    )
+    reverse.add_argument("file", metavar="FILE")
+    reverse.add_argument(
+        "-o",
+        "--output",
+        metavar="OUT",
+        help="write the assembled score here instead of standard output",
+    )
     return parser
 
 
@@ -240,4 +271,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if arguments.command == "to-musicxml":
         return _to_musicxml(arguments.file, arguments.output)
+    if arguments.command == "from-musicxml":
+        return _from_musicxml(arguments.file, arguments.output)
     return _canonicalize(arguments.file)
