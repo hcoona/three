@@ -136,6 +136,13 @@ resolves owned children and attempts the exact saved sessions; it does not
 silently replace unknown usage. `finalize` retains local delivery/evidence;
 `cleanup` is a separate explicit operation.
 
+The [closed failed-run reconnect contract](docs/implementation-contracts.md#closed-failed-run-reconnect)
+also specifies settlement-only recovery through this existing command without
+restarting workers or rewriting an ended failed audit. That entrypoint
+extension is not yet implemented; the existing crash-only mode cannot recover
+an already-ended unresolved run. Contract acceptance alone is not permission
+to invoke an unavailable path or reuse old paid receipts.
+
 For an authorized retained reservation, use the targeted offline accounting path:
 
 ```powershell

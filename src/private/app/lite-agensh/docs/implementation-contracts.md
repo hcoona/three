@@ -584,6 +584,50 @@ meaning for the offline `reconcile` cancellation command. It adds no public
 command, permits no manual ledger edit and does not waive build or receipt
 identity checks for subsequent paid work.
 
+### Closed failed-run reconnect
+
+The existing `reconnect --state <owned-state>` entrypoint has a distinct
+settlement-only branch for a run with at least one lifecycle segment, all
+segments ended and retained lifecycle `unresolved`. Select it under the run's
+exclusive ownership handle before the unfinished-crash-segment gate. No other
+closed lifecycle becomes eligible, and an unfinished segment keeps the normal
+crash reconnect path. Do not edit lifecycle or segment state to select a path.
+
+Resolve old owned process identities and validate durable run/campaign,
+reservation/worker/session and SDK associations. Recover each unresolved
+associated reservation through the existing exact-session non-dispatch
+factory boundary and measured-usage rules above. Use the actual durable
+uncertain reservation, disabled pending-work continuation and transcript
+recovery, isolated tools and a verified finite remaining cap. Failed exact
+load has no fresh-session fallback in this branch. Missing association,
+unsupported cap, live/ambiguous ownership or incomplete or regressing evidence
+retains uncertainty; no forced release or fabricated cancellation is allowed.
+
+Return a distinct settlement-only result after all selected recovery attempts
+and their owned temporary runtimes settle. A successful result means this
+run's retained reservations have supported accounting dispositions, not that
+the original failed run succeeded. If another reservation cannot settle,
+report failure and retain its uncertainty; already completed atomic
+dispositions are not rolled back or charged again. Other campaign unknowns
+remain untouched and still block paid use.
+
+Do not reserve another allowance, acquire a shared window, start a worker
+loop, send a prompt, replay delivery, process Git checks, export a report,
+create/reopen/end a segment or change the retained lifecycle/failure records.
+Keep original preflight/calibration receipts unchanged. Return normally from
+this branch without invoking paid admission or requiring new paid receipts:
+this is an explicitly selected non-dispatch operation, not a way to exploit
+an expected later gate failure. Subsequent paid operations retain every
+ordinary admission and exact build/configuration receipt requirement.
+
+Return the operation's own outcome and remaining run/campaign uncertainty
+separately from the retained failed-run outcome. A repeat with no unresolved
+run reservations is a successful no-op without native session creation,
+new reports or repeated charges. Record new native observations and ledger
+dispositions through the existing evidence carriers, never by rewriting the
+original failure. This adds no CLI option, incident command or recovery
+framework and does not change offline pre-dispatch `reconcile`.
+
 Local task cancellation or silence does not settle an operation.
 If dispatched usage, ownership or limit applicability is unknown, retain the
 reservation and stop paid work. Scripted metrics are not native billing proof.

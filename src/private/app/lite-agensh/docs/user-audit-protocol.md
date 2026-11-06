@@ -112,6 +112,47 @@ and diagnose through the accepted non-dispatch reconciliation path.
 This ordinary admission rule applies to every uncertainty in the new ledger;
 the one historical transition does not supply another exception.
 
+## Closed failed-run usage settlement
+
+The owner permits the existing `reconnect --state <owned-state>` settlement-only
+branch for the retained actual10 failed audit described in #1552 and later
+qualifying closed failed runs in this same continuing campaign. The
+[entrypoint contract](implementation-contracts.md#closed-failed-run-reconnect)
+must be accepted before its implementation, and that implementation must be
+accepted before execution. Record and independently review the exact accepted
+binary, original subject, target state, existing reservation/session bindings,
+expected effects, finite operation bounds and invocation before operating.
+This permission does not apply to historical unknowns in the old ledger.
+
+Preserve original run/campaign SQLite snapshots using backup semantics, source,
+worktrees, ended segments, failed lifecycle/details, report and original
+preflight/calibration receipts. Verify exclusive run ownership and current
+old-process identities, not merely a historical quiescence receipt. Open only
+the unresolved run's exact associated sessions through the isolated temporary
+runtime recovery path. Keep pending-work continuation and transcript recovery
+disabled; verify identity, working directory, Terra model and finite remaining
+limit before fresh fenced complete cumulative metrics and runtime settlement.
+No new grant, worker dispatch, prompt, fallback session, paid calibration,
+account query or report export is permitted.
+
+Use the existing bounded native probe, background-settlement, session and
+host-settlement deadlines; record the exact invocation's finite outer bound
+and cancellation/cleanup plan. Stop on ambiguous ownership, missing association,
+unsupported settings, incomplete/regressing usage or failed settlement.
+Retain failures without automatic native retry, manual SQL/ledger disposition,
+reflection bypass, lifecycle manipulation or intentional later gate failure.
+Fresh live proof is required; frozen metrics and arithmetic do not authorize
+booking an expected delta.
+
+Record a distinct settlement-only result, new native evidence, before/after
+raw cumulative accounting and any remaining uncertainty. Preserve the original
+failed audit outcome. After success, one idempotent repeat may verify that no
+native session or additional charge is created. Independently review original
+preservation, exact cumulative disposition and runtime quiescence before
+declaring this recovery complete. It proves neither autonomous report closure
+nor the historical memory-failure cause. New paid attempts still require their
+own accepted-source preflight, calibration and all existing finite-budget gates.
+
 ## Verified pre-dispatch accounting
 
 The owner accepts the application-path evidence level in the

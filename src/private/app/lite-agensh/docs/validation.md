@@ -92,6 +92,19 @@ and failed ownership/background/session/host settlement. Preserve unrelated
 unknowns, source/receipt bindings and paid-admission gates. Do not test this
 through pre-dispatch cancellation or add an incident-specific recovery command.
 
+Exercise `reconnect` through the public coordinator boundary for a closed
+failed run with dispatched uncertain usage and stale build-bound paid receipts.
+It must settle exact native usage and return a distinct non-paid result
+without opening a segment, creating worker loops, sending prompts, replacing
+receipts or changing the original failed outcome/report. Use real SQLite and
+the existing controlled native factory; retain before/after preservation,
+delta/overshoot and a no-native-I/O idempotent repeat. Cover mixed successful
+and rejected reservations, missing/mismatched associations, partial usage and
+failed ownership or session/host settlement. A later receipt failure is not
+the expected success outcome. Preserve normal unfinished crash reconnect,
+closed non-unresolved rejection, fresh-summary resume and all paid gates.
+Installed-native effectiveness still needs the owning operational observation.
+
 Native evidence must separately retain actual model selection, live limit
 readback/mutation, exhausted-window renewal, cumulative baselines and final
 settlement. A source-level API or scripted grant does not establish those
