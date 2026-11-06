@@ -12,6 +12,7 @@ internal sealed class NativeWorker : INativeWorker
     private readonly CreditLedger credits;
     private CreditReservation? reservation;
     private readonly bool calibration;
+    private readonly string evidenceKind;
     private readonly SemaphoreSlim turn = new(1, 1);
     private readonly SemaphoreSlim settlement = new(1, 1);
     private readonly CancellationTokenSource stop = new();
@@ -33,7 +34,8 @@ internal sealed class NativeWorker : INativeWorker
         INativeSdkHost host,
         CreditLedger credits,
         CreditReservation? reservation = null,
-        bool calibration = false
+        bool calibration = false,
+        string evidenceKind = "native-sdk"
     )
     {
         this.database = database;
@@ -41,6 +43,7 @@ internal sealed class NativeWorker : INativeWorker
         this.credits = credits;
         this.reservation = reservation;
         this.calibration = calibration;
+        this.evidenceKind = evidenceKind;
     }
 
     public string? SessionId { get; private set; }
@@ -201,6 +204,12 @@ internal sealed class NativeWorker : INativeWorker
 
                 credits.AttachSession(reservation.Id, id);
                 credits.RecordSdkUsage(reservation.Id, usage);
+                if (exactSession is null)
+                {
+                    NoDispatchCancellation.RecordStart(
+                        database, reservation, Diagnostic!, cwd, evidenceKind
+                    );
+                }
                 windowBaseline = exactSession is null ? 0 : usage.RequireComplete();
                 database.WriteMetadata($"worker:{worker}:lifecycle", "ready");
             }
@@ -533,7 +542,19 @@ internal sealed class NativeWorker : INativeWorker
 
         try
         {
-            credits.RecordSdkUsage(reservation.Id, pendingFinalUsage, final: true);
+            if (
+                pendingFinalUsage.TotalUserRequests == 0
+                && pendingFinalUsage.TotalNanoAiu == 0
+            )
+            {
+                _ = NoDispatchCancellation.Cancel(
+                    database, credits, reservation.Id, retained: false
+                );
+            }
+            else
+            {
+                credits.RecordSdkUsage(reservation.Id, pendingFinalUsage, final: true);
+            }
             usageFinalized = true;
             database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "stopped");
         }
