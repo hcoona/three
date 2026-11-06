@@ -155,6 +155,12 @@ VALID = {
         "1.1: D4/8........[rel=tremolo@r1:two-end:2]",
         carry("511/4096", '{"1.1":1}', TREMOLO.replace('"3/8"', '"511/2048"')),
     ),
+    "directions at one onset in any order": system(
+        "m 1\n1.1: C4/4 <hairpin)>[rel=hairpin@r1:end]"
+        " <cresc(>[rel=hairpin@r1:start:cresc]"
+        " <ped(>[rel=pedal@r2:line-start] D4/4"
+        " <ped)>[rel=pedal@r2:line-release] <ped(>[rel=pedal@r2:line-change]",
+    ),
 }
 
 INVALID = [

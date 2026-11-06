@@ -440,7 +440,7 @@ def _check_kind(analysis: RelationAnalysis, relation: Relation) -> None:
     end = relation.end
     if end is not None:
         for point in relation.points:
-            if point.role == CHANGE and end.placed.precedes(point.placed):
+            if point.role == CHANGE and end.placed.time < point.placed.time:
                 analysis.report(
                     kind,
                     f"the change of r{relation.label} shall not lie after"
@@ -466,7 +466,9 @@ def _check_order(
     for point in relation.points:
         if point is start:
             continue
-        if loose or isinstance(point.placed.event, TrillEnd):
+        if loose:
+            bad = point.placed.time < start.placed.time
+        elif isinstance(point.placed.event, TrillEnd):
             bad = point.placed.precedes(start.placed)
         else:
             bad = not start.placed.precedes(point.placed)
