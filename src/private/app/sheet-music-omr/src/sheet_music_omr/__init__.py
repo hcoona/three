@@ -2,11 +2,20 @@
 
 The package parses Text Score 2 system documents and assembled scores into an
 immutable syntax tree, reports lexical, grammar and semantic violations as
-diagnostics, derives the carry-out state of a system document and writes the
-canonical spelling of a tree. Assembly and MusicXML conversion are not
-implemented yet.
+diagnostics, derives the carry-out state of a system document, assembles
+system documents into an assembled score and writes the canonical spelling of
+a tree. MusicXML conversion is not implemented yet.
 """
 
+from sheet_music_omr.assembly import (
+    AssemblyResult,
+    AssemblyStatus,
+    MarkerReview,
+    SourceDiagnostic,
+    SourceLocation,
+    TrillReview,
+    assemble,
+)
 from sheet_music_omr.diagnostics import (
     Diagnostic,
     Location,
@@ -24,11 +33,18 @@ from sheet_music_omr.semantics import (
 from sheet_music_omr.writer import write_document
 
 __all__ = [
+    "AssemblyResult",
+    "AssemblyStatus",
     "Diagnostic",
     "Location",
+    "MarkerReview",
     "ReviewMarker",
     "RuleClass",
+    "SourceDiagnostic",
+    "SourceLocation",
     "TextScoreError",
+    "TrillReview",
+    "assemble",
     "carry_out",
     "check_document",
     "decode_source",

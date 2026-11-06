@@ -89,6 +89,16 @@ def unsupported(
     )
 
 
+def assembly(rule: str, message: str, location: Location | None) -> Diagnostic:
+    """Return an assembly diagnostic, at the document start without location."""
+    return Diagnostic(
+        RuleClass.ASSEMBLY,
+        rule,
+        message,
+        location or _DOCUMENT_START,
+    )
+
+
 class TextScoreError(Exception):
     """Raised when a document violates a rule of the format."""
 

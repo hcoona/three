@@ -1,0 +1,12 @@
+// Self-authored for this project; it transcribes no existing score.
+format: text-score/2
+key: 0
+time: 2/4
+clefs: G2 F3
+carry: octave
+page: 1
+system: 3
+carry-in: {"measure":5,"offset":"1/4","event_counts":{"1.1":1,"2.1":2},"accidental_scope":"octave","accidentals":[{"staff":2,"step":"B","octave":3,"alter":-1},{"staff":2,"step":"G","octave":4,"alter":2}],"open":[]}
+m 5 right=final from=1/4
+1.1: C5/4
+2.1: C3/4

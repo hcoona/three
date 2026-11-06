@@ -1,0 +1,13 @@
+// Self-authored for this project; it transcribes no existing score.
+format: text-score/2
+key: 0
+time: 3/4
+clefs: G2 F4
+carry: octave
+page: 2
+system: 1
+carry-in: {"measure":6,"offset":"0","event_counts":{},"accidental_scope":"octave","accidentals":[],"open":[]}
+heading: "Coda"
+m 6 right=final
+1.1: C5{tie-in}/2.
+2.1: C3/2.

@@ -907,6 +907,12 @@ class SystemDocument:
     headings: tuple[Heading, ...]
     blocks: tuple[MeasureBlock, ...]
     location: Location | None = field(default=None, compare=False, kw_only=True)
+    key_location: Location | None = field(
+        default=None, compare=False, kw_only=True
+    )
+    page_location: Location | None = field(
+        default=None, compare=False, kw_only=True
+    )
 
 
 @dataclass(frozen=True, slots=True)

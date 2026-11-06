@@ -6,9 +6,9 @@ document and returns the diagnostics in location order. ``carry_out`` derives
 the carry-out state of a valid system document, which assembly compares with
 the ``carry-in`` of the next document.
 
-Assembly rules, such as the identity of ``len`` across the fragments of a
-split measure or adjacency of volta brackets across documents, are not checked
-here because one document cannot show them.
+Rules that link several system documents, such as the identity of ``len``
+across the fragments of a split measure, are checked by
+``sheet_music_omr.assembly``.
 """
 
 from __future__ import annotations
@@ -39,14 +39,24 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, slots=True)
-class _Analysis:
+class Analysis:
+    """The timeline, relations and pitch state of a document.
+
+    Attributes:
+        timeline: The placed events.
+        relations: The relations and their findings.
+        pitches: The resolved pitches.
+        diagnostics: Every semantic finding in location order.
+    """
+
     timeline: Timeline
     relations: RelationAnalysis
     pitches: PitchResolver
     diagnostics: tuple[Diagnostic, ...]
 
 
-def _analyze(document: Document) -> _Analysis:
+def analyze(document: Document) -> Analysis:
+    """Analyze a parsed document and collect its semantic findings."""
     timeline = build_timeline(document)
     found: list[Diagnostic] = []
     if isinstance(document, SystemDocument):
@@ -62,7 +72,7 @@ def _analyze(document: Document) -> _Analysis:
     found.extend(pitches.findings)
     unique = dict.fromkeys(found)
     ordered = sorted(unique, key=lambda d: (d.location, d.code, d.message))
-    return _Analysis(timeline, relations, pitches, tuple(ordered))
+    return Analysis(timeline, relations, pitches, tuple(ordered))
 
 
 def validate_document(document: Document) -> tuple[Diagnostic, ...]:
@@ -75,7 +85,7 @@ def validate_document(document: Document) -> tuple[Diagnostic, ...]:
         The semantic and unsupported-content diagnostics in location order;
         empty when the document is valid.
     """
-    return _analyze(document).diagnostics
+    return analyze(document).diagnostics
 
 
 def check_document(document: Document) -> None:
@@ -95,7 +105,7 @@ def carry_out(document: SystemDocument) -> CarryState:
     Raises:
         TextScoreError: The document is not valid.
     """
-    analysis = _analyze(document)
+    analysis = analyze(document)
     if analysis.diagnostics:
         raise TextScoreError(analysis.diagnostics)
     return derive_carry_out(
