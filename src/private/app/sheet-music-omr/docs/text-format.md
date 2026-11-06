@@ -1142,6 +1142,13 @@ shape, spacing, fonts, cautionary key-signature glyphs, a reprinted unchanged
 key or numeric time signature, the printed number and bracket of a tuplet, and
 the closing hook of a volta bracket.
 
+The stem flags themselves are layout hints, but the voice-line assignment
+determined by the voice-order rules is content. In a measure with multiple
+voices, a change that assigns the same voice content to a different canonical
+voice position is a voice-content difference, not a difference in the stem
+flag. In a single-voice measure, stem direction does not change its voice 1
+assignment.
+
 The requirements record lists unsupported content. This format has no spelling
 for it. A validator rejects a document that carries it, and no tool shall drop
 or approximate it while reporting success. Undetermined content is not

@@ -427,8 +427,9 @@ These rules apply before counting, in this order:
    as defined by the format's
    [voice-order rules](text-format.md#voices-and-staves), is one `voice`
    difference: the reference note is non-identical and no extra element is
-   added. Raw MusicXML voice numbers alone do not identify a voice for this
-   rule.
+   added. The assignment to a canonical position is content; the stem flag
+   itself is layout. Raw MusicXML voice numbers alone do not identify a voice
+   for this rule.
 
 ### Supplementary checks
 
@@ -457,14 +458,16 @@ of its voice at that onset.
   for the cross-staff check. The voices of a staff are ranked by their
   canonical positions, as defined by the format's
   [voice-order rules](text-format.md#voices-and-staves); MusicXML `voice`
-  numbers do not establish those positions. A voice is identified by its
-  content: the sequence of onsets, durations, pitches and attached symbols of
-  its notes and rests. Each voice of `Y` in each measure is one element. It is
-  identical when `T(Y)` has a voice of the same content on the same staff in
-  that measure at the same canonical position. A voice of `Y` whose content no
-  voice of `T(Y)` on that staff in that measure matches is not a voice-order
-  element: musicdiff and the pairing rules score its differences. The
-  voice-order check adds no extra elements.
+  numbers do not establish those positions. The stem flag itself is layout,
+  but a change in the voice-line assignment it determines under those rules is
+  content. A voice is identified by its content: the sequence of onsets,
+  durations, pitches and attached symbols of its notes and rests. Each voice
+  of `Y` in each measure is one element. It is identical when `T(Y)` has a
+  voice of the same content on the same staff in that measure at the same
+  canonical position. A voice of `Y` whose content no voice of `T(Y)` on that
+  staff in that measure matches is not a voice-order element: musicdiff and
+  the pairing rules score its differences. The voice-order check adds no
+  extra elements.
 - **Heading** (`heading`): in the instrument, credits are the only carrier of
   heading text, and a `words` direction is always `text`, never `heading`.
   Whether the converters agree with that is what the round trip tests. Each
@@ -575,17 +578,19 @@ with their provenance:
   `grace/`, `cresc` and `dim` of a hairpin or `G` and `F` of a clef; the
   option's category is that category;
 - for each layout hint that the format lists (stem direction, placement,
-  inverted fermata, dynamic placement), one pair that differs only in it,
+  inverted fermata, dynamic placement), one pair that differs only in it; the
+  stem-direction pair is a single-voice measure, where stem direction does not
+  change the voice 1 assignment,
   one pair that differs only in a rest's staff position and one that differs
   only in the placement of a trill mark;
 - pairs that differ only in generated identifiers or `divisions`, a pair whose
   voices are renumbered without a change of canonical positions (for example
   staff 2 voices 5 and 6 against 1 and 2, including a change in their numeric
   rank), and identical pairs;
-- a pair in which the two voices of one staff in one measure exchange their
-  canonical positions while each retains its content, and a pair in which two
-  same-rhythm unison voices of one staff with different articulations exchange
-  their canonical positions;
+- a pair in which a two-voice measure keeps its two voice-group contents fixed
+  but reverses their stem assignments, thereby exchanging their canonical
+  positions, and a pair in which two same-rhythm unison voices of one staff
+  with different articulations exchange their canonical positions;
 - one pair that differs only in the end note of an extended trill, one in
   which an extended trill moves between simultaneous unison notes of different
   written durations in two voices of one staff that both carry a trill mark,
