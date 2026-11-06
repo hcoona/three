@@ -1,5 +1,7 @@
 namespace LiteAgensh;
 
+internal sealed record RecoveredNativeUsage(CreditReservation Reservation, NativeUsage Usage);
+
 public sealed record NativeUsage(
     string SessionId,
     double? TotalNanoAiu,

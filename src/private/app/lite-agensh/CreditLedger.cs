@@ -217,7 +217,15 @@ public sealed class CreditLedger
         }
     }
 
-    public void RecordSdkUsage(string id, NativeUsage usage, bool final = false)
+    public void RecordSdkUsage(string id, NativeUsage usage, bool final = false) =>
+        RecordSdkUsage(id, usage, final, recovery: null);
+
+    internal void RecordRecoveredSdkUsage(RecoveredNativeUsage recovered) =>
+        RecordSdkUsage(recovered.Reservation.Id, recovered.Usage, final: true, recovered);
+
+    private void RecordSdkUsage(
+        string id, NativeUsage usage, bool final, RecoveredNativeUsage? recovery
+    )
     {
         using SqliteConnection connection = Open();
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
@@ -315,6 +323,20 @@ public sealed class CreditLedger
         try
         {
             actual = usage.RequireComplete();
+            if (recovery is not null
+                && (recovery.Reservation.RunId != row.RunId
+                    || recovery.Reservation.Worker != row.Worker
+                    || recovery.Reservation.SessionId != row.SessionId
+                    || recovery.Reservation.UsagePath != row.UsagePath
+                    || recovery.Reservation.Allowance != row.Allowance
+                    || recovery.Reservation.Shared != row.Shared
+                    || recovery.Reservation.State != "uncertain"
+                    || row.State is not ("uncertain" or "reconciled")))
+            {
+                throw new OperationException(
+                    "credit_unknown", "Settled recovery association changed."
+                );
+            }
             if (
                 dispatches == 0
                 || actual < (row.Actual ?? 0)
@@ -342,7 +364,8 @@ public sealed class CreditLedger
         decimal overshoot = row.Overshoot;
         if (row.Shared)
         {
-            if (!row.GrantOpen && actual != row.Actual)
+            if (!row.GrantOpen && actual != row.Actual
+                && !(recovery is not null && row.State == "uncertain"))
             {
                 MarkUnknown(connection, transaction, id);
                 transaction.Commit();
