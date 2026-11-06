@@ -32,6 +32,8 @@ internal interface INativeWorkerFactory
 {
     JsonArray SettlementFailures { get; }
 
+    JsonArray SettlementDetails { get; }
+
     INativeWorker Create(CreditReservation? reservation, bool calibration);
 
     Task<JsonObject> PreflightAsync(
@@ -62,6 +64,8 @@ internal sealed class NativeWorkerFactory(
     private bool closing;
 
     public JsonArray SettlementFailures { get; } = [];
+
+    public JsonArray SettlementDetails { get; } = [];
 
     public INativeWorker Create(CreditReservation? reservation, bool calibration)
     {
@@ -176,6 +180,7 @@ internal sealed class NativeWorkerFactory(
             backend = host;
         }
         SettlementFailures.Clear();
+        SettlementDetails.Clear();
         HashSet<NativeWorker> unsettled = [];
         Exception? failure = null;
         foreach ((NativeWorker worker, CreditReservation? reservation) in cohort)
@@ -188,6 +193,9 @@ internal sealed class NativeWorkerFactory(
             {
                 failure ??= exception;
                 unsettled.Add(worker);
+                Json.AddSettlementDetails(
+                    SettlementDetails, reservation?.Worker, reservation?.Id, "stop", exception
+                );
                 SettlementFailures.Add(CreateSettlementFailure(reservation, "stop", exception));
             }
         }
@@ -204,6 +212,9 @@ internal sealed class NativeWorkerFactory(
         catch (Exception exception)
         {
             failure ??= exception;
+            Json.AddSettlementDetails(
+                SettlementDetails, null, null, "native-runtime", exception
+            );
             SettlementFailures.Add(CreateSettlementFailure(null, "native-runtime", exception));
         }
 
@@ -224,6 +235,10 @@ internal sealed class NativeWorkerFactory(
             catch (Exception exception)
             {
                 failure ??= exception;
+                Json.AddSettlementDetails(
+                    SettlementDetails, reservation?.Worker, reservation?.Id,
+                    finalize ? "final-usage" : "retain-uncertainty", exception
+                );
                 SettlementFailures.Add(CreateSettlementFailure(
                     reservation, finalize ? "final-usage" : "retain-uncertainty", exception
                 ));

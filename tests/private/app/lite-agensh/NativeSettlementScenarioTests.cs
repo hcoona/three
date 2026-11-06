@@ -882,7 +882,10 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
-    public async Task ProductionStopRetainsUsagePersistenceCauseInPrivateCoordinatorDiagnostics()
+    [DataRow("stop")]
+    [DataRow("final-usage")]
+    [DataRow("native-runtime")]
+    public async Task ProductionSettlementRetainsCausesInPrivateCoordinatorDiagnostics(string phase)
     {
         CancellationToken token = testContext.CancellationToken;
         using GitScenario fixture = await GitScenario.CreateAsync(token, configuration =>
@@ -904,10 +907,13 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             (database, processes, credits) => new NativeWorkerFactory(
                 database, processes, credits, () =>
                 {
-                    ControlledSdkHost host = new("none", token, evidenceDatabase: database,
+                    ControlledSdkHost host = new(
+                        armed && phase == "native-runtime" ? "host" : "none",
+                        token, evidenceDatabase: database,
                         onClose: session =>
                         {
-                            if (!armed || session.Metadata?["worker"]?.GetValue<string>()
+                            if (!armed || phase != "stop"
+                                || session.Metadata?["worker"]?.GetValue<string>()
                                 != "worker1")
                             {
                                 return;
@@ -921,7 +927,10 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                                 BEGIN SELECT RAISE(ABORT, 'controlled final usage failure'); END;
                                 """);
                         });
-                    host.Release.TrySetResult();
+                    if (!armed || phase != "final-usage")
+                    {
+                        host.Release.TrySetResult();
+                    }
                     hosts.Add(host);
                     return host;
                 }
@@ -945,36 +954,77 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 await Task.Delay(TimeSpan.FromMilliseconds(25), token);
             }
             coordinator.RequestControl("pause");
+            if (phase == "final-usage")
+            {
+                await hosts[^1].Closing.Task.WaitAsync(token);
+                Assert.AreEqual("stopped",
+                    fixture.Database.ReadMetadata("worker:worker1:lifecycle"));
+                Assert.IsTrue(hosts[^1].Sessions.All(session => session.CloseAttempted));
+                using SqliteConnection campaign = Campaign(fixture.Database);
+                Sql.Execute(campaign,
+                    """
+                    CREATE TRIGGER reject_final_usage BEFORE UPDATE ON credit_sdk_usage
+                    WHEN NEW.reservation_id IN
+                        (SELECT id FROM credit_reservations WHERE worker='worker1')
+                    BEGIN SELECT RAISE(ABORT, 'controlled final usage failure'); END;
+                    """);
+                hosts[^1].Release.TrySetResult();
+            }
             JsonObject failed = await execution;
             Scenario.Failure(failed, "ownership_or_usage_unresolved");
-            Assert.Contains("Native settlement retained unresolved evidence: "
-                + "SQLite Error 19: 'controlled final usage failure'.",
+            Assert.Contains(phase == "native-runtime"
+                ? "Controlled host failed."
+                : "SQLite Error 19: 'controlled final usage failure'.",
                 failed["message"]!.GetValue<string>());
             CreditReservation peer = Assert.ContainsSingle(ledger.Reservations()
                 .Where(row => row.Worker == "worker1"));
             Assert.AreEqual("uncertain", peer.State);
             Assert.AreEqual("credit_unknown",
                 Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
-            Assert.IsTrue(hosts[^1].Settled);
+            Assert.AreEqual(phase != "native-runtime", hosts[^1].Settled);
             string? details = Sql.Scalar(connection,
                 "SELECT value FROM meta WHERE key LIKE 'lifecycle:failure_details:%';") as string;
             Assert.IsNotNull(details);
             JsonObject diagnostics = JsonNode.Parse(details)!.AsObject();
+            string key = phase == "stop" ? "settlements" : "factorySettlements";
+            Assert.IsNotNull(diagnostics[key]);
             JsonObject settlement = Assert.ContainsSingle(
-                diagnostics["settlements"]!.AsArray().OfType<JsonObject>());
-            Assert.AreEqual("worker1", settlement["worker"]!.GetValue<string>());
-            Assert.AreEqual(peer.Id, settlement["reservationId"]!.GetValue<string>());
-            Assert.AreEqual("stop", settlement["phase"]!.GetValue<string>());
+                diagnostics[key]!.AsArray().OfType<JsonObject>());
+            Assert.AreEqual(phase, settlement["phase"]!.GetValue<string>());
             JsonObject error = settlement["error"]!.AsObject();
-            Assert.AreEqual("credit_or_ownership_unknown",
-                error["operationCode"]!.GetValue<string>());
-            Assert.IsNotNull(error["innerException"]);
-            JsonObject cause = error["innerException"]!.AsObject();
-            Assert.AreEqual("Microsoft.Data.Sqlite.SqliteException",
-                cause["type"]!.GetValue<string>());
-            Assert.AreEqual(19, cause["sqliteErrorCode"]!.GetValue<int>());
-            Assert.AreEqual(1811, cause["sqliteExtendedErrorCode"]!.GetValue<int>());
-            Assert.Contains("CreditLedger.RecordSdkUsage", cause["stackTrace"]!.GetValue<string>());
+            JsonObject[] publicFailures = Scenario.Data(coordinator.Status())["settlementFailures"]!
+                .AsArray().OfType<JsonObject>().ToArray();
+            JsonObject publicFailure = Assert.ContainsSingle(publicFailures.Where(item =>
+                item["phase"]!.GetValue<string>() == phase));
+            if (phase == "native-runtime")
+            {
+                Assert.IsNull(settlement["worker"]);
+                Assert.IsNull(settlement["reservationId"]);
+                Assert.IsNull(publicFailure["worker"]);
+                Assert.AreEqual("ownership_unresolved", error["operationCode"]!.GetValue<string>());
+                Assert.Contains("ControlledSdkHost.DisposeAsync",
+                    error["stackTrace"]!.GetValue<string>());
+            }
+            else
+            {
+                Assert.AreEqual("worker1", settlement["worker"]!.GetValue<string>());
+                Assert.AreEqual(peer.Id, settlement["reservationId"]!.GetValue<string>());
+                Assert.AreEqual(peer.Id, publicFailure["reservationId"]!.GetValue<string>());
+                JsonObject cause = error;
+                if (phase == "stop")
+                {
+                    Assert.AreEqual("credit_or_ownership_unknown",
+                        error["operationCode"]!.GetValue<string>());
+                    Assert.IsNotNull(error["innerException"]);
+                    cause = error["innerException"]!.AsObject();
+                }
+                Assert.AreEqual("Microsoft.Data.Sqlite.SqliteException",
+                    cause["type"]!.GetValue<string>());
+                Assert.AreEqual(19, cause["sqliteErrorCode"]!.GetValue<int>());
+                Assert.AreEqual(1811, cause["sqliteExtendedErrorCode"]!.GetValue<int>());
+                Assert.Contains("CreditLedger.RecordSdkUsage",
+                    cause["stackTrace"]!.GetValue<string>());
+            }
             foreach (JsonObject publicResult in new[] { failed, coordinator.Status() })
             {
                 Assert.DoesNotContain("\"stackTrace\"", publicResult.ToJsonString());
@@ -986,6 +1036,10 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         }
         finally
         {
+            foreach (ControlledSdkHost host in hosts)
+            {
+                host.Release.TrySetResult();
+            }
             await stop.CancelAsync();
             await execution.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
         }
