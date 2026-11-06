@@ -31,6 +31,37 @@ public sealed partial class CollaborationOperations
     {
         RequireWorker(recipient);
         using var connection = database.Open();
+        var now = database.Now.ToUnixTimeMilliseconds();
+        var candidates = """
+            e.recipient=$recipient AND s.event_id IS NULL AND e.attempts<5
+                AND (e.state='pending' OR
+                    (e.state IN ('failed','retrying') AND e.next_retry_at <= $now))
+                AND (e.kind!='board' OR EXISTS(
+                    SELECT 1 FROM board_history h JOIN board_recent r ON r.revision_id=h.id
+                    WHERE h.id=json_extract(e.payload,'$.gistId')
+                        AND (h.expires_at IS NULL OR h.expires_at >= $now)
+                        AND NOT EXISTS(SELECT 1 FROM shown_gists g
+                            WHERE g.gist_id=h.id AND g.recipient=e.recipient)))
+            """;
+        if ((long)Sql.Scalar(
+                connection,
+                $"""
+                SELECT NOT EXISTS(
+                    SELECT 1 FROM delivery_batches
+                    WHERE recipient=$recipient AND state='sending')
+                AND EXISTS(
+                    SELECT 1 FROM events e
+                    LEFT JOIN shown_notices s ON s.event_id=e.id AND s.recipient=e.recipient
+                    WHERE {candidates});
+                """,
+                null,
+                ("$recipient", recipient),
+                ("$now", now)
+            )! == 0)
+        {
+            return null;
+        }
+
         using var transaction = connection.BeginTransaction();
         if (
             Sql.Scalar(
@@ -47,18 +78,7 @@ public sealed partial class CollaborationOperations
             return null;
         }
 
-        var now = database.Now.ToUnixTimeMilliseconds();
-        var candidates = """
-            e.recipient=$recipient AND s.event_id IS NULL AND e.attempts<5
-                AND (e.state='pending' OR
-                    (e.state IN ('failed','retrying') AND e.next_retry_at <= $now))
-                AND (e.kind!='board' OR EXISTS(
-                    SELECT 1 FROM board_history h JOIN board_recent r ON r.revision_id=h.id
-                    WHERE h.id=json_extract(e.payload,'$.gistId')
-                        AND (h.expires_at IS NULL OR h.expires_at >= $now)
-                        AND NOT EXISTS(SELECT 1 FROM shown_gists g
-                            WHERE g.gist_id=h.id AND g.recipient=e.recipient)))
-            """;
+        now = database.Now.ToUnixTimeMilliseconds();
         var rows = Rows(
             connection,
             transaction,
@@ -346,7 +366,7 @@ public sealed partial class CollaborationOperations
     {
         RequireActor(actor);
         using var connection = database.Open();
-        using var transaction = connection.BeginTransaction();
+        using var transaction = connection.BeginTransaction(deferred: true);
         var result = SharedContext(connection, transaction, actor);
         transaction.Commit();
         return result;

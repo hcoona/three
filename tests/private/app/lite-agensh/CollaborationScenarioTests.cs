@@ -11,6 +11,94 @@ public sealed class CollaborationScenarioTests(TestContext testContext)
     private static readonly string[] ThirdPartyMention = ["worker2"];
 
     [TestMethod]
+    [Timeout(15000, CooperativeCancellation = true)]
+    public async Task SharedContextRemainsReadableWhileAnotherPeerHasUncommittedWork()
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        CollaborationOperations peers = new(database);
+        Scenario.Call(peers, "worker2", "message_send",
+            new { recipient = "team", body = "Committed peer evidence." });
+        using SqliteConnection writer = database.Open();
+        using SqliteTransaction pending = writer.BeginTransaction();
+        Sql.Execute(writer, "UPDATE tasks SET title='Uncommitted title' WHERE id=1;", pending);
+
+        JsonObject context = await Task.Run(
+            () => peers.ReadSharedContext("worker1"), testContext.CancellationToken);
+
+        Assert.AreEqual("Run goal", Assert.ContainsSingle(
+            context["tasks"]!.AsArray().OfType<JsonObject>())["title"]!.GetValue<string>());
+        Assert.AreEqual("Committed peer evidence.", Assert.ContainsSingle(
+            context["messages"]!.AsArray().OfType<JsonObject>())["body"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    [Timeout(15000, CooperativeCancellation = true)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task IdlePollDoesNotAcquireWriterAndLaterClaimsCommittedEvents(
+        bool alreadySending
+    )
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        CollaborationOperations peers = new(database);
+        DeliveryBatch? first = null;
+        if (alreadySending)
+        {
+            peers.QueueKickoff("worker1", "First committed event.");
+            first = peers.ClaimBatch("worker1");
+            Assert.IsNotNull(first);
+        }
+        using (SqliteConnection writer = database.Open())
+        using (SqliteTransaction pending = writer.BeginTransaction())
+        {
+            peers.EnqueueEvent(writer, pending, "worker1", "kickoff", "later-event",
+                """{"summary":"Work committed after the empty poll."}""");
+
+            DeliveryBatch? idle = await Task.Run(
+                () => peers.ClaimBatch("worker1"), testContext.CancellationToken);
+
+            Assert.IsNull(idle);
+            pending.Commit();
+        }
+        if (first is not null)
+        {
+            Assert.IsNull(peers.ClaimBatch("worker1"));
+            peers.CompleteBatch(first.Id);
+        }
+
+        DeliveryBatch? next = peers.ClaimBatch("worker1");
+        Assert.IsNotNull(next);
+        Assert.AreEqual(1, next.Attempt);
+        Assert.HasCount(1, next.EventIds);
+        Assert.Contains("Work committed after the empty poll.", next.Prompt);
+        Assert.IsNull(peers.ClaimBatch("worker1"));
+    }
+
+    [TestMethod]
+    [Timeout(15000, CooperativeCancellation = true)]
+    public async Task ConcurrentPollsClaimOneBatchWithoutDuplicatingItsEvents()
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        CollaborationOperations peers = new(database);
+        peers.QueueKickoff("worker1", "Exactly one claim.");
+
+        DeliveryBatch?[] polls = await Task.WhenAll(Enumerable.Range(0, 8).Select(
+            _ => Task.Run(() => peers.ClaimBatch("worker1"), testContext.CancellationToken)));
+
+        DeliveryBatch claimed = Assert.ContainsSingle(polls.OfType<DeliveryBatch>());
+        Assert.AreEqual(1, claimed.Attempt);
+        Assert.HasCount(1, claimed.EventIds);
+        peers.CompleteBatch(claimed.Id);
+        Assert.IsNull(peers.ClaimBatch("worker1"));
+        using SqliteConnection retained = database.Open();
+        Assert.AreEqual(1L,
+            Sql.Scalar(retained, "SELECT COUNT(*) FROM delivery_batches WHERE state='sent';"));
+    }
+
+    [TestMethod]
     public void PeersMultipleClaimsRemainAdvisoryAndExpireWithoutClosingTask()
     {
         using RunFixture fixture = new();
