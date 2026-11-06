@@ -165,6 +165,11 @@ _PEDAL_TYPES: Final = {
     PedalAction.LINE_CHANGE: "change",
     PedalAction.LINE_RELEASE: "stop",
 }
+_LINE_RANK: Final = {
+    PedalAction.LINE_START: 0,
+    PedalAction.LINE_CHANGE: 1,
+    PedalAction.LINE_RELEASE: 2,
+}
 _BEAT_UNITS: Final = {
     MetronomeUnit.QUARTER: ("quarter", False, Fraction(1)),
     MetronomeUnit.HALF: ("half", False, Fraction(2)),
@@ -172,9 +177,10 @@ _BEAT_UNITS: Final = {
     MetronomeUnit.DOTTED_QUARTER: ("quarter", True, Fraction(3, 2)),
     MetronomeUnit.DOTTED_HALF: ("half", True, Fraction(3)),
 }
-# The MusicXML number family of each numbered relation kind. Ties and
-# two-note tremolos carry no number.
+# The MusicXML number family of each numbered relation kind. Two-note
+# tremolos carry no number.
 _FAMILIES: Final = {
+    "tie": "tied",
     "slur": "slur",
     "ornament": "wavy-line",
     "hairpin": "wedge",
@@ -183,7 +189,7 @@ _FAMILIES: Final = {
     "dashes": "dashes",
     "arpeggio": "arpeggiate",
 }
-_UNNUMBERED: Final = frozenset({"tie", "tremolo"})
+_UNNUMBERED: Final = frozenset({"tremolo"})
 
 
 class ReviewRequiredError(Exception):
@@ -375,8 +381,18 @@ def _pedal_rank(placed: Placed) -> int:
     )
 
 
+def _line_rank(placed: Placed) -> int:
+    event = placed.event
+    assert isinstance(event, PedalLine)  # noqa: S101
+    return _LINE_RANK[event.action]
+
+
 def _pedal_order(events: Sequence[Placed]) -> list[Placed]:
-    """Put a pedal-up sign before a pedal-down sign at one onset."""
+    """Order pedal events at one onset.
+
+    A pedal-up sign goes before a pedal-down sign, and one line's start,
+    changes and release go in that order. Other events keep their slots.
+    """
     ordered = list(events)
     start = 0
     while start < len(ordered):
@@ -391,6 +407,15 @@ def _pedal_order(events: Sequence[Placed]) -> list[Placed]:
         signs = sorted((ordered[i] for i in slots), key=_pedal_rank)
         for slot, placed in zip(slots, signs, strict=True):
             ordered[slot] = placed
+        lines: dict[int, list[int]] = {}
+        for i in range(start, end):
+            event = ordered[i].event
+            if isinstance(event, PedalLine):
+                lines.setdefault(event.label, []).append(i)
+        for indices in lines.values():
+            actions = sorted((ordered[i] for i in indices), key=_line_rank)
+            for slot, placed in zip(indices, actions, strict=True):
+                ordered[slot] = placed
         start = max(end, start + 1)
     return ordered
 
@@ -846,9 +871,18 @@ class _Converter:
         return None
 
     def _pitch_notations(self, pitch: Pitch) -> list[Element]:
-        notations = [
-            Element("tied", {"type": kind}) for kind in _tie_types(pitch)
-        ]
+        notations: list[Element] = []
+        if pitch.tie_in:
+            notations.append(Element("tied", {"type": "stop"}))
+        for label, kind in (
+            (pitch.tie_end, "stop"),
+            (pitch.tie_start, "start"),
+        ):
+            if label is not None:
+                number = str(self.numbers[label])
+                notations.append(
+                    Element("tied", {"type": kind, "number": number}),
+                )
         if pitch.fingering:
             technical = Element("technical")
             for digit in pitch.fingering:

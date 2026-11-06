@@ -323,6 +323,22 @@ def test_ties_slurs_and_tie_in_pairing() -> None:
     assert [t.get("type") for t in tie_in.findall("tie")] == ["stop"]
 
 
+def test_crossing_unison_ties_have_numbers() -> None:
+    """Pair same-pitch ties that cross voices by their tied numbers."""
+    root = convert(
+        "m 1\n1.1: C5{tie@r1:start}/4 C5{tie@r2:end}/4\n"
+        "1.2: C5{tie@r2:start}/4 C5{tie@r1:end}/4\n2.1: C3/2\n",
+    )
+    start1, end2, start2, end1 = notes_of(measures(root)[0])[:4]
+
+    def number(note: ET.Element) -> str | None:
+        return one(note, "notations/tied").get("number")
+
+    assert number(start1) == number(end1)
+    assert number(start2) == number(end2)
+    assert number(start1) != number(start2)
+
+
 def test_nested_tuplets() -> None:
     """Write time modifications and nested tuplet starts and stops."""
     root = convert("m 1\n1.1: 3:2{C5/4 D5/4 3:2{E5/8 F5/8 G5/8}}\n2.1: C3/2\n")
@@ -528,6 +544,18 @@ def test_pedal_change_around_grace_note() -> None:
     )
     signs = [p.get("type") for p in measures(root)[0].iter("pedal")]
     assert signs == ["stop", "start"]
+
+
+def test_pedal_line_actions_at_one_onset() -> None:
+    """Write one line's start, changes and release in that order."""
+    root = convert(
+        "m 1\n1.1: C5/2\n"
+        "2.1: <ped(>[rel=pedal@r1:line-change] <ped(>[rel=pedal@r1:line-start]"
+        " C3/4 <ped)>[rel=pedal@r1:line-release]"
+        " <ped(>[rel=pedal@r1:line-change] D3/4\n",
+    )
+    actions = [p.get("type") for p in measures(root)[0].iter("pedal")]
+    assert actions == ["start", "change", "change", "stop"]
 
 
 def test_repeats_and_endings() -> None:
