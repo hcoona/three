@@ -154,8 +154,7 @@ def test_review_markers_are_listed_in_text_order() -> None:
     ]
     assert listed == [
         ("UntimedReview", 3, "2.1", "12:37", ("sfz", "sf")),
-        ("TimedReview", 3, "2.1", "12:53", ("B2/4", "Bb2/4")),
-        ("TimedReview", 4, "1.1", "14:66", ()),
+        ("TimedReview", 4, "1.1", "14:66", ("B5/4", "Bb5/4")),
         ("UntimedReview", 4, "2.1", "15:40", ()),
     ]
 

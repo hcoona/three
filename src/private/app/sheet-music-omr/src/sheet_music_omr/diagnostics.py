@@ -62,6 +62,33 @@ class Diagnostic:
         return f"{path}:{self.location}: {self.code}: {self.message}"
 
 
+_DOCUMENT_START = Location(1, 1)
+
+
+def semantic(rule: str, message: str, location: Location | None) -> Diagnostic:
+    """Return a semantic diagnostic, at the document start without location."""
+    return Diagnostic(
+        RuleClass.SEMANTIC,
+        rule,
+        message,
+        location or _DOCUMENT_START,
+    )
+
+
+def unsupported(
+    rule: str,
+    message: str,
+    location: Location | None,
+) -> Diagnostic:
+    """Return an unsupported-content diagnostic."""
+    return Diagnostic(
+        RuleClass.UNSUPPORTED,
+        rule,
+        message,
+        location or _DOCUMENT_START,
+    )
+
+
 class TextScoreError(Exception):
     """Raised when a document violates a rule of the format."""
 
