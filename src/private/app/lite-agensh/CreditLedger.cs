@@ -378,6 +378,117 @@ public sealed class CreditLedger
         transaction.Commit();
     }
 
+    internal JsonObject CancelBeforeDispatch(
+        CreditReservation expected, JsonObject proof, string inspection
+    )
+    {
+        using SqliteConnection connection = Open();
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        CreditReservation row = Read(connection, transaction)
+            .Single(item => item.Id == expected.Id);
+        if (
+            row.RunId != expected.RunId || row.Worker != expected.Worker
+            || row.SessionId != expected.SessionId || row.UsagePath != expected.UsagePath
+            || row.Allowance != expected.Allowance || row.Shared != expected.Shared
+            || row.Actual is not null || row.Overshoot != 0
+        )
+        {
+            throw new OperationException("credit_unknown", "Cancellation association changed.");
+        }
+
+        using (SqliteCommand command = Sql.Command(
+            connection,
+            """
+            SELECT u.session_id,u.reported_nano_aiu,u.status,u.dispatch_count,
+                u.reported_requests,o.pid,o.start_ticks,
+                (SELECT COUNT(*) FROM credit_sdk_usage WHERE session_id=u.session_id),
+                (SELECT COUNT(*) FROM credit_reports WHERE reservation_id=u.reservation_id)
+            FROM credit_sdk_usage u JOIN credit_sdk_owners o
+                ON o.reservation_id=u.reservation_id WHERE u.reservation_id=$id;
+            """,
+            transaction, ("$id", row.Id)
+        ))
+        using (SqliteDataReader reader = command.ExecuteReader())
+        {
+            if (
+                !reader.Read() || reader.GetString(0) != row.SessionId
+                || reader.IsDBNull(1) || !NoDispatchCancellation.IsZero(reader.GetString(1))
+                || (!reader.IsDBNull(2) && reader.GetString(2) != "complete")
+                || reader.GetString(1) !=
+                    proof["diagnostic"]!["reportedNanoAiu"]!.GetValue<string>()
+                || (reader.IsDBNull(2) ? null : reader.GetString(2)) !=
+                    proof["diagnostic"]!["aiCreditsStatus"]?.GetValue<string>()
+                || reader.GetInt64(3) != 0 || reader.IsDBNull(4) || reader.GetInt64(4) != 0
+                || reader.GetInt32(5) != proof["owner"]!["pid"]!.GetValue<int>()
+                || reader.GetInt64(6) != proof["owner"]!["startTicks"]!.GetValue<long>()
+                || reader.GetInt64(7) != 1 || reader.GetInt64(8) != 0
+            )
+            {
+                throw new OperationException(
+                    "credit_unknown", "Live SDK usage or ownership contradicts cancellation."
+                );
+            }
+        }
+
+        Sql.Execute(connection,
+            """
+            CREATE TABLE IF NOT EXISTS credit_cancellations(
+                reservation_id TEXT PRIMARY KEY, reason TEXT NOT NULL, proof TEXT NOT NULL,
+                inspection TEXT NOT NULL, application_build TEXT NOT NULL, created_at TEXT NOT NULL,
+                FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
+            """, transaction);
+        string? existing = Sql.Scalar(connection,
+            "SELECT proof FROM credit_cancellations WHERE reservation_id=$id;",
+            transaction, ("$id", row.Id)) as string;
+        if (existing is not null)
+        {
+            if (
+                row.State != "released" || row.GrantOpen
+                || !JsonNode.DeepEquals(JsonNode.Parse(existing), proof)
+                || Sql.Scalar(connection,
+                    "SELECT reason FROM credit_cancellations WHERE reservation_id=$id;",
+                    transaction, ("$id", row.Id)) as string != "verified-before-first-dispatch"
+            )
+            {
+                throw new OperationException(
+                    "credit_unknown", "Existing cancellation has contradictory retained evidence."
+                );
+            }
+        }
+        else
+        {
+            if (row.State is not ("active" or "uncertain"))
+            {
+                throw new OperationException(
+                    "credit_unknown", "Only an opened, unsettled session can be cancelled."
+                );
+            }
+            Sql.Execute(connection,
+                """
+                INSERT INTO credit_cancellations(
+                    reservation_id,reason,proof,inspection,application_build,created_at)
+                VALUES($id,'verified-before-first-dispatch',$proof,$inspection,$build,$time);
+                UPDATE credit_reservations SET state='released',grant_open=0,updated_at=$time
+                    WHERE id=$id;
+                """, transaction,
+                ("$id", row.Id), ("$proof", proof.ToJsonString()),
+                ("$inspection", inspection),
+                ("$build", typeof(CreditLedger).Assembly.ManifestModule.ModuleVersionId.ToString()),
+                ("$time", DateTimeOffset.UtcNow.ToString("O")));
+        }
+        transaction.Commit();
+        return new()
+        {
+            ["classification"] = "verified-before-first-dispatch",
+            ["reservationId"] = row.Id,
+            ["idempotent"] = existing is not null,
+            ["measuredActual"] = null,
+            ["reportedNanoAiu"] = proof["diagnostic"]!["reportedNanoAiu"]!.DeepClone(),
+            ["aiCreditsStatus"] = proof["diagnostic"]!["aiCreditsStatus"]?.DeepClone(),
+            ["proof"] = proof.DeepClone(),
+        };
+    }
+
     public CreditReservation Reserve(
         string runId,
         string worker,
@@ -797,12 +908,55 @@ public sealed class CreditLedger
         return Read(connection, null).Where(row => runId is null || row.RunId == runId).ToArray();
     }
 
+    internal JsonObject ReadSdkOwner(string id)
+    {
+        using SqliteConnection connection = Open();
+        using SqliteCommand command = Sql.Command(connection,
+            "SELECT pid,start_ticks FROM credit_sdk_owners WHERE reservation_id=$id;",
+            null, ("$id", id));
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            throw new OperationException("credit_unknown", "The SDK owner identity is missing.");
+        }
+        return new()
+        {
+            ["pid"] = reader.GetInt32(0),
+            ["startTicks"] = reader.GetInt64(1),
+        };
+    }
+
     public JsonObject Status(string runId, decimal runAllowance)
     {
         IReadOnlyList<CreditReservation> rows = Reservations();
         CreditReservation[] run = [.. rows.Where(row => row.RunId == runId)];
         using SqliteConnection connection = Open();
         JsonArray reported = [];
+        JsonArray cancellations = [];
+        if (Sql.Scalar(connection,
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='credit_cancellations';")
+            is string)
+        {
+            using SqliteCommand command = Sql.Command(connection,
+                """
+                SELECT c.reservation_id,c.reason,c.inspection,c.application_build,c.created_at
+                FROM credit_cancellations c JOIN credit_reservations r ON r.id=c.reservation_id
+                WHERE r.run_id=$run ORDER BY c.reservation_id;
+                """, null, ("$run", runId));
+            using SqliteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                cancellations.Add(new JsonObject
+                {
+                    ["reservationId"] = reader.GetString(0),
+                    ["classification"] = reader.GetString(1),
+                    ["inspection"] = reader.GetString(2),
+                    ["applicationBuild"] = reader.GetString(3),
+                    ["createdAt"] = reader.GetString(4),
+                    ["measuredActual"] = null,
+                });
+            }
+        }
         using (
             SqliteCommand command = Sql.Command(
                 connection,
@@ -849,6 +1003,7 @@ public sealed class CreditLedger
                 ).Sum(row => Math.Max(0, row.Allowance - (row.Actual ?? 0))),
                 uncertain = HasUnknown(connection, null),
                 reported,
+                cancellations,
                 reservations = run,
             }
         );

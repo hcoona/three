@@ -37,9 +37,10 @@ further paid work; repeated runs do not reset it.
 
 The [credit contract](docs/implementation-contracts.md#verified-pre-dispatch-cancellation)
 specifies a distinct verified cancellation before first dispatch, not measured
-zero billing. Its implementation and accounting-only `reconcile` command require
-separate acceptance; they are not yet available in the current application.
-The earlier unknown reservations are not automatically released by this design.
+zero billing. The application implements it with an accounting-only `reconcile`
+command and controlled rejection, preservation and idempotence scenarios.
+Earlier unknown reservations are not automatically released: each retained case
+requires the owning protocol's authorization and fresh live proof checks.
 
 ## User and primary journey
 
@@ -125,6 +126,21 @@ fresh sessions with durable summaries. After a coordinator crash, `reconnect`
 resolves owned children and attempts the exact saved sessions; it does not
 silently replace unknown usage. `finalize` retains local delivery/evidence;
 `cleanup` is a separate explicit operation.
+
+For an authorized retained reservation, use the targeted offline accounting path:
+
+```powershell
+dotnet $app reconcile --state C:\Work\LiteAgensh\run --reservation RESERVATION_ID
+```
+
+Legacy state without a dispatch-contract marker additionally requires
+`--evidence C:\Work\LiteAgensh\owned-proof.json`. Only the supported source lineage
+and matching referenced observations qualify. The command holds run ownership,
+checks the exact old process identities and atomically rechecks the live ledger.
+It never starts a native session, queries accounts, runs checks, resumes work or
+exports a report. A successful cancellation preserves absent billing completeness
+and unestablished measured actual usage; status lists it separately from measured
+reconciliation. Missing or contradictory proof leaves uncertainty in place.
 
 Run the controlled suite without native model calls:
 

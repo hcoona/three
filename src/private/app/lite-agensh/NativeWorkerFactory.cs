@@ -67,7 +67,10 @@ internal sealed class NativeWorkerFactory(
     {
         lock (lifecycle)
         {
-            NativeWorker worker = new(database, GetHost(), credits, reservation, calibration);
+            NativeWorker worker = new(
+                database, GetHost(), credits, reservation, calibration,
+                createHost is null ? "native-sdk" : "controlled-native-dependency"
+            );
             workers.Add((worker, reservation));
             return worker;
         }

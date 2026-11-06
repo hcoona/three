@@ -16,6 +16,7 @@ public sealed class Coordinator
     private readonly CreditLedger credits;
     private readonly INativeWorkerFactory nativeWorkers;
     private readonly string nativeEvidenceKind;
+    private readonly string ledgerBinding;
 
     private string PreflightReceiptKey =>
         nativeEvidenceKind == "native-sdk"
@@ -54,7 +55,7 @@ public sealed class Coordinator
             : "controlled-native-dependency";
         using SqliteConnection connection = database.Open();
         using SqliteTransaction transaction = connection.BeginTransaction();
-        string ledgerBinding = Json.SerializePayload(
+        ledgerBinding = Json.SerializePayload(
                 new
                 {
                     path = Path.GetFullPath(database.Configuration.CampaignLedgerPath),
@@ -113,6 +114,40 @@ public sealed class Coordinator
             ? new NativeWorkerFactory(database, processes, credits)
             : nativeWorkerFactory(database, processes, credits)
                 ?? throw new ArgumentException("The native worker factory must not be null.");
+    }
+
+    public JsonObject Reconcile(string reservationId, string? evidencePath = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reservationId);
+        using FileStream? ownership = TryOwn();
+        if (ownership is null)
+        {
+            return Failure("conflict", "Another coordinator owns this run.");
+        }
+        try
+        {
+            if (database.ReadMetadata("native:ledger_binding") != ledgerBinding)
+            {
+                throw new OperationException(
+                    "credit_unknown", "The retained campaign binding changed."
+                );
+            }
+            JsonObject result = NoDispatchCancellation.Cancel(
+                database, credits, reservationId, retained: true, evidencePath
+            );
+            result["accounting"] = credits.Status(
+                database.RunId, database.Configuration.RunAiCreditAllowance
+            );
+            JsonObject response = Success(result,
+                "Local authorization cancelled; provider-complete zero usage is not established.");
+            response["nativeEvidenceKind"] = result["proof"]!["source"]!["evidenceKind"]!
+                .DeepClone();
+            return response;
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+            return Failure(exception);
+        }
     }
 
     public async Task<JsonObject> InitializeAsync(CancellationToken cancellationToken = default)

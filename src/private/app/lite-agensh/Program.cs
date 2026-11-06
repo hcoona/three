@@ -16,6 +16,8 @@ public static class Program
                     + "init --config CONFIG_FILE (.yaml/.yml plus Markdown goal, or JSON)\n"
                     + "run|pause|resume|reconnect|status|preflight|calibrate|finalize|cleanup "
                     + "--state ABSOLUTE_STATE_DIRECTORY\n"
+                    + "reconcile --state ABSOLUTE_STATE_DIRECTORY --reservation ID "
+                    + "[--evidence OWNED_LEGACY_PROOF]\n"
                     + "tool --state ABSOLUTE_STATE_DIRECTORY --name TOOL --json JSON_OBJECT\n"
                     + "mcp --state ABSOLUTE_STATE_DIRECTORY --actor MEMBER\n"
                     + "\n"
@@ -23,6 +25,8 @@ public static class Program
                     + "run/resume/reconnect may spend native Copilot credits; "
                     + "verified limits/usage are required.\n"
                     + "preflight performs non-model native contract checks only.\n"
+                    + "reconcile performs targeted offline accounting only; "
+                    + "it never opens a native session or establishes provider-zero billing.\n"
                     + "calibrate is PAID: one tool-disabled READY turn, a 30-credit native "
                     + "soft cap and a two-minute turn deadline. Unknown usage blocks it.\n"
                     + "pause/finalize retain work. "
@@ -67,6 +71,9 @@ public static class Program
                     {
                         "mcp" => ["--state", "--actor"],
                         "tool" => ["--state", "--name", "--json"],
+                        "reconcile" => options.ContainsKey("--evidence")
+                            ? ["--state", "--reservation", "--evidence"]
+                            : ["--state", "--reservation"],
                         "run"
                         or "resume"
                         or "reconnect"
@@ -82,6 +89,16 @@ public static class Program
                     }
                 );
                 RunDatabase database = new(options["--state"]);
+                if (
+                    args[0] == "reconcile"
+                    && (database.ReadMetadata("native:ledger_binding") is null
+                        || !File.Exists(database.Configuration.CampaignLedgerPath))
+                )
+                {
+                    throw new OperationException(
+                        "credit_unknown", "Retained recovery requires its original campaign ledger."
+                    );
+                }
                 if (isMcp)
                 {
                     await McpHost
@@ -98,6 +115,9 @@ public static class Program
                         .RunAsync(args[0], cancellation.Token)
                         .ConfigureAwait(false),
                     "status" => coordinator.Status(),
+                    "reconcile" => coordinator.Reconcile(
+                        options["--reservation"], options.GetValueOrDefault("--evidence")
+                    ),
                     "pause" => coordinator.RequestControl("pause"),
                     "preflight" => await coordinator
                         .PreflightAsync(cancellation.Token)
