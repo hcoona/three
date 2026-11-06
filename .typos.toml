@@ -60,6 +60,7 @@ hexo = 'hexo'
 Asciidoc = 'Asciidoc'
 Asciidoctor = 'Asciidoctor'
 sme = 'sme'
+tuplets = 'tuplets'         # Music notation term (plural of tuplet)
 
 [type.gitignore]
 extend-glob = ['.gitignore']
