@@ -306,9 +306,9 @@ groups without encoding identifiers. The following are not compared:
   slurs, tuplet groups, wedges and other spanners. A beam's `number` is its
   level, which musicdiff and the beam checks compare;
 - raw MusicXML `voice` numbers. The order of a staff's voices is content,
-  because the format gives voice numbers effects that depend on that order,
+  because the format gives voice positions effects that depend on that order,
   and the voice-order check below compares it. Renumbering that keeps the
-  order is not a difference;
+  canonical voice positions is not a difference;
 - `divisions` values, since durations are compared in quarter lengths;
 - the `identification` element, including software, encoding dates and
   `supports`, and other metadata such as work title and creator, since the
@@ -455,14 +455,16 @@ of its voice at that onset.
   measure, onset, pitches and staff. Matching is as for fingering.
 - **Voice order** (`voice`): in each measure, a voice's staff is defined as
   for the cross-staff check. The voices of a staff are ranked by their
-  MusicXML `voice` number, and a voice is identified by its content: the
-  sequence of onsets, durations, pitches and attached symbols of its notes and
-  rests. Each voice
-  of `Y` in each measure is one element. It is identical when `T(Y)` has a
-  voice of the same content on the same staff in that measure with the same
-  rank. A voice of `Y` whose content no voice of `T(Y)` on that staff in that
-  measure matches is not a voice-order element: musicdiff and the pairing
-  rules score its differences. The voice-order check adds no extra elements.
+  canonical positions, as defined by the format's
+  [voice-order rules](text-format.md#voices-and-staves); MusicXML `voice`
+  numbers do not establish those positions. A voice is identified by its
+  content: the sequence of onsets, durations, pitches and attached symbols of
+  its notes and rests. Each voice of `Y` in each measure is one element. It is
+  identical when `T(Y)` has a voice of the same content on the same staff in
+  that measure at the same canonical position. A voice of `Y` whose content no
+  voice of `T(Y)` on that staff in that measure matches is not a voice-order
+  element: musicdiff and the pairing rules score its differences. The
+  voice-order check adds no extra elements.
 - **Heading** (`heading`): in the instrument, credits are the only carrier of
   heading text, and a `words` direction is always `text`, never `heading`.
   Whether the converters agree with that is what the round trip tests. Each
@@ -577,11 +579,13 @@ with their provenance:
   one pair that differs only in a rest's staff position and one that differs
   only in the placement of a trill mark;
 - pairs that differ only in generated identifiers or `divisions`, a pair whose
-  voices are renumbered without a change of order (for example staff 2 voices
-  5 and 6 against 1 and 2), and identical pairs;
-- a pair in which the two voices of one staff in one measure swap their
-  numbers, so that their order changes, and a pair in which two same-rhythm
-  unison voices of one staff with different articulations swap their numbers;
+  voices are renumbered without a change of canonical positions (for example
+  staff 2 voices 5 and 6 against 1 and 2, including a change in their numeric
+  rank), and identical pairs;
+- a pair in which the two voices of one staff in one measure exchange their
+  canonical positions while each retains its content, and a pair in which two
+  same-rhythm unison voices of one staff with different articulations exchange
+  their canonical positions;
 - one pair that differs only in the end note of an extended trill, one in
   which an extended trill moves between simultaneous unison notes of different
   written durations in two voices of one staff that both carry a trill mark,
@@ -646,7 +650,7 @@ The instrument passes when it reports:
 - exactly one `layout` difference, exactly one non-identical or extra layout
   element and no content difference for each layout pair;
 - exactly two non-identical `voice` elements and no other difference for each
-  voice-swap pair, since both voices change rank;
+  canonical-position-swap pair, since both voices change position;
 - exactly one non-identical and one extra `ornament` element for the extended
   trill pair and for the extended-trill move pair, and exactly one
   non-identical and one extra `text` element for
