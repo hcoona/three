@@ -24,6 +24,7 @@ public static class Program
                     + "init preserves an existing checkout and does not start models.\n"
                     + "run/resume/reconnect may spend native Copilot credits; "
                     + "verified limits/usage are required.\n"
+                    + "reconnect also settles ended unresolved runs without worker dispatch.\n"
                     + "preflight performs non-model native contract checks only.\n"
                     + "reconcile performs targeted offline accounting only; "
                     + "it never opens a native session or establishes provider-zero billing.\n"
@@ -90,7 +91,7 @@ public static class Program
                 );
                 RunDatabase database = new(options["--state"]);
                 if (
-                    args[0] == "reconcile"
+                    args[0] is "reconcile" or "reconnect"
                     && (database.ReadMetadata("native:ledger_binding") is null
                         || !File.Exists(database.Configuration.CampaignLedgerPath))
                 )

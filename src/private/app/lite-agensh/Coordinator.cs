@@ -498,9 +498,16 @@ public sealed class Coordinator
             return Failure("conflict", "Another coordinator owns this run.");
         }
 
+        bool settlementOnly = false;
         try
         {
-            ValidateMode(mode);
+            settlementOnly = ValidateMode(mode);
+            if (settlementOnly)
+            {
+                await SettleRecoveryAsync(cancellationToken, recoverNativeUsage: true,
+                    settlementOnly: true).ConfigureAwait(false);
+                return ClosedRecoveryResult();
+            }
             if (mode == "reconnect")
             {
                 foreach (string worker in database.Configuration.WorkerIds)
@@ -522,9 +529,10 @@ public sealed class Coordinator
                 );
             }
         }
-        catch (Exception exception) when (IsExpected(exception))
+        catch (Exception exception) when (IsExpected(exception)
+            || (settlementOnly && exception is OperationCanceledException))
         {
-            return Failure(exception);
+            return settlementOnly ? ClosedRecoveryResult(exception) : Failure(exception);
         }
 
         List<INativeWorker> workers = [];
@@ -1471,12 +1479,34 @@ public sealed class Coordinator
         return probe is null;
     }
 
+    private JsonObject ClosedRecoveryResult(Exception? failure = null)
+    {
+        JsonObject result = failure is null ? Success()
+            : failure is OperationCanceledException
+                ? Failure("cancelled",
+                    "Usage settlement was cancelled; retained uncertainty remains.")
+                : Failure(failure);
+        result["data"] = SerializePayload(new
+        {
+            operation = "usage-settlement",
+            runId = database.RunId,
+            lifecycle = database.ReadMetadata("lifecycle"),
+            runUncertain = credits.Reservations(database.RunId)
+                .Any(row => row.State is "reserved" or "started" or "active" or "uncertain"),
+            accounting = credits.Status(database.RunId,
+                database.Configuration.RunAiCreditAllowance),
+        });
+        return result;
+    }
+
     private async Task SettleRecoveryAsync(
         CancellationToken cancellationToken,
         bool allowUnknownUsage = false,
-        bool recoverNativeUsage = false
+        bool recoverNativeUsage = false,
+        bool settlementOnly = false
     )
     {
+        CreditReservation? recovering = null;
         try
         {
             await processes.ResolveSurvivorsAsync(cancellationToken).ConfigureAwait(false);
@@ -1489,7 +1519,8 @@ public sealed class Coordinator
                 );
             }
 
-            if (!string.IsNullOrEmpty(database.ReadMetadata("lifecycle:completion_ambiguity")))
+            if (!settlementOnly
+                && !string.IsNullOrEmpty(database.ReadMetadata("lifecycle:completion_ambiguity")))
             {
                 throw new OperationException(
                     "delivery_unresolved",
@@ -1505,6 +1536,8 @@ public sealed class Coordinator
 
             foreach (CreditReservation reservation in credits.Reservations(database.RunId))
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                recovering = reservation;
                 if (reservation.State == "reserved")
                 {
                     credits.ReleaseUnstarted(reservation.Id);
@@ -1533,9 +1566,27 @@ public sealed class Coordinator
                 }
             }
         }
-        catch
+        catch (Exception exception)
         {
-            database.WriteMetadata("lifecycle", "unresolved");
+            if (settlementOnly)
+            {
+                JsonArray details = [];
+                AddSettlementDetails(details, recovering?.Worker, recovering?.Id,
+                    "usage-recovery", exception);
+                try
+                {
+                    database.WriteMetadata($"native:recovery_failure_details:{Guid.NewGuid():N}",
+                        details.ToJsonString());
+                }
+                catch (Exception diagnosticFailure) when (IsExpected(diagnosticFailure))
+                {
+                    // Retention failure must not replace the recovery's original cause.
+                }
+            }
+            else
+            {
+                database.WriteMetadata("lifecycle", "unresolved");
+            }
             throw;
         }
     }
@@ -1689,7 +1740,7 @@ public sealed class Coordinator
     private string EvidencePath(string worker) =>
         Path.Combine(database.StatePath, "native", $"{worker}-{Guid.NewGuid():N}.sdk-evidence");
 
-    private void ValidateMode(string mode)
+    private bool ValidateMode(string mode)
     {
         using SqliteConnection connection = database.Open();
         long count = Convert.ToInt64(
@@ -1732,12 +1783,17 @@ public sealed class Coordinator
                 is null
         )
         {
+            if (database.ReadMetadata("lifecycle") == "unresolved")
+            {
+                return true;
+            }
             throw new OperationException(
                 "conflict",
                 "Crash reconnect requires an interrupted, unfinished segment; use "
                     + "fresh-session resume for a quiescent run."
             );
         }
+        return false;
     }
 
     private (long Segment, DateTimeOffset Deadline) BeginSegment(string mode)
