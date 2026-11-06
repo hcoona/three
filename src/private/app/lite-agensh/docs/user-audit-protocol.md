@@ -229,8 +229,9 @@ failure. Retain the missing allocation stack/peak as a limitation when absent.
    classifications, checks actually run, missing coverage, unresolved
    disagreements and owner decisions, and a bounded semantic conclusion.
    Verify original-source preservation, no active coordinator or owned
-   children, complete native usage for actual calls and either measured
-   reconciliation or the separately verified cancellation for each reservation.
+   children, complete native usage for actual calls and, for each reservation,
+   measured reconciliation, existing unstarted release or the separately
+   verified cancellation.
    Session closure
    alone is not shared-host settlement: stage final readings, settle the common
    runtime once, and only then finalize their accounting or eligible cancellation. Retain product
