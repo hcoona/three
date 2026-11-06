@@ -469,8 +469,9 @@ closed rather than silently reverting to fixed shares or replacing sessions.
 
 Save the current native accounting-window baseline on create/exact resume.
 Subtract it when deriving a cap from cumulative session spend; changing a cap
-does not authorize resetting that baseline. A completed SDK turn with complete,
-nonregressing cumulative metrics may close its grant and return unused backing.
+does not authorize resetting that baseline. A completed SDK user turn may close
+its grant only after known native background compaction has settled and a fresh,
+complete, nonregressing cumulative reading is established as specified below.
 A cap still present in an idle native session does not authorize another send:
 the host must obtain and verify a newly backed window first. A failed or
 canceled send cannot release backing merely because its local await ended.
@@ -505,6 +506,18 @@ a subtotal as final or releasing backing for a dispatched session. `Partial`, `U
 absent status cannot establish zero cost. Retain the native subtotal and its
 status separately from the conservative reserved charge.
 
+`Complete` covers the amounts for observed calls; it does not assert that a
+background compaction call has finished. Observe the exact session's compaction
+start/terminal events without replacing native compaction. Retain backing while
+that work is pending. After its terminal notification has been processed,
+request fresh typed metadata and cumulative metrics under a session-local
+settlement fence. A work-state change during the read invalidates it. A
+notification, a local idle flag, stable repeated numbers or a fixed delay alone
+cannot establish complete final usage. Missing, failed or contradictory
+settlement evidence must not release backing or finalize an earlier reading.
+Use bounded waits governed by the existing operation/cancellation and settlement
+deadlines; timeout leaves uncertainty rather than inventing a final subtotal.
+
 Live `assistant.usage` events can provide prompt stop signals but are ephemeral.
 Durable usage checkpoints and cumulative snapshots support recovery; a numeric
 checkpoint alone is not completeness proof. Charge cumulative deltas from a
@@ -525,9 +538,12 @@ the [user-audit protocol](user-audit-protocol.md#continuing-accounting-and-finit
 it preserves historical unknowns rather than reconciling or releasing them.
 It is not a general exception for uncertainty within the active campaign.
 
-Cancel through each session's `AbortAsync`, collect complete metrics when
-available, quiesce its handlers and close that session without permanent
-deletion. Preserve its backing while the shared operation is still settling.
+Cancel through each session's `AbortAsync`, settle known background compaction,
+then collect fresh complete metrics when available. Fence its handlers and
+close that session without permanent deletion. Preserve its backing while the
+shared operation is still settling. If work changes after a reading is staged,
+refresh it while the owned session remains readable or retain uncertainty;
+closing the common host cannot repair a stale reading.
 After all worker stop attempts, close the shared client and settle the
 host-owned runtime once, even when a peer stop failed. Only then finalize
 the staged complete readings; do not release reservations early because one
@@ -540,6 +556,33 @@ session and dispatched nothing, with an unchanged persisted complete baseline.
 That case may settle its old reservation without tearing down healthy peers.
 Non-dispatch usage recovery uses a separately bounded temporary runtime and
 returns its reading only after that runtime settles.
+
+A changed cumulative value outside an open shared window remains a live
+admission failure. The existing exact-session non-dispatch recovery may instead
+book a settled final increase for an uncertain, dispatched reservation only
+when all of these conditions hold:
+
+- The run is exclusively owned and old owned process identities are resolved.
+  Reservation/run/worker/session and saved SDK associations match; exact load
+  keeps pending-work continuation and transcript recovery disabled.
+- Actual session identity, working directory, requested model and applicable
+  finite limit are verified. Known background work settles before the fresh
+  complete cumulative reading; callbacks, session and temporary runtime then
+  settle without invalidating it.
+- The final reading is finite, nonnegative and nonregressing in both cumulative
+  spend and reported requests. It does not revise an already reconciled total.
+  Partial, unavailable, unassociated or ambiguous evidence remains unresolved.
+- The ledger receives evidence from that completed recovery boundary, not a
+  caller's finalization flag alone. Preserve the raw reading and atomically
+  record the cumulative delta once, including any soft-cap overshoot.
+- No new grant, dispatch, allowance, baseline reset or cancellation is created.
+  Other unknown reservations and all paid-admission/preflight/calibration
+  gates remain effective. Repeating an established disposition is idempotent.
+
+This is the existing reconnect recovery's measured-usage rule, not a broader
+meaning for the offline `reconcile` cancellation command. It adds no public
+command, permits no manual ledger edit and does not waive build or receipt
+identity checks for subsequent paid work.
 
 Local task cancellation or silence does not settle an operation.
 If dispatched usage, ownership or limit applicability is unknown, retain the

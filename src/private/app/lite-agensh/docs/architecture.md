@@ -166,10 +166,21 @@ Use renewable grants of at most 100 credits, and at least the existing
 30-credit application admission minimum. This bounds concurrent authorization
 without making 100 a worker's lifetime budget. Persist the grant before applying
 the native cap. While a call is in flight, its unused authorization remains
-committed; never lend it to another worker. A completed SDK turn with complete
-cumulative usage closes that grant and returns its unused backing. Every
-subsequent send needs fresh backing and a verified finite cap. Trust the SDK's
-documented completed-turn boundary; silence or canceled awaits are not closure.
+committed; never lend it to another worker. A completed SDK user turn is not
+proof that native background compaction has ended. Retain backing until that
+work settles and a fresh complete cumulative reading can close the grant.
+Every subsequent send needs fresh backing and a verified finite cap. Native
+compaction remains the runtime's responsibility; do not disable or replace it
+to make application accounting appear settled.
+
+The session adapter observes compaction lifecycle and fences its settlement
+state across metadata/usage reads. A completion notification permits a fresh
+query; neither the notification alone nor an old complete reading establishes
+settled spend. Invalidate a reading if native work changes during its capture
+or subsequent final staging. Wait within existing operation/settlement bounds,
+not an arbitrary sleep or an unbounded retry. Missing or contradictory
+settlement evidence retains backing and uncertainty; an ordinary idle session
+must not keep unused backing after verified settlement.
 
 Use the supported mutable session-limit and exhausted-limit response APIs.
 For a running session, relate its cap to the saved current-window baseline,
@@ -337,12 +348,16 @@ every possible external session.
 Cancel a turn explicitly through the SDK; cancellation of a local await is not
 proof that native work stopped. Quiesce event handlers, reconcile available
 complete usage, disconnect the SDK and settle the host-owned runtime before
-replacement. Stage each peer's final usage while aborting its turn, fencing
-callbacks and closing its session. The factory then closes the shared client
+replacement. Settle known background compaction before capturing each peer's
+final usage; fence callbacks and close the session without invalidating that
+reading. The factory then closes the shared client
 and settles the owned runtime once; only after that barrier may the staged
 complete usage become final reconciled accounting. A session, callback, client
 or process settlement failure retains affected authorization as unresolved.
 No single peer's session disposal establishes whole-cohort quiescence.
+The common-host barrier cannot make a pre-compaction reading fresh. If a
+settled complete reading cannot be established while the session is readable,
+retain uncertainty instead of finalizing an earlier subtotal.
 
 The [credit contract](implementation-contracts.md#verified-pre-dispatch-cancellation)
 also permits a distinct verified cancellation before first dispatch. The worker
@@ -370,6 +385,16 @@ undispatched complete-baseline recovery path; it does not dispose a healthy
 cohort's runtime or permit a send with unknown usage. Settled-usage recovery
 may use a temporary single-session runtime and must settle it before returning
 its final reading.
+
+Within that existing exact-session recovery, a verified settled final reading
+may reconcile a previously uncertain reservation whose shared grant is closed.
+This books an associated cumulative charge; it does not retrospectively open
+backing or authorize another send. The ledger must distinguish the recovery's
+settlement evidence from a live reading or an unrestricted finalization flag.
+The [credit contract](implementation-contracts.md#usage-evidence-and-settlement)
+owns eligibility and rejection rules. Keep the existing reconnect and offline
+pre-dispatch cancellation entry points distinct; no additional incident-specific
+command or recovery framework is introduced.
 
 SDK disposal preserves on-disk session data; do not call its
 permanent session deletion API during pause, finalization or reconnect.
