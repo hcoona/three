@@ -520,6 +520,16 @@ def test_directions_and_placement() -> None:
     assert text(second, "direction/direction-type/rehearsal") == "A"
 
 
+def test_pedal_change_around_grace_note() -> None:
+    """Release before pressing when a grace note separates the two signs."""
+    root = convert(
+        "m 1\n1.1: <pedal-sign down> D5/8[grace] <pedal-sign up> C5/2\n"
+        "2.1: C3/2\n",
+    )
+    signs = [p.get("type") for p in measures(root)[0].iter("pedal")]
+    assert signs == ["stop", "start"]
+
+
 def test_repeats_and_endings() -> None:
     """Write repeat barlines and volta brackets with their numbers."""
     root = convert(
@@ -675,6 +685,20 @@ def test_conversion_is_deterministic() -> None:
             TextScoreError,
             RuleClass.UNSUPPORTED,
             id="arp-flag-and-arpeggio-relation",
+        ),
+        pytest.param(
+            "m 1\n1.1: E5+G5/2[rel=arpeggio@r1:member,rel=arpeggio@r2:member]\n"
+            "1.2: C5/2[rel=arpeggio@r1:member]\n"
+            "2.1: C3/2[rel=arpeggio@r2:member]\n",
+            TextScoreError,
+            RuleClass.UNSUPPORTED,
+            id="event-in-two-arpeggio-relations",
+        ),
+        pytest.param(
+            "m 1\n1.1: " + "1:1{" * 17 + "C5/2" + "}" * 17 + "\n2.1: C3/2\n",
+            TextScoreError,
+            RuleClass.UNSUPPORTED,
+            id="tuplets-nested-past-sixteen",
         ),
     ],
 )

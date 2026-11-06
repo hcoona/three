@@ -275,7 +275,14 @@ def _tuplet_leaves(events: Sequence[Event]) -> list[_LeafTuplets]:
     ) -> None:
         for item in items:
             if isinstance(item, Tuplet):
-                span = (_Group(item.actual, item.normal, len(path) + 1), [])
+                depth = len(path) + 1
+                if depth > _MAX_NUMBER:
+                    msg = (
+                        f"tuplets nested more than {_MAX_NUMBER} deep, which"
+                        " MusicXML numbers cannot tell apart"
+                    )
+                    _fail("spanner_numbers", msg, item.location)
+                span = (_Group(item.actual, item.normal, depth), [])
                 spans.append(span)
                 walk(item.items, (*path, span))
                 continue
@@ -374,11 +381,7 @@ def _pedal_order(events: Sequence[Placed]) -> list[Placed]:
     start = 0
     while start < len(ordered):
         end = start
-        while (
-            end < len(ordered)
-            and ordered[end].is_direction
-            and ordered[end].onset == ordered[start].onset
-        ):
+        while end < len(ordered) and ordered[end].onset == ordered[start].onset:
             end += 1
         slots = [
             i
@@ -828,10 +831,10 @@ class _Converter:
     def _arpeggio(self, placed: Placed, event: Note) -> Element | None:
         related = _flags(event, ArpeggioRelation)
         rolled = _flags(event, Arpeggiate)
-        if related and rolled:
+        if len(related) + len(rolled) > 1:
             msg = (
-                "an event with both an arp flag and an arpeggio relation is"
-                " not converted"
+                "an event in more than one arpeggio, from an arp flag or"
+                " arpeggio relations, is not converted"
             )
             _fail("arpeggio", msg, placed.event.location)
         if related:
