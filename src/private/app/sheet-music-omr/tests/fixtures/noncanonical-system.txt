@@ -10,8 +10,8 @@ page: 2
 system: 1
 carry-in: {"measure":7,"offset":"0","event_counts":{},"accidental_scope":"letter","accidentals":[],"open":[]}
 heading: "\u00c0 la \/ \ud83c\udfb5"  // trailing comment
-m 7 to=3/4 time-symbol=numeric from=0 len=3/4 time=3/4 key=0
-2.1:   C3/2.
-1.1: E4+G4/4[rel=slur@r2:start,beam1=start,rel=arpeggio@r1:member,stacc,ten^]   <"x">  C5/4  C5/4
+m 7 ending=1:start to=3/4 time-symbol=numeric from=0 len=3/4 time=3/4 key=0
+2.1:   C3/2.[rel=arpeggio@r1:member]
+1.1: E4+G4/4[rel=slur@r2:start,rel=arpeggio@r1:member,stacc,ten^]   <"x">  C5/4  C5/4
 m 8 ending=continue to=1/2 time=2/4
-1.1: <"a\"//b"> D4/4[up,ferm,acc] r/4[beam1=end,ferm_]
+1.1: <"a\"//b"> D4/4[up,ferm,acc] r/4[ferm_]

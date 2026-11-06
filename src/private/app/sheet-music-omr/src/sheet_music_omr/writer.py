@@ -20,12 +20,15 @@ rules itself:
 - Rationals are reduced, text uses the canonical escapes and a carry state
     has the grammar spelling.
 
-Deferred to the semantic validator: block id order, chord member order,
-relation label numbering and the entry order of a carry state. These rules
-decide which spelling is valid rather than how to respell a valid document,
-and checking them needs block ids, onsets and relation endpoints. The writer
-keeps these orders as the tree has them. A tool validates a document before it
-writes canonical form, so the writer assumes a valid tree and repairs nothing.
+Block id order, chord member order, relation label numbering and the entry
+order of a carry state are validity rules, which the semantic validator checks
+rather than the writer applies. Block ids are positional, while chord member
+indices, relation labels and carry entries are referenced by the carry state
+of other documents, so respelling them would change content. The writer keeps
+these orders as the tree has them. The order of directions at one onset is a
+transcription rule, which is neither validated nor reordered. A tool validates
+a document before it writes canonical form, so the writer assumes a valid tree
+and repairs nothing.
 """
 
 from __future__ import annotations

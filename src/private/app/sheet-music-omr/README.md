@@ -7,11 +7,11 @@ MusicXML. The records here define the text representation and the evidence its
 tools must meet.
 
 **Current state:** experimental. A standard-library Python package parses
-Text Score 2 documents, reports lexical and grammar errors with their rule class
-and location, lists review markers and writes canonical text. There is no
-semantic validator, assembler, converter, recognizer or model yet, so a
-document that this package accepts can still be invalid. No packaging or
-release is selected.
+Text Score 2 documents, validates their grammar and semantics, reports each
+error with its rule class and location, lists review markers, writes canonical
+text and derives the carry-out state of a system document. There is no
+assembler, converter, recognizer or model yet. No packaging or release is
+selected.
 
 ## Usage
 

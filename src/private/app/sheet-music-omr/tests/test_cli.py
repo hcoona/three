@@ -29,12 +29,8 @@ def test_validate_lists_review_markers(
             ' 2.1; candidates ["sfz","sf"]'
         ),
         (
-            f"{marked}:12:53: review: timed review span ?(1/4) in measure 3,"
-            ' 2.1; candidates ["B2/4","Bb2/4"]'
-        ),
-        (
             f"{marked}:14:66: review: timed review span ?(1/4) in measure 4,"
-            " 1.1; no candidates"
+            ' 1.1; candidates ["B5/4","Bb5/4"]'
         ),
         (
             f"{marked}:15:40: review: untimed review marker <?> in measure 4,"
@@ -89,3 +85,18 @@ def test_canonicalize_rejects_invalid_input(
     captured = capsys.readouterr()
     assert not captured.out
     assert captured.err.startswith(f"{invalid}:11:23: grammar/note_flag:")
+
+
+def test_semantic_errors_fail_both_commands(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Semantic rule classes fail validation and canonicalization alike."""
+    invalid = str(FIXTURES / "invalid" / "short-measure.txt")
+    assert main(["validate", invalid]) == 1
+    assert capsys.readouterr().out.startswith(
+        f"{invalid}:11:1: semantic/measure_fill:",
+    )
+    assert main(["canonicalize", invalid]) == 1
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert captured.err.startswith(f"{invalid}:11:1: semantic/measure_fill:")

@@ -1,8 +1,8 @@
 """Command-line interface for Text Score 2 documents.
 
-``validate`` checks the lexical and grammar rules of each file and lists the
-review markers of each valid file. ``canonicalize`` writes the canonical text
-of one valid file. The semantic rules are not checked yet.
+``validate`` checks the lexical, grammar and semantic rules of each file and
+lists the review markers of each valid file. ``canonicalize`` writes the
+canonical text of one valid file.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from sheet_music_omr.lexical import decode_source, format_rational
 from sheet_music_omr.model import TimedReview
 from sheet_music_omr.parser import parse_document
 from sheet_music_omr.review import review_markers
+from sheet_music_omr.semantics import check_document
 from sheet_music_omr.writer import format_candidates, write_document
 
 if TYPE_CHECKING:
@@ -27,7 +28,9 @@ if TYPE_CHECKING:
 
 
 def _load(path: str) -> Document:
-    return parse_document(decode_source(Path(path).read_bytes()))
+    document = parse_document(decode_source(Path(path).read_bytes()))
+    check_document(document)
+    return document
 
 
 def _describe(path: str, marker: ReviewMarker) -> str:
@@ -76,8 +79,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sheet-music-omr",
         description=(
-            "Check and canonicalize Text Score 2 documents. Only the lexical"
-            " and grammar rules are checked."
+            "Check and canonicalize Text Score 2 documents against the"
+            " lexical, grammar and semantic rules."
         ),
     )
     commands = parser.add_subparsers(dest="command", required=True)
