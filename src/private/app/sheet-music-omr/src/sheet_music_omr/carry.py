@@ -32,17 +32,21 @@ if TYPE_CHECKING:
     from sheet_music_omr.timeline import Timeline
 
 _BASES: Final = (1, 2, 4, 8, 16, 32, 64, 128)
-_MAX_DOTS: Final = 7
 _PITCHED = frozenset({RelationKind.TIE, RelationKind.ARC})
 
 
 def is_written_value(value: Fraction) -> bool:
-    """Return whether a rational is the value of a written duration."""
-    return any(
-        Fraction(1, base) * (2 - Fraction(1, 2**dots)) == value
-        for base in _BASES
-        for dots in range(_MAX_DOTS + 1)
-    )
+    """Return whether a rational is the value of a written duration.
+
+    A base with ``d`` dots has the value ``(2**(d + 1) - 1) / (base * 2**d)``
+    in lowest terms, and the format allows any number of dots.
+    """
+    numerator = value.numerator
+    if numerator <= 0 or numerator & (numerator + 1):
+        return False
+    dots = numerator.bit_length() - 1
+    base, remainder = divmod(value.denominator, 2**dots)
+    return remainder == 0 and base in _BASES
 
 
 def _accidental_key(entry: CarriedAccidental) -> tuple[int, str, int]:

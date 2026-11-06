@@ -437,6 +437,16 @@ def _check_kind(analysis: RelationAnalysis, relation: Relation) -> None:
     start = relation.start
     if start is not None:
         _check_order(analysis, relation, start)
+    end = relation.end
+    if end is not None:
+        for point in relation.points:
+            if point.role == CHANGE and end.placed.precedes(point.placed):
+                analysis.report(
+                    kind,
+                    f"the change of r{relation.label} shall not lie after"
+                    " its release",
+                    point.location,
+                )
     checks = {
         TIE: _check_tie,
         TREMOLO: _check_tremolo,
@@ -557,6 +567,13 @@ def _check_tremolo(analysis: RelationAnalysis, relation: Relation) -> None:
             )
         return
     if start is None:
+        return
+    if not start.placed.is_main_rhythmic:
+        analysis.report(
+            TREMOLO,
+            f"the tremolo {label} shall start on a non-grace rhythmic event",
+            start.location,
+        )
         return
     following = analysis.next_main(start.placed)
     if end is None:

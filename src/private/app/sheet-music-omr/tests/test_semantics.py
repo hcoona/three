@@ -150,6 +150,11 @@ VALID = {
         "m 1\n1.1: E4+G4/2[rel=arpeggio@r1:member]\n"
         "2.1: C3/2[rel=arpeggio@r1:member]",
     ),
+    "carried tremolo with eight dots": system(
+        "m 5 from=511/4096 to=511/2048\n"
+        "1.1: D4/8........[rel=tremolo@r1:two-end:2]",
+        carry("511/4096", '{"1.1":1}', TREMOLO.replace('"3/8"', '"511/2048"')),
+    ),
 }
 
 INVALID = [
@@ -305,6 +310,28 @@ INVALID = [
         ),
         INITIAL,
         "semantic/pedal@10:6",
+    ),
+    (
+        (
+            "m 1\n1.1: <ped(>[rel=pedal@r1:line-start] C4/4"
+            " <ped)>[rel=pedal@r1:line-release] D4/4"
+            " <ped(>[rel=pedal@r1:line-change]"
+        ),
+        INITIAL,
+        "semantic/pedal@10:82",
+    ),
+    (
+        (
+            "m 5\n1.1: <ped)>[rel=pedal@r1:line-release] C4/4"
+            " <ped(>[rel=pedal@r1:line-change] D4/4"
+        ),
+        carry(open_relations=SLUR.replace('"slur"', '"pedal"')),
+        "semantic/pedal@10:45",
+    ),
+    (
+        "m 1\n1.1: C4/8[grace,rel=tremolo@r1:two-start:2] D4/2",
+        INITIAL,
+        "semantic/tremolo@10:17",
     ),
     (
         (
