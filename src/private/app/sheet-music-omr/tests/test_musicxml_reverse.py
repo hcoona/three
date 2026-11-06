@@ -343,6 +343,100 @@ def test_time_modification_without_tuplet_numbers() -> None:
     assert refusal(score(wrong)).diagnostics[0].code == "grammar/duration"
 
 
+def wavy(*kinds: str) -> str:
+    """Return wavy-line elements of number 1, after a trill mark if any."""
+    marks = "".join(
+        "<trill-mark/>" if kind == "trill" else f'<wavy-line type="{kind}"/>'
+        for kind in kinds
+    )
+    return f"<notations><ornaments>{marks}</ornaments></notations>"
+
+
+LOWER_HALF = "<backup><duration>4</duration></backup>" + note(
+    "C3", 4, "half", 5, 2
+)
+
+
+@pytest.mark.parametrize(
+    ("measures", "expected"),
+    [
+        pytest.param(
+            '<measure number="1">'
+            + ATTRIBUTES
+            + note("C5", 2, "quarter", 1, 1, tie="start").replace(
+                '<notations><tied type="start"/></notations>', ""
+            )
+            + note("C5", 2, "quarter", 1, 1, tie="stop").replace(
+                '<notations><tied type="stop"/></notations>', ""
+            )
+            + LOWER_HALF
+            + "</measure>",
+            "m 1\n1.1: C5/4 C5/4\n2.1: C3/2\n",
+            id="tie-without-tied-is-playback-only",
+        ),
+        pytest.param(
+            '<measure number="1">'
+            + ATTRIBUTES
+            + note(
+                "C5", 4, "half", 1, 1, notations=wavy("trill", "start", "stop")
+            )
+            + LOWER_HALF
+            + "</measure>",
+            "m 1\n1.1: C5/2[orn=trill]\n2.1: C3/2\n",
+            id="wavy-line-on-one-trilled-note",
+        ),
+        pytest.param(
+            '<measure number="1">'
+            + ATTRIBUTES
+            + note("C5", 2, "quarter", 1, 1, notations=wavy("trill", "start"))
+            + note(
+                "D5",
+                1,
+                "eighth",
+                1,
+                1,
+                notations=wavy("trill", "stop", "start"),
+            )
+            + note("E5", 1, "eighth", 1, 1, notations=wavy("stop"))
+            + LOWER_HALF
+            + "</measure>",
+            "m 1\n1.1: C5/4[orn=trill,rel=ornament@r1:start:extended-trill]"
+            " D5/8[orn=trill,rel=ornament@r1:end:extended-trill,"
+            "rel=ornament@r2:start:extended-trill]"
+            " E5/8[rel=ornament@r2:end:extended-trill]\n2.1: C3/2\n",
+            id="wavy-line-number-reused-on-one-note",
+        ),
+        pytest.param(
+            '<measure number="1">'
+            + ATTRIBUTES
+            + note("C5", 4, "half", 1, 1)
+            + LOWER_HALF
+            + '</measure><measure number="2"><attributes>'
+            '<key number="1"><fifths>1</fifths></key>'
+            '<key number="2"><fifths>1</fifths></key></attributes>'
+            + note("D5", 4, "half", 1, 1)
+            + LOWER_HALF
+            + "</measure>",
+            "m 1\n1.1: C5/2\n2.1: C3/2\nm 2 key=1\n1.1: D5/2\n2.1: C3/2\n",
+            id="equal-keys-numbered-per-staff",
+        ),
+        pytest.param(
+            '<measure number="1">'
+            + ATTRIBUTES
+            + note("C5", 4, "half", 1, 1)
+            + LOWER_HALF
+            + '<barline location="right"><bar-style>light-heavy</bar-style>'
+            '<repeat direction="backward" times="2"/></barline></measure>',
+            "m 1 right=repeat\n1.1: C5/2\n2.1: C3/2\n",
+            id="repeat-play-count-is-playback-only",
+        ),
+    ],
+)
+def test_musicxml_fragments_convert(measures: str, expected: str) -> None:
+    """Convert MusicXML fragments whose playback-only data is ignored."""
+    assert from_musicxml_text(score(measures)) == canonical(HEADER + expected)
+
+
 def test_compressed_file() -> None:
     """Read the root file that the container of an ``.mxl`` names."""
     source = HEADER + "m 1\n1.1: C5/2\n2.1: C3/2\n"
@@ -499,12 +593,31 @@ HIDDEN_BEAMED_REST = (
             ),
             "grammar/credit",
         ),
+        (
+            note("C5", 2, "quarter", 1, 1)
+            + "<attributes><divisions>1</divisions></attributes>"
+            + note("D5", 1, "quarter", 1, 1),
+            "",
+            "unsupported/divisions_change",
+        ),
+        (
+            '<attributes><key number="1"><fifths>1</fifths></key></attributes>'
+            + note("C5", 4, "half", 1, 1),
+            "",
+            "unsupported/signature",
+        ),
+        (
+            "<attributes><time><beats>2</beats><beat-type>0</beat-type></time>"
+            "</attributes>" + note("C5", 4, "half", 1, 1),
+            "",
+            "grammar/time",
+        ),
     ],
 )
 def test_childless_and_malformed_elements_are_refused(
     staff_one: str, extra: str, rule: str
 ) -> None:
-    """Refuse a beamed spacer, a symbol credit and a non-numeric position."""
+    """Refuse dropped elements, malformed values and per-staff changes."""
     measure = (
         f'<measure number="1">{ATTRIBUTES}{staff_one}'
         "<backup><duration>4</duration></backup>"

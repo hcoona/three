@@ -806,9 +806,13 @@ class _Reader:
         for child in element:
             tag = child.tag
             if tag == "divisions":
-                self.divisions = _int(child.text, "divisions", tag, at)
-                if self.divisions <= 0:
+                divisions = _int(child.text, "divisions", tag, at)
+                if divisions <= 0:
                     _malformed("divisions", "divisions are not positive", at)
+                if self.divisions not in {None, divisions} and cursor.furthest:
+                    msg = "the divisions change inside a measure"
+                    _unsupported("divisions_change", msg, at)
+                self.divisions = divisions
             elif tag == "staves":
                 self.staves = _int(child.text, "staves", tag, at)
                 if self.staves != _STAVES:
@@ -828,11 +832,7 @@ class _Reader:
         cursor: _Cursor,
         at: _At,
     ) -> None:
-        keys = {_key(child, at) for child in element.findall("key")}
-        times = {_time(child, at) for child in element.findall("time")}
-        if len(keys) > 1 or len(times) > 1:
-            msg = "the staves have different key or time signatures"
-            _unsupported("signature", msg, at)
+        keys, times = _signature_values(element, at)
         if (keys or times) and cursor.position != 0:
             msg = "a key or time signature changes inside a measure"
             _unsupported("signature_change", msg, at)
@@ -931,7 +931,6 @@ class _Reader:
                 "heavy-light",
             }:
                 _unsupported("barline", "a left barline repeats backward", at)
-            _check_repeat(repeat, at)
             measure.options.append(LeftRepeatOption())
         elif style not in {None, "regular"}:
             msg = f"a left barline of style {style!r} is not supported"
@@ -956,7 +955,6 @@ class _Reader:
             }:
                 msg = "a right barline repeats forward or is not light-heavy"
                 _unsupported("barline", msg, at)
-            _check_repeat(repeat, at)
             measure.options.append(RightOption(Barline.REPEAT))
         elif style == "light-heavy":
             measure.options.append(RightOption(Barline.FINAL))
@@ -974,17 +972,37 @@ class _Reader:
         return _ending_number(ending, at)
 
 
+def _signature_values(
+    element: ET.Element, at: _At
+) -> tuple[set[int], set[tuple[Meter, TimeSymbol]]]:
+    for tag in ("key", "time"):
+        _check_staves(element.findall(tag), at)
+    keys = {_key(child, at) for child in element.findall("key")}
+    times = {_time(child, at) for child in element.findall("time")}
+    if len(keys) > 1 or len(times) > 1:
+        msg = "the staves have different key or time signatures"
+        _unsupported("signature", msg, at)
+    return keys, times
+
+
+def _check_staves(declarations: list[ET.Element], at: _At) -> None:
+    covered = {
+        _int(number, "staff", "a signature number", at)
+        for number in (child.get("number") for child in declarations)
+        if number is not None
+    }
+    if any(child.get("number") is None for child in declarations):
+        covered |= {1, 2}
+    if declarations and covered != {1, 2}:
+        msg = "a key or time signature for one staff only"
+        _unsupported("signature", msg, at)
+
+
 def _check_barline_children(element: ET.Element, at: _At) -> None:
     for child in element:
         if child.tag not in {"bar-style", "repeat", "ending", "footnote"}:
             msg = f"<{child.tag}> in a barline is not supported"
             _unsupported(child.tag, msg, at)
-
-
-def _check_repeat(element: ET.Element, at: _At) -> None:
-    if element.get("times") is not None:
-        msg = "a repeat with a play count is not supported"
-        _unsupported("repeat_times", msg, at)
 
 
 def _ending_number(element: ET.Element, at: _At) -> int:
@@ -1023,6 +1041,8 @@ def _time(element: ET.Element, at: _At) -> tuple[Meter, TimeSymbol]:
     if not numerator.isdigit() or not denominator.isdigit():
         msg = f"the time signature {numerator}/{denominator} is not numeric"
         _unsupported("time", msg, at)
+    if int(denominator) == 0:
+        _malformed("time", "the time signature has beat type 0", at)
     return Meter(int(numerator), int(denominator)), _SYMBOLS[symbol]
 
 
@@ -1320,8 +1340,6 @@ class _NoteReader:
             self._parenthesized(element),
             self.at,
         )
-        for tie in element.findall("tie"):
-            _set_tie(member, tie.get("type"), self.at)
         _Notations(leaf, member, self.at, None).read(element)
         return member
 
@@ -1354,6 +1372,16 @@ def _modification(element: ET.Element, at: _At) -> Fraction:
     if actual <= 0 or normal <= 0:
         _malformed("tuplet", "a time modification is not positive", at)
     return Fraction(actual, normal)
+
+
+def _single_wavy(leaf: _Leaf, family: str, number: str) -> bool:
+    """Tell whether a wavy line starts and stops on this one note."""
+    if family != "wavy-line" or (_START, number) not in leaf.wavy:
+        return False
+    if Ornament(OrnamentKind.TRILL) not in leaf.flags:
+        msg = "a wavy line that no trill sign starts"
+        _unsupported("wavy_line", msg, leaf.at)
+    return True
 
 
 def _set_tie(member: _Member, kind: str | None, at: _At) -> None:
@@ -1943,7 +1971,7 @@ class _Matcher:
         self._tremolos()
         self._arpeggios()
 
-    def _numbered(self) -> None:
+    def _endpoints(self) -> list[tuple[int, int, _Leaf, str, str, str]]:
         endpoints: list[tuple[int, int, _Leaf, str, str, str]] = []
         for position, leaf in enumerate(self.leaves):
             marks = [("slur", kind, number) for kind, number in leaf.slurs]
@@ -1964,16 +1992,26 @@ class _Matcher:
                     )
                 )
         endpoints.sort(key=lambda item: (item[0], item[1]))
+        return endpoints
+
+    def _numbered(self) -> None:
         open_starts: dict[tuple[str, str], tuple[_Leaf, int]] = {}
-        for _, _, leaf, family, role, number in endpoints:
+        # A wavy line over its own trilled note alone adds nothing.
+        single: set[tuple[int, str, str]] = set()
+        for position, _, leaf, family, role, number in self._endpoints():
             key = (family, number)
             if role == _START:
+                if (position, family, number) in single:
+                    continue
                 if key in open_starts:
                     msg = f"two {family} spanners share number {number}"
                     _unsupported("spanner_number", msg, leaf.at)
                 label = self.label()
                 open_starts[key] = (leaf, label)
                 self._start(leaf, family, label)
+                continue
+            if key not in open_starts and _single_wavy(leaf, family, number):
+                single.add((position, family, number))
                 continue
             if key not in open_starts:
                 msg = f"a {family} {role} has no start"
@@ -2007,15 +2045,9 @@ class _Matcher:
                 _unsupported("slur", "a slur on a rest", leaf.at)
             leaf.relations.append(SlurRelation(label, EndpointRole.END))
         elif family == "wavy-line":
-            if leaf is start:
-                # A wavy line over its own trilled note alone adds nothing.
-                start.relations.remove(
-                    ExtendedTrillRelation(label, EndpointRole.START),
-                )
-            else:
-                leaf.relations.append(
-                    ExtendedTrillRelation(label, EndpointRole.END),
-                )
+            leaf.relations.append(
+                ExtendedTrillRelation(label, EndpointRole.END),
+            )
         else:
             leaf.label = label
             if family == "octave-shift":
