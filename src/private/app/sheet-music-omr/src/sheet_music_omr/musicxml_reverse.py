@@ -375,7 +375,12 @@ class _DeclarationError(Exception):
 
 def _load(data: bytes | str) -> ET.Element:
     if isinstance(data, str):
-        _check_size(len(data.encode("utf-8")))
+        try:
+            size = len(data.encode("utf-8"))
+        except UnicodeEncodeError:
+            msg = "the text holds a character that XML cannot encode"
+            _fail(RuleClass.LEXICAL, "xml", msg, None)
+        _check_size(size)
         raw: bytes | str = data
     else:
         _check_size(len(data))

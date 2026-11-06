@@ -438,6 +438,7 @@ def test_chord_symbol_is_refused() -> None:
             ),
             "lexical/xml",
         ),
+        ("<a>\ud800</a>", "lexical/xml"),
     ],
 )
 def test_unreadable_input_is_refused(data: str | bytes, rule: str) -> None:
