@@ -329,8 +329,9 @@ from the denominator. Its element count is that of `Y` alone, or of `X` when
 pass plus the supplementary elements computed on that score alone, where each
 voice, each slur, each note with a `tie` of type `stop`, each tremolo of type
 `single` or `start`, each `beam` with value `forward hook` or `backward hook`
-on a note that is not a rest and each note, rest or chord with a
-`time-modification` counts as an element.
+on a note that is not a rest, each beam on a rest as defined by the Rest beams
+check, and each note, rest or chord with a `time-modification` counts as an
+element.
 
 A gold piece whose reverse conversion reports unsupported content does not
 pass OMR-REQ-010, and the count of such pieces returns to the owner, because
@@ -422,9 +423,12 @@ These rules apply before counting, in this order:
    when the cross-staff check has an element for either note. Otherwise, as
    when a whole voice changes staff, the reference note is non-identical and
    no extra element is added.
-2. Such a pair on the same staff in different voices is one `voice`
+2. Such a pair on the same staff but in different canonical voice positions,
+   as defined by the format's
+   [voice-order rules](text-format.md#voices-and-staves), is one `voice`
    difference: the reference note is non-identical and no extra element is
-   added.
+   added. Raw MusicXML voice numbers alone do not identify a voice for this
+   rule.
 
 ### Supplementary checks
 
@@ -583,10 +587,13 @@ with their provenance:
   written durations in two voices of one staff that both carry a trill mark,
   one that differs only in the end of a dashes line, and one in which a
   dashes line moves between two `words` directions of one staff and onset;
-- one pair for each pairing rule, a pair of pairing rule 1 whose moved note
-  carries a fingering digit and a slur end, and a pair in which a one-note
-  voice moves to the other staff, where it becomes that staff's
-  highest-numbered voice;
+- one pair for each pairing rule, with the rule-2 pair using raw MusicXML
+  voice numbers that do not encode the canonical voice order; a second pair
+  of pairing rule 1 in which the reference measure and the immediately
+  following measure have identical content on the staff losing the moved
+  note; a pair of pairing rule 1 whose moved note carries a fingering digit
+  and a slur end; and a pair in which a one-note voice moves to the other
+  staff, where it becomes that staff's highest-numbered voice;
 - a pair in which the same-rhythm voices of one staff in one measure are a C4
   and an E4 in `Y` and two C4s in `T(Y)`;
 - one pair that differs only in the stroke count of a single-note tremolo,
@@ -645,8 +652,8 @@ The instrument passes when it reports:
   non-identical and one extra `text` element for
   the dashes pair and for the dashes-text pair, each with no other difference;
 - exactly one counted `cross_staff` difference and no other difference for
-  the pair of pairing rule 1, for the marked pair and for the voice that
-  moves to the other staff;
+  the pair of pairing rule 1, the pair with identical adjacent measures, the
+  marked pair and the voice that moves to the other staff;
 - exactly one non-identical `voice` element and no other difference for the
   pair of pairing rule 2;
 - exactly one counted `pitch` difference and no other difference for the
