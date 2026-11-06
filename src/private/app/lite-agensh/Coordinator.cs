@@ -970,6 +970,45 @@ public sealed class Coordinator
 
         if (failure is not null)
         {
+            try
+            {
+                JsonArray workerDetails = [];
+                for (int index = 0; index < loops.Count; index++)
+                {
+                    if (loops[index].Exception is { } errors)
+                    {
+                        foreach (Exception error in errors.Flatten().InnerExceptions)
+                        {
+                            workerDetails.Add(new JsonObject
+                            {
+                                ["worker"] = database.Configuration.WorkerIds[index],
+                                ["error"] = ExceptionDetails(error),
+                            });
+                        }
+                    }
+                }
+                database.WriteMetadata(
+                    $"lifecycle:failure_details:{segment}",
+                    new JsonObject
+                    {
+                        ["primary"] = ExceptionDetails(failure),
+                        ["workers"] = workerDetails,
+                        ["nativeFailures"] = new JsonArray(workers.Select((worker, index) =>
+                            worker.NativeFailure is { } message
+                                ? (JsonNode)new JsonObject
+                                {
+                                    ["worker"] = database.Configuration.WorkerIds[index],
+                                    ["message"] = message,
+                                    ["detailsKind"] = "native-message-only",
+                                } : null).OfType<JsonNode>().ToArray()),
+                    }.ToJsonString()
+                );
+            }
+            catch (Exception exception) when (IsExpected(exception))
+            {
+                // Diagnostic retention must not replace the original failure or settlement.
+            }
+
             IEnumerable<string> loopFailures = loops
                 .SelectMany(
                     (loop, index) =>
@@ -1156,6 +1195,40 @@ public sealed class Coordinator
                 or UnauthorizedAccessException
                 or System.ComponentModel.Win32Exception;
 
+    private static JsonObject ExceptionDetails(Exception exception)
+    {
+        JsonObject details = new()
+        {
+            ["type"] = exception.GetType().FullName,
+            ["message"] = exception.Message,
+            ["stackTrace"] = exception.StackTrace,
+            ["phase"] = exception.Data["liteagensh.phase"] as string,
+            ["batchId"] = exception.Data["liteagensh.batchId"] is long batch
+                ? JsonValue.Create(batch) : null,
+        };
+        if (exception is OperationException operation)
+        {
+            details["operationCode"] = operation.Code;
+        }
+        if (exception is SqliteException sqlite)
+        {
+            details["sqliteErrorCode"] = sqlite.SqliteErrorCode;
+            details["sqliteExtendedErrorCode"] = sqlite.SqliteExtendedErrorCode;
+        }
+        if (exception is AggregateException aggregate)
+        {
+            details["innerExceptions"] = new JsonArray(
+                aggregate.InnerExceptions.Select(error => (JsonNode)ExceptionDetails(error))
+                    .ToArray()
+            );
+        }
+        else if (exception.InnerException is { } inner)
+        {
+            details["innerException"] = ExceptionDetails(inner);
+        }
+        return details;
+    }
+
     private JsonObject Success(object? data = null, string message = "") =>
         Classify(Operation.Success(data, message));
 
@@ -1291,6 +1364,10 @@ public sealed class Coordinator
             }
             catch (Exception exception)
             {
+                exception.Data["liteagensh.batchId"] = batch.Id;
+                exception.Data["liteagensh.phase"] = nativeCompleted
+                    ? acknowledged ? "credit-verification" : "acknowledgement"
+                    : modelAttempted ? "native-turn" : "composition";
                 if (nativeCompleted)
                 {
                     if (acknowledged)
@@ -1313,7 +1390,8 @@ public sealed class Coordinator
 
                     throw new OperationException(
                         "post_delivery_failed",
-                        $"Completed native turn retained without retry: {exception.Message}"
+                        $"Completed native turn retained without retry: {exception.Message}",
+                        exception
                     );
                 }
 

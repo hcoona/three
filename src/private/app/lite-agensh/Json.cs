@@ -40,7 +40,9 @@ public static class Operation
         };
 }
 
-public sealed class OperationException(string code, string message) : Exception(message)
+public sealed class OperationException(
+    string code, string message, Exception? innerException = null
+) : Exception(message, innerException)
 {
     public string Code { get; } = code;
 }

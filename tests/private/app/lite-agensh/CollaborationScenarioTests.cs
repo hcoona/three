@@ -12,6 +12,45 @@ public sealed class CollaborationScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(15000, CooperativeCancellation = true)]
+    [DataRow("run_info", "{}")]
+    [DataRow("agent_info", """{"id":"worker1"}""")]
+    [DataRow("agent_list", "{}")]
+    [DataRow("task_read", """{"id":1}""")]
+    [DataRow("task_list", "{}")]
+    [DataRow("work_search", """{"query":"goal"}""")]
+    [DataRow("message_read", """{"channelId":"team"}""")]
+    [DataRow("message_thread", """{"threadId":1}""")]
+    [DataRow("message_search", """{"query":"evidence"}""")]
+    [DataRow("channel_read", """{"id":"team"}""")]
+    [DataRow("channel_list", "{}")]
+    [DataRow("board_recent", "{}")]
+    [DataRow("board_search", """{"query":"evidence"}""")]
+    [DataRow("board_expand", """{"labels":["G1"]}""")]
+    public async Task ReadOperationsKeepCommittedSnapshotWhileAnotherPeerWrites(
+        string operation, string arguments
+    )
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        CollaborationOperations peers = new(database);
+        Scenario.Call(peers, "worker2", "message_send",
+            new { recipient = "team", body = "Committed evidence." });
+        Scenario.Call(peers, "worker2", "board_publish",
+            new { type = "FACT", content = "Committed evidence.", detail = "Full evidence." });
+        using SqliteConnection writer = database.Open();
+        using SqliteTransaction pending = writer.BeginTransaction();
+        Sql.Execute(writer, "UPDATE tasks SET title='Uncommitted title' WHERE id=1;", pending);
+
+        JsonObject result = await Task.Run(
+            () => peers.Invoke("worker1", operation, JsonNode.Parse(arguments)!.AsObject()),
+            testContext.CancellationToken);
+
+        Assert.IsTrue(result["ok"]!.GetValue<bool>(), result.ToJsonString());
+        Assert.DoesNotContain("Uncommitted title", result.ToJsonString());
+    }
+
+    [TestMethod]
+    [Timeout(15000, CooperativeCancellation = true)]
     public async Task SharedContextRemainsReadableWhileAnotherPeerHasUncommittedWork()
     {
         using RunFixture fixture = new();
@@ -589,6 +628,39 @@ public sealed class CollaborationScenarioTests(TestContext testContext)
                 "SELECT COUNT(*) FROM events WHERE recipient='worker1' AND state='pending';"
             )
         );
+    }
+
+    [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task NoticesRecoverOlderFailedGistsAfterCursorAdvancesPastAnInflightBatch()
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        LocalTools tools = new(database);
+        JsonObject older = Scenario.Call(tools.Collaboration, "worker2", "board_publish",
+            new { type = "FACT", content = "Earlier independent finding." });
+        DeliveryBatch batch = tools.Collaboration.ClaimBatch("worker1")!;
+        Assert.IsNotNull(batch);
+        JsonObject newer = Scenario.Call(tools.Collaboration, "worker2", "board_publish",
+            new { type = "FACT", content = "Later independent evidence." });
+
+        JsonObject first = await tools.InvokeAsync("worker1", "task_read",
+            Json.SerializePayload(new { id = 1 }), testContext.CancellationToken);
+
+        JsonObject shown = Assert.ContainsSingle(
+            first["notices"]!["items"]!.AsArray().OfType<JsonObject>());
+        Assert.AreEqual(Scenario.Id(newer), shown["data"]!["id"]!.GetValue<long>());
+        tools.Collaboration.FailBatch(batch.Id, "The earlier native turn was interrupted.");
+
+        JsonObject recovered = await tools.InvokeAsync("worker1", "task_read",
+            Json.SerializePayload(new { id = 1 }), testContext.CancellationToken);
+
+        JsonObject delayed = Assert.ContainsSingle(
+            recovered["notices"]!["items"]!.AsArray().OfType<JsonObject>());
+        Assert.AreEqual(Scenario.Id(older), delayed["data"]!["id"]!.GetValue<long>());
+        JsonObject repeated = await tools.InvokeAsync("worker1", "task_read",
+            Json.SerializePayload(new { id = 1 }), testContext.CancellationToken);
+        Assert.IsEmpty(repeated["notices"]!["items"]!.AsArray());
     }
 
     [TestMethod]

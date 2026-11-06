@@ -83,7 +83,11 @@ public sealed class ControlledFailureScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
-    public async Task CompletedTurnsSurviveLateAcknowledgementFailureWithoutReplayingOldBatch()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task CompletedTurnsSurviveLateAcknowledgementFailureWithoutReplayingOldBatch(
+        bool rejectDiagnosticPersistence
+    )
     {
         CancellationToken token = testContext.CancellationToken;
         using GitScenario fixture = await GitScenario.CreateAsync(token);
@@ -100,12 +104,52 @@ public sealed class ControlledFailureScenarioTests(TestContext testContext)
                 BEGIN SELECT RAISE(ABORT, 'controlled late acknowledgement failure'); END;
                 """
             );
+            if (rejectDiagnosticPersistence)
+            {
+                Sql.Execute(connection,
+                    """
+                    CREATE TRIGGER reject_diagnostics BEFORE INSERT ON meta
+                    WHEN NEW.key LIKE 'lifecycle:failure_details:%'
+                    BEGIN SELECT RAISE(ABORT, 'controlled diagnostic persistence failure'); END;
+                    """);
+            }
         }
 
         JsonObject failed = await coordinator.RunAsync("run", token);
         Scenario.Failure(failed, "post_delivery_failed");
         Assert.HasCount(2, native.OrdinaryPrompts());
         using SqliteConnection retained = fixture.Database.Open();
+        string? details = Sql.Scalar(retained,
+            "SELECT value FROM meta WHERE key LIKE 'lifecycle:failure_details:%';") as string;
+        if (rejectDiagnosticPersistence)
+        {
+            Assert.IsNull(details);
+        }
+        else
+        {
+            Assert.IsNotNull(details);
+            JsonObject diagnostics = JsonNode.Parse(details)!.AsObject();
+            Assert.AreEqual("post_delivery_failed",
+                diagnostics["primary"]!["operationCode"]!.GetValue<string>());
+            JsonObject[] workers = diagnostics["workers"]!.AsArray().OfType<JsonObject>().ToArray();
+            Assert.HasCount(2, workers);
+            foreach (JsonObject worker in workers)
+            {
+                JsonObject cause = worker["error"]!["innerException"]!.AsObject();
+                Assert.AreEqual("acknowledgement", cause["phase"]!.GetValue<string>());
+                Assert.IsGreaterThan(0L, cause["batchId"]!.GetValue<long>());
+                Assert.AreEqual("Microsoft.Data.Sqlite.SqliteException",
+                    cause["type"]!.GetValue<string>());
+                Assert.AreEqual(19, cause["sqliteErrorCode"]!.GetValue<int>());
+                Assert.AreEqual(1811, cause["sqliteExtendedErrorCode"]!.GetValue<int>());
+                Assert.Contains("MarkAcknowledged", cause["stackTrace"]!.GetValue<string>());
+            }
+        }
+        foreach (JsonObject publicResult in new[] { failed, coordinator.Status() })
+        {
+            Assert.DoesNotContain("\"stackTrace\"", publicResult.ToJsonString());
+            Assert.DoesNotContain("\"sqliteExtendedErrorCode\"", publicResult.ToJsonString());
+        }
         Assert.AreEqual(
             2L,
             Sql.Scalar(

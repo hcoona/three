@@ -533,9 +533,9 @@ public sealed partial class CollaborationOperations
                 + """
 
                 JOIN board_recent r ON r.revision_id=h.id WHERE h.actor!=$actor
-                    AND (h.id>$cursor OR EXISTS(
-                        SELECT 1 FROM events e WHERE e.recipient=$actor AND e.kind='board'
-                            AND json_extract(e.payload,'$.gistId')=h.id AND e.state!='sent'))
+                    AND (h.id>$cursor OR h.id IN (
+                        SELECT json_extract(e.payload,'$.gistId') FROM events e
+                        WHERE e.recipient=$actor AND e.kind='board' AND e.state!='sent'))
                     AND (h.expires_at IS NULL OR h.expires_at >= $now)
                     AND NOT EXISTS(SELECT 1 FROM shown_gists g
                         WHERE g.gist_id=h.id AND g.recipient=$actor)
