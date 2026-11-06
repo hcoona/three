@@ -14,7 +14,8 @@ internal sealed class ControlledNativeFactory(
     string directory,
     Func<CancellationToken, Task>? onExactLoadSettled = null,
     Func<CreditReservation, CancellationToken, Task>? onStart = null,
-    Func<Task>? onHostSettlement = null
+    Func<Task>? onHostSettlement = null,
+    Action<CreditReservation, string>? onSettlement = null
 ) : INativeWorkerFactory
 {
     private readonly List<(ControlledNativeWorker Worker, CreditReservation? Reservation)> workers =
@@ -31,7 +32,8 @@ internal sealed class ControlledNativeFactory(
             reservation,
             calibration,
             onExactLoadSettled,
-            onStart
+            onStart,
+            onSettlement
         );
         workers.Add((worker, reservation));
         return worker;
@@ -164,7 +166,8 @@ internal sealed class ControlledNativeWorker(
     CreditReservation? reservation,
     bool calibration,
     Func<CancellationToken, Task>? onExactLoadSettled = null,
-    Func<CreditReservation, CancellationToken, Task>? onStart = null
+    Func<CreditReservation, CancellationToken, Task>? onStart = null,
+    Action<CreditReservation, string>? onSettlement = null
 ) : INativeWorker
 {
     private readonly CancellationTokenSource stop = new();
@@ -549,6 +552,10 @@ internal sealed class ControlledNativeWorker(
                 }
             }
 
+            if (reservation is not null)
+            {
+                onSettlement?.Invoke(reservation, "stop");
+            }
             stopped = true;
             if (reservation is not null)
             {
@@ -581,6 +588,10 @@ internal sealed class ControlledNativeWorker(
     public async ValueTask DisposeAsync()
     {
         await StopAsync();
+        if (reservation is not null)
+        {
+            onSettlement?.Invoke(reservation, "dispose");
+        }
         if (failedSession is not null)
         {
             await failedSession.DisposeAsync();

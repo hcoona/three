@@ -211,6 +211,144 @@ public sealed class ControlledFailureScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow("stop", false)]
+    [DataRow("dispose", false)]
+    [DataRow("stop", true)]
+    public async Task SecondarySettlementFailuresRetainPrivateCausesAndPublicIsolation(
+        string phase, bool rejectDiagnosticPersistence
+    )
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario fixture = await GitScenario.CreateAsync(token);
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        Coordinator coordinator = new(
+            fixture.Database, fixture.Collaboration, fixture.Operations,
+            (database, _, credits) => new ControlledNativeFactory(
+                database, credits, native.DirectoryPath,
+                onSettlement: (reservation, operation) =>
+                {
+                    if (reservation.Worker == "calibration" || operation != phase)
+                    {
+                        return;
+                    }
+                    try
+                    {
+                        using SqliteConnection connection = database.Open();
+                        Sql.Execute(
+                            connection, "SELECT * FROM controlled_missing_settlement_table;"
+                        );
+                    }
+                    catch (SqliteException exception)
+                    {
+                        throw new OperationException(
+                            "controlled_settlement", "Controlled peer settlement failed.", exception
+                        );
+                    }
+                }
+            )
+        );
+        await native.PrepareAsync(coordinator, token);
+        using (SqliteConnection connection = fixture.Database.Open())
+        {
+            Sql.Execute(connection,
+                """
+                CREATE TRIGGER reject_ack BEFORE UPDATE OF state ON coordinator_turns
+                WHEN NEW.state='acknowledged'
+                BEGIN SELECT RAISE(ABORT, 'controlled late acknowledgement failure'); END;
+                """);
+            if (rejectDiagnosticPersistence)
+            {
+                Sql.Execute(connection,
+                    """
+                    CREATE TRIGGER reject_diagnostics BEFORE INSERT ON meta
+                    WHEN NEW.key LIKE 'lifecycle:failure_details:%'
+                    BEGIN SELECT RAISE(ABORT, 'controlled diagnostic persistence failure'); END;
+                    """);
+            }
+        }
+
+        HashSet<string> beforeOperations = native.CaptureOperations();
+        JsonObject failed = await coordinator.RunAsync("run", token);
+
+        Scenario.Failure(failed, "ownership_or_usage_unresolved");
+        Assert.Contains("controlled late acknowledgement failure",
+            failed["message"]!.GetValue<string>());
+        JsonObject status = Scenario.Data(coordinator.Status());
+        Assert.AreEqual("unresolved", status["lifecycle"]!.GetValue<string>());
+        JsonObject[] publicFailures = status["settlementFailures"]!.AsArray()
+            .OfType<JsonObject>()
+            .Where(item => item["phase"]?.GetValue<string>() == phase).ToArray();
+        Assert.HasCount(2, publicFailures);
+        CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+        CreditReservation[] peers = ledger.Reservations()
+            .Where(item => item.Worker != "calibration").ToArray();
+        Assert.HasCount(2, peers);
+        foreach (CreditReservation peer in peers)
+        {
+            JsonObject evidence = Assert.ContainsSingle(publicFailures.Where(item =>
+                item["worker"]!.GetValue<string>() == peer.Worker));
+            Assert.AreEqual(peer.Id, evidence["reservationId"]!.GetValue<string>());
+            Assert.AreEqual("Controlled peer settlement failed.",
+                evidence["message"]!.GetValue<string>());
+            Assert.AreEqual(phase == "stop" ? "uncertain" : "reconciled", peer.State);
+        }
+        Assert.HasCount(1, native.Operations(beforeOperations).Where(item =>
+            item["operation"]?.GetValue<string>() == "host-settled").ToArray());
+        using SqliteConnection retained = fixture.Database.Open();
+        string? details = Sql.Scalar(retained,
+            "SELECT value FROM meta WHERE key LIKE 'lifecycle:failure_details:%';") as string;
+        if (rejectDiagnosticPersistence)
+        {
+            Assert.IsNull(details);
+        }
+        else
+        {
+            Assert.IsNotNull(details);
+            JsonObject diagnostics = JsonNode.Parse(details)!.AsObject();
+            Assert.AreEqual("post_delivery_failed",
+                diagnostics["primary"]!["operationCode"]!.GetValue<string>());
+            Assert.IsNotNull(diagnostics["settlements"]);
+            JsonObject[] settlements = diagnostics["settlements"]!.AsArray()
+                .OfType<JsonObject>().ToArray();
+            Assert.HasCount(2, settlements);
+            foreach (CreditReservation peer in peers)
+            {
+                JsonObject evidence = Assert.ContainsSingle(settlements.Where(item =>
+                    item["worker"]!.GetValue<string>() == peer.Worker));
+                Assert.AreEqual(peer.Id, evidence["reservationId"]!.GetValue<string>());
+                Assert.AreEqual(phase, evidence["phase"]!.GetValue<string>());
+                JsonObject error = evidence["error"]!.AsObject();
+                Assert.AreEqual(
+                    "controlled_settlement", error["operationCode"]!.GetValue<string>()
+                );
+                Assert.Contains(
+                    nameof(SecondarySettlementFailuresRetainPrivateCausesAndPublicIsolation),
+                    error["stackTrace"]!.GetValue<string>()
+                );
+                JsonObject cause = error["innerException"]!.AsObject();
+                Assert.AreEqual("Microsoft.Data.Sqlite.SqliteException",
+                    cause["type"]!.GetValue<string>());
+                Assert.AreEqual(1, cause["sqliteErrorCode"]!.GetValue<int>());
+                Assert.AreEqual(1, cause["sqliteExtendedErrorCode"]!.GetValue<int>());
+                Assert.Contains("Sql.Execute", cause["stackTrace"]!.GetValue<string>());
+            }
+        }
+        foreach (JsonObject publicResult in new[] { failed, coordinator.Status() })
+        {
+            Assert.DoesNotContain("\"stackTrace\"", publicResult.ToJsonString());
+            Assert.DoesNotContain("\"sqliteExtendedErrorCode\"", publicResult.ToJsonString());
+            Assert.DoesNotContain(
+                "controlled_missing_settlement_table", publicResult.ToJsonString()
+            );
+        }
+        long before = native.OrdinaryPrompts().LongLength;
+        Scenario.Failure(await coordinator.RunAsync("resume", token), "conflict");
+        Assert.AreEqual(before, native.OrdinaryPrompts().LongLength);
+        await fixture.AssertOriginalPreservedAsync(token);
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
     [DataRow("unknown-usage")]
     [DataRow("unsettled")]
     public async Task IncompleteCalibrationOrUnsettledStopRetainsReservationWithoutReceipt(

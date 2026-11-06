@@ -536,6 +536,7 @@ public sealed class Coordinator
         bool finalize = false;
         Exception? failure = null;
         JsonArray settlementFailures = [];
+        JsonArray settlementDetails = [];
         try
         {
             RecoverCompletedTurns();
@@ -872,6 +873,11 @@ public sealed class Coordinator
                 catch (Exception exception)
                 {
                     failure ??= exception;
+                    AddSettlementDetails(
+                        settlementDetails,
+                        database.Configuration.WorkerIds[workers.IndexOf(worker)],
+                        worker.ReservationId, "stop", exception
+                    );
                     settlementFailures.Add(
                         new JsonObject
                         {
@@ -901,6 +907,11 @@ public sealed class Coordinator
                     catch (Exception exception)
                     {
                         failure ??= exception;
+                        AddSettlementDetails(
+                            settlementDetails,
+                            database.Configuration.WorkerIds[workers.IndexOf(worker)],
+                            worker.ReservationId, "dispose", exception
+                        );
                         settlementFailures.Add(
                             new JsonObject
                             {
@@ -993,6 +1004,7 @@ public sealed class Coordinator
                     {
                         ["primary"] = ExceptionDetails(failure),
                         ["workers"] = workerDetails,
+                        ["settlements"] = settlementDetails,
                         ["nativeFailures"] = new JsonArray(workers.Select((worker, index) =>
                             worker.NativeFailure is { } message
                                 ? (JsonNode)new JsonObject
@@ -1194,6 +1206,27 @@ public sealed class Coordinator
                 or TimeoutException
                 or UnauthorizedAccessException
                 or System.ComponentModel.Win32Exception;
+
+    private static void AddSettlementDetails(
+        JsonArray details, string worker, string? reservationId, string phase, Exception exception
+    )
+    {
+        try
+        {
+            // Later settlement can rethrow this exception and replace its original stack.
+            details.Add(new JsonObject
+            {
+                ["worker"] = worker,
+                ["reservationId"] = reservationId,
+                ["phase"] = phase,
+                ["error"] = ExceptionDetails(exception),
+            });
+        }
+        catch (Exception diagnosticFailure) when (IsExpected(diagnosticFailure))
+        {
+            // Diagnostic retention must not replace the original failure or settlement.
+        }
+    }
 
     private static JsonObject ExceptionDetails(Exception exception)
     {
