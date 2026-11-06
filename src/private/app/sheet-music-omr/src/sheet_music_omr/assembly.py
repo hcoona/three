@@ -34,7 +34,12 @@ from itertools import pairwise
 from typing import TYPE_CHECKING, Final
 
 from sheet_music_omr.carry import derive_carry_out
-from sheet_music_omr.diagnostics import Diagnostic, Location, assembly
+from sheet_music_omr.diagnostics import (
+    Diagnostic,
+    Location,
+    TextScoreError,
+    assembly,
+)
 from sheet_music_omr.lexical import format_rational
 from sheet_music_omr.model import (
     ArpeggioRelation,
@@ -803,7 +808,12 @@ class _Assembler:
         if trills:
             return AssemblyResult(None, None, (), trills, markers)
         text = write_document(score)
-        parsed = _typed(parse_document(text), AssembledScore)
+        try:
+            parsed = _typed(parse_document(text), AssembledScore)
+        except TextScoreError as error:
+            return _failed(
+                [SourceDiagnostic(_SCORE, d) for d in error.diagnostics]
+            )
         return AssemblyResult(parsed, text, (), (), markers)
 
     def _locate(self, diagnostic: Diagnostic) -> SourceDiagnostic:

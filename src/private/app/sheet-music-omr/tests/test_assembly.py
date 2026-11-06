@@ -124,6 +124,18 @@ def test_assembled_score_text_is_titled() -> None:
     )
 
 
+@pytest.mark.parametrize("option", ["title", "composer"])
+def test_metadata_the_format_cannot_hold_fails(option: str) -> None:
+    """Fail on an empty title or composer instead of raising."""
+    result = assemble(
+        [parse_document(system(1, 1, "m 1 right=final\n1.1: C4/2"))],
+        **{option: ""},
+    )
+    assert result.status is AssemblyStatus.FAILED
+    assert result.text is None
+    assert _found(result)[0].startswith("assembled score:grammar/")
+
+
 def test_trill_ending_on_direction_needs_a_person() -> None:
     """Report an extended trill and review markers instead of success."""
     documents = [parse_document(path.read_text("utf-8")) for path in WALTZ]
