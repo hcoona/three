@@ -880,11 +880,123 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         }
     }
 
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task ProductionStopRetainsUsagePersistenceCauseInPrivateCoordinatorDiagnostics()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario fixture = await GitScenario.CreateAsync(token, configuration =>
+            configuration with
+            {
+                WorkerCount = 1,
+                PlanningSeconds = 0,
+                RunAiCreditAllowance = 120,
+                CampaignAiCreditAllowance = 600,
+                NativeExecutable = Path.Combine(
+                    configuration.RepositoryPath, "missing-native-runtime.exe"
+                ),
+            });
+        CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+        bool armed = false;
+        List<ControlledSdkHost> hosts = [];
+        Coordinator coordinator = new(
+            fixture.Database, fixture.Collaboration, fixture.Operations,
+            (database, processes, credits) => new NativeWorkerFactory(
+                database, processes, credits, () =>
+                {
+                    ControlledSdkHost host = new("none", token, evidenceDatabase: database,
+                        onClose: session =>
+                        {
+                            if (!armed || session.Metadata?["worker"]?.GetValue<string>()
+                                != "worker1")
+                            {
+                                return;
+                            }
+                            using SqliteConnection connection = Campaign(database);
+                            Sql.Execute(connection,
+                                """
+                                CREATE TRIGGER reject_stop_usage BEFORE UPDATE ON credit_sdk_usage
+                                WHEN NEW.reservation_id IN
+                                    (SELECT id FROM credit_reservations WHERE worker='worker1')
+                                BEGIN SELECT RAISE(ABORT, 'controlled final usage failure'); END;
+                                """);
+                        });
+                    host.Release.TrySetResult();
+                    hosts.Add(host);
+                    return host;
+                }
+            )
+        );
+        Scenario.Data(await coordinator.PreflightAsync(token));
+        Scenario.Data(await coordinator.CalibrateAsync(token));
+        armed = true;
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
+        try
+        {
+            using SqliteConnection connection = fixture.Database.Open();
+            while ((long)Sql.Scalar(connection,
+                "SELECT COUNT(*) FROM coordinator_turns WHERE state='acknowledged';")! == 0)
+            {
+                if (execution.IsCompleted)
+                {
+                    Assert.Fail((await execution).ToJsonString());
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(25), token);
+            }
+            coordinator.RequestControl("pause");
+            JsonObject failed = await execution;
+            Scenario.Failure(failed, "ownership_or_usage_unresolved");
+            Assert.Contains("Native settlement retained unresolved evidence: "
+                + "SQLite Error 19: 'controlled final usage failure'.",
+                failed["message"]!.GetValue<string>());
+            CreditReservation peer = Assert.ContainsSingle(ledger.Reservations()
+                .Where(row => row.Worker == "worker1"));
+            Assert.AreEqual("uncertain", peer.State);
+            Assert.AreEqual("credit_unknown",
+                Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
+            Assert.IsTrue(hosts[^1].Settled);
+            string? details = Sql.Scalar(connection,
+                "SELECT value FROM meta WHERE key LIKE 'lifecycle:failure_details:%';") as string;
+            Assert.IsNotNull(details);
+            JsonObject diagnostics = JsonNode.Parse(details)!.AsObject();
+            JsonObject settlement = Assert.ContainsSingle(
+                diagnostics["settlements"]!.AsArray().OfType<JsonObject>());
+            Assert.AreEqual("worker1", settlement["worker"]!.GetValue<string>());
+            Assert.AreEqual(peer.Id, settlement["reservationId"]!.GetValue<string>());
+            Assert.AreEqual("stop", settlement["phase"]!.GetValue<string>());
+            JsonObject error = settlement["error"]!.AsObject();
+            Assert.AreEqual("credit_or_ownership_unknown",
+                error["operationCode"]!.GetValue<string>());
+            Assert.IsNotNull(error["innerException"]);
+            JsonObject cause = error["innerException"]!.AsObject();
+            Assert.AreEqual("Microsoft.Data.Sqlite.SqliteException",
+                cause["type"]!.GetValue<string>());
+            Assert.AreEqual(19, cause["sqliteErrorCode"]!.GetValue<int>());
+            Assert.AreEqual(1811, cause["sqliteExtendedErrorCode"]!.GetValue<int>());
+            Assert.Contains("CreditLedger.RecordSdkUsage", cause["stackTrace"]!.GetValue<string>());
+            foreach (JsonObject publicResult in new[] { failed, coordinator.Status() })
+            {
+                Assert.DoesNotContain("\"stackTrace\"", publicResult.ToJsonString());
+                Assert.DoesNotContain("\"sqliteExtendedErrorCode\"", publicResult.ToJsonString());
+                Assert.DoesNotContain("\"innerException\"", publicResult.ToJsonString());
+            }
+            Assert.AreEqual("unresolved", fixture.Database.ReadMetadata("lifecycle"));
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            await stop.CancelAsync();
+            await execution.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+        }
+    }
+
     // Controlled SDK effects only; production workers, cohort and SQLite accounting remain real.
     private sealed class ControlledSdkHost(
         string failure, CancellationToken token, bool missingMetrics = false,
         RunDatabase? evidenceDatabase = null, bool emptyStatus = false,
-        string? modelReadback = null, double? limitReadback = null
+        string? modelReadback = null, double? limitReadback = null,
+        Action<ControlledSdkSession>? onClose = null
     ) : INativeSdkHost
     {
         public string Id { get; } = "controlled-sdk-host-" + Guid.NewGuid().ToString("N");
@@ -914,7 +1026,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             }
             ControlledSdkSession session = new(
                 failure == "session" && Sessions.Count == 0, missingMetrics,
-                evidenceDatabase, emptyStatus, cwd, Id, LeaseId, modelReadback, limitReadback
+                evidenceDatabase, emptyStatus, cwd, Id, LeaseId, modelReadback, limitReadback,
+                onClose
             );
             Sessions.Add(session);
             return session;
@@ -949,7 +1062,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     private sealed class ControlledSdkSession(
         bool failDispose, bool missingMetrics = false, RunDatabase? evidenceDatabase = null,
         bool emptyStatus = false, string cwd = "", string runtimeId = "", long runtimeLeaseId = 1,
-        string? modelReadback = null, double? limitReadback = null
+        string? modelReadback = null, double? limitReadback = null,
+        Action<ControlledSdkSession>? onClose = null
     ) : INativeSdkSession
     {
         private long requests;
@@ -1033,7 +1147,12 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         {
             cancellationToken.ThrowIfCancellationRequested();
             requests++;
-            return Task.FromResult(new JsonObject { ["text"] = "Controlled response." });
+            return Task.FromResult(new JsonObject
+            {
+                ["text"] = text == "Reply with exactly READY and nothing else."
+                    ? "READY" : "Controlled response.",
+                ["stopReason"] = "end_turn",
+            });
         }
 
         public Task AbortAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -1052,6 +1171,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 );
             }
             HasSession = false;
+            onClose?.Invoke(this);
             return ValueTask.CompletedTask;
         }
     }
