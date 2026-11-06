@@ -135,6 +135,9 @@ a passing check and never bypasses required candidate/final acceptance.
 ### LA-REQ-013: Cancellation and recovery
 
 Support run, status, pause, resume, finalize and explicit cleanup operations.
+Support a separately bounded, explicitly targeted accounting-only reconciliation
+of retained state without dispatching or reopening native sessions. It shall not
+restart or relabel an ended unresolved lifecycle.
 Pause/cancellation shall stop further dispatch, request native cancellation and
 settle owned processes before reporting a quiescent state. Timeouts or ambiguous
 children shall remain visible and block replacement/cleanup, not establish
@@ -147,6 +150,12 @@ before stopping that runtime once. Final accounting and a quiescent outcome
 require settlement of the owned runtime, not merely disposal of one session.
 Unknown ownership or usage blocks replacement; reuse is not permission to
 weaken the existing recovery or accounting guarantees.
+
+Distinguish verified cancellation before first dispatch from provider-measured
+reconciliation. The [credit contract](implementation-contracts.md#verified-pre-dispatch-cancellation)
+owns the fresh-session proof and failure conditions. Preserve raw usage and
+missing completeness; an eligible cancellation shall not fabricate complete
+zero billing. Missing proof or ambiguous ownership remains unresolved.
 
 ### LA-REQ-014: Budgets, liveness and stop meaning
 
@@ -164,6 +173,11 @@ stop the team while the shared pool can fund further work. Waiting workers
 shall not lock fixed shares of the pool. Preserve cancellation, complete
 cumulative usage, unknown-usage stops and the native soft-limit evidence
 boundary. Existing configurations retain their per-session allocation mode.
+
+Unused authorization from a verified pre-dispatch cancellation may return to
+the same finite pool only after session and common-runtime settlement. It shall
+not reset cumulative spend, grant an extra allowance or release unrelated
+historical unknowns.
 
 ### LA-REQ-015: Retained local delivery
 

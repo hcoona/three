@@ -501,7 +501,7 @@ protocol owns that observation.
 `session.Rpc.Usage.GetMetricsAsync()` supplies `TotalNanoAiu` and
 `AiCreditsStatus`. Interpret credits as reported nano-AIU divided by
 1,000,000,000. Require finite nonnegative totals and `Complete` before treating
-a subtotal as final or releasing a reservation. `Partial`, `Unavailable` or an
+a subtotal as final or releasing backing for a dispatched session. `Partial`, `Unavailable` or an
 absent status cannot establish zero cost. Retain the native subtotal and its
 status separately from the conservative reserved charge.
 
@@ -542,5 +542,63 @@ Non-dispatch usage recovery uses a separately bounded temporary runtime and
 returns its reading only after that runtime settles.
 
 Local task cancellation or silence does not settle an operation.
-If final usage, ownership or limit applicability is unknown, retain the
+If dispatched usage, ownership or limit applicability is unknown, retain the
 reservation and stop paid work. Scripted metrics are not native billing proof.
+
+### Verified pre-dispatch cancellation
+
+A fresh opened session may have no completed-call billing because it was never
+dispatched. Permit a distinct cancellation of its remaining authorization only
+with all proof below. This is an accepted application-path evidence level under
+the trusted same-user boundary, not provider-final zero cost or tamper resistance.
+Hashes preserve captured evidence; they do not prove that nobody edited it
+before capture. An incomplete native reading alone never permits cancellation.
+
+- The reservation, run, worker, fresh session, SDK usage row, native attempt,
+  observed metadata and owned runtime associations match uniquely. Reject reused
+  or exact-resume sessions, missing associations and unsupported source lineage.
+- Establish the applicable dispatch contract: intent is durably committed before
+  every SDK send and never reset. Current intent and maximum reported requests
+  must both be zero. A defaulted counter or SDK version alone is not provenance.
+  Retained compatible source/build evidence may establish legacy lineage;
+  unknown compatibility remains uncertain.
+- Preserve matching raw numeric zero usage and zero native requests, with
+  observed identity, locality, cwd, model and finite limit validation. Missing
+  numeric data, nonfinite or nonzero totals, positive requests, `Partial`,
+  `Unavailable` or contradictory readings reject cancellation. Absent status
+  remains absent; it is not rewritten to `Complete`.
+- Fence admission and quiesce session turns and handlers, close the session and
+  settle its owned common runtime. A stop or runtime failure rejects the affected
+  disposition. Disposal, silence, timestamps and a recorded exit flag alone do
+  not establish this. Retained recovery additionally checks the exact old
+  coordinator-owner/runtime identities; a live or uninspectable identity fails.
+
+Apply the disposition inside an immediate campaign-ledger transaction that
+rechecks the matching current reservation, intent, requests and raw usage.
+Atomically record its distinct cancellation reason and proof provenance,
+including source contract, associations, raw readings and settlement evidence,
+and close its remaining authorization. Preserve measured actual usage as
+unestablished; do not insert a synthetic zero credit report or mark it reconciled.
+The resulting terminal state cannot authorize another send. Repetition is
+idempotent only for the same consistent disposition; racing or contradictory
+state fails closed. Unrelated reservations, allowances and cumulative reports
+remain unchanged. Keep existing unstarted-release and unopened exact-load
+complete-baseline cases separate.
+
+Expose only the targeted accounting-only `reconcile --state <owned-state>
+--reservation <id>` operation for retained cases. Hold exclusive run ownership,
+verify its unchanged campaign binding and source lineage, and check live state
+rather than replacing it with a backup. When legacy state lacks a provenance
+marker, `--evidence <owned-proof>` supplies retained lineage and evidence
+references, not trusted success booleans or a budget reset. Independently check
+its identity, compatible source and referenced observations against owned state.
+Return the cancellation classification, raw usage/status and remaining
+uncertainty separately from measured reconciliation. Do not open native sessions,
+query accounts, dispatch, continue pending work, run checks, consume delivery
+events or alter the old run's lifecycle, segments, leases or report.
+
+This path does not infer free usage for all empty sessions or release arbitrary
+historical unknowns. An owning operational protocol must authorize the retained
+target. Actual sends retain the existing complete-usage guards. A successful
+cancellation settles local authorization only; it is not native billing
+effectiveness, a completed audit or permission to bypass future preflight.
