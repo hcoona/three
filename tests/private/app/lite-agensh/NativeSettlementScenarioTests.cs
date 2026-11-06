@@ -472,6 +472,106 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         }
     }
 
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow(1d, "complete")]
+    [DataRow(double.NaN, "complete")]
+    [DataRow(null, "complete")]
+    [DataRow(0d, "partial")]
+    public async Task LaterZeroCannotErasePreDispatchContradictoryUsage(
+        double? nano, string status
+    )
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        LocalTools tools = new(database);
+        _ = new Coordinator(database, tools.Collaboration, tools.Git);
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        ControlledSdkHost host = new("none", token,
+            evidenceDatabase: database, emptyStatus: true);
+        host.Release.TrySetResult();
+        NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
+        CreditReservation reservation = ledger.Reserve(database.RunId, "worker1", 0, 300,
+            Path.Combine(fixture.RootPath, "contradictory.sdk-evidence"), shared: true);
+        INativeWorker peer = factory.Create(reservation, calibration: false);
+        await peer.StartAsync(fixture.RepositoryPath, null, token);
+        host.Sessions[0].Readings.Enqueue(new NativeUsage(peer.SessionId!, nano, status, 0));
+        if (nano is double observed && observed != 0)
+        {
+            await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                peer.VerifyCreditsAsync(token));
+        }
+        else
+        {
+            await peer.VerifyCreditsAsync(token);
+        }
+        await Assert.ThrowsExactlyAsync<OperationException>(() => factory.CompleteAsync());
+        Assert.AreEqual("uncertain", ledger.Reservations()[0].State);
+        Assert.IsNull(ledger.Reservations()[0].Actual);
+        using SqliteConnection campaign = Campaign(database);
+        Assert.AreEqual("0", Sql.Scalar(campaign,
+            "SELECT reported_nano_aiu FROM credit_sdk_usage;"));
+        Assert.AreEqual(0L, Sql.Scalar(campaign,
+            "SELECT dispatch_count FROM credit_sdk_usage;"));
+        Assert.AreEqual(0L, Sql.Scalar(campaign, "SELECT COUNT(*) FROM credit_reports;"));
+        Assert.AreEqual(1L, Sql.Scalar(campaign,
+            "SELECT COUNT(*) FROM credit_cancellation_disqualifiers;"));
+        Assert.AreEqual("credit_unknown",
+            Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task FreshResumedSessionCancellationPreservesEarlierMeasuredTurn()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "per-session");
+        LocalTools tools = new(database);
+        _ = new Coordinator(database, tools.Collaboration, tools.Git);
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        ControlledSdkHost firstHost = new("none", token,
+            evidenceDatabase: database, emptyStatus: true);
+        firstHost.Release.TrySetResult();
+        NativeWorkerFactory first = new(database, new(database), ledger, () => firstHost);
+        CreditReservation previous = ledger.Reserve(database.RunId, "worker1", 60, 300,
+            Path.Combine(fixture.RootPath, "previous.sdk-evidence"));
+        INativeWorker original = first.Create(previous, calibration: false);
+        await original.StartAsync(fixture.RepositoryPath, null, token);
+        await original.PromptAsync("Earlier completed turn.", token);
+        await first.CompleteAsync();
+        using (SqliteConnection state = database.Open())
+        {
+            Sql.Execute(state,
+                """
+                INSERT INTO coordinator_turns(batch_id,worker,state,completed_at)
+                VALUES(901,'worker1','acknowledged','earlier');
+                """);
+        }
+        CreditReservation previousAccounting = ledger.Reservations()
+            .Single(row => row.Id == previous.Id);
+        ControlledSdkHost resumedHost = new("none", token,
+            evidenceDatabase: database, emptyStatus: true);
+        resumedHost.Release.TrySetResult();
+        NativeWorkerFactory resumed = new(database, new(database), ledger, () => resumedHost);
+        CreditReservation fresh = ledger.Reserve(database.RunId, "worker1", 60, 300,
+            Path.Combine(fixture.RootPath, "resumed.sdk-evidence"));
+        INativeWorker replacement = resumed.Create(fresh, calibration: false);
+        await replacement.StartAsync(fixture.RepositoryPath, null, token);
+        Assert.AreNotEqual(original.SessionId, replacement.SessionId);
+        await resumed.CompleteAsync();
+        Assert.AreEqual("released", ledger.Reservations().Single(row => row.Id == fresh.Id).State);
+        Assert.AreEqual(previousAccounting,
+            ledger.Reservations().Single(row => row.Id == previous.Id));
+        ledger.RequirePaidAdmission();
+        using SqliteConnection retained = database.Open();
+        Assert.AreEqual("acknowledged", Sql.Scalar(retained,
+            "SELECT state FROM coordinator_turns WHERE batch_id=901;"));
+        Assert.AreEqual("earlier", Sql.Scalar(retained,
+            "SELECT completed_at FROM coordinator_turns WHERE batch_id=901;"));
+    }
+
     private static RunDatabase ControlledDatabase(RunFixture fixture, string allocation) =>
         new(fixture.StatePath, fixture.Configuration with
         {
@@ -717,9 +817,9 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         RunDatabase? evidenceDatabase = null, bool emptyStatus = false
     ) : INativeSdkHost
     {
-        public string Id => "controlled-sdk-host";
+        public string Id { get; } = "controlled-sdk-host-" + Guid.NewGuid().ToString("N");
 
-        public long LeaseId => 1;
+        public long LeaseId { get; private set; } = 1;
 
         public List<ControlledSdkSession> Sessions { get; } = [];
 
@@ -738,12 +838,13 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             if (evidenceDatabase is not null && Sessions.Count == 0)
             {
                 using Process process = Process.GetCurrentProcess();
-                _ = new ProcessRunner(evidenceDatabase).Register(process, $"native:runtime:{Id}");
+                LeaseId = new ProcessRunner(evidenceDatabase)
+                    .Register(process, $"native:runtime:{Id}");
                 RecordState("ready");
             }
             ControlledSdkSession session = new(
                 failure == "session" && Sessions.Count == 0, missingMetrics,
-                evidenceDatabase, emptyStatus, cwd, Id
+                evidenceDatabase, emptyStatus, cwd, Id, LeaseId
             );
             Sessions.Add(session);
             return session;
@@ -777,7 +878,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     private sealed class ControlledSdkSession(
         bool failDispose, bool missingMetrics = false, RunDatabase? evidenceDatabase = null,
-        bool emptyStatus = false, string cwd = "", string runtimeId = ""
+        bool emptyStatus = false, string cwd = "", string runtimeId = "", long runtimeLeaseId = 1
     ) : INativeSdkSession
     {
         private long requests;
@@ -791,6 +892,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         public JsonObject? Metadata { get; private set; }
 
         public bool CloseAttempted { get; private set; }
+
+        public Queue<NativeUsage> Readings { get; } = [];
 
         public Task OpenAsync(
             string worker, string sessionId, decimal? limit, string? exactSession,
@@ -812,13 +915,13 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 Metadata["runtimeVersion"] = NativeSdkSession.RuntimeVersion;
                 Metadata["sdkVersion"] = NativeSdkSession.SdkVersion;
                 Metadata["runtimeId"] = runtimeId;
-                Metadata["runtimeLeaseId"] = 1L;
+                Metadata["runtimeLeaseId"] = runtimeLeaseId;
                 evidenceDatabase.WriteMetadata(
                     $"native:runtime:{runtimeId}:session:{sessionId}",
                     new JsonObject
                     {
                         ["runtimeId"] = runtimeId,
-                        ["runtimeLeaseId"] = 1L,
+                        ["runtimeLeaseId"] = runtimeLeaseId,
                         ["sessionId"] = sessionId,
                         ["worker"] = worker,
                         ["workingDirectory"] = cwd,
@@ -833,6 +936,10 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (Readings.TryDequeue(out NativeUsage? reading))
+            {
+                return Task.FromResult(reading);
+            }
             return Task.FromResult(new NativeUsage(
                 SessionId, missingMetrics ? null : requests * 1_000_000_000d,
                 missingMetrics || (emptyStatus && requests == 0) ? null : "complete", requests

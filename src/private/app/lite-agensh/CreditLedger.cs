@@ -272,6 +272,25 @@ public sealed class CreditLedger
                 ("$id", id)
             ) ?? throw new InvalidOperationException()
         );
+        if (dispatches == 0
+            && (usage.TotalNanoAiu != 0 || usage.TotalUserRequests != 0
+                || usage.Status is not (null or "complete")))
+        {
+            Sql.Execute(connection,
+                """
+                CREATE TABLE IF NOT EXISTS credit_cancellation_disqualifiers(
+                    reservation_id TEXT PRIMARY KEY, reported_nano_aiu TEXT,
+                    status TEXT, reported_requests INTEGER, created_at TEXT NOT NULL,
+                    FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
+                INSERT OR IGNORE INTO credit_cancellation_disqualifiers(
+                    reservation_id,reported_nano_aiu,status,reported_requests,created_at)
+                VALUES($id,$nano,$status,$requests,$time);
+                """, transaction,
+                ("$id", id),
+                ("$nano", usage.TotalNanoAiu?.ToString("R", CultureInfo.InvariantCulture)),
+                ("$status", usage.Status), ("$requests", usage.TotalUserRequests),
+                ("$time", DateTimeOffset.UtcNow.ToString("O")));
+        }
         if (dispatches == 0 && !final)
         {
             if (
@@ -386,6 +405,16 @@ public sealed class CreditLedger
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
         CreditReservation row = Read(connection, transaction)
             .Single(item => item.Id == expected.Id);
+        if (Sql.Scalar(connection,
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                    + "AND name='credit_cancellation_disqualifiers';", transaction) is string
+            && Sql.Scalar(connection,
+                "SELECT reservation_id FROM credit_cancellation_disqualifiers "
+                    + "WHERE reservation_id=$id;", transaction, ("$id", row.Id)) is string)
+        {
+            throw new OperationException(
+                "credit_unknown", "A prior contradictory native reading prohibits cancellation.");
+        }
         if (
             row.RunId != expected.RunId || row.Worker != expected.Worker
             || row.SessionId != expected.SessionId || row.UsagePath != expected.UsagePath

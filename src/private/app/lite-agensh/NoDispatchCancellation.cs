@@ -48,6 +48,7 @@ internal static class NoDispatchCancellation
             ["reservationId"] = reservation.Id,
             ["sessionId"] = reservation.SessionId,
             ["workingDirectory"] = cwd,
+            ["turnBaseline"] = LastWorkerTurn(database, reservation.Worker),
             ["initial"] = diagnostic.DeepClone(),
         }.ToJsonString());
     }
@@ -121,10 +122,7 @@ internal static class NoDispatchCancellation
                 Text(diagnostic, "workingDirectory"))
             && Text(lease, "kind") == $"native:runtime:{runtimeId}"
             && Text(lease, "state") == "exited"
-            && Value(connection, snapshot, $"worker:{reservation.Worker}:lifecycle") == "stopped"
-            && (long)Sql.Scalar(connection,
-                "SELECT COUNT(*) FROM coordinator_turns WHERE worker=$id;",
-                snapshot, ("$id", reservation.Worker))! == 0,
+            && Value(connection, snapshot, $"worker:{reservation.Worker}:lifecycle") == "stopped",
             "Session/handler or common-runtime settlement is not established."
         );
         JsonObject owner = credits.ReadSdkOwner(reservation.Id);
@@ -159,6 +157,12 @@ internal static class NoDispatchCancellation
                 && Text(source, "evidenceKind") is "native-sdk" or "controlled-native-dependency",
                 "The persisted dispatch-contract provenance is unsupported."
             );
+            long? baseline = source["turnBaseline"]?.GetValue<long>();
+            Require(baseline is >= 0
+                && (long)Sql.Scalar(connection,
+                    "SELECT COALESCE(MAX(batch_id),0) FROM coordinator_turns WHERE worker=$id;",
+                    snapshot, ("$id", reservation.Worker))! == baseline,
+                "The selected fresh session has new or contradictory completed turns.");
             JsonObject initial = Object(source["initial"]);
             RequireZero(initial);
             foreach (string key in new[]
@@ -177,6 +181,10 @@ internal static class NoDispatchCancellation
             Require(retained && evidencePath is not null,
                 "Legacy cancellation requires explicit compatible retained lineage evidence.");
             source = LegacyEvidence(database, reservation, diagnostic, evidencePath!, proof);
+            Require((long)Sql.Scalar(connection,
+                "SELECT COUNT(*) FROM coordinator_turns WHERE worker=$id;",
+                snapshot, ("$id", reservation.Worker))! == 0,
+                "Legacy evidence does not distinguish this worker's prior completed turns.");
             Require(SamePath(
                 Value(connection, snapshot, $"worktree:{reservation.Worker}")
                     ?? throw Unknown("The retained worktree binding is missing."),
@@ -199,6 +207,14 @@ internal static class NoDispatchCancellation
     internal static bool IsZero(string? value) =>
         double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double total)
         && double.IsFinite(total) && total == 0;
+
+    private static long LastWorkerTurn(RunDatabase database, string worker)
+    {
+        using SqliteConnection connection = database.Open();
+        return (long)Sql.Scalar(connection,
+            "SELECT COALESCE(MAX(batch_id),0) FROM coordinator_turns WHERE worker=$id;",
+            null, ("$id", worker))!;
+    }
 
     private static bool IsEmpty(JsonObject diagnostic) =>
         IsZero(diagnostic["reportedNanoAiu"]?.GetValue<string>())
