@@ -587,10 +587,11 @@ with their provenance:
   voices are renumbered without a change of canonical positions (for example
   staff 2 voices 5 and 6 against 1 and 2, including a change in their numeric
   rank), and identical pairs;
-- a pair in which a two-voice measure keeps its two voice-group contents fixed
-  but reverses their stem assignments, thereby exchanging their canonical
-  positions, and a pair in which two same-rhythm unison voices of one staff
-  with different articulations exchange their canonical positions;
+- a pair in which a two-voice measure has one note in each voice and reverses
+  their stem directions, keeping each voice group's content fixed while
+  exchanging canonical positions, and a pair in which two one-note,
+  same-rhythm unison voices of one staff with different articulations exchange
+  their canonical positions;
 - one pair that differs only in the end note of an extended trill, one in
   which an extended trill moves between simultaneous unison notes of different
   written durations in two voices of one staff that both carry a trill mark,
@@ -654,8 +655,10 @@ The instrument passes when it reports:
   value pair;
 - exactly one `layout` difference, exactly one non-identical or extra layout
   element and no content difference for each layout pair;
-- exactly two non-identical `voice` elements and no other difference for each
-  canonical-position-swap pair, since both voices change position;
+- exactly two non-identical `voice` elements and no other content difference
+  for each canonical-position-swap pair, since both voices change position;
+  each one-note stem-swap pair also has exactly two layout differences, one for
+  each changed stem direction;
 - exactly one non-identical and one extra `ornament` element for the extended
   trill pair and for the extended-trill move pair, and exactly one
   non-identical and one extra `text` element for
