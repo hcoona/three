@@ -109,7 +109,8 @@ public sealed partial class CollaborationOperations
                 (text, query) => text.Contains(query, StringComparison.OrdinalIgnoreCase),
                 isDeterministic: true
             );
-            using var transaction = connection.BeginTransaction();
+            using var transaction = connection.BeginTransaction(
+                deferred: name is not ("task_write" or "message_send" or "board_publish"));
             var data = Dispatch(connection, transaction, actor, name, arguments);
             transaction.Commit();
             return Operation.Success(data);

@@ -498,7 +498,8 @@ internal sealed class NativeWorker : INativeWorker
             {
                 settlementFailure = new OperationException(
                     "credit_or_ownership_unknown",
-                    $"Native settlement retained unresolved evidence: {failure.Message}"
+                    $"Native settlement retained unresolved evidence: {failure.Message}",
+                    failure
                 );
                 if (reservation is not null)
                 {

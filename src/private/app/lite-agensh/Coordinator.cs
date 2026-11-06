@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
+using static LiteAgensh.Json;
 
 namespace LiteAgensh;
 
@@ -536,6 +537,7 @@ public sealed class Coordinator
         bool finalize = false;
         Exception? failure = null;
         JsonArray settlementFailures = [];
+        JsonArray settlementDetails = [];
         try
         {
             RecoverCompletedTurns();
@@ -872,6 +874,11 @@ public sealed class Coordinator
                 catch (Exception exception)
                 {
                     failure ??= exception;
+                    AddSettlementDetails(
+                        settlementDetails,
+                        database.Configuration.WorkerIds[workers.IndexOf(worker)],
+                        worker.ReservationId, "stop", exception
+                    );
                     settlementFailures.Add(
                         new JsonObject
                         {
@@ -901,6 +908,11 @@ public sealed class Coordinator
                     catch (Exception exception)
                     {
                         failure ??= exception;
+                        AddSettlementDetails(
+                            settlementDetails,
+                            database.Configuration.WorkerIds[workers.IndexOf(worker)],
+                            worker.ReservationId, "dispose", exception
+                        );
                         settlementFailures.Add(
                             new JsonObject
                             {
@@ -970,6 +982,48 @@ public sealed class Coordinator
 
         if (failure is not null)
         {
+            try
+            {
+                JsonArray workerDetails = [];
+                for (int index = 0; index < loops.Count; index++)
+                {
+                    if (loops[index].Exception is { } errors)
+                    {
+                        foreach (Exception error in errors.Flatten().InnerExceptions)
+                        {
+                            workerDetails.Add(new JsonObject
+                            {
+                                ["worker"] = database.Configuration.WorkerIds[index],
+                                ["error"] = ExceptionDetails(error),
+                            });
+                        }
+                    }
+                }
+                database.WriteMetadata(
+                    $"lifecycle:failure_details:{segment}",
+                    new JsonObject
+                    {
+                        ["primary"] = ExceptionDetails(failure),
+                        ["workers"] = workerDetails,
+                        ["settlements"] = settlementDetails,
+                        ["factorySettlements"] = new JsonArray(nativeWorkers.SettlementDetails
+                            .Select(item => item!.DeepClone()).ToArray()),
+                        ["nativeFailures"] = new JsonArray(workers.Select((worker, index) =>
+                            worker.NativeFailure is { } message
+                                ? (JsonNode)new JsonObject
+                                {
+                                    ["worker"] = database.Configuration.WorkerIds[index],
+                                    ["message"] = message,
+                                    ["detailsKind"] = "native-message-only",
+                                } : null).OfType<JsonNode>().ToArray()),
+                    }.ToJsonString()
+                );
+            }
+            catch (Exception exception) when (IsExpected(exception))
+            {
+                // Diagnostic retention must not replace the original failure or settlement.
+            }
+
             IEnumerable<string> loopFailures = loops
                 .SelectMany(
                     (loop, index) =>
@@ -1144,18 +1198,6 @@ public sealed class Coordinator
         }
     }
 
-    private static bool IsExpected(Exception exception) =>
-        exception
-            is OperationException
-                or IOException
-                or InvalidOperationException
-                or JsonException
-                or SqliteException
-                or ArgumentException
-                or TimeoutException
-                or UnauthorizedAccessException
-                or System.ComponentModel.Win32Exception;
-
     private JsonObject Success(object? data = null, string message = "") =>
         Classify(Operation.Success(data, message));
 
@@ -1291,6 +1333,10 @@ public sealed class Coordinator
             }
             catch (Exception exception)
             {
+                exception.Data["liteagensh.batchId"] = batch.Id;
+                exception.Data["liteagensh.phase"] = nativeCompleted
+                    ? acknowledged ? "credit-verification" : "acknowledgement"
+                    : modelAttempted ? "native-turn" : "composition";
                 if (nativeCompleted)
                 {
                     if (acknowledged)
@@ -1313,7 +1359,8 @@ public sealed class Coordinator
 
                     throw new OperationException(
                         "post_delivery_failed",
-                        $"Completed native turn retained without retry: {exception.Message}"
+                        $"Completed native turn retained without retry: {exception.Message}",
+                        exception
                     );
                 }
 

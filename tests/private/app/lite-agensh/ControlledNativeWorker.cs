@@ -14,13 +14,16 @@ internal sealed class ControlledNativeFactory(
     string directory,
     Func<CancellationToken, Task>? onExactLoadSettled = null,
     Func<CreditReservation, CancellationToken, Task>? onStart = null,
-    Func<Task>? onHostSettlement = null
+    Func<Task>? onHostSettlement = null,
+    Action<CreditReservation, string>? onSettlement = null
 ) : INativeWorkerFactory
 {
     private readonly List<(ControlledNativeWorker Worker, CreditReservation? Reservation)> workers =
         [];
 
     public JsonArray SettlementFailures { get; } = [];
+
+    public JsonArray SettlementDetails { get; } = [];
 
     public INativeWorker Create(CreditReservation? reservation, bool calibration)
     {
@@ -31,7 +34,8 @@ internal sealed class ControlledNativeFactory(
             reservation,
             calibration,
             onExactLoadSettled,
-            onStart
+            onStart,
+            onSettlement
         );
         workers.Add((worker, reservation));
         return worker;
@@ -64,6 +68,7 @@ internal sealed class ControlledNativeFactory(
     public async Task CompleteAsync()
     {
         SettlementFailures.Clear();
+        SettlementDetails.Clear();
         HashSet<ControlledNativeWorker> unsettled = [];
         Exception? failure = null;
         foreach ((ControlledNativeWorker worker, CreditReservation? reservation) in workers)
@@ -76,6 +81,9 @@ internal sealed class ControlledNativeFactory(
             {
                 failure ??= exception;
                 unsettled.Add(worker);
+                Json.AddSettlementDetails(
+                    SettlementDetails, reservation?.Worker, reservation?.Id, "stop", exception
+                );
                 SettlementFailures.Add(NativeWorkerFactory.CreateSettlementFailure(
                     reservation, "stop", exception
                 ));
@@ -101,6 +109,9 @@ internal sealed class ControlledNativeFactory(
         catch (Exception exception)
         {
             failure ??= exception;
+            Json.AddSettlementDetails(
+                SettlementDetails, null, null, "native-runtime", exception
+            );
             SettlementFailures.Add(NativeWorkerFactory.CreateSettlementFailure(
                 null, "native-runtime", exception
             ));
@@ -122,6 +133,10 @@ internal sealed class ControlledNativeFactory(
             catch (Exception exception)
             {
                 failure ??= exception;
+                Json.AddSettlementDetails(
+                    SettlementDetails, reservation?.Worker, reservation?.Id,
+                    finalize ? "final-usage" : "retain-uncertainty", exception
+                );
                 SettlementFailures.Add(NativeWorkerFactory.CreateSettlementFailure(
                     reservation, finalize ? "final-usage" : "retain-uncertainty", exception
                 ));
@@ -164,7 +179,8 @@ internal sealed class ControlledNativeWorker(
     CreditReservation? reservation,
     bool calibration,
     Func<CancellationToken, Task>? onExactLoadSettled = null,
-    Func<CreditReservation, CancellationToken, Task>? onStart = null
+    Func<CreditReservation, CancellationToken, Task>? onStart = null,
+    Action<CreditReservation, string>? onSettlement = null
 ) : INativeWorker
 {
     private readonly CancellationTokenSource stop = new();
@@ -549,6 +565,10 @@ internal sealed class ControlledNativeWorker(
                 }
             }
 
+            if (reservation is not null)
+            {
+                onSettlement?.Invoke(reservation, "stop");
+            }
             stopped = true;
             if (reservation is not null)
             {
@@ -581,6 +601,10 @@ internal sealed class ControlledNativeWorker(
     public async ValueTask DisposeAsync()
     {
         await StopAsync();
+        if (reservation is not null)
+        {
+            onSettlement?.Invoke(reservation, "dispose");
+        }
         if (failedSession is not null)
         {
             await failedSession.DisposeAsync();
