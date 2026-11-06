@@ -35,6 +35,12 @@ cost. The owner-approved [SDK baseline](docs/native-acceptance-protocol.md#sdk-c
 uses one new persistent ledger. Unknown usage in that active ledger blocks
 further paid work; repeated runs do not reset it.
 
+The [credit contract](docs/implementation-contracts.md#verified-pre-dispatch-cancellation)
+specifies a distinct verified cancellation before first dispatch, not measured
+zero billing. Its implementation and accounting-only `reconcile` command require
+separate acceptance; they are not yet available in the current application.
+The earlier unknown reservations are not automatically released by this design.
+
 ## User and primary journey
 
 The user is a developer who wants several coding agents to cooperate on one

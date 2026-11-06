@@ -41,8 +41,12 @@ balance, personal usage or authentication artifact belongs in public evidence.
   sum bounded by the run and remaining campaign allowances. Pass native
   SDK `SessionLimits.MaxAiCredits` for each allocation and read it back; do not
   reset limits or start a fresh session to evade a spent allowance. Reconcile
-  complete native-reported usage before releasing reservations or admitting
-  further paid work. Bind reservation/session/worker identity atomically.
+  complete native-reported usage for actual dispatch before measured
+  reconciliation or further paid work. Bind reservation/session/worker identity
+  atomically. Distinct verified pre-dispatch cancellation belongs to the
+  [credit contract](implementation-contracts.md#verified-pre-dispatch-cancellation)
+  and requires its owning operational scope; this protocol does not authorize
+  release of its historical unknown reservations.
 - These are the official native **soft** credit limits. The owner accepts
   possible overshoot by an in-flight model response before the runtime stops
   the next call. Record actual overshoot; never label this a mathematical
@@ -191,6 +195,11 @@ explicit one-time SDK baseline above, this protocol does not authorize another
 reset, measured-zero inference, release or bypass of the active ledger's
 global paid-work gate. Non-model SDK inspection and credential-free
 implementation remain separate from paid admission.
+
+The separately authorized user audit may apply the
+[bounded cancellation disposition](user-audit-protocol.md#verified-pre-dispatch-accounting)
+only within its own scope. It is not measured-zero inference and does not reopen
+this protocol's campaign or change the retained SDK-baseline unknowns.
 
 Keep logs, SQLite/journals, fixture worktrees and native session associations
 local for diagnosis. Cleanup is separately explicit, limited to named owned

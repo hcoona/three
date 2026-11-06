@@ -103,14 +103,47 @@ There is no separate run-count quota; cumulative credit and per-run worker/time
 bounds are accident fuses, not unlimited execution permission.
 
 Retain the existing reservation, native limit readback, cumulative-delta and
-ownership contracts. Require complete native-reported metrics before final
-reconciliation or further paid admission; never infer exact spend from tokens,
+ownership contracts. Require complete native-reported metrics for dispatched
+usage before final measured reconciliation or further paid admission; never infer exact spend from tokens,
 elapsed time or account balance. Native limits are soft, not exact prepaid
 ceilings. Unknown usage, unsupported limit application or ambiguous ownership
 blocks replacement and further paid work. Preserve the affected reservation
 and diagnose through the accepted non-dispatch reconciliation path.
 This ordinary admission rule applies to every uncertainty in the new ledger;
 the one historical transition does not supply another exception.
+
+## Verified pre-dispatch accounting
+
+The owner accepts the application-path evidence level in the
+[verified pre-dispatch cancellation contract](implementation-contracts.md#verified-pre-dispatch-cancellation),
+under the existing trusted same-user assumptions, not provider-complete zero
+billing. It applies to qualifying fresh sessions in the continuing campaign.
+Retained-target permission is limited to actual08's worker28, whose original
+accepted subject is `3805a50490afbdd6c53ec4e3c6e8c64a3150858f`.
+Keep exact private reservation/session/runtime identifiers and evidence local.
+This does not release the old ledgers' historical unknowns or grant another reset.
+
+Separately accept the contract, recovery design and validation prerequisites,
+then the implementation, before invoking `reconcile --state <owned-state>
+--reservation <id>` against that retained case. Supply compatible retained
+lineage through `--evidence <owned-proof>` when the old state lacks its marker.
+The proof's recorded success is not authority: the accepted implementation must
+recheck current bindings, dispatch/usage, ownership and settlement and atomically
+record the disposition. Missing, contradictory or live-owner evidence retains
+uncertainty. This operation is offline accounting only, without native session
+creation, prompting, account queries or a new calibration.
+
+Retain raw readings, absent completeness and a distinct durable cancellation
+proof. Do not overwrite original receipts, lifecycle, leases, source, report or
+failed outcome. Record the new operation's exact accepted binary, original
+subject, private input/output identities, fresh checks, before/after accounting,
+idempotence and any rejected condition. Reverify original preservation and
+publish only a sanitized outcome with independent review.
+
+Cancellation may resolve the selected authorization, not prove provider-final
+spend. Every other unknown still blocks paid work. A new actual attempt still
+requires its own matching accepted-source preflight, calibration, immutable
+inputs and all existing 32-peer, model, finite-credit and outcome gates.
 
 ## Owned memory observations
 
@@ -196,9 +229,12 @@ failure. Retain the missing allocation stack/peak as a limitation when absent.
    classifications, checks actually run, missing coverage, unresolved
    disagreements and owner decisions, and a bounded semantic conclusion.
    Verify original-source preservation, no active coordinator or owned
-   children, complete native usage and ledger reconciliation. Session closure
+   children, complete native usage for actual calls and, for each reservation,
+   measured reconciliation, existing unstarted release or the separately
+   verified cancellation.
+   Session closure
    alone is not shared-host settlement: stage final readings, settle the common
-   runtime once, and only then finalize their accounting. Retain product
+   runtime once, and only then finalize their accounting or eligible cancellation. Retain product
    delivery/check status truthfully; empty final checks are not acceptance.
 
 Actual dispatch, meaningful cooperation, substantive audit output and complete

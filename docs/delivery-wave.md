@@ -128,6 +128,16 @@ ends a grant. Git and the proposing PR retain the reason and history.
   again. This exception does not change ordinary unknown-usage admission:
   uncertainty in the new ledger blocks further paid work until resolved by
   the accepted reconciliation path. There is no separate run-count quota.
+  The owner accepts the distinct
+  [verified pre-dispatch cancellation](../src/private/app/lite-agensh/docs/implementation-contracts.md#verified-pre-dispatch-cancellation)
+  evidence level under the existing trusted same-user boundary, not
+  provider-complete zero usage. Permit conditional application to the retained
+  actual08 worker28 case declared in the
+  [user-audit protocol](../src/private/app/lite-agensh/docs/user-audit-protocol.md#verified-pre-dispatch-accounting),
+  plus qualifying fresh sessions in this continuing campaign. Separately accept
+  the owning records and implementation before any disposition. The public
+  accounting-only path must recheck live evidence and ownership; no snapshot
+  substitution, manual edit, blanket historical release or second reset.
   Native limits remain soft, with possible in-flight overshoot accepted and
   recorded; tokens or elapsed time do not prove exact spend.
 - **Ordering and gates:** this Wave must merge before newly authorized work.

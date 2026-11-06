@@ -344,6 +344,27 @@ complete usage become final reconciled accounting. A session, callback, client
 or process settlement failure retains affected authorization as unresolved.
 No single peer's session disposal establishes whole-cohort quiescence.
 
+The [credit contract](implementation-contracts.md#verified-pre-dispatch-cancellation)
+also permits a distinct verified cancellation before first dispatch. The worker
+stages its fresh-session evidence during stop; the existing factory applies the
+same common-host barrier before the campaign ledger can cancel its remaining
+authorization. Keep the durable cancellation proof and raw metrics separate
+from native-measured reports. This is not a new backend or billing estimate.
+
+The owner-facing `reconcile --state <owned-state> --reservation <id>` path is
+accounting-only and requires the run's exclusive ownership handle. It may
+inspect an ended unresolved segment without opening sessions, starting a new
+segment, replaying events, exporting a team report or relabeling old leases.
+Bind the requested reservation to the unchanged run/campaign and verify exact
+old owner/runtime identities, retained session settlement and current ledger
+predicates before the ledger's atomic disposition. Unknown ownership blocks it.
+Legacy state without a persisted dispatch-contract provenance marker requires
+explicit compatible retained lineage evidence through `--evidence <owned-proof>`;
+SDK version or a report's claimed success is not sufficient. Do not rewrite old
+preflight/calibration fingerprints or reuse them for paid admission by a new build.
+The ledger transaction rechecks dispatch and usage and records cancellation
+exactly once; a racing send cannot pass both admission and cancellation.
+
 An exact-load failure with no opened session may retain the existing
 undispatched complete-baseline recovery path; it does not dispose a healthy
 cohort's runtime or permit a send with unknown usage. Settled-usage recovery

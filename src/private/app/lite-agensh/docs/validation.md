@@ -95,6 +95,35 @@ sessions nor managed tests establish native concurrent reasoning, complete
 billing, memory savings or 32-peer success; retain those as actual-journey
 observations under the accepted operational protocol.
 
+Verified pre-dispatch cancellation scenarios protect LA-REQ-003, LA-REQ-013 and
+LA-REQ-014 under the
+[owning credit contract](implementation-contracts.md#verified-pre-dispatch-cancellation).
+Use the real worker/cohort lifecycle with controlled native sessions and real
+SQLite to cancel a fresh never-dispatched session only after the common-host
+barrier. Preserve raw zero/absent-status readings without a synthetic measured
+report, return backing once and keep a peer with actual complete usage correct.
+Retain the existing unstarted and unopened exact-load baseline behavior.
+
+Reject positive or racing dispatch, positive/missing/nonfinite usage or requests,
+partial/unavailable status, mismatched associations, reused sessions, missing
+source lineage, session-stop failure and unsettled or ambiguous ownership.
+Use a focused concurrent ledger scenario to show cancellation and admission
+cannot both win; do not test incidental private method order.
+
+The public accounting-only path additionally covers ended unresolved state,
+exclusive run ownership, exact live/reused/unknown old process identities,
+unchanged campaign binding, current-state rechecks, legacy compatible evidence
+and rejection of unsupported or mismatched proof. Repeated cancellation is
+idempotent. Old lifecycle/segments/leases, reports, events, cumulative spend,
+other reservations and model dispatch remain unchanged. Scripted receipts or
+claimed report success must not become native proof or paid admission.
+
+The independently reviewed retained actual08 evidence supports only application-
+path non-dispatch under trusted same-user assumptions. It does not establish
+provider-final zero, historical tamper resistance or a fresh live fence.
+Verify the accepted public path against fresh owned evidence before its bounded
+disposition; no paid billing probe is required or authorized by these scenarios.
+
 ## Implementation and evidence ordering
 
 The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) selects the
