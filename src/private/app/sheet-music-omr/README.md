@@ -11,9 +11,9 @@ Text Score 2 documents, validates their grammar and semantics, reports each
 error with its rule class and location, lists review markers, writes canonical
 text, derives the carry-out state of a system document and assembles system
 documents into one score. A forward converter turns a valid assembled score
-without review markers into MusicXML 4.0. There is no reverse converter,
-recognizer or model yet. No
-packaging or release is selected.
+without review markers into MusicXML 4.0, and a reverse converter turns a
+MusicXML piano part on two staves back into a valid assembled score. There is
+no recognizer or model yet. No packaging or release is selected.
 
 ## Usage
 
@@ -24,6 +24,7 @@ uv run --package sheet-music-omr sheet-music-omr validate FILE...
 uv run --package sheet-music-omr sheet-music-omr canonicalize FILE
 uv run --package sheet-music-omr sheet-music-omr assemble FILE... [-o OUTPUT]
 uv run --package sheet-music-omr sheet-music-omr to-musicxml FILE [-o OUT]
+uv run --package sheet-music-omr sheet-music-omr from-musicxml FILE [-o OUT]
 uv run --package sheet-music-omr --group dev pytest src/private/app/sheet-music-omr/tests
 ```
 
@@ -38,6 +39,10 @@ person.
 output or to `OUT`. It exits with 1 and writes no MusicXML when the score is
 invalid, holds review markers or holds content that the converter cannot
 convert faithfully.
+`from-musicxml` reads a `.musicxml` or compressed `.mxl` file and writes the
+canonical text of the assembled score to standard output or to `OUT`. It exits
+with 1 and writes no score when the file is unreadable, is not one part on two
+staves or holds content that the format cannot represent.
 
 ## User and primary journey
 
