@@ -333,6 +333,7 @@ No distributed lease service is needed.
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Start                          | Validate state/config/backend prerequisites, own the run, allocate worktrees and native sessions, then dispatch                                                             |
 | Crash reconnect                | Resolve old writer ownership; resume the exact saved native session with pending work continuation and transcript recovery disabled, then verify identity, limits and usage |
+| Closed failed-run reconnect    | Resolve ownership and settle associated usage only; preserve ended segments and the failed outcome, without worker dispatch or reopening the run                            |
 | Session load unavailable/fails | Record the failed reconnect and use the explicit fresh-session-with-summary recovery path; never claim an uninterrupted continuation or silently lose queued work           |
 | Pause                          | Stop new dispatch, request native cancellation, settle owned processes and retain durable work                                                                              |
 | Explicit resume                | Start fresh native sessions with repository/task/change/board summary and preserved run state                                                                               |
@@ -395,6 +396,18 @@ The [credit contract](implementation-contracts.md#usage-evidence-and-settlement)
 owns eligibility and rejection rules. Keep the existing reconnect and offline
 pre-dispatch cancellation entry points distinct; no additional incident-specific
 command or recovery framework is introduced.
+
+The same `reconnect` entrypoint selects a settlement-only branch when the run
+has prior segments, all are ended and its retained lifecycle is `unresolved`.
+Select that branch under exclusive ownership before requiring an unfinished
+crash segment or paid-work receipts. Reuse exact-session recovery and its
+settled temporary runtime; do not introduce a separate command or backend.
+Return its own success/failure outcome before worker admission or segment
+creation. Preserve original lifecycle/failure records, segments, report and
+receipts; accounting success is not a successful audit or delivery. Ordinary
+crash reconnect and fresh-summary resume retain their existing semantics and
+paid gates. The [entrypoint contract](implementation-contracts.md#closed-failed-run-reconnect)
+owns the detailed boundary.
 
 SDK disposal preserves on-disk session data; do not call its
 permanent session deletion API during pause, finalization or reconnect.

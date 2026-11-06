@@ -136,14 +136,25 @@ a passing check and never bypasses required candidate/final acceptance.
 
 Support run, status, pause, resume, finalize and explicit cleanup operations.
 Support a separately bounded, explicitly targeted accounting-only reconciliation
-of retained state without dispatching or reopening native sessions. It shall not
-restart or relabel an ended unresolved lifecycle.
+of retained pre-dispatch state without dispatching or reopening native sessions.
+It shall not restart or relabel an ended unresolved lifecycle.
 Pause/cancellation shall stop further dispatch, request native cancellation and
 settle owned processes before reporting a quiescent state. Timeouts or ambiguous
 children shall remain visible and block replacement/cleanup, not establish
 success. Crash reconnect attempts the exact saved session when supported;
 explicit resume starts fresh native sessions with durable project-state
 summaries. These paths shall not be conflated.
+
+For an ended failed run whose lifecycle remains unresolved, explicit `reconnect`
+shall also support bounded, non-dispatch recovery of associated native usage.
+Resolve ownership and verify exact saved sessions before measured settlement;
+do not reopen lifecycle segments, create worker loops, replay delivery or send
+prompts. Return a distinct settlement-only result and preserve the original
+failed outcome, report and preflight/calibration receipts. This branch shall
+finish normally without depending on a later paid-admission gate rejection.
+It does not authorize resuming work or waive receipts for subsequent paid use.
+The [credit contract](implementation-contracts.md#closed-failed-run-reconnect)
+owns selection, idempotence and rejection conditions.
 
 When sessions share a runtime, stop dispatch and settle their session operations
 before stopping that runtime once. Final accounting and a quiescent outcome
