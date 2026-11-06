@@ -139,6 +139,8 @@ treated, since an identifier difference alone is not a content difference. It
 shall assign every difference to exactly one of the 27 content categories or to
 layout. A difference that cannot be assigned is a protocol defect, never
 agreement. Missing content and extra content both count as differences.
+The [comparison protocol](comparison-protocol.md) is that protocol once it is
+accepted.
 
 ## Acceptance
 

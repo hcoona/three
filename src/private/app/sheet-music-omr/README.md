@@ -74,6 +74,7 @@ does not produce.
 | ---------------------------------------------------------------------- | ------------------------------------------------------------- |
 | What must the format, its tools and their acceptance evidence achieve? | [Requirements](docs/requirements.md)                          |
 | What exactly is a valid system document or assembled score?            | [Text Score 2 format](docs/text-format.md)                    |
+| How is a round trip compared and scored?                               | [Comparison protocol](docs/comparison-protocol.md)            |
 | What work is currently authorized?                                     | Repository [Delivery Wave](../../../../docs/delivery-wave.md) |
 | Where are progress, reviews and findings?                              | The two Issues above and their linked pull requests           |
 
@@ -103,6 +104,14 @@ would not be comparable. The format needs a separate carrier because it changes
 through versioned grammar and semantic decisions that a reviewer checks against
 the grammar, while the requirements change with acceptance obligations.
 Merging them would bury the obligations in a reference text.
+
+The round-trip harness implementers, their independent reviewers and W1
+acceptance consume the comparison protocol, which fixes the tools, inputs,
+element measure and category assignment of every round-trip result. Without it
+the harness would choose its own measure after seeing results. It needs its
+own carrier because an accepted protocol must be fixed before execution and
+changes only under research-evidence review, independently of format and
+requirement changes. Issues carry its results, not the protocol.
 
 Review execution, findings and progress stay in Issues and pull requests. When
 implementation changes status, update this README rather than creating a second
