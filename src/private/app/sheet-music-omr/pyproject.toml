@@ -11,7 +11,7 @@ authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
 requires-python = ">=3.14"
 license = "GPL-3.0-or-later"
 classifiers = ["Private :: Do Not Upload"]
-dependencies = []
+dependencies = ["musicdiff==6.0"]
 
 [project.scripts]
 sheet-music-omr = "sheet_music_omr.cli:main"
