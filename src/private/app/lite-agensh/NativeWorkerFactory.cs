@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Runtime.ExceptionServices;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Data.Sqlite;
 
 namespace LiteAgensh;
 
@@ -58,6 +60,12 @@ internal sealed class NativeWorkerFactory(
     Func<INativeSdkHost>? createHost = null
 ) : INativeWorkerFactory
 {
+    private static readonly string[] RecoveryMetadataKeys =
+        ["selectedModel", "sdkVersion", "runtimeVersion"];
+    private static readonly string[] OriginalRecoveryMetadataKeys =
+        ["sessionId", "workingDirectory", "selectedModel", "sdkVersion",
+            "runtimeVersion", "runtimeId", "runtimeLeaseId", "paidReservation",
+            "alreadyInUse", "isRemote"];
     private readonly object lifecycle = new();
     private readonly List<(NativeWorker Worker, CreditReservation? Reservation)> workers = [];
     private INativeSdkHost? host;
@@ -320,13 +328,14 @@ internal sealed class NativeWorkerFactory(
         CancellationToken cancellationToken
     )
     {
-        decimal cap = reservation.Allowance - (reservation.Actual ?? 0);
-        if (cap <= 0)
+        if (reservation.Allowance - (reservation.Actual ?? 0) <= 0)
         {
             throw new OperationException(
-                "credit_unknown", "Exact recovery has no remaining finite backed native cap."
+                "credit_unknown", "Exact recovery has no remaining backed capacity."
             );
         }
+        JsonObject retained = RecoveryLimitEvidence(reservation, cwd);
+        decimal cap = retained["appliedLimit"]!.GetValue<decimal>();
         using CancellationTokenSource deadline =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(30));
@@ -351,6 +360,16 @@ internal sealed class NativeWorkerFactory(
             usage = await recovery
                 .ReadSettledAsync(reservation.SessionId!, cap, deadline.Token)
                 .ConfigureAwait(false);
+            RequireRecoveryEvidence(
+                recovery.Metadata is JsonObject observed
+                && observed["sessionId"]?.GetValue<string>() == reservation.SessionId
+                && SameRecoveryPath(observed["workingDirectory"]?.GetValue<string>(), cwd)
+                && observed["appliedLimit"]?.GetValue<double>() == NativeSdkSession.NativeLimit(cap)
+                && observed["alreadyInUse"]?.GetValue<bool>() == false
+                && observed["isRemote"]?.GetValue<bool>() == false
+                && RecoveryMetadataKeys
+                    .All(key => JsonNode.DeepEquals(observed[key], retained[key]))
+            );
             recovery.RequireHealthy();
         }
         catch (Exception exception)
@@ -392,5 +411,119 @@ internal sealed class NativeWorkerFactory(
         recovery!.RequireHealthy();
         recovery.WithSettledUsage(usage!, () => { });
         return new(reservation, usage!);
+    }
+
+    private JsonObject RecoveryLimitEvidence(CreditReservation reservation, string cwd)
+    {
+        try
+        {
+            using SqliteConnection connection = database.Open();
+            using SqliteTransaction snapshot = connection.BeginTransaction(deferred: true);
+            RequireRecoveryEvidence(reservation.RunId == database.RunId
+                && reservation.SessionId is not null
+                && (long)Sql.Scalar(connection,
+                    """
+                    SELECT
+                      (SELECT COUNT(*) FROM native_sessions
+                       WHERE reservation_id=$id OR session_id=$session)=1
+                      AND EXISTS(SELECT 1 FROM native_sessions
+                        WHERE reservation_id=$id AND session_id=$session AND worker=$worker
+                        AND recovery='fresh-session-with-durable-summary'
+                        AND initialize_json=$sdk)
+                      AND (SELECT COUNT(*) FROM native_attempts
+                        WHERE reservation_id=$id OR session_id=$session OR usage_path=$path)=1
+                      AND EXISTS(SELECT 1 FROM native_attempts
+                        WHERE reservation_id=$id AND session_id=$session AND worker=$worker
+                        AND usage_path=$path AND baseline_usage='0' AND initialize_json=$sdk);
+                    """, snapshot, ("$id", reservation.Id), ("$session", reservation.SessionId),
+                    ("$worker", reservation.Worker), ("$path", reservation.UsagePath),
+                    ("$sdk", "sdk:" + NativeSdkSession.SdkVersion))! == 1);
+
+            JsonObject Read(string key) =>
+                JsonNode.Parse(Sql.Scalar(connection, "SELECT value FROM meta WHERE key=$key;",
+                    snapshot, ("$key", key)) as string
+                    ?? throw new OperationException("credit_unknown",
+                        "Required original native limit evidence is missing."))?.AsObject()
+                ?? throw new OperationException("credit_unknown",
+                    "Required original native limit evidence is not structured.");
+
+            JsonObject start = Read(NoDispatchCancellation.Marker(reservation.Id));
+            JsonObject initial = start["initial"] as JsonObject
+                ?? throw new OperationException("credit_unknown",
+                    "Original native start observation is missing.");
+            JsonObject retained = Read($"native:session:{reservation.SessionId}");
+            RequireRecoveryEvidence(
+                start["contract"]?.GetValue<string>() == NoDispatchCancellation.Contract
+                && start["evidenceKind"]?.GetValue<string>() ==
+                    (createHost is null ? "native-sdk" : "controlled-native-dependency")
+                && Guid.TryParse(start["applicationBuild"]?.GetValue<string>(), out Guid build)
+                && build != Guid.Empty
+                && start["runId"]?.GetValue<string>() == database.RunId
+                && start["reservationId"]?.GetValue<string>() == reservation.Id
+                && start["sessionId"]?.GetValue<string>() == reservation.SessionId
+                && SameRecoveryPath(start["workingDirectory"]?.GetValue<string>(), cwd)
+                && NoDispatchCancellation.IsEmpty(initial)
+                && initial["appliedLimit"]?.GetValue<decimal>() is > 0
+                && initial["appliedLimit"]!.GetValue<decimal>() <= reservation.Allowance
+                && retained["appliedLimit"]?.GetValue<decimal>() == reservation.Allowance
+                && retained["sessionId"]?.GetValue<string>() == reservation.SessionId
+                && SameRecoveryPath(retained["workingDirectory"]?.GetValue<string>(), cwd)
+                && retained["paidReservation"]?.GetValue<bool>() == true
+                && retained["alreadyInUse"]?.GetValue<bool>() == false
+                && retained["isRemote"]?.GetValue<bool>() == false
+                && retained["sdkVersion"]?.GetValue<string>() == NativeSdkSession.SdkVersion
+                && retained["runtimeVersion"]?.GetValue<string>() == NativeSdkSession.RuntimeVersion
+                && !string.IsNullOrWhiteSpace(retained["selectedModel"]?.GetValue<string>())
+                && (database.Configuration.NativeModel is null
+                    || string.Equals(database.Configuration.NativeModel,
+                        retained["selectedModel"]?.GetValue<string>(),
+                        StringComparison.OrdinalIgnoreCase))
+                && !string.IsNullOrWhiteSpace(retained["runtimeId"]?.GetValue<string>())
+                && retained["runtimeLeaseId"]?.GetValue<long>() is > 0
+                && OriginalRecoveryMetadataKeys
+                    .All(key => JsonNode.DeepEquals(initial[key], retained[key]))
+            );
+            string runtimeId = retained["runtimeId"]!.GetValue<string>();
+            JsonObject runtime = Read($"native:runtime:{runtimeId}");
+            JsonObject association =
+                Read($"native:runtime:{runtimeId}:session:{reservation.SessionId}");
+            RequireRecoveryEvidence(
+                runtime["runtimeId"]?.GetValue<string>() == runtimeId
+                && JsonNode.DeepEquals(runtime["runtimeLeaseId"], retained["runtimeLeaseId"])
+                && JsonNode.DeepEquals(runtime["runtimeVersion"], retained["runtimeVersion"])
+                && association["runtimeId"]?.GetValue<string>() == runtimeId
+                && JsonNode.DeepEquals(association["runtimeLeaseId"], retained["runtimeLeaseId"])
+                && association["sessionId"]?.GetValue<string>() == reservation.SessionId
+                && association["worker"]?.GetValue<string>() == reservation.Worker
+                && SameRecoveryPath(association["workingDirectory"]?.GetValue<string>(), cwd)
+                && (long)Sql.Scalar(connection,
+                    "SELECT COUNT(*) FROM process_leases WHERE id=$lease AND kind=$kind "
+                        + "AND state='exited' AND pid>0 AND start_ticks>0;",
+                    snapshot, ("$lease", retained["runtimeLeaseId"]!.GetValue<long>()),
+                    ("$kind", $"native:runtime:{runtimeId}"))! == 1
+            );
+            return retained;
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException
+            or ArgumentException or FormatException or OverflowException)
+        {
+            throw new OperationException("credit_unknown",
+                "Original native limit evidence is malformed or incompatible.", exception);
+        }
+    }
+
+    private static bool SameRecoveryPath(string? path, string cwd) =>
+        path is not null && Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)).Equals(
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(cwd)),
+            StringComparison.OrdinalIgnoreCase);
+
+    private static void RequireRecoveryEvidence(bool condition)
+    {
+        if (!condition)
+        {
+            throw new OperationException("credit_unknown",
+                "Exact recovery requires compatible original zero-origin and verified cap evidence."
+            );
+        }
     }
 }

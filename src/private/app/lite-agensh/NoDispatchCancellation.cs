@@ -10,7 +10,7 @@ namespace LiteAgensh;
 
 internal static class NoDispatchCancellation
 {
-    private const string Contract = "write-ahead-dispatch-v1";
+    internal const string Contract = "write-ahead-dispatch-v1";
     private const string LegacySubject = "3805a50490afbdd6c53ec4e3c6e8c64a3150858f";
     private static readonly Dictionary<string, string> LegacySources =
         new Dictionary<string, string>
@@ -219,7 +219,7 @@ internal static class NoDispatchCancellation
             null, ("$id", worker))!;
     }
 
-    private static bool IsEmpty(JsonObject diagnostic) =>
+    internal static bool IsEmpty(JsonObject diagnostic) =>
         IsZero(diagnostic["reportedNanoAiu"]?.GetValue<string>())
         && diagnostic["totalUserRequests"]?.GetValue<long>() == 0
         && diagnostic["aiCreditsStatus"]?.GetValue<string>() is null or "complete";
@@ -424,7 +424,7 @@ internal static class NoDispatchCancellation
         Path.GetFullPath(first).Equals(
             Path.GetFullPath(second), StringComparison.OrdinalIgnoreCase);
 
-    private static string Marker(string id) => $"native:dispatch_contract:{id}";
+    internal static string Marker(string id) => $"native:dispatch_contract:{id}";
 
     private static void Require(bool condition, string message)
     {
