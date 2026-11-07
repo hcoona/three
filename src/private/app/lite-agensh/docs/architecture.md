@@ -419,6 +419,10 @@ owns the coordinate translation and supported retained evidence for
 non-dispatch recovery. Verify cumulative metrics against the saved accounting
 baseline; unknown or regressing usage stops paid work rather than regranting
 spent capacity. A new host or changed cap does not reset either baseline.
+The same contract owns the narrowly selected original-1.0.105/current-1.0.107
+runtime bridge under unchanged SDK identity. Preserve historical provenance
+and verify the temporary host against the current exact application pin;
+do not introduce a version-range fallback, SDK migration or receipt rewrite.
 
 Retain SQLite together with its live journal state and worktrees through
 pause/finalize; do not copy a live main database file and call it a backup.

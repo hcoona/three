@@ -254,6 +254,35 @@ with guessed JSON pointers, an account/quota query, token estimates or a model
 gateway. Requirements, architecture, contracts and the native protocol own
 their decisions and effects; this evidence does not authorize a paid call.
 
+### CLI 1.0.107 interface recheck
+
+The official [CLI 1.0.107 release][cli107] was published on 2026-11-06;
+the release's tag resolves to `841e7a57ba6ec683d710826c113f3c0cdd8f0940`.
+Its notes describe changes to saved-session resolution, session resumption
+and automatic compaction, and removal of hidden startup options from some
+help topics. Those are source findings, not proof of SDK wire compatibility
+or this application's recovery behavior. The SDK 1.0.28 release describes
+its snapshot for CLI 1.0.105; its released property default remains 1.0.105.
+No vendor guarantee for an arbitrary newer CLI is inferred.
+
+A bounded installed-version-only observation on 2026-11-07 reported CLI
+1.0.107. The configured executable's SHA-256 before and after that command was
+`cd7f9eab17576455a0f6e33315150e33215dea0482f3cb629349a3bf4e14c29f`;
+the previous 1.0.105 pin differed. The replacement cause remains unknown.
+The complete independently reviewed stop and owner decision belong in
+[Issue #1552](https://github.com/hcoona/three/issues/1552), not a claim that
+any retained session recovered or any usage settled.
+
+The owner permits the installed 1.0.107 selection. The
+[dependency contract](implementation-contracts.md#application-and-dependencies)
+owns the exact application override under the unchanged SDK package, and the
+[recovery contract](implementation-contracts.md#retained-cli-10105-to-selected-cli-10107)
+owns the narrow historical-runtime bridge. Those are application decisions,
+not changes to the released SDK's default or source evidence of native success.
+Keep the existing interface-recheck trigger and independent review; actual
+status, settings, session identity, finite cap, fenced complete metrics and
+settlement remain operational evidence obligations.
+
 ## Evidence boundary and material differences
 
 The 68 responsibility rows and 29 tool rows are a migration inventory, not a
@@ -279,6 +308,7 @@ not relicense unrelated upstream assets or import their demos/benchmarks.
 Implementation ports must retain applicable source notices as well.
 
 [upstream]: https://github.com/microsoft/Agensh/tree/2dae4e14a653da48549fd9aa093f834841475d6c
+[cli107]: https://github.com/github/copilot-cli/releases/tag/v1.0.107
 [state]: https://github.com/microsoft/Agensh/blob/2dae4e14a653da48549fd9aa093f834841475d6c/mini-router/src/state.ts
 [dispatcher]: https://github.com/microsoft/Agensh/blob/2dae4e14a653da48549fd9aa093f834841475d6c/mini-router/src/dispatcher.ts
 [router]: https://github.com/microsoft/Agensh/blob/2dae4e14a653da48549fd9aa093f834841475d6c/mini-router/src/main.ts

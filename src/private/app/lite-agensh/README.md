@@ -30,6 +30,12 @@ audit and independent finding classifications are carried by
 [#1552](https://github.com/hcoona/three/issues/1552).
 The MCP 2.3.0 upgrade is covered by controlled stdio contracts, not a new
 native acceptance run; PR #1530 retains the earlier dependency baseline.
+The owning contracts now select installed CLI 1.0.107 under the unchanged SDK
+and an explicit retained-1.0.105 recovery bridge. That prerequisite selection
+still needs its dependent implementation and separately reviewed native
+observation; the existing application remains pinned to 1.0.105 until that
+implementation is accepted. Do not bypass its current version guard or reuse
+a consumed recovery invocation.
 
 The [native-host design](docs/architecture.md#native-sdk-mcp-and-instruction-boundary)
 specifies one owned runtime/client with independent peer sessions and a

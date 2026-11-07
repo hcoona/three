@@ -22,8 +22,12 @@ that unchanged binary for initialization, preflight, calibration, execution and
 inspection. Changed relied-on inputs require matching receipts, not reused ones.
 
 Use the owner's Windows host, root-selected .NET SDK, installed Git and existing
-Copilot CLI. The accepted adapter selects official `GitHub.Copilot.SDK` 1.0.28
-and its CLI 1.0.105 pin. After protocol acceptance and before relying on them,
+Copilot CLI. The owner permits the installed CLI 1.0.107. Keep official
+`GitHub.Copilot.SDK` 1.0.28 unchanged and select the application's explicit
+CLI 1.0.107 override under the
+[dependency contract](implementation-contracts.md#application-and-dependencies),
+not the package's historical 1.0.105 default. After protocol acceptance and
+before relying on them,
 record installed versions, inspect the pinned package's typed session,
 metadata, limits and usage contracts, and recheck required installed CLI flags.
 Pause affected work if an interface changed. Disable native automatic updates
@@ -136,6 +140,18 @@ backing and the unchanged finite native ceiling under the
 before fresh fenced complete cumulative metrics and runtime settlement.
 No new grant, worker dispatch, prompt, fallback session, paid calibration,
 account query or report export is permitted.
+
+Retained actual11 original CLI 1.0.105 evidence may enter only the contract's
+explicit 1.0.105-to-1.0.107 bridge with the unchanged SDK package. Accept that
+contract and its implementation before a new settlement invocation. Record
+and independently review the exact installed 1.0.107 executable identity,
+selected application pin, relied-on SDK/CLI interface and startup-setting
+rechecks, original lineage and fresh owned-state proof. The recovery host's
+typed status and session readbacks must establish the selected version and
+required settings; unsupported behavior stops without prompting or retry.
+Preserve original 1.0.105 receipts and the consumed failed invocation. This
+version permission neither restores that invocation nor permits a ledger reset,
+installation, authentication/access change or historical evidence edit.
 
 Use the existing bounded native probe, background-settlement, session and
 host-settlement deadlines; record the exact invocation's finite outer bound
