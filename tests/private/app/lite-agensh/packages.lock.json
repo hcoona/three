@@ -227,8 +227,8 @@
       },
       "ModelContextProtocol.Core": {
         "type": "Transitive",
-        "resolved": "2.3.0",
-        "contentHash": "EDpbQholhVWoNumb0Ab3oGv9LmXOLgaD5ixEIUkrnzpnqD0TJCSHTJ5G71/J1KlrQ98aWDclWTPMffKTnCJoMw==",
+        "resolved": "2.3.1",
+        "contentHash": "cuYIbAWWhVSY0PRaz0LiDoxxnpLdps1tKXjo2LN91CObgWBFcKg3Ebz4kF95O++2Do7GXI2Tl5KQOYM8UoAyZA==",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "10.11.0",
           "Microsoft.Extensions.Logging.Abstractions": "10.0.13"
@@ -271,7 +271,7 @@
         "dependencies": {
           "GitHub.Copilot.SDK": "[1.0.28, )",
           "Microsoft.Data.Sqlite": "[10.0.14, )",
-          "ModelContextProtocol": "[2.3.0, )",
+          "ModelContextProtocol": "[2.3.1, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
@@ -298,13 +298,13 @@
       },
       "ModelContextProtocol": {
         "type": "CentralTransitive",
-        "requested": "[2.3.0, )",
-        "resolved": "2.3.0",
-        "contentHash": "PHZ0q8xTAoysqUKpA5gC0RGJSfwpZhfsNz+9Sw0X0RzFFVHjIE52sx6C+ogMn+LSE+FfiYiNscPJhM6q6DMT6Q==",
+        "requested": "[2.3.1, )",
+        "resolved": "2.3.1",
+        "contentHash": "r93TE8VAvPIJrvoMPpWhKWcMLvKIPB72JozRye3hHeY7gCsMXYo/3fLVnzNEnjBcXmV8+EXcNMYzC/+0wRkidA==",
         "dependencies": {
           "Microsoft.Extensions.Caching.Abstractions": "10.0.13",
           "Microsoft.Extensions.Hosting.Abstractions": "10.0.13",
-          "ModelContextProtocol.Core": "[2.3.0]"
+          "ModelContextProtocol.Core": "[2.3.1]"
         }
       },
       "System.IO.Hashing": {
