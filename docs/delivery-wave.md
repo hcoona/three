@@ -140,6 +140,16 @@ ends a grant. Git and the proposing PR retain the reason and history.
   substitution, manual edit, blanket historical release or second reset.
   Native limits remain soft, with possible in-flight overshoot accepted and
   recorded; tokens or elapsed time do not prove exact spend.
+- **Accounting evidence decision:** the owner accepts the
+  [SDK-native recovery boundary](../src/private/app/lite-agensh/docs/implementation-contracts.md#sdk-native-recovery-boundary)
+  for qualifying dispatched uncertainty in this continuing campaign.
+  Original routine native termination and a newly checked supported complete
+  cumulative reading may establish accounting without successful original
+  SDK-send delivery or individual final-return certificates for historical
+  cancelled requests. This is native-reported accounting, not provider-final
+  invoices or zero usage. Separately accept the owning decision and its
+  implementation before an exact non-dispatch invocation; preserve original
+  failures, unobserved-provider limits, all other uncertainty and the sole ledger.
 - **Ordering and gates:** this Wave must merge before newly authorized work.
   Author and separately accept the exact project-local operational protocol
   before any native observation. It must cover the subject/build identities,

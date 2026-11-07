@@ -28,6 +28,11 @@ terminal boundary retain uncertainty and backing. Installed-native
 ordering and a repaired autonomous journey remain unverified; the retained failed
 audit and independent finding classifications are carried by
 [#1552](https://github.com/hcoona/three/issues/1552).
+The [SDK-native recovery contract](docs/implementation-contracts.md#sdk-native-recovery-boundary)
+adds original typed termination provenance and fresh supported accounting checks
+for a separate financial boundary, not successful original task delivery or
+provider-final invoices. This guard is specified, not yet implemented or
+installed-native verified; existing uncertainty does not release automatically.
 The MCP 2.3.0 upgrade is covered by controlled stdio contracts, not a new
 native acceptance run; PR #1530 retains the earlier dependency baseline.
 The [dependency contract](docs/implementation-contracts.md#application-and-dependencies)
