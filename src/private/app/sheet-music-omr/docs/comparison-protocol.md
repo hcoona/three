@@ -590,8 +590,10 @@ with their provenance:
 - a pair in which a two-voice measure has one note in each voice and reverses
   their stem directions, keeping each voice group's content fixed while
   exchanging canonical positions, and a second pair in which two one-note,
-  same-rhythm unison voices of one staff with different articulations reverse
-  their stem assignments, thereby exchanging canonical positions;
+  same-rhythm unison voices of one staff reverse their stem assignments,
+  thereby exchanging canonical positions, with note content that makes
+  preserving each voice's content the unique minimum-cost pairing under the
+  pinned comparison; articulation differences alone are insufficient;
 - one pair that differs only in the end note of an extended trill, one in
   which an extended trill moves between simultaneous unison notes of different
   written durations in two voices of one staff that both carry a trill mark,
