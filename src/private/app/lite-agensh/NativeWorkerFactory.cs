@@ -61,7 +61,7 @@ internal sealed class NativeWorkerFactory(
 ) : INativeWorkerFactory
 {
     private static readonly string[] RecoveryMetadataKeys =
-        ["selectedModel", "sdkVersion", "runtimeVersion"];
+        ["selectedModel", "sdkVersion"];
     private static readonly string[] OriginalRecoveryMetadataKeys =
         ["sessionId", "workingDirectory", "selectedModel", "sdkVersion",
             "runtimeVersion", "runtimeId", "runtimeLeaseId", "paidReservation",
@@ -367,6 +367,7 @@ internal sealed class NativeWorkerFactory(
                 && observed["appliedLimit"]?.GetValue<double>() == NativeSdkSession.NativeLimit(cap)
                 && observed["alreadyInUse"]?.GetValue<bool>() == false
                 && observed["isRemote"]?.GetValue<bool>() == false
+                && observed["runtimeVersion"]?.GetValue<string>() == NativeSdkSession.RuntimeVersion
                 && RecoveryMetadataKeys
                     .All(key => JsonNode.DeepEquals(observed[key], retained[key]))
             );
@@ -472,7 +473,7 @@ internal sealed class NativeWorkerFactory(
                 && retained["alreadyInUse"]?.GetValue<bool>() == false
                 && retained["isRemote"]?.GetValue<bool>() == false
                 && retained["sdkVersion"]?.GetValue<string>() == NativeSdkSession.SdkVersion
-                && retained["runtimeVersion"]?.GetValue<string>() == NativeSdkSession.RuntimeVersion
+                && CompatibleRecoveryRuntime(retained["runtimeVersion"]?.GetValue<string>())
                 && !string.IsNullOrWhiteSpace(retained["selectedModel"]?.GetValue<string>())
                 && (database.Configuration.NativeModel is null
                     || string.Equals(database.Configuration.NativeModel,
@@ -511,6 +512,10 @@ internal sealed class NativeWorkerFactory(
                 "Original native limit evidence is malformed or incompatible.", exception);
         }
     }
+
+    private static bool CompatibleRecoveryRuntime(string? original) =>
+        original == NativeSdkSession.RuntimeVersion
+        || (original == "1.0.105" && NativeSdkSession.RuntimeVersion == "1.0.107");
 
     private static bool SameRecoveryPath(string? path, string cwd) =>
         path is not null && Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)).Equals(

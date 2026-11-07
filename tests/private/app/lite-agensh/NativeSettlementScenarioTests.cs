@@ -218,9 +218,11 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
-    [DataRow(62.422970d)]
-    [DataRow(150d)]
-    public async Task ExactRecoveryBooksClosedWindowDeltaOnlyAfterTemporaryHostSettles(double total)
+    [DataRow(62.422970d, null)]
+    [DataRow(150d, null)]
+    [DataRow(62.422970d, "1.0.105")]
+    public async Task ExactRecoveryBooksClosedWindowDeltaOnlyAfterTemporaryHostSettles(
+        double total, string? originalRuntimeVersion)
     {
         CancellationToken token = testContext.CancellationToken;
         using RunFixture fixture = new();
@@ -229,7 +231,9 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         CreditReservation other = ledger.Reserve(
             "another-run", "worker2", 30, 60, Path.Combine(fixture.RootPath, "other.sdk-evidence"));
         CreditReservation reservation =
-            await ClosedReservationAsync(fixture, database, ledger, token);
+            await ClosedReservationAsync(fixture, database, ledger, token,
+                originalRuntimeVersion: originalRuntimeVersion);
+        string original = RetainedState(database);
         ledger.MarkStarted(other.Id);
         ledger.MarkUncertain(other.Id);
         ControlledSdkHost host = new("none", token, onCreate: session =>
@@ -268,6 +272,9 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         Assert.IsTrue(Assert.ContainsSingle(host.IsolationRequests));
         Assert.AreEqual(NativeSdkSession.NativeLimit(reservation.Allowance),
             Assert.ContainsSingle(host.Sessions).Metadata!["appliedLimit"]!.GetValue<double>());
+        Assert.AreEqual(NativeSdkSession.RuntimeVersion,
+            Assert.ContainsSingle(host.Sessions).Metadata!["runtimeVersion"]!.GetValue<string>());
+        Assert.AreEqual(original, RetainedState(database));
     }
 
     [TestMethod]
@@ -284,6 +291,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     [DataRow("lagging-cap")]
     [DataRow("wrong-runtime")]
     [DataRow("reused-session")]
+    [DataRow("unsupported-runtime")]
+    [DataRow("conflicting-runtime")]
     public async Task ExactRecoveryRejectsUnsupportedCapEvidenceBeforeNativeIo(string defect)
     {
         CancellationToken token = testContext.CancellationToken;
@@ -291,7 +300,9 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         RunDatabase database = ControlledDatabase(fixture, "shared");
         CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
         CreditReservation reservation =
-            await ClosedReservationAsync(fixture, database, ledger, token);
+            await ClosedReservationAsync(fixture, database, ledger, token,
+                originalRuntimeVersion: defect == "unsupported-runtime" ? "1.0.106"
+                    : defect == "conflicting-runtime" ? "1.0.105" : null);
         string startKey = NoDispatchCancellation.Marker(reservation.Id);
         JsonObject start = JsonNode.Parse(database.ReadMetadata(startKey)!)!.AsObject();
         JsonObject retained = JsonNode.Parse(
@@ -344,6 +355,9 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 case "wrong-runtime":
                     retained["runtimeLeaseId"] = long.MaxValue;
                     break;
+                case "conflicting-runtime":
+                    start["initial"]!["runtimeVersion"] = NativeSdkSession.RuntimeVersion;
+                    break;
             }
         }
         if (defect != "missing-start")
@@ -376,6 +390,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     [DataRow("malformed-limit")]
     [DataRow("nonfinite-limit")]
     [DataRow("infinite-limit")]
+    [DataRow("runtime")]
+    [DataRow("sdk")]
     public async Task ExactRecoveryRetainsUncertaintyWhenNativeCapCannotBeVerified(string defect)
     {
         CancellationToken token = testContext.CancellationToken;
@@ -405,6 +421,12 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                             break;
                         case "infinite-limit":
                             session.Metadata!["appliedLimit"] = double.PositiveInfinity;
+                            break;
+                        case "runtime":
+                            session.Metadata!["runtimeVersion"] = "1.0.105";
+                            break;
+                        case "sdk":
+                            session.Metadata!["sdkVersion"] = "changed-sdk";
                             break;
                     }
                 };
@@ -480,9 +502,11 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
-    [DataRow(62.422970d)]
-    [DataRow(150d)]
-    public async Task ClosedReconnectSettlesUsageWithoutRestartingOrReplacingFailedRun(double total)
+    [DataRow(62.422970d, null)]
+    [DataRow(150d, null)]
+    [DataRow(62.422970d, "1.0.105")]
+    public async Task ClosedReconnectSettlesUsageWithoutRestartingOrReplacingFailedRun(
+        double total, string? originalRuntimeVersion)
     {
         CancellationToken token = testContext.CancellationToken;
         using RunFixture fixture = new();
@@ -504,7 +528,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             Path.Combine(fixture.RootPath, "other.sdk-evidence"));
         CreditReservation reservation =
             await ClosedReservationAsync(fixture, database, ledger, token,
-                cwd: tools.Git.GetWorkerPath("worker1"));
+                cwd: tools.Git.GetWorkerPath("worker1"),
+                originalRuntimeVersion: originalRuntimeVersion);
         PrepareClosedReconnect(database, reservation);
         ledger.MarkStarted(other.Id);
         ledger.MarkUncertain(other.Id);
@@ -696,14 +721,16 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     private static async Task<CreditReservation> ClosedReservationAsync(
         RunFixture fixture, RunDatabase database, CreditLedger ledger, CancellationToken token,
-        string worker = "worker1", bool uncertain = true, string? cwd = null
+        string worker = "worker1", bool uncertain = true, string? cwd = null,
+        string? originalRuntimeVersion = null
     )
     {
         LocalTools tools = new(database);
         _ = new Coordinator(database, tools.Collaboration, tools.Git);
         CreditReservation reservation = ledger.Reserve(database.RunId, worker, 0, 300,
             Path.Combine(fixture.RootPath, $"closed-{worker}.sdk-evidence"), shared: true);
-        ControlledSdkHost originalHost = new("none", token, evidenceDatabase: database);
+        ControlledSdkHost originalHost = new("none", token, evidenceDatabase: database,
+            runtimeVersion: originalRuntimeVersion);
         originalHost.Release.TrySetResult();
         NativeWorkerFactory originalFactory =
             new(database, new(database), ledger, () => originalHost);
@@ -1029,13 +1056,16 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     [DataRow("source")]
     [DataRow("snapshot")]
     [DataRow("digest")]
+    [DataRow("runtime")]
     public async Task LegacyReconciliationBindsReferencedObservationsInsteadOfSuccessFlags(
         string defect
     )
     {
         using RunFixture fixture = new();
         var (database, ledger, reservation, coordinator) =
-            await PrepareUnpromptedAsync(fixture, testContext.CancellationToken);
+            await PrepareUnpromptedAsync(fixture, testContext.CancellationToken,
+                originalRuntimeVersion: defect == "runtime" ? NativeSdkSession.RuntimeVersion
+                    : "1.0.105");
         ledger.MarkUncertain(reservation.Id);
         using (SqliteConnection campaign = Campaign(database))
         {
@@ -1364,14 +1394,16 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         });
 
     private static async Task<(RunDatabase, CreditLedger, CreditReservation, Coordinator)>
-        PrepareUnpromptedAsync(RunFixture fixture, CancellationToken token)
+        PrepareUnpromptedAsync(RunFixture fixture, CancellationToken token,
+            string? originalRuntimeVersion = null)
     {
         RunDatabase database = ControlledDatabase(fixture, "shared");
         LocalTools tools = new(database);
         Coordinator coordinator = new(database, tools.Collaboration, tools.Git);
         CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
         ControlledSdkHost host = new("none", token,
-            evidenceDatabase: database, emptyStatus: true);
+            evidenceDatabase: database, emptyStatus: true,
+            runtimeVersion: originalRuntimeVersion);
         host.Release.TrySetResult();
         NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
         CreditReservation reservation = ledger.Reserve(database.RunId, "worker1", 0, 300,
@@ -1764,7 +1796,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         RunDatabase? evidenceDatabase = null, bool emptyStatus = false,
         string? modelReadback = null, double? limitReadback = null,
         Action<ControlledSdkSession>? onClose = null,
-        Action<ControlledSdkSession>? onCreate = null
+        Action<ControlledSdkSession>? onCreate = null,
+        string? runtimeVersion = null
     ) : INativeSdkHost
     {
         public string Id { get; } = "controlled-sdk-host-" + Guid.NewGuid().ToString("N");
@@ -1798,7 +1831,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             ControlledSdkSession session = new(
                 failure == "session" && Sessions.Count == 0, missingMetrics,
                 evidenceDatabase, emptyStatus, cwd, Id, LeaseId, modelReadback, limitReadback,
-                onClose
+                onClose, runtimeVersion
             );
             Sessions.Add(session);
             onCreate?.Invoke(session);
@@ -1826,7 +1859,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             {
                 ["runtimeId"] = Id,
                 ["runtimeLeaseId"] = LeaseId,
-                ["runtimeVersion"] = NativeSdkSession.RuntimeVersion,
+                ["runtimeVersion"] = runtimeVersion ?? NativeSdkSession.RuntimeVersion,
                 ["state"] = state,
             }.ToJsonString());
     }
@@ -1835,7 +1868,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         bool failDispose, bool missingMetrics = false, RunDatabase? evidenceDatabase = null,
         bool emptyStatus = false, string cwd = "", string runtimeId = "", long runtimeLeaseId = 1,
         string? modelReadback = null, double? limitReadback = null,
-        Action<ControlledSdkSession>? onClose = null
+        Action<ControlledSdkSession>? onClose = null, string? runtimeVersion = null
     ) : INativeSdkSession
     {
         private long requests;
@@ -1914,7 +1947,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                     ?? evidenceDatabase?.Configuration.NativeModel ?? "controlled-model",
                 ["alreadyInUse"] = false,
                 ["isRemote"] = false,
-                ["runtimeVersion"] = NativeSdkSession.RuntimeVersion,
+                ["runtimeVersion"] = runtimeVersion ?? NativeSdkSession.RuntimeVersion,
                 ["sdkVersion"] = NativeSdkSession.SdkVersion,
                 ["runtimeId"] = runtimeId,
                 ["runtimeLeaseId"] = runtimeLeaseId,

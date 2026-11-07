@@ -90,7 +90,7 @@ internal sealed class NativeSdkHost(
                 {
                     throw new OperationException(
                         "unavailable",
-                        "The installed native runtime does not match the SDK package's CLI pin."
+                        "The installed native runtime does not match the application's CLI pin."
                     );
                 }
 
