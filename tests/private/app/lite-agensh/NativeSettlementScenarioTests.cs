@@ -233,8 +233,11 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         ledger.MarkStarted(other.Id);
         ledger.MarkUncertain(other.Id);
         ControlledSdkHost host = new("none", token, onCreate: session =>
+        {
+            session.ResumeUsedCredits = 60;
             session.Readings.Enqueue(new(
-                reservation.SessionId!, total * 1_000_000_000, "complete", 10)));
+                reservation.SessionId!, total * 1_000_000_000, "complete", 10));
+        });
         NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
         Task<RecoveredNativeUsage> recovery = factory.ReadSettledUsageAsync(
             reservation, fixture.RepositoryPath, "controlled-recovery", token);
@@ -263,6 +266,132 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             null, ("$id", reservation.Id)));
         Assert.IsFalse(Assert.ContainsSingle(host.Sessions).Sent);
         Assert.IsTrue(Assert.ContainsSingle(host.IsolationRequests));
+        Assert.AreEqual(reservation.Allowance,
+            Assert.ContainsSingle(host.Sessions).Metadata!["appliedLimit"]!.GetValue<decimal>());
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("missing-start")]
+    [DataRow("missing-initial")]
+    [DataRow("wrong-lineage")]
+    [DataRow("ambiguous-session")]
+    [DataRow("nonzero-origin")]
+    [DataRow("nonzero-start")]
+    [DataRow("partial-start")]
+    [DataRow("wrong-sdk")]
+    [DataRow("wrong-model")]
+    [DataRow("lagging-cap")]
+    [DataRow("wrong-runtime")]
+    [DataRow("reused-session")]
+    public async Task ExactRecoveryRejectsUnsupportedCapEvidenceBeforeNativeIo(string defect)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        CreditReservation reservation =
+            await ClosedReservationAsync(fixture, database, ledger, token);
+        string startKey = NoDispatchCancellation.Marker(reservation.Id);
+        JsonObject start = JsonNode.Parse(database.ReadMetadata(startKey)!)!.AsObject();
+        JsonObject retained = JsonNode.Parse(
+            database.ReadMetadata($"native:session:{reservation.SessionId}")!)!.AsObject();
+        using (SqliteConnection connection = database.Open())
+        {
+            switch (defect)
+            {
+                case "missing-start":
+                    Sql.Execute(connection, "DELETE FROM meta WHERE key=$key;",
+                        null, ("$key", startKey));
+                    break;
+                case "missing-initial":
+                    start.Remove("initial");
+                    break;
+                case "wrong-lineage":
+                    start["applicationBuild"] = "unknown-build";
+                    break;
+                case "ambiguous-session":
+                    Sql.Execute(connection,
+                        """
+                        INSERT INTO native_sessions(reservation_id,worker,session_id,
+                            recovery,initialize_json,created_at)
+                        SELECT reservation_id,worker,session_id,recovery,initialize_json,created_at
+                        FROM native_sessions;
+                        """);
+                    break;
+                case "nonzero-origin":
+                    Sql.Execute(connection, "UPDATE native_attempts SET baseline_usage='60';");
+                    break;
+                case "reused-session":
+                    Sql.Execute(connection,
+                        "UPDATE native_sessions SET recovery='exact-session-load';");
+                    break;
+                case "nonzero-start":
+                    start["initial"]!["reportedNanoAiu"] = "1";
+                    break;
+                case "partial-start":
+                    start["initial"]!["aiCreditsStatus"] = "partial";
+                    break;
+                case "wrong-sdk":
+                    retained["sdkVersion"] = "unknown-sdk";
+                    break;
+                case "wrong-model":
+                    retained["selectedModel"] = "changed-model";
+                    break;
+                case "lagging-cap":
+                    retained["appliedLimit"] = 40;
+                    break;
+                case "wrong-runtime":
+                    retained["runtimeLeaseId"] = long.MaxValue;
+                    break;
+            }
+        }
+        if (defect != "missing-start")
+        {
+            database.WriteMetadata(startKey, start.ToJsonString());
+        }
+        database.WriteMetadata($"native:session:{reservation.SessionId}", retained.ToJsonString());
+        string original = RetainedState(database);
+        bool opened = false;
+        NativeWorkerFactory factory = new(database, new(database), ledger, () =>
+        {
+            opened = true;
+            throw new InvalidOperationException("Unsupported evidence must not create a host.");
+        });
+        OperationException failure = await Assert.ThrowsExactlyAsync<OperationException>(() =>
+            factory.ReadSettledUsageAsync(
+                reservation, fixture.RepositoryPath, "controlled-recovery", token));
+        Assert.AreEqual("credit_unknown", failure.Code);
+        Assert.IsFalse(opened);
+        Assert.AreEqual(original, RetainedState(database));
+        Assert.AreEqual(reservation, Assert.ContainsSingle(ledger.Reservations()));
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("limit")]
+    [DataRow("model")]
+    [DataRow("already-used")]
+    public async Task ExactRecoveryRetainsUncertaintyWhenNativeCapCannotBeVerified(string defect)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        CreditReservation reservation =
+            await ClosedReservationAsync(fixture, database, ledger, token);
+        ControlledSdkHost host = new("none", token,
+            modelReadback: defect == "model" ? "changed-model" : null,
+            limitReadback: defect == "limit" ? 40 : null,
+            onCreate: session => session.ResumeUsedCredits = defect == "already-used" ? 100 : 60);
+        host.Release.TrySetResult();
+        NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
+        await Assert.ThrowsExactlyAsync<OperationException>(() =>
+            factory.ReadSettledUsageAsync(
+                reservation, fixture.RepositoryPath, "controlled-recovery", token));
+        Assert.IsTrue(host.Settled);
+        Assert.IsFalse(Assert.ContainsSingle(host.Sessions).Sent);
+        Assert.AreEqual(reservation, Assert.ContainsSingle(ledger.Reservations()));
     }
 
     [TestMethod]
@@ -349,7 +478,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         CreditReservation other = ledger.Reserve("another-run", "worker2", 30, 60,
             Path.Combine(fixture.RootPath, "other.sdk-evidence"));
         CreditReservation reservation =
-            await ClosedReservationAsync(fixture, database, ledger, token);
+            await ClosedReservationAsync(fixture, database, ledger, token,
+                cwd: tools.Git.GetWorkerPath("worker1"));
         PrepareClosedReconnect(database, reservation);
         ledger.MarkStarted(other.Id);
         ledger.MarkUncertain(other.Id);
@@ -418,8 +548,10 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 return host;
             }));
         CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
-        await ClosedReservationAsync(fixture, database, ledger, token, "worker1", uncertain: false);
-        await ClosedReservationAsync(fixture, database, ledger, token, "worker2", uncertain: false);
+        await ClosedReservationAsync(fixture, database, ledger, token, "worker1", uncertain: false,
+            cwd: tools.Git.GetWorkerPath("worker1"));
+        await ClosedReservationAsync(fixture, database, ledger, token, "worker2", uncertain: false,
+            cwd: tools.Git.GetWorkerPath("worker2"));
         CreditReservation[] reservations = ledger.Reservations(database.RunId).ToArray();
         foreach (CreditReservation reservation in reservations)
         {
@@ -534,25 +666,24 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 mode,state,started_at,deadline,ended_at,stop_reason)
             SELECT 'run','unresolved','start','deadline','end','credit_unknown'
             WHERE NOT EXISTS(SELECT 1 FROM coordinator_segments);
-            INSERT INTO native_attempts(
-                usage_path,reservation_id,worker,initialize_json,session_id,
-                baseline_usage,created_at)
-            VALUES($path,$id,$worker,$sdk,$session,'{}','earlier');
-            """, null, ("$path", reservation.UsagePath), ("$id", reservation.Id),
-            ("$worker", reservation.Worker), ("$sdk", "sdk:" + NativeSdkSession.SdkVersion),
-            ("$session", reservation.SessionId));
+            """);
     }
 
     private static async Task<CreditReservation> ClosedReservationAsync(
         RunFixture fixture, RunDatabase database, CreditLedger ledger, CancellationToken token,
-        string worker = "worker1", bool uncertain = true
+        string worker = "worker1", bool uncertain = true, string? cwd = null
     )
     {
+        LocalTools tools = new(database);
+        _ = new Coordinator(database, tools.Collaboration, tools.Git);
         CreditReservation reservation = ledger.Reserve(database.RunId, worker, 0, 300,
             Path.Combine(fixture.RootPath, $"closed-{worker}.sdk-evidence"), shared: true);
-        await ledger.AcquireSharedWindowAsync(reservation.Id, token);
-        ledger.MarkStarted(reservation.Id);
-        ledger.AttachSession(reservation.Id, reservation.SessionId!);
+        ControlledSdkHost originalHost = new("none", token, evidenceDatabase: database);
+        originalHost.Release.TrySetResult();
+        NativeWorkerFactory originalFactory =
+            new(database, new(database), ledger, () => originalHost);
+        INativeWorker original = originalFactory.Create(reservation, calibration: false);
+        await original.StartAsync(cwd ?? fixture.RepositoryPath, null, token);
         ledger.BeginDispatch(database.RunId, reservation.Id, 300);
         ledger.RecordSdkUsage(reservation.Id,
             new(reservation.SessionId!, 60_000_000_000, "complete", 10));
@@ -561,6 +692,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         {
             ledger.MarkUncertain(reservation.Id);
         }
+        await originalHost.DisposeAsync();
         return ledger.Reservations().Single(row => row.Id == reservation.Id);
     }
 
@@ -1730,32 +1862,38 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
         public Queue<NativeUsage> Readings { get; } = [];
 
+        public decimal ResumeUsedCredits { get; set; }
+
         public Task OpenAsync(
             string worker, string sessionId, decimal? limit, string? exactSession,
             string evidencePath, CancellationToken cancellationToken
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (exactSession is not null && limit <= ResumeUsedCredits)
+            {
+                throw new OperationException("session_load_failed",
+                    "Controlled resume requires an absolute cap above already-used credits.");
+            }
             SessionId = sessionId;
             HasSession = true;
-            Metadata = new() { ["sessionId"] = sessionId, ["worker"] = worker };
+            Metadata = new()
+            {
+                ["sessionId"] = sessionId,
+                ["worker"] = worker,
+                ["workingDirectory"] = cwd,
+                ["appliedLimit"] = limitReadback is double observed ? observed : limit,
+                ["selectedModel"] = modelReadback
+                    ?? evidenceDatabase?.Configuration.NativeModel ?? "controlled-model",
+                ["alreadyInUse"] = false,
+                ["isRemote"] = false,
+                ["runtimeVersion"] = NativeSdkSession.RuntimeVersion,
+                ["sdkVersion"] = NativeSdkSession.SdkVersion,
+                ["runtimeId"] = runtimeId,
+                ["runtimeLeaseId"] = runtimeLeaseId,
+            };
             if (evidenceDatabase is not null)
             {
-                Metadata["workingDirectory"] = cwd;
-                Metadata["appliedLimit"] = limit;
-                if (limitReadback is double observed)
-                {
-                    Metadata["appliedLimit"] = observed;
-                }
-                Metadata["selectedModel"] = modelReadback
-                    ?? evidenceDatabase.Configuration.NativeModel
-                    ?? "controlled-model";
-                Metadata["alreadyInUse"] = false;
-                Metadata["isRemote"] = false;
-                Metadata["runtimeVersion"] = NativeSdkSession.RuntimeVersion;
-                Metadata["sdkVersion"] = NativeSdkSession.SdkVersion;
-                Metadata["runtimeId"] = runtimeId;
-                Metadata["runtimeLeaseId"] = runtimeLeaseId;
                 evidenceDatabase.WriteMetadata(
                     $"native:runtime:{runtimeId}:session:{sessionId}",
                     new JsonObject

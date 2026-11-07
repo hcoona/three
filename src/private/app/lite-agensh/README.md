@@ -140,7 +140,10 @@ The [closed failed-run reconnect contract](docs/implementation-contracts.md#clos
 also specifies settlement-only recovery through this existing command without
 restarting workers or rewriting an ended failed audit. This branch is
 implemented with controlled coverage; installed-native recovery effectiveness
-remains unverified. It returns a distinct `usage-settlement` result before
+remains unverified. Exact non-dispatch recovery requires the
+[retained zero-origin cap profile](docs/implementation-contracts.md#exact-recovery-limit-coordinates),
+not a raw remaining-credit limit or an inferred new allowance.
+It returns a distinct `usage-settlement` result before
 paid admission, while later paid operations still require matching receipts.
 Native use remains subject to the owning operational protocol and exact
 invocation/effects review.
