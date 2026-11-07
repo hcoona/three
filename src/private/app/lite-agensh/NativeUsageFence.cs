@@ -49,6 +49,11 @@ internal sealed class NativeUsageFence
                     break;
                 case AssistantUsageEvent:
                 case UserMessageEvent:
+                case AssistantTurnStartEvent:
+                case AssistantTurnEndEvent:
+                case ToolExecutionStartEvent:
+                case ToolExecutionCompleteEvent:
+                case SessionLimitsExhaustedRequestedEvent:
                     break;
                 default:
                     return;

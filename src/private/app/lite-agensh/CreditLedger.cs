@@ -217,6 +217,41 @@ public sealed class CreditLedger
         }
     }
 
+    internal (decimal? BookedActual, NativeUsage Reported)? ReadRecoveryBaseline(string id)
+    {
+        using SqliteConnection connection = Open();
+        using SqliteCommand command = Sql.Command(
+            connection,
+            """
+            SELECT r.session_id,r.actual,u.reported_nano_aiu,u.reported_requests,u.status
+            FROM credit_reservations r
+            JOIN credit_sdk_usage u ON u.reservation_id=r.id AND u.session_id=r.session_id
+            WHERE r.id=$id AND u.dispatch_count>0;
+            """, null, ("$id", id));
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read() || reader.IsDBNull(2) || reader.IsDBNull(3)
+            || !double.TryParse(reader.GetString(2), NumberStyles.Float,
+                CultureInfo.InvariantCulture, out double nano)
+            || !double.IsFinite(nano) || nano < 0 || reader.GetInt64(3) < 0)
+        {
+            return null;
+        }
+        try
+        {
+            decimal? booked = reader.IsDBNull(1) ? null : Parse(reader.GetString(1));
+            if (booked < 0)
+            {
+                return null;
+            }
+            return (booked, new(reader.GetString(0), nano,
+                reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetInt64(3)));
+        }
+        catch (Exception exception) when (exception is FormatException or OverflowException)
+        {
+            return null;
+        }
+    }
+
     public void RecordSdkUsage(string id, NativeUsage usage, bool final = false) =>
         RecordSdkUsage(id, usage, final, recovery: null);
 

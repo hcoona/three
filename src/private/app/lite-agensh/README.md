@@ -31,8 +31,10 @@ audit and independent finding classifications are carried by
 The [SDK-native recovery contract](docs/implementation-contracts.md#sdk-native-recovery-boundary)
 adds original typed termination provenance and fresh supported accounting checks
 for a separate financial boundary, not successful original task delivery or
-provider-final invoices. This guard is specified, not yet implemented or
-installed-native verified; existing uncertainty does not release automatically.
+provider-final invoices. The application implements this guard with controlled
+original-history, receipt-frontier, current-local work and rejection/preservation
+scenarios. Installed-native effectiveness remains unverified; existing
+uncertainty does not release automatically.
 The MCP 2.3.0 upgrade is covered by controlled stdio contracts, not a new
 native acceptance run; PR #1530 retains the earlier dependency baseline.
 The [dependency contract](docs/implementation-contracts.md#application-and-dependencies)
