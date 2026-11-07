@@ -591,6 +591,69 @@ meaning for the offline `reconcile` cancellation command. It adds no public
 command, permits no manual ledger edit and does not waive build or receipt
 identity checks for subsequent paid work.
 
+### SDK-native recovery boundary
+
+For accounting-only recovery of a dispatched uncertain reservation, original
+routine native termination may establish the predecessor's known-work boundary
+without successful delivery of its original SDK send. This is the owner's
+native-reported accounting evidence level, not a certificate that every
+historical cancelled request returned or every provider invoice is final.
+An earlier cancelled compaction can retain `attemptSettled=false` at its
+cancellation decision; the separately verified later native termination is
+the accepted predecessor boundary. Keep that failure and the original fence
+unchanged. A newly idle instance, abandoned pending work, process exit,
+stable amounts or `Complete` alone cannot replace this provenance.
+Live turn/compaction fencing and the unopened exact-load failure exception
+above retain their existing semantics.
+
+Before activating the saved session, use the temporary owned client's official
+`Rpc.Sessions.ReadPersistedEventsAsync` for that exact local session and storage
+context. Bind the original lifetime to its durable session/start, segment and
+stop associations; do not choose a global latest session or accept a later
+recovery shutdown as the original endpoint. Read one pinned journal snapshot
+sequentially to `CursorStatus=ok` and `HasMore=false`, using each continuation
+cursor once. Require its matching original `SessionShutdownEvent` with
+`ShutdownType=routine`, finite nonnegative public `TotalNanoAiu` and valid
+public accounting watermarks. Preserve the original event identity/time,
+amount and frontier as recovery provenance. Watermarks subsume preceding
+receipts, not future or unobserved calls.
+
+Bound the entire history read by the existing native-probe deadline, not a
+new deadline for each page; consume one snapshot at a time. A short page is
+not completion. Expired, unavailable, unsupported, incomplete or contradictory
+history leaves uncertainty. Do not fall back to raw CLI files, hidden snapshot
+properties, reflection, another journal generation or session replacement.
+The public shutdown amount is a consistency lower bound, never a saved amount
+to book. The SDK's internal `AccountingSnapshot` is not a production interface.
+
+Then exact-load with pending continuation and transcript recovery disabled,
+retain all identity/model/SDK/runtime/finite-cap/origin/backing checks, and read
+fresh supported aggregate metrics under the existing session-local fence.
+Require `Complete`, finite nonnegative cumulative spend and valid requests,
+nonregression against the associated persisted spend/request baseline, and
+spend at least covering the original public shutdown amount in the same native
+coordinate. Check typed local `Metadata.IsProcessingAsync` and
+`Metadata.ActivityAsync` around the usage read: processing or active work
+invalidates it. These are new-boundary work checks, not predecessor financial
+certificates; nonlocal or unsupported results cannot prove inactivity.
+Known new background work, callbacks, session and temporary host must settle
+without invalidating the fresh reading before the existing atomic delta
+booking. No new grant, prompt, baseline reset or original-fence clearing occurs.
+
+These primitives are documented in the selected SDK 1.0.28's
+[public generated RPC contract][sdk-recovery-rpc] and
+[event contract][sdk-recovery-events]: persisted snapshot paging, current-local
+activity, observed-call completeness and public shutdown accounting projections.
+The public source ref is distinct from the package's runtime build stamp;
+source/package correspondence is not installed CLI effectiveness.
+Recheck the selected package and CLI interface before dependent native use.
+The owning protocol and validation gates still require separate implementation
+acceptance and an exact prospective operation; this contract is not a successful
+recovery or permission to book the retained diagnostic snapshots.
+
+[sdk-recovery-rpc]: https://github.com/github/copilot-sdk/blob/fa108e71ee3025663e0dac20f2a071055d3a6b14/dotnet/src/Generated/Rpc.cs
+[sdk-recovery-events]: https://github.com/github/copilot-sdk/blob/fa108e71ee3025663e0dac20f2a071055d3a6b14/dotnet/src/Generated/SessionEvents.cs
+
 ### Exact recovery limit coordinates
 
 For exact non-dispatch usage recovery, distinguish the existing cumulative
@@ -669,7 +732,9 @@ crash reconnect path. Do not edit lifecycle or segment state to select a path.
 Resolve old owned process identities and validate durable run/campaign,
 reservation/worker/session and SDK associations. Recover each unresolved
 associated reservation through the existing exact-session non-dispatch
-factory boundary and measured-usage rules above. Use the actual durable
+factory boundary and measured-usage rules above, including the
+[SDK-native predecessor boundary](#sdk-native-recovery-boundary) for dispatched
+uncertainty. Use the actual durable
 uncertain reservation, disabled pending-work continuation and transcript
 recovery, isolated tools, positive remaining backing and the verified finite
 native ceiling under the [coordinate contract](#exact-recovery-limit-coordinates). Failed exact

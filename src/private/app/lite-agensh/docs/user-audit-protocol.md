@@ -133,11 +133,25 @@ worktrees, ended segments, failed lifecycle/details, report and original
 preflight/calibration receipts. Verify exclusive run ownership and current
 old-process identities, not merely a historical quiescence receipt. Open only
 the unresolved run's exact associated sessions through the isolated temporary
-runtime recovery path. Keep pending-work continuation and transcript recovery
+runtime recovery path. For dispatched uncertainty, first obtain the
+[original SDK-native termination](implementation-contracts.md#sdk-native-recovery-boundary)
+through that owned client's typed exact persisted-history reader before session
+activation. Read only the associated local journal, sequentially within the
+existing probe bound, and preserve original-lifetime identity, public amount
+and receipt frontier. Do not enumerate sessions, use a later replacement
+shutdown, replay history into a model or substitute raw saved journal data.
+The owner accepts that original native endpoint plus fresh supported accounting
+and new-boundary settlement, not individual final-return proof for every
+historical cancelled request or provider-final invoices.
+Keep pending-work continuation and transcript recovery
 disabled; verify identity, working directory, Terra model, positive remaining
 backing and the unchanged finite native ceiling under the
 [coordinate contract](implementation-contracts.md#exact-recovery-limit-coordinates)
 before fresh fenced complete cumulative metrics and runtime settlement.
+Require fresh usage to cover the original public amount and persisted
+associated baseline, with typed local processing/activity checks around the
+reading. Missing, expired, unsupported, active or contradictory evidence
+retains uncertainty; original cancelled-compaction/delivery failures remain.
 No new grant, worker dispatch, prompt, fallback session, paid calibration,
 account query or report export is permitted.
 

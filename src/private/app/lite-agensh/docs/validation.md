@@ -92,6 +92,20 @@ and failed ownership/background/session/host settlement. Preserve unrelated
 unknowns, source/receipt bindings and paid-admission gates. Do not test this
 through pre-dispatch cancellation or add an incident-specific recovery command.
 
+For the [SDK-native recovery boundary](implementation-contracts.md#sdk-native-recovery-boundary),
+exercise an original undelivered send and cancelled compaction followed by
+matching routine native termination, then fresh complete nonregressing usage
+and settled replacement-boundary work/session/host. Preserve the original
+failures while booking only the fresh cumulative delta. Cover complete pinned
+history across short pages, original-lifetime association and the public amount
+lower bound. Reject missing/error/later-recovery termination, expired or
+incomplete paging, regressing or below-original amounts, nonlocal/active work,
+unsupported APIs and work changing during or after the read. Rejection creates
+no prompt/grant, raw-file/reflection fallback or accounting disposition.
+Use controlled SDK-shaped boundaries for these guards, not provider-invoice
+simulations. Installed-native typed history retrieval and new-boundary
+settlement remain separately unobserved until the owning exact operation.
+
 Exercise `reconnect` through the public coordinator boundary for a closed
 failed run with dispatched uncertain usage and stale build-bound paid receipts.
 It must settle exact native usage and return a distinct non-paid result

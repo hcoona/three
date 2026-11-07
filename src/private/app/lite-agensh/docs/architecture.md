@@ -397,6 +397,17 @@ owns eligibility and rejection rules. Keep the existing reconnect and offline
 pre-dispatch cancellation entry points distinct; no additional incident-specific
 command or recovery framework is introduced.
 
+For dispatched uncertain accounting recovery, the
+[SDK-native boundary](implementation-contracts.md#sdk-native-recovery-boundary)
+requires original routine termination from a pinned typed exact-session journal
+before activation, followed by independently fresh supported usage and
+new-boundary work/fence/session/host checks. Original send delivery and cancelled
+compaction failures remain failures; original termination supplies accounting
+provenance rather than clearing their old live fence. Only the fresh reading
+drives cumulative booking. Keep this in the existing native factory/adapter,
+not a raw-journal reader, new recovery service or provider-invoice integration.
+Missing original provenance or unsupported native behavior retains uncertainty.
+
 The same `reconnect` entrypoint selects a settlement-only branch when the run
 has prior segments, all are ended and its retained lifecycle is `unresolved`.
 Select that branch under exclusive ownership before requiring an unfinished
