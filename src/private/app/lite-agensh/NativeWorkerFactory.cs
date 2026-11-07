@@ -334,7 +334,12 @@ internal sealed class NativeWorkerFactory(
                 "credit_unknown", "Exact recovery has no remaining backed capacity."
             );
         }
-        JsonObject retained = RecoveryLimitEvidence(reservation, cwd);
+        (JsonObject retained, NativeRecoveryOrigin origin) =
+            RecoveryLimitEvidence(reservation, cwd);
+        (NativeUsage Usage, long Dispatches)? baseline =
+            credits.ReadCompleteSdkUsage(reservation.Id);
+        RequireRecoveryEvidence(baseline is not null
+            && baseline.Value.Usage.SessionId == reservation.SessionId);
         decimal cap = retained["appliedLimit"]!.GetValue<decimal>();
         using CancellationTokenSource deadline =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -347,6 +352,8 @@ internal sealed class NativeWorkerFactory(
         try
         {
             recovery = recoveryHost.CreateSession(cwd, isolated: true);
+            OriginalNativeShutdown original = await recovery.ReadOriginalShutdownAsync(
+                origin, evidencePrefix, deadline.Token).ConfigureAwait(false);
             await recovery
                 .OpenAsync(
                     reservation.Worker,
@@ -358,8 +365,17 @@ internal sealed class NativeWorkerFactory(
                 )
                 .ConfigureAwait(false);
             usage = await recovery
-                .ReadSettledAsync(reservation.SessionId!, cap, deadline.Token)
+                .ReadSettledAsync(
+                    reservation.SessionId!, cap, deadline.Token, verifyLocalWork: true)
                 .ConfigureAwait(false);
+            if (usage.RequireComplete() < baseline!.Value.Usage.RequireComplete()
+                || usage.TotalUserRequests < baseline.Value.Usage.TotalUserRequests
+                || usage.TotalNanoAiu < original.TotalNanoAiu)
+            {
+                throw new OperationException("credit_unknown",
+                    "Fresh recovery usage regressed or does not cover original native termination."
+                );
+            }
             RequireRecoveryEvidence(
                 recovery.Metadata is JsonObject observed
                 && observed["sessionId"]?.GetValue<string>() == reservation.SessionId
@@ -414,7 +430,8 @@ internal sealed class NativeWorkerFactory(
         return new(reservation, usage!);
     }
 
-    private JsonObject RecoveryLimitEvidence(CreditReservation reservation, string cwd)
+    private (JsonObject Metadata, NativeRecoveryOrigin Origin) RecoveryLimitEvidence(
+        CreditReservation reservation, string cwd)
     {
         try
         {
@@ -503,7 +520,44 @@ internal sealed class NativeWorkerFactory(
                     snapshot, ("$lease", retained["runtimeLeaseId"]!.GetValue<long>()),
                     ("$kind", $"native:runtime:{runtimeId}"))! == 1
             );
-            return retained;
+            using SqliteCommand lifetime = Sql.Command(connection,
+                """
+                SELECT n.created_at,a.created_at,p.created_at,s.started_at,s.ended_at,s.id
+                FROM native_sessions n JOIN native_attempts a
+                  ON a.reservation_id=n.reservation_id AND a.session_id=n.session_id
+                JOIN process_leases p ON p.id=$lease
+                CROSS JOIN coordinator_segments s
+                WHERE n.reservation_id=$id AND s.ended_at IS NOT NULL;
+                """, snapshot, ("$id", reservation.Id),
+                ("$lease", retained["runtimeLeaseId"]!.GetValue<long>()));
+            using SqliteDataReader reader = lifetime.ExecuteReader();
+            NativeRecoveryOrigin? origin = null;
+            while (reader.Read())
+            {
+                DateTimeOffset associationTime = DateTimeOffset.Parse(
+                    reader.GetString(0), CultureInfo.InvariantCulture);
+                DateTimeOffset attemptTime = DateTimeOffset.Parse(
+                    reader.GetString(1), CultureInfo.InvariantCulture);
+                DateTimeOffset runtimeTime = DateTimeOffset.Parse(
+                    reader.GetString(2), CultureInfo.InvariantCulture);
+                DateTimeOffset segmentStart = DateTimeOffset.Parse(
+                    reader.GetString(3), CultureInfo.InvariantCulture);
+                DateTimeOffset segmentEnd = DateTimeOffset.Parse(
+                    reader.GetString(4), CultureInfo.InvariantCulture);
+                if (segmentStart <= associationTime && associationTime == attemptTime
+                    && associationTime <= segmentEnd
+                    && segmentStart <= runtimeTime && runtimeTime <= segmentEnd)
+                {
+                    RequireRecoveryEvidence(origin is null);
+                    origin = new(reservation.SessionId!,
+                        retained["runtimeVersion"]!.GetValue<string>(), runtimeId,
+                        retained["runtimeLeaseId"]!.GetValue<long>(),
+                        reader.GetInt64(5), associationTime,
+                        runtimeTime, segmentStart, segmentEnd);
+                }
+            }
+            RequireRecoveryEvidence(origin is not null);
+            return (retained, origin!);
         }
         catch (Exception exception) when (exception is JsonException or InvalidOperationException
             or ArgumentException or FormatException or OverflowException)

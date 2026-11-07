@@ -2,12 +2,14 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using GitHub.Copilot;
+using GitHub.Copilot.Rpc;
 using LiteAgensh;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LiteAgensh.Tests;
 
+#pragma warning disable GHCP001
 [TestClass]
 public sealed class NativeSettlementScenarioTests(TestContext testContext)
 {
@@ -218,11 +220,12 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
-    [DataRow(62.422970d, null)]
-    [DataRow(150d, null)]
-    [DataRow(62.422970d, "1.0.105")]
+    [DataRow(62.422970d, null, false)]
+    [DataRow(150d, null, false)]
+    [DataRow(62.422970d, "1.0.105", false)]
+    [DataRow(62.422970d, "1.0.105", true)]
     public async Task ExactRecoveryBooksClosedWindowDeltaOnlyAfterTemporaryHostSettles(
-        double total, string? originalRuntimeVersion)
+        double total, string? originalRuntimeVersion, bool sharedRuntimeAlreadyStarted)
     {
         CancellationToken token = testContext.CancellationToken;
         using RunFixture fixture = new();
@@ -233,6 +236,18 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         CreditReservation reservation =
             await ClosedReservationAsync(fixture, database, ledger, token,
                 originalRuntimeVersion: originalRuntimeVersion);
+        if (sharedRuntimeAlreadyStarted)
+        {
+            using SqliteConnection state = database.Open();
+            string associated = (string)Sql.Scalar(state,
+                "SELECT created_at FROM native_sessions WHERE reservation_id=$id;",
+                null, ("$id", reservation.Id))!;
+            DateTimeOffset runtimeStart = DateTimeOffset.Parse(
+                associated, System.Globalization.CultureInfo.InvariantCulture).AddTicks(-1);
+            Sql.Execute(state,
+                "UPDATE process_leases SET created_at=$time WHERE kind LIKE 'native:runtime:%';",
+                null, ("$time", runtimeStart.ToString("O")));
+        }
         string original = RetainedState(database);
         ledger.MarkStarted(other.Id);
         ledger.MarkUncertain(other.Id);
@@ -245,6 +260,11 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
         Task<RecoveredNativeUsage> recovery = factory.ReadSettledUsageAsync(
             reservation, fixture.RepositoryPath, "controlled-recovery", token);
+        if (await Task.WhenAny(recovery, host.Closing.Task).WaitAsync(token) == recovery)
+        {
+            _ = await recovery;
+            Assert.Fail("Recovery returned before temporary host settlement.");
+        }
         await host.Closing.Task.WaitAsync(token);
         Assert.IsFalse(recovery.IsCompleted);
         Assert.AreEqual(60m, ledger.Reservations().Single(row => row.Id == reservation.Id).Actual);
@@ -275,6 +295,243 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         Assert.AreEqual(NativeSdkSession.RuntimeVersion,
             Assert.ContainsSingle(host.Sessions).Metadata!["runtimeVersion"]!.GetValue<string>());
         Assert.AreEqual(original, RetainedState(database));
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task OriginalFailedWorkRemainsFailedAfterSeparateNativeAccountingRecovery()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        ControlledSdkSession? originalSession = null;
+        CreditReservation reservation = await ClosedReservationAsync(
+            fixture, database, ledger, token, onOriginal: session =>
+            {
+                originalSession = session;
+                session.FailOriginalWork();
+            });
+        database.WriteMetadata(
+            "lifecycle:failure", "Original undelivered send and cancelled compaction.");
+        string original = RetainedState(database);
+        ControlledSdkHost host = new("none", token, onCreate: session =>
+        {
+            session.Readings.Enqueue(new(reservation.SessionId!, 65_000_000_000, "complete", 11));
+        });
+        host.Release.TrySetResult();
+        NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
+
+        RecoveredNativeUsage recovered = await factory.ReadSettledUsageAsync(
+            reservation, fixture.RepositoryPath, "controlled-recovery", token);
+        ledger.RecordRecoveredSdkUsage(recovered);
+
+        Assert.AreEqual(65m, Assert.ContainsSingle(ledger.Reservations()).Actual);
+        Assert.AreEqual("reconciled", Assert.ContainsSingle(ledger.Reservations()).State);
+        Assert.IsFalse(Assert.ContainsSingle(host.Sessions).Sent);
+        await Assert.ThrowsExactlyAsync<OperationException>(() =>
+            originalSession!.ReadSettledAsync(
+                reservation.SessionId!, reservation.Allowance, token));
+        Assert.AreEqual(original, RetainedState(database));
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("processing")]
+    [DataRow("active")]
+    [DataRow("late-active")]
+    [DataRow("unsupported-activity")]
+    [DataRow("below-original")]
+    [DataRow("missing-history")]
+    public async Task RecoveryBoundaryRejectionPreservesBackingAndOriginalState(string defect)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        CreditReservation reservation =
+            await ClosedReservationAsync(fixture, database, ledger, token);
+        string original = RetainedState(database);
+        ControlledSdkHost host = new("none", token, onCreate: session =>
+        {
+            session.Processing = defect == "processing";
+            session.ActiveWork = defect == "active";
+            session.UnsupportedActivity = defect == "unsupported-activity";
+            session.MissingOriginalHistory = defect == "missing-history";
+            session.OriginalShutdownNanoAiu =
+                defect == "below-original" ? 70_000_000_000 : 60_000_000_000;
+            session.Readings.Enqueue(new(reservation.SessionId!, 65_000_000_000, "complete", 11));
+            if (defect == "late-active")
+            {
+                session.OnRead = () => session.ActiveWork = true;
+            }
+        });
+        host.Release.TrySetResult();
+        NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
+
+        await Assert.ThrowsExactlyAsync<OperationException>(() => factory.ReadSettledUsageAsync(
+            reservation, fixture.RepositoryPath, "controlled-recovery", token));
+
+        CreditReservation retained = Assert.ContainsSingle(ledger.Reservations());
+        Assert.AreEqual("uncertain", retained.State);
+        Assert.AreEqual(60m, retained.Actual);
+        Assert.AreEqual(reservation.Allowance, retained.Allowance);
+        Assert.IsFalse(Assert.ContainsSingle(host.Sessions).Sent);
+        Assert.IsTrue(host.Settled);
+        Assert.AreEqual(original, RetainedState(database));
+        Assert.AreEqual("credit_unknown",
+            Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task PinnedShortPagesSelectOriginalShutdownInsteadOfLaterRecoveryTermination(
+        bool laterReceipt)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        NativeRecoveryOrigin origin = HistoryOrigin();
+        SessionEvent[] events = OriginalEvents(origin, 62_422_970_000);
+        SessionEvent later = SessionEvent.FromJson(events[^1].ToJson());
+        later.Id = Guid.NewGuid();
+        later.Timestamp = origin.SegmentEndTime.AddSeconds(1);
+        SessionEvent receiptAfterShutdown = SessionEvent.FromJson(events[1].ToJson());
+        receiptAfterShutdown.Id = Guid.NewGuid();
+        receiptAfterShutdown.Timestamp = events[^1].Timestamp.AddTicks(1);
+        Assert.IsInstanceOfType<AssistantUsageEvent>(receiptAfterShutdown)
+            .Data.Accounting!.Sequence = 2;
+        Queue<EventsReadResult> pages = new([
+            new() { Cursor = "next", CursorStatus = EventsCursorStatus.Ok,
+                HasMore = true, Events = [events[0]] },
+            new() { Cursor = "last", CursorStatus = EventsCursorStatus.Ok,
+                HasMore = false, Events = laterReceipt
+                    ? [events[1], events[2], receiptAfterShutdown, later]
+                    : [events[1], events[2], later] },
+        ]);
+        List<string?> consumed = [];
+        OriginalNativeShutdown original = await NativeSdkSession.ReadOriginalShutdownAsync(
+            origin, (cursor, _) =>
+            {
+                consumed.Add(cursor);
+                return Task.FromResult(pages.Dequeue());
+            }, token);
+        Assert.AreEqual(events[^1].Id, original.EventId);
+        Assert.AreEqual(events[^1].Timestamp, original.Timestamp);
+        Assert.AreEqual(62_422_970_000d, original.TotalNanoAiu);
+        Assert.HasCount(2, consumed);
+        Assert.IsNull(consumed[0]);
+        Assert.AreEqual("next", consumed[1]);
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task OriginalShutdownMustCoverSeparatelyMeteredToolReceipts(bool toolSuccess)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        NativeRecoveryOrigin origin = HistoryOrigin();
+        SessionEvent[] events = OriginalEvents(origin, 60_000_000_000);
+        events[1] = MeteredToolReceipt(events[1].Timestamp, toolSuccess);
+        SessionShutdownEvent terminal = Assert.IsInstanceOfType<SessionShutdownEvent>(events[^1]);
+        terminal.Data.UsageAccountingWatermarks!["charged-tool-source"] = 1;
+        EventsReadResult page = new()
+        {
+            Cursor = "complete",
+            CursorStatus = EventsCursorStatus.Ok,
+            HasMore = false,
+            Events = events,
+        };
+
+        OriginalNativeShutdown original = await NativeSdkSession.ReadOriginalShutdownAsync(
+            origin, (_, _) => Task.FromResult(page), token);
+
+        Assert.AreEqual(terminal.Id, original.EventId);
+        Assert.AreEqual(1L, original.Watermarks["charged-tool-source"]);
+        Assert.AreEqual(60_000_000_000d, original.TotalNanoAiu);
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("expired")]
+    [DataRow("reused-cursor")]
+    [DataRow("missing")]
+    [DataRow("error")]
+    [DataRow("later-only")]
+    [DataRow("wrong-start")]
+    [DataRow("backdated-start")]
+    [DataRow("wrong-session")]
+    [DataRow("uncovered-receipt")]
+    [DataRow("uncovered-tool-receipt")]
+    [DataRow("missing-tool-identity")]
+    [DataRow("work-after-shutdown")]
+    [DataRow("negative-amount")]
+    public async Task TypedOriginalHistoryRejectsInvalidPredecessorProof(string defect)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        NativeRecoveryOrigin origin = HistoryOrigin();
+        SessionEvent[] events = OriginalEvents(origin, 60_000_000_000);
+        SessionShutdownEvent terminal = Assert.IsInstanceOfType<SessionShutdownEvent>(events[^1]);
+        if (defect == "error")
+        {
+            terminal.Data.ShutdownType = ShutdownType.Error;
+        }
+        if (defect == "later-only")
+        {
+            terminal.Timestamp = origin.SegmentEndTime.AddSeconds(1);
+        }
+        if (defect == "wrong-start")
+        {
+            terminal.Data.SessionStartTime++;
+        }
+        if (defect == "backdated-start")
+        {
+            origin = origin with { RuntimeStartTime = origin.AssociationTime.AddSeconds(-1) };
+            DateTimeOffset backdated = origin.AssociationTime.AddTicks(-1);
+            Assert.IsInstanceOfType<SessionStartEvent>(events[0]).Data.StartTime = backdated;
+            terminal.Data.SessionStartTime = backdated.ToUnixTimeMilliseconds();
+        }
+        if (defect == "wrong-session")
+        {
+            Assert.IsInstanceOfType<SessionStartEvent>(events[0])
+                .Data.SessionId = "another-session";
+        }
+        if (defect == "uncovered-receipt")
+        {
+            terminal.Data.UsageAccountingWatermarks![origin.SessionId] = 0;
+        }
+        if (defect is "uncovered-tool-receipt" or "missing-tool-identity")
+        {
+            events[1] = MeteredToolReceipt(events[1].Timestamp, success: true);
+            if (defect == "missing-tool-identity")
+            {
+                Assert.IsInstanceOfType<ToolExecutionCompleteEvent>(events[1])
+                    .Data.ToolUsage!.Accounting = null;
+                terminal.Data.UsageAccountingWatermarks!["charged-tool-source"] = 1;
+            }
+        }
+        if (defect == "work-after-shutdown")
+        {
+            SessionEvent work = LateWorkEvent("assistant.turn_start");
+            work.Timestamp = terminal.Timestamp.AddTicks(1);
+            events = [.. events, work];
+        }
+        if (defect == "negative-amount")
+        {
+            terminal.Data.TotalNanoAiu = -1;
+        }
+        EventsReadResult page = new()
+        {
+            Cursor = "repeated",
+            CursorStatus = defect == "expired" ? EventsCursorStatus.Expired : EventsCursorStatus.Ok,
+            HasMore = defect == "reused-cursor",
+            Events = defect == "reused-cursor" ? []
+                : defect == "missing" ? [events[0], events[1]] : events,
+        };
+        await Assert.ThrowsExactlyAsync<OperationException>(() =>
+            NativeSdkSession.ReadOriginalShutdownAsync(
+                origin, (_, _) => Task.FromResult(page), token));
     }
 
     [TestMethod]
@@ -446,6 +703,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     [DataRow("host")]
     [DataRow("session")]
     [DataRow("late-work")]
+    [DataRow("late-tool")]
+    [DataRow("late-turn")]
     [DataRow("partial")]
     [DataRow("regressing")]
     [DataRow("requests")]
@@ -459,10 +718,18 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         CreditReservation reservation =
             await ClosedReservationAsync(fixture, database, ledger, token);
         ControlledSdkHost host = new(failure, token,
-            onClose: failure == "late-work" ? session =>
+            onClose: failure is "late-work" or "late-tool" or "late-turn" ? session =>
             {
-                session.BeginCompaction();
-                session.CompleteCompaction();
+                if (failure == "late-work")
+                {
+                    session.BeginCompaction();
+                    session.CompleteCompaction();
+                }
+                else
+                {
+                    session.ObserveLateWork(failure == "late-tool"
+                        ? "tool.execution_start" : "assistant.turn_start");
+                }
             }
         : null,
             onCreate: session => session.Readings.Enqueue(new(
@@ -472,7 +739,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
         Task<RecoveredNativeUsage> recovery = factory.ReadSettledUsageAsync(
             reservation, fixture.RepositoryPath, "controlled-recovery", token);
-        if (failure is "host" or "session" or "late-work")
+        if (failure is "host" or "session" or "late-work" or "late-tool" or "late-turn"
+            or "partial" or "regressing" or "requests")
         {
             await Assert.ThrowsExactlyAsync<OperationException>(() => recovery);
         }
@@ -489,7 +757,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             Assert.ThrowsExactly<OperationException>(() =>
                 ledger.RecordRecoveredSdkUsage(recovered));
             using SqliteConnection campaign = Campaign(database);
-            Assert.AreEqual(failure == "partial" ? "partial" : "complete",
+            Assert.AreEqual("complete",
                 Sql.Scalar(campaign, "SELECT status FROM credit_sdk_usage;"));
         }
         CreditReservation retained = Assert.ContainsSingle(ledger.Reservations());
@@ -619,7 +887,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 null, ("$id", reservations[1].Id));
         }
         JsonObject response = await coordinator.RunAsync("reconnect", token);
-        Scenario.Failure(response, failure is "session" or "host"
+        Scenario.Failure(response, failure is "session" or "host" or "partial" or "regressing"
             ? "credit_or_ownership_unknown" : "credit_unknown");
         JsonObject result = response["data"]!.AsObject();
         Assert.AreEqual("usage-settlement", result["operation"]!.GetValue<string>());
@@ -640,7 +908,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             database.ReadMetadata("native:controlled_billing_receipt"));
         using SqliteConnection retained = database.Open();
         Assert.AreEqual(1L, Sql.Scalar(retained,
-            "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at='end' "
+            "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NOT NULL "
                 + "AND stop_reason='credit_unknown';"));
         Assert.AreEqual(0L, Sql.Scalar(retained, "SELECT COUNT(*) FROM coordinator_turns;"));
         Assert.IsNotNull(Sql.Scalar(retained,
@@ -722,11 +990,23 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     private static async Task<CreditReservation> ClosedReservationAsync(
         RunFixture fixture, RunDatabase database, CreditLedger ledger, CancellationToken token,
         string worker = "worker1", bool uncertain = true, string? cwd = null,
-        string? originalRuntimeVersion = null
+        string? originalRuntimeVersion = null, Action<ControlledSdkSession>? onOriginal = null
     )
     {
         LocalTools tools = new(database);
         _ = new Coordinator(database, tools.Collaboration, tools.Git);
+        using (SqliteConnection state = database.Open())
+        {
+            Sql.Execute(state,
+                """
+                INSERT INTO coordinator_segments(
+                    mode,state,started_at,deadline,ended_at,stop_reason)
+                SELECT 'run','unresolved',$start,$end,$end,'credit_unknown'
+                WHERE NOT EXISTS(SELECT 1 FROM coordinator_segments);
+                """, null,
+                ("$start", database.Now.AddSeconds(-1).ToString("O")),
+                ("$end", database.Now.AddMinutes(1).ToString("O")));
+        }
         CreditReservation reservation = ledger.Reserve(database.RunId, worker, 0, 300,
             Path.Combine(fixture.RootPath, $"closed-{worker}.sdk-evidence"), shared: true);
         ControlledSdkHost originalHost = new("none", token, evidenceDatabase: database,
@@ -744,6 +1024,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         {
             ledger.MarkUncertain(reservation.Id);
         }
+        onOriginal?.Invoke(Assert.ContainsSingle(originalHost.Sessions));
         await originalHost.DisposeAsync();
         return ledger.Reservations().Single(row => row.Id == reservation.Id);
     }
@@ -757,6 +1038,101 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         ["type"] = start ? "session.compaction_start" : "session.compaction_complete",
         ["data"] = new JsonObject { ["compactionAttemptId"] = attempt, ["success"] = success },
     }.ToJsonString())!;
+
+    private static NativeRecoveryOrigin HistoryOrigin()
+    {
+        DateTimeOffset start = DateTimeOffset.Parse(
+            "2026-01-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
+        return new("controlled-session", NativeSdkSession.RuntimeVersion,
+            "controlled-runtime", 1, 1,
+            start, start, start.AddSeconds(-1), start.AddMinutes(1));
+    }
+
+    private static SessionEvent MeteredToolReceipt(DateTimeOffset timestamp, bool success) =>
+        SessionEvent.FromJson(new JsonObject
+        {
+            ["id"] = Guid.NewGuid().ToString("D"),
+            ["timestamp"] = timestamp.ToString("O"),
+            ["type"] = "tool.execution_complete",
+            ["data"] = new JsonObject
+            {
+                ["success"] = success,
+                ["toolCallId"] = "charged-tool",
+                ["toolUsage"] = new JsonObject
+                {
+                    ["model"] = "controlled-tool-model",
+                    ["requestId"] = "controlled-tool-request",
+                    ["accounting"] = new JsonObject
+                    {
+                        ["sourceSessionId"] = "charged-tool-source",
+                        ["sequence"] = 1,
+                        ["usageId"] = "charged-tool-receipt",
+                    },
+                },
+            },
+        }.ToJsonString());
+
+    private static SessionEvent LateWorkEvent(string type) =>
+        SessionEvent.FromJson(new JsonObject
+        {
+            ["id"] = Guid.NewGuid().ToString("D"),
+            ["timestamp"] = "2026-01-01T00:00:00Z",
+            ["type"] = type,
+            ["data"] = new JsonObject
+            {
+                ["turnId"] = "controlled-late-turn",
+                ["toolName"] = "controlled-late-tool",
+                ["toolCallId"] = "controlled-late-tool",
+            },
+        }.ToJsonString());
+
+    private static SessionEvent[] OriginalEvents(NativeRecoveryOrigin origin, double amount)
+    {
+        DateTimeOffset started = (origin.RuntimeStartTime > origin.AssociationTime
+            ? origin.RuntimeStartTime : origin.AssociationTime).AddMilliseconds(1);
+        SessionEvent Event(string type, DateTimeOffset at, JsonObject data) =>
+            SessionEvent.FromJson(new JsonObject
+            {
+                ["id"] = Guid.NewGuid().ToString("D"),
+                ["timestamp"] = at.ToString("O"),
+                ["type"] = type,
+                ["data"] = data,
+            }.ToJsonString());
+        return
+        [
+            Event("session.start", started, new()
+            {
+                ["sessionId"] = origin.SessionId,
+                ["copilotVersion"] = origin.RuntimeVersion,
+                ["startTime"] = started.ToString("O"),
+                ["producer"] = "controlled-sdk",
+                ["version"] = 1,
+            }),
+            Event("assistant.usage", started.AddMilliseconds(1), new()
+            {
+                ["model"] = "controlled-model",
+                ["accounting"] = new JsonObject
+                {
+                    ["sourceSessionId"] = origin.SessionId,
+                    ["sequence"] = 1,
+                    ["usageId"] = "controlled-receipt",
+                },
+            }),
+            Event("session.shutdown", started.AddMilliseconds(2), new()
+            {
+                ["shutdownType"] = "routine",
+                ["sessionStartTime"] = started.ToUnixTimeMilliseconds(),
+                ["totalNanoAiu"] = amount,
+                ["usageAccountingWatermarks"] = new JsonObject { [origin.SessionId] = 1 },
+                ["codeChanges"] = new JsonObject
+                {
+                    ["filesModified"] = new JsonArray(), ["linesAdded"] = 0, ["linesRemoved"] = 0,
+                },
+                ["modelMetrics"] = new JsonObject(),
+                ["totalApiDurationMs"] = 0,
+            }),
+        ];
+    }
 
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
@@ -1906,6 +2282,26 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
         public Action? OnSend { get; set; }
 
+        public bool Processing { get; set; }
+
+        public bool ActiveWork { get; set; }
+
+        public bool UnsupportedActivity { get; set; }
+
+        public bool MissingOriginalHistory { get; set; }
+
+        public double OriginalShutdownNanoAiu { get; set; } = 60_000_000_000;
+
+        public void FailOriginalWork()
+        {
+            usageFence.SetTurnPending(true);
+            usageFence.Observe(CompactionEvent(start: true));
+            usageFence.Observe(CompactionEvent(start: false, success: false));
+        }
+
+        public void ObserveLateWork(string type) =>
+            usageFence.Observe(LateWorkEvent(type));
+
         public bool Sent { get; private set; }
 
         public string SessionId { get; private set; } = "";
@@ -1921,6 +2317,23 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         public Queue<NativeUsage> Readings { get; } = [];
 
         public decimal ResumeUsedCredits { get; set; }
+
+        public Task<OriginalNativeShutdown> ReadOriginalShutdownAsync(
+            NativeRecoveryOrigin origin, string evidencePath, CancellationToken cancellationToken
+        )
+        {
+            Assert.IsFalse(HasSession);
+            EventsReadResult page = new()
+            {
+                Cursor = "complete-original",
+                CursorStatus = EventsCursorStatus.Ok,
+                HasMore = false,
+                Events = MissingOriginalHistory
+                    ? [] : OriginalEvents(origin, OriginalShutdownNanoAiu),
+            };
+            return NativeSdkSession.ReadOriginalShutdownAsync(
+                origin, (_, _) => Task.FromResult(page), cancellationToken);
+        }
 
         public Task OpenAsync(
             string worker, string sessionId, decimal? limit, string? exactSession,
@@ -1995,12 +2408,27 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
         public async Task<NativeUsage> ReadSettledAsync(
             string expectedSession, decimal? expectedLimit, CancellationToken cancellationToken,
-            bool validateEvents = true
+            bool validateEvents = true, bool verifyLocalWork = false
         )
         {
             SettlementReadStarted.TrySetResult();
             return await usageFence.CaptureAsync(
-                token => ReadAsync(expectedSession, expectedLimit, token, validateEvents),
+                token => verifyLocalWork
+                    ? NativeSdkSession.ReadIdleRecoveryUsageAsync(
+                        next => ReadAsync(expectedSession, expectedLimit, next, validateEvents),
+                        _ =>
+                        {
+                            if (UnsupportedActivity)
+                            {
+                                throw new OperationException("unavailable",
+                                    "Controlled native activity API is unsupported.");
+                            }
+                            NativeSdkSession.RequireIdleRecoveryWork(
+                                new() { Processing = Processing },
+                                new() { HasActiveWork = ActiveWork });
+                            return Task.CompletedTask;
+                        }, token)
+                    : ReadAsync(expectedSession, expectedLimit, token, validateEvents),
                 cancellationToken);
         }
 

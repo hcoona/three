@@ -16,6 +16,10 @@ internal interface INativeSdkSession : IAsyncDisposable
 
     JsonObject? Metadata { get; }
 
+    Task<OriginalNativeShutdown> ReadOriginalShutdownAsync(
+        NativeRecoveryOrigin origin, string evidencePath, CancellationToken cancellationToken
+    );
+
     Task OpenAsync(
         string worker, string sessionId, decimal? limit, string? exactSession,
         string evidencePath, CancellationToken cancellationToken
@@ -28,7 +32,7 @@ internal interface INativeSdkSession : IAsyncDisposable
 
     Task<NativeUsage> ReadSettledAsync(
         string expectedSession, decimal? expectedLimit, CancellationToken cancellationToken,
-        bool validateEvents = true
+        bool validateEvents = true, bool verifyLocalWork = false
     );
 
     void WithSettledUsage(NativeUsage usage, Action record);
@@ -67,6 +71,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
     private bool acceptingCallbacks = true;
     private string? eventFailure;
     private string? actualRuntimeVersion;
+    private string? recoveryEvidencePath;
     private bool disposed;
     private Channel<SessionLimitsExhaustedRequestedData>? limitRequests;
 
@@ -124,6 +129,154 @@ internal sealed class NativeSdkSession : INativeSdkSession
     }
 
     public JsonObject? Metadata { get; private set; }
+
+    public async Task<OriginalNativeShutdown> ReadOriginalShutdownAsync(
+        NativeRecoveryOrigin origin, string evidencePath, CancellationToken cancellationToken
+    )
+    {
+        if (HasSession)
+        {
+            throw new OperationException("credit_unknown",
+                "Original native history must be checked before exact session activation.");
+        }
+        using CancellationTokenSource deadline =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(ProbeTimeoutSeconds));
+        client = await host.GetClientAsync(cwd, evidencePath, deadline.Token).ConfigureAwait(false);
+        OriginalNativeShutdown original = await ReadOriginalShutdownAsync(
+            origin,
+            (cursor, token) => client.Rpc.Sessions.ReadPersistedEventsAsync(
+                origin.SessionId, cursor, max: 200, direction: EventsReadDirection.Forward,
+                cancellationToken: token),
+            deadline.Token
+        ).ConfigureAwait(false);
+        using FileStream evidence = new(
+            evidencePath + ".original-shutdown.json", FileMode.CreateNew,
+            FileAccess.Write, FileShare.Read);
+        await System.Text.Json.JsonSerializer.SerializeAsync(
+            evidence, original.Evidence(origin), cancellationToken: deadline.Token
+        ).ConfigureAwait(false);
+        evidence.Flush(flushToDisk: true);
+        recoveryEvidencePath = evidencePath + ".recovery-usage.jsonl";
+        return original;
+    }
+
+    internal static async Task<OriginalNativeShutdown> ReadOriginalShutdownAsync(
+        NativeRecoveryOrigin origin,
+        Func<string?, CancellationToken, Task<EventsReadResult>> read,
+        CancellationToken cancellationToken
+    )
+    {
+        SessionStartEvent? start = null;
+        SessionShutdownEvent? shutdown = null;
+        Dictionary<string, long> receipts = new(StringComparer.Ordinal);
+        HashSet<string> cursors = new(StringComparer.Ordinal);
+        string? cursor = null;
+        do
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (cursor is not null && !cursors.Add(cursor))
+            {
+                throw new OperationException("credit_unknown", "Native history cursor was reused.");
+            }
+            EventsReadResult page = await read(cursor, cancellationToken)
+                .WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (page.CursorStatus != EventsCursorStatus.Ok
+                || string.IsNullOrWhiteSpace(page.Cursor))
+            {
+                throw new OperationException("credit_unknown",
+                    "Original native history is expired, incomplete or unsupported.");
+            }
+            foreach (SessionEvent update in page.Events)
+            {
+                if (update.Timestamp < origin.AssociationTime
+                    || update.Timestamp > origin.SegmentEndTime)
+                {
+                    continue;
+                }
+                if (update is SessionStartEvent opening)
+                {
+                    if (start is not null || shutdown is not null
+                        || opening.Id == Guid.Empty
+                        || opening.Data.SessionId != origin.SessionId
+                        || opening.Data.CopilotVersion != origin.RuntimeVersion
+                        || opening.Data.AlreadyInUse == true
+                        || opening.Data.StartTime < origin.RuntimeStartTime
+                        || opening.Data.StartTime < origin.AssociationTime
+                        || opening.Data.StartTime > opening.Timestamp)
+                    {
+                        throw new OperationException("credit_unknown",
+                            "Original native session startup disagrees with its durable lifetime.");
+                    }
+                    start = opening;
+                }
+                else if (update is SessionShutdownEvent terminal)
+                {
+                    if (start is null || shutdown is not null
+                        || terminal.Id == Guid.Empty
+                        || terminal.Timestamp < start.Timestamp
+                        || terminal.Data.SessionStartTime
+                            != start.Data.StartTime.ToUnixTimeMilliseconds()
+                        || terminal.Data.ShutdownType != ShutdownType.Routine
+                        || terminal.Data.TotalNanoAiu is not double total
+                        || !double.IsFinite(total) || total < 0
+                        || terminal.Data.UsageAccountingWatermarks is not { Count: > 0 } marks
+                        || marks.Any(mark => string.IsNullOrWhiteSpace(mark.Key) || mark.Value < 0)
+                        || receipts.Any(receipt =>
+                            !marks.TryGetValue(receipt.Key, out long frontier)
+                            || frontier < receipt.Value))
+                    {
+                        throw new OperationException("credit_unknown",
+                            "Original routine termination or accounting frontier is invalid.");
+                    }
+                    shutdown = terminal;
+                }
+                else if (shutdown is null && (update is AssistantUsageEvent
+                    || update is ToolExecutionCompleteEvent { Data.ToolUsage: not null }))
+                {
+                    UsageAccountingIdentity? identity = update is AssistantUsageEvent receipt
+                        ? receipt.Data.Accounting
+                        : ((ToolExecutionCompleteEvent)update).Data.ToolUsage!.Accounting;
+                    if (identity is null
+                        || string.IsNullOrWhiteSpace(identity.SourceSessionId)
+                        || string.IsNullOrWhiteSpace(identity.UsageId) || identity.Sequence < 0)
+                    {
+                        throw new OperationException("credit_unknown",
+                            "Original native usage receipt lacks a subsumed accounting identity.");
+                    }
+                    receipts[identity.SourceSessionId] = Math.Max(identity.Sequence,
+                        receipts.GetValueOrDefault(identity.SourceSessionId));
+                }
+                else if (update is SessionResumeEvent)
+                {
+                    throw new OperationException("credit_unknown",
+                        "A resumed session cannot substitute for the original native lifetime.");
+                }
+                else if (shutdown is not null && update is UserMessageEvent
+                    or AssistantTurnStartEvent or ToolExecutionStartEvent
+                    or SessionLimitsExhaustedRequestedEvent)
+                {
+                    throw new OperationException("credit_unknown",
+                        "New native work followed the selected original termination.");
+                }
+            }
+            if (!page.HasMore)
+            {
+                break;
+            }
+            cursor = page.Cursor;
+        } while (true);
+
+        if (shutdown is null)
+        {
+            throw new OperationException("credit_unknown",
+                "Matching original routine native termination is missing.");
+        }
+        return new(shutdown.Id, shutdown.Timestamp, shutdown.Data.SessionStartTime,
+            shutdown.Data.TotalNanoAiu!.Value,
+            new Dictionary<string, long>(shutdown.Data.UsageAccountingWatermarks!,
+                StringComparer.Ordinal));
+    }
 
     public async Task OpenAsync(
         string worker,
@@ -248,12 +401,29 @@ internal sealed class NativeSdkSession : INativeSdkSession
             {
                 CheckEvents();
             }
-            return new(
+            NativeUsage reading = new(
                 expectedSession,
                 usage.TotalNanoAiu,
                 usage.AiCreditsStatus?.Value,
                 usage.TotalUserRequests
             );
+            if (recoveryEvidencePath is not null)
+            {
+                JsonObject evidence = new()
+                {
+                    ["sessionId"] = reading.SessionId,
+                    ["reportedNanoAiu"] = reading.TotalNanoAiu?.ToString(
+                        "R", System.Globalization.CultureInfo.InvariantCulture),
+                    ["aiCreditsStatus"] = reading.Status,
+                    ["totalUserRequests"] = reading.TotalUserRequests,
+                    ["metadata"] = Metadata.DeepClone(),
+                    ["evidenceLevel"] = "fresh-native-reading-not-yet-settled",
+                };
+                await File.AppendAllTextAsync(recoveryEvidencePath,
+                    evidence.ToJsonString() + Environment.NewLine, deadline.Token)
+                    .ConfigureAwait(false);
+            }
+            return reading;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -268,16 +438,54 @@ internal sealed class NativeSdkSession : INativeSdkSession
 
     public async Task<NativeUsage> ReadSettledAsync(
         string expectedSession, decimal? expectedLimit, CancellationToken cancellationToken,
-        bool validateEvents = true
+        bool validateEvents = true, bool verifyLocalWork = false
     )
     {
         using CancellationTokenSource deadline =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(database.Configuration.DurationSeconds));
         return await usageFence.CaptureAsync(
-            token => ReadAsync(expectedSession, expectedLimit, token, validateEvents),
+            token => verifyLocalWork
+                ? ReadIdleRecoveryUsageAsync(
+                    next => ReadAsync(expectedSession, expectedLimit, next, validateEvents),
+                    async next =>
+                    {
+                        CopilotSession active = session
+                            ?? throw new InvalidOperationException("No native session.");
+                        SessionMetadataSnapshot metadata =
+                            await active.Rpc.Metadata.SnapshotAsync(next).ConfigureAwait(false);
+                        ValidateMetadata(metadata, active.SessionId, expectedSession,
+                            cwd, expectedLimit, database.Configuration.NativeModel);
+                        RequireIdleRecoveryWork(
+                            await active.Rpc.Metadata.IsProcessingAsync(next).ConfigureAwait(false),
+                            await active.Rpc.Metadata.ActivityAsync(next).ConfigureAwait(false));
+                    },
+                    token)
+                : ReadAsync(expectedSession, expectedLimit, token, validateEvents),
             deadline.Token
         ).ConfigureAwait(false);
+    }
+
+    internal static async Task<NativeUsage> ReadIdleRecoveryUsageAsync(
+        Func<CancellationToken, Task<NativeUsage>> read,
+        Func<CancellationToken, Task> requireIdle,
+        CancellationToken cancellationToken
+    )
+    {
+        await requireIdle(cancellationToken).ConfigureAwait(false);
+        NativeUsage usage = await read(cancellationToken).ConfigureAwait(false);
+        await requireIdle(cancellationToken).ConfigureAwait(false);
+        return usage;
+    }
+
+    internal static void RequireIdleRecoveryWork(
+        MetadataIsProcessingResult processing, SessionActivity activity)
+    {
+        if (processing.Processing || activity.HasActiveWork || activity.Abortable)
+        {
+            throw new OperationException("credit_unknown",
+                "New native recovery boundary still has processing or active work.");
+        }
     }
 
     public void WithSettledUsage(NativeUsage usage, Action record) => usageFence.Use(usage, record);
