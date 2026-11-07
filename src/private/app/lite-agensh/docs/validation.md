@@ -105,6 +105,16 @@ the expected success outcome. Preserve normal unfinished crash reconnect,
 closed non-unresolved rejection, fresh-summary resume and all paid gates.
 Installed-native effectiveness still needs the owning operational observation.
 
+For exact non-dispatch recovery, exercise already-used credits greater than
+remaining backing with a supported retained zero-origin receipt and its
+unchanged authorized absolute ceiling. The controlled native boundary must
+reject a requested ceiling below already-used credits, not silently accept the
+remaining difference. Cover missing or conflicting origin/start receipts,
+nonzero origins, mismatched lineage, lagging or incompatible applied limits
+and native rejection/readback mismatch. Rejection preserves uncertainty and
+does not create backing, reset baselines or book error-derived usage. Controlled
+success establishes application translation, not installed-native support.
+
 Native evidence must separately retain actual model selection, live limit
 readback/mutation, exhausted-window renewal, cumulative baselines and final
 settlement. A source-level API or scripted grant does not establish those

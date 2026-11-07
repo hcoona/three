@@ -411,9 +411,14 @@ owns the detailed boundary.
 
 SDK disposal preserves on-disk session data; do not call its
 permanent session deletion API during pause, finalization or reconnect.
-On exact resume, use no more than the reservation's remaining allowance as the
-native window limit. Verify cumulative metrics against the saved baseline;
-unknown or regressing usage stops paid work rather than regranting a full cap.
+On exact resume, preserve the native accounting-window origin and limit
+additional capacity to the reservation's existing backed allowance. Remaining
+backing is not the raw absolute native limit. The
+[credit contract](implementation-contracts.md#exact-recovery-limit-coordinates)
+owns the coordinate translation and supported retained evidence for
+non-dispatch recovery. Verify cumulative metrics against the saved accounting
+baseline; unknown or regressing usage stops paid work rather than regranting
+spent capacity. A new host or changed cap does not reset either baseline.
 
 Retain SQLite together with its live journal state and worktrees through
 pause/finalize; do not copy a live main database file and call it a backup.
