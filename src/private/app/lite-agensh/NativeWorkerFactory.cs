@@ -336,10 +336,10 @@ internal sealed class NativeWorkerFactory(
         }
         (JsonObject retained, NativeRecoveryOrigin origin) =
             RecoveryLimitEvidence(reservation, cwd);
-        (NativeUsage Usage, long Dispatches)? baseline =
-            credits.ReadCompleteSdkUsage(reservation.Id);
+        (decimal? BookedActual, NativeUsage Reported)? baseline =
+            credits.ReadRecoveryBaseline(reservation.Id);
         RequireRecoveryEvidence(baseline is not null
-            && baseline.Value.Usage.SessionId == reservation.SessionId);
+            && baseline.Value.Reported.SessionId == reservation.SessionId);
         decimal cap = retained["appliedLimit"]!.GetValue<decimal>();
         using CancellationTokenSource deadline =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -368,8 +368,9 @@ internal sealed class NativeWorkerFactory(
                 .ReadSettledAsync(
                     reservation.SessionId!, cap, deadline.Token, verifyLocalWork: true)
                 .ConfigureAwait(false);
-            if (usage.RequireComplete() < baseline!.Value.Usage.RequireComplete()
-                || usage.TotalUserRequests < baseline.Value.Usage.TotalUserRequests
+            if (usage.RequireComplete() < (baseline!.Value.BookedActual ?? 0)
+                || usage.TotalNanoAiu < baseline.Value.Reported.TotalNanoAiu
+                || usage.TotalUserRequests < baseline.Value.Reported.TotalUserRequests
                 || usage.TotalNanoAiu < original.TotalNanoAiu)
             {
                 throw new OperationException("credit_unknown",

@@ -299,6 +299,105 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("first-send", false, false)]
+    [DataRow("partial", false, false)]
+    [DataRow("partial", true, false)]
+    [DataRow("partial", false, true)]
+    public async Task IncompletePredecessorIsOnlyALowerBoundForFreshAccounting(
+        string predecessor, bool regressingSpend, bool regressingRequests)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        CreditReservation reservation = await ClosedReservationAsync(
+            fixture, database, ledger, token,
+            interruptedFirstSend: predecessor == "first-send");
+        if (predecessor == "partial")
+        {
+            Assert.ThrowsExactly<OperationException>(() => ledger.RecordSdkUsage(
+                reservation.Id, new(reservation.SessionId!, 65_000_000_000, "partial", 11)));
+        }
+        string original = RetainedState(database);
+        CreditReservation before = Assert.ContainsSingle(ledger.Reservations());
+        Assert.AreEqual(predecessor == "first-send" ? (decimal?)null : 60m, before.Actual);
+        ControlledSdkHost host = new("none", token, onCreate: session =>
+        {
+            session.Readings.Enqueue(new(reservation.SessionId!,
+                regressingSpend ? 64_000_000_000 : 70_000_000_000,
+                "complete", regressingRequests ? 10 : 12));
+        });
+        host.Release.TrySetResult();
+        NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
+
+        if (regressingSpend || regressingRequests)
+        {
+            await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                factory.ReadSettledUsageAsync(
+                    reservation, fixture.RepositoryPath, "controlled-recovery", token));
+            Assert.AreEqual(before, Assert.ContainsSingle(ledger.Reservations()));
+        }
+        else
+        {
+            RecoveredNativeUsage recovered = await factory.ReadSettledUsageAsync(
+                reservation, fixture.RepositoryPath, "controlled-recovery", token);
+            Assert.AreEqual(before, Assert.ContainsSingle(ledger.Reservations()));
+            ledger.RecordRecoveredSdkUsage(recovered);
+            Assert.AreEqual(70m, Assert.ContainsSingle(ledger.Reservations()).Actual);
+            Assert.AreEqual("reconciled", Assert.ContainsSingle(ledger.Reservations()).State);
+            ledger.RequirePaidAdmission();
+        }
+
+        Assert.IsFalse(Assert.ContainsSingle(host.Sessions).Sent);
+        Assert.IsTrue(host.Settled);
+        Assert.AreEqual(original, RetainedState(database));
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("missing-amount")]
+    [DataRow("invalid-amount")]
+    [DataRow("negative-requests")]
+    [DataRow("no-dispatch")]
+    public async Task UnsupportedBaselineRetainsUncertaintyBeforeNativeRecovery(string defect)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        CreditReservation reservation =
+            await ClosedReservationAsync(fixture, database, ledger, token);
+        using (SqliteConnection campaign = Campaign(database))
+        {
+            string change = defect switch
+            {
+                "missing-amount" => "reported_nano_aiu=NULL",
+                "invalid-amount" => "reported_nano_aiu='NaN'",
+                "negative-requests" => "reported_requests=-1",
+                _ => "dispatch_count=0",
+            };
+            Sql.Execute(campaign,
+                $"UPDATE credit_sdk_usage SET {change} WHERE reservation_id=$id;",
+                null, ("$id", reservation.Id));
+        }
+        string original = RetainedState(database);
+        CreditReservation before = Assert.ContainsSingle(ledger.Reservations());
+        ControlledSdkHost host = new("none", token);
+        NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
+
+        await Assert.ThrowsExactlyAsync<OperationException>(() =>
+            factory.ReadSettledUsageAsync(
+                reservation, fixture.RepositoryPath, "controlled-recovery", token));
+
+        Assert.IsEmpty(host.Sessions);
+        Assert.AreEqual(before, Assert.ContainsSingle(ledger.Reservations()));
+        Assert.AreEqual(original, RetainedState(database));
+        Assert.AreEqual("credit_unknown",
+            Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
     public async Task OriginalFailedWorkRemainsFailedAfterSeparateNativeAccountingRecovery()
     {
         CancellationToken token = testContext.CancellationToken;
@@ -990,7 +1089,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     private static async Task<CreditReservation> ClosedReservationAsync(
         RunFixture fixture, RunDatabase database, CreditLedger ledger, CancellationToken token,
         string worker = "worker1", bool uncertain = true, string? cwd = null,
-        string? originalRuntimeVersion = null, Action<ControlledSdkSession>? onOriginal = null
+        string? originalRuntimeVersion = null, Action<ControlledSdkSession>? onOriginal = null,
+        bool interruptedFirstSend = false
     )
     {
         LocalTools tools = new(database);
@@ -1017,9 +1117,12 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         INativeWorker original = originalFactory.Create(reservation, calibration: false);
         await original.StartAsync(cwd ?? fixture.RepositoryPath, null, token);
         ledger.BeginDispatch(database.RunId, reservation.Id, 300);
-        ledger.RecordSdkUsage(reservation.Id,
-            new(reservation.SessionId!, 60_000_000_000, "complete", 10));
-        ledger.CloseSharedWindow(reservation.Id);
+        if (!interruptedFirstSend)
+        {
+            ledger.RecordSdkUsage(reservation.Id,
+                new(reservation.SessionId!, 60_000_000_000, "complete", 10));
+            ledger.CloseSharedWindow(reservation.Id);
+        }
         if (uncertain)
         {
             ledger.MarkUncertain(reservation.Id);
