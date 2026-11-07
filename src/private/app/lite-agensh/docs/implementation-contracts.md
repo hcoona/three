@@ -438,8 +438,9 @@ Never unset a paid session's cap to keep it working. Report actual overshoot.
 Persist campaign/run allowances and session reservations before paid dispatch.
 Bind each reservation to the exact run, worker and persistent session in one
 transaction. Fresh sessions consume new reservations. Exact continuation
-retains previously charged usage and applies no more than the remaining
-backed allowance as the native window cap; never reset cumulative usage.
+retains previously charged usage and permits no more additional capacity than
+the remaining backed allowance. Express the native cap in its accounting-window
+coordinate, not as that remaining difference; never reset cumulative usage.
 Per-session mode retains its original lifetime allocation.
 
 ### Shared spending windows
@@ -467,9 +468,10 @@ finite `Set` response. Verify the applied cap and retained baseline; never
 use `Unset` or an unbacked `Add`. Unsupported or inconsistent behavior fails
 closed rather than silently reverting to fixed shares or replacing sessions.
 
-Save the current native accounting-window baseline on create/exact resume.
-Subtract it when deriving a cap from cumulative session spend; changing a cap
-does not authorize resetting that baseline. A completed SDK user turn may close
+Establish the native accounting-window origin on creation and preserve it on
+exact resume. Subtract that origin when translating a cumulative authorized
+ceiling; a newly read or booked cumulative total is not itself a new origin.
+Changing a cap does not authorize resetting that baseline. A completed SDK user turn may close
 its grant only after known native background compaction has settled and a fresh,
 complete, nonregressing cumulative reading is established as specified below.
 A cap still present in an idle native session does not authorize another send:
@@ -584,6 +586,45 @@ meaning for the offline `reconcile` cancellation command. It adds no public
 command, permits no manual ledger edit and does not waive build or receipt
 identity checks for subsequent paid work.
 
+### Exact recovery limit coordinates
+
+For exact non-dispatch usage recovery, distinguish the existing cumulative
+authorized ceiling `A`, booked cumulative actual `S`, remaining backed capacity
+`H = A - S`, and native accounting-window origin `B` in the same cumulative
+coordinate. Require finite positive `H` before opening a session. The absolute
+native ceiling representing that authorization is `A - B`, not `H`. Apply the
+same supported finite value to resume configuration and limit readback. This
+translation creates no grant and does not change `A`, `S` or either baseline.
+
+The bounded retained-state profile supports a fresh session with established
+zero origin and an unchanged, previously verified native ceiling equal to `A`.
+Reuse that ceiling; do not substitute raw `A` merely because backing remains.
+Establish compatibility from the unique fresh reservation/session/attempt
+associations, zero starting association baseline, and matching original typed
+zero-use/zero-request observation in the write-ahead dispatch-contract start
+receipt. Bind its run, reservation, session, working directory, model, SDK and
+runtime lineage to the retained session evidence. Require the latest verified
+applied limit to equal the existing authorized ceiling and reject conflicting
+or intervening origin/reset evidence. A numeric zero association baseline or
+an SDK version alone does not establish this profile.
+
+The start observation establishes this application's coordinate provenance,
+not provider-final zero billing or a cancellation disposition. Retain its raw
+usage status. Do not reuse the offline cancellation eligibility rules to
+release a dispatched reservation. A missing, ambiguous, nonzero-origin or
+incompatible receipt, including a lagging applied-limit observation, leaves
+recovery unavailable; do not synthesize a receipt, renew backing, reset a
+window or guess a higher limit from a native error. A supported ceiling may
+still be rejected by the installed runtime, in which case retain uncertainty.
+
+For example, `A = 300`, `S = 200` and established `B = 0` leave `H = 100`,
+but the unchanged verified absolute ceiling is `300`, not a new 300-credit
+grant. Rounded already-used diagnostics do not establish complete usage or
+authorize another ceiling. This profile does not claim that every SDK
+accounting window has zero origin, that another retained lineage is supported,
+or that an installed-native recovery has succeeded. Those claims retain their
+separate evidence and operational invocation gates.
+
 ### Closed failed-run reconnect
 
 The existing `reconnect --state <owned-state>` entrypoint has a distinct
@@ -598,7 +639,8 @@ reservation/worker/session and SDK associations. Recover each unresolved
 associated reservation through the existing exact-session non-dispatch
 factory boundary and measured-usage rules above. Use the actual durable
 uncertain reservation, disabled pending-work continuation and transcript
-recovery, isolated tools and a verified finite remaining cap. Failed exact
+recovery, isolated tools, positive remaining backing and the verified finite
+native ceiling under the [coordinate contract](#exact-recovery-limit-coordinates). Failed exact
 load has no fresh-session fallback in this branch. Missing association,
 unsupported cap, live/ambiguous ownership or incomplete or regressing evidence
 retains uncertainty; no forced release or fabricated cancellation is allowed.

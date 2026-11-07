@@ -130,8 +130,10 @@ preflight/calibration receipts. Verify exclusive run ownership and current
 old-process identities, not merely a historical quiescence receipt. Open only
 the unresolved run's exact associated sessions through the isolated temporary
 runtime recovery path. Keep pending-work continuation and transcript recovery
-disabled; verify identity, working directory, Terra model and finite remaining
-limit before fresh fenced complete cumulative metrics and runtime settlement.
+disabled; verify identity, working directory, Terra model, positive remaining
+backing and the unchanged finite native ceiling under the
+[coordinate contract](implementation-contracts.md#exact-recovery-limit-coordinates)
+before fresh fenced complete cumulative metrics and runtime settlement.
 No new grant, worker dispatch, prompt, fallback session, paid calibration,
 account query or report export is permitted.
 
