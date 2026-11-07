@@ -54,7 +54,9 @@ The format's definitions of content and layout apply. Group membership and
 symbol identity are content even when a group is drawn graphically, while curve
 shape, spacing and font metrics are layout. The format shall encode the layout
 hints that its specification lists, and a layout hint shall never count as a
-content difference.
+content difference. The `up` and `down` stem hints themselves are layout;
+the voice-line assignment determined by the format's voice-order rules is
+group-membership content.
 
 ## Representation invariants
 
