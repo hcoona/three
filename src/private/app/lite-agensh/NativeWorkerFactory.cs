@@ -364,7 +364,7 @@ internal sealed class NativeWorkerFactory(
                 recovery.Metadata is JsonObject observed
                 && observed["sessionId"]?.GetValue<string>() == reservation.SessionId
                 && SameRecoveryPath(observed["workingDirectory"]?.GetValue<string>(), cwd)
-                && observed["appliedLimit"]?.GetValue<decimal>() == cap
+                && observed["appliedLimit"]?.GetValue<double>() == NativeSdkSession.NativeLimit(cap)
                 && observed["alreadyInUse"]?.GetValue<bool>() == false
                 && observed["isRemote"]?.GetValue<bool>() == false
                 && RecoveryMetadataKeys

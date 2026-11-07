@@ -266,8 +266,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             null, ("$id", reservation.Id)));
         Assert.IsFalse(Assert.ContainsSingle(host.Sessions).Sent);
         Assert.IsTrue(Assert.ContainsSingle(host.IsolationRequests));
-        Assert.AreEqual(reservation.Allowance,
-            Assert.ContainsSingle(host.Sessions).Metadata!["appliedLimit"]!.GetValue<decimal>());
+        Assert.AreEqual(NativeSdkSession.NativeLimit(reservation.Allowance),
+            Assert.ContainsSingle(host.Sessions).Metadata!["appliedLimit"]!.GetValue<double>());
     }
 
     [TestMethod]
@@ -372,6 +372,10 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     [DataRow("limit")]
     [DataRow("model")]
     [DataRow("already-used")]
+    [DataRow("missing-limit")]
+    [DataRow("malformed-limit")]
+    [DataRow("nonfinite-limit")]
+    [DataRow("infinite-limit")]
     public async Task ExactRecoveryRetainsUncertaintyWhenNativeCapCannotBeVerified(string defect)
     {
         CancellationToken token = testContext.CancellationToken;
@@ -383,7 +387,28 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         ControlledSdkHost host = new("none", token,
             modelReadback: defect == "model" ? "changed-model" : null,
             limitReadback: defect == "limit" ? 40 : null,
-            onCreate: session => session.ResumeUsedCredits = defect == "already-used" ? 100 : 60);
+            onCreate: session =>
+            {
+                session.ResumeUsedCredits = defect == "already-used" ? 100 : 60;
+                session.OnRead = () =>
+                {
+                    switch (defect)
+                    {
+                        case "missing-limit":
+                            session.Metadata!.Remove("appliedLimit");
+                            break;
+                        case "malformed-limit":
+                            session.Metadata!["appliedLimit"] = "not-a-number";
+                            break;
+                        case "nonfinite-limit":
+                            session.Metadata!["appliedLimit"] = double.NaN;
+                            break;
+                        case "infinite-limit":
+                            session.Metadata!["appliedLimit"] = double.PositiveInfinity;
+                            break;
+                    }
+                };
+            });
         host.Release.TrySetResult();
         NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
         await Assert.ThrowsExactlyAsync<OperationException>(() =>
@@ -1882,7 +1907,9 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 ["sessionId"] = sessionId,
                 ["worker"] = worker,
                 ["workingDirectory"] = cwd,
-                ["appliedLimit"] = limitReadback is double observed ? observed : limit,
+                ["appliedLimit"] = limitReadback
+                    ?? (limit is decimal value
+                        ? NativeSdkSession.NativeLimit(value) : (double?)null),
                 ["selectedModel"] = modelReadback
                     ?? evidenceDatabase?.Configuration.NativeModel ?? "controlled-model",
                 ["alreadyInUse"] = false,
