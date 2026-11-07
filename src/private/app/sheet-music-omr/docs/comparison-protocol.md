@@ -10,9 +10,11 @@ its round trip are compared and scored before anything executes.
 This record governs execution only once it is accepted under
 [research-evidence review](../../../../../.github/skills/research-evidence-review/SKILL.md),
 and every later change needs the same review before the changed part executes.
-It is not a result report, and nothing in it has been run. Results go to the W1
-work carrier, [Issue #1488](https://github.com/hcoona/three/issues/1488), and
-its linked pull requests.
+It is not a result report. No MuseScore, corpus or private-gold run has been
+conducted under this proposed amendment. Earlier local calibration results,
+including the failed adjacent-measure case, are recorded in the W1 work
+carrier, [Issue #1488](https://github.com/hcoona/three/issues/1488); they do
+not establish conformance to this amendment.
 
 Statements about tools and datasets are source findings and cite their source
 under [Source basis](#source-basis). Items that the sources do not settle are
@@ -249,16 +251,41 @@ treats `Y` as the reference. Whether an operation is missing content or extra
 content is decided by which side of the operation holds an object, never by
 the operation's name.
 
-The harness builds musicdiff's annotated scores and calls
-`Comparison.annotated_scores_diff` directly, as the high-level `diff` function
-does at the pinned commit, so that it keeps every raw operation. It does not
-use musicdiff's batch mode, which skips files whose parsing fails.
+The comparison oracle is positional: within each matched part, the zero-based
+ordinal of a measure in the MusicXML sequence is its identity for comparison.
+Printed measure numbers, XML IDs and measure content do not establish that
+identity. A measure is compared only with the measure at the same ordinal;
+musicdiff is never allowed to align a measure with one at another ordinal.
+When one score has no measure at an ordinal present in the other, the absent
+side is compared as an empty measure. Its insertions or deletions are
+decomposed and scored by the rules below. This makes a missing, added or
+shifted measure visible instead of allowing a repeated measure to conceal it.
+
+For category assignment and the fidelity measure, the harness builds
+musicdiff's annotated scores and calls `Comparison.annotated_scores_diff` on
+each same-ordinal measure pair. It retains each raw operation with its part
+and measure ordinal. A separate global-only comparison, run once per pass,
+handles staff groups and parts that have no counterpart at the same part
+ordinal. It contains no measures from matched parts; each unmatched part is
+compared with an empty part, never with a part at another ordinal. Its
+operations participate in category assignment and element counting. Its
+edit-cost total is reported separately from the sum of per-measure edit costs.
+The measure-pair and global-only results, not a content-based alignment across
+the score, determine counted differences.
+
+For comparison with the pinned library's ordinary behavior, the harness also
+calls `Comparison.annotated_scores_diff` once on each complete pair of
+annotated scores and retains its whole-score operations, distance and symbol
+counts as a separate diagnostic. These figures are not used to assign
+categories, pair objects, count elements or determine fidelity. The harness
+does not use musicdiff's batch mode, which skips files whose parsing fails.
 
 At the pinned commit, `Comparison._voices_coupling_recursive` adds the cost
 of pairing the first voice of the first list with a voice `c` of the second
 only when the first voices of both lists differ, so an unequal pairing can
 cost nothing. The harness replaces that condition,
-`compare_to[0] != original[0]`, with `c != original[0]`, and changes nothing
+`compare_to[0] != original[0]`, with `c != original[0]`, for both the
+measure-pair comparisons and the whole-score diagnostic, and changes nothing
 else in musicdiff.
 
 ### Detail levels
@@ -269,10 +296,14 @@ else in musicdiff.
 - **Layout pass:** the content pass with `DetailLevel.Style` added.
 
 For each pass and file the harness retains every raw operation (name, kinds of
-both objects, cost and location), the OMR edit distance, both symbol counts
-and the normalized OMR edit distance. These are reported as secondary figures.
-The normalized distance divides by the symbol counts of both scores and is not
-a symbol error rate. Neither it nor the measure below is reported as one.
+both objects, cost and location) for the anchored measure pairs, the
+global-only comparison and the whole-score diagnostic, identifying which
+comparison produced it. It reports the per-measure edit-cost sum and the
+global-only edit cost separately, and the whole-score OMR edit distance,
+whole-score symbol counts and whole-score normalized distance as separate
+secondary figures. The whole-score normalized distance divides its cost by
+the symbol counts of both complete scores and is not a symbol error rate.
+Neither these diagnostics nor the measure below is reported as one.
 
 ### Elements and the fidelity measure
 
@@ -344,9 +375,12 @@ and the count of such pieces returns to the owner.
 Every counted difference is assigned to exactly one of the 27 content
 categories of the [format](text-format.md#category-encodings), or to `layout`.
 A difference assigned to `layout` is never a content difference: the content
-pass disregards it, and the layout pass counts it. A difference that the table
-and rules below cannot assign is a protocol defect. The run stops, and the
-difference is never counted as agreement.
+pass disregards it, and the layout pass counts it. For each pass, the
+authoritative operations are those from same-ordinal measure pairs and the
+global-only comparison. The ordinary whole-score diagnostic is never assigned
+or counted. A difference that the table and rules below cannot assign is a
+protocol defect. The run stops, and the difference is never counted as
+agreement.
 
 | musicdiff 6.0 operation                                                                                                                                  | Assignment                                                                                                                                                                                                                                                                 |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -413,17 +447,26 @@ Staff groups and staff details are assigned to `layout` because the format
 encodes neither: the piano grand staff is implied, and the screen fixes the
 staff count and lines.
 
+The global-only comparison is authoritative for staff-group differences and
+content held by unmatched parts. An unmatched part is decomposed as an
+insertion or deletion against an empty part, using the same category and
+element-counting rules as an unmatched measure. No measure of a matched part
+is present in this comparison. Costs from this pass are retained separately
+and are not included in the per-measure edit-cost sum.
+
 ### Pairing rules
 
 These rules apply before counting, in this order:
 
-1. A deleted note of `Y` and an inserted note of `T(Y)` in the same measure,
-   with the same onset, pitches, duration and attached symbols, on different
-   staves, are one `cross_staff` difference. The pair is disregarded here
-   when the cross-staff check has an element for either note. Otherwise, as
-   when a whole voice changes staff, the reference note is non-identical and
-   no extra element is added.
-2. Such a pair on the same staff but in different canonical voice positions,
+1. A deleted note of `Y` and an inserted note of `T(Y)` in the same part and
+   measure ordinal, with the same onset, pitches, duration and attached
+   symbols, on different staves, are one `cross_staff` difference. The pair
+   is disregarded here when the cross-staff check has an element for either
+   note. Otherwise, as when a whole voice changes staff, the reference note
+   is non-identical and no extra element is added. A note at another measure
+   ordinal is never its pair.
+2. Such a pair in the same part, measure ordinal and staff but in different
+   canonical voice positions,
    as defined by the format's
    [voice-order rules](text-format.md#voices-and-staves), is one `voice`
    difference: the reference note is non-identical and no extra element is
@@ -436,8 +479,9 @@ These rules apply before counting, in this order:
 musicdiff 6.0 does not establish some content. For these facets a
 project-owned check compares the MusicXML of `Y` and `T(Y)` directly. Each
 facet is scored by exactly one instrument, and the table above disregards the
-musicdiff operations on a facet that a check owns. Notes are aligned by
-measure index, staff, onset and written pitch. In every key, match and
+anchored musicdiff operations on a facet that a check owns. The whole-score
+diagnostic does not participate in this assignment. Notes are aligned by
+measure ordinal, staff, onset and written pitch. In every key, match and
 identity condition below except those of the cross-staff and voice-order
 checks, a note of `T(Y)` that pairing rule 1 pairs with a note of `Y` takes
 that note's staff. Wherever a key below names an
@@ -462,12 +506,17 @@ of its voice at that onset.
   but a change in the voice-line assignment it determines under those rules is
   content. A voice is identified by its content: the sequence of onsets,
   durations, pitches and attached symbols of its notes and rests. Each voice
-  of `Y` in each measure is one element. It is identical when `T(Y)` has a
-  voice of the same content on the same staff in that measure at the same
-  canonical position. A voice of `Y` whose content no voice of `T(Y)` on that
-  staff in that measure matches is not a voice-order element: musicdiff and
-  the pairing rules score its differences. The voice-order check adds no
-  extra elements.
+  of `Y` in each measure is one element. Its canonical position is evaluated
+  event by event in the order of that content sequence; it is identical only
+  when `T(Y)` has a voice of the same content on the same staff in that
+  measure with the same ordered position sequence. Comparing only the counts
+  at each position is insufficient. A voice of `Y` whose content no voice of
+  `T(Y)` on that staff in that measure matches is not a voice-order element:
+  musicdiff and the pairing rules score its differences. The voice-order
+  check adds no extra elements. A double-stem event belongs to both voices;
+  while the instrument cannot represent that dual membership, it stops with
+  `ProtocolDefectError` rather than assigning one position or counting
+  agreement.
 - **Heading** (`heading`): in the instrument, credits are the only carrier of
   heading text, and a `words` direction is always `text`, never `heading`.
   Whether the converters agree with that is what the round trip tests. Each
@@ -587,13 +636,25 @@ with their provenance:
   voices are renumbered without a change of canonical positions (for example
   staff 2 voices 5 and 6 against 1 and 2, including a change in their numeric
   rank), and identical pairs;
+- a pair in which a measure is inserted before later measures and the reverse
+  pair in which a measure is deleted, with the expected per-ordinal
+  differences fixed by the fixture; neither pair may align content across
+  different measure ordinals;
 - a pair in which a two-voice measure has one note in each voice and reverses
   their stem directions, keeping each voice group's content fixed while
   exchanging canonical positions, and a second pair in which two one-note,
   same-rhythm unison voices of one staff reverse their stem assignments,
   thereby exchanging canonical positions, with note content that makes
   preserving each voice's content the unique minimum-cost pairing under the
-  pinned comparison; articulation differences alone are insufficient;
+  pinned comparison; articulation differences alone are insufficient; a pair
+  in which one non-beamed event of a content-matched voice changes its stem
+  while its other events and the other voice remain unchanged; and a pair in
+  which two events of one content-matched voice exchange positions without
+  changing that voice's position histogram; each changed voice is exactly one
+  non-identical voice-order element;
+- a mixed-stem beam-group pair whose events retain the position of the first
+  non-grace event, plus an identical overlapping-voice pair with a rest inside
+  a primary beam group;
 - one pair that differs only in the end note of an extended trill, one in
   which an extended trill moves between simultaneous unison notes of different
   written durations in two voices of one staff that both carry a trill mark,
@@ -670,6 +731,9 @@ The instrument passes when it reports:
   marked pair and the voice that moves to the other staff;
 - exactly one non-identical `voice` element and no other difference for the
   pair of pairing rule 2;
+- the insertion and deletion measure pairs have exactly their fixture's
+  predeclared per-ordinal category assignments and non-identical/extra
+  element counts; neither fixture pairs content across measure ordinals;
 - exactly one counted `pitch` difference and no other difference for the
   voice-coupling pair;
 - exactly one non-identical `tremolo` element for each tremolo-stroke pair,
@@ -689,7 +753,7 @@ The instrument passes when it reports:
   element for the parenthesis pair, and exactly one non-identical and
   one extra `heading` element for the heading-order pair, each with no other
   difference;
-- no difference for the other pairs, including the reprint pairs.
+- no difference for the remaining no-change pairs, including the reprint pairs.
 
 The screen's allowlist is reviewed against the same fixtures. A
 failure is a protocol defect: this record is revised under review before any
@@ -737,7 +801,9 @@ systems that start inside a measure.
 
 ## Layout-fidelity score
 
-The layout pass gives the score, per arm and for gold. A _layout element_ of
+The layout pass uses the same measure-ordinal pairs and global-only comparison
+as the content pass; its ordinary whole-score diagnostic is not scored. It
+gives the score, per arm and for gold. A _layout element_ of
 `Y` is an annotated object, or an articulation, expression or tuplet group
 attached to one, that carries a value other than musicdiff's default of a
 property whose difference the operation table assigns to `layout`, such as a
@@ -898,6 +964,9 @@ Source findings, with the pinned sources they rely on:
   [lines 312 and 1515](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/comparison.py#L312-L1515)
   of `comparison.py`, and the kinds of extras are in
   [m21utils.py](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L1057-L1115).
+  `annotated_scores_diff` compares unmatched parts and staff groups after its
+  matched-part measure loop; see
+  [comparison.py lines 1485 to 1543](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/comparison.py#L1485-L1543).
   musicdiff collects only the spanner classes in
   [m21utils.py](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L923-L960)
   and skips unrecognized kinds
