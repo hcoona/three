@@ -12,9 +12,14 @@ Use one `LiteAgensh.csproj` executable under the project root, namespace
 `LiteAgensh`, target `$(CurrentTargetFramework)`. Use root SDK/CPM/NBGV rules.
 Select `Microsoft.Data.Sqlite` 10.0.14 and `ModelContextProtocol` 2.3.0 through
 CPM; retain existing `Microsoft.Extensions.Hosting` selection. Select
-`GitHub.Copilot.SDK` 1.0.28, whose packaged runtime pin is CLI 1.0.105.
-Set `CopilotSkipCliDownload=true` and reuse the installed executable without
-automatic acquisition/update. Its normal transitive AI abstractions do not
+`GitHub.Copilot.SDK` 1.0.28. Its packaged `CopilotCliVersion` default remains
+1.0.105; explicitly override that property to 1.0.107 in this application and
+record the selected value in its existing assembly metadata. Reuse the
+installed CLI 1.0.107 and require exact typed runtime-status equality with that
+selected value; do not accept a minimum version, range or arbitrary newer patch.
+This application selection does not change or repackage the SDK. Set
+`CopilotSkipCliDownload=true` and retain disabled automatic acquisition/update.
+Its normal transitive AI abstractions do not
 authorize another provider or reasoning layer. Do not copy SDK source or
 implement an application HTTP server. The official MCP package supplies stdio framing,
 initialization, tool discovery and invocation. Use its low-level tool handlers
@@ -624,6 +629,33 @@ authorize another ceiling. This profile does not claim that every SDK
 accounting window has zero origin, that another retained lineage is supported,
 or that an installed-native recovery has succeeded. Those claims retain their
 separate evidence and operational invocation gates.
+
+#### Retained CLI 1.0.105 to selected CLI 1.0.107
+
+In addition to an original session matching the selected runtime, admit only
+the explicit ordered recovery bridge from original CLI 1.0.105 to selected
+CLI 1.0.107 with the unchanged SDK 1.0.28 package. This is not a generic
+cross-version, SDK-upgrade or session-migration mechanism. Preserve the
+original start, latest session, runtime and lease evidence unchanged; their
+original runtime versions must still agree. All unique associations, raw
+zero-origin proof, working directory, model, exact SDK identity, original
+runtime/lease bindings, latest applied ceiling `A` and positive backing `H`
+remain required.
+
+The temporary recovery host must report the application's exactly selected
+1.0.107 runtime. Its live session must retain the original session identity,
+working directory, model and exact SDK identity, and read back the unchanged
+absolute ceiling. Compare its runtime version with the selected current pin,
+not the historical receipt's version. Do not rewrite that receipt, either
+baseline or the original cap to make the versions match.
+
+Reject any other ordered version pair, a changed SDK identity, conflicting
+original lineage, unavailable settings or incomplete/regressing live metrics.
+Require the same fresh usage fence and session/host settlement before booking
+the measured cumulative delta. Neither the owner's version selection nor a
+controlled bridge scenario proves installed-native session loadability,
+preserved accounting-window behavior or complete billing. Native rejection
+retains uncertainty; no new prompt, grant, fallback or automatic retry follows.
 
 ### Closed failed-run reconnect
 
