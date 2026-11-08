@@ -653,6 +653,12 @@ of its voice at that onset.
     voice's beams are read before any position is decided, so an undetermined
     voice does not hide a beam stop in another voice of its staff-measure.
 
+    The stop for a mixed-stem beam whose first event is outside the measure
+    is a temporarily accepted implementation gap in the comparison instrument,
+    not a permanent exclusion of that case. A later extension may support it
+    through a reviewed and accepted protocol change with calibration coverage;
+    until then this stop remains.
+
 - **Heading** (`heading`): in the instrument, credits are the only carrier of
   heading text, and a `words` direction is `text` or, by the words reading,
   `tempo_rehearsal`, never `heading`.
