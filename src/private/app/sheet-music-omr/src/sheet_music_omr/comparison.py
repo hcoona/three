@@ -3279,11 +3279,7 @@ def _drop_words_reprint(
     xml, reading = source
     words = reading.words
     start = span.start
-    stop = span.stop
-    if not isinstance(start, XmlDirection) or (stop.measure, stop.onset) < (
-        first.measure,
-        first.onset,
-    ):
+    if not isinstance(start, XmlDirection) or span.stop.start < first.start:
         return False
     text = dashes_text(start, xml.directions)
     if text is None:
@@ -3388,20 +3384,19 @@ def _reprint_directions(
 ) -> list[XmlDirection]:
     """The words of the line's text on ``first`` while the line is open.
 
-    The line does not stop before ``first``. A line that stops at the
-    position of ``first`` is open only at words that precede its stop in
-    document order.
+    The line does not stop before the time of ``first``, which an offset of
+    the stop can move to another measure. A line that stops at that time is
+    open only at words that precede its stop in document order.
     """
     stop = span.stop
     position = (first.measure, first.onset)
-    stop_position = (stop.measure, stop.onset)
     return [
         direction
         for direction in xml.directions
         if direction.place == span.start.place
         and (direction.measure, direction.onset) == position
         and direction.words == text
-        and (stop_position > position or direction.order <= stop.order)
+        and (stop.start > first.start or direction.order <= stop.order)
     ]
 
 

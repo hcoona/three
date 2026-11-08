@@ -4400,6 +4400,56 @@ def test_first_event_of_a_system_precedes_the_next_measure(
     assert added == added_layout
 
 
+def _offset_stop(offset: int) -> str:
+    """Return a dashes stop that its ``offset`` in quarters moves."""
+    return _line_direction(None, "stop").replace(
+        "        <staff>",
+        f"        <offset>{offset}</offset>\n        <staff>",
+    )
+
+
+def _offset_stop_score(*, offset_into: str, reprint: bool) -> str:
+    """Open a dashes line in measure 1 and stop it with an offset.
+
+    The stop is written in measure 3 but sounds in measure 1, or written at
+    the end of measure 1 but sounds in measure 2, after its first event.
+    The line's words can be reprinted on that event, which starts a system.
+    """
+    stops = (
+        ("", _offset_stop(-5))
+        if offset_into == "earlier"
+        else (_offset_stop(1), "")
+    )
+    words = _line_direction("cresc.", None) if reprint else ""
+    return _system_score(
+        _line_direction("cresc.", "start") + _system_note("m1s1", 1) + stops[0],
+        words + _system_note("m2s1", 1),
+        stops[1] + _system_note("m3s1", 1),
+    )
+
+
+@pytest.mark.parametrize(
+    ("offset_into", "content", "added"),
+    [("earlier", {"text": 1}, 1), ("later", {}, 0)],
+    ids=["stop-sounds-before-the-words", "stop-sounds-after-the-words"],
+)
+def test_words_are_a_reprint_until_the_line_stop_sounds(
+    offset_into: str,
+    content: dict[str, int],
+    added: int,
+) -> None:
+    """Judge whether a line is open by when its offset stop sounds.
+
+    The measure that holds the stop does not decide it.
+    """
+    t_text = _offset_stop_score(offset_into=offset_into, reprint=False)
+    y_text = _offset_stop_score(offset_into=offset_into, reprint=True)
+
+    _assert_file(compare_file(t_text, y_text), content)
+    added_count = failure_element_count(y_text) - failure_element_count(t_text)
+    assert added_count == added
+
+
 _CRESC_LINE = _variant(
     _before("m4s1n1", _line_direction("cresc.", "start")),
     _before("m6s1n1", _line_direction(None, "stop")),
