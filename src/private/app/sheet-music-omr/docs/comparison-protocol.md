@@ -10,11 +10,12 @@ its round trip are compared and scored before anything executes.
 This record governs execution only once it is accepted under
 [research-evidence review](../../../../../.github/skills/research-evidence-review/SKILL.md),
 and every later change needs the same review before the changed part executes.
-It is not a result report. No MuseScore, corpus or private-gold run has been
-conducted under this proposed amendment. Earlier local calibration results,
-including the failed adjacent-measure case, are recorded in the W1 work
-carrier, [Issue #1488](https://github.com/hcoona/three/issues/1488); they do
-not establish conformance to this amendment.
+It is not a result report. Local results that informed it, including the
+failed adjacent-measure calibration case and the harness pilots and
+private-gold probes behind the voice-position and octave-shift rules, are
+recorded in the W1 work carrier,
+[Issue #1488](https://github.com/hcoona/three/issues/1488); they do not
+establish conformance to this protocol.
 
 Statements about tools and datasets are source findings and cite their source
 under [Source basis](#source-basis). Items that the sources do not settle are
