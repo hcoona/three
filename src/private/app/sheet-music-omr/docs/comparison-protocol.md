@@ -423,11 +423,33 @@ The `kind` of an extra assigns it as follows:
 | `staffinfo`, `systembreak`, `pagebreak`                    | `layout`          |
 | `chordsym`, or a kind not listed                           | protocol defect   |
 
+Before annotation, the harness reads the `words` of both scores by the rule
+below, which the converters' MusicXML mapping also uses and which music21 and
+musicdiff 6.0 do not apply. Without it, tempo words, which the format assigns
+to `tempo_rehearsal`, would be counted as `text`, and navigation words, which
+it assigns to `text`, would not be compared. music21 imports words that name a
+repeat instruction, such as "D.C. al Fine" or "Fine", as a repeat expression
+that holds them as a text expression, and musicdiff 6.0 assigns a repeat
+expression no `kind`. The harness replaces it with the text expression it
+holds, whose kind is `direction`. The words of a direction without `dashes`
+that has a `metronome`, a `sound` with a `tempo` attribute or only `words`
+with `font-weight="bold"` are tempo words. Their text, joined in document
+order and trimmed, becomes the text of the direction's metronome mark. A
+direction without a `metronome` gets a new metronome mark without a number in
+place of its text expressions, with their offset, placement and style.
+musicdiff 6.0 compares such a mark by its text alone, and its kind is
+`tempo`. A change between tempo words and other words, such as a change of
+only the weight of words in a direction without a `metronome` or a `sound`
+tempo, is therefore one `tempo_rehearsal` and one `text` difference. When the
+harness cannot find the music21 object of a `words` element at its onset, the
+run stops with `ProtocolDefectError`.
+
 In each score, a key signature that restates the key in effect on its staff,
 a clef at the start of a system that restates the clef in effect on its
 staff, or a numeric time signature that restates the meter in effect, is a
 reprint, which the format does not encode. So is a trill mark or
-a `words` direction on the first event of a system on a staff where a
+a `words` direction, read as text or as tempo words, on the first event of a
+system on a staff where a
 `wavy-line` or `dashes` line that started in an earlier system is open, when
 it repeats the trill mark or the words that start that line. The harness
 removes reprints from both annotated scores before comparison, so a reprint
@@ -518,7 +540,8 @@ of its voice at that onset.
   `ProtocolDefectError` rather than assigning one position or counting
   agreement.
 - **Heading** (`heading`): in the instrument, credits are the only carrier of
-  heading text, and a `words` direction is always `text`, never `heading`.
+  heading text, and a `words` direction is `text` or, by the words reading,
+  `tempo_rehearsal`, never `heading`.
   Whether the converters agree with that is what the round trip tests. Each
   line of `credit-words` text, after whitespace normalization, is one element.
   Credits whose `credit-type` is `title`,
@@ -704,8 +727,14 @@ with their provenance:
   system, and `T(Y)` omits them, and a pair in which `Y` reprints the trill
   mark of an extended trill and the
   words of a dashes line at the start of the system they continue into and
-  `T(Y)` omits them, and a pair in which a wavy line of `Y` starts and stops on
-  its trilled note and `T(Y)` has only the trill mark;
+  `T(Y)` omits them, a second such pair whose words are bold, and a pair in
+  which a wavy line of `Y` starts and stops on its trilled note and `T(Y)` has
+  only the trill mark;
+- for the words reading, a pair in which bold words become normal words, one
+  in which a direction with words loses its `sound` tempo, one in which bold
+  tempo words are split into two `words` elements, one in which `T(Y)` drops
+  the words of a direction with a `metronome`, and one for each staff in which
+  `T(Y)` drops words that music21 reads as a repeat instruction;
 - a pair in which two heading lines of one page swap their reading order, and
   a pair in which the only change is that a page 2 heading line is moved to
   page 1 after the page 1 lines.
@@ -753,7 +782,12 @@ The instrument passes when it reports:
   element for the parenthesis pair, and exactly one non-identical and
   one extra `heading` element for the heading-order pair, each with no other
   difference;
-- no difference for the remaining no-change pairs, including the reprint pairs.
+- exactly one `text` and one `tempo_rehearsal` difference for the bold-words
+  pair and for the `sound`-tempo pair, exactly one `tempo_rehearsal`
+  difference for the metronome-words pair and exactly one `text` difference
+  for each repeat-words pair, each with no other difference;
+- no difference for the remaining no-change pairs, including the reprint pairs
+  and the split-words pair.
 
 The screen's allowlist is reviewed against the same fixtures. A
 failure is a protocol defect: this record is revised under review before any
@@ -901,6 +935,14 @@ member, not by its members, so a regrouping that keeps these is not counted.
 musicdiff 6.0 also drops a clef that restates an earlier clef of its staff in
 the same measure; the screen excludes such clefs in `X`, but one that `T(Y)`
 adds is not counted.
+The words reading takes the converters' marks of tempo words, which MusicXML
+does not standardize: words with none of these marks are text in both scores,
+so a conversion that keeps such tempo words of `Y` as text is not counted.
+music21 forms a pedal mark only from a `pedal` start that a later `stop`
+completes, and musicdiff 6.0 compares pedals only as pedal marks, so a pedal
+sign without such a partner is not compared, and its loss is not counted; the
+text-space check reports the loss only when the reverse conversion keeps the
+sign.
 The fingering, parenthesis, tie-end, slur-endpoint, tremolo-stroke, beam-hook and
 extended-trill checks identify a note by its written pitch and written
 duration, not by its voice, so a mark or endpoint
@@ -979,6 +1021,22 @@ Source findings, with the pinned sources they rely on:
   [PyPI wheel](https://pypi.org/project/music21/10.5.0/#files)
   `music21-10.5.0-py3-none-any.whl`, SHA-256
   `9924eff5fbf58490e67cbf3b78a58ba53040e77c281930d354af32a747e94606`.
+- music21 10.5.2, the version that the lockfile resolves, imports `words` that
+  name a repeat instruction as a `RepeatExpression` that holds a copy of their
+  text expression, and inserts only complete spanners. A pedal mark is
+  complete only at its `stop`, and a `stop` without an open pedal mark is
+  skipped with a warning. See `music21/musicxml/xmlToM21.py` lines 5631 to
+  5647, 1547 to 1552, 4556 to 4557, 4516 to 4523 and 5591 to 5598, and
+  `music21/expressions.py` lines 536 to 555, in the
+  [PyPI wheel](https://pypi.org/project/music21/10.5.2/#files)
+  `music21-10.5.2-py3-none-any.whl`, SHA-256
+  `dba8696eafab709a244b6f18c64399edcccf4e96ddd1e0e4de7eff0a291c2dec`.
+  musicdiff 6.0 has no `kind` for a `RepeatExpression` in the `extra_to_kind`
+  lines cited above, and it compares a metronome mark that has text and no
+  number by its text alone; see
+  [m21utils.py](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L1484-L1493)
+  and
+  [lines 1535 to 1543](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L1535-L1543).
 - The normalized OMR edit distance divides the OMR edit distance by the symbol
   counts of both scores; see
   [visualization.py](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/visualization.py#L1384-L1396).
