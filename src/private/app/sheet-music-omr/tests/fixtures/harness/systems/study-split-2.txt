@@ -1,0 +1,21 @@
+// Self-authored for this project; it transcribes no existing score.
+// System 2 of tests/fixtures/assembly/study.expected.txt split at m 3 and m 6:
+// r2 and r3 keep their carry-in labels, and the new relations take r1 and
+// r4 to r8 in the order of their first endpoints.
+format: text-score/2
+key: 0
+time: 3/4
+clefs: G2 F4
+carry: octave
+page: 1
+system: 2
+carry-in: {"measure":3,"offset":"0","event_counts":{},"accidental_scope":"octave","accidentals":[],"open":[{"id":"r2","kind":"pedal","start":{"measure":1,"offset":"0","staff":2,"voice":1,"event_index":1,"member_index":null}},{"id":"r3","kind":"hairpin","start":{"measure":2,"offset":"0","staff":1,"voice":1,"event_index":1,"member_index":null},"variant":"cresc"}]}
+m 3
+1.1: <8va(>[rel=ottava@r1:start:8va] B5/4[rel=slur@r4:start] C6{tie@r6:start}/4 <hairpin)>[rel=hairpin@r3:end] C6{tie@r6:end}/4[rel=slur@r4:end]
+2.1: E3/4[rel=slur@r5:start] G3{tie@r7:start}/4 G3{tie@r7:end}/4[rel=slur@r5:end]
+m 4
+1.1: <8va)>[rel=ottava@r1:end:8va] B4/2[rel=slur@r8:start] C#5/4[rel=slur@r8:end]
+2.1: <ped)>[rel=pedal@r2:line-release] A2/2.
+m 5 right=repeat ending=1:single
+1.1: D5/2.
+2.1: D3/2.

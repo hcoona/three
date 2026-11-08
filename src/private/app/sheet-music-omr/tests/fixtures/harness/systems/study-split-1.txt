@@ -1,0 +1,17 @@
+// Self-authored for this project; it transcribes no existing score.
+// System 1 of tests/fixtures/assembly/study.expected.txt split at m 3 and m 6.
+format: text-score/2
+key: 0
+time: 3/4
+clefs: G2 F4
+carry: octave
+page: 1
+system: 1
+carry-in: {"measure":1,"offset":"0","event_counts":{},"accidental_scope":"octave","accidentals":[],"open":[]}
+heading: "Assembly Study"
+m 1
+1.1: <p> C5/4[rel=slur@r1:start] D5/4 E5/4
+2.1: <ped(>[rel=pedal@r2:line-start] C3/2.
+m 2
+1.1: <cresc(>[rel=hairpin@r3:start:cresc] F5/4 G5/4 A5/4[rel=slur@r1:end]
+2.1: F3/2.
