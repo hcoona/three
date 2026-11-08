@@ -294,6 +294,8 @@ internal static class SqliteDiagnostics
     {
         try
         {
+            DateTimeOffset collectionStartedAtUtc = DateTimeOffset.UtcNow;
+            long collectionStarted = Stopwatch.GetTimestamp();
             List<Source> sources = [];
             int remaining = MaximumCollectionBytes;
             for (int slot = 0; slot < ActivitySlots; slot++)
@@ -358,6 +360,8 @@ internal static class SqliteDiagnostics
 
             Incident incident = new(
                 1, database.Identity, Environment.ProcessId, ProcessBirth, failure,
+                collectionStartedAtUtc, DateTimeOffset.UtcNow,
+                Stopwatch.GetElapsedTime(collectionStarted).TotalMilliseconds,
                 "Partial application observations; non-atomic; "
                     + "external or uninstrumented holders remain unknown.",
                 database.Warning, sources.ToArray()
@@ -526,7 +530,9 @@ internal static class SqliteDiagnostics
 
     private sealed record Incident(
         int Version, string Database, int ProcessId, DateTimeOffset? ProcessBirthUtc,
-        Activity Failure, string Coverage,
+        Activity Failure, DateTimeOffset CollectionStartedAtUtc,
+        DateTimeOffset CollectionCompletedAtUtc, double CollectionElapsedMilliseconds,
+        string Coverage,
         string? Warning, Source[] Sources
     );
 }

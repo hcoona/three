@@ -259,6 +259,7 @@ public sealed class GitOperations
                 throw new OperationException("unknown_actor", "Actor is not a member of this run.");
             }
 
+            using var diagnosticActor = SqliteDiagnostics.UseActor(actor);
             return name switch
             {
                 "change_write" => await WriteChangeAsync(actor, arguments, cancellationToken)

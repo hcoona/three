@@ -367,6 +367,7 @@ public sealed partial class CollaborationOperations
     public JsonObject ReadSharedContext(string actor)
     {
         RequireActor(actor);
+        using var diagnosticActor = SqliteDiagnostics.UseActor(actor);
         using var connection = database.Open();
         using var transaction = Sql.BeginTransaction(connection, deferred: true);
         var result = SharedContext(connection, transaction, actor);
@@ -458,6 +459,7 @@ public sealed partial class CollaborationOperations
     public JsonObject AddNotices(string actor, JsonObject result)
     {
         RequireActor(actor);
+        using var diagnosticActor = SqliteDiagnostics.UseActor(actor);
         ArgumentNullException.ThrowIfNull(result);
         var envelopeResult = (JsonObject)result.DeepClone();
         using var connection = database.Open();

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using LiteAgensh;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -24,7 +25,10 @@ public sealed class RunDatabaseTests
         using SqliteConnection reader = database.Open();
         using SqliteTransactionScope deferred = Sql.BeginTransaction(reader, deferred: true);
         string directory = Path.Combine(fixture.StatePath, "run.sqlite.diagnostics");
-        File.WriteAllText(Path.Combine(directory, "activity-31.json"), "{malformed");
+        File.WriteAllText(Path.Combine(directory, "activity-01.json"), "{malformed");
+        File.WriteAllBytes(Path.Combine(directory, "activity-29.json"), new byte[128 * 1024]);
+        File.WriteAllBytes(Path.Combine(directory, "activity-30.json"), new byte[128 * 1024]);
+        File.WriteAllText(Path.Combine(directory, "activity-31.json"), "{}");
 
         SqliteException error = Assert.ThrowsExactly<SqliteException>(() =>
             collaboration.ClaimBatch("worker1")
@@ -35,6 +39,7 @@ public sealed class RunDatabaseTests
         string path = Assert.IsInstanceOfType<string>(error.Data["LiteAgensh.SqliteIncident"]);
         string text = File.ReadAllText(path);
         using JsonDocument incident = JsonDocument.Parse(text);
+        AssertCollectionInterval(incident.RootElement);
         JsonElement failure = incident.RootElement.GetProperty("failure");
         Assert.AreEqual("ClaimBatch", failure.GetProperty("operation").GetString());
         Assert.AreEqual("worker1", failure.GetProperty("actor").GetString());
@@ -61,6 +66,11 @@ public sealed class RunDatabaseTests
             incident.RootElement.GetProperty("sources").EnumerateArray()
                 .Select(source => source.GetProperty("status").GetString())
         );
+        Assert.Contains(
+            "collection-budget-exhausted",
+            incident.RootElement.GetProperty("sources").EnumerateArray()
+                .Select(source => source.GetProperty("status").GetString())
+        );
         Assert.Contains("unknown", incident.RootElement.GetProperty("coverage").GetString()!);
         foreach (string file in Directory.EnumerateFiles(directory, "*.json"))
         {
@@ -70,6 +80,47 @@ public sealed class RunDatabaseTests
         }
 
         Assert.AreEqual(0L, Sql.Scalar(reader, "SELECT COUNT(*) FROM delivery_batches;", deferred));
+    }
+
+    [TestMethod]
+    public async Task GitContextAndNoticeFailureRetainValidatedActors()
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        LocalTools tools = new(database);
+        using SqliteConnection writer = database.Open();
+        using SqliteTransactionScope held = Sql.BeginTransaction(writer);
+
+        JsonObject changes = await tools.Git.InvokeAsync("worker1", "change_list", new());
+        Assert.IsTrue(changes["ok"]!.GetValue<bool>());
+        _ = tools.Collaboration.ReadSharedContext("worker2");
+        SqliteException error = await Assert.ThrowsExactlyAsync<SqliteException>(async () =>
+            await tools.InvokeAsync("worker1", "run_info", new())
+        );
+
+        Assert.AreEqual(5, error.SqliteErrorCode);
+        string path = Assert.IsInstanceOfType<string>(error.Data["LiteAgensh.SqliteIncident"]);
+        using JsonDocument incident = JsonDocument.Parse(File.ReadAllText(path));
+        AssertCollectionInterval(incident.RootElement);
+        JsonElement failure = incident.RootElement.GetProperty("failure");
+        Assert.AreEqual("AddNotices", failure.GetProperty("operation").GetString());
+        Assert.AreEqual("worker1", failure.GetProperty("actor").GetString());
+        JsonElement[] recent = incident.RootElement.GetProperty("sources").EnumerateArray()
+            .Where(source => source.GetProperty("status").GetString() == "available")
+            .SelectMany(source =>
+                source.GetProperty("snapshot").GetProperty("recent").EnumerateArray())
+            .ToArray();
+        Assert.Contains(
+            "worker1",
+            recent.Where(record => record.GetProperty("operation").GetString() == "Reader")
+                .Select(record => record.GetProperty("actor").GetString())
+        );
+        Assert.Contains(
+            "worker2",
+            recent.Where(record =>
+                record.GetProperty("operation").GetString() == "ReadSharedContext")
+                .Select(record => record.GetProperty("actor").GetString())
+        );
     }
 
     [TestMethod]
@@ -192,6 +243,17 @@ public sealed class RunDatabaseTests
                     .Where(item => item.GetProperty("transaction").GetString() == transaction)
             );
         }
+    }
+
+    private static void AssertCollectionInterval(JsonElement incident)
+    {
+        DateTimeOffset started = incident.GetProperty("collectionStartedAtUtc").GetDateTimeOffset();
+        DateTimeOffset completed =
+            incident.GetProperty("collectionCompletedAtUtc").GetDateTimeOffset();
+        double elapsed = incident.GetProperty("collectionElapsedMilliseconds").GetDouble();
+        Assert.IsTrue(completed >= started);
+        Assert.IsTrue(double.IsFinite(elapsed));
+        Assert.IsInRange(0, double.MaxValue, elapsed);
     }
 
     [TestMethod]
