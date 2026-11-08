@@ -30,12 +30,14 @@ from bisect import bisect_right
 from collections import Counter
 from copy import copy
 from dataclasses import dataclass, field
+from enum import StrEnum
 from fractions import Fraction
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import converter21
 import music21 as m21
+from music21.musicxml.xmlToM21 import MeasureParser
 from musicdiff import DetailLevel
 from musicdiff import comparison as musicdiff_comparison
 from musicdiff.annotation import (
@@ -57,6 +59,7 @@ from sheet_music_omr.musicxml_events import (
     VoiceKey,
     XmlDirection,
     XmlEvent,
+    XmlOttava,
     XmlScore,
     XmlSpan,
     dashes_text,
@@ -291,6 +294,49 @@ class ScoreParseError(RuntimeError):
     """musicdiff cannot parse or annotate a score."""
 
 
+class UndeterminedReason(StrEnum):
+    """Why the format's voice rules do not determine a voice position.
+
+    An event has a known canonical position, a position that the rules leave
+    undetermined for one of these reasons, or no position at all, which is a
+    protocol defect. An undetermined position never equals another position,
+    undetermined or not. Where several reasons apply, the first declared here
+    is reported.
+    """
+
+    NO_STEMMED_EVENT = "no-stemmed-event"
+    """An unstemmed event's voice has no stemmed event to place it."""
+
+    NEAREST_STEM_TIE = "nearest-stem-tie"
+    """An unstemmed event is equally near stems of both directions."""
+
+    INDISTINGUISHABLE_VOICES = "indistinguishable-voices"
+    """Two overlapping voices resolve to one stem direction."""
+
+    MIXED_STEM_VOICE = "mixed-stem-voice"
+    """One of three or four voices has stems of both directions."""
+
+    STEM_COUNTS = "stem-counts"
+    """Three or four voices do not split into one or two per direction."""
+
+    TIED_HEIGHTS = "tied-heights"
+    """Two voices of one stem direction have the same highest pitch.
+
+    The instrument reads "from the top" as the highest pitch.
+    """
+
+
+type _Position = int | UndeterminedReason
+
+
+def _reason_rank(reason: UndeterminedReason) -> int:
+    return list(UndeterminedReason).index(reason)
+
+
+def _first_reason(reasons: Iterable[UndeterminedReason]) -> UndeterminedReason:
+    return min(reasons, key=_reason_rank)
+
+
 @dataclass(frozen=True, slots=True)
 class Location:
     """Where an annotated object is in its score.
@@ -303,6 +349,9 @@ class Location:
         voice: The 0-based index of the voice in musicdiff's voice list.
         voice_id: The music21 voice identifier, the MusicXML voice number.
         onset: The offset in quarter lengths from the start of the measure.
+        voice_position: The canonical voice position of a note, or of a voice
+            whose events share one known position; ``None`` when it is
+            undetermined or, for a voice, its events' positions differ.
     """
 
     staff: int
@@ -617,6 +666,27 @@ class ElementTally:
 
 
 @dataclass(frozen=True, slots=True, eq=False)
+class VoiceOrderResult:
+    """The voice-order check of one file.
+
+    Attributes:
+        by_measure: By 0-based measure ordinal, the voice-order elements of
+            that measure.
+        excluded: The excluded reference voices, by reason: content-matched
+            voices of ``Y`` whose positions are undetermined. They are not
+            elements and never count as agreement.
+    """
+
+    by_measure: dict[int, ElementTally]
+    excluded: Counter[UndeterminedReason]
+
+    @property
+    def tally(self) -> ElementTally:
+        """The voice-order elements of the whole file."""
+        return sum(self.by_measure.values(), ElementTally(0, 0, 0))
+
+
+@dataclass(frozen=True, slots=True, eq=False)
 class PassDiagnostic:
     """The ordinary whole-score figures of one musicdiff pass over one file.
 
@@ -852,7 +922,9 @@ def annotate(
 
     Before annotation, ``words`` directions are read as the protocol's words
     reading specifies: repeat words stay text, and tempo words become tempo
-    text. With ``Style``, an inverted fermata is read by its shape, which
+    text. Each music21 ottava takes the extent of its MusicXML octave shift,
+    as the octave-shift reading specifies. With ``Style``, an inverted
+    fermata is read by its shape, which
     musicdiff 6.0 does not name. A fermata without a type is upright, as
     MusicXML defines it.
 
@@ -867,12 +939,13 @@ def annotate(
     Raises:
         ScoreParseError: If music21 or musicdiff cannot parse the score.
         ProtocolDefectError: If the MusicXML structure has no protocol
-            reading, an annotated note has no unique MusicXML event, or
-            music21 reads an octave shift other than MusicXML does.
+            reading, an annotated note has no unique MusicXML event, or an
+            ottava of the score disagrees with the MusicXML octave shifts.
     """
     converter21.register()
     parsed, xml = _parse(source)
     words = _read_words(parsed, xml)
+    _read_octave_shifts(parsed, xml)
     if DetailLevel.includesStyle(detail):
         _read_fermata_shapes(parsed)
     try:
@@ -968,13 +1041,7 @@ def _read_words(
         direction's document order.
     """
     read: dict[int, tuple[m21.base.Music21Object, ...]] = {}
-    streams = list(score.parts)
-    parts = {
-        source: streams[index]
-        for index, source in _source_staff_indices(
-            [(stream, stream) for stream in streams],
-        ).items()
-    }
+    parts = _source_staves(score)
     # Each claimed object stays referenced, so its id stays unique.
     claimed: dict[int, m21.base.Music21Object] = {}
     for direction in xml.directions:
@@ -1004,6 +1071,19 @@ def _read_words(
         else:
             read[direction.order] = tuple(expressions)
     return read
+
+
+def _source_staves(
+    score: m21.stream.Score,
+) -> dict[tuple[int, int], m21.stream.Part]:
+    """Return the music21 stream of each MusicXML part and staff."""
+    streams = list(score.parts)
+    return {
+        source: streams[index]
+        for index, source in _source_staff_indices(
+            [(stream, stream) for stream in streams],
+        ).items()
+    }
 
 
 def _claim_words(
@@ -1134,6 +1214,130 @@ def _read_fermata_shapes(score: m21.stream.Score) -> None:
                 and expression.type == "inverted"
             ):
                 expression.__class__ = _InvertedFermata
+
+
+type _TimedNotes = list[tuple[Fraction, m21.note.GeneralNote]]
+"""The notes, chords and rests of a staff, each with its onset."""
+
+
+def _read_octave_shifts(score: m21.stream.Score, xml: XmlScore) -> None:
+    """Read each octave shift as the protocol's octave-shift reading does.
+
+    music21 starts an ottava on a later note, chord or rest of the document,
+    whatever its staff or offset; ends it on the last one before its stop in
+    the measure, if any; and drops it where its stop's number does not match.
+    musicdiff compares an ottava from the onset of its first element to the
+    end of its last, and the written pitch of each element. So music21's
+    ottavas are removed, and each MusicXML octave shift becomes an ottava,
+    styled as music21 styles one from its start element, over the notes,
+    chords and rests of its staff that start in it and that musicdiff
+    annotates: first one at its start, last one, another unless it is the
+    only one, that ends at its end.
+
+    Raises:
+        ProtocolDefectError: If no such note, chord or rest starts an octave
+            shift at its start, or ends it at its end, or if one alone does
+            both while others lie inside the shift.
+    """
+    staves = _source_staves(score)
+    timed = {place: _timed_notes(stream) for place, stream in staves.items()}
+    _remove_ottavas(score, timed)
+    for ottava in xml.ottavas:
+        elements = _ottava_elements(ottava, timed.get(ottava.place, []))
+        parser = MeasureParser()
+        (spanner,) = parser.xmlDirectionTypeToSpanners(ottava.element)
+        parser.setPosition(ottava.element, spanner)
+        parser.setPlacement(ottava.element, spanner)
+        parser.setLineStyle(ottava.element, spanner)
+        parser.setEditorial(ottava.direction.element, spanner)
+        spanner.completeStatus = True
+        spanner.addSpannedElements(elements)
+        stream = staves[ottava.place]
+        stream.coreInsert(0, spanner)
+        stream.coreElementsChanged()
+
+
+def _timed_notes(stream: m21.stream.Part) -> _TimedNotes:
+    return [
+        (_fraction(general_note.getOffsetInHierarchy(stream)), general_note)
+        for general_note in stream.recurse().getElementsByClass(
+            m21.note.GeneralNote,
+        )
+        if not isinstance(general_note, m21.harmony.Harmony)
+    ]
+
+
+def _remove_ottavas(
+    score: m21.stream.Score,
+    timed: dict[tuple[int, int], _TimedNotes],
+) -> None:
+    """Remove music21's ottavas, kept or dropped, from the score and notes."""
+    for stream in score.recurse(streamsOnly=True, includeSelf=True):
+        for ottava in list(stream.getElementsByClass(m21.spanner.Ottava)):
+            stream.remove(ottava)
+    for notes in timed.values():
+        for _, general_note in notes:
+            for ottava in general_note.getSpannerSites(["Ottava"]):
+                ottava.spannerStorage.remove(
+                    list(ottava.getSpannedElements()),
+                )
+
+
+def _ottava_elements(
+    ottava: XmlOttava,
+    notes: _TimedNotes,
+) -> list[m21.note.GeneralNote]:
+    """Return the elements of a music21 ottava for a MusicXML octave shift.
+
+    musicdiff annotates neither hidden notes nor hidden rests, so they hold
+    no written pitch to compare and the ottava leaves them out. A music21
+    spanner holds each element once, and musicdiff reads its extent from its
+    first and last element. So the first element starts at the shift's
+    start, and the last one, another element unless it is the only one,
+    ends at its end.
+
+    Raises:
+        ProtocolDefectError: If no annotated note, chord or rest starts the
+            shift at its start, or ends it at its end, or if one alone does
+            both while others lie inside the shift.
+    """
+    inside = [
+        (onset, general_note)
+        for onset, general_note in notes
+        if ottava.start <= onset < ottava.end
+        and not general_note.style.hideObjectOnPrint
+    ]
+    firsts = [note for onset, note in inside if onset == ottava.start]
+    lasts = [
+        note
+        for onset, note in sorted(inside, key=lambda timed: -timed[0])
+        if onset + _fraction(note.duration.quarterLength) == ottava.end
+    ]
+    if not firsts or not lasts:
+        message = (
+            "no note or rest that musicdiff annotates starts and ends the "
+            f"octave shift at {_site(ottava.direction)}"
+        )
+        raise ProtocolDefectError(message)
+    first, last = next(
+        (
+            (first, last)
+            for first in firsts
+            for last in lasts
+            if first is not last or len(inside) == 1
+        ),
+        (None, None),
+    )
+    if first is None or last is None:
+        message = (
+            "one note or rest alone starts and ends the octave shift at "
+            f"{_site(ottava.direction)}, which holds others"
+        )
+        raise ProtocolDefectError(message)
+    middle = [
+        note for _, note in inside if note is not first and note is not last
+    ]
+    return [first, *middle] if first is last else [first, *middle, last]
 
 
 def compare_layout(
@@ -1314,10 +1518,7 @@ def voice_order_annotated(
 
     See :func:`voice_order_tally`.
     """
-    return sum(
-        voice_order_by_measure(t_score, y_score).values(),
-        ElementTally(0, 0, 0),
-    )
+    return voice_order_result(t_score, y_score).tally
 
 
 def voice_order_by_measure(
@@ -1326,8 +1527,7 @@ def voice_order_by_measure(
 ) -> dict[int, ElementTally]:
     """Score canonical voice positions per measure.
 
-    Voices of equal content on one staff in one measure are matched one to
-    one, matching as many equal position sequences as possible.
+    See :func:`voice_order_result`.
 
     Args:
         t_score: The annotated round trip ``T(Y)``.
@@ -1336,24 +1536,61 @@ def voice_order_by_measure(
     Returns:
         By 0-based measure ordinal, the voice-order elements of that measure.
     """
+    return voice_order_result(t_score, y_score).by_measure
+
+
+def voice_order_result(
+    t_score: AnnotatedScore,
+    y_score: AnnotatedScore,
+) -> VoiceOrderResult:
+    """Score canonical voice positions and count excluded reference voices.
+
+    On one staff in one measure, the voices of ``Y`` and ``T(Y)`` with equal
+    content are matched one to one. The voices of ``Y`` whose positions are
+    all known are matched first, each with a voice of ``T(Y)`` of the same
+    known position sequence where possible; each such matched voice is one
+    element, identical only with such a partner. A voice of ``Y`` with an
+    undetermined position that still finds a partner is an excluded
+    reference voice, and one without a partner is neither. Where fewer
+    partners remain than such voices, the excluded voices are those whose
+    reasons come first in precedence order.
+
+    Args:
+        t_score: The annotated round trip ``T(Y)``.
+        y_score: The annotated reference ``Y``.
+
+    Returns:
+        The voice-order elements by measure and the excluded reference voices.
+
+    Raises:
+        ProtocolDefectError: If an event has no position at all, or the
+            voices of a measure break an invariant of the voice rules.
+    """
     t_groups = _voice_content_groups(t_score)
     y_groups = _voice_content_groups(y_score)
     tallies: dict[int, ElementTally] = {}
-    for key, y_positions in y_groups.items():
-        t_positions = t_groups.get(key)
-        if t_positions is None:
+    excluded: Counter[UndeterminedReason] = Counter()
+    for key, y_voices in y_groups.items():
+        t_voices = t_groups.get(key)
+        if t_voices is None:
             continue
-        matched = min(sum(y_positions.values()), sum(t_positions.values()))
+        t_count = t_voices.known.total() + t_voices.undetermined.total()
+        matched = min(y_voices.known.total(), t_count)
         identical = sum(
-            min(y_positions[position], t_positions[position])
-            for position in y_positions.keys() | t_positions.keys()
+            min(count, t_voices.known[sequence])
+            for sequence, count in y_voices.known.items()
+        )
+        excluded.update(
+            sorted(y_voices.undetermined.elements(), key=_reason_rank)[
+                : t_count - matched
+            ],
         )
         _, measure_index, _ = key
         tallies[measure_index] = tallies.get(
             measure_index,
             ElementTally(0, 0, 0),
         ) + ElementTally(matched, identical, 0)
-    return tallies
+    return VoiceOrderResult(tallies, excluded)
 
 
 def content_element_count(score: AnnotatedScore) -> int:
@@ -1753,7 +1990,7 @@ def _canonical_voice_positions(
     voices: list[AnnVoice] | None = None,
     direction_overrides: dict[int, str | None] | None = None,
     event_onsets: dict[int, Fraction] | None = None,
-) -> dict[int, int]:
+) -> dict[int, _Position]:
     voices = bar.voices_list if voices is None else voices
     _reject_double_stem_events(voices, bar)
     if len(voices) <= _SINGLE_VOICE_POSITION:
@@ -1781,14 +2018,12 @@ def _canonical_voice_positions(
         position_context,
         direction_overrides,
     )
+    if isinstance(by_direction, UndeterminedReason):
+        return _undetermined_positions(voices, by_direction)
     stem_counts = (len(by_direction["up"]), len(by_direction["down"]))
     if stem_counts not in _VALID_STEM_COUNTS:
-        message = (
-            f"measure {bar.measureNumber} has stem directions that do not "
-            "establish two to four voices"
-        )
-        raise ProtocolDefectError(message)
-    return _rank_stem_voices(by_direction, bar.measureNumber)
+        return _undetermined_positions(voices, UndeterminedReason.STEM_COUNTS)
+    return _rank_stem_voices(by_direction, bar)
 
 
 def _reject_double_stem_events(
@@ -1807,7 +2042,9 @@ def _reject_double_stem_events(
         raise ProtocolDefectError(message)
 
 
-def _single_voice_event_positions(voices: list[AnnVoice]) -> dict[int, int]:
+def _single_voice_event_positions(
+    voices: list[AnnVoice],
+) -> dict[int, _Position]:
     return {
         id(note): _SINGLE_VOICE_POSITION
         for voice in voices
@@ -1815,42 +2052,85 @@ def _single_voice_event_positions(voices: list[AnnVoice]) -> dict[int, int]:
     }
 
 
+def _undetermined_positions(
+    voices: list[AnnVoice],
+    reason: UndeterminedReason,
+) -> dict[int, _Position]:
+    return {id(note): reason for voice in voices for note in voice.annot_notes}
+
+
 def _two_voice_event_positions(
     voices: list[AnnVoice],
     context: _MeasureEventContext,
     direction_overrides: dict[int, str | None] | None = None,
-) -> dict[int, int]:
-    positions: dict[int, int] = {}
-    seen_directions: set[str] = set()
+) -> dict[int, _Position]:
     voice_directions = [
         _voice_event_directions(voice, context.bar, direction_overrides)
         for voice in voices
     ]
-    for index, (voice, directions) in enumerate(
-        zip(voices, voice_directions, strict=True),
-    ):
-        stemless_direction = _stemless_voice_direction(
+    resolved = [
+        _resolve_voice_directions(
+            voice,
             directions,
-            voice_directions[1 - index],
+            context,
+            _stemless_voice_direction(
+                directions,
+                voice_directions[1 - index],
+            ),
         )
+        for index, (voice, directions) in enumerate(
+            zip(voices, voice_directions, strict=True),
+        )
+    ]
+    seen_directions = {
+        direction
+        for directions in resolved
+        if not isinstance(directions, UndeterminedReason)
+        for direction in directions.values()
+    }
+    if not any(
+        isinstance(item, UndeterminedReason) for item in resolved
+    ) and seen_directions != {"up", "down"}:
+        return _undetermined_positions(
+            voices,
+            UndeterminedReason.INDISTINGUISHABLE_VOICES,
+        )
+    positions: dict[int, _Position] = {}
+    for voice, directions in zip(voices, resolved, strict=True):
+        if isinstance(directions, UndeterminedReason):
+            positions.update(_undetermined_positions([voice], directions))
+            continue
         for note in voice.annot_notes:
-            direction = directions[id(note)] or stemless_direction
-            if direction is None:
-                direction = _infer_voice_direction(
-                    note,
-                    voice,
-                    directions,
-                    context,
-                )
-            seen_directions.add(direction)
-            positions[id(note)] = 1 if direction == "up" else 2
-    if seen_directions != {"up", "down"}:
-        message = (
-            f"measure {context.bar.measureNumber} has overlapping voices that "
-            "stem direction cannot distinguish"
-        )
-        raise ProtocolDefectError(message)
+            positions[id(note)] = 1 if directions[id(note)] == "up" else 2
     return positions
+
+
+def _resolve_voice_directions(
+    voice: AnnVoice,
+    directions: dict[int, str | None],
+    context: _MeasureEventContext,
+    stemless_direction: str | None = None,
+) -> dict[int, str] | UndeterminedReason:
+    """Return each event's stem direction under the voice rules, if known.
+
+    An unstemmed event takes the direction of its stemless voice, if any, or
+    the nearest stemmed event's. When one event's direction is undetermined,
+    the whole voice is.
+    """
+    resolved: dict[int, str] = {}
+    for note in voice.annot_notes:
+        direction = directions[id(note)] or stemless_direction
+        if direction is None:
+            direction = _infer_voice_direction(
+                note,
+                voice,
+                directions,
+                context,
+            )
+            if isinstance(direction, UndeterminedReason):
+                return direction
+        resolved[id(note)] = direction
+    return resolved
 
 
 def _stemless_voice_direction(
@@ -1879,44 +2159,36 @@ def _events_by_stem_direction(
     voices: list[AnnVoice],
     context: _MeasureEventContext,
     direction_overrides: dict[int, str | None] | None = None,
-) -> dict[str, list[tuple[list[AnnNote], int]]]:
-    by_direction: dict[str, list[tuple[list[AnnNote], int]]] = {
-        "up": [],
-        "down": [],
-    }
-    for voice in voices:
-        directions = _voice_event_directions(
-            voice,
-            context.bar,
-            direction_overrides,
-        )
+) -> dict[str, list[list[AnnNote]]] | UndeterminedReason:
+    by_direction: dict[str, list[list[AnnNote]]] = {"up": [], "down": []}
+    # Every voice's beams are read first, so that a hard stop in one voice
+    # is not hidden by an undetermined position in another.
+    voice_directions = [
+        _voice_event_directions(voice, context.bar, direction_overrides)
+        for voice in voices
+    ]
+    reasons: list[UndeterminedReason] = []
+    for voice, directions in zip(voices, voice_directions, strict=True):
         explicit_directions = {
             direction
             for direction in directions.values()
             if direction is not None
         }
         if len(explicit_directions) > 1:
-            message = (
-                f"measure {context.bar.measureNumber} has a mixed-stem voice "
-                "whose position among three or four voices is ambiguous"
-            )
-            raise ProtocolDefectError(message)
+            reasons.append(UndeterminedReason.MIXED_STEM_VOICE)
+            continue
+        resolved = _resolve_voice_directions(voice, directions, context)
+        if isinstance(resolved, UndeterminedReason):
+            reasons.append(resolved)
+            continue
         notes_by_direction: dict[str, list[AnnNote]] = {"up": [], "down": []}
         for note in voice.annot_notes:
-            direction = directions[id(note)]
-            if direction is None:
-                direction = _infer_voice_direction(
-                    note,
-                    voice,
-                    directions,
-                    context,
-                )
-            notes_by_direction[direction].append(note)
+            notes_by_direction[resolved[id(note)]].append(note)
         for direction, notes in notes_by_direction.items():
             if notes:
-                by_direction[direction].append(
-                    (notes, _voice_height(notes, context.bar)),
-                )
+                by_direction[direction].append(notes)
+    if reasons:
+        return _first_reason(reasons)
     return by_direction
 
 
@@ -2291,7 +2563,7 @@ def _beam_direction_overrides(
 
 def _score_voice_positions(
     annotated: AnnotatedScore,
-) -> tuple[dict[int, int], dict[int, _CrossStaffBeamGroup]]:
+) -> tuple[dict[int, _Position], dict[int, _CrossStaffBeamGroup]]:
     groups = _cross_staff_beam_groups(annotated)
     groups_by_note = {
         id(note): group for group in groups for _, note in group.events
@@ -2301,7 +2573,7 @@ def _score_voice_positions(
         for group in groups
         for note_id, onset in group.event_onsets
     }
-    positions: dict[int, int] = {}
+    positions: dict[int, _Position] = {}
     for staff, part in enumerate(annotated.annotated.part_list):
         measure_indexes = _measure_indexes(part.get_object())
         for bar in part.bar_list:
@@ -2338,6 +2610,8 @@ def _score_voice_positions(
             )
 
     for group in groups:
+        # An undetermined anchor position carries over to the group; a
+        # missing one is a defect.
         anchor_position = positions.get(id(group.home_note))
         if anchor_position is None:
             message = (
@@ -2355,7 +2629,10 @@ def _infer_voice_direction(
     voice: AnnVoice,
     directions: dict[int, str | None],
     context: _MeasureEventContext,
-) -> str:
+) -> str | UndeterminedReason:
+    # The nearest stemmed onset is the instrument's reading of "the voice
+    # whose rhythm it completes"; where it does not decide, the position is
+    # undetermined.
     onset = _event_onset(note, context.measure, context.event_onsets)
     candidates = [
         (
@@ -2373,11 +2650,7 @@ def _infer_voice_direction(
         if (direction := directions[id(other)]) is not None
     ]
     if not candidates:
-        message = (
-            f"overlapping voice in measure {context.bar.measureNumber} has an "
-            "unstemmed event with no stemmed event to establish its position"
-        )
-        raise ProtocolDefectError(message)
+        return UndeterminedReason.NO_STEMMED_EVENT
     distance = min(candidate[0] for candidate in candidates)
     nearest_directions = {
         direction
@@ -2385,11 +2658,7 @@ def _infer_voice_direction(
         if candidate_distance == distance
     }
     if len(nearest_directions) != 1:
-        message = (
-            f"overlapping voice in measure {context.bar.measureNumber} has an "
-            "unstemmed event with ambiguous voice position"
-        )
-        raise ProtocolDefectError(message)
+        return UndeterminedReason.NEAREST_STEM_TIE
     return nearest_directions.pop()
 
 
@@ -2480,40 +2749,55 @@ def _chord_stem_direction(chord: m21.chord.Chord) -> str:
 
 
 def _rank_stem_voices(
-    by_direction: dict[str, list[tuple[list[AnnNote], int]]],
-    measure_number: str,
-) -> dict[int, int]:
-    positions: dict[int, int] = {}
+    by_direction: dict[str, list[list[AnnNote]]],
+    bar: AnnMeasure,
+) -> dict[int, _Position]:
+    """Rank the one or two voices of each stem direction from the top.
+
+    The instrument reads "from the top" as the highest pitch; two voices of
+    one direction with the same highest pitch have no order.
+    """
+    positions: dict[int, _Position] = {}
     for direction, first_position in (("up", 1), ("down", 2)):
-        ranked = by_direction[direction]
-        if len(ranked) > _MAX_VOICES_PER_STEM:
-            message = (
-                f"measure {measure_number} has more than two "
-                f"{direction}-stem voices"
-            )
-            raise ProtocolDefectError(message)
+        ranked = [
+            (notes, _voice_height(notes, bar))
+            for notes in by_direction[direction]
+        ]
         ranked.sort(key=lambda pair: pair[1], reverse=True)
-        if len(ranked) == _MAX_VOICES_PER_STEM and ranked[0][1] == ranked[1][1]:
-            message = (
-                f"measure {measure_number} has {direction}-stem voices "
-                "with an ambiguous vertical order"
-            )
-            raise ProtocolDefectError(message)
+        tied = (
+            len(ranked) == _MAX_VOICES_PER_STEM and ranked[0][1] == ranked[1][1]
+        )
         for index, (notes, _height) in enumerate(ranked):
-            position = first_position + _VOICE_POSITION_STEP * index
+            position: _Position = (
+                UndeterminedReason.TIED_HEIGHTS
+                if tied
+                else first_position + _VOICE_POSITION_STEP * index
+            )
             for note in notes:
                 positions[id(note)] = position
     return positions
 
 
+@dataclass(slots=True)
+class _ContentVoices:
+    """The voices of one content on one staff in one measure.
+
+    Attributes:
+        known: The count of each known ordered position sequence.
+        undetermined: The count of voices with an undetermined position, by
+            the first of their events' reasons in precedence order.
+    """
+
+    known: Counter[tuple[int, ...]] = field(default_factory=Counter)
+    undetermined: Counter[UndeterminedReason] = field(default_factory=Counter)
+
+
 def _voice_content_groups(
     annotated: AnnotatedScore,
-) -> dict[
-    tuple[tuple[int, int], int, tuple[object, ...]], Counter[tuple[int, ...]]
-]:
+) -> dict[tuple[tuple[int, int], int, tuple[object, ...]], _ContentVoices]:
     groups: dict[
         tuple[tuple[int, int], int, tuple[object, ...]],
-        Counter[tuple[int, ...]],
+        _ContentVoices,
     ] = {}
     positions, _ = _score_voice_positions(annotated)
     source_staff_indexes = _musicxml_part_staff_indices(annotated.annotated)
@@ -2538,11 +2822,31 @@ def _voice_content_groups(
             for onset, _, note, _, measure_number in events
         )
         key = (source_staff, measure_index, signature)
-        position_sequence = tuple(
-            positions[id(note)] for _, _, note, _, _ in events
-        )
-        groups.setdefault(key, Counter())[position_sequence] += 1
+        voices = groups.setdefault(key, _ContentVoices())
+        sequence = [
+            _event_position(positions, note) for _, _, note, _, _ in events
+        ]
+        reasons = [p for p in sequence if isinstance(p, UndeterminedReason)]
+        if not reasons:
+            voices.known[tuple(p for p in sequence if isinstance(p, int))] += 1
+        else:
+            voices.undetermined[_first_reason(reasons)] += 1
     return groups
+
+
+def _event_position(
+    positions: dict[int, _Position],
+    note: AnnNote,
+) -> _Position:
+    position = positions.get(id(note))
+    if position is None:
+        message = f"event has no canonical voice position: {note}"
+        raise ProtocolDefectError(message)
+    return position
+
+
+def _known_position(position: _Position) -> int | None:
+    return None if isinstance(position, UndeterminedReason) else position
 
 
 def voice_element_count(annotated: AnnotatedScore) -> int:
@@ -2640,7 +2944,8 @@ def _locate(annotated: AnnotatedScore) -> dict[int, Location]:
                     else None
                 )
                 positions = {
-                    note_positions[id(note)] for note in voice.annot_notes
+                    _known_position(_event_position(note_positions, note))
+                    for note in voice.annot_notes
                 }
                 locations[id(voice)] = Location(
                     staff,
@@ -2663,7 +2968,9 @@ def _locate(annotated: AnnotatedScore) -> dict[int, Location]:
                         voice_index,
                         voice_id,
                         onset,
-                        note_positions[id(note)],
+                        _known_position(
+                            _event_position(note_positions, note),
+                        ),
                         part_index,
                         grace_position,
                     )
@@ -2967,19 +3274,21 @@ def _check_octave_shifts(
     xml: XmlScore,
     events: dict[int, XmlEvent],
 ) -> None:
-    """Stop where music21 reads an octave shift other than MusicXML does.
+    """Stop where an ottava of the score disagrees with MusicXML's shifts.
 
     music21 starts an ottava on the next note in the document, whatever its
     staff or offset, and ends it on the note that precedes its stop in the
     measure, if any, so it can drop or misplace the notes of an ottava.
-    musicdiff then compares written pitches that the score does not write,
-    and an ottava, from the start of its first element to the end of its
-    last, that the score does not give. So each music21 ottava must start
-    and end on the staff of a MusicXML octave shift, at its start and after
-    its length; a note under either reading of an ottava must keep the
-    written pitch that the MusicXML octave shifts give it; and each note and
-    rest must start in a music21 ottava of its staff exactly when, and by as
-    many octaves as, MusicXML shifts it.
+    Unread, musicdiff would compare written pitches that the score does not
+    write, and an ottava, from the start of its first element to the end of
+    its last, that the score does not give. ``_read_octave_shifts`` replaces
+    music21's ottavas with ottavas built from the MusicXML octave shifts;
+    this check stops where those still disagree with them. So each ottava of
+    the score must start and end on the staff of a MusicXML octave shift, at
+    its start and after its length; a note under an ottava or a MusicXML
+    octave shift must keep the written pitch that the MusicXML octave shifts
+    give it; and each note and rest must start in an ottava of its staff
+    exactly when, and by as many octaves as, MusicXML shifts it.
     """
     extents = _ottava_extents(score, parsed, xml, events)
     for part in score.part_list:
@@ -3046,8 +3355,7 @@ def _ottava_extents(
         end = _fraction(last.getOffsetInHierarchy(parsed)) + _fraction(
             last.duration.quarterLength,
         )
-        octaves = _OTTAVA_OCTAVES[ottava.shiftMagnitude()]
-        shift = octaves if ottava.shiftDirection() == "up" else -octaves
+        shift = _music21_shift(ottava)
         if (
             last_event.place != first_event.place
             or (
@@ -3065,6 +3373,12 @@ def _ottava_extents(
             raise ProtocolDefectError(message)
         extents.setdefault(first_event.place, []).append((start, end, shift))
     return extents
+
+
+def _music21_shift(ottava: m21.spanner.Ottava) -> int:
+    """Return the octaves that a music21 ottava shifts written pitches by."""
+    octaves = _OTTAVA_OCTAVES[ottava.shiftMagnitude()]
+    return octaves if ottava.shiftDirection() == "up" else -octaves
 
 
 def _misreads_octave_shift(
@@ -3770,12 +4084,19 @@ def _source_beamings(note: AnnNote) -> tuple[tuple[int, str], ...]:
 
 
 def _pairing_rule(t_location: Location, y_location: Location) -> str | None:
-    """Return the category of a matching pair under rule 1 or rule 2."""
+    """Return the category of a matching pair under rule 1 or rule 2.
+
+    Rule 2 needs a known canonical position on both sides.
+    """
     if t_location.part_index != y_location.part_index:
         return None
     if t_location.staff != y_location.staff:
         return _CROSS_STAFF
-    if t_location.voice_position != y_location.voice_position:
+    if (
+        t_location.voice_position is not None
+        and y_location.voice_position is not None
+        and t_location.voice_position != y_location.voice_position
+    ):
         return _VOICE
     return None
 

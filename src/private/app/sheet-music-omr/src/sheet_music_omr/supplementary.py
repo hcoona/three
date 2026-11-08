@@ -31,13 +31,14 @@ from sheet_music_omr.comparison import (
     ContentResult,
     ElementTally,
     NotePair,
+    UndeterminedReason,
     annotate,
     compare_annotated,
     content_element_count,
     extra_sites,
     heading_tally,
     voice_element_count,
-    voice_order_annotated,
+    voice_order_result,
 )
 from sheet_music_omr.musicxml_events import (
     DASHES,
@@ -96,10 +97,16 @@ class FileComparison:
     Attributes:
         content: The musicdiff part.
         checks: The element counts of each supplementary check, by name.
+        excluded_voices: The excluded reference voices of the voice-order
+            check, by reason: voices of ``Y`` with a content partner whose
+            canonical positions the format's rules do not determine. They are
+            neither elements nor agreement, and are reported beside the
+            voice-order elements.
     """
 
     content: ContentResult
     checks: dict[str, ElementTally]
+    excluded_voices: Counter[UndeterminedReason]
 
     @property
     def tally(self) -> ElementTally:
@@ -201,6 +208,7 @@ def compare_file(t_source: Path | str, y_source: Path | str) -> FileComparison:
         cross_staff_owned=cross_staff_owned,
     )
     y_side, t_side = _sides(content)
+    voice_order = voice_order_result(t_score, y_score)
     checks = {
         "fingering": _multiset(
             _compared_fingerings(y_side),
@@ -210,7 +218,7 @@ def compare_file(t_source: Path | str, y_source: Path | str) -> FileComparison:
             map(_cross_staff_key, y_cross),
             map(_cross_staff_key, t_cross),
         ),
-        "voice_order": voice_order_annotated(t_score, y_score),
+        "voice_order": voice_order.tally,
         "heading": heading_tally(t_source, y_source),
         **_line_checks(y_side, t_side),
         **_mark_checks(y_side, t_side),
@@ -224,6 +232,7 @@ def compare_file(t_source: Path | str, y_source: Path | str) -> FileComparison:
     return FileComparison(
         content,
         {name: checks[name] for name in CHECKS},
+        voice_order.excluded,
     )
 
 
@@ -246,7 +255,8 @@ def failure_element_count(source: Path | str) -> int:
     score = annotate(source)
     side = _Side(score, frozenset(), {})
     # A failed file's voices need no counterpart, so they are counted without
-    # their positions; its heading lines match themselves, one element each.
+    # their positions, undetermined ones included; its heading lines match
+    # themselves, one element each.
     elements: dict[str, Iterable[object]] = {
         "fingering": _fingerings(side),
         "cross_staff": _cross_staff_events(score),

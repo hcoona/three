@@ -311,6 +311,8 @@ Neither these diagnostics nor the measure below is reported as one.
   pass (a note, rest or chord, or an extra such as a clef or dynamic) whose
   category is one of the 27 content categories, plus each element that a
   supplementary check below defines.
+- An excluded reference voice of the voice-order check is not an in-scope
+  element: it is neither in the denominator nor identical.
 - A reference element is _identical_ when no counted difference touches it.
   A difference is counted unless the assignment below disregards it.
 - Each counted difference that holds an object only in `T(Y)` adds one _extra
@@ -469,6 +471,28 @@ Before parsing, the harness therefore gives each such `fermata` the type
 `ProtocolDefectError`. A fermata's placement is not compared; the format
 does not encode it.
 
+The harness also reads each octave shift as MusicXML gives it. music21 10.5.2
+starts an ottava on a later note, chord or rest of the document, whatever its
+staff or offset; ends it on the last one before its stop in that measure, if
+any, ignoring the stop's `offset`; and drops it where its stop's `number`
+does not match its start's. musicdiff 6.0 compares an ottava from the onset
+of its first element to the end of its last, and the written pitch of each
+element under it; it annotates no hidden note or rest. Before annotation, the
+harness therefore removes music21's ottavas and, for each MusicXML octave
+shift, builds an ottava, styled as music21 styles one from the shift's
+start `octave-shift` element and `direction`, over the notes, chords and
+rests of its staff that musicdiff annotates and whose onsets fall in the
+shift: first one at its start, and last one, another unless it is the only
+one, that ends at its end. A shift whose stop is written after its last
+note, at the start of the next measure or with an `offset` to the barline
+is thus one extent. The run stops with `ProtocolDefectError` where the
+harness finds no such ottava: when no note, chord or rest that musicdiff
+annotates starts the shift at its start or ends it at its end, or when one
+alone does both while others lie inside the shift, since a music21 ottava
+holds each element once. It also stops where the ottavas so built still
+disagree with the MusicXML octave shifts after annotation, such as two
+octave shifts that overlap on one staff.
+
 In each score, a key signature that restates the key in effect on its staff,
 a clef at the start of a system that restates the clef in effect on its
 staff, or a numeric time signature that restates the meter in effect, is a
@@ -512,12 +536,13 @@ These rules apply before counting, in this order:
    note. Otherwise, as when a whole voice changes staff, the reference note
    is non-identical and no extra element is added. A note at another measure
    ordinal is never its pair.
-2. Such a pair in the same part, measure ordinal and staff but in different
-   canonical voice positions,
-   as defined by the format's
-   [voice-order rules](text-format.md#voices-and-staves), is one `voice`
-   difference: the reference note is non-identical and no extra element is
-   added. The assignment to a canonical position is content; the stem flag
+2. Such a pair in the same part, measure ordinal and staff, both of whose
+   notes have a known canonical position, as defined by the format's
+   [voice-order rules](text-format.md#voices-and-staves) and the voice-order
+   check below, and whose positions differ, is one `voice` difference: the
+   reference note is non-identical and no extra element is added. A pair with
+   an undetermined position on either side is not a rule-2 pair. The
+   assignment to a canonical position is content; the stem flag
    itself is layout. Raw MusicXML voice numbers alone do not identify a voice
    for this rule.
 
@@ -554,18 +579,78 @@ of its voice at that onset.
   content. A voice is identified by its content: the sequence of onsets,
   durations, pitches and attached symbols of its notes and rests. Its
   canonical position is evaluated event by event in the order of that content
-  sequence. On each staff in each measure, the voices of `Y` and of `T(Y)`
-  with the same content are matched one to one, matching as many voices with
-  the same ordered position sequence as possible. Each matched voice of `Y` is
-  one element, identical only when its partner has the same ordered position
-  sequence. Comparing only the counts at each position is insufficient. A
-  voice of `Y` without a partner, because no voice of `T(Y)` on that staff in
-  that measure has its content or because `T(Y)` has fewer voices with that
-  content, is not a voice-order element: musicdiff and the pairing rules
-  score its differences. The voice-order check adds no extra elements. A double-stem event belongs to both voices;
-  while the instrument cannot represent that dual membership, it stops with
-  `ProtocolDefectError` rather than assigning one position or counting
-  agreement.
+  sequence.
+
+    Each event's position is _known_, _undetermined_ or _missing_. It is
+    undetermined, with one of the reasons below, where those rules do not
+    determine it:
+
+    - `no-stemmed-event`: an unstemmed event's voice has no stemmed event to
+      place it, and no partner voice of one stem direction places it opposite;
+    - `nearest-stem-tie`: an unstemmed event is equally near stemmed onsets of
+      both directions in its voice (the instrument reads "the voice whose rhythm
+      it completes" as the nearest stemmed onset);
+    - `indistinguishable-voices`: two overlapping voices resolve to one stem
+      direction;
+    - `mixed-stem-voice`: one of three or four overlapping voices has stems of
+      both directions;
+    - `stem-counts`: three or four overlapping voices do not split into one or
+      two voices per stem direction;
+    - `tied-heights`: two voices of one stem direction have the same highest
+      pitch, so neither is above the other (the instrument reads "from the
+      top" as the highest pitch).
+
+    The reasons are in precedence order: where several apply, the first listed
+    is reported. In a two-voice staff-measure an undetermined event makes only
+    its own voice undetermined. In a three- or four-voice staff-measure, every
+    voice's reason is collected first; any of the first five reasons then makes
+    every voice of that staff-measure undetermined under the first of the
+    collected reasons, and only when none applies are the voices ranked by
+    height, where a tie makes only the two tied voices undetermined. A voice is
+    undetermined, under the first of its events' reasons, when any of its
+    events is. MusicXML voice numbers and order do not affect the reported
+    reason. A cross-staff beam takes its home-staff anchor's position,
+    undetermined if the anchor's is. An undetermined position never equals
+    another position, undetermined or not.
+
+    On each staff in each measure, the voices of `Y` and of `T(Y)` with the same
+    content are matched one to one. The voices of `Y` whose positions are all
+    known are matched first, as many as possible with a voice of `T(Y)` of the
+    same ordered position sequence, then with the remaining voices of `T(Y)` of
+    that content, known or not. Each matched voice of `Y` is one element,
+    identical only when its partner has the same known ordered position
+    sequence; a partner with an undetermined position makes it non-identical.
+    Comparing only the counts at each position is insufficient. A voice of `Y`
+    whose position is undetermined is not an element and never counts as
+    agreement: when a voice of `T(Y)` of its content remains after the known
+    voices are matched, it is an _excluded reference voice_, counted by its
+    reason; where fewer such voices of `T(Y)` remain than undetermined voices
+    of `Y` of that content, the excluded voices are those whose reasons come
+    first in precedence order. A voice of `Y` without a partner, because no
+    voice of `T(Y)` on that staff in that measure has its content or because
+    `T(Y)` has fewer voices with that content, is neither: musicdiff and the
+    pairing rules score its differences. The voice-order check adds no extra
+    elements.
+
+    Excluded reference voices are uncertainty, not agreement. Each file's
+    comparison keeps its own count of them by reason; the run reports, for each
+    arm, their sum over the arm's files, by reason and in total, beside that
+    arm's voice-order elements and fidelity figure. An acceptance claim that
+    relies on an arm with excluded reference voices returns to the owner for
+    disposition. An exclusion does not by itself establish a format gap or a
+    converter defect; a comparator limitation remains a possible cause.
+
+    A missing position is a protocol defect and stops the run with
+    `ProtocolDefectError`, as do: a double-stem event, which belongs to both
+    voices and whose dual membership the instrument cannot represent; a chord
+    whose notes carry different stems; more than four overlapping voices on one
+    staff; beam ownership that cannot be resolved; a nested or interrupted
+    primary beam; an event in more than one music21 voice; a mixed-stem beam
+    group whose first event is outside the measure; a cross-staff beam with no
+    home-staff anchor; and a voice to be ranked by height without a pitch. Every
+    voice's beams are read before any position is decided, so an undetermined
+    voice does not hide a beam stop in another voice of its staff-measure.
+
 - **Heading** (`heading`): in the instrument, credits are the only carrier of
   heading text, and a `words` direction is `text` or, by the words reading,
   `tempo_rehearsal`, never `heading`.
@@ -715,6 +800,38 @@ with their provenance:
 - a mixed-stem beam-group pair whose events retain the position of the first
   non-grace event, plus an identical overlapping-voice pair with a rest inside
   a primary beam group;
+- self-pairs in which the two whole-note voices of a staff in one measure are
+  both stemmed up, or both unstemmed; the pair of the original file, with
+  stems up and down, against the both-up file in each direction; and a
+  both-up self-pair whose second voice is renumbered in `T(Y)`;
+- a self-pair in which a stemless half-note voice overlaps a quarter-note
+  voice with stems of both directions; and a self-pair in which a rest of a
+  quarter-note voice lies between an up-stemmed and a down-stemmed event at
+  equal distance;
+- self-pairs of one staff-measure with three whole-note voices all stemmed
+  up, and with a third unstemmed voice; a four-voice self-pair, C4 and E4 up
+  and two A4 down; a pair in which `Y` has C4 up, E4 down and G4 down and
+  `T(Y)` changes G4 to E4; and a pair in which `Y` has C4 and G4 up and two G4
+  down, and `T(Y)` drops one G4 down voice;
+- a pair in which `Y` has a C4 voice up and a C4 voice down and `T(Y)` has
+  the original C4 and E4 voices without stems;
+- the pair of pairing rule 2 with `Y`'s two voices both stemmed up, and the
+  pair of pairing rule 1 with `Y`'s two staff-1 voices both stemmed up;
+- a measure-4 staff with three overlapping voices, C5 quarters up, an A4
+  half down and an added F4 whole note down (positions 1, 2 and 4), and the
+  same staff with the last C5-voice quarter (E5) stemmed down, making that
+  voice mixed: the mixed self-pair, and the mixed and placed files against
+  each other in each direction;
+- the cross-staff beam of the first two measure-4 eighths with the A4 half
+  stemmed up, so that both home voices are up: its self-pair, and it
+  against the beam file with the A4 stemmed down in each direction;
+- voice 7 of measure 4 with an added D5 eighth and an eighth rest, whose
+  beam of C5 and D5 lies on staff 2 and so belongs to staff 2, beside staff
+  2's voice 5 stemmed down (placed) or up (unplaced): the unplaced
+  self-pair, and the unplaced and placed files against each other in each
+  direction;
+- the mixed three-voice staff with the F4 unstemmed, as a self-pair and
+  again with voice 7 renumbered 1;
 - one pair that differs only in the end note of an extended trill, one in
   which an extended trill moves between simultaneous unison notes of different
   written durations in two voices of one staff that both carry a trill mark,
@@ -774,9 +891,31 @@ with their provenance:
   elements, one in which they are split inside a word, one in which `T(Y)`
   drops the words of a direction with a `metronome`, and one for each staff
   in which `T(Y)` drops words that music21 reads as a repeat instruction;
+- for the octave-shift reading, a pair in which an 8va over the last two
+  quarter notes of measure 1 stops after its last note in `Y` and at the
+  start of measure 2 in `T(Y)`, one in which `T(Y)` instead stops before the
+  last note with an `offset` to the barline, one in which `T(Y)` stops at the
+  start of measure 2 without a `number`, one in which an 8vb of staff 2
+  starts before the first note of staff 1 in `T(Y)` and before its chord in
+  `Y`, one in which a whole note that starts an 8va with a quarter note of
+  another voice ends it, and one in which a hidden rest of another voice
+  ends an 8va with a half note, each stopping after its notes in `Y` and at
+  the start of measure 2 in `T(Y)`, and the forward conversions of
+  `assembled-score.txt` and of the study score, each compared with itself;
+  and, against the measure-2 stop, a pair in which `T(Y)` ends the 8va
+  before the last note at the same written pitch, one in which that note
+  keeps its sounding pitch, and one in which `T(Y)` drops the 8va
+  and keeps the sounding pitches;
 - a pair in which two heading lines of one page swap their reading order, and
   a pair in which the only change is that a page 2 heading line is moved to
-  page 1 after the page 1 lines.
+  page 1 after the page 1 lines;
+- stop controls: a double-stem event; a chord whose notes carry different
+  stems; a staff-measure with five voices; the mixed three-voice staff,
+  voice 7 renumbered 1, with a third voice of two eighths F4 up and G4 down
+  whose primary beam begins and continues but does not stop in the measure;
+  a primary beam begun on the first measure-4 quarter and not carried by the
+  next; and an 8va over a whole note that alone starts and ends it while a
+  later quarter note of another voice lies inside it.
 
 The instrument passes when it reports:
 
@@ -799,6 +938,73 @@ The instrument passes when it reports:
   marked pair and the voice that moves to the other staff;
 - exactly one non-identical `voice` element and no other difference for the
   pair of pairing rule 2;
+- for the voice-position pairs, where a triple gives the voice-order or file
+  elements, identical elements and extra elements, and the base file has 19
+  voice-order and 79 file elements:
+    - for each both-up and both-unstemmed self-pair, voice order (17, 17, 0),
+      file (77, 77, 0), no other difference, and two excluded reference
+      voices, `indistinguishable-voices` or `no-stemmed-event`; for the
+      renumbered both-up pair, the same;
+    - for the original `Y` against the both-up `T(Y)`, voice order (19, 17, 0)
+      and no other difference; for the both-up `Y` against the original
+      `T(Y)`, voice order (17, 17, 0), no difference and two excluded
+      reference voices;
+    - for the stemless voice beside a mixed-stem voice, voice order
+      (18, 18, 0), file (78, 78, 0) and one `no-stemmed-event` exclusion; for
+      the equidistant rest, voice order (18, 18, 0), file (78, 78, 0) and one
+      `nearest-stem-tie` exclusion;
+    - for the three-voice self-pairs (one added note and voice, three voices
+      excluded), voice order (17, 17, 0), file (78, 78, 0) and three
+      `stem-counts` or `no-stemmed-event` exclusions; for the four-voice
+      self-pair (two added notes and voices, two excluded), voice order
+      (19, 19, 0), file (81, 81, 0) and two `tied-heights` exclusions;
+    - for the G4-to-E4 pair, one `pitch` difference and, in that
+      staff-measure, two voice-order elements, one identical (C4) and one not
+      (E4 against an E4 of tied height), with no exclusion; for the dropped G4
+      voice, one `pitch` and one `rhythm_rest` symbol, voice order
+      (19, 19, 0) and one `tied-heights` exclusion, since the placed G4 is
+      matched first;
+    - for the C4/C4 against unstemmed C4/E4 pair, one `pitch` difference,
+      voice order (18, 17, 0) and file (78, 76, 0), with no exclusion;
+    - for the rule-2 pair with an undetermined `Y` context, no `voice`
+      difference: the deletion and insertion count two `pitch` and three
+      `rhythm_rest` symbols and one extra element (deletion: pitch, rhythm and
+      the voice-2 gap before it, 1 + 2; insertion: pitch and rhythm, 1 + 1;
+      the inserted note, present only in `T(Y)`, is the extra); for the rule-1
+      pair with an undetermined `Y` context, one `cross_staff` difference, one
+      non-identical voice-order element (the staff-2 voice that gains a
+      partner) and one `indistinguishable-voices` exclusion;
+    - for the three-voice measure-4 staff (placed: 20 voice-order and 81 file
+      elements, one more of each than the base for the F4), with no content
+      difference in any of its pairs: for the mixed self-pair and for the
+      mixed `Y` against the placed `T(Y)`, voice order (17, 17, 0), file
+      (78, 78, 0) and three `mixed-stem-voice` exclusions, since the mixed
+      voice leaves all three voices undetermined and each still finds a
+      content partner; for the placed `Y` against the mixed `T(Y)`, voice
+      order (20, 17, 0), file (81, 78, 0) and no exclusion, since each placed
+      voice meets an undetermined partner;
+    - for the cross-staff beam pairs (80 file elements, the base's 79 and the
+      `cross_staff` beam element, and 19 voice-order elements), with no
+      content difference: for the self-pair of the both-up file and for it as
+      `Y` against the placed `T(Y)`, voice order (17, 17, 0), file
+      (78, 78, 0) and two `indistinguishable-voices` exclusions, the beam's
+      staff-2 note taking its undetermined home anchor; for the placed `Y`
+      against the both-up `T(Y)`, voice order (19, 17, 0) and file
+      (80, 78, 0) with no exclusion;
+    - for the staff-2 beam pairs (83 file elements, the base's 79, the D5 and
+      the rest, and two `cross_staff` beam events; 19 voice-order elements),
+      with no content difference: on staff 2 the up-stemmed beam and voice 5
+      stemmed up are indistinguishable, so voice 5 and, through its beam
+      events, voice 7 are undetermined although voice 7's staff-1 events are
+      placed. For the unplaced self-pair and the unplaced `Y` against the
+      placed `T(Y)`, voice order (17, 17, 0), file (81, 81, 0) and two
+      `indistinguishable-voices` exclusions; for the placed `Y` against the
+      unplaced `T(Y)`, voice order (19, 17, 0) and file (83, 81, 0) with no
+      exclusion. (A known position given to the beam events would place
+      voice 7 and leave one exclusion.)
+    - for the unstemmed-F4 mixed staff and its renumbered copy, no difference
+      and three `no-stemmed-event` exclusions each, the first in precedence of
+      the staff-measure's `mixed-stem-voice` and `no-stemmed-event`;
 - the insertion and deletion measure pairs have exactly their fixture's
   predeclared per-ordinal category assignments and non-identical/extra
   element counts; neither fixture pairs content across measure ordinals;
@@ -826,9 +1032,16 @@ The instrument passes when it reports:
   exactly one `tempo_rehearsal` difference for the metronome-words pair and
   exactly one `text` difference for each repeat-words pair, each with no
   other difference;
+- exactly one `ottava` difference for the shorter-ottava pair at the same
+  written pitch, exactly one `ottava` and one `pitch` difference for the
+  shorter-ottava pair at the same sounding pitch, and exactly one `ottava`
+  and two `pitch` differences for the dropped-ottava pair, each with no other
+  difference;
+- a `ProtocolDefectError` stop for each stop control;
 - no difference for the remaining no-change pairs, including the reprint
-  pairs, the split-words pairs and the untyped-fermata pair, which also has
-  no difference in the layout pass.
+  pairs, the split-words pairs, the octave-shift encoding pairs and
+  self-comparisons, and the untyped-fermata pair; the octave-shift and
+  untyped-fermata pairs also have no difference in the layout pass.
 
 The screen's allowlist is reviewed against the same fixtures before the
 samples are selected in Execution step 2. A failure of the instrument or of
@@ -1135,6 +1348,21 @@ Source findings, with the pinned sources they rely on:
   ([lines 620 to 641](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L620-L641)).
 - MusicXML 4.0 defines a `fermata` without a `type` as upright; see the
   [`fermata` element](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/fermata/).
+- music21 10.5.2 reads an `octave-shift` start as an `Ottava` whose first
+  element is the next note, chord or rest that it parses, of any staff and at
+  any offset, and a stop by adding the last note, chord or rest that its
+  measure parser has read, if any, without reading the stop's `offset`. A
+  stop whose `number` matches no open start raises an import error, which is
+  caught with a warning, so that start is never completed or inserted. See
+  `music21/musicxml/xmlToM21.py` lines 4449 to 4486, 5591 to 5598, 2454, 2894
+  and 2916, and `music21/spanner.py` lines 1505 to 1530, in the 10.5.2 wheel
+  cited above. musicdiff 6.0 transposes every note to written pitch, undoing
+  ottavas, before annotation
+  ([annotation.py lines 1765 to 1769](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/annotation.py#L1765-L1769)),
+  does not annotate a hidden note or rest
+  ([m21utils.py lines 706 to 708](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L706-L708)),
+  and gives an ottava the extent of its primary and last elements, as cited
+  below for spanners.
 - The converters read a direction with a `metronome` as a tempo whatever
   its weight and one with `dashes` as a dashes line, and otherwise mark
   tempo words in MusicXML as bold `words` or with a
