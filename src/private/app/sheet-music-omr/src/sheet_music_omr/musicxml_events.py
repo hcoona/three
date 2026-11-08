@@ -183,6 +183,29 @@ class XmlDirection:
         return "".join(w.text or "" for w in words) if words else None
 
 
+def dashes_text(
+    start: XmlDirection,
+    directions: tuple[XmlDirection, ...],
+) -> str | None:
+    """Return the text of the ``words`` direction that a dashes start follows.
+
+    The words may be in the start's own direction, or else in the nearest
+    preceding direction of its staff and onset.
+    """
+    if start.words is not None:
+        return start.words
+    preceding = [
+        direction.words
+        for direction in directions
+        if direction.place == start.place
+        and direction.measure == start.measure
+        and direction.onset == start.onset
+        and direction.order < start.order
+        and direction.words is not None
+    ]
+    return preceding[-1] if preceding else None
+
+
 @dataclass(frozen=True, slots=True, eq=False)
 class XmlSpan:
     """A slur, wavy line or dashes line from its start to its stop.

@@ -9,6 +9,7 @@ text edits, and asserts what the calibration section of
 from __future__ import annotations
 
 import re
+import zipfile
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -2316,6 +2317,26 @@ def test_untyped_fermata_in_a_file_is_upright(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    "compression",
+    [zipfile.ZIP_DEFLATED, zipfile.ZIP_STORED],
+    ids=["deflated", "stored"],
+)
+def test_compressed_source_is_refused(tmp_path: Path, compression: int) -> None:
+    """Refuse a ``.mxl`` container, which no protocol input is."""
+    y_path = tmp_path / "y.mxl"
+    with zipfile.ZipFile(y_path, "w", compression) as container:
+        container.writestr(
+            "META-INF/container.xml",
+            '<container><rootfiles><rootfile full-path="score.musicxml"/>'
+            "</rootfiles></container>",
+        )
+        container.writestr("score.musicxml", _UNTYPED_FERMATA)
+
+    with pytest.raises(ProtocolDefectError, match="container"):
+        compare_layout(_fermata("upright"), y_path)
+
+
+@pytest.mark.parametrize(
     ("t_text", "y_text", "expected"),
     [
         (
@@ -2675,6 +2696,34 @@ def test_check_pair_gives_only_its_check_elements(pair: str) -> None:
     _assert_file(compare_file(t_text, y_text), **{check: elements})
 
 
+def _two_slurs(first: str, second: str | None) -> str:
+    """Slur ``m2s1n7`` to ``first`` and, if given, to ``second``."""
+    starts = '          <slur number="2" type="start"/>\n'
+    marks = [(first, '          <slur number="2" type="stop"/>\n')]
+    if second is not None:
+        starts += '          <slur number="3" type="start"/>\n'
+        marks.append((second, '          <slur number="3" type="stop"/>\n'))
+    return _marked(BASE, ("m2s1n7", starts), *marks)
+
+
+def test_slur_difference_exempts_only_the_slur_it_touches() -> None:
+    """Score an endpoint move beside a deleted slur of the same start."""
+    y_text = _two_slurs("m3s1n1", "m4s1n1")
+    t_text = _two_slurs("m3s1n2", None)
+    result = compare_file(t_text, y_text)
+
+    assert result.checks["slur_endpoints"] == ElementTally(2, 1, 0)
+    _assert_file(result, {"slur": 1}, slur_endpoints=(1, 0))
+
+
+@pytest.mark.parametrize("kept", ["m3s1n1", "m3s1n2"])
+def test_deleted_slur_of_two_equal_slurs_counts_once(kept: str) -> None:
+    """Count a deletion once when musicdiff cannot tell two slurs apart."""
+    y_text = _two_slurs("m3s1n1", "m3s1n2")
+
+    _assert_file(compare_file(_two_slurs(kept, None), y_text), {"slur": 1})
+
+
 def test_beams_of_a_rest_that_musicdiff_scores_are_not_elements() -> None:
     """Leave the beams of a rest that becomes a note to musicdiff."""
     pitch = "<pitch>\n          <step>C</step>\n          <octave>3</octave>\n"
@@ -2726,6 +2775,50 @@ def test_reprint_without_an_open_line_is_one_difference(
 
     _assert_only(result.content, category)
     _assert_file(result, {category: 1})
+
+
+def test_reprint_of_words_that_a_separate_dashes_start_follows() -> None:
+    """Read a line's words from the direction that its start follows."""
+    t_text = _variant(
+        _before(
+            "m4s1n1",
+            _line_direction("cresc.", None) + _line_direction(None, "start"),
+        ),
+        _before("m6s1n1", _line_direction(None, "stop")),
+    )
+    y_text = _variant(
+        _before("m5s1n1", _line_direction("cresc.", None)),
+        base=t_text,
+    )
+
+    _assert_file(compare_file(t_text, y_text))
+    assert failure_element_count(y_text) == failure_element_count(t_text)
+
+
+@pytest.mark.parametrize(
+    ("y_directions", "content"),
+    [
+        (
+            _line_direction(None, "stop") + _line_direction("cresc.", None),
+            {"text": 1},
+        ),
+        (
+            _line_direction("cresc.", None) + _line_direction(None, "stop"),
+            {},
+        ),
+    ],
+    ids=["words-after-the-stop", "words-before-the-stop"],
+)
+def test_words_at_a_line_stop_are_a_reprint_only_while_it_is_open(
+    y_directions: str,
+    content: dict[str, int],
+) -> None:
+    """Count words that follow the stop at a system start as new words."""
+    start = _before("m4s1n1", _line_direction("cresc.", "start"))
+    t_text = _variant(start, _before("m5s1n1", _line_direction(None, "stop")))
+    y_text = _variant(start, _before("m5s1n1", y_directions))
+
+    _assert_file(compare_file(t_text, y_text), content)
 
 
 def test_note_on_its_voices_staff_is_a_cross_staff_check_element() -> None:

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import TYPE_CHECKING
 
 from musicdiff.annotation import AnnExtra, AnnNote
@@ -40,6 +41,7 @@ from sheet_music_omr.musicxml_events import (
     XmlDirection,
     XmlEvent,
     XmlSpan,
+    dashes_text,
     voice_staves,
 )
 from sheet_music_omr.musicxml_reverse import from_musicxml_text
@@ -47,7 +49,6 @@ from sheet_music_omr.musicxml_reverse import from_musicxml_text
 if TYPE_CHECKING:
     import xml.etree.ElementTree as ET
     from collections.abc import Callable, Hashable, Iterable, Iterator
-    from fractions import Fraction
     from pathlib import Path
 
 CHECKS: dict[str, str] = {
@@ -78,6 +79,7 @@ _STOP = "stop"
 
 type _Key = tuple[object, ...]
 type _Place = tuple[int, int]
+type _Site = tuple[_Place, int, Fraction | None]
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -206,7 +208,7 @@ def compare_file(t_source: Path | str, y_source: Path | str) -> FileComparison:
             _ratios(y_side, _touched(content, _TUPLET)[0]),
             _ratios(t_side, frozenset()),
         ),
-        "slur_endpoints": _slur_tally(y_side, t_side, _slur_sites(content)),
+        "slur_endpoints": _slur_tally(y_side, t_side, _slur_touches(content)),
         "tie_ends": _exempt_multiset(_tie_stops(y_side), _tie_stops(t_side)),
     }
     return FileComparison(
@@ -457,31 +459,8 @@ def _dashes_lines(side: _Side) -> Iterator[_Key]:
         yield (
             (start.measure, start.place, start.onset),
             (stop.measure, stop.place, stop.onset),
-            _dashes_text(start, directions),
+            dashes_text(start, directions),
         )
-
-
-def _dashes_text(
-    start: XmlDirection,
-    directions: tuple[XmlDirection, ...],
-) -> str | None:
-    """Return the text of the ``words`` direction that a dashes start follows.
-
-    The words may be in the start's own direction, or else in the nearest
-    preceding direction of its staff and onset.
-    """
-    if start.words is not None:
-        return start.words
-    preceding = [
-        direction.words
-        for direction in directions
-        if direction.place == start.place
-        and direction.measure == start.measure
-        and direction.onset == start.onset
-        and direction.order < start.order
-        and direction.words is not None
-    ]
-    return preceding[-1] if preceding else None
 
 
 def _mark_checks(y_side: _Side, t_side: _Side) -> dict[str, ElementTally]:
@@ -591,33 +570,65 @@ def _slurs(side: _Side) -> list[_Slur]:
     return slurs
 
 
-def _slur_sites(
+def _slur_touches(
     content: ContentResult,
-) -> frozenset[tuple[_Place, int, Fraction | None]]:
-    """Return where the ``Y`` slurs that counted differences touch start."""
+) -> dict[_Site, frozenset[Fraction | None]]:
+    """Return each touched ``Y`` slur's start site and musicdiff duration.
+
+    musicdiff identifies a slur by its start site and its duration, so a
+    counted ``slur`` difference touches each ``Y`` slur that has both.
+    """
     sites = extra_sites(content.y_score)
-    return frozenset(
-        sites[id(difference.y_object)]
-        for difference in content.counted
-        if _SLUR in difference.categories
-        and isinstance(difference.y_object, AnnExtra)
-        and id(difference.y_object) in sites
-    )
+    touched: dict[_Site, set[Fraction | None]] = {}
+    for difference in content.counted:
+        extra = difference.y_object
+        if (
+            _SLUR in difference.categories
+            and isinstance(extra, AnnExtra)
+            and id(extra) in sites
+        ):
+            duration = (
+                None if extra.duration is None else Fraction(extra.duration)
+            )
+            touched.setdefault(sites[id(extra)], set()).add(duration)
+    return {site: frozenset(values) for site, values in touched.items()}
+
+
+def _slur_site(slur: _Slur) -> _Site:
+    return slur.start.place, slur.start.measure, slur.start.onset
+
+
+def _slur_duration(slur: _Slur) -> Fraction:
+    """The span from the start event's onset to the stop event's end."""
+    return slur.stop.end - slur.start.start
 
 
 def _slur_tally(
     y_side: _Side,
     t_side: _Side,
-    touched_sites: frozenset[tuple[_Place, int, Fraction | None]],
+    touches: dict[_Site, frozenset[Fraction | None]],
 ) -> ElementTally:
     """Score slur endpoints; musicdiff scores what this check excludes."""
     candidates = _slurs(t_side)
+    y_slurs = _slurs(y_side)
+    durations: dict[_Site, set[Fraction]] = {}
+    for slur in y_slurs:
+        durations.setdefault(_slur_site(slur), set()).add(_slur_duration(slur))
     used: set[int] = set()
     elements = identical = 0
-    for slur in _slurs(y_side):
+    for slur in y_slurs:
         start, stop = slur.start, slur.stop
+        touched = touches.get(_slur_site(slur))
         if (
-            (start.place, start.measure, start.onset) in touched_sites
+            (
+                touched is not None
+                # A touched slur that no ``Y`` slur of its site matches
+                # leaves the whole site to musicdiff.
+                and (
+                    _slur_duration(slur) in touched
+                    or touched.isdisjoint(durations[_slur_site(slur)])
+                )
+            )
             or id(start) in y_side.touched
             or id(stop) in y_side.touched
         ):

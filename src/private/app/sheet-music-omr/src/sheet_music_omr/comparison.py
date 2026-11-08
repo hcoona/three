@@ -55,6 +55,7 @@ from sheet_music_omr.musicxml_events import (
     XmlEvent,
     XmlScore,
     XmlSpan,
+    dashes_text,
     read_score,
     voice_staves,
 )
@@ -229,6 +230,7 @@ _INVERTED_FERMATA = "inverted fermata"
 _UNTYPED_FERMATA = re.compile(r"<fermata(?=[\s/>])(?![^>]*\btype\s*=)")
 _UNTYPED_FERMATA_BYTES = re.compile(_UNTYPED_FERMATA.pattern.encode())
 _UPRIGHT_FERMATA = '<fermata type="upright"'
+_ZIP_MAGIC = b"PK"
 _FINGERING = "fingering"
 _ARTICULATIONS = "articulations"
 _EXPRESSIONS = "expressions"
@@ -881,6 +883,11 @@ def annotate(
 def _parse(source: Path | str) -> tuple[m21.stream.Score, XmlScore]:
     try:
         data = source.read_bytes() if isinstance(source, Path) else source
+        if isinstance(data, bytes) and data.startswith(_ZIP_MAGIC):
+            # No protocol input is a container, and the fermata reading
+            # below needs the root document's bytes.
+            message = "a compressed MusicXML container is not a protocol input"
+            raise ProtocolDefectError(message)  # noqa: TRY301
         typed = _upright_untyped_fermatas(data)
         if typed is None and isinstance(source, Path):
             parsed = m21.converter.parse(source, forceSource=True)
@@ -2885,7 +2892,12 @@ def _drop_line_reprint(
             if (note := notes.get(id(event))) is not None
         ]
         return any(dropped)
-    return span.family == DASHES and _drop_words_reprint(span, measure, part)
+    return span.family == DASHES and _drop_words_reprint(
+        span,
+        measure,
+        part,
+        xml,
+    )
 
 
 def _trill_reprints(
@@ -2956,9 +2968,17 @@ def _drop_trill(note: AnnNote, part: AnnPart) -> bool:
     return True
 
 
-def _drop_words_reprint(span: XmlSpan, measure: int, part: AnnPart) -> bool:
+def _drop_words_reprint(
+    span: XmlSpan,
+    measure: int,
+    part: AnnPart,
+    xml: XmlScore,
+) -> bool:
     start = span.start
-    if not isinstance(start, XmlDirection) or start.words is None:
+    if not isinstance(start, XmlDirection):
+        return False
+    text = dashes_text(start, xml.directions)
+    if text is None or not _open_at_measure_start(span, measure, text, xml):
         return False
     indexes = _measure_indexes(part.get_object())
     for bar in part.bar_list:
@@ -2968,13 +2988,37 @@ def _drop_words_reprint(span: XmlSpan, measure: int, part: AnnPart) -> bool:
             id(extra)
             for extra in bar.extras_list
             if extra.kind in {"direction", "tempo"}
-            and extra.content == start.words
+            and extra.content == text
             and extra.offset == 0
         }
         if reprints:
             _drop_extras(bar, set(list(reprints)[:1]))
             return True
     return False
+
+
+def _open_at_measure_start(
+    span: XmlSpan,
+    measure: int,
+    text: str,
+    xml: XmlScore,
+) -> bool:
+    """Whether words of the line's text start ``measure`` on the open line.
+
+    A line that stops at the measure's first onset is open only at words
+    that precede its stop in document order.
+    """
+    stop = span.stop
+    if stop.measure > measure or stop.onset > 0:
+        return True
+    return any(
+        direction.place == span.start.place
+        and direction.measure == measure
+        and direction.onset == 0
+        and direction.words == text
+        and direction.order <= stop.order
+        for direction in xml.directions
+    )
 
 
 def _extra_category(kind: str) -> str:
