@@ -3045,10 +3045,11 @@ def _drop_words_reprint(
     part: AnnPart,
     source: tuple[XmlScore, dict[int, tuple[m21.base.Music21Object, ...]]],
 ) -> bool:
-    """Drop the first words in ``measure`` that restate the open line.
+    """Drop the first words direction in ``measure`` that restates the line.
 
-    Only words of a direction that restates the line count, so new words
-    of the same text after the line's stop stay.
+    Only a direction whose joined words restate the line counts, so new
+    words of the same text after the line's stop stay. Each of its words,
+    which music21 may read as several text expressions, is dropped.
     """
     xml, words = source
     start = span.start
@@ -3057,32 +3058,30 @@ def _drop_words_reprint(
     text = dashes_text(start, xml.directions)
     if text is None:
         return False
-    orders = {
-        id(item): direction.order
-        for direction in _reprint_directions(span, measure, text, xml)
-        for item in words.get(direction.order, ())
-    }
-    if not orders:
+    directions = sorted(
+        _reprint_directions(span, measure, text, xml),
+        key=lambda direction: direction.order,
+    )
+    if not directions:
         return False
     indexes = _measure_indexes(part.get_object())
     for bar in part.bar_list:
         if indexes.get(id(bar.get_object())) != measure:
             continue
-        reprints = [
-            extra
+        extras = {
+            id(extra.get_object()): extra
             for extra in bar.extras_list
-            if extra.kind in {"direction", "tempo"}
-            and extra.content == text
-            and extra.offset == 0
-            and id(extra.get_object()) in orders
-        ]
-        if reprints:
-            first = min(
-                reprints,
-                key=lambda extra: orders[id(extra.get_object())],
-            )
-            _drop_extras(bar, {id(first)})
-            return True
+            if extra.kind in {"direction", "tempo"} and extra.offset == 0
+        }
+        for direction in directions:
+            reprints = {
+                id(extras[id(item)])
+                for item in words.get(direction.order, ())
+                if id(item) in extras
+            }
+            if reprints:
+                _drop_extras(bar, reprints)
+                return True
     return False
 
 

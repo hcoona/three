@@ -3318,6 +3318,32 @@ def test_only_words_before_a_line_stop_are_dropped_as_its_reprint(
     assert failure_element_count(y_text) == failure_element_count(t_text)
 
 
+@pytest.mark.parametrize(
+    ("start_words", "reprint_words"),
+    [
+        ("cresc. molto", "cresc. </words><words>molto"),
+        ("cresc. </words><words>molto", "cresc. molto"),
+    ],
+    ids=["split-reprint", "split-start"],
+)
+def test_reprint_of_split_words_drops_all_of_its_words(
+    start_words: str,
+    reprint_words: str,
+) -> None:
+    """Identify a reprint by its joined words and drop each of its words."""
+    t_text = _variant(
+        _before("m4s1n1", _line_direction(start_words, "start")),
+        _before("m6s1n1", _line_direction(None, "stop")),
+    )
+    y_text = _variant(
+        _before("m5s1n1", _line_direction(reprint_words, None)),
+        base=t_text,
+    )
+
+    _assert_file(compare_file(t_text, y_text))
+    assert failure_element_count(y_text) == failure_element_count(t_text)
+
+
 def test_words_in_the_direction_of_a_line_stop_are_its_reprint() -> None:
     """Drop words that share the direction of the stop at a system start."""
     start = _before("m4s1n1", _line_direction("cresc.", "start"))
