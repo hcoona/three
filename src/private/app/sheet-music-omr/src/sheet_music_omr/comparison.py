@@ -3274,12 +3274,18 @@ def _drop_words_reprint(
     words of the same text after the line's stop stay. Each of its words,
     which music21 may read as several text expressions, is dropped. The
     words are the reprint, so the metronome of a direction with tempo words
-    stays, compared as a mark without text.
+    stays, compared as a mark without text. The line must be open at the
+    time of ``first``: its start, which an offset can move into the system,
+    sounds no later than ``first``.
     """
     xml, reading = source
     words = reading.words
     start = span.start
-    if not isinstance(start, XmlDirection) or span.stop.start < first.start:
+    if (
+        not isinstance(start, XmlDirection)
+        or start.start > first.start
+        or span.stop.start < first.start
+    ):
         return False
     text = dashes_text(start, xml.directions)
     if text is None:

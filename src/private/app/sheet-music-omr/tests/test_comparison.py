@@ -4400,50 +4400,61 @@ def test_first_event_of_a_system_precedes_the_next_measure(
     assert added == added_layout
 
 
-def _offset_stop(offset: int) -> str:
-    """Return a dashes stop that its ``offset`` in quarters moves."""
-    return _line_direction(None, "stop").replace(
+def _with_offset(direction: str, offset: int) -> str:
+    """Return ``direction`` moved by ``offset`` quarters."""
+    return direction.replace(
         "        <staff>",
         f"        <offset>{offset}</offset>\n        <staff>",
     )
 
 
-def _offset_stop_score(*, offset_into: str, reprint: bool) -> str:
-    """Open a dashes line in measure 1 and stop it with an offset.
+def _offset_line_score(*, moved: str, reprint: bool) -> str:
+    """Open a dashes line in measure 1 and stop it in measure 3.
 
-    The stop is written in measure 3 but sounds in measure 1, or written at
-    the end of measure 1 but sounds in measure 2, after its first event.
-    The line's words can be reprinted on that event, which starts a system.
+    An offset moves one end across a barline: the stop, written in measure 3,
+    sounds in measure 1; or a stop or the start, written at the end of
+    measure 1, sounds in measure 2 after its first event. The line's words
+    can be reprinted on that event, which starts a system.
     """
-    stops = (
-        ("", _offset_stop(-5))
-        if offset_into == "earlier"
-        else (_offset_stop(1), "")
-    )
+    start = _line_direction("cresc.", "start")
+    stop = _line_direction(None, "stop")
+    m1_head, m1_tail, m3_head = {
+        "stop-back": (start, "", _with_offset(stop, -5)),
+        "stop-forward": (start, _with_offset(stop, 1), ""),
+        "start-forward": ("", _with_offset(start, 1), stop),
+    }[moved]
     words = _line_direction("cresc.", None) if reprint else ""
     return _system_score(
-        _line_direction("cresc.", "start") + _system_note("m1s1", 1) + stops[0],
+        m1_head + _system_note("m1s1", 1) + m1_tail,
         words + _system_note("m2s1", 1),
-        stops[1] + _system_note("m3s1", 1),
+        m3_head + _system_note("m3s1", 1),
     )
 
 
 @pytest.mark.parametrize(
-    ("offset_into", "content", "added"),
-    [("earlier", {"text": 1}, 1), ("later", {}, 0)],
-    ids=["stop-sounds-before-the-words", "stop-sounds-after-the-words"],
+    ("moved", "content", "added"),
+    [
+        ("stop-back", {"text": 1}, 1),
+        ("stop-forward", {}, 0),
+        ("start-forward", {"text": 1}, 1),
+    ],
+    ids=[
+        "stop-sounds-before-the-words",
+        "stop-sounds-after-the-words",
+        "start-sounds-after-the-words",
+    ],
 )
-def test_words_are_a_reprint_until_the_line_stop_sounds(
-    offset_into: str,
+def test_words_are_a_reprint_only_while_the_line_sounds(
+    moved: str,
     content: dict[str, int],
     added: int,
 ) -> None:
-    """Judge whether a line is open by when its offset stop sounds.
+    """Judge whether a line is open by when its offset ends sound.
 
-    The measure that holds the stop does not decide it.
+    The measures that hold the start and the stop do not decide it.
     """
-    t_text = _offset_stop_score(offset_into=offset_into, reprint=False)
-    y_text = _offset_stop_score(offset_into=offset_into, reprint=True)
+    t_text = _offset_line_score(moved=moved, reprint=False)
+    y_text = _offset_line_score(moved=moved, reprint=True)
 
     _assert_file(compare_file(t_text, y_text), content)
     added_count = failure_element_count(y_text) - failure_element_count(t_text)
