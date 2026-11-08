@@ -161,6 +161,45 @@ generic plugin framework. Additional internal types do not change this API.
   increasing integers; timestamps are UTC. No tool parameter changes the
   helper's bound actor or run.
 
+## SQLite contention evidence
+
+Use application-owned instrumentation through the existing storage helpers for
+run and campaign SQLite access. Do not change connection sharing, busy handlers,
+timeouts, transaction isolation, atomic domain/event changes or credit admission
+to collect evidence. No native trace callback or additional package is required.
+
+- Qualify each record with a database identity, connection/transaction identity,
+  application PID and birth identity, UTC observation time and monotonic elapsed
+  duration. Use fixed application operation labels and a validated local actor
+  when available; unknown actors remain unknown.
+- Distinguish acquisition requested/succeeded/failed, statement execution,
+  commit/rollback requested/succeeded/failed and connection closure. Retire an
+  acquired-transaction entry after actual successful commit or rollback, not
+  merely when its surrounding method returns. Record the transaction mode;
+  never report a deferred read transaction as a confirmed write holder.
+- Preserve primary and extended SQLite error codes and the original exception.
+  An incident snapshot records the failed phase and available overlapping or
+  recent application activity, not a definitive SQLite lock-owner certificate.
+  Collection from several processes is not an atomic global snapshot.
+- Store bounded rolling activity and bounded incident captures in separate
+  owned local files, not the run or campaign SQLite databases. Bound bytes,
+  retained records, incident count and cross-process collection work. Report
+  truncation, unavailable writers and malformed/incomplete records explicitly.
+  Never overwrite original native journals, ledger snapshots or incident
+  evidence retained by an operational protocol.
+- Exclude raw SQL text and parameter values, operation payloads, goals/messages,
+  native conversations, credentials, environment dumps and unrelated process
+  information. Do not automatically publish or forward these files to models.
+- Make the incident location or failed-persistence warning available with the
+  existing failure diagnostics. An I/O failure in diagnostics does not turn a
+  database error into success or obscure its original code. Diagnostic
+  collection creates no application retry, cancellation reinterpretation,
+  recovery admission or accounting disposition.
+
+This is reusable product failure evidence, not an incident-specific settlement
+command or a guarantee of discovering external/uninstrumented lock holders.
+The [validation basis](validation.md) owns the required controlled scenarios.
+
 ## Local operations and storage ownership
 
 `CollaborationOperations` owns task/message/board/event/notice tables and

@@ -225,6 +225,22 @@ resolved configuration and goal at initialization; later input-file edits
 shall not silently change a running or resumed run. Editor integration shall
 be optional and shall not require a custom LiteAgensh VS Code extension.
 
+### LA-REQ-018: Automatic local SQLite contention evidence
+
+When application-owned SQLite access fails with a busy or locked result, retain
+bounded local diagnostic evidence automatically, without requiring a later
+operator to reproduce the failure. Identify the failed operation, connection,
+process lifetime, transaction phase, elapsed time and primary/extended result
+codes, together with available recent application-owned transaction activity.
+Preserve the original operation failure and distinguish observed activity from
+an inferred competing lock holder; missing coverage remains explicit.
+
+Diagnostics shall not depend on another write to the contended database,
+include SQL parameters, goals, messages or credentials, or inspect unrelated
+host processes. Diagnostic persistence failure shall remain visible without
+replacing the original database failure. Retaining evidence does not authorize
+automatic retry, recovery, ledger disposition, diagnostic upload or paid work.
+
 ## Explicitly unsupported in this outcome
 
 Other agent backends; multi-host coordination; untrusted/mutually hostile
