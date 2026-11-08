@@ -363,9 +363,9 @@ counterpart counts without one, so each voice of each measure, each slur, each
 tremolo of type `single` or `start`, each `beam` with value `forward hook` or
 `backward hook` on a note that is not a rest, and each note, rest or chord
 with a `time-modification` is an element, as are each fingering digit, each
-note or rest off its voice's staff, each heading line, each `wavy-line` and
-`dashes` line, each parenthesized notehead or accidental, each beam on a rest
-and each note with a `tie` of type `stop`.
+note or rest off its voice's staff, each heading line, each `wavy-line` that
+stops on a later note and each `dashes` line, each parenthesized notehead or
+accidental, each beam on a rest and each note with a `tie` of type `stop`.
 
 A gold piece whose reverse conversion reports unsupported content does not
 pass OMR-REQ-010, and the count of such pieces returns to the owner, because
@@ -440,12 +440,13 @@ words when the text of its `words` is not empty and it has a `metronome`, a
 `font-weight="bold"`, whatever its other direction types. That text is the
 character data of its `words` elements, joined in document order with no
 separator and then trimmed, and it becomes the text of the direction's
-metronome mark. music21 trims each `words` element separately, and the
-harness finds the music21 object of each by that trimmed text at the
-direction's onset. A direction without a `metronome` gets a new metronome
-mark without a number in place of its text expressions, with their offset
-and the placement and style of the first `words` element; the style of the
-other `words` elements is not compared. musicdiff 6.0 compares such a mark
+metronome mark, which replaces the text expressions that held it. music21
+trims each `words` element separately, and the harness finds the music21
+object of each by that trimmed text at the direction's onset. A direction
+without a `metronome` gets a new metronome mark without a number in place of
+its text expressions, with their offset, the direction's placement and the
+style of its first `words` element; the style of the other `words` elements is
+not compared. musicdiff 6.0 compares such a mark
 by its text: it does not compare a number that music21 infers from the text,
 and it compares text of the form note = number by that note and number. Its
 kind is `tempo`.
@@ -1017,8 +1018,9 @@ staff `number`. Each such mark is one element per staff, so it counts once
 per staff in the fidelity figure and the per-category counts, while a pedal
 mark counts once.
 The fingering, parenthesis, tie-end, slur-endpoint, tremolo-stroke, beam-hook and
-extended-trill checks identify a note by its written pitch and written
-duration, not by its voice, so a mark or endpoint
+extended-trill checks identify a note, or for tremolo strokes and beam hooks an
+event, by its written pitch or pitches and written duration, not by its voice,
+so a mark or endpoint
 that moves between simultaneous notes of the same pitch and written duration
 in two voices of one staff, which usually share one notehead, is not counted.
 The rest-beam check identifies a rest by its written duration, so a beam that
@@ -1049,8 +1051,8 @@ each before results depend on it:
 - the size of the Lieder download and the sizes of the eligible PDMX and
   Lieder sets;
 - whether credits without a `credit-type` count as heading credits; this is
-  settled on the calibration set and the selected files before results depend
-  on it.
+  settled on the calibration set and the selected files, by a reviewed
+  revision of this rule, before results depend on it.
 
 The harness confines its own writes. MuseScore's other writes in its own data
 folders, such as logs, are not monitored beyond the settings-file hash.
