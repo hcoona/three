@@ -275,7 +275,8 @@ def read_score(source: Path | str) -> XmlScore:
     """Read the events, directions, spans and ottavas of one MusicXML score.
 
     Args:
-        source: A MusicXML file path, or MusicXML text.
+        source: A ``Path`` to a MusicXML file, or MusicXML text as a
+            ``str``. A ``str`` is always read as text, never as a path.
 
     Returns:
         The score's events, directions, spans, ottavas, system starts and

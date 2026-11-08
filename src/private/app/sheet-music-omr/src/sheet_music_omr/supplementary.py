@@ -10,6 +10,9 @@ part, with pairing rule 1 deferring to the cross-staff check, and every check.
 file whose conversion or comparison fails.
 :func:`text_space_consistent` is the text-space consistency check, which is not
 part of the fidelity figure.
+
+Every function that takes a score takes a ``Path`` to a MusicXML file or the
+MusicXML text as a ``str``; a ``str`` is never read as a path.
 """
 
 from __future__ import annotations

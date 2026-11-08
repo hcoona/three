@@ -13,6 +13,9 @@ scores, and rule 1 uses its ``cross_staff_owned`` hook.
 ``sheet_music_omr.supplementary`` runs the supplementary checks and combines
 them with this content pass per file. :func:`compare_layout` runs the layout
 pass and counts the layout elements of the layout-fidelity score.
+
+Every function that takes a score takes a ``Path`` to a MusicXML file or the
+MusicXML text as a ``str``; a ``str`` is never read as a path.
 """
 
 from __future__ import annotations
@@ -852,7 +855,8 @@ def annotate(
     MusicXML defines it.
 
     Args:
-        source: A MusicXML file path, or MusicXML text.
+        source: A ``Path`` to a MusicXML file, or MusicXML text as a
+            ``str``. A ``str`` is always read as text, never as a path.
         detail: The musicdiff detail level.
 
     Returns:
