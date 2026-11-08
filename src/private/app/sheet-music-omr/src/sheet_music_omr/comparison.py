@@ -119,6 +119,8 @@ _COUPLING_SOURCE_SHA256 = (
 _COUPLING_OLD = "compare_to[0] != original[0]"
 _COUPLING_NEW = "c != original[0]"
 _COUPLING_MARKER = "_sheet_music_omr_coupling_fix"
+_OTTAVA_OCTAVES = {8: 1, 15: 2, 22: 3}
+"""The octaves of each music21 ottava shift magnitude."""
 
 _PITCH = "pitch"
 _RHYTHM = "rhythm_rest"
@@ -877,7 +879,7 @@ def annotate(
         raise ScoreParseError(message) from error
     _remove_reprints(annotated, parsed)
     events, notes = _bridge(annotated, xml)
-    _check_octave_shifts(annotated, events)
+    _check_octave_shifts(annotated, parsed, events)
     reading = _WordsReading(words, parsed, detail)
     _remove_line_reprints(annotated, xml, notes, reading)
     return AnnotatedScore(parsed, annotated, xml, events)
@@ -2943,6 +2945,7 @@ def _annotated_voice_id(voice: AnnVoice) -> str | None:
 
 def _check_octave_shifts(
     score: AnnScore,
+    parsed: m21.stream.Score,
     events: dict[int, XmlEvent],
 ) -> None:
     """Stop where music21 reads an octave shift other than MusicXML does.
@@ -2951,23 +2954,97 @@ def _check_octave_shifts(
     staff or offset, and ends it on the note that precedes its stop in the
     measure, if any, so it can drop or misplace the notes of an ottava.
     musicdiff then compares written pitches that the score does not write,
-    so a note under either reading of an ottava must keep the written pitch
-    that the MusicXML octave shifts give it.
+    and an ottava extent, from the start of its first element to the end of
+    its last, that the score does not give. So a note under either reading
+    of an ottava must keep the written pitch that the MusicXML octave shifts
+    give it, and each note and rest must start in a music21 ottava of its
+    staff exactly when, and by as many octaves as, MusicXML shifts it.
     """
+    extents = _ottava_extents(score, parsed, events)
     for part in score.part_list:
         for bar in part.bar_list:
             for voice in bar.voices_list:
                 for note in voice.annot_notes:
-                    event = events[id(note)]
-                    ottavas = _general_note(note).getSpannerSites(["Ottava"])
-                    if (event.shift or ottavas) and _annotated_pitches(
+                    if _misreads_octave_shift(
                         note,
-                    ) != event.pitches:
+                        events[id(note)],
+                        parsed,
+                        extents,
+                    ):
                         message = (
                             "music21 reads an octave shift in measure "
                             f"{bar.measureNumber} other than MusicXML does"
                         )
                         raise ProtocolDefectError(message)
+
+
+type _OttavaExtents = dict[
+    tuple[int, int],
+    list[tuple[Fraction, Fraction, int]],
+]
+"""The start, end and octaves of each music21 ottava, by staff."""
+
+
+def _ottava_extents(
+    score: AnnScore,
+    parsed: m21.stream.Score,
+    events: dict[int, XmlEvent],
+) -> _OttavaExtents:
+    """Return each music21 ottava's extent as musicdiff compares it."""
+    places = {
+        id(_general_note(note)): events[id(note)].place
+        for part in score.part_list
+        for bar in part.bar_list
+        for voice in bar.voices_list
+        for note in voice.annot_notes
+    }
+    extents: _OttavaExtents = {}
+    for ottava in parsed.spannerBundle:
+        if not isinstance(ottava, m21.spanner.Ottava):
+            continue
+        first, last = ottava.getFirst(), ottava.getLast()
+        if first is None or last is None:
+            continue
+        place = places.get(id(first))
+        if place is None:
+            message = "music21 starts an ottava on an element without an event"
+            raise ProtocolDefectError(message)
+        octaves = _OTTAVA_OCTAVES[ottava.shiftMagnitude()]
+        extents.setdefault(place, []).append(
+            (
+                _fraction(first.getOffsetInHierarchy(parsed)),
+                _fraction(last.getOffsetInHierarchy(parsed))
+                + _fraction(last.duration.quarterLength),
+                octaves if ottava.shiftDirection() == "up" else -octaves,
+            ),
+        )
+    return extents
+
+
+def _misreads_octave_shift(
+    note: AnnNote,
+    event: XmlEvent,
+    parsed: m21.stream.Score,
+    extents: _OttavaExtents,
+) -> bool:
+    general_note = _general_note(note)
+    if (
+        event.shift or general_note.getSpannerSites(["Ottava"])
+    ) and _annotated_pitches(note) != event.pitches:
+        return True
+    staff_extents = extents.get(event.place, [])
+    if not (event.shift or staff_extents):
+        return False
+    onset = _fraction(general_note.getOffsetInHierarchy(parsed))
+    shift = next(
+        (
+            octaves
+            for start, end, octaves in staff_extents
+            if start <= onset < end
+        ),
+        0,
+    )
+    return shift != event.shift
 
 
 def _annotated_pitches(note: AnnNote) -> tuple[PitchKey, ...]:

@@ -3467,6 +3467,74 @@ def test_ottava_that_stops_at_a_barline_stops_the_run() -> None:
         compare_file(text, text)
 
 
+def _ottava_over_rests(*, stop_in_next_measure: bool) -> str:
+    """Shift a written C5 and the three rests after it to the end of measure 1.
+
+    The ottava stops after the last rest of measure 1, or before the note of
+    measure 2: either way at the barline.
+    """
+    start, stop = _direction(_shift("down", 1)), _direction(_shift("stop", 1))
+    rest = (
+        "      <note>\n        <rest/>\n        <duration>1</duration>\n"
+        "        <type>quarter</type>\n      </note>\n"
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<score-partwise version="4.0">\n'
+        "  <part-list>\n"
+        '    <score-part id="P1"><part-name>Flute</part-name></score-part>\n'
+        "  </part-list>\n"
+        '  <part id="P1">\n'
+        '    <measure number="1">\n'
+        f"{_attributes('        <divisions>1</divisions>\n')}"
+        f"{start}"
+        "      <note>\n"
+        "        <pitch><step>C</step><octave>6</octave></pitch>\n"
+        "        <duration>1</duration>\n        <type>quarter</type>\n"
+        "      </note>\n"
+        f"{rest * 3}"
+        f"{'' if stop_in_next_measure else stop}"
+        "    </measure>\n"
+        '    <measure number="2">\n'
+        f"{stop if stop_in_next_measure else ''}"
+        "      <note>\n"
+        "        <pitch><step>D</step><octave>5</octave></pitch>\n"
+        "        <duration>4</duration>\n        <type>whole</type>\n"
+        "      </note>\n"
+        "    </measure>\n"
+        "  </part>\n"
+        "</score-partwise>\n"
+    )
+
+
+def test_ottava_must_keep_the_rests_that_it_shifts() -> None:
+    """Stop where music21 ends an ottava before the rests it shifts.
+
+    Both scores shift measure 1 to the barline. Before a note of measure 2,
+    the stop has no note before it in its measure, and music21 ends the
+    ottava on the C5, a shorter ottava that musicdiff would compare.
+    """
+    after_rests = _ottava_over_rests(stop_in_next_measure=False)
+    before_note = _ottava_over_rests(stop_in_next_measure=True)
+
+    assert [event.shift for event in read_score(after_rests).events] == [
+        1,
+        1,
+        1,
+        1,
+        0,
+    ]
+    assert [event.shift for event in read_score(before_note).events] == [
+        event.shift for event in read_score(after_rests).events
+    ]
+    _assert_file(compare_file(after_rests, after_rests))
+    with pytest.raises(
+        ProtocolDefectError,
+        match="music21 reads an octave shift in measure 1",
+    ):
+        compare_file(before_note, after_rests)
+
+
 def test_beams_of_a_rest_that_musicdiff_scores_are_not_elements() -> None:
     """Leave the beams of a rest that becomes a note to musicdiff."""
     pitch = "<pitch>\n          <step>C</step>\n          <octave>3</octave>\n"
