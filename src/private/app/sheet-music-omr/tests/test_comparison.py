@@ -39,7 +39,7 @@ from sheet_music_omr.lexical import decode_source
 from sheet_music_omr.model import AssembledScore
 from sheet_music_omr.musicxml_events import read_score
 from sheet_music_omr.musicxml_forward import to_musicxml
-from sheet_music_omr.musicxml_reverse import from_musicxml_text
+from sheet_music_omr.musicxml_reverse import MusicXmlError, from_musicxml_text
 from sheet_music_omr.parser import parse_document
 from sheet_music_omr.supplementary import (
     CHECKS,
@@ -3104,19 +3104,66 @@ def test_slur_from_a_grace_note_reads(start: str, stop: str) -> None:
             (("m2s1n3b", "m2s1n3", 2),),
             "a slur stops before it starts",
         ),
+        (
+            _PIANO,
+            (("t3", "b2", 1), ("l1", "l4", 1)),
+            "a slur stops before it starts",
+        ),
+        (
+            _PIANO,
+            (("t3", "b4", 1), ("b1", "b2", 1), ("l3", "l2", 2)),
+            "a slur stops before it starts",
+        ),
+        (
+            _GRACES,
+            (("m2s1n4", "m2s1n3", 2), ("m2s2n1", "m2s2n4", 2)),
+            "a slur stops before it starts",
+        ),
+        (
+            _GRACES,
+            (("m2s1n3b", "m2s1n3", 2), ("m2s2n1", "m2s2n4", 2)),
+            "a slur stops before it starts",
+        ),
     ],
-    ids=["nested", "backward", "main-to-grace", "grace-to-earlier-grace"],
+    ids=[
+        "nested",
+        "backward",
+        "main-to-grace",
+        "grace-to-earlier-grace",
+        "backward-with-pairs-in-time",
+        "backward-beside-reused-number",
+        "main-to-grace-with-pairs-in-time",
+        "grace-to-earlier-grace-with-pairs-in-time",
+    ],
 )
 def test_unpairable_slur_numbers_stop_the_run(
     base: str,
     slurs: tuple[tuple[str, str, int], ...],
     message: str,
 ) -> None:
-    """Stop on slurs that neither document nor time order can pair."""
+    """Stop on slurs that neither document nor time order can pair.
+
+    A slur that the document order pairs backward stops the run even when
+    the time order would pair its number otherwise.
+    """
     text = _slurred(base, *slurs)
 
     with pytest.raises(ProtocolDefectError, match=message):
         compare_file(text, text)
+
+
+def test_reused_slur_number_pairs_in_time_beside_document_pairs() -> None:
+    """Pair only the number that the document order cannot pair in time."""
+    text = _slurred(
+        _PIANO,
+        ("t3", "b4", 1),
+        ("b1", "b2", 1),
+        *((start, stop, 2) for start, stop in _EXAMPLE_SLURS),
+    )
+
+    assert _slur_ids(text) == sorted(
+        [("t3", "b4"), ("b1", "b2"), *_EXAMPLE_SLURS],
+    )
 
 
 def _two_staff_ottavas(number: int, *, bottom_stop: str = "b4") -> str:
@@ -3173,6 +3220,122 @@ def test_ottava_that_stops_on_another_staff_stops_the_run() -> None:
     text = _two_staff_ottavas(2, bottom_stop="t4")
 
     with pytest.raises(ProtocolDefectError, match="octave shift stop"):
+        read_score(text)
+
+
+# Ends two direction types of one direction.
+_NEXT_TYPE = "        </direction-type>\n        <direction-type>\n"
+
+
+def _at_measure_start(*directions: tuple[int, int, str]) -> str:
+    """Write each ``(staff, onset, direction content)`` before ``t1``.
+
+    The directions keep their order in the document whatever their onsets,
+    which each ``offset`` sets.
+    """
+    return _variant(
+        _before(
+            "t1",
+            "".join(
+                _direction(inner, staff).replace(
+                    "        <staff>",
+                    f"        <offset>{onset}</offset>\n        <staff>",
+                )
+                for staff, onset, inner in directions
+            ),
+        ),
+        base=_PIANO,
+    )
+
+
+def _shift(kind: str, number: int) -> str:
+    return (
+        f'          <octave-shift type="{kind}" size="8" number="{number}"/>\n'
+    )
+
+
+def _shifts(text: str) -> dict[str, int]:
+    return {
+        _note_id(event.notes[0]): event.shift
+        for event in read_score(text).events
+    }
+
+
+def _ottava_chain(bottom: int, *, stop_first: bool) -> str:
+    """Chain two top ottavas through one direction, stop first in the file.
+
+    The top staff writes the chain's last stop, then the direction that
+    stops the first ottava and starts the second, then the first start.
+    The bottom staff shifts b1-b3 and l1-l3 by number ``bottom``.
+    """
+    stop, start = _shift("stop", 1), _shift("down", 1)
+    shared = (
+        stop + _NEXT_TYPE + start if stop_first else start + _NEXT_TYPE + stop
+    )
+    return _at_measure_start(
+        (1, 2, stop),
+        (1, 1, shared),
+        (1, 0, start),
+        (2, 0, _shift("up", bottom)),
+        (2, 3, _shift("stop", bottom)),
+    )
+
+
+@pytest.mark.parametrize(
+    "order",
+    ["stop-then-start", "start-then-stop"],
+)
+def test_ottava_chain_pairs_beside_a_reused_number(order: str) -> None:
+    """Pair a stop-first ottava chain while another staff reuses its number."""
+    stop_first = order == "stop-then-start"
+    shared = _ottava_chain(1, stop_first=stop_first)
+    renumbered = _ottava_chain(2, stop_first=stop_first)
+    shifts = _shifts(shared)
+
+    assert shifts == _shifts(renumbered)
+    assert [shifts[f"t{beat}"] for beat in range(1, 5)] == [1, 1, 0, 0]
+    assert [
+        shifts[f"{voice}{beat}"] for voice in "bl" for beat in (1, 3, 4)
+    ] == [
+        -1,
+        -1,
+        0,
+    ] * 2
+    _assert_file(compare_file(shared, shared))
+    _assert_file(compare_file(renumbered, renumbered))
+
+
+def test_nested_ottavas_of_one_number_stop_the_run() -> None:
+    """Stop on two ottavas of one staff that share a number and overlap."""
+    text = _at_measure_start(
+        (1, 0, _shift("down", 1)),
+        (1, 1, _shift("down", 1)),
+        (1, 2, _shift("stop", 1)),
+        (1, 3, _shift("stop", 1)),
+    )
+
+    with pytest.raises(ProtocolDefectError, match="share number 1"):
+        read_score(text)
+
+
+def _dashes(kind: str) -> str:
+    words = "          <words>cresc.</words>\n" + _NEXT_TYPE
+    return (
+        f"{words if kind == 'start' else ''}"
+        f'          <dashes type="{kind}" number="1"/>\n'
+    )
+
+
+def test_backward_dashes_stop_the_run_beside_pairs_in_time() -> None:
+    """Stop on dashes that the document order pairs backward."""
+    text = _at_measure_start(
+        (1, 2, _dashes("start")),
+        (1, 1, _dashes("stop")),
+        (1, 0, _dashes("start")),
+        (1, 3, _dashes("stop")),
+    )
+
+    with pytest.raises(ProtocolDefectError, match="stops before it starts"):
         read_score(text)
 
 
@@ -3354,6 +3517,118 @@ def test_words_in_the_direction_of_a_line_stop_are_its_reprint() -> None:
     )
 
     _assert_file(compare_file(t_text, y_text))
+
+
+_CRESC_LINE = _variant(
+    _before("m4s1n1", _line_direction("cresc.", "start")),
+    _before("m6s1n1", _line_direction(None, "stop")),
+)
+
+
+def _tempo_reprint(
+    number: int | None,
+    words: str | None = "cresc.",
+    *,
+    bold: bool = False,
+    sound: bool = False,
+    base: str = _CRESC_LINE,
+) -> str:
+    """Write words, a quarter ``number`` metronome or both at measure 5.
+
+    The measure starts a system while the line of ``base`` is open.
+    """
+    weight = ' font-weight="bold"' if bold else ""
+    types = []
+    if words is not None:
+        types.append(f"          <words{weight}>{words}</words>\n")
+    if number is not None:
+        types.append(
+            "          <metronome>\n"
+            "            <beat-unit>quarter</beat-unit>\n"
+            f"            <per-minute>{number}</per-minute>\n"
+            "          </metronome>\n",
+        )
+    direction = _direction(_NEXT_TYPE.join(types))
+    if sound:
+        direction = direction.replace(
+            "      </direction>\n",
+            '        <sound tempo="100"/>\n      </direction>\n',
+        )
+    return _variant(_before("m5s1n1", direction), base=base)
+
+
+@pytest.mark.parametrize(
+    ("t_text", "y_text", "content", "layout"),
+    [
+        (_tempo_reprint(120), _tempo_reprint(100), {"tempo_rehearsal": 1}, 1),
+        (_CRESC_LINE, _tempo_reprint(100), {"tempo_rehearsal": 1}, 0),
+        (_tempo_reprint(100), _CRESC_LINE, {"tempo_rehearsal": 1}, 0),
+        (_tempo_reprint(None), _tempo_reprint(100), {"tempo_rehearsal": 1}, 0),
+        (_tempo_reprint(100, None), _tempo_reprint(100), {}, 0),
+        (_tempo_reprint(100), _tempo_reprint(100, None), {}, 0),
+        (
+            _tempo_reprint(120, None, base=BASE),
+            _tempo_reprint(100, None, base=BASE),
+            {"tempo_rehearsal": 1},
+            1,
+        ),
+    ],
+    ids=[
+        "changed-number",
+        "dropped-mark",
+        "added-mark",
+        "dropped-number",
+        "words-only-in-y",
+        "words-only-in-t",
+        "changed-number-without-a-line",
+    ],
+)
+def test_reprint_with_a_metronome_keeps_the_metronome(
+    t_text: str,
+    y_text: str,
+    content: dict[str, int],
+    layout: int,
+) -> None:
+    """Drop a reprint's words but compare the metronome it also writes.
+
+    Both passes see the kept metronome as a metronome without an open line.
+    """
+    _assert_file(compare_file(t_text, y_text), content)
+    assert len(compare_layout(t_text, y_text).differences) == layout
+
+
+def test_failure_count_keeps_the_metronome_of_a_reprint() -> None:
+    """Count the metronome of a reprint, as a direction without words."""
+    count = failure_element_count(_CRESC_LINE) + 1
+
+    assert failure_element_count(_tempo_reprint(100)) == count
+    assert failure_element_count(_tempo_reprint(100, None)) == count
+
+
+_ALLEGRO_LINE = _variant(
+    _before("m4s1n1", _line_direction("Allegro", "start")),
+    _before("m6s1n1", _line_direction(None, "stop")),
+)
+
+
+@pytest.mark.parametrize(
+    ("t_text", "y_text"),
+    [
+        (_CRESC_LINE, _tempo_reprint(None, sound=True)),
+        (
+            _ALLEGRO_LINE,
+            _tempo_reprint(None, "Allegro", bold=True, base=_ALLEGRO_LINE),
+        ),
+    ],
+    ids=["sound-tempo", "inferred-number"],
+)
+def test_tempo_words_reprint_without_a_metronome_is_dropped(
+    t_text: str,
+    y_text: str,
+) -> None:
+    """Drop a tempo-words reprint whole when it writes no metronome."""
+    _assert_file(compare_file(t_text, y_text))
+    assert failure_element_count(y_text) == failure_element_count(t_text)
 
 
 def test_note_on_its_voices_staff_is_a_cross_staff_check_element() -> None:
@@ -4543,6 +4818,31 @@ def test_failure_count_includes_the_elements_of_every_check() -> None:
         }
 
     assert counted == set(CHECKS)
+
+
+def test_failure_count_needs_no_voice_positions() -> None:
+    """Count the voices of an unsupported file whose positions are unknown.
+
+    Both voices of measure 3 are stemmed up, so a comparison cannot place
+    them; a failed file's count does not compare voices.
+    """
+    stems = _variant(_edit("m3s1n2", "<stem>down</stem>", "<stem>up</stem>"))
+    fingered = _marked(stems, ("m1s1n3", _fingering("6")))
+
+    with pytest.raises(ProtocolDefectError, match="cannot distinguish"):
+        compare_file(stems, stems)
+    with pytest.raises(MusicXmlError) as refusal:
+        from_musicxml_text(fingered)
+    assert refusal.value.diagnostics[0].code == "unsupported/fingering"
+    assert failure_element_count(stems) == BASE_FILE_ELEMENT_COUNT
+    assert failure_element_count(fingered) == BASE_FILE_ELEMENT_COUNT + 1
+
+
+def test_failure_count_keeps_each_voice_of_equal_content() -> None:
+    """Count two voices of one staff and measure with equal notes twice."""
+    doubled = _variant(_edit("m3s1n2", "<step>E</step>", "<step>C</step>"))
+
+    assert failure_element_count(doubled) == BASE_FILE_ELEMENT_COUNT
 
 
 def test_pooled_fidelity_pools_elements_over_files() -> None:

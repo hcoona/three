@@ -876,7 +876,8 @@ def annotate(
         raise ScoreParseError(message) from error
     _remove_reprints(annotated, parsed)
     events, notes = _bridge(annotated, xml)
-    _remove_line_reprints(annotated, xml, notes, words)
+    reading = _WordsReading(words, parsed, detail)
+    _remove_line_reprints(annotated, xml, notes, reading)
     return AnnotatedScore(parsed, annotated, xml, events)
 
 
@@ -2498,6 +2499,53 @@ def _voice_content_groups(
         source_staff: staff
         for staff, source_staff in source_staff_indexes.items()
     }
+    for (source_staff, measure_index, _identity), events in _measure_voices(
+        annotated,
+    ).items():
+        staff = flattened_staff_indexes[source_staff]
+        signature = tuple(
+            _pairing_key(
+                note,
+                Location(
+                    staff,
+                    measure_index,
+                    measure_number,
+                    onset=onset,
+                ),
+            )
+            for onset, _, note, _, measure_number in events
+        )
+        key = (source_staff, measure_index, signature)
+        position_sequence = tuple(
+            positions[id(note)] for _, _, note, _, _ in events
+        )
+        groups.setdefault(key, Counter())[position_sequence] += 1
+    return groups
+
+
+def voice_element_count(annotated: AnnotatedScore) -> int:
+    """Count the voices of each measure without their canonical positions.
+
+    A failed file counts each voice of each measure as an element, which
+    needs no counterpart and so no position to agree on.
+
+    Args:
+        annotated: The annotated score, ``Y`` or ``X``.
+
+    Returns:
+        The number of voices, by staff and measure, that hold an event.
+    """
+    return len(_measure_voices(annotated))
+
+
+def _measure_voices(
+    annotated: AnnotatedScore,
+) -> dict[
+    tuple[tuple[int, int], int, VoiceKey],
+    list[tuple[float, XmlEvent, AnnNote, m21.stream.Measure, str]],
+]:
+    """Return each voice's events by MusicXML staff and measure ordinal."""
+    source_staff_indexes = _musicxml_part_staff_indices(annotated.annotated)
     voice_staves_by_event = voice_staves(annotated.xml.events)
     voices: dict[
         tuple[tuple[int, int], int, VoiceKey],
@@ -2534,29 +2582,11 @@ def _voice_content_groups(
                             bar.measureNumber,
                         ),
                     )
-    for (source_staff, measure_index, _identity), events in voices.items():
+    for events in voices.values():
         # A voice's events can lie on two staves, so they follow the written
         # order, which does not depend on the staff that displays them.
         events.sort(key=lambda event: _event_order(event[1]))
-        staff = flattened_staff_indexes[source_staff]
-        signature = tuple(
-            _pairing_key(
-                note,
-                Location(
-                    staff,
-                    measure_index,
-                    measure_number,
-                    onset=onset,
-                ),
-            )
-            for onset, _, note, _, measure_number in events
-        )
-        key = (source_staff, measure_index, signature)
-        position_sequence = tuple(
-            positions[id(note)] for _, _, note, _, _ in events
-        )
-        groups.setdefault(key, Counter())[position_sequence] += 1
-    return groups
+    return voices
 
 
 def _locate(annotated: AnnotatedScore) -> dict[int, Location]:
@@ -2813,6 +2843,15 @@ def _reset_size(
     obj._cached_notation_size = None  # noqa: SLF001 - musicdiff's size cache
 
 
+@dataclass(frozen=True, slots=True, eq=False)
+class _WordsReading:
+    """A score's words reading, which its reprint removal uses."""
+
+    words: dict[int, tuple[m21.base.Music21Object, ...]]
+    score: m21.stream.Score
+    detail: DetailLevel | int
+
+
 @dataclass(frozen=True, slots=True)
 class _BarSite:
     staff: tuple[int, int]
@@ -2915,7 +2954,7 @@ def _remove_line_reprints(
     annotated: AnnScore,
     xml: XmlScore,
     notes: dict[int, AnnNote],
-    words: dict[int, tuple[m21.base.Music21Object, ...]],
+    words: _WordsReading,
 ) -> None:
     """Remove trill marks and words that restate an open line's start."""
     staff_indexes = {
@@ -2952,7 +2991,7 @@ def _drop_line_reprint(
     source: tuple[
         XmlScore,
         dict[int, AnnNote],
-        dict[int, tuple[m21.base.Music21Object, ...]],
+        _WordsReading,
     ],
 ) -> bool:
     xml, notes, words = source
@@ -3043,15 +3082,18 @@ def _drop_words_reprint(
     span: XmlSpan,
     measure: int,
     part: AnnPart,
-    source: tuple[XmlScore, dict[int, tuple[m21.base.Music21Object, ...]]],
+    source: tuple[XmlScore, _WordsReading],
 ) -> bool:
     """Drop the first words direction in ``measure`` that restates the line.
 
     Only a direction whose joined words restate the line counts, so new
     words of the same text after the line's stop stay. Each of its words,
-    which music21 may read as several text expressions, is dropped.
+    which music21 may read as several text expressions, is dropped. The
+    words are the reprint, so the metronome of a direction with tempo words
+    stays, compared as a mark without text.
     """
-    xml, words = source
+    xml, reading = source
+    words = reading.words
     start = span.start
     if not isinstance(start, XmlDirection):
         return False
@@ -3074,15 +3116,79 @@ def _drop_words_reprint(
             if extra.kind in {"direction", "tempo"} and extra.offset == 0
         }
         for direction in directions:
-            reprints = {
-                id(extras[id(item)])
+            reprints = [
+                extras[id(item)]
                 for item in words.get(direction.order, ())
                 if id(item) in extras
-            }
+            ]
             if reprints:
-                _drop_extras(bar, reprints)
+                metronome = (
+                    direction.element.find("direction-type/metronome")
+                    is not None
+                )
+                _drop_words(bar, reprints, reading if metronome else None)
                 return True
     return False
+
+
+def _drop_words(
+    bar: AnnMeasure,
+    reprints: list[AnnExtra],
+    reading: _WordsReading | None,
+) -> None:
+    """Drop the reprinted words, keeping a metronome mark without its text.
+
+    With ``reading``, the direction has a ``metronome``, and its mark is
+    annotated again without its text, as musicdiff annotates a mark that
+    a ``metronome`` alone gives. A mark that is then empty is dropped, as
+    musicdiff ignores it.
+    """
+    kept: dict[int, AnnExtra] = {}
+    measure = bar.get_object()
+    if not isinstance(measure, m21.stream.Measure):
+        message = f"bar {bar.measureNumber} has no music21 measure"
+        raise ProtocolDefectError(message)
+    for extra in reprints:
+        mark = extra.get_object()
+        if reading is not None and isinstance(mark, m21.tempo.MetronomeMark):
+            bare = _without_text(mark, measure, reading)
+            if bare is not None:
+                kept[id(extra)] = bare
+    dropped = {id(extra) for extra in reprints}
+    bar.extras_list = [
+        kept.get(id(extra), extra)
+        for extra in bar.extras_list
+        if id(extra) not in dropped or id(extra) in kept
+    ]
+    bar.n_of_elements -= len(dropped) - len(kept)
+    bar.precomputed_str = hash(str(bar))
+    bar.precomputed_repr = hash(repr(bar))
+    _reset_size(bar)
+
+
+def _without_text(
+    mark: m21.tempo.MetronomeMark,
+    measure: m21.stream.Measure,
+    reading: _WordsReading,
+) -> AnnExtra | None:
+    """Annotate ``mark`` as if it had no text, then restore its text.
+
+    Returns:
+        The annotated mark, or ``None`` when it shows nothing to compare.
+    """
+    # musicdiff reads the tempo text object, not the ``text`` property.
+    text = mark._tempoText  # noqa: SLF001
+    implicit = mark.textImplicit
+    mark._tempoText = None  # noqa: SLF001
+    mark.textImplicit = True
+    try:
+        bare = AnnExtra(mark, measure, reading.score, reading.detail)
+    finally:
+        mark._tempoText = text  # noqa: SLF001
+        mark.textImplicit = implicit
+    if bare.content or bare.symbolic or bare.infodict:
+        return bare
+    return None
 
 
 def _reprint_directions(

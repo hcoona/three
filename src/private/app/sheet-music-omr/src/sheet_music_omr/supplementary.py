@@ -33,6 +33,7 @@ from sheet_music_omr.comparison import (
     content_element_count,
     extra_sites,
     heading_tally,
+    voice_element_count,
     voice_order_annotated,
 )
 from sheet_music_omr.musicxml_events import (
@@ -237,8 +238,8 @@ def failure_element_count(source: Path | str) -> int:
     """
     score = annotate(source)
     side = _Side(score, frozenset(), {})
-    # A score matches itself, so its voices and heading lines each have a
-    # partner and are each one element.
+    # A failed file's voices need no counterpart, so they are counted without
+    # their positions; its heading lines match themselves, one element each.
     elements: dict[str, Iterable[object]] = {
         "fingering": _fingerings(side),
         "cross_staff": _cross_staff_events(score),
@@ -254,7 +255,7 @@ def failure_element_count(source: Path | str) -> int:
         "tie_ends": _tie_stops(side),
     }
     counts = {name: sum(1 for _ in items) for name, items in elements.items()}
-    counts["voice_order"] = voice_order_annotated(score, score).elements
+    counts["voice_order"] = voice_element_count(score)
     counts["heading"] = heading_tally(source, source).elements
     return content_element_count(score) + sum(counts.values())
 

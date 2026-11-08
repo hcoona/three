@@ -8,11 +8,11 @@ the events of its staff from its start up to, but not including, its stop. A
 spanner's ``number`` tells it apart only from spanners that overlap it in
 document order, as MusicXML 4.0 defines the number level, so endpoints of one
 number pair in document order, a stop before a start on one note, and a stop
-may precede its start. A score that reuses a number for spanners that overlap
-in document order but not in time cannot pair that way; it pairs in time
-order, the reading this module used before. Whenever both orders pair a
-score, they give the same spans. A wavy line that starts and stops on one note
-is not a span.
+may precede its start. Only a number that two spans share in document order,
+which MusicXML 4.0 does not allow, pairs in time order, the reading this module
+used before; the other numbers keep their pairs. A span that document order
+pairs backward in time, or an ottava that it pairs across staves, stops the
+run. A wavy line that starts and stops on one note is not a span.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from sheet_music_omr.musicxml_reverse import _load as _load_musicxml
 
 if TYPE_CHECKING:
     import xml.etree.ElementTree as ET
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
 type PitchKey = tuple[str, Fraction, int]
 type Leaf = XmlEvent | XmlDirection
@@ -38,6 +38,7 @@ SLUR = "slur"
 WAVY_LINE = "wavy-line"
 DASHES = "dashes"
 
+_OTTAVA = "MusicXML octave shift"
 _YES = "yes"
 _START = "start"
 _STOP = "stop"
@@ -563,16 +564,22 @@ def _apply_ottavas(
     events: list[XmlEvent],
     directions: list[XmlDirection],
 ) -> None:
-    try:
-        spans = _ottava_spans(sorted(directions, key=lambda d: d.order))
-    except ProtocolDefectError as error:
-        defect = error
-        try:
-            spans = _ottava_spans(
-                sorted(directions, key=lambda d: (d.start, d.order)),
-            )
-        except ProtocolDefectError:
-            raise defect from None
+    spans: list[tuple[tuple[int, int], Fraction, Fraction, int]] = []
+    for span in _pair_numbers(list(directions), _ottava_endpoints):
+        if span.start.place != span.stop.place:
+            message = "a MusicXML octave shift stops on another staff"
+            raise ProtocolDefectError(message)
+        if span.start_note is None:
+            message = "a MusicXML octave shift has no start element"
+            raise ProtocolDefectError(message)
+        spans.append(
+            (
+                span.start.place,
+                span.start.start,
+                span.stop.start,
+                _ottava_size(span.start_note),
+            ),
+        )
     for event in events:
         event.shift = next(
             (
@@ -584,38 +591,19 @@ def _apply_ottavas(
         )
 
 
-def _ottava_spans(
-    directions: list[XmlDirection],
-) -> list[tuple[tuple[int, int], Fraction, Fraction, int]]:
-    spans: list[tuple[tuple[int, int], Fraction, Fraction, int]] = []
-    pending: dict[tuple[int, str], _Shift] = {}
-    for direction in directions:
-        shifts = direction.element.findall("direction-type/octave-shift")
-        for shift in sorted(shifts, key=lambda s: s.get("type") != _STOP):
-            kind = shift.get("type")
-            if kind == "continue":
-                continue
-            size = None if kind == _STOP else _ottava_size(shift)
-            key = (direction.part, shift.get("number", "1"))
-            other = pending.pop(key, None)
-            if other is None:
-                pending[key] = (direction, size)
-            elif size is None:
-                spans.append(_ottava_span(other, (direction, size)))
-            else:
-                spans.append(_ottava_span((direction, size), other))
-    for _, size in pending.values():
-        message = (
-            "MusicXML octave shift stop has no start"
-            if size is None
-            else "MusicXML octave shift never stops"
-        )
-        raise ProtocolDefectError(message)
-    return spans
-
-
-type _Shift = tuple[XmlDirection, int | None]
-"""An octave-shift endpoint: its direction and, for a start, its size."""
+def _ottava_endpoints(leaf: Leaf) -> list[_Endpoint]:
+    endpoints: list[_Endpoint] = []
+    if not isinstance(leaf, XmlDirection):
+        return endpoints
+    for shift in leaf.element.findall("direction-type/octave-shift"):
+        kind = shift.get("type")
+        if kind == "continue":
+            continue
+        if kind != _STOP:
+            _ottava_size(shift)
+        role = _STOP if kind == _STOP else _START
+        endpoints.append((_OTTAVA, role, shift.get("number", "1"), shift))
+    return endpoints
 
 
 def _ottava_size(shift: ET.Element) -> int:
@@ -626,48 +614,72 @@ def _ottava_size(shift: ET.Element) -> int:
     return size
 
 
-def _ottava_span(
-    start: _Shift,
-    stop: _Shift,
-) -> tuple[tuple[int, int], Fraction, Fraction, int]:
-    (opened, size), (closed, end) = start, stop
-    if size is None:
-        message = "MusicXML octave shift stop has no start"
-        raise ProtocolDefectError(message)
-    if end is not None:
-        message = "two MusicXML octave shifts share a number"
-        raise ProtocolDefectError(message)
-    if opened.place != closed.place or closed.start < opened.start:
-        message = "MusicXML octave shift stop has no start"
-        raise ProtocolDefectError(message)
-    return closed.place, opened.start, closed.start, size
-
-
 type _Endpoint = tuple[str, str, str, ET.Element | None]
+type _NumberKey = tuple[int, str, str]
+"""A spanner number: part, family and MusicXML ``number``."""
+type _Pending = tuple[str, Leaf, ET.Element | None]
+
+
+class _NumberConflictError(ProtocolDefectError):
+    """Two spans of one number overlap in document order."""
+
+    def __init__(self, key: _NumberKey, message: str) -> None:
+        super().__init__(message)
+        self.key = key
 
 
 def _spans(
     events: list[XmlEvent],
     directions: list[XmlDirection],
 ) -> tuple[XmlSpan, ...]:
-    leaves: list[Leaf] = [*events, *directions]
-    try:
-        return _paired(sorted(leaves, key=lambda leaf: leaf.order))
-    except ProtocolDefectError as error:
-        defect = error
-    try:
-        return _paired(sorted(leaves, key=_leaf_key))
-    except ProtocolDefectError:
-        raise defect from None
+    return tuple(_pair_numbers([*events, *directions], _endpoints))
 
 
-def _paired(leaves: list[Leaf]) -> tuple[XmlSpan, ...]:
+def _pair_numbers(
+    leaves: list[Leaf],
+    endpoints: Callable[[Leaf], list[_Endpoint]],
+) -> list[XmlSpan]:
+    """Pair numbered endpoints, each number in document order if it can.
+
+    Only a number that two spans share in document order, which MusicXML
+    4.0 does not allow, pairs in time order; other numbers keep their pairs,
+    and any other defect stops.
+    """
+    by_order = sorted(leaves, key=lambda leaf: leaf.order)
+    conflicts: dict[_NumberKey, _NumberConflictError] = {}
+    while True:
+        try:
+            spans = _paired(
+                by_order,
+                endpoints,
+                lambda key: key not in conflicts,
+            )
+            break
+        except _NumberConflictError as conflict:
+            conflicts[conflict.key] = conflict
+    by_time = sorted(leaves, key=_leaf_key)
+    for key, conflict in conflicts.items():
+        try:
+            spans += _paired(by_time, endpoints, {key}.__contains__)
+        except ProtocolDefectError:
+            raise conflict from None
+    spans.sort(key=lambda span: _leaf_key(span.stop))
+    return spans
+
+
+def _paired(
+    leaves: list[Leaf],
+    endpoints_of: Callable[[Leaf], list[_Endpoint]],
+    include: Callable[[_NumberKey], bool],
+) -> list[XmlSpan]:
     spans: list[XmlSpan] = []
-    pending: dict[
-        tuple[int, str, str], tuple[str, Leaf, ET.Element | None]
-    ] = {}
+    pending: dict[_NumberKey, _Pending] = {}
     for leaf in leaves:
-        endpoints = _leaf_endpoints(leaf, pending)
+        endpoints = [
+            endpoint
+            for endpoint in _leaf_endpoints(leaf, pending, endpoints_of)
+            if include((leaf.part, endpoint[0], endpoint[2]))
+        ]
         single = {
             number
             for family, role, number, _ in endpoints
@@ -684,16 +696,18 @@ def _paired(leaves: list[Leaf]) -> tuple[XmlSpan, ...]:
             if other is None:
                 pending[key] = (role, leaf, note)
                 continue
-            if other[0] == role:
-                raise ProtocolDefectError(_overlap(family, role, number))
+            if other[0] == role or other[1] is leaf:
+                raise _NumberConflictError(
+                    key,
+                    _overlap(family, role, number),
+                )
             if role == _STOP:
                 spans.append(_span(family, (other[1], other[2]), (leaf, note)))
             else:
                 spans.append(_span(family, (leaf, note), (other[1], other[2])))
     for (_, family, number), (role, _, _) in pending.items():
         raise ProtocolDefectError(_unpaired(family, role, number))
-    spans.sort(key=lambda span: _leaf_key(span.stop))
-    return tuple(spans)
+    return spans
 
 
 def _overlap(family: str, role: str, number: str) -> str:
@@ -710,7 +724,8 @@ def _unpaired(family: str, role: str, number: str) -> str:
 
 def _leaf_endpoints(
     leaf: Leaf,
-    pending: dict[tuple[int, str, str], tuple[str, Leaf, ET.Element | None]],
+    pending: dict[_NumberKey, _Pending],
+    endpoints: Callable[[Leaf], list[_Endpoint]],
 ) -> list[_Endpoint]:
     # A stop on a leaf closes the span that is open before a start on the leaf
     # opens the next; a start on a leaf first takes a stop that came earlier.
@@ -719,7 +734,7 @@ def _leaf_endpoints(
         role = _START if waiting is not None and waiting[0] == _STOP else _STOP
         return endpoint[1] != role
 
-    return sorted(_endpoints(leaf), key=first)
+    return sorted(endpoints(leaf), key=first)
 
 
 def _span(
