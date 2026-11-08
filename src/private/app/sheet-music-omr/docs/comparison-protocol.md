@@ -719,12 +719,13 @@ of its voice at that onset.
   onset, whatever its grace position, and whose stop event ends at the same
   time, no counted musicdiff
   `slur` difference touches it and no counted musicdiff difference touches its
-  start or stop event. Slurs are matched one to one, preferring equal stop
-  onsets, staffs, written pitches and durations, and the element is identical
-  when the start events have the same grace position, the stop events also the
-  same measure and onset, and the start and
-  stop events the same staffs, written pitches and written durations. The
-  check adds no extra elements.
+  start or stop event. Slurs are matched one to one: slurs that would be
+  identical are matched first, so the order of the documents does not change
+  the tally, and the remaining slurs are matched preferring equal stop onsets,
+  staffs, written pitches and durations. The element is identical when the
+  start events have the same grace position, the stop events also the same
+  measure and onset, and the start and stop events the same staffs, written
+  pitches and written durations. The check adds no extra elements.
 - **Tie ends** (`tie`): musicdiff 6.0 marks a tie only on the note that
   starts or continues it, not on the note where it ends, including a `tie-in`
   pitch. Each `tie` of type `stop` on a note is one element, keyed by measure,
