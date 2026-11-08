@@ -184,7 +184,7 @@ public sealed class ProcessRunner
                 "SELECT id,pid,start_ticks,state FROM process_leases WHERE state<>'exited';"
             )
         )
-        using (SqliteDataReader reader = command.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             while (reader.Read())
             {

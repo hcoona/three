@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LiteAgensh;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -7,6 +8,192 @@ namespace LiteAgensh.Tests;
 [TestClass]
 public sealed class RunDatabaseTests
 {
+    [TestMethod]
+    public void BusyClaimRetainsAvailableWriterAndUnknownCoverageWithoutSqlOrPayloads()
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        CollaborationOperations collaboration = new(database);
+        collaboration.QueueKickoff("worker1", "initial");
+        string secret = "private-sql-parameter-" + Guid.NewGuid().ToString("N");
+        const string statement =
+            "INSERT INTO meta(key,value) VALUES('private-diagnostic',$secret);";
+        using SqliteConnection writer = database.Open();
+        using SqliteTransactionScope held = Sql.BeginTransaction(writer);
+        Sql.Execute(writer, statement, held, ("$secret", secret));
+        using SqliteConnection reader = database.Open();
+        using SqliteTransactionScope deferred = Sql.BeginTransaction(reader, deferred: true);
+        string directory = Path.Combine(fixture.StatePath, "run.sqlite.diagnostics");
+        File.WriteAllText(Path.Combine(directory, "activity-31.json"), "{malformed");
+
+        SqliteException error = Assert.ThrowsExactly<SqliteException>(() =>
+            collaboration.ClaimBatch("worker1")
+        );
+
+        Assert.AreEqual(5, error.SqliteErrorCode);
+        Assert.AreEqual(5, error.SqliteExtendedErrorCode);
+        string path = Assert.IsInstanceOfType<string>(error.Data["LiteAgensh.SqliteIncident"]);
+        string text = File.ReadAllText(path);
+        using JsonDocument incident = JsonDocument.Parse(text);
+        JsonElement failure = incident.RootElement.GetProperty("failure");
+        Assert.AreEqual("ClaimBatch", failure.GetProperty("operation").GetString());
+        Assert.AreEqual("worker1", failure.GetProperty("actor").GetString());
+        Assert.AreEqual("acquisition-failed", failure.GetProperty("phase").GetString());
+        Assert.AreEqual(5, failure.GetProperty("primaryCode").GetInt32());
+        Assert.AreEqual(5, failure.GetProperty("extendedCode").GetInt32());
+        Assert.IsGreaterThan(4000, failure.GetProperty("elapsedMilliseconds").GetDouble());
+        JsonElement[] active = incident.RootElement.GetProperty("sources")
+            .EnumerateArray()
+            .Where(source => source.GetProperty("status").GetString() == "available")
+            .SelectMany(source =>
+                source.GetProperty("snapshot").GetProperty("active").EnumerateArray())
+            .ToArray();
+        JsonElement knownWriter = Assert.ContainsSingle(
+            active.Where(activity => activity.GetProperty("transaction").GetString() == held.Id)
+        );
+        Assert.IsTrue(knownWriter.GetProperty("writeAcquisitionObserved").GetBoolean());
+        JsonElement readTransaction = Assert.ContainsSingle(
+            active.Where(activity => activity.GetProperty("transaction").GetString() == deferred.Id)
+        );
+        Assert.IsFalse(readTransaction.GetProperty("writeAcquisitionObserved").GetBoolean());
+        Assert.Contains(
+            "unavailable-or-malformed",
+            incident.RootElement.GetProperty("sources").EnumerateArray()
+                .Select(source => source.GetProperty("status").GetString())
+        );
+        Assert.Contains("unknown", incident.RootElement.GetProperty("coverage").GetString()!);
+        foreach (string file in Directory.EnumerateFiles(directory, "*.json"))
+        {
+            string contents = File.ReadAllText(file);
+            Assert.DoesNotContain(secret, contents);
+            Assert.DoesNotContain(statement, contents);
+        }
+
+        Assert.AreEqual(0L, Sql.Scalar(reader, "SELECT COUNT(*) FROM delivery_batches;", deferred));
+    }
+
+    [TestMethod]
+    public void LockedStatementCapturesCodesAndPreservesPriorIncidentAtCapacity()
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        using SqliteConnection connection = database.Open();
+        connection.DefaultTimeout = 1;
+        using SqliteCommand command = Sql.Command(connection, "SELECT key FROM meta;");
+        using ObservedSqliteReader reader = Sql.Reader(command);
+        Assert.IsTrue(reader.Read());
+        string? firstPath = null;
+        string? firstContents = null;
+
+        for (int attempt = 0; attempt < 9; attempt++)
+        {
+            SqliteException error = Assert.ThrowsExactly<SqliteException>(() =>
+                Sql.Execute(connection, "DROP TABLE meta;")
+            );
+            Assert.AreEqual(6, error.SqliteErrorCode);
+            Assert.AreEqual(6, error.SqliteExtendedErrorCode);
+            if (attempt == 0)
+            {
+                firstPath =
+                    Assert.IsInstanceOfType<string>(error.Data["LiteAgensh.SqliteIncident"]);
+                firstContents = File.ReadAllText(firstPath);
+                using JsonDocument incident = JsonDocument.Parse(firstContents);
+                JsonElement failure = incident.RootElement.GetProperty("failure");
+                Assert.AreEqual("statement-failed", failure.GetProperty("phase").GetString());
+                Assert.AreEqual(6, failure.GetProperty("primaryCode").GetInt32());
+            }
+            else if (attempt == 8)
+            {
+                Assert.IsNull(error.Data["LiteAgensh.SqliteIncident"]);
+                Assert.Contains(
+                    "capacity exhausted",
+                    Assert.IsInstanceOfType<string>(
+                        error.Data["LiteAgensh.SqliteDiagnosticWarning"])
+                );
+            }
+        }
+
+        Assert.IsNotNull(firstPath);
+        Assert.AreEqual(firstContents, File.ReadAllText(firstPath));
+        Assert.HasCount(
+            8,
+            Directory.EnumerateFiles(
+                Path.Combine(fixture.StatePath, "run.sqlite.diagnostics"), "incident-*.json"
+            )
+        );
+    }
+
+    [TestMethod]
+    public void SuccessfulCommitAndRollbackRetireAcquisitionBeforeScopeEnds()
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        using SqliteConnection connection = database.Open();
+        using SqliteTransactionScope committed = Sql.BeginTransaction(connection);
+        Sql.Execute(
+            connection, "INSERT INTO meta(key,value) VALUES('checked','committed');", committed
+        );
+        committed.Commit();
+        string directory = Path.Combine(fixture.StatePath, "run.sqlite.diagnostics");
+        AssertRetired(directory, committed.Id);
+
+        using SqliteConnection other = database.Open();
+        using SqliteTransactionScope rolledBack = Sql.BeginTransaction(other);
+        Sql.Execute(
+            other, "UPDATE meta SET value='not-committed' WHERE key='checked';", rolledBack
+        );
+        rolledBack.Rollback();
+        AssertRetired(directory, rolledBack.Id);
+        Assert.AreEqual("committed", database.ReadMetadata("checked"));
+        using SqliteTransactionScope next = Sql.BeginTransaction(connection);
+        Sql.Execute(
+            connection, "UPDATE meta SET value='next' WHERE key='checked';", next
+        );
+        next.Commit();
+        Assert.AreEqual("next", database.ReadMetadata("checked"));
+    }
+
+    [TestMethod]
+    public void FailedDiagnosticPersistencePreservesBusyAndDoesNotMutateDelivery()
+    {
+        using RunFixture fixture = new();
+        Directory.CreateDirectory(fixture.StatePath);
+        File.WriteAllText(
+            Path.Combine(fixture.StatePath, "run.sqlite.diagnostics"),
+            "Owned fixture intentionally blocks diagnostic directory creation."
+        );
+        RunDatabase database = fixture.CreateDatabase();
+        CollaborationOperations collaboration = new(database);
+        collaboration.QueueKickoff("worker1", "initial");
+        using SqliteConnection connection = database.Open();
+        using SqliteTransactionScope held = Sql.BeginTransaction(connection);
+
+        SqliteException error = Assert.ThrowsExactly<SqliteException>(() =>
+            collaboration.ClaimBatch("worker1")
+        );
+
+        Assert.AreEqual(5, error.SqliteErrorCode);
+        Assert.AreEqual(5, error.SqliteExtendedErrorCode);
+        Assert.IsNull(error.Data["LiteAgensh.SqliteIncident"]);
+        Assert.Contains(
+            "original database error preserved",
+            Assert.IsInstanceOfType<string>(error.Data["LiteAgensh.SqliteDiagnosticWarning"])
+        );
+        Assert.AreEqual(0L, Sql.Scalar(connection, "SELECT COUNT(*) FROM delivery_batches;", held));
+    }
+
+    private static void AssertRetired(string directory, string transaction)
+    {
+        foreach (string path in Directory.EnumerateFiles(directory, "activity-*.json"))
+        {
+            using JsonDocument activity = JsonDocument.Parse(File.ReadAllText(path));
+            Assert.IsEmpty(
+                activity.RootElement.GetProperty("active").EnumerateArray()
+                    .Where(item => item.GetProperty("transaction").GetString() == transaction)
+            );
+        }
+    }
+
     [TestMethod]
     public void OpenFutureSchemaRejectsWithoutLosingRunOrDomainState()
     {

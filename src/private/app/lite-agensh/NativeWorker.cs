@@ -623,7 +623,7 @@ internal sealed class NativeWorker : INativeWorker
         CreditReservation allocation =
             reservation ?? throw new InvalidOperationException("No paid reservation.");
         using SqliteConnection connection = database.Open();
-        using SqliteTransaction transaction = connection.BeginTransaction();
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         Sql.Execute(
             connection,
             """

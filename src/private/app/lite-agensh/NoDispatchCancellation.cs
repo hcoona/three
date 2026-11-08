@@ -64,7 +64,7 @@ internal static class NoDispatchCancellation
         Require(reservation.SessionId is not null && reservation.Actual is null,
             "Cancellation requires an unmeasured fresh session.");
         using SqliteConnection connection = database.Open();
-        using SqliteTransaction snapshot = connection.BeginTransaction(deferred: true);
+        using SqliteTransactionScope snapshot = Sql.BeginTransaction(connection, deferred: true);
         JsonObject association = Single(connection, snapshot,
             "SELECT * FROM native_sessions WHERE reservation_id=$id;", reservation.Id);
         JsonObject attempt = Single(connection, snapshot,
@@ -286,7 +286,7 @@ internal static class NoDispatchCancellation
             "Retained source/worktree observations contradict the compatible source lineage.");
         using (SqliteConnection frozenRun = OpenSnapshot(
             Path.Combine(root, "run-after.evidence-only.sqlite")))
-        using (SqliteTransaction frozen = frozenRun.BeginTransaction(deferred: true))
+        using (SqliteTransactionScope frozen = Sql.BeginTransaction(frozenRun, deferred: true))
         {
             Require(Value(frozenRun, frozen, "run_id") == database.RunId
                 && Value(frozenRun, frozen, "configuration") ==
@@ -312,7 +312,7 @@ internal static class NoDispatchCancellation
         }
         using (SqliteConnection frozenCampaign = OpenSnapshot(
             Path.Combine(root, "campaign-after.evidence-only.sqlite")))
-        using (SqliteTransaction frozen = frozenCampaign.BeginTransaction(deferred: true))
+        using (SqliteTransactionScope frozen = Sql.BeginTransaction(frozenCampaign, deferred: true))
         {
             JsonObject row = Single(frozenCampaign, frozen,
                 "SELECT * FROM credit_reservations WHERE id=$id;", reservation.Id);
@@ -388,7 +388,7 @@ internal static class NoDispatchCancellation
     )
     {
         using SqliteCommand command = Sql.Command(connection, query, transaction, ("$id", id));
-        using SqliteDataReader reader = command.ExecuteReader();
+        using ObservedSqliteReader reader = Sql.Reader(command);
         Require(reader.Read(), "A required native association is missing.");
         JsonObject result = new();
         for (int index = 0; index < reader.FieldCount; index++)
