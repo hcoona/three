@@ -321,14 +321,14 @@ class _CrossStaffBeamGroup:
     measure_index: int
     voice_id: str | tuple[str, int]
     events: tuple[tuple[int, AnnNote], ...]
-    event_onsets: tuple[tuple[int, float], ...]
+    event_onsets: tuple[tuple[int, Fraction], ...]
     home_note: AnnNote
     home_direction: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class _ScoreVoiceEvent:
-    onset: float
+    onset: Fraction
     order: tuple[Fraction, bool, int, int]
     staff: int
     source_staff: tuple[int, int]
@@ -352,7 +352,7 @@ _BeamKey = tuple[_BeamStreamKey, bool]
 class _MeasureEventContext:
     measure: m21.stream.Measure
     bar: AnnMeasure
-    event_onsets: dict[int, float] | None
+    event_onsets: dict[int, Fraction] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1749,7 +1749,7 @@ def _canonical_voice_positions(
     *,
     voices: list[AnnVoice] | None = None,
     direction_overrides: dict[int, str | None] | None = None,
-    event_onsets: dict[int, float] | None = None,
+    event_onsets: dict[int, Fraction] | None = None,
 ) -> dict[int, int]:
     voices = bar.voices_list if voices is None else voices
     _reject_double_stem_events(voices, bar)
@@ -2116,7 +2116,7 @@ def _score_voice_events(
                     [],
                 )
                 for note in voice.annot_notes:
-                    onset = float(
+                    onset = _fraction(
                         _general_note(note).getOffsetInHierarchy(measure),
                     )
                     voice_id = parent_voice_id or _source_voice_id(note)
@@ -2393,15 +2393,15 @@ def _infer_voice_direction(
 def _has_overlapping_voices(
     voices: list[AnnVoice],
     measure: m21.stream.Measure,
-    event_onsets: dict[int, float] | None = None,
+    event_onsets: dict[int, Fraction] | None = None,
 ) -> bool:
-    intervals: list[tuple[int, float, float]] = []
+    intervals: list[tuple[int, Fraction, Fraction]] = []
     for voice_index, voice in enumerate(voices):
         for note in voice.annot_notes:
             if note.graceness:
                 continue
             general_note = _general_note(note)
-            duration = float(general_note.duration.quarterLength)
+            duration = _fraction(general_note.duration.quarterLength)
             if duration <= 0:
                 continue
             onset = _event_onset(note, measure, event_onsets)
@@ -2417,11 +2417,11 @@ def _has_overlapping_voices(
 def _event_onset(
     note: AnnNote,
     measure: m21.stream.Measure,
-    event_onsets: dict[int, float] | None,
-) -> float:
+    event_onsets: dict[int, Fraction] | None,
+) -> Fraction:
     if event_onsets is not None and id(note) in event_onsets:
         return event_onsets[id(note)]
-    return float(_general_note(note).getOffsetInHierarchy(measure))
+    return _fraction(_general_note(note).getOffsetInHierarchy(measure))
 
 
 def _voice_height(
@@ -2561,14 +2561,14 @@ def _measure_voices(
     annotated: AnnotatedScore,
 ) -> dict[
     tuple[tuple[int, int], int, VoiceKey],
-    list[tuple[float, XmlEvent, AnnNote, m21.stream.Measure, str]],
+    list[tuple[Fraction, XmlEvent, AnnNote, m21.stream.Measure, str]],
 ]:
     """Return each voice's events by MusicXML staff and measure ordinal."""
     source_staff_indexes = _musicxml_part_staff_indices(annotated.annotated)
     voice_staves_by_event = voice_staves(annotated.xml.events)
     voices: dict[
         tuple[tuple[int, int], int, VoiceKey],
-        list[tuple[float, XmlEvent, AnnNote, m21.stream.Measure, str]],
+        list[tuple[Fraction, XmlEvent, AnnNote, m21.stream.Measure, str]],
     ] = {}
     for staff, part in enumerate(annotated.annotated.part_list):
         indexes = _measure_indexes(part.get_object())
@@ -2586,7 +2586,7 @@ def _measure_voices(
                 for note in voice.annot_notes:
                     event = annotated.events[id(note)]
                     voice_key, voice_staff = voice_staves_by_event[id(event)]
-                    onset = float(
+                    onset = _fraction(
                         _general_note(note).getOffsetInHierarchy(measure),
                     )
                     voices.setdefault(

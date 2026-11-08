@@ -2309,6 +2309,108 @@ def test_two_overlapping_voices_without_stems_stop() -> None:
         voice_order_tally(text, text)
 
 
+def _one_measure(beats: int, *items: str) -> str:
+    """Return a one-staff score of one measure at three divisions a beat."""
+    return (
+        '<?xml version="1.0" encoding="utf-8"?><score-partwise version="4.0">'
+        '<part-list><score-part id="P1"><part-name>Piano</part-name>'
+        '</score-part></part-list><part id="P1"><measure number="1">'
+        "<attributes><divisions>3</divisions><key><fifths>0</fifths></key>"
+        f"<time><beats>{beats}</beats><beat-type>4</beat-type></time>"
+        "<clef><sign>G</sign><line>2</line></clef></attributes>"
+        + "".join(items)
+        + "</measure></part></score-partwise>"
+    )
+
+
+def _timed(
+    step: str | None,
+    ticks: int,
+    voice: int,
+    stem: str | None = None,
+    *,
+    tuplet: str | None = None,
+) -> str:
+    """Return a note, or a rest without ``step``; one tick is a triplet."""
+    kind = {1: "eighth", 3: "quarter", 6: "half"}[ticks]
+    sound = (
+        f"<pitch><step>{step}</step><octave>5</octave></pitch>"
+        if step
+        else "<rest/>"
+    )
+    triplet = (
+        "<time-modification><actual-notes>3</actual-notes><normal-notes>2"
+        "</normal-notes><normal-type>eighth</normal-type></time-modification>"
+        if ticks == 1
+        else ""
+    )
+    stem_xml = f"<stem>{stem}</stem>" if stem else ""
+    notations = (
+        f'<notations><tuplet type="{tuplet}"/></notations>' if tuplet else ""
+    )
+    return (
+        f"<note>{sound}<duration>{ticks}</duration>"
+        f"<voice>{voice}</voice><type>{kind}</type>{triplet}{stem_xml}"
+        f"<staff>1</staff>{notations}</note>"
+    )
+
+
+def _triplet_handoff(first: str, second: str) -> str:
+    """Voice 1's triplet ends at 8/3, where voice 2 starts, with no overlap.
+
+    ``first`` and ``second`` are the stems of voices 1 and 2.
+    """
+    return _one_measure(
+        4,
+        _timed("C", 6, 1, first),
+        _timed("D", 1, 1, first, tuplet="start"),
+        _timed("E", 1, 1, first),
+        "<backup><duration>8</duration></backup><forward><duration>8"
+        "</duration><voice>2</voice><staff>1</staff></forward>",
+        _timed("F", 1, 2, second, tuplet="stop"),
+        _timed("G", 3, 2, second),
+    )
+
+
+@pytest.mark.parametrize(
+    ("t_stems", "y_stems"),
+    [(("up", "up"), ("up", "up")), (("down", "up"), ("up", "down"))],
+    ids=["same-stems", "swapped-stems"],
+)
+def test_voices_that_abut_after_a_triplet_do_not_overlap(
+    t_stems: tuple[str, str],
+    y_stems: tuple[str, str],
+) -> None:
+    """Compare onsets exactly, so a triplet's end abuts the next voice.
+
+    In binary floating point 7/3 + 1/3 exceeds 8/3, which made the voices
+    overlap: equal stems then stopped the run, and swapped stems, a layout
+    change only, counted both voices as changed.
+    """
+    result = compare_file(
+        _triplet_handoff(*t_stems), _triplet_handoff(*y_stems)
+    )
+
+    _assert_file(result)
+    assert result.checks["voice_order"] == ElementTally(2, 2, 0)
+
+
+def test_unstemmed_rest_exactly_between_two_stems_stops() -> None:
+    """Stop on a rest whose nearest stems, 1/3 away, point both ways."""
+    text = _one_measure(
+        2,
+        _timed("C", 1, 1, "up"),
+        _timed("D", 1, 1, "up"),
+        _timed(None, 1, 1),
+        _timed("E", 3, 1, "down"),
+        "<backup><duration>6</duration></backup>",
+        _timed("F", 6, 2, "down"),
+    )
+
+    with pytest.raises(ProtocolDefectError, match="ambiguous voice position"):
+        compare_file(text, text)
+
+
 def test_unison_stem_swap_pairs_notes_by_distinctive_content() -> None:
     """Keep distinctive note content aligned across a stem swap."""
     t_text, y_text = _unison_stem_swap_pair()
