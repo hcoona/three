@@ -485,18 +485,25 @@ def public_markdown(summary: Mapping[str, object]) -> str:
         ),
         f"- Calibration: {calibration.get('status')} {tag}.",
         f"- Datasets: {PDMX_CITATION}; {LIEDER_SOURCE} ({SOURCE_FINDING}).",
+        (
+            "- The Lieder arms measure piano-accompaniment extracts, not "
+            f"original piano works ({SOURCE_FINDING})."
+        ),
         "",
         "## Fidelity per arm",
         "",
         (
             "Fidelity is identical reference elements over reference elements "
             f"plus extra elements, pooled per arm {tag}. The layout score is "
-            "reported only."
+            "reported only. The last column counts musicdiff differences "
+            "only; the supplementary checks' non-identical and extra "
+            "elements are listed under each arm's counts, and a file has no "
+            "counted difference only when both are zero."
         ),
         "",
         (
             "| Arm | Files | Failed | Content fidelity | Mean per file | "
-            "Layout score | Counted differences |"
+            "Layout score | musicdiff counted differences |"
         ),
         "| --- | ---: | ---: | --- | ---: | --- | ---: |",
     ]
