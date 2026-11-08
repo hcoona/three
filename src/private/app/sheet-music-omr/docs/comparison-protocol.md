@@ -382,26 +382,26 @@ or counted. A difference that the table and rules below cannot assign is a
 protocol defect. The run stops, and the difference is never counted as
 agreement.
 
-| musicdiff 6.0 operation                                                                                                                                  | Assignment                                                                                                                                                                                                                                                                 |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pitchnameedit`                                                                                                                                          | `pitch`; `layout` when both objects are rests, since only the layout pass compares a rest's staff position                                                                                                                                                                 |
-| `pitchtypeedit`                                                                                                                                          | `rhythm_rest` (note against rest)                                                                                                                                                                                                                                          |
-| `inspitch`, `delpitch`                                                                                                                                   | `chord_membership`                                                                                                                                                                                                                                                         |
-| `accidentins`, `accidentdel`, `accidentedit`                                                                                                             | `accidental`                                                                                                                                                                                                                                                               |
-| `headedit`, `dotins`, `dotdel`                                                                                                                           | `rhythm_rest`                                                                                                                                                                                                                                                              |
-| `insspace`, `delspace`, `editspace`                                                                                                                      | `rhythm_rest` (unprinted spacers and gaps in time)                                                                                                                                                                                                                         |
-| `graceedit`                                                                                                                                              | `grace`                                                                                                                                                                                                                                                                    |
-| `insbeam`, `delbeam`, `editbeam`                                                                                                                         | `beam`; `rhythm_rest` when the two notes differ in duration type, since musicdiff 6.0 gives every value from a quarter down the same notehead and encodes its flags only as beam levels                                                                                    |
-| `instuplet`, `deltuplet`, `edittuplet`                                                                                                                   | `tuplet`; `layout` when the two tuplet groups differ only in printed number or bracket                                                                                                                                                                                     |
-| `tieins`, `tiedel`                                                                                                                                       | `tie`                                                                                                                                                                                                                                                                      |
-| `insarticulation`, `delarticulation`, `editarticulation`                                                                                                 | `articulation_fermata`; `layout` when only the placement differs; disregarded when the object is a fingering                                                                                                                                                               |
-| `insexpression`, `delexpression`, `editexpression`                                                                                                       | by expression type: fermata `articulation_fermata` (`layout` when only its shape or placement differs); trill, mordent, inverted mordent, turn and inverted turn `ornament` (`layout` when only its placement differs); single-note tremolo `tremolo`; arpeggio `arpeggio` |
-| `extrains`, `extradel`, `extracontentedit`, `extrasymboledit`, `extrainfoedit`, `extraoffsetedit`, `extradurationedit`                                   | by the object's `kind`, below; `layout` when only the placement differs                                                                                                                                                                                                    |
-| `extrastyleedit`, `editnoteshape`, `editnoteheadfill`, `editstemdirection`, `editstyle`                                                                  | `layout`                                                                                                                                                                                                                                                                   |
-| `editnoteheadparenthesis`                                                                                                                                | disregarded; the parenthesis check scores it                                                                                                                                                                                                                               |
-| `staffgrpins`, `staffgrpdel`, `staffgrpnameedit`, `staffgrpabbreviationedit`, `staffgrpsymboledit`, `staffgrpbartogetheredit`, `staffgrppartindicesedit` | `layout`                                                                                                                                                                                                                                                                   |
-| `noteins`, `notedel`, `voiceins`, `voicedel`, `insbar`, `delbar`, `inspart`, `delpart`                                                                   | decomposed, below                                                                                                                                                                                                                                                          |
-| `lyricins`, `lyricdel`, `lyricedit`, `lyricidedit`, `lyricoffsetedit`, `lyricstyleedit`, `mditemins`, `mditemdel`, `mditemvalueedit`                     | not expected, since their detail levels are off; any occurrence is a protocol defect                                                                                                                                                                                       |
+| musicdiff 6.0 operation                                                                                                                                  | Assignment                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pitchnameedit`                                                                                                                                          | `pitch`; `layout` when both objects are rests, since only the layout pass compares a rest's staff position                                                                                                                                                                                  |
+| `pitchtypeedit`                                                                                                                                          | `rhythm_rest` (note against rest)                                                                                                                                                                                                                                                           |
+| `inspitch`, `delpitch`                                                                                                                                   | `chord_membership`                                                                                                                                                                                                                                                                          |
+| `accidentins`, `accidentdel`, `accidentedit`                                                                                                             | `accidental`                                                                                                                                                                                                                                                                                |
+| `headedit`, `dotins`, `dotdel`                                                                                                                           | `rhythm_rest`                                                                                                                                                                                                                                                                               |
+| `insspace`, `delspace`, `editspace`                                                                                                                      | `rhythm_rest` (unprinted spacers and gaps in time)                                                                                                                                                                                                                                          |
+| `graceedit`                                                                                                                                              | `grace`                                                                                                                                                                                                                                                                                     |
+| `insbeam`, `delbeam`, `editbeam`                                                                                                                         | `beam`; `rhythm_rest` when the two notes differ in duration type, since musicdiff 6.0 gives every value from a quarter down the same notehead and encodes its flags only as beam levels                                                                                                     |
+| `instuplet`, `deltuplet`, `edittuplet`                                                                                                                   | `tuplet`; `layout` when the two tuplet groups differ only in printed number, bracket or placement                                                                                                                                                                                           |
+| `tieins`, `tiedel`                                                                                                                                       | `tie`                                                                                                                                                                                                                                                                                       |
+| `insarticulation`, `delarticulation`, `editarticulation`                                                                                                 | `articulation_fermata`; `layout` when only the placement differs; disregarded when the object is a fingering                                                                                                                                                                                |
+| `insexpression`, `delexpression`, `editexpression`                                                                                                       | by expression type: fermata `articulation_fermata` (`layout` when only its shape differs, by the fermata reading below); trill, mordent, inverted mordent, turn and inverted turn `ornament` (`layout` when only its placement differs); single-note tremolo `tremolo`; arpeggio `arpeggio` |
+| `extrains`, `extradel`, `extracontentedit`, `extrasymboledit`, `extrainfoedit`, `extraoffsetedit`, `extradurationedit`                                   | by the object's `kind`, below; `layout` when only the placement differs                                                                                                                                                                                                                     |
+| `extrastyleedit`, `editnoteshape`, `editnoteheadfill`, `editstemdirection`, `editstyle`                                                                  | `layout`                                                                                                                                                                                                                                                                                    |
+| `editnoteheadparenthesis`                                                                                                                                | disregarded; the parenthesis check scores it                                                                                                                                                                                                                                                |
+| `staffgrpins`, `staffgrpdel`, `staffgrpnameedit`, `staffgrpabbreviationedit`, `staffgrpsymboledit`, `staffgrpbartogetheredit`, `staffgrppartindicesedit` | `layout`                                                                                                                                                                                                                                                                                    |
+| `noteins`, `notedel`, `voiceins`, `voicedel`, `insbar`, `delbar`, `inspart`, `delpart`                                                                   | decomposed, below                                                                                                                                                                                                                                                                           |
+| `lyricins`, `lyricdel`, `lyricedit`, `lyricidedit`, `lyricoffsetedit`, `lyricstyleedit`, `mditemins`, `mditemdel`, `mditemvalueedit`                     | not expected, since their detail levels are off; any occurrence is a protocol defect                                                                                                                                                                                                        |
 
 The `kind` of an extra assigns it as follows:
 
@@ -431,18 +431,37 @@ it assigns to `text`, would not be compared. music21 imports words that name a
 repeat instruction, such as "D.C. al Fine" or "Fine", as a repeat expression
 that holds them as a text expression, and musicdiff 6.0 assigns a repeat
 expression no `kind`. The harness replaces it with the text expression it
-holds, whose kind is `direction`. The words of a direction without `dashes`
-that has a `metronome`, a `sound` with a `tempo` attribute or only `words`
-with `font-weight="bold"` are tempo words. Their text, joined in document
-order and trimmed, becomes the text of the direction's metronome mark. A
-direction without a `metronome` gets a new metronome mark without a number in
-place of its text expressions, with their offset, placement and style.
-musicdiff 6.0 compares such a mark by its text alone, and its kind is
-`tempo`. A change between tempo words and other words, such as a change of
-only the weight of words in a direction without a `metronome` or a `sound`
-tempo, is therefore one `tempo_rehearsal` and one `text` difference. When the
-harness cannot find the music21 object of a `words` element at its onset, the
-run stops with `ProtocolDefectError`.
+holds, whose kind is `direction`. A direction without `dashes` has tempo
+words when the text of its `words` is not empty and it has a `metronome`, a
+`sound` with a `tempo` attribute, or `words` that all have
+`font-weight="bold"`, whatever its other direction types. That text is the
+character data of its `words` elements, joined in document order with no
+separator and then trimmed, and it becomes the text of the direction's
+metronome mark. music21 trims each `words` element separately, and the
+harness finds the music21 object of each by that trimmed text at the
+direction's onset. A direction without a `metronome` gets a new metronome
+mark without a number in place of its text expressions, with their offset,
+placement and style. musicdiff 6.0 compares such a mark by its text: it does
+not compare a number that music21 infers from the text, and it compares text
+of the form note = number by that note and number. Its kind is `tempo`.
+musicdiff 6.0 pairs extras only of the same kind, so a change between tempo
+words and other words, such as a change of only the weight of words in a
+direction without a `metronome` or a `sound` tempo, is one `tempo_rehearsal`
+and one `text` difference. When the harness cannot find the music21 object of
+a `words` element, or the metronome mark of a direction with a `metronome`,
+the run stops with `ProtocolDefectError`.
+
+With `Style`, the harness also reads the shape of a fermata. musicdiff 6.0
+records a fermata only by its expression name, which holds neither its shape
+nor its placement, so an upright and an inverted fermata would compare
+equal. The harness gives the fermata of a note, chord or rest whose type is
+inverted the name "inverted fermata", so that a change of only its shape is
+one `editexpression`, assigned to `layout`. MusicXML 4.0 defines a `fermata`
+without a `type` as upright, but music21 10.5.2 imports it as inverted.
+Before parsing, the harness therefore gives each such `fermata` the type
+`upright`, and if one remains without a type, the run stops with
+`ProtocolDefectError`. A fermata's placement is not compared; the format
+does not encode it.
 
 In each score, a key signature that restates the key in effect on its staff,
 a clef at the start of a system that restates the clef in effect on its
@@ -648,7 +667,11 @@ with their provenance:
   category and one can replace the other at the same place in a valid text,
   at both ends of a relation together, as `stacc` and `acc`, `grace` and
   `grace/`, `cresc` and `dim` of a hairpin or `G` and `F` of a clef; the
-  option's category is that category;
+  option's category is that category. The place of a block option is its
+  key, so `left=repeat`, the only value of its key, has no pair. A valid text
+  is the text of an assembled score, since each fixture is a whole score, so
+  a value that only a system document admits, such as `arc@` or `<trill)>`,
+  has no value pair;
 - for each layout hint that the format lists (stem direction, placement,
   inverted fermata, dynamic placement), one pair that differs only in it; the
   stem-direction pair is a single-voice measure, where stem direction does not
@@ -658,7 +681,8 @@ with their provenance:
 - pairs that differ only in generated identifiers or `divisions`, a pair whose
   voices are renumbered without a change of canonical positions (for example
   staff 2 voices 5 and 6 against 1 and 2, including a change in their numeric
-  rank), and identical pairs;
+  rank), a pair in which a fermata of `Y` has no `type` and that of `T(Y)`
+  is upright, and identical pairs;
 - a pair in which a measure is inserted before later measures and the reverse
   pair in which a measure is deleted, with the expected per-ordinal
   differences fixed by the fixture; neither pair may align content across
@@ -730,11 +754,13 @@ with their provenance:
   `T(Y)` omits them, a second such pair whose words are bold, and a pair in
   which a wavy line of `Y` starts and stops on its trilled note and `T(Y)` has
   only the trill mark;
-- for the words reading, a pair in which bold words become normal words, one
-  in which a direction with words loses its `sound` tempo, one in which bold
-  tempo words are split into two `words` elements, one in which `T(Y)` drops
-  the words of a direction with a `metronome`, and one for each staff in which
-  `T(Y)` drops words that music21 reads as a repeat instruction;
+- for the words reading, a pair in which bold words become normal words, a
+  second such pair whose direction also has dynamics, one in which a
+  direction with normal words and no `metronome` loses its `sound` tempo, one
+  in which bold tempo words are split after a space into two `words`
+  elements, one in which they are split inside a word, one in which `T(Y)`
+  drops the words of a direction with a `metronome`, and one for each staff
+  in which `T(Y)` drops words that music21 reads as a repeat instruction;
 - a pair in which two heading lines of one page swap their reading order, and
   a pair in which the only change is that a page 2 heading line is moved to
   page 1 after the page 1 lines.
@@ -782,12 +808,13 @@ The instrument passes when it reports:
   element for the parenthesis pair, and exactly one non-identical and
   one extra `heading` element for the heading-order pair, each with no other
   difference;
-- exactly one `text` and one `tempo_rehearsal` difference for the bold-words
-  pair and for the `sound`-tempo pair, exactly one `tempo_rehearsal`
-  difference for the metronome-words pair and exactly one `text` difference
-  for each repeat-words pair, each with no other difference;
-- no difference for the remaining no-change pairs, including the reprint pairs
-  and the split-words pair.
+- exactly one `text` and one `tempo_rehearsal` difference for each pair in
+  which bold words become normal words and for the `sound`-tempo pair,
+  exactly one `tempo_rehearsal` difference for the metronome-words pair and
+  exactly one `text` difference for each repeat-words pair, each with no
+  other difference;
+- no difference for the remaining no-change pairs, including the reprint
+  pairs, the untyped-fermata pair and the split-words pairs.
 
 The screen's allowlist is reviewed against the same fixtures. A
 failure is a protocol defect: this record is revised under review before any
@@ -848,10 +875,16 @@ is a system or page break, staff details or a staff group. It
 is identical when no `layout` difference touches it. An articulation,
 expression or tuplet operation touches only the attached element that it
 changes, not the note that carries it, and another operation on a note does
-not touch the elements attached to it. An object of `T(Y)` that
-carries such a property without a counterpart that carries it is an extra
-layout element. The score is the number of identical layout elements divided
-by the number of layout elements plus extra layout elements, pooled per arm.
+not touch the elements attached to it. The counterpart of an object of
+`T(Y)` is the object of `Y` that a difference pairs with it, including a pair
+that the pairing rules form; in the layout pass, rule 1 pairs two notes even
+when the cross-staff check has an element for either. The counterpart of an
+attached element is the element of `Y` that musicdiff aligns with it. An
+object or attached element of `T(Y)` that carries such a property without a
+counterpart that carries one is an extra layout element, so the layout of
+content that `T(Y)` inserts is extra. The score is the number of identical
+layout elements divided by the number of layout elements plus extra layout
+elements, pooled per arm.
 A file that the failure rules count as failed counts every layout element of
 `Y`, or of `X` when `R(X)` is missing or cannot be parsed, as non-identical.
 It is reported and never gates acceptance.
@@ -922,22 +955,30 @@ better than ABC or MusicXML, as OMR-REQ-011 and
 [OMR-REQ-014](requirements.md#omr-req-014-evidence-separation) state. A zero
 musicdiff difference is not byte-identical MusicXML or identical engraving.
 The layout score covers only the properties that musicdiff 6.0 compares with
-`Style`, which exclude coordinates and font family. A layout element whose
-object `T(Y)` deletes is touched by no `layout` difference and counts as
-identical, so layout lost with deleted content, which the content pass counts,
-does not lower the layout score. The heading check compares only the reading
-order of heading lines, not which system or page a heading precedes; a move
-between systems is not counted. It counts a credit that repeats an earlier
-page's line as a heading line, though the format does not encode running
-headers, so a conversion that omits one is counted. musicdiff 6.0 compares an
-arpeggio across events by its type, member count and the onset of its highest
-member, not by its members, so a regrouping that keeps these is not counted.
+`Style`, which exclude coordinates and font family. A layout element of a
+note, rest, chord or extra of a content category that `T(Y)` deletes is
+touched by no `layout` difference and counts as identical, so layout lost
+with deleted content, which the content pass counts, does not lower the
+layout score, while the layout of inserted content counts as extra. A
+deleted system or page break, staff details or staff group is a `layout`
+difference and counts as non-identical. The heading check compares only the
+reading order of heading lines, not which system or page a heading precedes;
+a move between systems is not counted. It counts a credit that repeats an
+earlier page's line as a heading line, though the format does not encode
+running headers, so a conversion that omits one is counted. musicdiff 6.0
+compares an arpeggio across events by its type, member count and the onset of
+its highest member, not by its members, so a regrouping that keeps these is
+not counted.
 musicdiff 6.0 also drops a clef that restates an earlier clef of its staff in
 the same measure; the screen excludes such clefs in `X`, but one that `T(Y)`
 adds is not counted.
-The words reading takes the converters' marks of tempo words, which MusicXML
-does not standardize: words with none of these marks are text in both scores,
-so a conversion that keeps such tempo words of `Y` as text is not counted.
+The words reading takes its marks of tempo words from the converters' MusicXML
+mapping, so it measures agreement with that mapping, not with the format's
+rule for tempo words. That MusicXML has no standard mark of tempo words is an
+inference. Words of `Y` without these marks are text in both scores, so a
+conversion that keeps such tempo words as text is not counted; marked words
+that the format assigns to text, such as a bold "Fine" or "rit." with a
+`sound` tempo, are counted as `tempo_rehearsal`.
 music21 forms a pedal mark only from a `pedal` start that a later `stop`
 completes, and musicdiff 6.0 compares pedals only as pedal marks, so a pedal
 sign without such a partner is not compared, and its loss is not counted; the
@@ -966,7 +1007,7 @@ each before results depend on it:
   beam relations and nested tuplet groups; the supplementary checks cover the
   first two, the direction of beam hooks and beams on rests;
 - whether `pitchtypeedit` means a change between note and rest, and how
-  musicdiff represents a fermata's shape and a pickup measure;
+  musicdiff represents a pickup measure;
 - the `PDMX.csv` header, including the prefilter columns and the column that
   holds the compressed MusicXML path, the layout of
   `mxl.tar.gz`, and the Lieder file names at the pinned commit;
@@ -1021,22 +1062,45 @@ Source findings, with the pinned sources they rely on:
   [PyPI wheel](https://pypi.org/project/music21/10.5.0/#files)
   `music21-10.5.0-py3-none-any.whl`, SHA-256
   `9924eff5fbf58490e67cbf3b78a58ba53040e77c281930d354af32a747e94606`.
-- music21 10.5.2, the version that the lockfile resolves, imports `words` that
+  These lines are the same in 10.5.2.
+- music21 10.5.2 is the version that the lockfile of the harness change
+  resolves when it adds musicdiff 6.0; the target branch's lockfile has no
+  music21. That version imports `words` that
   name a repeat instruction as a `RepeatExpression` that holds a copy of their
   text expression, and inserts only complete spanners. A pedal mark is
   complete only at its `stop`, and a `stop` without an open pedal mark is
-  skipped with a warning. See `music21/musicxml/xmlToM21.py` lines 5631 to
-  5647, 1547 to 1552, 4556 to 4557, 4516 to 4523 and 5591 to 5598, and
-  `music21/expressions.py` lines 536 to 555, in the
+  skipped with a warning. Its `Fermata` has the type `inverted` unless the
+  MusicXML gives one. See `music21/musicxml/xmlToM21.py` lines 5631 to
+  5647, 1547 to 1552, 4556 to 4557, 4516 to 4523, 5591 to 5598 and 3880 to
+  3890, and `music21/expressions.py` lines 536 to 555 and 2695 to 2700, in the
   [PyPI wheel](https://pypi.org/project/music21/10.5.2/#files)
   `music21-10.5.2-py3-none-any.whl`, SHA-256
   `dba8696eafab709a244b6f18c64399edcccf4e96ddd1e0e4de7eff0a291c2dec`.
+  If a run records another music21 version, these music21 findings are
+  rechecked before any corpus or gold run.
   musicdiff 6.0 has no `kind` for a `RepeatExpression` in the `extra_to_kind`
-  lines cited above, and it compares a metronome mark that has text and no
-  number by its text alone; see
-  [m21utils.py](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L1484-L1493)
+  lines cited above. It compares a metronome mark that has text and no
+  number by its text, except text of the form note = number; see
+  [m21utils.py](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L1476-L1493)
   and
   [lines 1535 to 1543](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L1535-L1543).
+  It pairs extras only of the same kind, and reports the others as
+  `extradel` and `extrains`; see
+  [comparison.py](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/comparison.py#L1106-L1113)
+  and
+  [lines 1174 to 1182](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/comparison.py#L1174-L1182).
+  It records a fermata only by its expression name
+  ([m21utils.py lines 217 to 219](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L217-L219)),
+  and with `Style` adds a tuplet group's placement to its printed number and
+  bracket
+  ([lines 620 to 641](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L620-L641)).
+- MusicXML 4.0 defines a `fermata` without a `type` as upright; see the
+  [`fermata` element](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/fermata/).
+- The converters mark tempo words in MusicXML as bold `words` or with a
+  `sound` tempo, at commit `36323f54`; see
+  [musicxml_reverse.py](https://github.com/hcoona/three/blob/36323f54c3f326e798725e11455a124a510b915a/src/private/app/sheet-music-omr/src/sheet_music_omr/musicxml_reverse.py#L1594-L1598)
+  and
+  [musicxml_forward.py](https://github.com/hcoona/three/blob/36323f54c3f326e798725e11455a124a510b915a/src/private/app/sheet-music-omr/src/sheet_music_omr/musicxml_forward.py#L1129-L1130).
 - The normalized OMR edit distance divides the OMR edit distance by the symbol
   counts of both scores; see
   [visualization.py](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/visualization.py#L1384-L1396).
