@@ -63,6 +63,7 @@ from sheet_music_omr.musicxml_events import (
     read_score,
     voice_staves,
 )
+from sheet_music_omr.musicxml_events import _written as _written_time
 from sheet_music_omr.musicxml_reverse import _load as _load_musicxml
 
 if TYPE_CHECKING:
@@ -3209,10 +3210,12 @@ def _trill_reprints(
     )
     if signature is None:
         return []
+    # The line is open up to its stop in written time, so a stop on a grace
+    # note closes it before a main note at the same onset.
     return [
         event
         for event in first
-        if event.start <= span.stop.start
+        if _written_time(event) <= _written_time(span.stop)
         and any(_trill_signature(note) == signature for note in event.notes)
     ]
 

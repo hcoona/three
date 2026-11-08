@@ -4250,6 +4250,64 @@ def test_line_reprints_are_on_the_first_event_of_a_system_on_a_staff(
     assert added_count == added
 
 
+_GRACE_TRILL_STOP = (
+    '      <note id="m2g">\n'
+    "        <grace/>\n"
+    "        <pitch>\n"
+    "          <step>D</step>\n"
+    "          <octave>4</octave>\n"
+    "        </pitch>\n"
+    "        <voice>1</voice>\n"
+    "        <type>16th</type>\n"
+    "        <staff>2</staff>\n"
+    f"        <notations>\n{_TRILL_STOP}        </notations>\n"
+    "      </note>\n"
+)
+_PLACED_TRILL = _ornaments('            <trill-mark placement="below"/>\n')
+
+
+def _trill_line_score(*, trill: bool, stop: str) -> str:
+    """Open a trill line in measure 1 and stop it at measure 2's onset.
+
+    The stop is on a grace note of the bottom staff before measure 2's top
+    note, or on the bottom note itself, and the top note can carry a placed
+    trill mark.
+    """
+    top = _system_note("m2s1", 1, ornaments=_PLACED_TRILL if trill else "")
+    text = _system_score(
+        _system_note("m1s1", 1, ornaments=_TRILL_START),
+        _GRACE_TRILL_STOP + top if stop == "grace" else top,
+    )
+    if stop == "grace":
+        return text
+    return _variant(_notations("m2s2", _TRILL_STOP, base=text), base=text)
+
+
+@pytest.mark.parametrize(
+    ("stop", "content", "added_layout"),
+    [("grace", {"ornament": 1}, 1), ("main", {}, 0)],
+    ids=["stop-on-an-earlier-grace-note", "stop-on-a-simultaneous-note"],
+)
+def test_trill_mark_is_a_reprint_only_while_its_line_is_open(
+    stop: str,
+    content: dict[str, int],
+    added_layout: int,
+) -> None:
+    """Count a trill mark after its line's stop at a system start as new.
+
+    A stop on a grace note of another staff closes the line before a main
+    note at the same onset; a stop on a simultaneous main note does not.
+    """
+    t_text = _trill_line_score(trill=False, stop=stop)
+    y_text = _trill_line_score(trill=True, stop=stop)
+
+    _assert_file(compare_file(t_text, y_text), content)
+    added = failure_layout_element_count(y_text) - failure_layout_element_count(
+        t_text,
+    )
+    assert added == added_layout
+
+
 _CRESC_LINE = _variant(
     _before("m4s1n1", _line_direction("cresc.", "start")),
     _before("m6s1n1", _line_direction(None, "stop")),
