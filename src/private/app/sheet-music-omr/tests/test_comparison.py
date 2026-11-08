@@ -2751,6 +2751,51 @@ def test_excluded_reasons_do_not_depend_on_voice_numbers() -> None:
         )
 
 
+def test_event_reason_precedes_mixed_stem_voice() -> None:
+    """Report a mixed voice's nearest-stem tie, which comes first.
+
+    Voice 7 has C5 up, a rest, C5 down and E5 up at onsets 0 to 3, so it
+    has both stem directions and a rest equally near an up and a down stem.
+    """
+    text = _variant(
+        _edit(
+            "m4s1n2",
+            "        <pitch>\n"
+            "          <step>C</step>\n"
+            "          <octave>5</octave>\n"
+            "        </pitch>\n",
+            "        <rest/>\n",
+            "        <stem>up</stem>\n",
+            "",
+            base=_M4_THREE_VOICES,
+        ),
+        _edit(
+            "m4s1n3",
+            "<stem>up</stem>",
+            "<stem>down</stem>",
+            base=_M4_THREE_VOICES,
+        ),
+        base=_M4_THREE_VOICES,
+    )
+
+    result = compare_file(text, text)
+
+    _assert_file(result)
+    assert result.checks["voice_order"] == ElementTally(
+        VOICE_ORDER_ELEMENT_COUNT - 2,
+        VOICE_ORDER_ELEMENT_COUNT - 2,
+        0,
+    )
+    assert result.tally == ElementTally(
+        BASE_FILE_ELEMENT_COUNT - 1,
+        BASE_FILE_ELEMENT_COUNT - 1,
+        0,
+    )
+    assert result.excluded_voices == Counter(
+        {UndeterminedReason.NEAREST_STEM_TIE: 3},
+    )
+
+
 _CROSS_STAFF_UNPLACED = _variant(
     _edit(
         "m4s1n5",

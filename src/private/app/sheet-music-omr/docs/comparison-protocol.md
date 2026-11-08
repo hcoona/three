@@ -834,6 +834,10 @@ with their provenance:
   direction;
 - the mixed three-voice staff with the F4 unstemmed, as a self-pair and
   again with voice 7 renumbered 1;
+- the three-voice measure-4 staff whose C5 voice has a rest in place of its
+  second quarter and its third quarter stemmed down, so that a voice with
+  stems of both directions has a rest equally near an up and a down stem, as
+  a self-pair;
 - one pair that differs only in the end note of an extended trill, one in
   which an extended trill moves between simultaneous unison notes of different
   written durations in two voices of one staff that both carry a trill mark,
@@ -1007,6 +1011,10 @@ The instrument passes when it reports:
     - for the unstemmed-F4 mixed staff and its renumbered copy, no difference
       and three `no-stemmed-event` exclusions each, the first in precedence of
       the staff-measure's `mixed-stem-voice` and `no-stemmed-event`;
+    - for the three-voice staff whose mixed voice has the equidistant rest,
+      voice order (17, 17, 0), file (78, 78, 0), no difference and three
+      `nearest-stem-tie` exclusions, the first in precedence of the
+      staff-measure's `nearest-stem-tie` and `mixed-stem-voice`;
 - the insertion and deletion measure pairs have exactly their fixture's
   predeclared per-ordinal category assignments and non-identical/extra
   element counts; neither fixture pairs content across measure ordinals;

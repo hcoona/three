@@ -2169,17 +2169,13 @@ def _events_by_stem_direction(
     ]
     reasons: list[UndeterminedReason] = []
     for voice, directions in zip(voices, voice_directions, strict=True):
-        explicit_directions = {
-            direction
-            for direction in directions.values()
-            if direction is not None
-        }
-        if len(explicit_directions) > 1:
-            reasons.append(UndeterminedReason.MIXED_STEM_VOICE)
-            continue
+        # An event's reason precedes the voice's own mixed-stem reason.
         resolved = _resolve_voice_directions(voice, directions, context)
         if isinstance(resolved, UndeterminedReason):
             reasons.append(resolved)
+            continue
+        if len(set(resolved.values())) > 1:
+            reasons.append(UndeterminedReason.MIXED_STEM_VOICE)
             continue
         notes_by_direction: dict[str, list[AnnNote]] = {"up": [], "down": []}
         for note in voice.annot_notes:
