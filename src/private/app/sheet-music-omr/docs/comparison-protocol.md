@@ -357,12 +357,15 @@ marker, or its forward conversion fails, or musicdiff cannot parse `R(X)` or
 `T(Y)`, or a step exceeds the 300-second timeout. Such a file is never dropped
 from the denominator. Its element count is that of `Y` alone, or of `X` when
 `R(X)` is missing or cannot be parsed: the in-scope elements of its content
-pass plus the supplementary elements computed on that score alone, where each
-voice, each slur, each note with a `tie` of type `stop`, each tremolo of type
-`single` or `start`, each `beam` with value `forward hook` or `backward hook`
-on a note that is not a rest, each beam on a rest as defined by the Rest beams
-check, and each note, rest or chord with a `time-modification` counts as an
-element.
+pass plus every element that a supplementary check defines, counted on that
+score alone. An element that a check counts only when `T(Y)` has a
+counterpart counts without one, so each voice of each measure, each slur, each
+tremolo of type `single` or `start`, each `beam` with value `forward hook` or
+`backward hook` on a note that is not a rest, and each note, rest or chord
+with a `time-modification` is an element, as are each fingering digit, each
+note or rest off its voice's staff, each heading line, each `wavy-line` and
+`dashes` line, each parenthesized notehead or accidental, each beam on a rest
+and each note with a `tie` of type `stop`.
 
 A gold piece whose reverse conversion reports unsupported content does not
 pass OMR-REQ-010, and the count of such pieces returns to the owner, because
@@ -440,10 +443,12 @@ separator and then trimmed, and it becomes the text of the direction's
 metronome mark. music21 trims each `words` element separately, and the
 harness finds the music21 object of each by that trimmed text at the
 direction's onset. A direction without a `metronome` gets a new metronome
-mark without a number in place of its text expressions, with their offset,
-placement and style. musicdiff 6.0 compares such a mark by its text: it does
-not compare a number that music21 infers from the text, and it compares text
-of the form note = number by that note and number. Its kind is `tempo`.
+mark without a number in place of its text expressions, with their offset
+and the placement and style of the first `words` element; the style of the
+other `words` elements is not compared. musicdiff 6.0 compares such a mark
+by its text: it does not compare a number that music21 infers from the text,
+and it compares text of the form note = number by that note and number. Its
+kind is `tempo`.
 musicdiff 6.0 pairs extras only of the same kind, so a change between tempo
 words and other words, such as a change of only the weight of words in a
 direction without a `metronome` or a `sound` tempo, is one `tempo_rehearsal`
@@ -546,15 +551,17 @@ of its voice at that onset.
   numbers do not establish those positions. The stem flag itself is layout,
   but a change in the voice-line assignment it determines under those rules is
   content. A voice is identified by its content: the sequence of onsets,
-  durations, pitches and attached symbols of its notes and rests. Each voice
-  of `Y` in each measure is one element. Its canonical position is evaluated
-  event by event in the order of that content sequence; it is identical only
-  when `T(Y)` has a voice of the same content on the same staff in that
-  measure with the same ordered position sequence. Comparing only the counts
-  at each position is insufficient. A voice of `Y` whose content no voice of
-  `T(Y)` on that staff in that measure matches is not a voice-order element:
-  musicdiff and the pairing rules score its differences. The voice-order
-  check adds no extra elements. A double-stem event belongs to both voices;
+  durations, pitches and attached symbols of its notes and rests. Its
+  canonical position is evaluated event by event in the order of that content
+  sequence. On each staff in each measure, the voices of `Y` and of `T(Y)`
+  with the same content are matched one to one, matching as many voices with
+  the same ordered position sequence as possible. Each matched voice of `Y` is
+  one element, identical only when its partner has the same ordered position
+  sequence. Comparing only the counts at each position is insufficient. A
+  voice of `Y` without a partner, because no voice of `T(Y)` on that staff in
+  that measure has its content or because `T(Y)` has fewer voices with that
+  content, is not a voice-order element: musicdiff and the pairing rules
+  score its differences. The voice-order check adds no extra elements. A double-stem event belongs to both voices;
   while the instrument cannot represent that dual membership, it stops with
   `ProtocolDefectError` rather than assigning one position or counting
   agreement.
@@ -565,7 +572,9 @@ of its voice at that onset.
   line of `credit-words` text, after whitespace normalization, is one element.
   Credits whose `credit-type` is `title`,
   `subtitle`, `composer`, `arranger` or `lyricist` count. Credits whose
-  `credit-type` is `page number`, `rights` or `part name` do not. The lines of
+  `credit-type` is `page number`, `rights` or `part name` do not. Credits
+  without a `credit-type` do not count until the open check on them in
+  [Evidence limits](#evidence-limits-and-open-checks) is settled. The lines of
   a score are in reading order: by `credit` page, and on each page, when every
   counted credit of the page has `default-x` and `default-y`, by descending
   `default-y` and then ascending `default-x`, and otherwise in document order,
@@ -592,21 +601,21 @@ of its voice at that onset.
   difference is the parentheses is disregarded.
 - **Tremolo strokes** (`tremolo`): musicdiff 6.0 encodes a tremolo without
   its stroke count. Each `tremolo` of `Y` with type `single` or `start` is one
-  element when `T(Y)` has a `tremolo` of the same type on a note with the same
-  measure, staff, onset, written pitch and written duration. It is identical
-  when the stroke counts are equal. musicdiff scores a tremolo that `T(Y)`
-  lacks, and the check adds no extra elements.
+  element when `T(Y)` has a `tremolo` of the same type on an event with the
+  same measure, staff, onset, written pitches and written duration. It is
+  identical when the stroke counts are equal. musicdiff scores a tremolo that
+  `T(Y)` lacks, and the check adds no extra elements.
 - **Beam hooks** (`beam`): musicdiff 6.0 encodes a hook as `partial`,
   without its direction. Each `beam` of `Y` with value `forward hook` or
   `backward hook` is one element when `T(Y)` has a hook of the same beam
-  `number` on a note with the same measure, staff, onset, written pitch and
+  `number` on an event with the same measure, staff, onset, written pitches and
   written duration. It is identical when the two values are equal. musicdiff
   scores a hook that `T(Y)` lacks, and the check adds no extra elements.
 - **Rest beams** (`beam`): musicdiff 6.0 discards a rest's beams and rebuilds
   them from its duration and the next event. Each `beam` on a rest, printed or
   not, is one element, keyed by measure, staff, onset, written duration, beam
   `number` and value. Matching is as for fingering, except that an unmatched
-  element is neither non-identical nor extra when a counted musicdiff
+  beam is neither an element nor an extra element when a counted musicdiff
   difference touches its rest. A musicdiff beam operation between two rests is
   `rhythm_rest` when they differ in duration type, as for notes, and is
   otherwise disregarded. The beam-hook check covers only hooks on notes that
@@ -652,7 +661,10 @@ the instrument. Its fixtures are small self-authored MusicXML pairs, committed
 with their provenance:
 
 - for each of the 27 categories, at least one pair that differs in exactly one
-  element of that category, built so that one edit gives one operation, and
+  element of that category, built so that one edit gives one operation,
+  except that the `voice` and `cross_staff` pairs give the two operations that
+  a pairing rule pairs and the `heading` pair gives no musicdiff operation,
+  since only the heading check scores it, and
   for `rhythm_rest` also a pair in which an unbeamed eighth note becomes a
   sixteenth note, one in which an unbeamed eighth rest becomes a sixteenth
   rest, and one in which a sixteenth rest in a beam group becomes an eighth
@@ -814,14 +826,18 @@ The instrument passes when it reports:
   exactly one `text` difference for each repeat-words pair, each with no
   other difference;
 - no difference for the remaining no-change pairs, including the reprint
-  pairs, the untyped-fermata pair and the split-words pairs.
+  pairs, the split-words pairs and the untyped-fermata pair, which also has
+  no difference in the layout pass.
 
-The screen's allowlist is reviewed against the same fixtures. A
-failure is a protocol defect: this record is revised under review before any
-corpus or gold run.
+The screen's allowlist is reviewed against the same fixtures before the
+samples are selected in Execution step 2. A failure of the instrument or of
+that review is a protocol defect: this record is revised under review before
+any corpus or gold run.
 
-As a preflight, one MuseScore conversion of a calibration fixture is run and
-the settings-file hash is checked before any corpus export.
+As a preflight in Execution step 1, one MuseScore conversion of a calibration
+fixture is run and the settings-file hash is checked before any corpus
+export. The allowlist review and this preflight belong to the screen and to
+the preflight; they are not part of the instrument's pass.
 
 ## MuseScore import check
 
@@ -870,16 +886,21 @@ attached to one, that carries a value other than musicdiff's default of a
 property whose difference the operation table assigns to `layout`, such as a
 non-empty style, a stem direction other than `unspecified`, a rest staff
 position other than the default, a notehead other than `normal` or a set
-notehead fill, a placement, or a tuplet's printed number or bracket; or that
-is a system or page break, staff details or a staff group. It
-is identical when no `layout` difference touches it. An articulation,
+notehead fill, a placement, an inverted fermata, or a tuplet's printed
+number or bracket; or that is a system or page break, staff details or a
+staff group. It is identical when no `layout` difference touches it. A
+`layout` difference is one whose only category is `layout`, so the
+difference of an inserted or deleted note, rest, chord or extra that also
+has a symbol of a content category is not one. An articulation,
 expression or tuplet operation touches only the attached element that it
 changes, not the note that carries it, and another operation on a note does
 not touch the elements attached to it. The counterpart of an object of
-`T(Y)` is the object of `Y` that a difference pairs with it, including a pair
-that the pairing rules form; in the layout pass, rule 1 pairs two notes even
-when the cross-staff check has an element for either. The counterpart of an
-attached element is the element of `Y` that musicdiff aligns with it. An
+`T(Y)` that a difference holds is the object of `Y` that the difference
+pairs with it, including a pair that the pairing rules form; in the layout
+pass, rule 1 pairs two notes even when the cross-staff check has an element
+for either. An object of `T(Y)` that no difference holds has the equal
+object of `Y` as its counterpart. The counterpart of an attached element is
+the element of `Y` that musicdiff aligns with it. An
 object or attached element of `T(Y)` that carries such a property without a
 counterpart that carries one is an extra layout element, so the layout of
 content that `T(Y)` inserts is extra. The score is the number of identical
@@ -959,7 +980,12 @@ The layout score covers only the properties that musicdiff 6.0 compares with
 note, rest, chord or extra of a content category that `T(Y)` deletes is
 touched by no `layout` difference and counts as identical, so layout lost
 with deleted content, which the content pass counts, does not lower the
-layout score, while the layout of inserted content counts as extra. A
+layout score, while the layout of inserted content counts as extra. The
+same holds for an articulation, expression or tuplet group of a note that
+`T(Y)` keeps: when `T(Y)` drops it or changes it by a content difference,
+its placement, fermata shape or printed number or bracket is touched by no
+`layout` difference and counts as identical, while one that `T(Y)` adds
+counts as extra. A
 deleted system or page break, staff details or staff group is a `layout`
 difference and counts as non-identical. The heading check compares only the
 reading order of heading lines, not which system or page a heading precedes;
@@ -984,6 +1010,12 @@ completes, and musicdiff 6.0 compares pedals only as pedal marks, so a pedal
 sign without such a partner is not compared, and its loss is not counted; the
 text-space check reports the loss only when the reverse conversion keeps the
 sign.
+music21 10.5.2 imports each staff of a multi-staff part as a separate part
+and puts some objects on every one of them: a barline, a repeat bracket, a
+pedal change, gap start or gap end, and a key or time signature without a
+staff `number`. Each such mark is one element per staff, so it counts once
+per staff in the fidelity figure and the per-category counts, while a pedal
+mark counts once.
 The fingering, parenthesis, tie-end, slur-endpoint, tremolo-stroke, beam-hook and
 extended-trill checks identify a note by its written pitch and written
 duration, not by its voice, so a mark or endpoint
@@ -1070,9 +1102,14 @@ Source findings, with the pinned sources they rely on:
   text expression, and inserts only complete spanners. A pedal mark is
   complete only at its `stop`, and a `stop` without an open pedal mark is
   skipped with a warning. Its `Fermata` has the type `inverted` unless the
-  MusicXML gives one. See `music21/musicxml/xmlToM21.py` lines 5631 to
-  5647, 1547 to 1552, 4556 to 4557, 4516 to 4523, 5591 to 5598 and 3880 to
-  3890, and `music21/expressions.py` lines 536 to 555 and 2695 to 2700, in the
+  MusicXML gives one. It trims each `words` element separately. It imports
+  each staff of a multi-staff part as a separate part with the objects that
+  the evidence limits list, and its pedal change, gap start and gap end are
+  not expressions.
+  See `music21/musicxml/xmlToM21.py` lines 5631 to 5647, 1547 to 1552, 4556
+  to 4557, 4516 to 4523, 5591 to 5598, 3880 to 3890, 5698, 1849 to 1863,
+  1893 to 1903, 2576 to 2595 and 4532 to 4555, and `music21/expressions.py`
+  lines 536 to 555, 2695 to 2700 and 380 to 415, in the
   [PyPI wheel](https://pypi.org/project/music21/10.5.2/#files)
   `music21-10.5.2-py3-none-any.whl`, SHA-256
   `dba8696eafab709a244b6f18c64399edcccf4e96ddd1e0e4de7eff0a291c2dec`.
@@ -1096,9 +1133,11 @@ Source findings, with the pinned sources they rely on:
   ([lines 620 to 641](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L620-L641)).
 - MusicXML 4.0 defines a `fermata` without a `type` as upright; see the
   [`fermata` element](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/fermata/).
-- The converters mark tempo words in MusicXML as bold `words` or with a
+- The converters read a direction with a `metronome` as a tempo whatever
+  its weight and one with `dashes` as a dashes line, and otherwise mark
+  tempo words in MusicXML as bold `words` or with a
   `sound` tempo, at commit `36323f54`; see
-  [musicxml_reverse.py](https://github.com/hcoona/three/blob/36323f54c3f326e798725e11455a124a510b915a/src/private/app/sheet-music-omr/src/sheet_music_omr/musicxml_reverse.py#L1594-L1598)
+  [musicxml_reverse.py](https://github.com/hcoona/three/blob/36323f54c3f326e798725e11455a124a510b915a/src/private/app/sheet-music-omr/src/sheet_music_omr/musicxml_reverse.py#L1584-L1598)
   and
   [musicxml_forward.py](https://github.com/hcoona/three/blob/36323f54c3f326e798725e11455a124a510b915a/src/private/app/sheet-music-omr/src/sheet_music_omr/musicxml_forward.py#L1129-L1130).
 - The normalized OMR edit distance divides the OMR edit distance by the symbol
