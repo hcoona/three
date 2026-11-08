@@ -2633,6 +2633,51 @@ def test_rule_2_needs_a_known_position_on_both_sides() -> None:
     assert result.tally.extras == 1
 
 
+def test_rule_2_pairs_a_stemmed_note_beside_an_undetermined_event() -> None:
+    """Pair a move of a stemmed note whose voice is otherwise undetermined.
+
+    In both files voice 7 of measure 4 has a rest as near an up stem as a
+    down stem, so the voice is undetermined; the moved E5's own stems still
+    place it at position 1 in ``Y`` and 2 in ``T(Y)``. As for the placed
+    move, both changed voices lack a content partner, so neither is an
+    element or an exclusion.
+    """
+    edits = (
+        (
+            "m4s1n2",
+            (
+                "        <pitch>\n"
+                "          <step>C</step>\n"
+                "          <octave>5</octave>\n"
+                "        </pitch>\n"
+            ),
+            "        <rest/>\n",
+            "        <stem>up</stem>\n",
+            "",
+        ),
+        ("m4s1n3", "<stem>up</stem>", "<stem>down</stem>"),
+    )
+    y_text = _variant(*(_edit(*edit) for edit in edits))
+    moved = _rule_2_pair()
+    t_text = _variant(*(_edit(*edit, base=moved) for edit in edits), base=moved)
+
+    result = compare_file(t_text, y_text)
+
+    _assert_file(result, {"voice": 1})
+    assert [pair.rule for pair in result.content.pairings] == ["voice"]
+    assert result.checks["voice_order"] == ElementTally(
+        VOICE_ORDER_ELEMENT_COUNT - 2,
+        VOICE_ORDER_ELEMENT_COUNT - 2,
+        0,
+    )
+    assert result.tally == ElementTally(
+        BASE_FILE_ELEMENT_COUNT - 2,
+        BASE_FILE_ELEMENT_COUNT - 3,
+        0,
+    )
+    assert not result.excluded_voices
+
+
 def test_rule_1_pairs_a_move_out_of_an_unplaced_voice() -> None:
     """Pair a cross-staff move whatever the positions of its voices."""
     y_text = _variant(_edit("m5s1n2", "<stem>down</stem>", "<stem>up</stem>"))

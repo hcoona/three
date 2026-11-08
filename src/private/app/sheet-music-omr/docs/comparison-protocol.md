@@ -603,7 +603,8 @@ of its voice at that onset.
 
     The reasons are in precedence order: where several apply, the first listed
     is reported. In a two-voice staff-measure an undetermined event makes only
-    its own voice undetermined. In a three- or four-voice staff-measure, every
+    its own voice undetermined, and that voice's other events keep their known
+    positions. In a three- or four-voice staff-measure, every
     voice's reason is collected first; any of the first five reasons then makes
     every voice of that staff-measure undetermined under the first of the
     collected reasons, and only when none applies are the voices ranked by
@@ -819,6 +820,8 @@ with their provenance:
   the original C4 and E4 voices without stems;
 - the pair of pairing rule 2 with `Y`'s two voices both stemmed up, and the
   pair of pairing rule 1 with `Y`'s two staff-1 voices both stemmed up;
+- the pair of pairing rule 2 with, in both files, the equidistant rest in the
+  quarter-note voice whose stemmed E5 moves;
 - a measure-4 staff with three overlapping voices, C5 quarters up, an A4
   half down and an added F4 whole note down (positions 1, 2 and 4), and the
   same staff with the last C5-voice quarter (E5) stemmed down, making that
@@ -980,6 +983,12 @@ The instrument passes when it reports:
       pair with an undetermined `Y` context, one `cross_staff` difference, one
       non-identical voice-order element (the staff-2 voice that gains a
       partner) and one `indistinguishable-voices` exclusion;
+    - for the rule-2 pair with the equidistant rest in the moving voice, one
+      `voice` difference and no other, voice order (17, 17, 0), file
+      (77, 76, 0) and no exclusion, as for the placed rule-2 pair: the rest
+      leaves its voice undetermined but not the E5, whose stems place it in
+      both files, and the voices that the move changes have no content
+      partner;
     - for the three-voice measure-4 staff (placed: 20 voice-order and 81 file
       elements, one more of each than the base for the F4), with no content
       difference in any of its pairs: for the mixed self-pair and for the

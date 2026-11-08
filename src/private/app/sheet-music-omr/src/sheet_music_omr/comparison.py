@@ -2069,7 +2069,7 @@ def _two_voice_event_positions(
         for voice in voices
     ]
     resolved = [
-        _resolve_voice_directions(
+        _resolve_event_directions(
             voice,
             directions,
             context,
@@ -2085,39 +2085,41 @@ def _two_voice_event_positions(
     seen_directions = {
         direction
         for directions in resolved
-        if not isinstance(directions, UndeterminedReason)
         for direction in directions.values()
     }
     if not any(
-        isinstance(item, UndeterminedReason) for item in resolved
+        isinstance(direction, UndeterminedReason)
+        for direction in seen_directions
     ) and seen_directions != {"up", "down"}:
         return _undetermined_positions(
             voices,
             UndeterminedReason.INDISTINGUISHABLE_VOICES,
         )
+    # An undetermined event leaves its voice's stemmed events placed.
     positions: dict[int, _Position] = {}
     for voice, directions in zip(voices, resolved, strict=True):
-        if isinstance(directions, UndeterminedReason):
-            positions.update(_undetermined_positions([voice], directions))
-            continue
         for note in voice.annot_notes:
-            positions[id(note)] = 1 if directions[id(note)] == "up" else 2
+            direction = directions[id(note)]
+            if isinstance(direction, UndeterminedReason):
+                positions[id(note)] = direction
+            else:
+                positions[id(note)] = 1 if direction == "up" else 2
     return positions
 
 
-def _resolve_voice_directions(
+def _resolve_event_directions(
     voice: AnnVoice,
     directions: dict[int, str | None],
     context: _MeasureEventContext,
     stemless_direction: str | None = None,
-) -> dict[int, str] | UndeterminedReason:
-    """Return each event's stem direction under the voice rules, if known.
+) -> dict[int, str | UndeterminedReason]:
+    """Return each event's stem direction under the voice rules.
 
     An unstemmed event takes the direction of its stemless voice, if any, or
-    the nearest stemmed event's. When one event's direction is undetermined,
-    the whole voice is.
+    the nearest stemmed event's; where neither decides, it has the reason its
+    direction is undetermined.
     """
-    resolved: dict[int, str] = {}
+    resolved: dict[int, str | UndeterminedReason] = {}
     for note in voice.annot_notes:
         direction = directions[id(note)] or stemless_direction
         if direction is None:
@@ -2127,8 +2129,6 @@ def _resolve_voice_directions(
                 directions,
                 context,
             )
-            if isinstance(direction, UndeterminedReason):
-                return direction
         resolved[id(note)] = direction
     return resolved
 
@@ -2169,10 +2169,16 @@ def _events_by_stem_direction(
     ]
     reasons: list[UndeterminedReason] = []
     for voice, directions in zip(voices, voice_directions, strict=True):
-        # An event's reason precedes the voice's own mixed-stem reason.
-        resolved = _resolve_voice_directions(voice, directions, context)
-        if isinstance(resolved, UndeterminedReason):
-            reasons.append(resolved)
+        resolved = _resolve_event_directions(voice, directions, context)
+        event_reasons = [
+            direction
+            for direction in resolved.values()
+            if isinstance(direction, UndeterminedReason)
+        ]
+        # An event's reason makes the whole voice undetermined and precedes
+        # the voice's own mixed-stem reason.
+        if event_reasons:
+            reasons.append(_first_reason(event_reasons))
             continue
         if len(set(resolved.values())) > 1:
             reasons.append(UndeterminedReason.MIXED_STEM_VOICE)
