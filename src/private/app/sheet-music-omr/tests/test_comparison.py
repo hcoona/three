@@ -3535,6 +3535,94 @@ def test_ottava_must_keep_the_rests_that_it_shifts() -> None:
         compare_file(before_note, after_rests)
 
 
+def _ottava_over_a_lower_staff(*, stop_after_lower_rests: bool) -> str:
+    """Shift a written C5 whole note of the upper staff to the barline.
+
+    The stop follows the whole note, or follows the third quarter rest of the
+    lower staff and is offset to the barline: either way at the barline.
+    """
+    start, stop = _direction(_shift("down", 1)), _direction(_shift("stop", 1))
+    barline_stop = stop.replace(
+        "        <staff>",
+        "        <offset>1</offset>\n        <staff>",
+    )
+    rest = (
+        "      <note>\n        <rest/>\n        <duration>1</duration>\n"
+        "        <voice>2</voice>\n        <type>quarter</type>\n"
+        "        <staff>2</staff>\n      </note>\n"
+    )
+    lower_rests = (
+        rest * 3 + barline_stop + rest if stop_after_lower_rests else rest * 4
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<score-partwise version="4.0">\n'
+        "  <part-list>\n"
+        '    <score-part id="P1"><part-name>Piano</part-name></score-part>\n'
+        "  </part-list>\n"
+        '  <part id="P1">\n'
+        '    <measure number="1">\n'
+        + _attributes(
+            "        <divisions>1</divisions>\n"
+            "        <staves>2</staves>\n"
+            '        <clef number="1"><sign>G</sign><line>2</line></clef>\n'
+            '        <clef number="2"><sign>F</sign><line>4</line></clef>\n',
+        )
+        + start
+        + "      <note>\n"
+        "        <pitch><step>C</step><octave>6</octave></pitch>\n"
+        "        <duration>4</duration>\n        <voice>1</voice>\n"
+        "        <type>whole</type>\n        <staff>1</staff>\n"
+        "      </note>\n"
+        + ("" if stop_after_lower_rests else stop)
+        + "      <backup><duration>4</duration></backup>\n"
+        + lower_rests
+        + "    </measure>\n"
+        "  </part>\n"
+        "</score-partwise>\n"
+    )
+
+
+def test_ottava_must_end_on_its_own_staff() -> None:
+    """Stop where music21 ends an ottava on a rest of another staff.
+
+    Both scores shift the upper whole note to the barline. After the lower
+    rests, the stop follows the third rest, and music21 ends the ottava on
+    it, a shorter ottava that musicdiff would compare.
+    """
+    after_note = _ottava_over_a_lower_staff(stop_after_lower_rests=False)
+    after_rests = _ottava_over_a_lower_staff(stop_after_lower_rests=True)
+
+    assert [event.shift for event in read_score(after_note).events] == [
+        1,
+        0,
+        0,
+        0,
+        0,
+    ]
+    assert [event.shift for event in read_score(after_rests).events] == [
+        event.shift for event in read_score(after_note).events
+    ]
+    _assert_file(compare_file(after_note, after_note))
+    with pytest.raises(
+        ProtocolDefectError,
+        match="music21 reads an octave shift in measure 1",
+    ):
+        compare_file(after_rests, after_note)
+
+
+def test_ottava_on_a_hidden_note_stops_the_run() -> None:
+    """Stop where music21 starts an ottava on a note musicdiff skips."""
+    text = _ottava_over_rests(stop_in_next_measure=False).replace(
+        "      <note>\n        <pitch>",
+        '      <note print-object="no">\n        <pitch>',
+        1,
+    )
+
+    with pytest.raises(ProtocolDefectError, match="does not annotate"):
+        compare_file(text, text)
+
+
 def test_beams_of_a_rest_that_musicdiff_scores_are_not_elements() -> None:
     """Leave the beams of a rest that becomes a note to musicdiff."""
     pitch = "<pitch>\n          <step>C</step>\n          <octave>3</octave>\n"

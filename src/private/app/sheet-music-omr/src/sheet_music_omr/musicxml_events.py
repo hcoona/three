@@ -232,14 +232,32 @@ class XmlSpan:
     stop_note: ET.Element | None
 
 
+@dataclass(frozen=True, slots=True)
+class XmlOttava:
+    """An octave shift from its start to its stop.
+
+    Attributes:
+        place: The part and staff of the shift.
+        start: The absolute start of the direction that starts it.
+        end: The absolute start of the direction that stops it.
+        shift: The octaves that it shifts the written pitch by.
+    """
+
+    place: tuple[int, int]
+    start: Fraction
+    end: Fraction
+    shift: int
+
+
 @dataclass(frozen=True, slots=True, eq=False)
 class XmlScore:
-    """The events, directions and line spans of one MusicXML score.
+    """The events, directions, line spans and ottavas of one MusicXML score.
 
     Attributes:
         events: Every event, in document order.
         directions: Every direction, in document order.
         spans: Every slur, wavy-line and dashes span.
+        ottavas: Every octave shift.
         system_starts: The 0-based ordinals of the measures that start a
             system: the first measure and each new system or page.
         measure_starts: The absolute start of each measure ordinal.
@@ -248,19 +266,20 @@ class XmlScore:
     events: tuple[XmlEvent, ...]
     directions: tuple[XmlDirection, ...]
     spans: tuple[XmlSpan, ...]
+    ottavas: tuple[XmlOttava, ...]
     system_starts: frozenset[int]
     measure_starts: tuple[Fraction, ...]
 
 
 def read_score(source: Path | str) -> XmlScore:
-    """Read the events, directions and line spans of one MusicXML score.
+    """Read the events, directions, spans and ottavas of one MusicXML score.
 
     Args:
         source: A MusicXML file path, or MusicXML text.
 
     Returns:
-        The score's events, directions, spans, system starts and measure
-        starts.
+        The score's events, directions, spans, ottavas, system starts and
+        measure starts.
 
     Raises:
         ProtocolDefectError: If the score has a fact the checks cannot read.
@@ -541,11 +560,12 @@ class _ScoreReader:
         for leaf in (*self.events, *self.directions):
             leaf.start = starts[leaf.measure] + leaf.onset
         _number_graces(self.events)
-        _apply_ottavas(self.events, self.directions)
+        ottavas = _apply_ottavas(self.events, self.directions)
         return XmlScore(
             tuple(self.events),
             tuple(self.directions),
             _spans(self.events, self.directions),
+            ottavas,
             frozenset(self.system_starts),
             tuple(starts),
         )
@@ -564,8 +584,8 @@ def _number_graces(events: list[XmlEvent]) -> None:
 def _apply_ottavas(
     events: list[XmlEvent],
     directions: list[XmlDirection],
-) -> None:
-    spans: list[tuple[tuple[int, int], Fraction, Fraction, int]] = []
+) -> tuple[XmlOttava, ...]:
+    ottavas: list[XmlOttava] = []
     for span in _pair_numbers(list(directions), _ottava_endpoints):
         if span.start.place != span.stop.place:
             message = "a MusicXML octave shift stops on another staff"
@@ -573,8 +593,8 @@ def _apply_ottavas(
         if span.start_note is None:
             message = "a MusicXML octave shift has no start element"
             raise ProtocolDefectError(message)
-        spans.append(
-            (
+        ottavas.append(
+            XmlOttava(
                 span.start.place,
                 span.start.start,
                 span.stop.start,
@@ -584,12 +604,14 @@ def _apply_ottavas(
     for event in events:
         event.shift = next(
             (
-                size
-                for place, start, end, size in spans
-                if place == event.place and start <= event.start < end
+                ottava.shift
+                for ottava in ottavas
+                if ottava.place == event.place
+                and ottava.start <= event.start < ottava.end
             ),
             0,
         )
+    return tuple(ottavas)
 
 
 def _ottava_endpoints(leaf: Leaf) -> list[_Endpoint]:
