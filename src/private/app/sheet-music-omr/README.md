@@ -46,6 +46,21 @@ canonical text of the assembled score to standard output or to `OUT`. It exits
 with 1 and writes no score when the file is unreadable, is not one part on two
 staves or holds content that the converter cannot convert faithfully.
 
+The W1 round-trip measurement harness runs the
+[comparison protocol](docs/comparison-protocol.md). Its run and download
+directories must be outside the repository:
+
+```shell
+uv run --package sheet-music-omr python -m sheet_music_omr.harness COMMAND --run-dir RUN --downloads DOWNLOADS [options]
+```
+
+The commands, in order, are `preflight` (with `--prior-total` and `--basis`
+for a new download ledger), `download`, `select`, `run` (with
+`--gold-status`, `--gold-cache` and `--jobs`) and `report`. `view --id ID
+[--measure N]` shows one file's differences by measure, and `pilot
+[--fixtures FILE...]` runs every phase on repository fixtures. A stop
+condition is recorded in `RUN/run.json` and exits with 2.
+
 ## User and primary journey
 
 The user is the repository owner, who turns photographed pages of piano scores
