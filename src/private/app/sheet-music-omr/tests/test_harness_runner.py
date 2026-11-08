@@ -11,13 +11,14 @@ import hashlib
 import json
 import shutil
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ParamSpec, TypeVar
 
 import pytest
 
 from sheet_music_omr.harness import cli, steps
+from sheet_music_omr.harness import run as runner_module
 from sheet_music_omr.harness.cli import Dependencies, main
 from sheet_music_omr.harness.confine import Confinement
 from sheet_music_omr.harness.gold import (
@@ -57,6 +58,8 @@ if TYPE_CHECKING:
 
 FIXTURE = Path(__file__).parent / "fixtures" / "comparison" / "base.musicxml"
 COMMIT = "0" * 40
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
 
 
 class CopyLauncher:
@@ -423,6 +426,7 @@ def test_stops_end_the_run(roots: Confinement, tmp_path: Path) -> None:
 def test_parallel_stop_interrupts_a_running_file_between_steps(
     roots: Confinement,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Stops a concurrent peer before further work or result publication."""
     plan = _plan(roots, ["p0001", "p0002"])
@@ -430,7 +434,11 @@ def test_parallel_stop_interrupts_a_running_file_between_steps(
     launcher = CopyLauncher()
     waiting = threading.Event()
     release = threading.Event()
+    origin_waiting = threading.Event()
+    release_origin = threading.Event()
+    peer_finished = threading.Event()
     forwarded: list[str] = []
+    origin_thread: int | None = None
 
     def reverse(y: Path) -> dict[str, object]:
         if y.parent.name == "p0002":
@@ -443,40 +451,134 @@ def test_parallel_stop_interrupts_a_running_file_between_steps(
         return {"status": "ok", "musicxml": FIXTURE.read_bytes()}
 
     def content(t: Path, y: Path) -> dict[str, object]:
+        nonlocal origin_thread
         if y.parent.name == "p0001":
             assert waiting.wait(timeout=5)
+            origin_thread = threading.get_ident()
             message = "parallel protocol defect"
             raise StopConditionError(message)
         return steps.content(t, y)
 
-    table = {
-        **steps.STEPS,
-        "reverse": reverse,
-        "forward": forward,
-        "content": content,
-    }
     runner = Runner(
         roots,
         _musescore(roots, tmp_path, launcher),
         InlineExecutor(),
-        table,
+        {
+            **steps.STEPS,
+            "reverse": reverse,
+            "forward": forward,
+            "content": content,
+        },
         jobs=2,
     )
+    original_set = runner._stopping.set  # noqa: SLF001
+
+    def delayed_set() -> None:
+        original_set()
+        if threading.get_ident() == origin_thread:
+            origin_waiting.set()
+            assert release_origin.wait(timeout=10)
+
+    class TrackingPool(ThreadPoolExecutor):
+        def submit(
+            self,
+            fn: Callable[_P, _T],
+            /,
+            *args: _P.args,
+            **kwargs: _P.kwargs,
+        ) -> Future[_T]:
+            future = super().submit(fn, *args, **kwargs)
+            future.add_done_callback(lambda _: peer_finished.set())
+            return future
+
+    monkeypatch.setattr(runner._stopping, "set", delayed_set)  # noqa: SLF001
+    monkeypatch.setattr(runner_module, "ThreadPoolExecutor", TrackingPool)
     try:
         with ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(runner.run, plan)
             assert waiting.wait(timeout=5)
-            assert runner._stopping.wait(timeout=5)  # noqa: SLF001
+            assert origin_waiting.wait(timeout=5)
             release.set()
+            assert peer_finished.wait(timeout=5)
+            release_origin.set()
             with pytest.raises(StepStopError, match="parallel protocol defect"):
                 future.result(timeout=5)
     finally:
         release.set()
+        release_origin.set()
 
     assert forwarded == ["p0001"]
     assert not (
         roots.run / "files" / "pdmx-x" / "p0002" / "result.json"
     ).exists()
+
+
+def test_parallel_stop_prevents_baseline_result_publication(
+    roots: Confinement,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A baseline cannot publish a result after a peer triggers a stop."""
+    plan = _plan(roots, ["p0001", "p0002"])
+    begin_run(roots, plan, {"commit": COMMIT, "dirty": False})
+    for file in plan.public:
+        write_json(roots, file.x.parent / "rx.json", {"status": "ok"})
+
+    operations_waiting = threading.Event()
+    release_operations = threading.Event()
+    original_write = runner_module.write_json
+
+    def delayed_write(
+        confinement: Confinement,
+        path: Path,
+        value: dict[str, object],
+    ) -> None:
+        if (
+            path.name == "operations.json"
+            and path.parent.parent.name == "baseline"
+            and path.parent.name == "p0001"
+        ):
+            operations_waiting.set()
+            assert release_operations.wait(timeout=10)
+        original_write(confinement, path, value)
+
+    def baseline(rx: Path, x: Path) -> dict[str, object]:
+        del rx
+        if x.parent.name == "p0002":
+            assert operations_waiting.wait(timeout=5)
+            message = "baseline protocol defect"
+            raise StopConditionError(message)
+        return {
+            "content": {"status": "ok"},
+            "layout": {"status": "ok"},
+        }
+
+    table = {**steps.STEPS, "baseline": baseline}
+    runner = Runner(
+        roots,
+        _musescore(roots, tmp_path, CopyLauncher()),
+        InlineExecutor(),
+        table,
+        jobs=2,
+    )
+    monkeypatch.setattr(runner_module, "write_json", delayed_write)
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(runner.baselines, plan.public)
+            assert operations_waiting.wait(timeout=5)
+            assert runner._stopping.wait(timeout=5)  # noqa: SLF001
+            release_operations.set()
+            with pytest.raises(
+                StopConditionError, match="baseline protocol defect"
+            ):
+                future.result(timeout=5)
+    finally:
+        release_operations.set()
+
+    for name in ("p0001", "p0002"):
+        assert not (
+            roots.run / "files" / "baseline" / name / "result.json"
+        ).exists()
 
 
 def test_cli_records_a_stop_and_exits_with_two(tmp_path: Path) -> None:

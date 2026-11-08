@@ -58,7 +58,7 @@ class StepError(StopConditionError):
     """A comparison or counting step failed in a way the protocol omits."""
 
 
-class _PeerStoppedError(Exception):
+class _PeerStoppedError(StopConditionError):
     """A running file stopped because another file triggered a run stop."""
 
 
@@ -322,7 +322,13 @@ class Runner:
                 for future in pending:
                     future.cancel()
                 wait(pending)
-                errors = [future.exception() for future in failed]
+                errors = []
+                for future in futures:
+                    if future.cancelled():
+                        continue
+                    error = future.exception()
+                    if error is not None:
+                        errors.append(error)
                 error = next(
                     (
                         error
@@ -443,12 +449,15 @@ class Runner:
             directory / "operations.json",
             state.operations,
         )
+        self._publish_result(directory, state.result)
+
+    def _publish_result(self, directory: Path, result: Data) -> None:
         with self._stop_lock:
             self._check_stopping()
             write_json(
                 self.confinement,
                 directory / "result.json",
-                state.result,
+                result,
             )
 
     def _convert(self, state: _FileState, directory: Path) -> None:
@@ -716,7 +725,7 @@ class Runner:
         result: Data = {"schema": FILE_SCHEMA, "id": item.id, "arm": "baseline"}
         if export.get("status") != "ok":
             result["status"] = "rx-missing"
-            write_json(self.confinement, directory / "result.json", result)
+            self._publish_result(directory, result)
             return
         outcome = self._call("baseline", item, rx=item.y, x=item.x)
         if outcome.status == "timeout":
@@ -743,7 +752,7 @@ class Runner:
                 directory / "operations.json",
                 operations,
             )
-        write_json(self.confinement, directory / "result.json", result)
+        self._publish_result(directory, result)
 
     def assemblies(self, plan: RunPlan) -> None:
         """Run the system-assembly test on each assembly piece."""
