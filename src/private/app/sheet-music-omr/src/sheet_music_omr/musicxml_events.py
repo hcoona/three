@@ -241,12 +241,16 @@ class XmlOttava:
         start: The absolute start of the direction that starts it.
         end: The absolute start of the direction that stops it.
         shift: The octaves that it shifts the written pitch by.
+        direction: The direction that starts it.
+        element: The ``octave-shift`` element that starts it.
     """
 
     place: tuple[int, int]
     start: Fraction
     end: Fraction
     shift: int
+    direction: XmlDirection = field(compare=False)
+    element: ET.Element = field(compare=False)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -597,15 +601,18 @@ def _apply_ottavas(
         if span.start.place != span.stop.place:
             message = "a MusicXML octave shift stops on another staff"
             raise ProtocolDefectError(message)
-        if span.start_note is None:
+        start = span.start
+        if span.start_note is None or not isinstance(start, XmlDirection):
             message = "a MusicXML octave shift has no start element"
             raise ProtocolDefectError(message)
         ottavas.append(
             XmlOttava(
-                span.start.place,
-                span.start.start,
+                start.place,
+                start.start,
                 span.stop.start,
                 _ottava_size(span.start_note),
+                start,
+                span.start_note,
             ),
         )
     for event in events:
