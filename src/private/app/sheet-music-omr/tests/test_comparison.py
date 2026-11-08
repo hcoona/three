@@ -26,6 +26,7 @@ from sheet_music_omr.comparison import (
     OperationRecord,
     ProtocolDefectError,
     ScoreParseError,
+    UndeterminedReason,
     annotate,
     compare_content,
     compare_layout,
@@ -2298,15 +2299,659 @@ def test_stemless_voice_takes_the_position_opposite_its_partner(
     assert tally == ElementTally(VOICE_ORDER_ELEMENT_COUNT, identical, 0)
 
 
-def test_two_overlapping_voices_without_stems_stop() -> None:
-    """Stop when neither of two overlapping voices has a stemmed event."""
-    text = _variant(
-        _edit("m3s1n1", "        <stem>up</stem>\n", ""),
-        _edit("m3s1n2", "        <stem>down</stem>\n", ""),
+_BOTH_UP = _variant(_edit("m3s1n2", "<stem>down</stem>", "<stem>up</stem>"))
+_BOTH_STEMLESS = _variant(
+    _edit("m3s1n1", "        <stem>up</stem>\n", ""),
+    _edit("m3s1n2", "        <stem>down</stem>\n", ""),
+)
+# The two voices of measure 3, staff 1.
+_M3_VOICES = 2
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        (_BOTH_UP, UndeterminedReason.INDISTINGUISHABLE_VOICES),
+        (_BOTH_STEMLESS, UndeterminedReason.NO_STEMMED_EVENT),
+    ],
+    ids=["both-up", "both-stemless"],
+)
+def test_undetermined_voices_are_excluded_reference_voices(
+    text: str,
+    reason: UndeterminedReason,
+) -> None:
+    """Exclude two overlapping voices the format's rules cannot place.
+
+    Neither voice is an element or agreement, even against itself; the
+    file loses their two voice-order elements and reports them by reason.
+    """
+    result = compare_file(text, text)
+
+    _assert_file(result)
+    assert result.checks["voice_order"] == ElementTally(
+        VOICE_ORDER_ELEMENT_COUNT - _M3_VOICES,
+        VOICE_ORDER_ELEMENT_COUNT - _M3_VOICES,
+        0,
+    )
+    assert result.tally == ElementTally(
+        BASE_FILE_ELEMENT_COUNT - _M3_VOICES,
+        BASE_FILE_ELEMENT_COUNT - _M3_VOICES,
+        0,
+    )
+    assert result.excluded_voices == Counter({reason: _M3_VOICES})
+
+
+def test_determined_voice_never_agrees_with_an_undetermined_partner() -> None:
+    """Count a placed ``Y`` voice against an unplaced partner as changed."""
+    result = compare_file(_BOTH_UP, BASE)
+
+    _assert_file(result, voice_order=(_M3_VOICES, 0))
+    assert result.checks["voice_order"].elements == VOICE_ORDER_ELEMENT_COUNT
+    assert not result.excluded_voices
+
+
+def test_undetermined_reference_voice_is_excluded_beside_a_placed_one() -> None:
+    """Exclude unplaced ``Y`` voices whose ``T(Y)`` partners are placed."""
+    result = compare_file(BASE, _BOTH_UP)
+
+    _assert_file(result)
+    assert result.checks["voice_order"] == ElementTally(
+        VOICE_ORDER_ELEMENT_COUNT - _M3_VOICES,
+        VOICE_ORDER_ELEMENT_COUNT - _M3_VOICES,
+        0,
+    )
+    assert result.excluded_voices == Counter(
+        {UndeterminedReason.INDISTINGUISHABLE_VOICES: _M3_VOICES},
     )
 
-    with pytest.raises(ProtocolDefectError, match="no stemmed event"):
-        voice_order_tally(text, text)
+
+def test_renumbered_undetermined_voices_stay_excluded() -> None:
+    """Exclude unplaced voices however ``T(Y)`` numbers them."""
+    renumbered = _variant(
+        _edit("m3s1n2", "<voice>2</voice>", "<voice>3</voice>", base=_BOTH_UP),
+        base=_BOTH_UP,
+    )
+
+    result = compare_file(renumbered, _BOTH_UP)
+
+    _assert_file(result)
+    assert result.checks["voice_order"].elements == (
+        VOICE_ORDER_ELEMENT_COUNT - _M3_VOICES
+    )
+    assert result.excluded_voices.total() == _M3_VOICES
+
+
+def test_stemless_voice_beside_a_mixed_partner_is_excluded_alone() -> None:
+    """Exclude only a stemless voice whose partner has both stem directions.
+
+    Voice 7 of measure 4 keeps its event positions, so only voice 2's half
+    note leaves the voice-order elements.
+    """
+    text = _variant(
+        _edit("m4s1n4", "<stem>up</stem>", "<stem>down</stem>"),
+        _edit("m4s1n5", "        <stem>down</stem>\n", ""),
+    )
+
+    result = compare_file(text, text)
+
+    _assert_file(result)
+    assert result.checks["voice_order"] == ElementTally(
+        VOICE_ORDER_ELEMENT_COUNT - 1,
+        VOICE_ORDER_ELEMENT_COUNT - 1,
+        0,
+    )
+    assert result.tally == ElementTally(
+        BASE_FILE_ELEMENT_COUNT - 1,
+        BASE_FILE_ELEMENT_COUNT - 1,
+        0,
+    )
+    assert result.excluded_voices == Counter(
+        {UndeterminedReason.NO_STEMMED_EVENT: 1},
+    )
+
+
+def test_rest_equidistant_from_two_stem_directions_is_undetermined() -> None:
+    """Exclude a voice whose rest is as near an up stem as a down stem."""
+    text = _variant(
+        _edit(
+            "m4s1n2",
+            "        <pitch>\n"
+            "          <step>C</step>\n"
+            "          <octave>5</octave>\n"
+            "        </pitch>\n",
+            "        <rest/>\n",
+            "        <stem>up</stem>\n",
+            "",
+        ),
+        _edit("m4s1n3", "<stem>up</stem>", "<stem>down</stem>"),
+    )
+
+    result = compare_file(text, text)
+
+    _assert_file(result)
+    assert result.checks["voice_order"] == ElementTally(
+        VOICE_ORDER_ELEMENT_COUNT - 1,
+        VOICE_ORDER_ELEMENT_COUNT - 1,
+        0,
+    )
+    assert result.tally == ElementTally(
+        BASE_FILE_ELEMENT_COUNT - 1,
+        BASE_FILE_ELEMENT_COUNT - 1,
+        0,
+    )
+    assert result.excluded_voices == Counter(
+        {UndeterminedReason.NEAREST_STEM_TIE: 1},
+    )
+
+
+def test_unplaced_partner_voices_count_against_placed_reference_voices() -> (
+    None
+):
+    """Count placed equal C4 voices against two stemless ``T(Y)`` voices.
+
+    One C4 of ``Y`` meets the unplaced C4 of ``T(Y)`` as a changed element;
+    the other has no partner after the E4 change.
+    """
+    y_text = _variant(_edit("m3s1n2", "<step>E</step>", "<step>C</step>"))
+
+    result = compare_file(_BOTH_STEMLESS, y_text)
+
+    _assert_file(result, {"pitch": 1}, voice_order=(1, 0))
+    assert result.checks["voice_order"].elements == (
+        VOICE_ORDER_ELEMENT_COUNT - 1
+    )
+    assert result.tally == ElementTally(
+        BASE_FILE_ELEMENT_COUNT - 1,
+        BASE_FILE_ELEMENT_COUNT - 3,
+        0,
+    )
+    assert not result.excluded_voices
+
+
+def _m3_voices(*voices: tuple[str, str | None], base: str = BASE) -> str:
+    """Add whole-note voices from 3 on to staff 1 of measure 3.
+
+    Each voice copies voice 2's E4 with the given step and stem, if any.
+    """
+    second = _note("m3s1n2", base)
+    backup = (
+        "      <backup>\n        <duration>48</duration>\n      </backup>\n"
+    )
+    added = ""
+    for index, (step, stem) in enumerate(voices):
+        voice = re.sub(
+            r"        <stem>\w+</stem>\n",
+            "" if stem is None else f"        <stem>{stem}</stem>\n",
+            second.replace('id="m3s1n2"', f'id="m3s1v{index + 3}"')
+            .replace("<voice>2</voice>", f"<voice>{index + 3}</voice>")
+            .replace("<step>E</step>", f"<step>{step}</step>"),
+        )
+        added += backup + voice
+    return _variant((second, second + added), base=base)
+
+
+def test_tied_heights_make_only_their_pair_undetermined() -> None:
+    """Rank the up stems of four voices and exclude two tied down stems.
+
+    E4 up and C4 up keep positions 1 and 3; the two A4 down voices have one
+    height and so no vertical order.
+    """
+    text = _m3_voices(("A", "down"), ("A", "down"), base=_BOTH_UP)
+
+    result = compare_file(text, text)
+
+    _assert_file(result)
+    # Two added notes and voices; the two tied voices are excluded.
+    assert result.tally == ElementTally(
+        BASE_FILE_ELEMENT_COUNT + 2,
+        BASE_FILE_ELEMENT_COUNT + 2,
+        0,
+    )
+    assert result.checks["voice_order"] == ElementTally(
+        VOICE_ORDER_ELEMENT_COUNT,
+        VOICE_ORDER_ELEMENT_COUNT,
+        0,
+    )
+    assert result.excluded_voices == Counter(
+        {UndeterminedReason.TIED_HEIGHTS: 2},
+    )
+
+
+def test_changed_voice_meets_tied_partners_as_non_identical() -> None:
+    """Count a placed E4 against two tied E4 voices of ``T(Y)`` once.
+
+    ``Y`` places C4 up, G4 down and E4 down; ``T(Y)`` changes G4 to E4, so
+    its two E4 down voices tie. Measure 3, staff 1 has two elements, C4
+    identical and E4 changed, and G4 has no partner.
+    """
+    y_text = _m3_voices(("G", "down"))
+    t_text = _m3_voices(("E", "down"))
+
+    result = compare_file(t_text, y_text)
+    by_measure = voice_order_by_measure(annotate(t_text), annotate(y_text))
+
+    _assert_file(result, {"pitch": 1}, voice_order=(1, 0))
+    # Measure 3 also holds the single voice of staff 2.
+    assert by_measure[2] == ElementTally(3, 2, 0)
+    assert not result.excluded_voices
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        (
+            _m3_voices(("G", "up"), base=_BOTH_UP),
+            UndeterminedReason.STEM_COUNTS,
+        ),
+        (_m3_voices(("G", None)), UndeterminedReason.NO_STEMMED_EVENT),
+    ],
+    ids=["three-up-stems", "stemless-third-voice"],
+)
+def test_unplaced_three_voices_exclude_their_staff_measure(
+    text: str,
+    reason: UndeterminedReason,
+) -> None:
+    """Exclude every voice of a three-voice staff the rules cannot rank."""
+    result = compare_file(text, text)
+
+    _assert_file(result)
+    assert result.checks["voice_order"] == ElementTally(
+        VOICE_ORDER_ELEMENT_COUNT - _M3_VOICES,
+        VOICE_ORDER_ELEMENT_COUNT - _M3_VOICES,
+        0,
+    )
+    # One added note and voice; all three voices are excluded.
+    assert result.tally == ElementTally(
+        BASE_FILE_ELEMENT_COUNT - 1,
+        BASE_FILE_ELEMENT_COUNT - 1,
+        0,
+    )
+    assert result.excluded_voices == Counter({reason: 3})
+
+
+def test_undetermined_duplicate_does_not_consume_a_placed_partner() -> None:
+    """Match a placed G4 voice first among equal G4 voices.
+
+    ``Y`` has C4 and G4 up, ranked, and two tied G4 down voices; ``T(Y)``
+    drops one G4 down voice. Of ``T(Y)``'s two G4 partners, one agrees with
+    the placed G4 and one is left for a tied voice, which is excluded.
+    """
+    y_text = _m3_voices(
+        ("G", "up"),
+        ("G", "down"),
+        base=_variant(
+            _edit("m3s1n2", "<step>E</step>", "<step>G</step>"),
+        ),
+    )
+    t_text = _variant(
+        (
+            "      <backup>\n        <duration>48</duration>\n      </backup>\n"
+            + _note("m3s1v4", y_text),
+            "",
+        ),
+        base=y_text,
+    )
+
+    result = compare_file(t_text, y_text)
+
+    _assert_file(result, {"pitch": 1, "rhythm_rest": 1})
+    # C4 and one G4 of staff 1, the other 17 voices of the file.
+    assert result.checks["voice_order"] == ElementTally(
+        VOICE_ORDER_ELEMENT_COUNT,
+        VOICE_ORDER_ELEMENT_COUNT,
+        0,
+    )
+    assert result.excluded_voices == Counter(
+        {UndeterminedReason.TIED_HEIGHTS: 1},
+    )
+
+
+def test_five_overlapping_voices_stop() -> None:
+    """Stop when a staff has more voices than the format can position."""
+    text = _m3_voices(("G", "up"), ("A", "down"), ("B", "down"))
+
+    with pytest.raises(ProtocolDefectError, match="more than four voices"):
+        compare_file(text, text)
+
+
+def test_rule_2_needs_a_known_position_on_both_sides() -> None:
+    """Leave a move out of an unplaced ``Y`` voice to the content pass.
+
+    Both voices of ``Y``'s measure 4 are up-stemmed, so the moved E5 has no
+    known position and is no ``voice`` pairing: the insertion counts pitch
+    and rhythm, and the deletion also counts the gap before it in voice 2.
+    """
+    edit = ("m4s1n5", "<stem>down</stem>", "<stem>up</stem>")
+    y_text = _variant(_edit(*edit))
+    moved = _rule_2_pair()
+    t_text = _variant(_edit(*edit, base=moved), base=moved)
+
+    result = compare_file(t_text, y_text)
+
+    _assert_file(result, {"pitch": 2, "rhythm_rest": 3})
+    assert not result.content.pairings
+    assert result.tally.extras == 1
+
+
+def test_rule_2_pairs_a_stemmed_note_beside_an_undetermined_event() -> None:
+    """Pair a move of a stemmed note whose voice is otherwise undetermined.
+
+    In both files voice 7 of measure 4 has a rest as near an up stem as a
+    down stem, so the voice is undetermined; the moved E5's own stems still
+    place it at position 1 in ``Y`` and 2 in ``T(Y)``. As for the placed
+    move, both changed voices lack a content partner, so neither is an
+    element or an exclusion.
+    """
+    edits = (
+        (
+            "m4s1n2",
+            (
+                "        <pitch>\n"
+                "          <step>C</step>\n"
+                "          <octave>5</octave>\n"
+                "        </pitch>\n"
+            ),
+            "        <rest/>\n",
+            "        <stem>up</stem>\n",
+            "",
+        ),
+        ("m4s1n3", "<stem>up</stem>", "<stem>down</stem>"),
+    )
+    y_text = _variant(*(_edit(*edit) for edit in edits))
+    moved = _rule_2_pair()
+    t_text = _variant(*(_edit(*edit, base=moved) for edit in edits), base=moved)
+
+    result = compare_file(t_text, y_text)
+
+    _assert_file(result, {"voice": 1})
+    assert [pair.rule for pair in result.content.pairings] == ["voice"]
+    assert result.checks["voice_order"] == ElementTally(
+        VOICE_ORDER_ELEMENT_COUNT - 2,
+        VOICE_ORDER_ELEMENT_COUNT - 2,
+        0,
+    )
+    assert result.tally == ElementTally(
+        BASE_FILE_ELEMENT_COUNT - 2,
+        BASE_FILE_ELEMENT_COUNT - 3,
+        0,
+    )
+    assert not result.excluded_voices
+
+
+def test_rule_1_pairs_a_move_out_of_an_unplaced_voice() -> None:
+    """Pair a cross-staff move whatever the positions of its voices."""
+    y_text = _variant(_edit("m5s1n2", "<stem>down</stem>", "<stem>up</stem>"))
+
+    result = compare_file(_rule_1_pair(y_text), y_text)
+
+    # Staff 2's E3 changes from position 0 to 1, as for the placed move; the
+    # unplaced G5 is excluded, and the moved C5 has no staff-1 partner.
+    _assert_file(result, {"cross_staff": 1}, voice_order=(1, 0))
+    assert [pair.rule for pair in result.content.pairings] == ["cross_staff"]
+    assert result.excluded_voices == Counter(
+        {UndeterminedReason.INDISTINGUISHABLE_VOICES: 1},
+    )
+
+
+_M4_THIRD_VOICE = (
+    "      <backup>\n        <duration>48</duration>\n      </backup>\n"
+    '      <note id="m4s1v3">\n'
+    "        <pitch>\n"
+    "          <step>F</step>\n"
+    "          <octave>4</octave>\n"
+    "        </pitch>\n"
+    "        <duration>48</duration>\n"
+    "        <voice>3</voice>\n"
+    "        <type>whole</type>\n"
+    "        <stem>down</stem>\n"
+    "        <staff>1</staff>\n"
+    "      </note>\n"
+)
+_M4_VOICE_2_END = (
+    "      <forward>\n"
+    "        <duration>24</duration>\n"
+    "        <voice>2</voice>\n"
+    "        <staff>1</staff>\n"
+    "      </forward>\n"
+)
+_M4_THREE_VOICES = _variant(
+    (_M4_VOICE_2_END, _M4_VOICE_2_END + _M4_THIRD_VOICE)
+)
+"""Measure 4, staff 1 with an F4 down voice: C5 up 1, A4 down 2, F4 down 4."""
+_M4_MIXED = _variant(
+    _edit(
+        "m4s1n4",
+        "<stem>up</stem>",
+        "<stem>down</stem>",
+        base=_M4_THREE_VOICES,
+    ),
+    base=_M4_THREE_VOICES,
+)
+"""``_M4_THREE_VOICES`` with voice 7's last quarter stemmed down."""
+
+
+@pytest.mark.parametrize(
+    ("t_text", "y_text", "voice_order", "excluded"),
+    [
+        (_M4_MIXED, _M4_MIXED, 0, 3),
+        (_M4_THREE_VOICES, _M4_MIXED, 0, 3),
+        (_M4_MIXED, _M4_THREE_VOICES, 3, 0),
+    ],
+    ids=["self-pair", "mixed-reference", "mixed-round-trip"],
+)
+def test_mixed_stem_voice_unplaces_its_three_voice_staff_measure(
+    t_text: str,
+    y_text: str,
+    voice_order: int,
+    excluded: int,
+) -> None:
+    """Score a mixed-stem voice among three against itself and a placement.
+
+    The mixed voice leaves all three voices of measure 4, staff 1 unplaced:
+    as reference voices they are excluded, and as partners of the placed
+    voices they make each placed voice non-identical. The stem change is
+    layout only, so the content is identical.
+    """
+    result = compare_file(t_text, y_text)
+
+    _assert_file(
+        result,
+        **({"voice_order": (voice_order, 0)} if voice_order else {}),
+    )
+    # The added F4 is one note element and one voice element.
+    elements = 1 + VOICE_ORDER_ELEMENT_COUNT - excluded
+    assert result.checks["voice_order"] == ElementTally(
+        elements,
+        elements - voice_order,
+        0,
+    )
+    assert result.tally == ElementTally(
+        BASE_FILE_ELEMENT_COUNT + 2 - excluded,
+        BASE_FILE_ELEMENT_COUNT + 2 - excluded - voice_order,
+        0,
+    )
+    assert result.excluded_voices == Counter(
+        {UndeterminedReason.MIXED_STEM_VOICE: excluded} if excluded else {},
+    )
+
+
+def test_excluded_reasons_do_not_depend_on_voice_numbers() -> None:
+    """Report the first reason in precedence order whatever the numbering.
+
+    Voice 7 has both stem directions and the F4 voice no stem, so all three
+    voices take the first of mixed-stem-voice and no-stemmed-event.
+    """
+    text = _variant(
+        _edit("m4s1v3", "        <stem>down</stem>\n", "", base=_M4_MIXED),
+        base=_M4_MIXED,
+    )
+    renumbered = text.replace("<voice>7</voice>", "<voice>1</voice>")
+
+    for score in (text, renumbered):
+        result = compare_file(score, score)
+
+        _assert_file(result)
+        assert result.excluded_voices == Counter(
+            {UndeterminedReason.NO_STEMMED_EVENT: 3},
+        )
+
+
+def test_event_reason_precedes_mixed_stem_voice() -> None:
+    """Report a mixed voice's nearest-stem tie, which comes first.
+
+    Voice 7 has C5 up, a rest, C5 down and E5 up at onsets 0 to 3, so it
+    has both stem directions and a rest equally near an up and a down stem.
+    """
+    text = _variant(
+        _edit(
+            "m4s1n2",
+            "        <pitch>\n"
+            "          <step>C</step>\n"
+            "          <octave>5</octave>\n"
+            "        </pitch>\n",
+            "        <rest/>\n",
+            "        <stem>up</stem>\n",
+            "",
+            base=_M4_THREE_VOICES,
+        ),
+        _edit(
+            "m4s1n3",
+            "<stem>up</stem>",
+            "<stem>down</stem>",
+            base=_M4_THREE_VOICES,
+        ),
+        base=_M4_THREE_VOICES,
+    )
+
+    result = compare_file(text, text)
+
+    _assert_file(result)
+    assert result.checks["voice_order"] == ElementTally(
+        VOICE_ORDER_ELEMENT_COUNT - 2,
+        VOICE_ORDER_ELEMENT_COUNT - 2,
+        0,
+    )
+    assert result.tally == ElementTally(
+        BASE_FILE_ELEMENT_COUNT - 1,
+        BASE_FILE_ELEMENT_COUNT - 1,
+        0,
+    )
+    assert result.excluded_voices == Counter(
+        {UndeterminedReason.NEAREST_STEM_TIE: 3},
+    )
+
+
+_CROSS_STAFF_UNPLACED = _variant(
+    _edit(
+        "m4s1n5",
+        "<stem>down</stem>",
+        "<stem>up</stem>",
+        base=_cross_staff_beam_score(),
+    ),
+    base=_cross_staff_beam_score(),
+)
+"""The cross-staff beam score with both voices of its home staff up."""
+
+
+@pytest.mark.parametrize(
+    ("t_text", "y_text", "voice_order", "excluded"),
+    [
+        (_CROSS_STAFF_UNPLACED, _CROSS_STAFF_UNPLACED, 0, 2),
+        (_cross_staff_beam_score(), _CROSS_STAFF_UNPLACED, 0, 2),
+        (_CROSS_STAFF_UNPLACED, _cross_staff_beam_score(), 2, 0),
+    ],
+    ids=["self-pair", "unplaced-reference", "unplaced-round-trip"],
+)
+def test_cross_staff_beam_takes_an_undetermined_home_position(
+    t_text: str,
+    y_text: str,
+    voice_order: int,
+    excluded: int,
+) -> None:
+    """Carry an undetermined home position over to a cross-staff beam.
+
+    The home voices of measure 4, staff 1 cannot be told apart, so the
+    beam's staff-2 note has no position and its voice is excluded or
+    non-identical with its home voice.
+    """
+    result = compare_file(t_text, y_text)
+
+    _assert_file(
+        result,
+        **({"voice_order": (voice_order, 0)} if voice_order else {}),
+    )
+    elements = VOICE_ORDER_ELEMENT_COUNT - excluded
+    assert result.checks["voice_order"] == ElementTally(
+        elements,
+        elements - voice_order,
+        0,
+    )
+    # The cross-staff beam is one more element.
+    assert result.tally == ElementTally(
+        BASE_FILE_ELEMENT_COUNT + 1 - excluded,
+        BASE_FILE_ELEMENT_COUNT + 1 - excluded - voice_order,
+        0,
+    )
+    assert result.excluded_voices == Counter(
+        {UndeterminedReason.INDISTINGUISHABLE_VOICES: excluded}
+        if excluded
+        else {},
+    )
+
+
+def test_mixed_beam_from_outside_the_measure_stops_beside_a_mixed_voice() -> (
+    None
+):
+    """Stop on a third voice's open mixed beam after a mixed first voice.
+
+    Voice 7 is renumbered 1, so that the mixed voice is read first.
+    """
+    eighths = "".join(
+        f'      <note id="m4s1b{index}">\n'
+        "        <pitch>\n"
+        f"          <step>{step}</step>\n"
+        "          <octave>4</octave>\n"
+        "        </pitch>\n"
+        "        <duration>6</duration>\n"
+        "        <voice>3</voice>\n"
+        "        <type>eighth</type>\n"
+        f"        <stem>{stem}</stem>\n"
+        "        <staff>1</staff>\n"
+        f'        <beam number="1">{beam}</beam>\n'
+        "      </note>\n"
+        for index, (step, stem, beam) in enumerate(
+            (("F", "up", "begin"), ("G", "down", "continue")),
+        )
+    )
+    text = _variant(
+        _edit("m4s1n4", "<stem>up</stem>", "<stem>down</stem>"),
+        (
+            _M4_VOICE_2_END,
+            _M4_VOICE_2_END
+            + "      <backup>\n        <duration>48</duration>\n"
+            "      </backup>\n" + eighths,
+        ),
+    ).replace("<voice>7</voice>", "<voice>1</voice>")
+
+    with pytest.raises(ProtocolDefectError, match="outside the measure"):
+        compare_file(text, text)
+
+
+def test_interrupted_primary_beam_stops() -> None:
+    """Stop on a primary beam that its voice's next event does not carry.
+
+    The score-wide beam scan stops before the measure's voice positions.
+    """
+    text = _variant(
+        _edit(
+            "m4s1n1",
+            "        <staff>1</staff>\n",
+            '        <staff>1</staff>\n        <beam number="1">begin</beam>\n',
+        ),
+    )
+
+    with pytest.raises(ProtocolDefectError, match="interrupted before"):
+        compare_file(text, text)
 
 
 def _one_measure(beats: int, *items: str, divisions: int = 3) -> str:
@@ -2395,8 +3040,12 @@ def test_voices_that_abut_after_a_triplet_do_not_overlap(
     assert result.checks["voice_order"] == ElementTally(2, 2, 0)
 
 
-def test_unstemmed_rest_exactly_between_two_stems_stops() -> None:
-    """Stop on a rest whose nearest stems, 1/3 away, point both ways."""
+def test_unstemmed_rest_exactly_between_two_stems_is_excluded() -> None:
+    """Exclude a voice whose rest's nearest stems, 1/3 away, point both ways.
+
+    In binary floating point the two distances differed, which placed the
+    rest instead.
+    """
     text = _one_measure(
         2,
         _timed("C", 1, 1, "up"),
@@ -2407,8 +3056,13 @@ def test_unstemmed_rest_exactly_between_two_stems_stops() -> None:
         _timed("F", 6, 2, "down"),
     )
 
-    with pytest.raises(ProtocolDefectError, match="ambiguous voice position"):
-        compare_file(text, text)
+    result = compare_file(text, text)
+
+    _assert_file(result)
+    assert result.excluded_voices == Counter(
+        {UndeterminedReason.NEAREST_STEM_TIE: 1},
+    )
+    assert result.checks["voice_order"] == ElementTally(1, 1, 0)
 
 
 _FINE_DIVISIONS = 32768
@@ -3575,10 +4229,11 @@ def _ottava_chain(bottom: int, *, stop_first: bool) -> str:
     ["stop-then-start", "start-then-stop"],
 )
 def test_ottava_chain_pairs_beside_a_reused_number(order: str) -> None:
-    """Pair a stop-first ottava chain while another staff reuses its number.
+    """Read a stop-first ottava chain while another staff reuses its number.
 
     music21 gives each ottava the notes after its start in the document,
-    whatever their staff or offset, so a comparison stops.
+    whatever their staff or offset, and can pair the bottom stop of number 1
+    with a top start; the octave-shift reading follows MusicXML instead.
     """
     stop_first = order == "stop-then-start"
     shared = _ottava_chain(1, stop_first=stop_first)
@@ -3594,9 +4249,8 @@ def test_ottava_chain_pairs_beside_a_reused_number(order: str) -> None:
         -1,
         0,
     ] * 2
-    for text in (shared, renumbered):
-        with pytest.raises(ProtocolDefectError, match="music21"):
-            compare_file(text, text)
+    _assert_file(compare_file(shared, shared))
+    _assert_file(compare_file(shared, renumbered))
 
 
 def test_nested_ottavas_of_one_number_stop_the_run() -> None:
@@ -3709,50 +4363,6 @@ def test_nested_dashes_pair_in_time_beside_a_document_pair() -> None:
     ] == [(0, 1), (2, 3), (4, 5)]
 
 
-def _study_musicxml() -> str:
-    source = ASSEMBLY / "study.expected.txt"
-    document = parse_document(decode_source(source.read_bytes()))
-    assert isinstance(document, AssembledScore)
-    return to_musicxml(document).decode("utf-8")
-
-
-def test_forward_output_with_reused_numbers_compares_cleanly() -> None:
-    """Compare the forward conversion of the study score with itself.
-
-    The conversion keeps its slurs, ties and wedges but not its ottava, which
-    stops at a barline that music21 does not read.
-    """
-    study = _study_musicxml()
-    text = re.sub(
-        r"      <direction>\n        <direction-type>\n"
-        r"          <octave-shift .*?      </direction>\n",
-        "",
-        study,
-        flags=re.DOTALL,
-    )
-    result = compare_file(text, text)
-
-    assert "<octave-shift" in study
-    assert "<octave-shift" not in text
-    assert result.tally.elements == result.tally.identical
-    _assert_file(result)
-
-
-def test_ottava_that_stops_at_a_barline_stops_the_run() -> None:
-    """Stop where music21 gives an ottava only its first note.
-
-    The forward conversion of the study score stops its ottava at the start
-    of measure 4, where music21 has no note before the stop to end it on.
-    """
-    text = _study_musicxml()
-
-    with pytest.raises(
-        ProtocolDefectError,
-        match="music21 reads an octave shift in measure 3",
-    ):
-        compare_file(text, text)
-
-
 def _ottava_over_rests(*, stop_in_next_measure: bool) -> str:
     """Shift a written C5 and the three rests after it to the end of measure 1.
 
@@ -3793,12 +4403,12 @@ def _ottava_over_rests(*, stop_in_next_measure: bool) -> str:
     )
 
 
-def test_ottava_must_keep_the_rests_that_it_shifts() -> None:
-    """Stop where music21 ends an ottava before the rests it shifts.
+def test_ottava_keeps_the_rests_that_it_shifts() -> None:
+    """Read an ottava over the rests that it shifts to the barline.
 
     Both scores shift measure 1 to the barline. Before a note of measure 2,
     the stop has no note before it in its measure, and music21 ends the
-    ottava on the C5, a shorter ottava that musicdiff would compare.
+    ottava on the C5; the octave-shift reading ends it after the last rest.
     """
     after_rests = _ottava_over_rests(stop_in_next_measure=False)
     before_note = _ottava_over_rests(stop_in_next_measure=True)
@@ -3814,11 +4424,7 @@ def test_ottava_must_keep_the_rests_that_it_shifts() -> None:
         event.shift for event in read_score(after_rests).events
     ]
     _assert_file(compare_file(after_rests, after_rests))
-    with pytest.raises(
-        ProtocolDefectError,
-        match="music21 reads an octave shift in measure 1",
-    ):
-        compare_file(before_note, after_rests)
+    _assert_file(compare_file(before_note, after_rests))
 
 
 def _ottava_over_a_lower_staff(*, stop_after_lower_rests: bool) -> str:
@@ -3869,12 +4475,13 @@ def _ottava_over_a_lower_staff(*, stop_after_lower_rests: bool) -> str:
     )
 
 
-def test_ottava_must_end_on_its_own_staff() -> None:
-    """Stop where music21 ends an ottava on a rest of another staff.
+def test_ottava_ends_on_its_own_staff() -> None:
+    """Read an ottava whose stop follows rests of another staff.
 
     Both scores shift the upper whole note to the barline. After the lower
     rests, the stop follows the third rest, and music21 ends the ottava on
-    it, a shorter ottava that musicdiff would compare.
+    it, ignoring the stop's offset; the octave-shift reading ends it on the
+    whole note.
     """
     after_note = _ottava_over_a_lower_staff(stop_after_lower_rests=False)
     after_rests = _ottava_over_a_lower_staff(stop_after_lower_rests=True)
@@ -3890,23 +4497,341 @@ def test_ottava_must_end_on_its_own_staff() -> None:
         event.shift for event in read_score(after_note).events
     ]
     _assert_file(compare_file(after_note, after_note))
-    with pytest.raises(
-        ProtocolDefectError,
-        match="music21 reads an octave shift in measure 1",
-    ):
-        compare_file(after_rests, after_note)
+    _assert_file(compare_file(after_rests, after_note))
 
 
 def test_ottava_on_a_hidden_note_stops_the_run() -> None:
-    """Stop where music21 starts an ottava on a note musicdiff skips."""
+    """Stop where only a note that musicdiff skips starts an ottava."""
     text = _ottava_over_rests(stop_in_next_measure=False).replace(
         "      <note>\n        <pitch>",
         '      <note print-object="no">\n        <pitch>',
         1,
     )
 
-    with pytest.raises(ProtocolDefectError, match="does not annotate"):
+    with pytest.raises(ProtocolDefectError, match="musicdiff annotates"):
         compare_file(text, text)
+
+
+_SHIFT_START = _direction(_shift("down", 1))
+_SHIFT_STOP = _direction(_shift("stop", 1))
+
+
+def _offset(direction: str, divisions: int) -> str:
+    return direction.replace(
+        "        <staff>",
+        f"        <offset>{divisions}</offset>\n        <staff>",
+    )
+
+
+def _after(note_id: str, xml: str, base: str = BASE) -> tuple[str, str]:
+    note = _note(note_id, base)
+    return note, note + xml
+
+
+def _sounding(*note_ids: str) -> str:
+    """Write each note of ``BASE`` an octave higher, as an 8va sounds."""
+    return _variant(
+        *(
+            _edit(note_id, "<octave>5</octave>", "<octave>6</octave>")
+            for note_id in note_ids
+        ),
+    )
+
+
+# Where the stop of an 8va over the E5 and G5 of measure 1 sits.
+_STOPS = {
+    # After the G5, as MuseScore writes it.
+    "after-last-note": lambda base: _after("m1s1n4", _SHIFT_STOP, base),
+    # At the start of measure 2, as the forward conversion writes it.
+    "next-measure": lambda _: _before("m2s1n1", _SHIFT_STOP),
+    # Before the G5, offset to the barline.
+    "offset": lambda _: _before("m1s1n4", _offset(_SHIFT_STOP, 12)),
+    # Before the G5, so that the G5 is not shifted.
+    "before-last-note": lambda _: _before("m1s1n4", _SHIFT_STOP),
+    # Before the G5, offset to the middle of it.
+    "inside-last-note": lambda _: _before("m1s1n4", _offset(_SHIFT_STOP, 6)),
+}
+
+
+def _tail_ottava(stop: str, *, sounding: tuple[str, ...] | None = None) -> str:
+    """Put the E5 and G5 of measure 1 under an 8va that stops at ``stop``.
+
+    ``sounding`` names the notes that sound an octave higher, by default
+    both.
+    """
+    base = _sounding(*(sounding or ("m1s1n3", "m1s1n4")))
+    return _variant(
+        _before("m1s1n3", _SHIFT_START),
+        _STOPS[stop](base),
+        base=base,
+    )
+
+
+@pytest.mark.parametrize("t_stop", ["next-measure", "offset"])
+def test_ottava_stop_that_music21_misreads_follows_musicxml(
+    t_stop: str,
+) -> None:
+    """Read an ottava stop that music21 misreads where MusicXML puts it.
+
+    At the start of measure 2, music21 has no note before the stop and ends
+    the ottava on its first note, the E5; before the G5, music21 ignores the
+    offset and ends it on the E5 too. Both stops end it at the barline, the
+    extent that the stop after the G5 gives, so neither is a difference.
+    """
+    y_text = _tail_ottava("after-last-note")
+    t_text = _tail_ottava(t_stop)
+
+    _assert_file(compare_file(t_text, t_text))
+    _assert_file(compare_file(t_text, y_text))
+    assert compare_layout(t_text, y_text).differences == ()
+
+
+def test_ottava_whose_stop_number_music21_misses_follows_musicxml() -> None:
+    """Read an ottava whose stop has no number, which MusicXML reads as 1.
+
+    music21 drops the ottava, since its start's number 1 does not match the
+    stop's missing number, so musicdiff would compare sounding pitches.
+    """
+    y_text = _tail_ottava("next-measure")
+    t_text = y_text.replace(
+        '<octave-shift type="stop" size="8" number="1"/>',
+        '<octave-shift type="stop" size="8"/>',
+    )
+
+    assert t_text != y_text
+    _assert_file(compare_file(t_text, y_text))
+    assert compare_layout(t_text, y_text).differences == ()
+
+
+def test_ottava_of_a_lower_staff_follows_musicxml() -> None:
+    """Read an 8vb of staff 2 that starts before a note of staff 1.
+
+    The start comes first in measure 2, so music21 starts the ottava on the
+    E5 of staff 1, the next note in the document; MusicXML starts it on the
+    chord of staff 2, as the start just before the chord does.
+    """
+    chord = ("m2s2n1", "m2s2n2", "m2s2n3")
+    base = _variant(
+        *(
+            _edit(note, "<octave>3</octave>", "<octave>2</octave>")
+            for note in chord
+        ),
+    )
+    start = _direction(_shift("up", 1), 2)
+    stop = _before("m2s2n4", _direction(_shift("stop", 1), 2))
+    first = _variant(_before("m2s1n1", start), stop, base=base)
+    last = _variant(_before("m2s2n1", start), stop, base=base)
+
+    assert _shifts(first) == _shifts(last)
+    assert _shifts(first)["m2s2n1"] == -1
+    _assert_file(compare_file(first, first))
+    _assert_file(compare_file(first, last))
+    assert compare_layout(first, last).differences == ()
+
+
+@pytest.mark.parametrize(
+    ("t_text", "content"),
+    [
+        (
+            _tail_ottava("before-last-note", sounding=("m1s1n3",)),
+            {"ottava": 1},
+        ),
+        (
+            _tail_ottava("before-last-note"),
+            {"ottava": 1, "pitch": 1},
+        ),
+        (_sounding("m1s1n3", "m1s1n4"), {"ottava": 1, "pitch": 2}),
+    ],
+    ids=["shorter-same-written", "shorter-same-sounding", "dropped"],
+)
+def test_ottava_extent_change_counts_its_written_pitches(
+    t_text: str,
+    content: dict[str, int],
+) -> None:
+    """Count an ottava that ends early or is dropped, and its written pitches.
+
+    Y shifts the E5 and G5 of measure 1 to the barline, the stop at the start
+    of measure 2. T ends the ottava before the G5: one ``ottava`` difference
+    for its length, and no other where the G5 sounds G5, still written G5;
+    where the G5 keeps its sounding G6, it is written G6, one ``pitch``
+    difference. Without the ottava, the E6 and G6 that sound are written:
+    one ``ottava`` deletion and two ``pitch`` differences.
+    """
+    _assert_file(compare_file(t_text, _tail_ottava("next-measure")), content)
+
+
+def _two_voices(first: str, second: str, *, stop_in_next_measure: bool) -> str:
+    """Write measure 1 of one staff as two voices under an 8va.
+
+    ``first`` holds the 8va's start; its stop follows ``second``, or comes
+    before the whole note of measure 2: either way at the barline.
+    """
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<score-partwise version="4.0">\n'
+        "  <part-list>\n"
+        '    <score-part id="P1"><part-name>Flute</part-name></score-part>\n'
+        "  </part-list>\n"
+        '  <part id="P1">\n'
+        '    <measure number="1">\n'
+        f"{_attributes('        <divisions>1</divisions>\n')}"
+        f"{first}"
+        "      <backup><duration>4</duration></backup>\n"
+        f"{second}"
+        f"{'' if stop_in_next_measure else _SHIFT_STOP}"
+        "    </measure>\n"
+        '    <measure number="2">\n'
+        f"{_SHIFT_STOP if stop_in_next_measure else ''}"
+        f"{_voice_note('D', 5, 4, 1)}"
+        "    </measure>\n"
+        "  </part>\n"
+        "</score-partwise>\n"
+    )
+
+
+def _voice_note(step: str, octave: int, duration: int, voice: int) -> str:
+    kind = {1: "quarter", 2: "half", 4: "whole"}[duration]
+    stem = "" if kind == "whole" else f"        <stem>{_STEMS[voice]}</stem>\n"
+    return (
+        "      <note>\n"
+        f"        <pitch><step>{step}</step><octave>{octave}</octave></pitch>\n"
+        f"        <duration>{duration}</duration>\n"
+        f"        <voice>{voice}</voice>\n        <type>{kind}</type>\n"
+        f"{stem}"
+        "      </note>\n"
+    )
+
+
+_STEMS = {1: "up", 2: "down"}
+
+
+def _forward(duration: int) -> str:
+    return f"      <forward><duration>{duration}</duration></forward>\n"
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        (
+            _SHIFT_START + _voice_note("E", 6, 4, 1),
+            _voice_note("G", 5, 1, 2) + _forward(3),
+        ),
+        (
+            _voice_note("C", 5, 1, 1)
+            + _voice_note("D", 5, 1, 1)
+            + _SHIFT_START
+            + _voice_note("E", 6, 2, 1),
+            _forward(3) + '      <note print-object="no">\n        <rest/>\n'
+            "        <duration>1</duration>\n        <voice>2</voice>\n"
+            "        <type>quarter</type>\n      </note>\n",
+        ),
+    ],
+    ids=["whole-note-that-starts-first", "hidden-rest-that-ends-last"],
+)
+def test_ottava_over_two_voices_follows_musicxml(
+    first: str,
+    second: str,
+) -> None:
+    """Read an 8va whose first and last elements are in different voices.
+
+    A whole note starts the 8va with the quarter note of another voice and
+    alone ends it; the quarter note is the ottava's first element, so that
+    the whole note can be its last. A hidden rest of another voice ends the
+    8va with a half note; musicdiff does not annotate the rest, so the
+    ottava leaves it out and ends on the half note. Both stops give the same
+    extent.
+    """
+    after = _two_voices(first, second, stop_in_next_measure=False)
+    before = _two_voices(first, second, stop_in_next_measure=True)
+
+    _assert_file(compare_file(after, after))
+    _assert_file(compare_file(before, after))
+    assert compare_layout(before, after).differences == ()
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        (
+            _tail_ottava("inside-last-note"),
+            "no note or rest that musicdiff annotates starts and ends",
+        ),
+        (
+            _variant(
+                _before("m1s1n3", _offset(_SHIFT_START, 6)),
+                _before("m2s1n1", _SHIFT_STOP),
+                base=_sounding("m1s1n4"),
+            ),
+            "no note or rest that musicdiff annotates starts and ends",
+        ),
+        (
+            _variant(
+                _before("m1s1n1", _direction(_shift("down", 2))),
+                _before("m1s1n4", _direction(_shift("stop", 2))),
+                base=_tail_ottava("next-measure"),
+            ),
+            "music21 reads an octave shift in measure 1",
+        ),
+        (
+            _two_voices(
+                _SHIFT_START + _voice_note("E", 6, 4, 1),
+                _forward(1) + _voice_note("G", 5, 1, 2) + _forward(2),
+                stop_in_next_measure=True,
+            ),
+            "one note or rest alone starts and ends the octave shift",
+        ),
+    ],
+    ids=[
+        "stop-inside-a-note",
+        "start-inside-a-note",
+        "overlapping",
+        "whole-note-alone",
+    ],
+)
+def test_ottava_that_no_reading_maps_stops_the_run(
+    text: str,
+    message: str,
+) -> None:
+    """Stop where no music21 ottava can take a MusicXML octave shift's extent.
+
+    musicdiff compares an ottava from the onset of its first element to the
+    end of its last, so a shift that starts or ends inside a note has no
+    elements to give; two shifts that overlap on one staff would shift the
+    written pitch of the notes they share twice; and a whole note that alone
+    starts and ends a shift over a later quarter note of another voice would
+    be the first and the last element of one ottava, which music21 cannot
+    hold.
+    """
+    with pytest.raises(ProtocolDefectError, match=message):
+        compare_file(text, text)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [FIXTURES.parent / "assembled-score.txt", ASSEMBLY / "study.expected.txt"],
+    ids=["assembled-score", "study"],
+)
+def test_forward_output_of_a_score_with_ottavas_compares_cleanly(
+    source: Path,
+) -> None:
+    """Compare the forward conversion of a score with ottavas with itself.
+
+    The conversion keeps its slurs, ties, wedges and ottavas. An ottava stops
+    at the start of the next measure, before its staff's first note, where
+    music21 has no note to end it on; the octave-shift reading gives it its
+    extent.
+    """
+    document = parse_document(decode_source(source.read_bytes()))
+    assert isinstance(document, AssembledScore)
+    text = to_musicxml(document).decode("utf-8")
+    result = compare_file(text, text)
+    layout = compare_layout(text, text)
+
+    assert "<octave-shift" in text
+    assert result.tally.elements == result.tally.identical
+    _assert_file(result)
+    assert layout.differences == ()
+    assert layout.tally.elements == layout.tally.identical
 
 
 def test_beams_of_a_rest_that_musicdiff_scores_are_not_elements() -> None:
@@ -4735,6 +5660,68 @@ def test_voice_stays_on_its_staff_when_its_beam_belongs_to_another() -> None:
             "cross_staff": cross_staff_difference,
             "voice_order": (1, 0),
         }
+
+
+def _staff_2_beam_unplaced() -> str:
+    """Stem staff 2's voice 5 up beside voice 7's up-stemmed staff-2 beam."""
+    placed = _cross_staff_beam_off_voice_staff(2)
+    return _variant(
+        *(
+            _edit(
+                f"m4s2n{index}",
+                "<stem>down</stem>",
+                "<stem>up</stem>",
+                base=placed,
+            )
+            for index in range(1, 5)
+        ),
+        base=placed,
+    )
+
+
+@pytest.mark.parametrize(
+    ("placed_t", "placed_y"),
+    [(False, False), (True, False), (False, True)],
+    ids=["self-pair", "unplaced-reference", "unplaced-round-trip"],
+)
+def test_staff_2_beam_takes_its_undetermined_staff_position(
+    *,
+    placed_t: bool,
+    placed_y: bool,
+) -> None:
+    """Leave voice 7 unplaced through its beam on an unplaced staff.
+
+    The beam and voice 5 share one stem direction on staff 2, so neither
+    has a position there; voice 7's staff-1 events are placed, but its beam
+    events take the undetermined position, so voice 7 is unplaced too.
+    """
+    placed = _cross_staff_beam_off_voice_staff(2)
+    unplaced = _staff_2_beam_unplaced()
+    result = compare_file(
+        placed if placed_t else unplaced,
+        placed if placed_y else unplaced,
+    )
+
+    changed = 2 if placed_y else 0
+    excluded = 0 if placed_y else 2
+    _assert_file(result, **({"voice_order": (changed, 0)} if changed else {}))
+    elements = VOICE_ORDER_ELEMENT_COUNT - excluded
+    assert result.checks["voice_order"] == ElementTally(
+        elements,
+        elements - changed,
+        0,
+    )
+    # An added eighth and rest, and two cross-staff beam events.
+    assert result.tally == ElementTally(
+        BASE_FILE_ELEMENT_COUNT + 4 - excluded,
+        BASE_FILE_ELEMENT_COUNT + 4 - excluded - changed,
+        0,
+    )
+    assert result.excluded_voices == Counter(
+        {UndeterminedReason.INDISTINGUISHABLE_VOICES: excluded}
+        if excluded
+        else {},
+    )
 
 
 def test_voice_number_reused_on_two_staves_is_two_voices() -> None:
@@ -5763,16 +6750,17 @@ def test_failure_count_includes_the_elements_of_every_check() -> None:
 
 
 def test_failure_count_needs_no_voice_positions() -> None:
-    """Count the voices of an unsupported file whose positions are unknown.
+    """Count every voice of a failed file, placed or not.
 
-    Both voices of measure 3 are stemmed up, so a comparison cannot place
-    them; a failed file's count does not compare voices.
+    Both voices of measure 3 are stemmed up, so a comparison excludes them;
+    a failed file's count does not compare voices and keeps them.
     """
     stems = _variant(_edit("m3s1n2", "<stem>down</stem>", "<stem>up</stem>"))
     fingered = _marked(stems, ("m1s1n3", _fingering("6")))
 
-    with pytest.raises(ProtocolDefectError, match="cannot distinguish"):
-        compare_file(stems, stems)
+    assert compare_file(stems, stems).tally.elements == (
+        BASE_FILE_ELEMENT_COUNT - _M3_VOICES
+    )
     with pytest.raises(MusicXmlError) as refusal:
         from_musicxml_text(fingered)
     assert refusal.value.diagnostics[0].code == "unsupported/fingering"
