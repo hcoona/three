@@ -65,9 +65,10 @@ Each worker call has one 300-second bound, which includes starting a fresh
 worker. Some calls hold more than one of the protocol's steps: the content
 pass with the supplementary checks, the text-space check's two reverse
 conversions, the baseline's two passes and each gold piece's whole
-system-assembly test. A timeout of one of these calls is stricter than the
-protocol's per-step bound, so the file returns to the owner before it is
-counted.
+system-assembly test. A timeout of one of these calls is counted as a failure
+under the protocol's failure rule, but the bound is stricter than the
+protocol's per-step bound, so the results carrier lists any such timeout for
+the owner to review before its figures are used.
 
 ## User and primary journey
 
