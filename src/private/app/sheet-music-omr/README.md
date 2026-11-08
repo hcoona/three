@@ -6,14 +6,16 @@ into text, and deterministic tools validate, assemble and convert that text to
 MusicXML. The records here define the text representation and the evidence its
 tools must meet.
 
-**Current state:** experimental. A standard-library Python package parses
+**Current state:** experimental. A Python package parses
 Text Score 2 documents, validates their grammar and semantics, reports each
 error with its rule class and location, lists review markers, writes canonical
 text, derives the carry-out state of a system document and assembles system
 documents into one score. A forward converter turns a valid assembled score
 without review markers into MusicXML 4.0, and a reverse converter turns a
-MusicXML piano part on two staves back into a valid assembled score. There is
-no recognizer or model yet. No packaging or release is selected.
+MusicXML piano part on two staves back into a valid assembled score. A
+round-trip comparison instrument scores a MusicXML round trip with musicdiff
+under the [comparison protocol](docs/comparison-protocol.md). There is no
+recognizer or model yet. No packaging or release is selected.
 
 ## Usage
 
