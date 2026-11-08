@@ -26,6 +26,7 @@ import inspect
 import math
 import re
 import textwrap
+from bisect import bisect_right
 from collections import Counter
 from copy import copy
 from dataclasses import dataclass, field
@@ -3106,24 +3107,27 @@ def _remove_line_reprints(
     notes: dict[int, AnnNote],
     words: _WordsReading,
 ) -> None:
-    """Remove trill marks and words that restate an open line's start."""
+    """Remove trill marks and words that restate an open line's start.
+
+    Each is on the first event of a system on the line's staff, in a later
+    system than the line's start.
+    """
     staff_indexes = {
         key: staff
         for staff, key in _musicxml_part_staff_indices(annotated).items()
     }
+    firsts = _system_first_events(xml)
     changed: set[int] = set()
     for span in xml.spans:
         staff = staff_indexes.get(span.start.place)
         if staff is None:
             continue
-        for measure in sorted(xml.system_starts):
-            if span.start.measure < measure <= span.stop.measure and (
-                _drop_line_reprint(
-                    span,
-                    measure,
-                    annotated.part_list[staff],
-                    (xml, notes, words),
-                )
+        for system, first in firsts.get(span.start.place, ()):
+            if span.start.measure < system and _drop_line_reprint(
+                span,
+                first,
+                annotated.part_list[staff],
+                (xml, notes, words),
             ):
                 changed.add(staff)
     for staff in changed:
@@ -3134,9 +3138,42 @@ def _remove_line_reprints(
         _reset_size(annotated)
 
 
+def _system_first_events(
+    xml: XmlScore,
+) -> dict[tuple[int, int], list[tuple[int, list[XmlEvent]]]]:
+    """The first events of each system on each staff.
+
+    A staff's first event in a system can be in a later measure than the
+    system's first, or after the start of a measure. Simultaneous events
+    of several voices are all first.
+
+    Returns:
+        By staff, the first measure of each system that has events on it,
+        in order, with the events at the earliest written position.
+    """
+    starts = sorted(xml.system_starts)
+    systems: dict[tuple[tuple[int, int], int], list[XmlEvent]] = {}
+    for event in xml.events:
+        system = starts[bisect_right(starts, event.measure) - 1]
+        systems.setdefault((event.place, system), []).append(event)
+    firsts: dict[tuple[int, int], list[tuple[int, list[XmlEvent]]]] = {}
+    for (place, system), events in sorted(
+        systems.items(),
+        key=lambda item: item[0],
+    ):
+        first = min(map(_written_order, events))
+        firsts.setdefault(place, []).append(
+            (
+                system,
+                [event for event in events if _written_order(event) == first],
+            ),
+        )
+    return firsts
+
+
 def _drop_line_reprint(
     span: XmlSpan,
-    measure: int,
+    first: list[XmlEvent],
     part: AnnPart,
     source: tuple[
         XmlScore,
@@ -3148,13 +3185,13 @@ def _drop_line_reprint(
     if span.family == WAVY_LINE:
         dropped = [
             _drop_trill(note, part)
-            for event in _trill_reprints(span, measure, xml)
+            for event in _trill_reprints(span, first)
             if (note := notes.get(id(event))) is not None
         ]
         return any(dropped)
     return span.family == DASHES and _drop_words_reprint(
         span,
-        measure,
+        first[0],
         part,
         (xml, words),
     )
@@ -3162,27 +3199,18 @@ def _drop_line_reprint(
 
 def _trill_reprints(
     span: XmlSpan,
-    measure: int,
-    xml: XmlScore,
+    first: list[XmlEvent],
 ) -> list[XmlEvent]:
+    """The first events of a system that repeat the line's trill mark."""
     signature = (
         None if span.start_note is None else _trill_signature(span.start_note)
     )
     if signature is None:
         return []
-    staff_events = [
-        event
-        for event in xml.events
-        if event.place == span.start.place and event.measure == measure
-    ]
-    if not staff_events:
-        return []
-    first = min(map(_written_order, staff_events))
     return [
         event
-        for event in staff_events
-        if _written_order(event) == first
-        and event.start <= span.stop.start
+        for event in first
+        if event.start <= span.stop.start
         and any(_trill_signature(note) == signature for note in event.notes)
     ]
 
@@ -3230,11 +3258,11 @@ def _drop_trill(note: AnnNote, part: AnnPart) -> bool:
 
 def _drop_words_reprint(
     span: XmlSpan,
-    measure: int,
+    first: XmlEvent,
     part: AnnPart,
     source: tuple[XmlScore, _WordsReading],
 ) -> bool:
-    """Drop the first words direction in ``measure`` that restates the line.
+    """Drop the first words direction on ``first`` that restates the line.
 
     Only a direction whose joined words restate the line counts, so new
     words of the same text after the line's stop stay. Each of its words,
@@ -3245,25 +3273,30 @@ def _drop_words_reprint(
     xml, reading = source
     words = reading.words
     start = span.start
-    if not isinstance(start, XmlDirection):
+    stop = span.stop
+    if not isinstance(start, XmlDirection) or (stop.measure, stop.onset) < (
+        first.measure,
+        first.onset,
+    ):
         return False
     text = dashes_text(start, xml.directions)
     if text is None:
         return False
     directions = sorted(
-        _reprint_directions(span, measure, text, xml),
+        _reprint_directions(span, first, text, xml),
         key=lambda direction: direction.order,
     )
     if not directions:
         return False
     indexes = _measure_indexes(part.get_object())
     for bar in part.bar_list:
-        if indexes.get(id(bar.get_object())) != measure:
+        if indexes.get(id(bar.get_object())) != first.measure:
             continue
         extras = {
             id(extra.get_object()): extra
             for extra in bar.extras_list
-            if extra.kind in {"direction", "tempo"} and extra.offset == 0
+            if extra.kind in {"direction", "tempo"}
+            and extra.offset == first.onset
         }
         for direction in directions:
             reprints = [
@@ -3343,25 +3376,26 @@ def _without_text(
 
 def _reprint_directions(
     span: XmlSpan,
-    measure: int,
+    first: XmlEvent,
     text: str,
     xml: XmlScore,
 ) -> list[XmlDirection]:
-    """The words of the line's text that start ``measure`` on the open line.
+    """The words of the line's text on ``first`` while the line is open.
 
-    A line that stops at the measure's first onset is open only at words
-    that precede its stop in document order.
+    The line does not stop before ``first``. A line that stops at the
+    position of ``first`` is open only at words that precede its stop in
+    document order.
     """
     stop = span.stop
-    open_past_start = stop.measure > measure or stop.onset > 0
+    position = (first.measure, first.onset)
+    stop_position = (stop.measure, stop.onset)
     return [
         direction
         for direction in xml.directions
         if direction.place == span.start.place
-        and direction.measure == measure
-        and direction.onset == 0
+        and (direction.measure, direction.onset) == position
         and direction.words == text
-        and (open_past_start or direction.order <= stop.order)
+        and (stop_position > position or direction.order <= stop.order)
     ]
 
 

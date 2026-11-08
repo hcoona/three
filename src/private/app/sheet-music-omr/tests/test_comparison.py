@@ -3869,6 +3869,168 @@ def test_words_in_the_direction_of_a_line_stop_are_its_reprint() -> None:
     _assert_file(compare_file(t_text, y_text))
 
 
+_SYSTEM_OPENINGS = {
+    1: (
+        "      <attributes>\n"
+        "        <divisions>1</divisions>\n"
+        "        <key><fifths>0</fifths></key>\n"
+        "        <time><beats>4</beats><beat-type>4</beat-type></time>\n"
+        "        <staves>2</staves>\n"
+        '        <clef number="1"><sign>G</sign><line>2</line></clef>\n'
+        '        <clef number="2"><sign>F</sign><line>4</line></clef>\n'
+        "      </attributes>\n"
+    ),
+    2: '      <print new-system="yes"/>\n',
+}
+# The octave and voice of the notes of each staff of a system score.
+_SYSTEM_STAVES = {1: ("5", "1"), 2: ("3", "5")}
+
+
+def _system_note(
+    note_id: str,
+    staff: int,
+    *,
+    dotted: bool = False,
+    ornaments: str = "",
+) -> str:
+    """Return a whole, or a dotted half, C5 on staff 1 or C3 on staff 2."""
+    octave, voice = _SYSTEM_STAVES[staff]
+    duration, kind = (
+        ("3", "        <type>half</type>\n        <dot/>\n")
+        if dotted
+        else ("4", "        <type>whole</type>\n")
+    )
+    notations = (
+        f"        <notations>\n{ornaments}        </notations>\n"
+        if ornaments
+        else ""
+    )
+    return (
+        f'      <note id="{note_id}">\n'
+        "        <pitch>\n"
+        "          <step>C</step>\n"
+        f"          <octave>{octave}</octave>\n"
+        "        </pitch>\n"
+        f"        <duration>{duration}</duration>\n"
+        f"        <voice>{voice}</voice>\n"
+        f"{kind}"
+        f"        <staff>{staff}</staff>\n"
+        f"{notations}"
+        "      </note>\n"
+    )
+
+
+def _system_score(*tops: str) -> str:
+    """Return a 4/4 piano score whose top staff of each measure is in ``tops``.
+
+    Each bottom staff is a whole C3, and measure 2 starts a new system.
+    """
+    measures = []
+    for number, top in enumerate(tops, start=1):
+        backup = (
+            "      <backup>\n        <duration>4</duration>\n      </backup>\n"
+            if top
+            else ""
+        )
+        measures.append(
+            f'    <measure number="{number}">\n'
+            f"{_SYSTEM_OPENINGS.get(number, '')}{top}{backup}"
+            f"{_system_note(f'm{number}s2', 2)}"
+            "    </measure>\n",
+        )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<score-partwise version="4.0">\n'
+        "  <part-list>\n"
+        '    <score-part id="P1"><part-name>Piano</part-name></score-part>\n'
+        "  </part-list>\n"
+        '  <part id="P1">\n'
+        f"{''.join(measures)}"
+        "  </part>\n"
+        "</score-partwise>\n"
+    )
+
+
+_DELAY = (
+    "      <forward>\n"
+    "        <duration>1</duration>\n"
+    "        <voice>1</voice>\n"
+    "        <staff>1</staff>\n"
+    "      </forward>\n"
+)
+_DELAYED_TOPS = (
+    _line_direction("cresc.", "start") + _system_note("m1s1", 1),
+    _DELAY + _system_note("m2s1", 1, dotted=True),
+    _line_direction(None, "stop") + _system_note("m3s1", 1),
+)
+_LATER_TOPS = (
+    _line_direction("cresc.", "start")
+    + _system_note("m1s1", 1, ornaments=_TRILL_START),
+    "",
+    _system_note("m3s1", 1),
+    _line_direction(None, "stop")
+    + _system_note("m4s1", 1, ornaments=_TRILL_STOP),
+)
+
+
+@pytest.mark.parametrize(
+    ("t_tops", "y_tops", "content", "added"),
+    [
+        (
+            _DELAYED_TOPS,
+            (
+                _DELAYED_TOPS[0],
+                _DELAY
+                + _line_direction("cresc.", None)
+                + _system_note("m2s1", 1, dotted=True),
+                _DELAYED_TOPS[2],
+            ),
+            {},
+            0,
+        ),
+        (
+            _DELAYED_TOPS,
+            (
+                _DELAYED_TOPS[0],
+                _line_direction("cresc.", None) + _DELAYED_TOPS[1],
+                _DELAYED_TOPS[2],
+            ),
+            {"text": 1},
+            1,
+        ),
+        (
+            _LATER_TOPS,
+            (
+                *_LATER_TOPS[:2],
+                _line_direction("cresc.", None)
+                + _system_note("m3s1", 1, ornaments=_TRILL_MARK),
+                _LATER_TOPS[3],
+            ),
+            {},
+            0,
+        ),
+    ],
+    ids=["words-on-a-delayed-event", "words-before-it", "first-measure-empty"],
+)
+def test_line_reprints_are_on_the_first_event_of_a_system_on_a_staff(
+    t_tops: tuple[str, ...],
+    y_tops: tuple[str, ...],
+    content: dict[str, int],
+    added: int,
+) -> None:
+    """Find the reprints on a staff's first event of a system, wherever it is.
+
+    That event can start after the system's first onset or in a later
+    measure; words before it on its staff are new words.
+    """
+    t_text = _system_score(*t_tops)
+    y_text = _system_score(*y_tops)
+
+    _assert_file(compare_file(t_text, y_text), content)
+    added_count = failure_element_count(y_text) - failure_element_count(t_text)
+    assert added_count == added
+
+
 _CRESC_LINE = _variant(
     _before("m4s1n1", _line_direction("cresc.", "start")),
     _before("m6s1n1", _line_direction(None, "stop")),
