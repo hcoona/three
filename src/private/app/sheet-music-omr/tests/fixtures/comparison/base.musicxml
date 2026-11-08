@@ -277,6 +277,7 @@
         <duration>48</duration>
         <voice>1</voice>
         <type>whole</type>
+        <stem>up</stem>
         <staff>1</staff>
       </note>
       <backup>
@@ -290,6 +291,7 @@
         <duration>48</duration>
         <voice>2</voice>
         <type>whole</type>
+        <stem>down</stem>
         <staff>1</staff>
       </note>
       <backup>
@@ -340,8 +342,9 @@
           <octave>5</octave>
         </pitch>
         <duration>12</duration>
-        <voice>1</voice>
+        <voice>7</voice>
         <type>quarter</type>
+        <stem>up</stem>
         <staff>1</staff>
       </note>
       <note id="m4s1n2">
@@ -350,8 +353,9 @@
           <octave>5</octave>
         </pitch>
         <duration>12</duration>
-        <voice>1</voice>
+        <voice>7</voice>
         <type>quarter</type>
+        <stem>up</stem>
         <staff>1</staff>
       </note>
       <note id="m4s1n3">
@@ -360,8 +364,9 @@
           <octave>5</octave>
         </pitch>
         <duration>12</duration>
-        <voice>1</voice>
+        <voice>7</voice>
         <type>quarter</type>
+        <stem>up</stem>
         <staff>1</staff>
       </note>
       <note id="m4s1n4">
@@ -370,8 +375,9 @@
           <octave>5</octave>
         </pitch>
         <duration>12</duration>
-        <voice>1</voice>
+        <voice>7</voice>
         <type>quarter</type>
+        <stem>up</stem>
         <staff>1</staff>
       </note>
       <backup>
@@ -385,6 +391,7 @@
         <duration>24</duration>
         <voice>2</voice>
         <type>half</type>
+        <stem>down</stem>
         <staff>1</staff>
       </note>
       <forward>
@@ -481,6 +488,7 @@
         <duration>48</duration>
         <voice>1</voice>
         <type>whole</type>
+        <stem>up</stem>
         <staff>1</staff>
       </note>
       <backup>
@@ -494,6 +502,7 @@
         <duration>48</duration>
         <voice>2</voice>
         <type>whole</type>
+        <stem>down</stem>
         <staff>1</staff>
       </note>
       <backup>
@@ -507,6 +516,7 @@
         <duration>48</duration>
         <voice>5</voice>
         <type>whole</type>
+        <stem>up</stem>
         <staff>2</staff>
       </note>
     </measure>
@@ -519,6 +529,7 @@
         <duration>48</duration>
         <voice>1</voice>
         <type>whole</type>
+        <stem>up</stem>
         <staff>1</staff>
       </note>
       <backup>
@@ -532,6 +543,7 @@
         <duration>48</duration>
         <voice>2</voice>
         <type>whole</type>
+        <stem>down</stem>
         <staff>1</staff>
       </note>
       <backup>
@@ -545,6 +557,7 @@
         <duration>48</duration>
         <voice>5</voice>
         <type>whole</type>
+        <stem>up</stem>
         <staff>2</staff>
       </note>
     </measure>
@@ -570,6 +583,7 @@
         <duration>48</duration>
         <voice>5</voice>
         <type>whole</type>
+        <stem>up</stem>
         <staff>2</staff>
       </note>
       <backup>
@@ -583,6 +597,7 @@
         <duration>48</duration>
         <voice>6</voice>
         <type>whole</type>
+        <stem>down</stem>
         <staff>2</staff>
       </note>
       <barline location="right">
