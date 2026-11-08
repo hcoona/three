@@ -683,14 +683,12 @@ def _slur_tally(
     durations: dict[_Site, set[Fraction | None]] = {}
     for slur, duration in y_slurs:
         durations.setdefault(_slur_site(slur), set()).add(duration)
-    used: set[int] = set()
-    elements = identical = 0
-    for slur, duration in y_slurs:
-        start, stop = slur.start, slur.stop
-        touched = touches.get(_slur_site(slur))
-        if (
+    scored = [
+        slur
+        for slur, duration in y_slurs
+        if not (
             (
-                touched is not None
+                (touched := touches.get(_slur_site(slur))) is not None
                 # A touched slur whose duration is unknown, or that no ``Y``
                 # slur of its site matches, leaves the site to musicdiff.
                 and (
@@ -699,30 +697,58 @@ def _slur_tally(
                     or touched.isdisjoint(durations[_slur_site(slur)])
                 )
             )
-            or id(start) in y_side.touched
-            or id(stop) in y_side.touched
-        ):
-            continue
+            or id(slur.start) in y_side.touched
+            or id(slur.stop) in y_side.touched
+        )
+    ]
+    sides = (y_side, t_side)
+    used: set[int] = set()
+    unpaired: list[_Slur] = []
+    # Identity is the equality of one key, so pairing identical slurs first
+    # gives every identical pair whatever the order of either score's slurs.
+    for slur in scored:
+        partner = next(
+            (
+                index
+                for index, other in enumerate(candidates)
+                if index not in used
+                and _slur_matches(slur, other)
+                and _slur_identical(slur, other, sides)
+            ),
+            None,
+        )
+        if partner is None:
+            unpaired.append(slur)
+        else:
+            used.add(partner)
+    identical = len(scored) - len(unpaired)
+    elements = identical
+    for slur in unpaired:
         matches = [
             index
             for index, other in enumerate(candidates)
-            if index not in used
-            and (other.start.measure, other.start.onset)
-            == (start.measure, start.onset)
-            and other.stop.end == stop.end
+            if index not in used and _slur_matches(slur, other)
         ]
         if not matches:
             continue
-        sides = (y_side, t_side)
-        best = max(
-            matches,
-            key=lambda index: _slur_preference(slur, candidates[index], sides),
+        used.add(
+            max(
+                matches,
+                key=lambda index: _slur_preference(
+                    slur, candidates[index], sides
+                ),
+            ),
         )
-        used.add(best)
         elements += 1
-        if _slur_identical(slur, candidates[best], sides):
-            identical += 1
     return ElementTally(elements, identical, 0)
+
+
+def _slur_matches(slur: _Slur, other: _Slur) -> bool:
+    """Whether ``other`` starts at the onset and ends when ``slur`` does."""
+    return (other.start.measure, other.start.onset) == (
+        slur.start.measure,
+        slur.start.onset,
+    ) and other.stop.end == slur.stop.end
 
 
 def _slur_preference(
@@ -759,7 +785,7 @@ def _stop_onset(slur: _Slur) -> tuple[int, Fraction, int]:
 def _tie_stops(side: _Side) -> Iterator[tuple[_Key, bool]]:
     """Yield each tie stop, exempt when musicdiff scores its tie."""
     touched_starts = {
-        (event.place, event.end, event.written_pitch(note))
+        (side.place(event), event.end, event.written_pitch(note))
         for event in side.score.xml.events
         if id(event) in side.touched
         for note in event.notes
@@ -773,7 +799,7 @@ def _tie_stops(side: _Side) -> Iterator[tuple[_Key, bool]]:
             yield (
                 side.note_key(event, note),
                 id(event) in side.touched
-                or (event.place, event.start, pitch) in touched_starts,
+                or (side.place(event), event.start, pitch) in touched_starts,
             )
 
 

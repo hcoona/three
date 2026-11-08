@@ -2633,6 +2633,22 @@ def test_tie_displayed_only_by_tied_is_not_a_tie_end() -> None:
     _assert_file(result, {"tie": 1})
 
 
+def test_tie_stop_exemption_uses_the_paired_staff() -> None:
+    """Exempt a moved tie stop by the staff its paired source takes.
+
+    ``T(Y)`` moves the tie source to staff 2, where pairing rule 1 gives it
+    back staff 1, and moves the stop to the simultaneous C5 half.
+    """
+    moved = _tie_end_score("m4s1n5")
+    t_text = _variant(
+        _edit("m3s1n1", "<staff>1</staff>", "<staff>2</staff>", base=moved),
+        base=moved,
+    )
+    result = compare_file(t_text, _tie_end_score("m4s1n1"))
+
+    assert result.checks["tie_ends"] == ElementTally(1, 1, 0)
+
+
 _UNISON = _unison_base()
 _GRACES = _double_grace_base()
 _SINGLE_TUPLET = _single_tuplet_base()
@@ -3150,6 +3166,42 @@ def test_slurs_that_overlap_only_in_document_order_pair_in_time() -> None:
 def test_slur_from_a_grace_note_reads(start: str, stop: str) -> None:
     """Read a slur from a grace note to a later note of one onset."""
     assert (start, stop) in _slur_ids(_slur_score(start, stop, _GRACES))
+
+
+_GRACE_SLURS = _slurred(
+    _GRACES,
+    ("m2s1n3", "m2s1n5", 2),
+    ("m2s1n3b", "m2s1n5", 3),
+)
+_GRACE_SLURS_SWAPPED = _GRACE_SLURS.replace(
+    '<slur number="2" type="stop"/>\n          <slur number="3" type="stop"/>',
+    '<slur number="3" type="stop"/>\n          <slur number="2" type="stop"/>',
+)
+
+
+@pytest.mark.parametrize(
+    ("t_text", "y_text"),
+    [
+        (_GRACE_SLURS_SWAPPED, _GRACE_SLURS),
+        (_GRACE_SLURS, _GRACE_SLURS_SWAPPED),
+    ],
+    ids=["t-swapped", "y-swapped"],
+)
+def test_grace_slurs_to_one_note_pair_whatever_their_tag_order(
+    t_text: str,
+    y_text: str,
+) -> None:
+    """Pair two grace-note slurs by grace position, not by document order.
+
+    Both D5 grace notes slur to one main note; swapping the two stop tags on
+    it changes only the order in which the slurs are read.
+    """
+    assert t_text != y_text
+    assert _slur_ids(t_text) == _slur_ids(y_text)
+    result = compare_file(t_text, y_text)
+
+    assert result.checks["slur_endpoints"] == ElementTally(3, 3, 0)
+    _assert_file(result)
 
 
 @pytest.mark.parametrize(
