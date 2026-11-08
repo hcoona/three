@@ -62,6 +62,10 @@ cost. The owner-approved [SDK baseline](docs/native-acceptance-protocol.md#sdk-c
 uses one new persistent ledger. Unknown usage in that active ledger blocks
 further paid work; repeated runs do not reset it.
 
+The [SQLite contention contract](docs/implementation-contracts.md#sqlite-contention-evidence)
+specifies automatic bounded local failure evidence. This instrumentation is not
+yet implemented; the failed audit does not establish its competing lock holder.
+
 The [credit contract](docs/implementation-contracts.md#verified-pre-dispatch-cancellation)
 specifies a distinct verified cancellation before first dispatch, not measured
 zero billing. The application implements it with an accounting-only `reconcile`

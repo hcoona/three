@@ -106,6 +106,27 @@ MCP/CLI integration and lifecycle operations enqueue requests and return their
 identities; they do not announce a merge or pause as completed before the
 coordinator records the outcome.
 
+### Contention observability
+
+Instrument the application's existing connection, transaction and SQL execution
+boundaries, not a replacement SQLite busy handler, global profiler or hosted
+diagnostic service. Keep finite provider timeout and transaction semantics
+unchanged. Track actual acquisition and commit/rollback/close outcomes rather
+than treating a still-open C# transaction scope as a still-held write lock.
+Record deferred and immediate acquisition separately; deferred acquisition alone
+does not establish a write lock.
+
+The coordinator and local MCP helpers retain bounded recent activity in
+process-lifetime-qualified files outside SQLite, under owned local state.
+On contention, preserve a separate bounded incident snapshot, including available
+activity from those application files and its collection interval. Concurrent,
+stale, truncated or missing records are evidence limitations, not proof of a
+particular lock holder. Do not enumerate unrelated OS processes or use a
+database query as the only diagnostic path after that database becomes locked.
+The [diagnostic contract](implementation-contracts.md#sqlite-contention-evidence)
+owns field/privacy/retention behavior. Native runtime internals remain outside
+this instrumentation boundary.
+
 ## Native SDK, MCP and instruction boundary
 
 Launch and register one owned installed Copilot headless runtime for the
