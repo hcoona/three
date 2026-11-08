@@ -3227,11 +3227,14 @@ def test_ottava_that_stops_on_another_staff_stops_the_run() -> None:
 _NEXT_TYPE = "        </direction-type>\n        <direction-type>\n"
 
 
-def _at_measure_start(*directions: tuple[int, int, str]) -> str:
+def _at_measure_start(
+    *directions: tuple[int, int, str],
+    base: str = _PIANO,
+) -> str:
     """Write each ``(staff, onset, direction content)`` before ``t1``.
 
     The directions keep their order in the document whatever their onsets,
-    which each ``offset`` sets.
+    which each ``offset`` sets in divisions.
     """
     return _variant(
         _before(
@@ -3244,7 +3247,7 @@ def _at_measure_start(*directions: tuple[int, int, str]) -> str:
                 for staff, onset, inner in directions
             ),
         ),
-        base=_PIANO,
+        base=base,
     )
 
 
@@ -3286,7 +3289,11 @@ def _ottava_chain(bottom: int, *, stop_first: bool) -> str:
     ["stop-then-start", "start-then-stop"],
 )
 def test_ottava_chain_pairs_beside_a_reused_number(order: str) -> None:
-    """Pair a stop-first ottava chain while another staff reuses its number."""
+    """Pair a stop-first ottava chain while another staff reuses its number.
+
+    music21 gives each ottava the notes after its start in the document,
+    whatever their staff or offset, so a comparison stops.
+    """
     stop_first = order == "stop-then-start"
     shared = _ottava_chain(1, stop_first=stop_first)
     renumbered = _ottava_chain(2, stop_first=stop_first)
@@ -3301,8 +3308,9 @@ def test_ottava_chain_pairs_beside_a_reused_number(order: str) -> None:
         -1,
         0,
     ] * 2
-    _assert_file(compare_file(shared, shared))
-    _assert_file(compare_file(renumbered, renumbered))
+    for text in (shared, renumbered):
+        with pytest.raises(ProtocolDefectError, match="music21"):
+            compare_file(text, text)
 
 
 def test_nested_ottavas_of_one_number_stop_the_run() -> None:
@@ -3339,16 +3347,124 @@ def test_backward_dashes_stop_the_run_beside_pairs_in_time() -> None:
         read_score(text)
 
 
-def test_forward_output_with_reused_numbers_compares_cleanly() -> None:
-    """Compare the forward conversion of the study score with itself."""
+# ``_PIANO`` in divisions of an eighth, so that a direction can sit between
+# beats.
+_PIANO_EIGHTHS = (
+    _PIANO.replace("<divisions>1</divisions>", "<divisions>2</divisions>")
+    .replace("<duration>1</duration>", "<duration>2</duration>")
+    .replace("<duration>4</duration>", "<duration>8</duration>")
+)
+
+
+def _dashes_at(*ends: tuple[str, int]) -> str:
+    """Write each ``(type, onset in eighths)`` dashes end in this order."""
+    return _at_measure_start(
+        *((1, onset, _dashes(kind)) for kind, onset in ends),
+        base=_PIANO_EIGHTHS,
+    )
+
+
+@pytest.mark.parametrize(
+    ("ends", "message"),
+    [
+        (
+            (
+                ("start", 0),
+                ("start", 3),
+                ("stop", 1),
+                ("stop", 6),
+                ("start", 5),
+                ("stop", 4),
+            ),
+            "stops before it starts",
+        ),
+        (
+            (
+                ("start", 0),
+                ("stop", 3),
+                ("start", 2),
+                ("start", 4),
+                ("stop", 1),
+                ("stop", 5),
+            ),
+            "two dashes spans share number 1",
+        ),
+    ],
+    ids=["backward-after-nested", "nested-across-a-pair"],
+)
+def test_nested_dashes_keep_each_document_pair(
+    ends: tuple[tuple[str, int], ...],
+    message: str,
+) -> None:
+    """Stop where pairing nested dashes in time would lose a document pair.
+
+    In ``backward-after-nested`` the document order pairs the last dashes
+    backward; in ``nested-across-a-pair`` the time order would pair the first
+    start with a stop of the nested dashes.
+    """
+    with pytest.raises(ProtocolDefectError, match=message):
+        read_score(_dashes_at(*ends))
+
+
+def test_nested_dashes_pair_in_time_beside_a_document_pair() -> None:
+    """Pair nested dashes in time beside a document pair of their number."""
+    text = _dashes_at(
+        ("start", 0),
+        ("stop", 1),
+        ("start", 2),
+        ("start", 4),
+        ("stop", 3),
+        ("stop", 5),
+    )
+
+    assert [
+        (span.start.onset * 2, span.stop.onset * 2)
+        for span in read_score(text).spans
+    ] == [(0, 1), (2, 3), (4, 5)]
+
+
+def _study_musicxml() -> str:
     source = ASSEMBLY / "study.expected.txt"
     document = parse_document(decode_source(source.read_bytes()))
     assert isinstance(document, AssembledScore)
-    text = to_musicxml(document).decode("utf-8")
+    return to_musicxml(document).decode("utf-8")
+
+
+def test_forward_output_with_reused_numbers_compares_cleanly() -> None:
+    """Compare the forward conversion of the study score with itself.
+
+    The conversion keeps its slurs, ties and wedges but not its ottava, which
+    stops at a barline that music21 does not read.
+    """
+    study = _study_musicxml()
+    text = re.sub(
+        r"      <direction>\n        <direction-type>\n"
+        r"          <octave-shift .*?      </direction>\n",
+        "",
+        study,
+        flags=re.DOTALL,
+    )
     result = compare_file(text, text)
 
+    assert "<octave-shift" in study
+    assert "<octave-shift" not in text
     assert result.tally.elements == result.tally.identical
     _assert_file(result)
+
+
+def test_ottava_that_stops_at_a_barline_stops_the_run() -> None:
+    """Stop where music21 gives an ottava only its first note.
+
+    The forward conversion of the study score stops its ottava at the start
+    of measure 4, where music21 has no note before the stop to end it on.
+    """
+    text = _study_musicxml()
+
+    with pytest.raises(
+        ProtocolDefectError,
+        match="music21 reads an octave shift in measure 3",
+    ):
+        compare_file(text, text)
 
 
 def test_beams_of_a_rest_that_musicdiff_scores_are_not_elements() -> None:

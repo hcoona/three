@@ -859,7 +859,8 @@ def annotate(
     Raises:
         ScoreParseError: If music21 or musicdiff cannot parse the score.
         ProtocolDefectError: If the MusicXML structure has no protocol
-            reading, or an annotated note has no unique MusicXML event.
+            reading, an annotated note has no unique MusicXML event, or
+            music21 reads an octave shift other than MusicXML does.
     """
     converter21.register()
     parsed, xml = _parse(source)
@@ -876,6 +877,7 @@ def annotate(
         raise ScoreParseError(message) from error
     _remove_reprints(annotated, parsed)
     events, notes = _bridge(annotated, xml)
+    _check_octave_shifts(annotated, events)
     reading = _WordsReading(words, parsed, detail)
     _remove_line_reprints(annotated, xml, notes, reading)
     return AnnotatedScore(parsed, annotated, xml, events)
@@ -2937,6 +2939,35 @@ def _annotated_voice_id(voice: AnnVoice) -> str | None:
     return (
         str(m21_voice.id) if isinstance(m21_voice, m21.stream.Voice) else None
     )
+
+
+def _check_octave_shifts(
+    score: AnnScore,
+    events: dict[int, XmlEvent],
+) -> None:
+    """Stop where music21 reads an octave shift other than MusicXML does.
+
+    music21 starts an ottava on the next note in the document, whatever its
+    staff or offset, and ends it on the note that precedes its stop in the
+    measure, if any, so it can drop or misplace the notes of an ottava.
+    musicdiff then compares written pitches that the score does not write,
+    so a note under either reading of an ottava must keep the written pitch
+    that the MusicXML octave shifts give it.
+    """
+    for part in score.part_list:
+        for bar in part.bar_list:
+            for voice in bar.voices_list:
+                for note in voice.annot_notes:
+                    event = events[id(note)]
+                    ottavas = _general_note(note).getSpannerSites(["Ottava"])
+                    if (event.shift or ottavas) and _annotated_pitches(
+                        note,
+                    ) != event.pitches:
+                        message = (
+                            "music21 reads an octave shift in measure "
+                            f"{bar.measureNumber} other than MusicXML does"
+                        )
+                        raise ProtocolDefectError(message)
 
 
 def _annotated_pitches(note: AnnNote) -> tuple[PitchKey, ...]:

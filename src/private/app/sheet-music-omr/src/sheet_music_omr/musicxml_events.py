@@ -8,11 +8,12 @@ the events of its staff from its start up to, but not including, its stop. A
 spanner's ``number`` tells it apart only from spanners that overlap it in
 document order, as MusicXML 4.0 defines the number level, so endpoints of one
 number pair in document order, a stop before a start on one note, and a stop
-may precede its start. Only a number that two spans share in document order,
-which MusicXML 4.0 does not allow, pairs in time order, the reading this module
-used before; the other numbers keep their pairs. A span that document order
-pairs backward in time, or an ottava that it pairs across staves, stops the
-run. A wavy line that starts and stops on one note is not a span.
+may precede its start. Only the endpoints that two spans of one number share
+in document order, which MusicXML 4.0 does not allow, pair in time order, the
+reading this module used before, and only where each pair in time stays
+within them; every other pair keeps its document order. A span that document
+order pairs backward in time, or an ottava that it pairs across staves, stops
+the run. A wavy line that starts and stops on one note is not a span.
 """
 
 from __future__ import annotations
@@ -618,6 +619,7 @@ type _Endpoint = tuple[str, str, str, ET.Element | None]
 type _NumberKey = tuple[int, str, str]
 """A spanner number: part, family and MusicXML ``number``."""
 type _Pending = tuple[str, Leaf, ET.Element | None]
+"""An endpoint of a number: role, leaf and element."""
 
 
 class _NumberConflictError(ProtocolDefectError):
@@ -626,6 +628,21 @@ class _NumberConflictError(ProtocolDefectError):
     def __init__(self, key: _NumberKey, message: str) -> None:
         super().__init__(message)
         self.key = key
+
+
+@dataclass(slots=True, eq=False)
+class _Run:
+    """The endpoints of one number from one empty pending state to the next.
+
+    A run of two endpoints is a span. A longer run nests spans of its number,
+    which MusicXML 4.0 does not allow, and has a ``conflict``.
+    """
+
+    key: _NumberKey
+    family: str
+    ends: list[_Pending] = field(default_factory=list)
+    waiting: list[_Pending] = field(default_factory=list)
+    conflict: _NumberConflictError | None = None
 
 
 def _spans(
@@ -639,45 +656,85 @@ def _pair_numbers(
     leaves: list[Leaf],
     endpoints: Callable[[Leaf], list[_Endpoint]],
 ) -> list[XmlSpan]:
-    """Pair numbered endpoints, each number in document order if it can.
+    """Pair numbered endpoints in document order where it can.
 
-    Only a number that two spans share in document order, which MusicXML
-    4.0 does not allow, pairs in time order; other numbers keep their pairs,
-    and any other defect stops.
+    The endpoints of a run that nests spans of one number pair in time
+    order, provided that each pair in time keeps to one run; every other
+    run is a span, and any other defect stops.
     """
     by_order = sorted(leaves, key=lambda leaf: leaf.order)
-    conflicts: dict[_NumberKey, _NumberConflictError] = {}
-    while True:
-        try:
-            spans = _paired(
-                by_order,
-                endpoints,
-                lambda key: key not in conflicts,
-            )
-            break
-        except _NumberConflictError as conflict:
-            conflicts[conflict.key] = conflict
+    runs = _runs(by_order, endpoints, lambda _: True)
+    spans = [_run_span(run) for run in runs if run.conflict is None]
+    nested = dict.fromkeys(run.key for run in runs if run.conflict is not None)
     by_time = sorted(leaves, key=_leaf_key)
-    for key, conflict in conflicts.items():
-        try:
-            spans += _paired(by_time, endpoints, {key}.__contains__)
-        except ProtocolDefectError:
-            raise conflict from None
+    for key in nested:
+        spans += _retimed(
+            [run for run in runs if run.key == key], by_time, endpoints
+        )
     spans.sort(key=lambda span: _leaf_key(span.stop))
     return spans
 
 
-def _paired(
+def _retimed(
+    runs: list[_Run],
+    by_time: list[Leaf],
+    endpoints: Callable[[Leaf], list[_Endpoint]],
+) -> list[XmlSpan]:
+    """Pair the nested runs of one number in time order.
+
+    Each pair in time must keep to one run of the document order, so that
+    no pair that the document order decodes on its own is replaced.
+    """
+    conflict = next(run.conflict for run in runs if run.conflict is not None)
+    members = {
+        _end_key(end): index
+        for index, run in enumerate(runs)
+        for end in run.ends
+    }
+    spans: list[XmlSpan] = []
+    try:
+        for timed in _runs(by_time, endpoints, {conflict.key}.__contains__):
+            if timed.conflict is not None:
+                raise conflict
+            first, second = (members.get(_end_key(end)) for end in timed.ends)
+            if first is None or first != second:
+                raise conflict
+            if runs[first].conflict is not None:
+                spans.append(_run_span(timed))
+    except ProtocolDefectError:
+        raise conflict from None
+    return spans
+
+
+def _end_key(end: _Pending) -> tuple[str, int, int]:
+    role, leaf, element = end
+    return role, id(leaf), id(element)
+
+
+def _run_span(run: _Run) -> XmlSpan:
+    (role, leaf, element), (_, other, other_element) = run.ends
+    if role == _START:
+        return _span(run.family, (leaf, element), (other, other_element))
+    return _span(run.family, (other, other_element), (leaf, element))
+
+
+def _runs(
     leaves: list[Leaf],
     endpoints_of: Callable[[Leaf], list[_Endpoint]],
     include: Callable[[_NumberKey], bool],
-) -> list[XmlSpan]:
-    spans: list[XmlSpan] = []
-    pending: dict[_NumberKey, _Pending] = {}
+) -> list[_Run]:
+    """Split the endpoints of each included number into runs, in leaf order."""
+    runs: list[_Run] = []
+    open_runs: dict[_NumberKey, _Run] = {}
+
+    def waiting(key: _NumberKey) -> str | None:
+        run = open_runs.get(key)
+        return None if run is None else run.waiting[0][0]
+
     for leaf in leaves:
         endpoints = [
             endpoint
-            for endpoint in _leaf_endpoints(leaf, pending, endpoints_of)
+            for endpoint in _leaf_endpoints(leaf, waiting, endpoints_of)
             if include((leaf.part, endpoint[0], endpoint[2]))
         ]
         single = {
@@ -685,29 +742,51 @@ def _paired(
             for family, role, number, _ in endpoints
             if family == WAVY_LINE
             and role == _STOP
-            and (leaf.part, family, number) not in pending
+            and (leaf.part, family, number) not in open_runs
             and (WAVY_LINE, _START, number) in {e[:3] for e in endpoints}
         }
         for family, role, number, note in endpoints:
             if family == WAVY_LINE and number in single:
                 continue
-            key = (leaf.part, family, number)
-            other = pending.pop(key, None)
-            if other is None:
-                pending[key] = (role, leaf, note)
-                continue
-            if other[0] == role or other[1] is leaf:
-                raise _NumberConflictError(
-                    key,
-                    _overlap(family, role, number),
-                )
-            if role == _STOP:
-                spans.append(_span(family, (other[1], other[2]), (leaf, note)))
-            else:
-                spans.append(_span(family, (leaf, note), (other[1], other[2])))
-    for (_, family, number), (role, _, _) in pending.items():
-        raise ProtocolDefectError(_unpaired(family, role, number))
-    return spans
+            closed = _add_end(
+                open_runs,
+                (leaf.part, family, number),
+                family,
+                (role, leaf, note),
+            )
+            if closed is not None:
+                runs.append(closed)
+    for run in open_runs.values():
+        if run.conflict is not None:
+            raise run.conflict
+        role = run.waiting[0][0]
+        raise ProtocolDefectError(_unpaired(run.family, role, run.key[2]))
+    return runs
+
+
+def _add_end(
+    open_runs: dict[_NumberKey, _Run],
+    key: _NumberKey,
+    family: str,
+    end: _Pending,
+) -> _Run | None:
+    """Add an endpoint to the open run of its number; return a closed run."""
+    run = open_runs.get(key)
+    if run is None:
+        run = open_runs[key] = _Run(key, family)
+    run.ends.append(end)
+    role, leaf, _ = end
+    other = run.waiting[-1] if run.waiting else None
+    if other is not None and (other[0] == role or other[1] is leaf):
+        run.conflict = run.conflict or _NumberConflictError(
+            key,
+            _overlap(family, role, key[2]),
+        )
+    if other is None or other[0] == role:
+        run.waiting.append(end)
+        return None
+    run.waiting.pop()
+    return None if run.waiting else open_runs.pop(key)
 
 
 def _overlap(family: str, role: str, number: str) -> str:
@@ -724,15 +803,14 @@ def _unpaired(family: str, role: str, number: str) -> str:
 
 def _leaf_endpoints(
     leaf: Leaf,
-    pending: dict[_NumberKey, _Pending],
+    waiting: Callable[[_NumberKey], str | None],
     endpoints: Callable[[Leaf], list[_Endpoint]],
 ) -> list[_Endpoint]:
     # A stop on a leaf closes the span that is open before a start on the leaf
     # opens the next; a start on a leaf first takes a stop that came earlier.
     def first(endpoint: _Endpoint) -> bool:
-        waiting = pending.get((leaf.part, endpoint[0], endpoint[2]))
-        role = _START if waiting is not None and waiting[0] == _STOP else _STOP
-        return endpoint[1] != role
+        role = waiting((leaf.part, endpoint[0], endpoint[2]))
+        return endpoint[1] != (_START if role == _STOP else _STOP)
 
     return sorted(endpoints(leaf), key=first)
 
