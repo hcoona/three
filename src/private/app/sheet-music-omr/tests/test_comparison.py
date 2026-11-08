@@ -35,7 +35,12 @@ from sheet_music_omr.comparison import (
     voice_order_by_measure,
     voice_order_tally,
 )
+from sheet_music_omr.lexical import decode_source
+from sheet_music_omr.model import AssembledScore
+from sheet_music_omr.musicxml_events import read_score
+from sheet_music_omr.musicxml_forward import to_musicxml
 from sheet_music_omr.musicxml_reverse import from_musicxml_text
+from sheet_music_omr.parser import parse_document
 from sheet_music_omr.supplementary import (
     CHECKS,
     FileComparison,
@@ -45,9 +50,11 @@ from sheet_music_omr.supplementary import (
 )
 
 if TYPE_CHECKING:
+    import xml.etree.ElementTree as ET
     from collections.abc import Callable
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "comparison"
+ASSEMBLY = FIXTURES.parent / "assembly"
 BASE = (FIXTURES / "base.musicxml").read_text(encoding="utf-8")
 SINGLE = (FIXTURES / "single-staff.musicxml").read_text(encoding="utf-8")
 CONTENT_CATEGORY_COUNT = 27
@@ -2144,6 +2151,97 @@ def test_double_stem_event_cannot_be_assigned_to_one_voice() -> None:
         voice_order_tally(double_stem, double_stem)
 
 
+def _chord_score(first: str, chord: str) -> str:
+    """Make voice 2 of measure 3 a chord with a stem on each of its notes."""
+    note = _note("m3s1n2")
+    voice_2 = note.replace("<stem>down</stem>", f"<stem>{chord}</stem>")
+    added = (
+        voice_2.replace('id="m3s1n2"', 'id="m3s1n2b"')
+        .replace("        <pitch>\n", "        <chord/>\n        <pitch>\n")
+        .replace("<step>E</step>", "<step>G</step>")
+    )
+    return _variant(
+        _edit("m3s1n1", "<stem>up</stem>", f"<stem>{first}</stem>"),
+        (note, voice_2 + added),
+    )
+
+
+@pytest.mark.parametrize(
+    ("first", "chord", "identical"),
+    [
+        ("up", "down", VOICE_ORDER_ELEMENT_COUNT),
+        (
+            "down",
+            "up",
+            VOICE_ORDER_ELEMENT_COUNT - VOICE_POSITION_SWAP_COUNT,
+        ),
+    ],
+    ids=["same-stems", "swapped-stems"],
+)
+def test_chord_stem_is_read_from_its_notes(
+    first: str,
+    chord: str,
+    identical: int,
+) -> None:
+    """Position a chord by the stems that music21 imports onto its notes."""
+    y_text = _chord_score("up", "down")
+
+    tally = voice_order_tally(_chord_score(first, chord), y_text)
+
+    assert tally == ElementTally(VOICE_ORDER_ELEMENT_COUNT, identical, 0)
+
+
+def test_chord_with_notes_of_different_stems_stops() -> None:
+    """Stop when the notes of one chord disagree on its stem."""
+    text = _chord_score("up", "down")
+    mixed = _variant(
+        _edit("m3s1n2b", "<stem>down</stem>", "<stem>up</stem>", base=text),
+        base=text,
+    )
+
+    with pytest.raises(ProtocolDefectError, match="different stem"):
+        voice_order_tally(mixed, mixed)
+
+
+def _stemless_whole_note_score(stem: str) -> str:
+    """Remove the stem of measure 3's voice 1 and set voice 2's stem."""
+    return _variant(
+        _edit("m3s1n1", "        <stem>up</stem>\n", ""),
+        _edit("m3s1n2", "<stem>down</stem>", f"<stem>{stem}</stem>"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("stem", "identical"),
+    [
+        ("down", VOICE_ORDER_ELEMENT_COUNT),
+        ("up", VOICE_ORDER_ELEMENT_COUNT - VOICE_POSITION_SWAP_COUNT),
+    ],
+    ids=["same-partner", "flipped-partner"],
+)
+def test_stemless_voice_takes_the_position_opposite_its_partner(
+    stem: str,
+    identical: int,
+) -> None:
+    """Give a voice without a stemmed event the other of two positions."""
+    y_text = _stemless_whole_note_score("down")
+
+    tally = voice_order_tally(_stemless_whole_note_score(stem), y_text)
+
+    assert tally == ElementTally(VOICE_ORDER_ELEMENT_COUNT, identical, 0)
+
+
+def test_two_overlapping_voices_without_stems_stop() -> None:
+    """Stop when neither of two overlapping voices has a stemmed event."""
+    text = _variant(
+        _edit("m3s1n1", "        <stem>up</stem>\n", ""),
+        _edit("m3s1n2", "        <stem>down</stem>\n", ""),
+    )
+
+    with pytest.raises(ProtocolDefectError, match="no stemmed event"):
+        voice_order_tally(text, text)
+
+
 def test_unison_stem_swap_pairs_notes_by_distinctive_content() -> None:
     """Keep distinctive note content aligned across a stem swap."""
     t_text, y_text = _unison_stem_swap_pair()
@@ -2724,6 +2822,372 @@ def test_deleted_slur_of_two_equal_slurs_counts_once(kept: str) -> None:
     _assert_file(compare_file(_two_slurs(kept, None), y_text), {"slur": 1})
 
 
+def _slur_note(
+    note_id: str,
+    pitch: tuple[str, int],
+    length: tuple[int, str, int],
+    slurs: str = "",
+) -> str:
+    """Return one note of ``_filled_slurs``: duration, type and voice."""
+    duration, kind, voice = length
+    notations = (
+        f"        <notations>\n{slurs}        </notations>\n" if slurs else ""
+    )
+    return (
+        f'      <note id="{note_id}">\n'
+        f"        <pitch><step>{pitch[0]}</step>"
+        f"<octave>{pitch[1]}</octave></pitch>\n"
+        f"        <duration>{duration}</duration>\n"
+        f"        <voice>{voice}</voice>\n"
+        f"        <type>{kind}</type>\n"
+        f"        <stem>{'up' if voice == 1 else 'down'}</stem>\n"
+        f"{notations}"
+        "      </note>\n"
+    )
+
+
+def _filled_slurs(fill: tuple[int, str, str], stops: dict[int, str]) -> str:
+    """Slur ``n1`` of measure 1 to each note of ``stops``, by number.
+
+    Measure 1 holds ``n1`` and ``n2`` and then ``fill``; measure 3 holds
+    ``x1`` and ``z1`` in voice 1 and the simultaneous ``x2`` and ``z2`` in
+    voice 2. Divisions are 2.
+    """
+    n2_duration, n2_type, filler = fill
+
+    def stopped(note_id: str) -> str:
+        return "".join(
+            f'          <slur number="{number}" type="stop"/>\n'
+            for number, stop in stops.items()
+            if stop == note_id
+        )
+
+    starts = "".join(
+        f'          <slur number="{number}" type="start"/>\n'
+        for number in stops
+    )
+    measures = (
+        _slur_note("n1", ("C", 4), (2, "quarter", 1), starts)
+        + _slur_note("n2", ("D", 4), (n2_duration, n2_type, 1), stopped("n2"))
+        + filler,
+        _slur_note("w", ("E", 4), (8, "whole", 1)),
+        _slur_note("x1", ("F", 4), (4, "half", 1), stopped("x1"))
+        + _slur_note("z1", ("G", 4), (4, "half", 1), stopped("z1"))
+        + "      <backup><duration>8</duration></backup>\n"
+        + _slur_note("x2", ("A", 3), (4, "half", 2), stopped("x2"))
+        + _slur_note("z2", ("B", 3), (4, "half", 2), stopped("z2")),
+    )
+    attributes = (
+        "      <attributes>\n"
+        "        <divisions>2</divisions>\n"
+        "        <time><beats>4</beats><beat-type>4</beat-type></time>\n"
+        "        <clef><sign>G</sign><line>2</line></clef>\n"
+        "      </attributes>\n"
+    )
+    body = "".join(
+        f'    <measure number="{index}">\n'
+        f"{attributes if index == 1 else ''}{measure}"
+        "    </measure>\n"
+        for index, measure in enumerate(measures, start=1)
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<score-partwise version="4.0">\n'
+        "  <part-list>\n"
+        '    <score-part id="P1"><part-name>Piano</part-name></score-part>\n'
+        "  </part-list>\n"
+        f'  <part id="P1">\n{body}  </part>\n'
+        "</score-partwise>\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "fill",
+    [
+        (2, "quarter", "      <forward><duration>4</duration></forward>\n"),
+        (1, "eighth", "      <forward><duration>5</duration></forward>\n"),
+        (
+            2,
+            "quarter",
+            (
+                "      <note><rest/><duration>4</duration><voice>1</voice>"
+                "<type>half</type></note>\n"
+            ),
+        ),
+    ],
+    ids=["trailing-forward", "fractional-forward", "rest"],
+)
+def test_slur_exemption_uses_the_music21_duration(
+    fill: tuple[int, str, str],
+) -> None:
+    """Exempt the deleted slur, not a moved one of its MusicXML duration.
+
+    A trailing ``forward`` lengthens measure 1 in MusicXML time only, so the
+    deleted slur's musicdiff duration is the moved slur's MusicXML duration.
+    """
+    y_text = _filled_slurs(fill, {1: "n2", 2: "x1", 3: "z1"})
+    t_text = _filled_slurs(fill, {1: "n2", 2: "x2"})
+    result = compare_file(t_text, y_text)
+
+    assert result.checks["slur_endpoints"] == ElementTally(2, 1, 0)
+    _assert_file(result, {"slur": 1}, slur_endpoints=(1, 0))
+
+
+def _piano_notes(
+    prefix: str,
+    staff: int,
+    voice: int,
+    octave: int,
+    stem: str,
+) -> str:
+    """Return four quarter notes ``{prefix}1`` to ``{prefix}4`` of a voice."""
+    return "".join(
+        f'      <note id="{prefix}{beat}">\n'
+        "        <pitch>\n"
+        f"          <step>{step}</step>\n"
+        f"          <octave>{octave}</octave>\n"
+        "        </pitch>\n"
+        "        <duration>1</duration>\n"
+        f"        <voice>{voice}</voice>\n"
+        "        <type>quarter</type>\n"
+        f"        <stem>{stem}</stem>\n"
+        f"        <staff>{staff}</staff>\n"
+        "      </note>\n"
+        for beat, step in enumerate("CDEF", start=1)
+    )
+
+
+# One 4/4 piano measure that writes the top staff ``t`` before the two
+# bottom-staff voices ``b`` and ``l``, as the MusicXML number-level example
+# writes all top-staff notes before all bottom-staff notes.
+_PIANO = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<score-partwise version="4.0">\n'
+    "  <part-list>\n"
+    '    <score-part id="P1"><part-name>Piano</part-name></score-part>\n'
+    "  </part-list>\n"
+    '  <part id="P1">\n'
+    '    <measure number="1">\n'
+    "      <attributes>\n"
+    "        <divisions>1</divisions>\n"
+    "        <key><fifths>0</fifths></key>\n"
+    "        <time><beats>4</beats><beat-type>4</beat-type></time>\n"
+    "        <staves>2</staves>\n"
+    '        <clef number="1"><sign>G</sign><line>2</line></clef>\n'
+    '        <clef number="2"><sign>F</sign><line>4</line></clef>\n'
+    "      </attributes>\n"
+    f"{_piano_notes('t', 1, 1, 5, 'down')}"
+    "      <backup><duration>4</duration></backup>\n"
+    f"{_piano_notes('b', 2, 5, 3, 'up')}"
+    "      <backup><duration>4</duration></backup>\n"
+    f"{_piano_notes('l', 2, 6, 2, 'down')}"
+    "    </measure>\n"
+    "  </part>\n"
+    "</score-partwise>\n"
+)
+
+
+def _slurred(base: str, *slurs: tuple[str, str, int]) -> str:
+    """Add each ``(start note, stop note, number)`` slur to ``base``."""
+    marks: dict[str, str] = {}
+    for start, stop, number in slurs:
+        for note_id, kind in ((stop, "stop"), (start, "start")):
+            marks[note_id] = (
+                marks.get(note_id, "")
+                + f'          <slur number="{number}" type="{kind}"/>\n'
+            )
+    return _marked(base, *marks.items())
+
+
+def _note_id(note: ET.Element | None) -> str:
+    assert note is not None
+    return note.get("id", "")
+
+
+def _slur_ids(text: str) -> list[tuple[str, str]]:
+    """Return the start and stop note IDs of each slur that ``text`` reads."""
+    return sorted(
+        (_note_id(span.start_note), _note_id(span.stop_note))
+        for span in read_score(text).spans
+    )
+
+
+# The number-level example: each staff has a slur from beat 2 to beat 3, and
+# a cross-staff slur rises from beat 1 of the bottom staff to beat 4 of the
+# top staff, so the cross-staff slur stops before it starts in the document.
+_EXAMPLE_SLURS = (("t2", "t3"), ("b1", "t4"), ("b2", "b3"))
+
+
+def test_slurs_pair_their_numbers_in_document_order() -> None:
+    """Read the number-level example alike with one or three numbers."""
+    shared = _slurred(
+        _PIANO, *((start, stop, 1) for start, stop in _EXAMPLE_SLURS)
+    )
+    distinct = _slurred(
+        _PIANO,
+        *(
+            (start, stop, number)
+            for number, (start, stop) in enumerate(_EXAMPLE_SLURS, start=1)
+        ),
+    )
+    result = compare_file(shared, shared)
+
+    assert _slur_ids(shared) == _slur_ids(distinct) == sorted(_EXAMPLE_SLURS)
+    assert result.checks["slur_endpoints"] == ElementTally(3, 3, 0)
+    _assert_file(result)
+
+
+def test_dependency_misreads_a_renumbered_stop_first_slur() -> None:
+    """Pin the known music21 limitation on a slur that stops first.
+
+    music21 completes a slur at a stop that comes before its start in the
+    document, so renumbering the example changes the slurs that musicdiff
+    reads; the supplementary check leaves the touched slurs to musicdiff.
+    """
+    shared = _slurred(
+        _PIANO, *((start, stop, 1) for start, stop in _EXAMPLE_SLURS)
+    )
+    distinct = _slurred(
+        _PIANO,
+        *(
+            (start, stop, number)
+            for number, (start, stop) in enumerate(_EXAMPLE_SLURS, start=1)
+        ),
+    )
+
+    _assert_file(compare_file(shared, distinct), {"slur": 2})
+
+
+def test_slur_chain_through_one_note_pairs_in_document_order() -> None:
+    """Pair a stop that comes first with the start on a shared note."""
+    # In the document the stop on t3 precedes b2, which stops one slur and
+    # starts the other, and the start on l1 comes last.
+    text = _slurred(_PIANO, ("l1", "b2", 1), ("b2", "t3", 1))
+
+    assert _slur_ids(text) == [("b2", "t3"), ("l1", "b2")]
+    _assert_file(compare_file(text, text))
+
+
+def test_slurs_that_overlap_only_in_document_order_pair_in_time() -> None:
+    """Read a reused number that the document order cannot pair."""
+    text = _slurred(_PIANO, ("t3", "b4", 1), ("b1", "b2", 1))
+
+    assert _slur_ids(text) == [("b1", "b2"), ("t3", "b4")]
+
+
+@pytest.mark.parametrize(
+    ("start", "stop"),
+    [("m2s1n3", "m2s1n4"), ("m2s1n3", "m2s1n3b")],
+    ids=["grace-to-main", "grace-to-next-grace"],
+)
+def test_slur_from_a_grace_note_reads(start: str, stop: str) -> None:
+    """Read a slur from a grace note to a later note of one onset."""
+    assert (start, stop) in _slur_ids(_slur_score(start, stop, _GRACES))
+
+
+@pytest.mark.parametrize(
+    ("base", "slurs", "message"),
+    [
+        (
+            _PIANO,
+            (("t1", "t4", 1), ("t2", "t3", 1)),
+            "two slur spans share number 1",
+        ),
+        (_PIANO, (("t2", "t1", 1),), "a slur stops before it starts"),
+        (
+            _GRACES,
+            (("m2s1n4", "m2s1n3", 2),),
+            "a slur stops before it starts",
+        ),
+        (
+            _GRACES,
+            (("m2s1n3b", "m2s1n3", 2),),
+            "a slur stops before it starts",
+        ),
+    ],
+    ids=["nested", "backward", "main-to-grace", "grace-to-earlier-grace"],
+)
+def test_unpairable_slur_numbers_stop_the_run(
+    base: str,
+    slurs: tuple[tuple[str, str, int], ...],
+    message: str,
+) -> None:
+    """Stop on slurs that neither document nor time order can pair."""
+    text = _slurred(base, *slurs)
+
+    with pytest.raises(ProtocolDefectError, match=message):
+        compare_file(text, text)
+
+
+def _two_staff_ottavas(number: int, *, bottom_stop: str = "b4") -> str:
+    """Shift t1-t3 an octave up and b1-b3 down, the bottom by ``number``."""
+    return _with_directions(
+        ("t1", 1, '          <octave-shift type="down" size="8"/>\n'),
+        ("t4", 1, '          <octave-shift type="stop" size="8"/>\n'),
+        (
+            "b1",
+            2,
+            f'          <octave-shift type="up" size="8" number="{number}"/>\n',
+        ),
+        (
+            bottom_stop,
+            1 if bottom_stop.startswith("t") else 2,
+            (
+                '          <octave-shift type="stop" size="8"'
+                f' number="{number}"/>\n'
+            ),
+        ),
+        base=_PIANO,
+    )
+
+
+def test_ottavas_of_two_staves_may_share_a_number() -> None:
+    """Pair simultaneous ottavas of one number on two staves."""
+    shifts = {
+        _note_id(event.notes[0]): event.shift
+        for event in read_score(_two_staff_ottavas(1)).events
+    }
+
+    assert shifts == {
+        _note_id(event.notes[0]): event.shift
+        for event in read_score(_two_staff_ottavas(2)).events
+    }
+    assert [shifts[f"t{beat}"] for beat in range(1, 5)] == [
+        shifts["t1"],
+        shifts["t1"],
+        shifts["t1"],
+        0,
+    ]
+    assert [shifts[f"b{beat}"] for beat in range(1, 5)] == [
+        -shifts["t1"],
+        -shifts["t1"],
+        -shifts["t1"],
+        0,
+    ]
+    assert shifts["t1"] != 0
+    _assert_file(compare_file(_two_staff_ottavas(1), _two_staff_ottavas(2)))
+
+
+def test_ottava_that_stops_on_another_staff_stops_the_run() -> None:
+    """Stop on an ottava whose stop is on another staff than its start."""
+    text = _two_staff_ottavas(2, bottom_stop="t4")
+
+    with pytest.raises(ProtocolDefectError, match="octave shift stop"):
+        read_score(text)
+
+
+def test_forward_output_with_reused_numbers_compares_cleanly() -> None:
+    """Compare the forward conversion of the study score with itself."""
+    source = ASSEMBLY / "study.expected.txt"
+    document = parse_document(decode_source(source.read_bytes()))
+    assert isinstance(document, AssembledScore)
+    text = to_musicxml(document).decode("utf-8")
+    result = compare_file(text, text)
+
+    assert result.tally.elements == result.tally.identical
+    _assert_file(result)
+
+
 def test_beams_of_a_rest_that_musicdiff_scores_are_not_elements() -> None:
     """Leave the beams of a rest that becomes a note to musicdiff."""
     pitch = "<pitch>\n          <step>C</step>\n          <octave>3</octave>\n"
@@ -2819,6 +3283,51 @@ def test_words_at_a_line_stop_are_a_reprint_only_while_it_is_open(
     y_text = _variant(start, _before("m5s1n1", y_directions))
 
     _assert_file(compare_file(t_text, y_text), content)
+
+
+def _bold(direction: str) -> str:
+    return direction.replace("<words>", '<words font-weight="bold">')
+
+
+@pytest.mark.parametrize(
+    ("reprint", "new"),
+    [
+        (
+            _bold(_line_direction("cresc.", None)),
+            _line_direction("cresc.", None),
+        ),
+        (
+            _line_direction("cresc.", None),
+            _bold(_line_direction("cresc.", None)),
+        ),
+        (_line_direction("cresc.", None), _line_direction("cresc.", None)),
+    ],
+    ids=["tempo-reprint", "tempo-new-words", "same-reading"],
+)
+def test_only_words_before_a_line_stop_are_dropped_as_its_reprint(
+    reprint: str,
+    new: str,
+) -> None:
+    """Drop the reprint before the stop, not new words of its text after."""
+    start = _before("m4s1n1", _line_direction("cresc.", "start"))
+    stop = _line_direction(None, "stop")
+    t_text = _variant(start, _before("m5s1n1", stop + new))
+    y_text = _variant(start, _before("m5s1n1", reprint + stop + new))
+
+    _assert_file(compare_file(t_text, y_text))
+    assert failure_element_count(y_text) == failure_element_count(t_text)
+
+
+def test_words_in_the_direction_of_a_line_stop_are_its_reprint() -> None:
+    """Drop words that share the direction of the stop at a system start."""
+    start = _before("m4s1n1", _line_direction("cresc.", "start"))
+    t_text = _variant(start, _before("m5s1n1", _line_direction(None, "stop")))
+    y_text = _variant(
+        start,
+        _before("m5s1n1", _line_direction("cresc.", "stop")),
+    )
+
+    _assert_file(compare_file(t_text, y_text))
 
 
 def test_note_on_its_voices_staff_is_a_cross_staff_check_element() -> None:

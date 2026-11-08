@@ -863,7 +863,7 @@ def annotate(
     """
     converter21.register()
     parsed, xml = _parse(source)
-    _read_words(parsed, xml)
+    words = _read_words(parsed, xml)
     if DetailLevel.includesStyle(detail):
         _read_fermata_shapes(parsed)
     try:
@@ -876,7 +876,7 @@ def annotate(
         raise ScoreParseError(message) from error
     _remove_reprints(annotated, parsed)
     events, notes = _bridge(annotated, xml)
-    _remove_line_reprints(annotated, xml, notes)
+    _remove_line_reprints(annotated, xml, notes, words)
     return AnnotatedScore(parsed, annotated, xml, events)
 
 
@@ -942,13 +942,21 @@ def _has_untyped_fermata(data: bytes | str) -> bool:
     return any(f.get("type") is None for f in root.iter("fermata"))
 
 
-def _read_words(score: m21.stream.Score, xml: XmlScore) -> None:
+def _read_words(
+    score: m21.stream.Score,
+    xml: XmlScore,
+) -> dict[int, tuple[m21.base.Music21Object, ...]]:
     """Read each ``words`` direction as the protocol's words reading does.
 
     music21 reads words such as "D.C." or "Fine" as repeat expressions,
     which musicdiff does not compare; each becomes the text expression it
     carries. The words of a tempo direction become one tempo text.
+
+    Returns:
+        The music21 objects that carry each direction's words, by the
+        direction's document order.
     """
+    read: dict[int, tuple[m21.base.Music21Object, ...]] = {}
     streams = list(score.parts)
     parts = {
         source: streams[index]
@@ -980,7 +988,11 @@ def _read_words(score: m21.stream.Score, xml: XmlScore) -> None:
         ]
         text = "".join(word.text or "" for word in words).strip()
         if text and _is_tempo(direction.element, words):
-            _set_tempo(measure, direction, expressions, text, claimed)
+            mark = _set_tempo(measure, direction, expressions, text, claimed)
+            read[direction.order] = (mark,)
+        else:
+            read[direction.order] = tuple(expressions)
+    return read
 
 
 def _claim_words(
@@ -1038,7 +1050,16 @@ def _set_tempo(
     expressions: list[m21.expressions.TextExpression],
     text: str,
     claimed: dict[int, m21.base.Music21Object],
-) -> None:
+) -> m21.tempo.MetronomeMark:
+    """Make the direction's words one tempo text of a metronome mark.
+
+    Returns:
+        The metronome mark that carries the tempo text.
+
+    Raises:
+        ProtocolDefectError: If the direction's metronome has no music21
+            metronome mark.
+    """
     carrier, *others = expressions
     for other in others:
         measure.remove(other)
@@ -1056,14 +1077,14 @@ def _set_tempo(
         mark.style = carrier.style
         mark.placement = carrier.placement
         measure.replace(carrier, mark)
-        return
+        return mark
     for mark in measure.getElementsByClass(m21.tempo.MetronomeMark):
         if id(mark) in claimed or _fraction(mark.offset) != direction.onset:
             continue
         claimed[id(mark)] = mark
         mark.text = tempo
         measure.remove(carrier)
-        return
+        return mark
     message = f"no music21 metronome mark at {_site(direction)}"
     raise ProtocolDefectError(message)
 
@@ -1778,14 +1799,19 @@ def _two_voice_event_positions(
 ) -> dict[int, int]:
     positions: dict[int, int] = {}
     seen_directions: set[str] = set()
-    for voice in voices:
-        directions = _voice_event_directions(
-            voice,
-            context.bar,
-            direction_overrides,
+    voice_directions = [
+        _voice_event_directions(voice, context.bar, direction_overrides)
+        for voice in voices
+    ]
+    for index, (voice, directions) in enumerate(
+        zip(voices, voice_directions, strict=True),
+    ):
+        stemless_direction = _stemless_voice_direction(
+            directions,
+            voice_directions[1 - index],
         )
         for note in voice.annot_notes:
-            direction = directions[id(note)]
+            direction = directions[id(note)] or stemless_direction
             if direction is None:
                 direction = _infer_voice_direction(
                     note,
@@ -1802,6 +1828,28 @@ def _two_voice_event_positions(
         )
         raise ProtocolDefectError(message)
     return positions
+
+
+def _stemless_voice_direction(
+    directions: dict[int, str | None],
+    other_directions: dict[int, str | None],
+) -> str | None:
+    """Return the direction of a voice without a stemmed event.
+
+    Of two overlapping voices, one is voice 1 and the other voice 2, so a
+    voice whose stemless events complete its own rhythm takes the position
+    opposite to the other voice when that voice has one stem direction.
+    """
+    if any(direction is not None for direction in directions.values()):
+        return None
+    other = {
+        direction
+        for direction in other_directions.values()
+        if direction is not None
+    }
+    if len(other) != 1:
+        return None
+    return "down" if other == {"up"} else "up"
 
 
 def _events_by_stem_direction(
@@ -2385,9 +2433,27 @@ def _voice_height(
 
 def _stem_direction(note: AnnNote) -> str:
     general_note = _general_note(note)
-    if isinstance(general_note, (m21.note.Note, m21.chord.Chord)):
+    if isinstance(general_note, m21.chord.Chord):
+        return _chord_stem_direction(general_note)
+    if isinstance(general_note, m21.note.Note):
         return general_note.stemDirection
     return "unspecified"
+
+
+def _chord_stem_direction(chord: m21.chord.Chord) -> str:
+    """Return a chord's stem, which music21 imports onto its notes."""
+    if chord.stemDirection != "unspecified":
+        return chord.stemDirection
+    directions = {component.stemDirection for component in chord.notes} - {
+        "unspecified"
+    }
+    if len(directions) > 1:
+        message = (
+            f"chord in measure {chord.measureNumber} has notes with different "
+            "stem directions"
+        )
+        raise ProtocolDefectError(message)
+    return directions.pop() if directions else "unspecified"
 
 
 def _rank_stem_voices(
@@ -2849,6 +2915,7 @@ def _remove_line_reprints(
     annotated: AnnScore,
     xml: XmlScore,
     notes: dict[int, AnnNote],
+    words: dict[int, tuple[m21.base.Music21Object, ...]],
 ) -> None:
     """Remove trill marks and words that restate an open line's start."""
     staff_indexes = {
@@ -2866,7 +2933,7 @@ def _remove_line_reprints(
                     span,
                     measure,
                     annotated.part_list[staff],
-                    (xml, notes),
+                    (xml, notes, words),
                 )
             ):
                 changed.add(staff)
@@ -2882,9 +2949,13 @@ def _drop_line_reprint(
     span: XmlSpan,
     measure: int,
     part: AnnPart,
-    source: tuple[XmlScore, dict[int, AnnNote]],
+    source: tuple[
+        XmlScore,
+        dict[int, AnnNote],
+        dict[int, tuple[m21.base.Music21Object, ...]],
+    ],
 ) -> bool:
-    xml, notes = source
+    xml, notes, words = source
     if span.family == WAVY_LINE:
         dropped = [
             _drop_trill(note, part)
@@ -2896,7 +2967,7 @@ def _drop_line_reprint(
         span,
         measure,
         part,
-        xml,
+        (xml, words),
     )
 
 
@@ -2972,53 +3043,71 @@ def _drop_words_reprint(
     span: XmlSpan,
     measure: int,
     part: AnnPart,
-    xml: XmlScore,
+    source: tuple[XmlScore, dict[int, tuple[m21.base.Music21Object, ...]]],
 ) -> bool:
+    """Drop the first words in ``measure`` that restate the open line.
+
+    Only words of a direction that restates the line count, so new words
+    of the same text after the line's stop stay.
+    """
+    xml, words = source
     start = span.start
     if not isinstance(start, XmlDirection):
         return False
     text = dashes_text(start, xml.directions)
-    if text is None or not _open_at_measure_start(span, measure, text, xml):
+    if text is None:
+        return False
+    orders = {
+        id(item): direction.order
+        for direction in _reprint_directions(span, measure, text, xml)
+        for item in words.get(direction.order, ())
+    }
+    if not orders:
         return False
     indexes = _measure_indexes(part.get_object())
     for bar in part.bar_list:
         if indexes.get(id(bar.get_object())) != measure:
             continue
-        reprints = {
-            id(extra)
+        reprints = [
+            extra
             for extra in bar.extras_list
             if extra.kind in {"direction", "tempo"}
             and extra.content == text
             and extra.offset == 0
-        }
+            and id(extra.get_object()) in orders
+        ]
         if reprints:
-            _drop_extras(bar, set(list(reprints)[:1]))
+            first = min(
+                reprints,
+                key=lambda extra: orders[id(extra.get_object())],
+            )
+            _drop_extras(bar, {id(first)})
             return True
     return False
 
 
-def _open_at_measure_start(
+def _reprint_directions(
     span: XmlSpan,
     measure: int,
     text: str,
     xml: XmlScore,
-) -> bool:
-    """Whether words of the line's text start ``measure`` on the open line.
+) -> list[XmlDirection]:
+    """The words of the line's text that start ``measure`` on the open line.
 
     A line that stops at the measure's first onset is open only at words
     that precede its stop in document order.
     """
     stop = span.stop
-    if stop.measure > measure or stop.onset > 0:
-        return True
-    return any(
-        direction.place == span.start.place
+    open_past_start = stop.measure > measure or stop.onset > 0
+    return [
+        direction
+        for direction in xml.directions
+        if direction.place == span.start.place
         and direction.measure == measure
         and direction.onset == 0
         and direction.words == text
-        and direction.order <= stop.order
-        for direction in xml.directions
-    )
+        and (open_past_start or direction.order <= stop.order)
+    ]
 
 
 def _extra_category(kind: str) -> str:

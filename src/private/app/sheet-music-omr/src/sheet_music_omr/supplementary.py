@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import TYPE_CHECKING
 
+import music21 as m21
+from music21.common.numberTools import opFrac
 from musicdiff.annotation import AnnExtra, AnnNote
 
 from sheet_music_omr.comparison import (
@@ -598,9 +600,50 @@ def _slur_site(slur: _Slur) -> _Site:
     return slur.start.place, slur.start.measure, slur.start.onset
 
 
-def _slur_duration(slur: _Slur) -> Fraction:
-    """The span from the start event's onset to the stop event's end."""
-    return slur.stop.end - slur.start.start
+def _music21_notes(
+    score: AnnotatedScore,
+) -> dict[int, m21.base.Music21Object]:
+    """Return the music21 note of each annotated event, by its event's id."""
+    notes: dict[int, m21.base.Music21Object] = {}
+    for part in score.annotated.part_list:
+        for bar in part.bar_list:
+            for voice in bar.voices_list:
+                for note in voice.annot_notes:
+                    event = score.events.get(id(note))
+                    general_note = note.get_object()
+                    if event is not None and general_note is not None:
+                        notes[id(event)] = general_note
+    return notes
+
+
+def _slur_duration(
+    slur: _Slur,
+    notes: dict[int, m21.base.Music21Object],
+    score: m21.stream.Score,
+) -> Fraction | None:
+    """The duration that musicdiff gives the slur, if it can be computed.
+
+    musicdiff measures from the first note's offset in the music21 score to
+    the last note's end, as :class:`musicdiff.annotation.AnnExtra` does. A
+    MusicXML measure's trailing ``forward`` can lengthen the measure in
+    MusicXML time but not in music21 offsets, so MusicXML times do not give
+    this duration.
+    """
+    first = notes.get(id(slur.start))
+    last = notes.get(id(slur.stop))
+    if first is None or last is None:
+        return None
+    try:
+        start = first.getOffsetInHierarchy(score)
+    except m21.sites.SitesException:
+        return None
+    try:
+        end = opFrac(
+            last.getOffsetInHierarchy(score) + last.duration.quarterLength,
+        )
+    except m21.sites.SitesException:
+        end = start
+    return Fraction(opFrac(end - start))
 
 
 def _slur_tally(
@@ -610,22 +653,27 @@ def _slur_tally(
 ) -> ElementTally:
     """Score slur endpoints; musicdiff scores what this check excludes."""
     candidates = _slurs(t_side)
-    y_slurs = _slurs(y_side)
-    durations: dict[_Site, set[Fraction]] = {}
-    for slur in y_slurs:
-        durations.setdefault(_slur_site(slur), set()).add(_slur_duration(slur))
+    notes = _music21_notes(y_side.score)
+    y_slurs = [
+        (slur, _slur_duration(slur, notes, y_side.score.score))
+        for slur in _slurs(y_side)
+    ]
+    durations: dict[_Site, set[Fraction | None]] = {}
+    for slur, duration in y_slurs:
+        durations.setdefault(_slur_site(slur), set()).add(duration)
     used: set[int] = set()
     elements = identical = 0
-    for slur in y_slurs:
+    for slur, duration in y_slurs:
         start, stop = slur.start, slur.stop
         touched = touches.get(_slur_site(slur))
         if (
             (
                 touched is not None
-                # A touched slur that no ``Y`` slur of its site matches
-                # leaves the whole site to musicdiff.
+                # A touched slur whose duration is unknown, or that no ``Y``
+                # slur of its site matches, leaves the site to musicdiff.
                 and (
-                    _slur_duration(slur) in touched
+                    duration is None
+                    or duration in touched
                     or touched.isdisjoint(durations[_slur_site(slur)])
                 )
             )
