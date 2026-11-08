@@ -519,12 +519,18 @@ class _ScoreReader:
     ) -> None:
         grace = note.find("grace") is not None
         duration = Fraction(0) if grace else xml_duration(note, self.divisions)
-        voice = (note.findtext("voice") or "1").strip()
+        voice_text = note.findtext("voice")
+        voice = (voice_text or "1").strip()
         if note.find("chord") is not None:
+            # A chord member that omits its voice or staff joins the voice and
+            # staff of the chord's first note.
             event = state.event
-            if event is None or (event.voice, event.staff) != (
-                voice,
-                _staff(note),
+            if event is None or (
+                (voice_text is not None and voice != event.voice)
+                or (
+                    note.find("staff") is not None
+                    and _staff(note) != event.staff
+                )
             ):
                 message = "MusicXML chord member has no matching first note"
                 raise ProtocolDefectError(message)

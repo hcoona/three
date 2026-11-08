@@ -1711,6 +1711,39 @@ def test_fingering_tally_preserves_chord_member_pitch() -> None:
     )
 
 
+def _chord_members_without(*tags: tuple[str, str]) -> str:
+    """Drop the ``(tag, value)`` elements from the staff-2 chord's members."""
+    edits = []
+    for note_id in ("m2s2n2", "m2s2n3"):
+        changes = [f"        <{tag}>{value}</{tag}>\n" for tag, value in tags]
+        edits.append(_edit(note_id, *(x for c in changes for x in (c, ""))))
+    return _variant(*edits)
+
+
+@pytest.mark.parametrize(
+    "tags",
+    [(("voice", "5"),), (("staff", "2"),), (("voice", "5"), ("staff", "2"))],
+    ids=["voice", "staff", "voice-and-staff"],
+)
+def test_chord_member_inherits_omitted_voice_and_staff(
+    tags: tuple[tuple[str, str], ...],
+) -> None:
+    """Read a chord member without voice or staff as its first note's."""
+    y_text = _chord_members_without(*tags)
+    result = compare_file(BASE, y_text)
+
+    assert result.tally == compare_file(BASE, BASE).tally
+    _assert_file(result)
+
+
+def test_chord_member_in_another_voice_stops_the_run() -> None:
+    """Stop on a chord member whose explicit voice is not its first note's."""
+    y_text = _variant(_edit("m2s2n2", "<voice>5</voice>", "<voice>6</voice>"))
+
+    with pytest.raises(ProtocolDefectError, match="chord member"):
+        compare_file(BASE, y_text)
+
+
 def test_identical_adjacent_rule_1_pair_is_one_cross_staff_difference() -> None:
     """Keep the identical adjacent-measure calibration at one difference."""
     base = _variant(_edit("m5s1n1", "<step>G</step>", "<step>E</step>"))
