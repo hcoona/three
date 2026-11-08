@@ -1058,12 +1058,16 @@ def _set_tempo(
 ) -> m21.tempo.MetronomeMark:
     """Make the direction's words one tempo text of a metronome mark.
 
+    music21 links a metronome mark to no direction, so the mark of a
+    direction with a metronome is the one music21 metronome mark at its
+    onset that no other direction claims.
+
     Returns:
         The metronome mark that carries the tempo text.
 
     Raises:
         ProtocolDefectError: If the direction's metronome has no music21
-            metronome mark.
+            metronome mark, or more than one mark could be its own.
     """
     carrier, *others = expressions
     for other in others:
@@ -1082,16 +1086,22 @@ def _set_tempo(
         mark.style = carrier.style
         mark.placement = carrier.placement
         measure.replace(carrier, mark)
-        return mark
-    for mark in measure.getElementsByClass(m21.tempo.MetronomeMark):
-        if id(mark) in claimed or _fraction(mark.offset) != direction.onset:
-            continue
         claimed[id(mark)] = mark
-        mark.text = tempo
-        measure.remove(carrier)
         return mark
-    message = f"no music21 metronome mark at {_site(direction)}"
-    raise ProtocolDefectError(message)
+    marks = [
+        mark
+        for mark in measure.getElementsByClass(m21.tempo.MetronomeMark)
+        if id(mark) not in claimed and _fraction(mark.offset) == direction.onset
+    ]
+    if len(marks) != 1:
+        count = "more than one" if marks else "no"
+        message = f"{count} music21 metronome mark at {_site(direction)}"
+        raise ProtocolDefectError(message)
+    (mark,) = marks
+    claimed[id(mark)] = mark
+    mark.text = tempo
+    measure.remove(carrier)
+    return mark
 
 
 class _InvertedFermata(m21.expressions.Fermata):

@@ -76,6 +76,7 @@ _RULE_1 = "cross_staff"
 _TUPLET = "tuplet"
 _SLUR = "slur"
 _HOOKS = frozenset({"forward hook", "backward hook"})
+_FINGERS = frozenset("12345")
 _TREMOLO_ELEMENTS = frozenset({"single", "start"})
 _START = "start"
 _STOP = "stop"
@@ -198,7 +199,10 @@ def compare_file(t_source: Path | str, y_source: Path | str) -> FileComparison:
     )
     y_side, t_side = _sides(content)
     checks = {
-        "fingering": _multiset(_fingerings(y_side), _fingerings(t_side)),
+        "fingering": _multiset(
+            _compared_fingerings(y_side),
+            _compared_fingerings(t_side),
+        ),
         "cross_staff": _multiset(
             map(_cross_staff_key, y_cross),
             map(_cross_staff_key, t_cross),
@@ -399,6 +403,20 @@ def _fingerings(side: _Side) -> Iterator[_Key]:
             for mark in note.findall("notations/technical/fingering"):
                 for digit in "".join((mark.text or "").split()):
                     yield (*side.note_key(event, note), digit)
+
+
+def _compared_fingerings(side: _Side) -> Iterator[_Key]:
+    """Yield the fingering digits of one side of a comparison.
+
+    Raises:
+        ProtocolDefectError: If a fingering writes anything but digits from
+            1 to 5, which the protocol does not read.
+    """
+    for key in _fingerings(side):
+        if key[-1] not in _FINGERS:
+            message = f"a fingering writes {key[-1]!r}, not a finger"
+            raise ProtocolDefectError(message)
+        yield key
 
 
 def _cross_staff_events(score: AnnotatedScore) -> list[XmlEvent]:

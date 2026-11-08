@@ -1496,6 +1496,40 @@ def test_words_reading_pair_gives_its_category_counts(pair: str) -> None:
     _assert_file(result, expected)
 
 
+def _two_metronomes(*, words_on_first: bool) -> str:
+    """Write a quarter 96 then a quarter 120 metronome before ``m1s1n1``.
+
+    The words "Allegro" are in the direction of the first or the second.
+    """
+    words = "          <words>Allegro</words>\n"
+    return _variant(
+        _before(
+            "m1s1n1",
+            _direction((words if words_on_first else "") + _METRONOME)
+            + _direction(
+                ("" if words_on_first else words)
+                + _METRONOME.replace("96", "120"),
+            ),
+        ),
+    )
+
+
+def test_words_of_one_of_two_metronomes_at_an_onset_stop_the_run() -> None:
+    """Stop where the words could name either metronome at their onset.
+
+    music21 links neither mark to its direction, so the words would name the
+    same mark in both scores although they name a different number.
+    """
+    with pytest.raises(
+        ProtocolDefectError,
+        match="more than one music21 metronome mark",
+    ):
+        compare_file(
+            _two_metronomes(words_on_first=True),
+            _two_metronomes(words_on_first=False),
+        )
+
+
 def test_heading_order_swap_is_one_nonidentical_and_one_extra_element() -> None:
     """Compare heading text in positioned reading order, not source order."""
     y_text = _with_credits(
@@ -3655,6 +3689,17 @@ def test_fingering_digits_of_one_mark_are_separate_elements() -> None:
 
     assert result.checks["fingering"] == ElementTally(2, 1, 0)
     _assert_file(result, fingering=(1, 0))
+
+
+@pytest.mark.parametrize("fingering", ["10", "1-2", "2,3"])
+def test_fingering_other_than_fingers_stops_the_comparison(
+    fingering: str,
+) -> None:
+    """Stop where a fingering writes anything but digits from 1 to 5."""
+    y_text = _marked(BASE, ("m1s1n2", _fingering(fingering)))
+
+    with pytest.raises(ProtocolDefectError, match="not a finger"):
+        compare_file(BASE, y_text)
 
 
 @pytest.mark.parametrize(
