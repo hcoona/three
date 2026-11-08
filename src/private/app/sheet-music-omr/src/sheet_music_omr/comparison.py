@@ -3148,7 +3148,8 @@ def _system_first_events(
 
     A staff's first event in a system can be in a later measure than the
     system's first, or after the start of a measure. Simultaneous events
-    of several voices are all first.
+    of several voices are all first; a grace note at the end of a measure
+    precedes the next measure's events at the same time.
 
     Returns:
         By staff, the first measure of each system that has events on it,
@@ -3164,11 +3165,11 @@ def _system_first_events(
         systems.items(),
         key=lambda item: item[0],
     ):
-        first = min(map(_written_order, events))
+        first = min(map(_written_time, events))
         firsts.setdefault(place, []).append(
             (
                 system,
-                [event for event in events if _written_order(event) == first],
+                [event for event in events if _written_time(event) == first],
             ),
         )
     return firsts

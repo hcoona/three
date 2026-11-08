@@ -4250,19 +4250,34 @@ def test_line_reprints_are_on_the_first_event_of_a_system_on_a_staff(
     assert added_count == added
 
 
-_GRACE_TRILL_STOP = (
-    '      <note id="m2g">\n'
-    "        <grace/>\n"
-    "        <pitch>\n"
-    "          <step>D</step>\n"
-    "          <octave>4</octave>\n"
-    "        </pitch>\n"
-    "        <voice>1</voice>\n"
-    "        <type>16th</type>\n"
-    "        <staff>2</staff>\n"
-    f"        <notations>\n{_TRILL_STOP}        </notations>\n"
-    "      </note>\n"
-)
+def _grace_note(
+    note_id: str,
+    pitch: str,
+    staff: int,
+    ornaments: str = "",
+) -> str:
+    """Return a grace sixteenth of voice 1 on ``staff``, such as ``D4``."""
+    notations = (
+        f"        <notations>\n{ornaments}        </notations>\n"
+        if ornaments
+        else ""
+    )
+    return (
+        f'      <note id="{note_id}">\n'
+        "        <grace/>\n"
+        "        <pitch>\n"
+        f"          <step>{pitch[0]}</step>\n"
+        f"          <octave>{pitch[1]}</octave>\n"
+        "        </pitch>\n"
+        "        <voice>1</voice>\n"
+        "        <type>16th</type>\n"
+        f"        <staff>{staff}</staff>\n"
+        f"{notations}"
+        "      </note>\n"
+    )
+
+
+_GRACE_TRILL_STOP = _grace_note("m2g", "D4", 2, _TRILL_STOP)
 _PLACED_TRILL = _ornaments('            <trill-mark placement="below"/>\n')
 
 
@@ -4302,6 +4317,83 @@ def test_trill_mark_is_a_reprint_only_while_its_line_is_open(
     y_text = _trill_line_score(trill=True, stop=stop)
 
     _assert_file(compare_file(t_text, y_text), content)
+    added = failure_layout_element_count(y_text) - failure_layout_element_count(
+        t_text,
+    )
+    assert added == added_layout
+
+
+_TO_MEASURE_END = _DELAY.replace(
+    "<duration>1</duration>",
+    "<duration>4</duration>",
+)
+
+
+def _boundary_trill_score(*, trill: bool) -> str:
+    """Open a trill line, then end measure 2 on a grace note.
+
+    Measure 3 starts at the same time with a grace note that can carry a
+    placed independent trill mark, and stops the line.
+    """
+    return _system_score(
+        _system_note("m1s1", 1, ornaments=_TRILL_START),
+        _TO_MEASURE_END + _grace_note("m2g", "D5", 1),
+        _grace_note("m3g", "F5", 1, _PLACED_TRILL if trill else "")
+        + _system_note("m3s1", 1, ornaments=_TRILL_STOP),
+    )
+
+
+def _boundary_words_score(*, reprint: bool) -> str:
+    """Open a dashes line, then end measure 2 on two grace notes.
+
+    The second is the top staff's, after one on the bottom staff, and the
+    line's words can be reprinted before it. Measure 3 starts at the same
+    time with a grace note and stops the line.
+    """
+    words = _line_direction("cresc.", None) if reprint else ""
+    return _system_score(
+        _line_direction("cresc.", "start") + _system_note("m1s1", 1),
+        _TO_MEASURE_END
+        + _grace_note("m2x", "D4", 2)
+        + words
+        + _grace_note("m2g", "D5", 1),
+        _grace_note("m3g", "F5", 1)
+        + _line_direction(None, "stop")
+        + _system_note("m3s1", 1),
+    )
+
+
+@pytest.mark.parametrize(
+    ("t_text", "y_text", "content", "added_layout"),
+    [
+        (
+            _boundary_trill_score(trill=False),
+            _boundary_trill_score(trill=True),
+            {"ornament": 1},
+            1,
+        ),
+        (
+            _boundary_words_score(reprint=False),
+            _boundary_words_score(reprint=True),
+            {},
+            0,
+        ),
+    ],
+    ids=["trill-mark-in-the-next-measure", "words-at-the-measure-end"],
+)
+def test_first_event_of_a_system_precedes_the_next_measure(
+    t_text: str,
+    y_text: str,
+    content: dict[str, int],
+    added_layout: int,
+) -> None:
+    """Order a grace note that ends a measure before the next measure's.
+
+    Both are at one time, but only the first is the first event of the
+    system on its staff, where a line's reprint can be.
+    """
+    _assert_file(compare_file(t_text, y_text), content)
+    assert failure_element_count(y_text) == failure_element_count(t_text)
     added = failure_layout_element_count(y_text) - failure_layout_element_count(
         t_text,
     )
