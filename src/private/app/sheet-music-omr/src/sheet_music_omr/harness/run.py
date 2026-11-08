@@ -58,6 +58,10 @@ class StepError(StopConditionError):
     """A comparison or counting step failed in a way the protocol omits."""
 
 
+class _PeerStoppedError(Exception):
+    """A running file stopped because another file triggered a run stop."""
+
+
 @dataclass(frozen=True, slots=True)
 class PublicFile:
     """One selected public file.
@@ -284,6 +288,7 @@ class Runner:
     timeout: float = STEP_SECONDS
     _musescore_lock: threading.Lock = field(default_factory=threading.Lock)
     _stopping: threading.Event = field(default_factory=threading.Event)
+    _stop_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def run(self, plan: RunPlan) -> None:
         """Run phases 3 to 6 of the protocol for a plan."""
@@ -299,35 +304,64 @@ class Runner:
     ) -> None:
         if self.jobs <= 1:
             for item in items:
-                action(item)
+                self._guarded(action, item)
             return
         with ThreadPoolExecutor(max_workers=self.jobs) as pool:
             futures = [
                 pool.submit(self._guarded, action, item) for item in items
             ]
             done, pending = wait(futures, return_when=FIRST_EXCEPTION)
-            failed = [f for f in done if f.exception() is not None]
+            failed = [
+                f
+                for f in done
+                if not f.cancelled() and f.exception() is not None
+            ]
             if failed:
-                self._stopping.set()
+                with self._stop_lock:
+                    self._stopping.set()
                 for future in pending:
                     future.cancel()
                 wait(pending)
-                error = failed[0].exception()
+                errors = [future.exception() for future in failed]
+                error = next(
+                    (
+                        error
+                        for error in errors
+                        if not isinstance(error, _PeerStoppedError)
+                    ),
+                    errors[0],
+                )
                 assert error is not None  # noqa: S101 - checked above
                 raise error
 
     def _guarded(self, action: Callable[[Item], None], item: Item) -> None:
-        if not self._stopping.is_set():
+        if self._stopping.is_set():
+            return
+        try:
             action(item)
+        except _PeerStoppedError:
+            raise
+        except BaseException:
+            with self._stop_lock:
+                self._stopping.set()
+            raise
+
+    def _check_stopping(self) -> None:
+        if self._stopping.is_set():
+            message = "another file triggered a protocol stop"
+            raise _PeerStoppedError(message)
 
     def _call(self, name: str, item: Item, **arguments: object) -> Outcome:
+        self._check_stopping()
         context = f"step {name}, arm {item.arm}, file {item.id}"
-        return self.executor.call(
+        outcome = self.executor.call(
             self.steps[name],
             arguments,
             context=context,
             timeout=self.timeout,
         )
+        self._check_stopping()
+        return outcome
 
     def make_rx(self, files: Sequence[PublicFile]) -> None:
         """Make ``R(X)`` for each public file that has no export record."""
@@ -361,6 +395,7 @@ class Runner:
 
     def _import_check(self, t: Path) -> Data:
         with self._musescore_lock:
+            self._check_stopping()
             directory = self.confinement.temp_dir("import-")
             try:
                 conversion = self.musescore.convert(
@@ -383,6 +418,7 @@ class Runner:
 
     def process(self, item: Item) -> None:
         """Run one file of one arm and write its result last."""
+        self._check_stopping()
         directory = file_directory(self.confinement, item.arm, item.id)
         if (directory / "result.json").exists():
             return
@@ -400,13 +436,20 @@ class Runner:
             },
         )
         self._convert(state, directory)
+        self._check_stopping()
         self._finish(state)
         write_json(
             self.confinement,
             directory / "operations.json",
             state.operations,
         )
-        write_json(self.confinement, directory / "result.json", state.result)
+        with self._stop_lock:
+            self._check_stopping()
+            write_json(
+                self.confinement,
+                directory / "result.json",
+                state.result,
+            )
 
     def _convert(self, state: _FileState, directory: Path) -> None:
         item = state.item

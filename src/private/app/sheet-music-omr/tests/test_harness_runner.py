@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -416,6 +418,65 @@ def test_stops_end_the_run(roots: Confinement, tmp_path: Path) -> None:
     launcher.settings = tmp_path / "MuseScore4.ini"
     with pytest.raises(StopConditionError, match="settings"):
         Runner(roots, musescore, InlineExecutor()).run(plan)
+
+
+def test_parallel_stop_interrupts_a_running_file_between_steps(
+    roots: Confinement,
+    tmp_path: Path,
+) -> None:
+    """Stops a concurrent peer before further work or result publication."""
+    plan = _plan(roots, ["p0001", "p0002"])
+    begin_run(roots, plan, {"commit": COMMIT, "dirty": False})
+    launcher = CopyLauncher()
+    waiting = threading.Event()
+    release = threading.Event()
+    forwarded: list[str] = []
+
+    def reverse(y: Path) -> dict[str, object]:
+        if y.parent.name == "p0002":
+            waiting.set()
+            assert release.wait(timeout=5)
+        return {"status": "ok", "text": y.parent.name}
+
+    def forward(text: str) -> dict[str, object]:
+        forwarded.append(text)
+        return {"status": "ok", "musicxml": FIXTURE.read_bytes()}
+
+    def content(t: Path, y: Path) -> dict[str, object]:
+        if y.parent.name == "p0001":
+            assert waiting.wait(timeout=5)
+            message = "parallel protocol defect"
+            raise StopConditionError(message)
+        return steps.content(t, y)
+
+    table = {
+        **steps.STEPS,
+        "reverse": reverse,
+        "forward": forward,
+        "content": content,
+    }
+    runner = Runner(
+        roots,
+        _musescore(roots, tmp_path, launcher),
+        InlineExecutor(),
+        table,
+        jobs=2,
+    )
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(runner.run, plan)
+            assert waiting.wait(timeout=5)
+            assert runner._stopping.wait(timeout=5)  # noqa: SLF001
+            release.set()
+            with pytest.raises(StepStopError, match="parallel protocol defect"):
+                future.result(timeout=5)
+    finally:
+        release.set()
+
+    assert forwarded == ["p0001"]
+    assert not (
+        roots.run / "files" / "pdmx-x" / "p0002" / "result.json"
+    ).exists()
 
 
 def test_cli_records_a_stop_and_exits_with_two(tmp_path: Path) -> None:
