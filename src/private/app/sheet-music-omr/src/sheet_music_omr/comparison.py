@@ -1446,11 +1446,13 @@ def _music21_pitch_key(pitch: m21.pitch.Pitch) -> PitchKey:
         message = f"paired note pitch has no octave: {pitch}"
         raise ProtocolDefectError(message)
     alter = pitch.accidental.alter if pitch.accidental else 0.0
-    return str(pitch.step), _fraction(alter), pitch.octave
+    # MusicXML pitch keys read <alter> as decimal text.
+    return str(pitch.step), Fraction(str(alter)), pitch.octave
 
 
 def _fraction(value: float | Fraction) -> Fraction:
-    return value if isinstance(value, Fraction) else Fraction(str(value))
+    """Return a music21 time value exactly; its floats are dyadic."""
+    return value if isinstance(value, Fraction) else Fraction(value)
 
 
 def _heading_credit(

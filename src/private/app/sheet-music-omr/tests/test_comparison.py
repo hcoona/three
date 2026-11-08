@@ -2309,13 +2309,13 @@ def test_two_overlapping_voices_without_stems_stop() -> None:
         voice_order_tally(text, text)
 
 
-def _one_measure(beats: int, *items: str) -> str:
-    """Return a one-staff score of one measure at three divisions a beat."""
+def _one_measure(beats: int, *items: str, divisions: int = 3) -> str:
+    """Return a one-staff, one-measure score at ``divisions`` per quarter."""
     return (
         '<?xml version="1.0" encoding="utf-8"?><score-partwise version="4.0">'
         '<part-list><score-part id="P1"><part-name>Piano</part-name>'
         '</score-part></part-list><part id="P1"><measure number="1">'
-        "<attributes><divisions>3</divisions><key><fifths>0</fifths></key>"
+        f"<attributes><divisions>{divisions}</divisions><key><fifths>0</fifths></key>"
         f"<time><beats>{beats}</beats><beat-type>4</beat-type></time>"
         "<clef><sign>G</sign><line>2</line></clef></attributes>"
         + "".join(items)
@@ -2409,6 +2409,71 @@ def test_unstemmed_rest_exactly_between_two_stems_stops() -> None:
 
     with pytest.raises(ProtocolDefectError, match="ambiguous voice position"):
         compare_file(text, text)
+
+
+_FINE_DIVISIONS = 32768
+_HIDDEN = ' print-object="no"'
+
+
+def _fine_note(step: str | None, ticks: int, voice: int) -> str:
+    """Return an up-stem quarter, or a hidden rest without ``step``.
+
+    A time modification makes the quarter last ``ticks`` at 32,768 divisions.
+    """
+    sound = (
+        f"<pitch><step>{step}</step><octave>5</octave></pitch>"
+        if step
+        else "<rest/>"
+    )
+    modification = (
+        ""
+        if ticks == _FINE_DIVISIONS
+        else f"<time-modification><actual-notes>{_FINE_DIVISIONS}"
+        f"</actual-notes><normal-notes>{ticks}</normal-notes>"
+        "</time-modification>"
+    )
+    return (
+        f"<note{'' if step else _HIDDEN}>{sound}"
+        f"<duration>{ticks}</duration><voice>{voice}</voice>"
+        f"<type>quarter</type>{modification}"
+        f"{'<stem>up</stem>' if step else ''}<staff>1</staff></note>"
+    )
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        (1, 64 * _FINE_DIVISIONS),
+        (_FINE_DIVISIONS - 3, 64 * _FINE_DIVISIONS + 3),
+    ],
+    ids=["fine-onset", "fine-duration"],
+)
+def test_voices_that_abut_at_a_fine_dyadic_time_do_not_overlap(
+    first: int,
+    second: int,
+) -> None:
+    """Read music21's dyadic floats exactly, not through their decimal text.
+
+    Voice 2 starts where voice 1's two notes end. The shortest decimal text
+    of voice 2's onset, 64 + 1/32768, is below it, which lost its MusicXML
+    event; that of the duration 64 + 3/32768 is above it, which made the
+    voices overlap.
+    """
+    end = first + second
+    text = _one_measure(
+        66,
+        _fine_note("C", first, 1),
+        _fine_note("D", second, 1),
+        f"<backup><duration>{end}</duration></backup>",
+        _fine_note(None, end, 2),
+        _fine_note("E", _FINE_DIVISIONS, 2),
+        divisions=_FINE_DIVISIONS,
+    )
+
+    result = compare_file(text, text)
+
+    _assert_file(result)
+    assert result.checks["voice_order"] == ElementTally(2, 2, 0)
 
 
 def test_unison_stem_swap_pairs_notes_by_distinctive_content() -> None:
