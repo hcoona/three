@@ -22,7 +22,7 @@ public sealed partial class CollaborationOperations
         ArgumentNullException.ThrowIfNull(database);
         this.database = database;
         using var connection = database.Open();
-        using var transaction = connection.BeginTransaction();
+        using var transaction = Sql.BeginTransaction(connection);
         Sql.Execute(
             connection,
             """
@@ -101,6 +101,7 @@ public sealed partial class CollaborationOperations
         try
         {
             RequireActor(actor);
+            using var diagnosticActor = SqliteDiagnostics.UseActor(actor);
             ArgumentNullException.ThrowIfNull(arguments);
             using var connection = database.Open();
             // SQLite's built-in lower()/NOCASE handles ASCII only.
@@ -109,7 +110,7 @@ public sealed partial class CollaborationOperations
                 (text, query) => text.Contains(query, StringComparison.OrdinalIgnoreCase),
                 isDeterministic: true
             );
-            using var transaction = connection.BeginTransaction(
+            using var transaction = Sql.BeginTransaction(connection,
                 deferred: name is not ("task_write" or "message_send" or "board_publish"));
             var data = Dispatch(connection, transaction, actor, name, arguments);
             transaction.Commit();
@@ -162,7 +163,7 @@ public sealed partial class CollaborationOperations
     public bool ReopenWorkerClosedRoot()
     {
         using var connection = database.Open();
-        using var transaction = connection.BeginTransaction();
+        using var transaction = Sql.BeginTransaction(connection);
         var root =
             One(connection, transaction, "SELECT state,closed_by FROM tasks WHERE id=1;")
             ?? throw Missing("Task", 1);
@@ -685,7 +686,7 @@ public sealed partial class CollaborationOperations
     )
     {
         using var command = Sql.Command(connection, sql, transaction, parameters);
-        using var reader = command.ExecuteReader();
+        using var reader = Sql.Reader(command);
         var rows = new List<JsonObject>();
         while (reader.Read())
         {

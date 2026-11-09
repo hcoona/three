@@ -437,7 +437,8 @@ internal sealed class NativeWorkerFactory(
         try
         {
             using SqliteConnection connection = database.Open();
-            using SqliteTransaction snapshot = connection.BeginTransaction(deferred: true);
+            using SqliteTransactionScope snapshot =
+                Sql.BeginTransaction(connection, deferred: true);
             RequireRecoveryEvidence(reservation.RunId == database.RunId
                 && reservation.SessionId is not null
                 && (long)Sql.Scalar(connection,
@@ -531,7 +532,7 @@ internal sealed class NativeWorkerFactory(
                 WHERE n.reservation_id=$id AND s.ended_at IS NOT NULL;
                 """, snapshot, ("$id", reservation.Id),
                 ("$lease", retained["runtimeLeaseId"]!.GetValue<long>()));
-            using SqliteDataReader reader = lifetime.ExecuteReader();
+            using ObservedSqliteReader reader = Sql.Reader(lifetime);
             NativeRecoveryOrigin? origin = null;
             while (reader.Read())
             {

@@ -55,7 +55,7 @@ public sealed class Coordinator
             ? "native-sdk"
             : "controlled-native-dependency";
         using SqliteConnection connection = database.Open();
-        using SqliteTransaction transaction = connection.BeginTransaction();
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         ledgerBinding = Json.SerializePayload(
                 new
                 {
@@ -227,7 +227,7 @@ public sealed class Coordinator
         }
 
         using SqliteConnection connection = database.Open();
-        using SqliteTransaction transaction = connection.BeginTransaction();
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         long? pending =
             Sql.Scalar(
                 connection,
@@ -1647,7 +1647,8 @@ public sealed class Coordinator
         string? session;
         string? reservationId;
         using (SqliteConnection connection = database.Open())
-        using (SqliteTransaction transaction = connection.BeginTransaction(deferred: true))
+        using (SqliteTransactionScope transaction =
+            Sql.BeginTransaction(connection, deferred: true))
         {
             session =
                 Sql.Scalar(
@@ -1799,7 +1800,7 @@ public sealed class Coordinator
     private (long Segment, DateTimeOffset Deadline) BeginSegment(string mode)
     {
         using SqliteConnection connection = database.Open();
-        using SqliteTransaction transaction = connection.BeginTransaction();
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         DateTimeOffset deadline = database.Now.AddSeconds(database.Configuration.DurationSeconds);
         if (mode == "reconnect")
         {
@@ -1881,7 +1882,7 @@ public sealed class Coordinator
             connection,
             "SELECT id,action FROM coordinator_controls WHERE state='pending' ORDER BY id LIMIT 1;"
         );
-        using SqliteDataReader reader = command.ExecuteReader();
+        using ObservedSqliteReader reader = Sql.Reader(command);
         if (!reader.Read())
         {
             action = null;
@@ -1959,7 +1960,7 @@ public sealed class Coordinator
                 "SELECT batch_id FROM coordinator_turns WHERE state='native-complete';"
             )
         )
-        using (SqliteDataReader reader = command.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             while (reader.Read())
             {

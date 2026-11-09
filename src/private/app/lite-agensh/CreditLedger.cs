@@ -45,7 +45,8 @@ public sealed class CreditLedger
         campaignAllowance = allowance;
         using SqliteConnection connection = Open();
         Sql.Execute(connection, "PRAGMA journal_mode=WAL;");
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        using SqliteTransactionScope transaction =
+            Sql.BeginTransaction(connection, deferred: false);
         Sql.Execute(
             connection,
             """
@@ -93,7 +94,7 @@ public sealed class CreditLedger
                 transaction
             )
         )
-        using (SqliteDataReader reader = command.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             if (
                 !reader.Read()
@@ -190,7 +191,7 @@ public sealed class CreditLedger
             null,
             ("$id", id)
         );
-        using SqliteDataReader reader = command.ExecuteReader();
+        using ObservedSqliteReader reader = Sql.Reader(command);
         if (
             !reader.Read()
             || !double.TryParse(
@@ -228,7 +229,7 @@ public sealed class CreditLedger
             JOIN credit_sdk_usage u ON u.reservation_id=r.id AND u.session_id=r.session_id
             WHERE r.id=$id AND u.dispatch_count>0;
             """, null, ("$id", id));
-        using SqliteDataReader reader = command.ExecuteReader();
+        using ObservedSqliteReader reader = Sql.Reader(command);
         if (!reader.Read() || reader.IsDBNull(2) || reader.IsDBNull(3)
             || !double.TryParse(reader.GetString(2), NumberStyles.Float,
                 CultureInfo.InvariantCulture, out double nano)
@@ -263,7 +264,8 @@ public sealed class CreditLedger
     )
     {
         using SqliteConnection connection = Open();
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        using SqliteTransactionScope transaction =
+            Sql.BeginTransaction(connection, deferred: false);
         CreditReservation row = Read(connection, transaction).Single(item => item.Id == id);
         if (
             row.SessionId != usage.SessionId
@@ -439,7 +441,8 @@ public sealed class CreditLedger
     public void BeginDispatch(string runId, string id, decimal runAllowance)
     {
         using SqliteConnection connection = Open();
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        using SqliteTransactionScope transaction =
+            Sql.BeginTransaction(connection, deferred: false);
         RequirePromptAllowance(
             connection, transaction, runId, id, runAllowance, requireGrant: true
         );
@@ -460,7 +463,8 @@ public sealed class CreditLedger
     )
     {
         using SqliteConnection connection = Open();
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        using SqliteTransactionScope transaction =
+            Sql.BeginTransaction(connection, deferred: false);
         CreditReservation row = Read(connection, transaction)
             .Single(item => item.Id == expected.Id);
         if (Sql.Scalar(connection,
@@ -495,7 +499,7 @@ public sealed class CreditLedger
             """,
             transaction, ("$id", row.Id)
         ))
-        using (SqliteDataReader reader = command.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             if (
                 !reader.Read() || reader.GetString(0) != row.SessionId
@@ -600,7 +604,8 @@ public sealed class CreditLedger
         }
 
         using SqliteConnection connection = Open();
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        using SqliteTransactionScope transaction =
+            Sql.BeginTransaction(connection, deferred: false);
         List<CreditReservation> rows = Read(connection, transaction);
         if (HasUnknown(connection, transaction))
         {
@@ -696,7 +701,8 @@ public sealed class CreditLedger
     private CreditReservation? TryAcquireSharedWindow(string id, bool renew)
     {
         using SqliteConnection connection = Open();
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        using SqliteTransactionScope transaction =
+            Sql.BeginTransaction(connection, deferred: false);
         List<CreditReservation> rows = Read(connection, transaction);
         CreditReservation own = rows.Single(row => row.Id == id);
         bool ready = Sql.Scalar(
@@ -776,7 +782,8 @@ public sealed class CreditLedger
     internal void CloseSharedWindow(string id)
     {
         using SqliteConnection connection = Open();
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        using SqliteTransactionScope transaction =
+            Sql.BeginTransaction(connection, deferred: false);
         CreditReservation own = Read(connection, transaction).Single(row => row.Id == id);
         if (!own.Shared || !own.GrantOpen)
         {
@@ -838,7 +845,8 @@ public sealed class CreditLedger
     public CreditReservation ContinueExact(string id, string usagePath)
     {
         using SqliteConnection connection = Open();
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        using SqliteTransactionScope transaction =
+            Sql.BeginTransaction(connection, deferred: false);
         List<CreditReservation> rows = Read(connection, transaction);
         CreditReservation previous = rows.Single(row => row.Id == id);
         if (
@@ -937,7 +945,7 @@ public sealed class CreditLedger
     public void RequirePromptAllowance(string runId, string reservationId, decimal runAllowance)
     {
         using SqliteConnection connection = Open();
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: true);
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection, deferred: true);
         RequirePromptAllowance(connection, transaction, runId, reservationId, runAllowance);
         transaction.Commit();
     }
@@ -1001,7 +1009,7 @@ public sealed class CreditLedger
         using SqliteCommand command = Sql.Command(connection,
             "SELECT pid,start_ticks FROM credit_sdk_owners WHERE reservation_id=$id;",
             null, ("$id", id));
-        using SqliteDataReader reader = command.ExecuteReader();
+        using ObservedSqliteReader reader = Sql.Reader(command);
         if (!reader.Read())
         {
             throw new OperationException("credit_unknown", "The SDK owner identity is missing.");
@@ -1030,7 +1038,7 @@ public sealed class CreditLedger
                 FROM credit_cancellations c JOIN credit_reservations r ON r.id=c.reservation_id
                 WHERE r.run_id=$run ORDER BY c.reservation_id;
                 """, null, ("$run", runId));
-            using SqliteDataReader reader = command.ExecuteReader();
+            using ObservedSqliteReader reader = Sql.Reader(command);
             while (reader.Read())
             {
                 cancellations.Add(new JsonObject
@@ -1056,7 +1064,7 @@ public sealed class CreditLedger
                 ("$run", runId)
             )
         )
-        using (SqliteDataReader reader = command.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             while (reader.Read())
             {
@@ -1130,7 +1138,7 @@ public sealed class CreditLedger
             """,
             transaction
         );
-        using SqliteDataReader reader = command.ExecuteReader();
+        using ObservedSqliteReader reader = Sql.Reader(command);
         while (reader.Read())
         {
             if (reader.IsDBNull(0) || reader.IsDBNull(1))
@@ -1215,7 +1223,7 @@ public sealed class CreditLedger
             """,
             transaction
         );
-        using SqliteDataReader reader = command.ExecuteReader();
+        using ObservedSqliteReader reader = Sql.Reader(command);
         while (reader.Read())
         {
             rows.Add(
@@ -1270,7 +1278,6 @@ public sealed class CreditLedger
     private SqliteConnection Open()
     {
         SqliteConnection connection = new(connectionString);
-        connection.Open();
-        return connection;
+        return Sql.Open(connection, "campaign");
     }
 }

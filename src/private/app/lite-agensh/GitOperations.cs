@@ -24,7 +24,7 @@ public sealed class GitOperations
         this.collaboration = collaboration;
         processes = new ProcessRunner(database);
         using SqliteConnection connection = database.Open();
-        using SqliteTransaction transaction = connection.BeginTransaction();
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         Sql.Execute(
             connection,
             """
@@ -259,6 +259,7 @@ public sealed class GitOperations
                 throw new OperationException("unknown_actor", "Actor is not a member of this run.");
             }
 
+            using var diagnosticActor = SqliteDiagnostics.UseActor(actor);
             return name switch
             {
                 "change_write" => await WriteChangeAsync(actor, arguments, cancellationToken)
@@ -291,7 +292,7 @@ public sealed class GitOperations
                 "SELECT id FROM integration_requests WHERE state='pending' ORDER BY id;"
             )
         )
-        using (SqliteDataReader reader = command.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             while (reader.Read())
             {
@@ -436,7 +437,7 @@ public sealed class GitOperations
             await RetainDeliveryAsync(head, cancellationToken).ConfigureAwait(false);
             JsonObject report = BuildDeliveryReport(head, batch, passed);
             using SqliteConnection store = database.Open();
-            using SqliteTransaction transaction = store.BeginTransaction();
+            using SqliteTransactionScope transaction = Sql.BeginTransaction(store);
             SetMeta(store, transaction, "git:delivery_report", report.ToJsonString(Json.Options));
             SetMeta(store, transaction, "git:finalized", "true");
             Event(
@@ -476,7 +477,7 @@ public sealed class GitOperations
 
             List<(string Ref, string Path)> resources = [];
             using (SqliteConnection connection = database.Open())
-            using (SqliteTransaction transaction = connection.BeginTransaction())
+            using (SqliteTransactionScope transaction = Sql.BeginTransaction(connection))
             {
                 if (
                     Convert.ToInt64(
@@ -502,7 +503,7 @@ public sealed class GitOperations
                         + "state='ready' ORDER BY ref;",
                     transaction
                 );
-                using (SqliteDataReader reader = command.ExecuteReader())
+                using (ObservedSqliteReader reader = Sql.Reader(command))
                 {
                     while (reader.Read())
                     {
@@ -532,7 +533,7 @@ public sealed class GitOperations
                 await GitAsync(Repository, ["update-ref", "-d", reference, head], cancellationToken)
                     .ConfigureAwait(false);
                 using SqliteConnection connection = database.Open();
-                using SqliteTransaction transaction = connection.BeginTransaction();
+                using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
                 Sql.Execute(
                     connection,
                     "UPDATE git_resources SET state='removed' WHERE ref=$ref;",
@@ -591,7 +592,7 @@ public sealed class GitOperations
                     string branch = WorkerBranch(actor);
                     string head = await ResolveAsync(branch, token).ConfigureAwait(false);
                     using SqliteConnection connection = database.Open();
-                    using SqliteTransaction transaction = connection.BeginTransaction();
+                    using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
                     RequireWritable(connection, transaction);
                     ValidateTasks(connection, transaction, tasks);
                     Sql.Execute(
@@ -648,7 +649,7 @@ public sealed class GitOperations
                     }
 
                     using SqliteConnection connection = database.Open();
-                    using SqliteTransaction transaction = connection.BeginTransaction();
+                    using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
                     RequireWritable(connection, transaction);
                     JsonObject change = Change(connection, transaction, id);
                     RequireAuthor(change, actor);
@@ -698,7 +699,7 @@ public sealed class GitOperations
                     long id = Id(arguments, "id");
                     string body = Text(arguments, "body");
                     using SqliteConnection connection = database.Open();
-                    using SqliteTransaction transaction = connection.BeginTransaction();
+                    using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
                     RequireWritable(connection, transaction);
                     _ = Change(connection, transaction, id);
                     Sql.Execute(
@@ -728,7 +729,7 @@ public sealed class GitOperations
                     long id = Id(arguments, "id");
                     string head = Text(arguments, "head");
                     using SqliteConnection connection = database.Open();
-                    using SqliteTransaction transaction = connection.BeginTransaction();
+                    using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
                     RequireWritable(connection, transaction);
                     JsonObject change = Change(connection, transaction, id);
                     RequireOpen(change);
@@ -849,7 +850,7 @@ public sealed class GitOperations
                 ("$limit", limit + 1)
             )
         )
-        using (SqliteDataReader reader = command.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             while (reader.Read())
             {
@@ -881,7 +882,7 @@ public sealed class GitOperations
         }
 
         using SqliteConnection connection = database.Open();
-        using SqliteTransaction transaction = connection.BeginTransaction();
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         RequireWritable(connection, transaction);
         JsonObject change = Change(connection, transaction, changeId);
         RequireOpen(change);
@@ -969,7 +970,7 @@ public sealed class GitOperations
         long changeId;
         string submitted;
         using (SqliteConnection connection = database.Open())
-        using (SqliteTransaction transaction = connection.BeginTransaction())
+        using (SqliteTransactionScope transaction = Sql.BeginTransaction(connection))
         {
             using (
                 SqliteCommand command = Sql.Command(
@@ -980,7 +981,7 @@ public sealed class GitOperations
                     ("$id", requestId)
                 )
             )
-            using (SqliteDataReader reader = command.ExecuteReader())
+            using (ObservedSqliteReader reader = Sql.Reader(command))
             {
                 if (!reader.Read())
                 {
@@ -1177,7 +1178,7 @@ public sealed class GitOperations
                     + "integration_requests WHERE state='running' ORDER BY id;"
             )
         )
-        using (SqliteDataReader reader = command.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             while (reader.Read())
             {
@@ -1262,7 +1263,7 @@ public sealed class GitOperations
     private void FinishRequest(long id, bool succeeded, string code, string message, string? commit)
     {
         using SqliteConnection connection = database.Open();
-        using SqliteTransaction transaction = connection.BeginTransaction();
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         object? changeId = Sql.Scalar(
             connection,
             "SELECT change_id FROM integration_requests WHERE id=$id AND state IN "
@@ -1418,7 +1419,7 @@ public sealed class GitOperations
         }
 
         using SqliteConnection connection = database.Open();
-        using SqliteTransaction transaction = connection.BeginTransaction();
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         Sql.Execute(
             connection,
             """
@@ -1471,7 +1472,7 @@ public sealed class GitOperations
             "SELECT commit_hash,passed,red_since,broken_commit,alerted,lifted,checked_at "
                 + "FROM git_health WHERE singleton=1;"
         );
-        using SqliteDataReader reader = command.ExecuteReader();
+        using ObservedSqliteReader reader = Sql.Reader(command);
         return !reader.Read()
             ? null
             : new JsonObject
@@ -1651,7 +1652,7 @@ public sealed class GitOperations
             await File.WriteAllTextAsync(logPath, log, Encoding.UTF8, CancellationToken.None)
                 .ConfigureAwait(false);
             using (SqliteConnection connection = database.Open())
-            using (SqliteTransaction transaction = connection.BeginTransaction())
+            using (SqliteTransactionScope transaction = Sql.BeginTransaction(connection))
             {
                 Sql.Execute(
                     connection,
@@ -1714,7 +1715,7 @@ public sealed class GitOperations
                 ("$id", change["id"]!.GetValue<long>())
             )
         )
-        using (SqliteDataReader reader = command.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             while (reader.Read())
             {
@@ -1900,7 +1901,7 @@ public sealed class GitOperations
 
         await VerifyWorktreeAsync(reference, path, token).ConfigureAwait(false);
         using SqliteConnection store = database.Open();
-        using SqliteTransaction transaction = store.BeginTransaction();
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(store);
         Sql.Execute(
             store,
             "UPDATE git_resources SET state='ready' WHERE ref=$ref;",
@@ -2103,7 +2104,7 @@ public sealed class GitOperations
                 "SELECT id,title,author,head FROM changes WHERE state='open' ORDER BY id;"
             )
         )
-        using (SqliteDataReader reader = command.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             while (reader.Read())
             {
@@ -2166,7 +2167,7 @@ public sealed class GitOperations
             "SELECT id FROM checks ORDER BY id;"
         );
         List<long> checkIds = [];
-        using (SqliteDataReader reader = checksCommand.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(checksCommand))
         {
             while (reader.Read())
             {
@@ -2220,7 +2221,7 @@ public sealed class GitOperations
                 ("$id", id)
             )
         )
-        using (SqliteDataReader reader = command.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             if (!reader.Read())
             {
@@ -2252,7 +2253,7 @@ public sealed class GitOperations
                 ("$id", id)
             )
         )
-        using (SqliteDataReader reader = command.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             while (reader.Read())
             {
@@ -2278,7 +2279,7 @@ public sealed class GitOperations
                 ("$id", id)
             )
         )
-        using (SqliteDataReader reader = command.ExecuteReader())
+        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             while (reader.Read())
             {
@@ -2321,7 +2322,7 @@ public sealed class GitOperations
             transaction,
             ("$id", id)
         );
-        using SqliteDataReader reader = command.ExecuteReader();
+        using ObservedSqliteReader reader = Sql.Reader(command);
         while (reader.Read())
         {
             items.Add(
@@ -2356,7 +2357,7 @@ public sealed class GitOperations
             null,
             ("$id", id)
         );
-        using SqliteDataReader reader = command.ExecuteReader();
+        using ObservedSqliteReader reader = Sql.Reader(command);
         while (reader.Read())
         {
             items.Add(

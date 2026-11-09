@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
@@ -39,7 +40,7 @@ public sealed class RunDatabase
         }.ToString();
         using SqliteConnection connection = Open();
         Sql.Execute(connection, "PRAGMA journal_mode=WAL;");
-        using SqliteTransaction transaction = connection.BeginTransaction();
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         Sql.Execute(
             connection,
             "CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);",
@@ -127,8 +128,7 @@ public sealed class RunDatabase
     public SqliteConnection Open()
     {
         SqliteConnection connection = new(connectionString);
-        connection.Open();
-        return connection;
+        return Sql.Open(connection, "run");
     }
 
     public string? ReadMetadata(string key)
@@ -161,6 +161,39 @@ public sealed class RunDatabase
 
 public static class Sql
 {
+    internal static SqliteConnection Open(SqliteConnection connection, string kind)
+    {
+        SqliteDiagnostics.Attach(connection, kind);
+        try
+        {
+            SqliteDiagnostics.Observe(
+                connection, "Open", "open",
+                () => { connection.Open(); return true; }
+            );
+            return connection;
+        }
+        catch
+        {
+            SqliteDiagnostics.Close(connection);
+            connection.Dispose();
+            throw;
+        }
+    }
+
+    public static SqliteTransactionScope BeginTransaction(
+        SqliteConnection connection,
+        bool deferred = false,
+        [CallerMemberName] string operation = ""
+    )
+    {
+        string id = Guid.NewGuid().ToString("N");
+        SqliteTransaction transaction = SqliteDiagnostics.Observe(
+            connection, operation, "acquisition",
+            () => connection.BeginTransaction(deferred), id, deferred
+        );
+        return new(connection, transaction, operation, id, deferred);
+    }
+
     public static SqliteCommand Command(
         SqliteConnection connection,
         string text,
@@ -187,7 +220,9 @@ public static class Sql
     )
     {
         using SqliteCommand command = Command(connection, text, transaction, parameters);
-        return command.ExecuteNonQuery();
+        return SqliteDiagnostics.Observe(
+            connection, "Execute", "statement", command.ExecuteNonQuery
+        );
     }
 
     public static object? Scalar(
@@ -198,7 +233,18 @@ public static class Sql
     )
     {
         using SqliteCommand command = Command(connection, text, transaction, parameters);
-        object? result = command.ExecuteScalar();
+        object? result = SqliteDiagnostics.Observe(
+            connection, "Scalar", "statement", command.ExecuteScalar
+        );
         return result is DBNull ? null : result;
+    }
+
+    public static ObservedSqliteReader Reader(SqliteCommand command)
+    {
+        SqliteConnection connection = command.Connection!;
+        SqliteDataReader reader = SqliteDiagnostics.Observe(
+            connection, "Reader", "statement", command.ExecuteReader
+        );
+        return new(connection, reader);
     }
 }

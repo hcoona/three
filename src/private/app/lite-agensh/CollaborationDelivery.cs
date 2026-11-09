@@ -13,9 +13,10 @@ public sealed partial class CollaborationOperations
     public void QueueKickoff(string recipient, string reason)
     {
         RequireWorker(recipient);
+        using var diagnosticActor = SqliteDiagnostics.UseActor(recipient);
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
         using var connection = database.Open();
-        using var transaction = connection.BeginTransaction();
+        using var transaction = Sql.BeginTransaction(connection);
         EnqueueEvent(
             connection,
             transaction,
@@ -30,6 +31,7 @@ public sealed partial class CollaborationOperations
     public DeliveryBatch? ClaimBatch(string recipient, bool bootstrap = true)
     {
         RequireWorker(recipient);
+        using var diagnosticActor = SqliteDiagnostics.UseActor(recipient);
         using var connection = database.Open();
         var now = database.Now.ToUnixTimeMilliseconds();
         var candidates = """
@@ -62,7 +64,7 @@ public sealed partial class CollaborationOperations
             return null;
         }
 
-        using var transaction = connection.BeginTransaction();
+        using var transaction = Sql.BeginTransaction(connection);
         if (
             Sql.Scalar(
                 connection,
@@ -221,7 +223,7 @@ public sealed partial class CollaborationOperations
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchId);
 
         using var connection = database.Open();
-        using var transaction = connection.BeginTransaction();
+        using var transaction = Sql.BeginTransaction(connection);
         var batch =
             One(
                 connection,
@@ -287,7 +289,7 @@ public sealed partial class CollaborationOperations
 
         ArgumentNullException.ThrowIfNull(error);
         using var connection = database.Open();
-        using var transaction = connection.BeginTransaction();
+        using var transaction = Sql.BeginTransaction(connection);
         var batch =
             One(
                 connection,
@@ -338,7 +340,7 @@ public sealed partial class CollaborationOperations
     public void RecoverInterrupted()
     {
         using var connection = database.Open();
-        using var transaction = connection.BeginTransaction();
+        using var transaction = Sql.BeginTransaction(connection);
         // Claims count attempts before prompting, including interrupted attempts.
         Sql.Execute(
             connection,
@@ -365,8 +367,9 @@ public sealed partial class CollaborationOperations
     public JsonObject ReadSharedContext(string actor)
     {
         RequireActor(actor);
+        using var diagnosticActor = SqliteDiagnostics.UseActor(actor);
         using var connection = database.Open();
-        using var transaction = connection.BeginTransaction(deferred: true);
+        using var transaction = Sql.BeginTransaction(connection, deferred: true);
         var result = SharedContext(connection, transaction, actor);
         transaction.Commit();
         return result;
@@ -456,10 +459,11 @@ public sealed partial class CollaborationOperations
     public JsonObject AddNotices(string actor, JsonObject result)
     {
         RequireActor(actor);
+        using var diagnosticActor = SqliteDiagnostics.UseActor(actor);
         ArgumentNullException.ThrowIfNull(result);
         var envelopeResult = (JsonObject)result.DeepClone();
         using var connection = database.Open();
-        using var transaction = connection.BeginTransaction();
+        using var transaction = Sql.BeginTransaction(connection);
         var now = database.Now.ToUnixTimeMilliseconds();
         var token = Guid.NewGuid().ToString("N");
         var acquired = Sql.Execute(

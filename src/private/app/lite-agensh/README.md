@@ -63,8 +63,14 @@ uses one new persistent ledger. Unknown usage in that active ledger blocks
 further paid work; repeated runs do not reset it.
 
 The [SQLite contention contract](docs/implementation-contracts.md#sqlite-contention-evidence)
-specifies automatic bounded local failure evidence. This instrumentation is not
-yet implemented; the failed audit does not establish its competing lock holder.
+specifies automatic bounded local failure evidence. The application records owned
+connection, transaction and statement observations under
+`<database-path>.diagnostics`; contention errors expose the incident location or
+persistence warning without replacing the original SQLite error. Controlled
+storage scenarios cover acquisition failures, completion and missing evidence.
+Prior incident captures are not overwritten; exhausted capacity is explicit.
+This does not identify the original failed audit's competing lock holder or
+establish complete attribution of external/uninstrumented connections.
 
 The [credit contract](docs/implementation-contracts.md#verified-pre-dispatch-cancellation)
 specifies a distinct verified cancellation before first dispatch, not measured
