@@ -180,8 +180,14 @@ internal static class NativeProcess
                 pending.Remove(completed);
             }
             if (process.ExitCode != 0)
+            {
+                var command = new NativeCommand(executable, directory, arguments, 30);
+                var result = new NativeCommandResult(NativeTermination.Exited, process.ExitCode,
+                    await stdout, await stderr, 0, null);
                 throw new InvalidDataException(
-                    $"Native query failed with exit code {process.ExitCode}.");
+                    $"Native query ({NativeDiagnostic.Operation(command)}) failed: " +
+                    NativeDiagnostic.Describe(result, includeStdout: true));
+            }
             return await stdout;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

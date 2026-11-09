@@ -58,15 +58,38 @@ public sealed class NativeProcessTests
     }
 
     [TestMethod]
-    public async Task RunRejectsFailureWithoutExposingRawDiagnostics()
+    [DataRow("short")]
+    [DataRow("long")]
+    [DataRow("empty")]
+    public async Task RunFailureIncludesOperationExitAndBoundedNativeOutput(string output)
     {
+        string prefix = output == "long" ? "omitted-head" + new string('x', 5000) : "";
+        string stdout = output == "empty" ? "" : prefix + "stdout-cause";
+        string stderr = output == "empty" ? "" : prefix + "stderr-cause";
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(
             () => NativeProcess.RunAsync(TestProcess.Executable, Path.GetTempPath(),
-                TestProcess.Arguments("exit", "7", "", "private diagnostic"),
+                TestProcess.Arguments("exit", "7", stdout, stderr),
                 TestContext.CancellationToken, Guard()));
 
-        Assert.Contains("exit code 7", error.Message);
-        Assert.DoesNotContain("private diagnostic", error.Message);
+        Assert.Contains(Path.GetFileNameWithoutExtension(TestProcess.Executable) + " exit",
+            error.Message);
+        Assert.Contains("Exited, exit 7.", error.Message);
+        if (output == "empty")
+        {
+            Assert.DoesNotContain("stdout:", error.Message);
+            Assert.DoesNotContain("stderr:", error.Message);
+        }
+        else
+        {
+            Assert.Contains("stdout-cause", error.Message);
+            Assert.Contains("stderr-cause", error.Message);
+        }
+        if (output == "long")
+        {
+            Assert.Contains("[truncated]", error.Message);
+            Assert.DoesNotContain("omitted-head", error.Message);
+            Assert.IsLessThan(2 * NativeDiagnostic.TailLength + 512, error.Message.Length);
+        }
     }
 
     [TestMethod]

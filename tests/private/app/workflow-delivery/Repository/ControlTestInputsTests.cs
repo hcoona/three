@@ -182,6 +182,11 @@ public sealed class ControlTestInputsTests(TestContext context)
         Assert.AreEqual(2, code);
         Assert.AreEqual("", output);
         Assert.IsNotEmpty(error);
+        if (defect == "failed-basis-evaluation")
+        {
+            Assert.Contains("Native query (dotnet msbuild) failed: Exited, exit 1.", error);
+            Assert.Contains("unavailable.props", error);
+        }
     }
 
     private static async Task<(string Basis, string Candidate)> CommitAsync(GitFixture repo,
