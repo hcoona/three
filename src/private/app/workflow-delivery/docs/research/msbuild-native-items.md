@@ -53,9 +53,10 @@ and control characters rather than introducing an MSBuild escaping engine.
 
 Read both revisions separately and retain their project/input relations through
 later selection. Native failure and malformed/conflicting required output remain
-errors. The existing native process bounds apply; raw native diagnostics do not
-become portable product errors. Evaluation still runs project logic and belongs
-in the unprivileged context.
+errors. The existing native process bounds apply. Failed queries report their
+operation, termination, exit and bounded native output for diagnosis; this text
+is not a portable product-error contract or secret redaction. Evaluation still
+runs project logic and belongs in the unprivileged context.
 
 The maintained `Microsoft.Build.Evaluation.Project` API remains a candidate for
 consumers needing actual imports/graph information. Hosting that API requires
@@ -73,7 +74,8 @@ empty resources/RID, required JSON groups/types/uniqueness, conflicting identiti
 unavailable sources, both-revision removal/move and native failures/cancellation.
 Actual CLI tests exercise native imports, glob/include/remove and conditional
 items; a failing default target and response-file target must not run. Actual
-native evaluation failure exposes a bounded exit error without raw diagnostics.
+native evaluation failure retains the operation, termination, exit and bounded
+native error text, including MSBuild errors written to stdout.
 Shared native-process tests own runtime deadline/output/cleanup coverage rather
 than repeating that implementation's full matrix in this reader. These ordinary
 tests are not a new native observation campaign or external experiment.
