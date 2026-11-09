@@ -489,8 +489,8 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
             new MsBuildResourceReader(checkout).ReadAsync(Project, Release,
                 context.CancellationToken));
 
-        Assert.Contains("Native query failed with exit code", error.Message);
-        Assert.DoesNotContain("missing-private-detail", error.Message);
+        Assert.Contains("Native query (dotnet msbuild) failed: Exited, exit 1.", error.Message);
+        Assert.Contains("missing-private-detail.props", error.Message);
     }
 
     [TestMethod]
