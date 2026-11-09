@@ -68,7 +68,8 @@ Workers may read the declared target repository, this attempt's collaboration
 state and the necessary pinned public upstream. They may run existing
 credential-free managed checks as supporting evidence, not repeat the former
 native acceptance campaign. They must not edit source, project records,
-dependencies or workflows, commit/push, mutate Issues/PRs, publish, dispatch,
+dependency declarations, declared versions, lockfiles or workflows, commit/push,
+mutate Issues/PRs, publish, dispatch,
 launch nested agent/model processes or inspect unrelated host/private/session
 data. Existing trusted-host permission policy remains explicit; worktrees and
 prompt instructions are not an OS permission sandbox. Stop on observed effects
@@ -80,6 +81,30 @@ Peers claim its preparation through normal cooperation to avoid concurrent
 overwrites and publish matching content to the team channel under the title
 `最终核验汇总`. Source identifiers, quoted evidence and paths keep their original
 form. Repository records remain English.
+
+### Dependency preparation
+
+A read-only audit preserves source, project records, dependency declarations,
+declared versions and lockfiles; it does not require an unprepared execution
+environment. Native/MCP startup and permitted managed checks may perform ordinary
+installation or restoration for their already-declared dependencies, including
+downloads, generated `node_modules` and normal package/tool caches. Configured
+MCP startup and this preparation are not failures merely because they occur
+without a model tool call. Existing declarations and locked selections still
+govern; do not override versions or add dependencies to make a check pass.
+
+Record the expected preparation scope before a fresh attempt and retain observed
+effects and missing provenance truthfully. Preparation may use owned worktrees
+and normal tool caches, not unrelated project directories or global settings.
+It does not permit another backend or CLI installation, authentication/access
+changes, unrelated software, arbitrary repository bootstrap operations or edits
+to protected files. Stop on effects outside this scope; preserve generated
+dependencies and evidence rather than deleting them to obtain a passing check.
+Unchanged tracked files alone do not prove that every side effect was permitted.
+
+Keep goals and preservation checks consistent with this distinction. Changed
+relied-on inputs still require matching initialization and receipts; do not edit
+a frozen goal or rewrite an earlier failed observation to apply a later policy.
 
 ## Continuing accounting and finite effects
 

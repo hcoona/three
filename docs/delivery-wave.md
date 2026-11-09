@@ -106,7 +106,14 @@ ends a grant. Git and the proposing PR retain the reason and history.
   host-permission sandbox. Permit owned worktree/state/process creation,
   worker-bound local MCP cooperation, private audit output, read-only public
   upstream inspection, and required non-model preflight and paid calibration.
-  Workers must not edit source/records/dependencies/workflows, commit/push,
+  Permit ordinary dependency preparation for already-declared MCP tools and
+  permitted managed checks under the
+  [user-audit protocol](../src/private/app/lite-agensh/docs/user-audit-protocol.md#dependency-preparation).
+  Downloads, restoration and generated dependency directories or normal tool
+  caches are environment preparation, not permission to change source,
+  dependency declarations, declared versions or lockfiles. Native backend,
+  CLI, authentication and access restrictions remain unchanged.
+  Workers must not edit those protected inputs or workflows, commit/push,
   mutate GitHub, invoke nested agents/models or inspect unrelated host,
   credential, account or historical-session data. The executor may inspect
   only this campaign's exact owned diagnostics to diagnose failures, plus
