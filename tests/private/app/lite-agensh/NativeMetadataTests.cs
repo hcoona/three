@@ -136,6 +136,41 @@ public sealed class NativeMetadataTests(TestContext testContext)
     // Pinned SDK DTOs used by the real application's metadata guard.
 #pragma warning disable GHCP001
     [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ExpiredAdmissionCannotIncreaseAnExhaustedNativeCap(bool closeDuringRenewal)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        ScenarioClock clock = new();
+        using WorkAdmission admission = new(clock, clock.GetUtcNow().AddSeconds(1), token);
+        double? appliedLimit = 100;
+        if (!closeDuringRenewal)
+        {
+            clock.Advance(TimeSpan.FromSeconds(2));
+        }
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            NativeSdkSession.HandleExhaustedLimitAsync(
+                "controlled-expiry",
+                _ =>
+                {
+                    clock.Advance(TimeSpan.FromSeconds(2));
+                    return Task.FromResult(200m);
+                },
+                (_, response, _) =>
+                {
+                    appliedLimit = response.MaxAiCredits;
+                    return Task.CompletedTask;
+                },
+                (_, _) => Task.CompletedTask,
+                token,
+                admission
+            )
+        );
+        Assert.AreEqual(100d, appliedLimit);
+    }
+
+    [TestMethod]
     [DataRow("supported")]
     [DataRow("unsupported")]
     [DataRow("mismatched")]

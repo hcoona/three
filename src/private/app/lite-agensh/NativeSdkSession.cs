@@ -43,7 +43,8 @@ internal interface INativeSdkSession : IAsyncDisposable
 
     Task<JsonObject> SendAsync(
         string text, TimeSpan timeout, CancellationToken cancellationToken,
-        Func<CancellationToken, Task<decimal>>? renewLimit = null
+        Func<CancellationToken, Task<decimal>>? renewLimit = null,
+        WorkAdmission? admission = null
     );
 
     Task AbortAsync(CancellationToken cancellationToken);
@@ -550,7 +551,8 @@ internal sealed class NativeSdkSession : INativeSdkSession
         string text,
         TimeSpan timeout,
         CancellationToken cancellationToken,
-        Func<CancellationToken, Task<decimal>>? renewLimit = null
+        Func<CancellationToken, Task<decimal>>? renewLimit = null,
+        WorkAdmission? admission = null
     )
     {
         CheckEvents(cancellationToken);
@@ -573,6 +575,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
         Task<SessionLimitsExhaustedRequestedData>? pending = null;
         try
         {
+            admission?.ThrowIfClosed();
             usageFence.SetTurnPending(true);
             sending = active.SendAndWaitAsync(text, timeout, linked.Token);
             while (requests is not null && !sending.IsCompleted)
@@ -592,7 +595,8 @@ internal sealed class NativeSdkSession : INativeSdkSession
                     {
                         await ReadAsync(SessionId, limit, token).ConfigureAwait(false);
                     },
-                    linked.Token
+                    linked.Token,
+                    admission
                 ).ConfigureAwait(false);
             }
             AssistantMessageEvent? response = await sending.ConfigureAwait(false);
@@ -643,10 +647,16 @@ internal sealed class NativeSdkSession : INativeSdkSession
         Func<CancellationToken, Task<decimal>> renewLimit,
         Func<string, UISessionLimitsExhaustedResponse, CancellationToken, Task> apply,
         Func<decimal, CancellationToken, Task> verify,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        WorkAdmission? admission = null
     )
     {
-        decimal limit = await renewLimit(cancellationToken).ConfigureAwait(false);
+        admission?.ThrowIfClosed();
+        using CancellationTokenSource renewing = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, admission?.Token ?? CancellationToken.None
+        );
+        decimal limit = await renewLimit(renewing.Token).ConfigureAwait(false);
+        admission?.ThrowIfClosed();
         await apply(
             requestId,
             new UISessionLimitsExhaustedResponse
@@ -654,9 +664,9 @@ internal sealed class NativeSdkSession : INativeSdkSession
                 Action = UISessionLimitsExhaustedResponseAction.Set,
                 MaxAiCredits = NativeLimit(limit),
             },
-            cancellationToken
+            renewing.Token
         ).ConfigureAwait(false);
-        await verify(limit, cancellationToken).ConfigureAwait(false);
+        await verify(limit, renewing.Token).ConfigureAwait(false);
     }
 
     internal async Task AbortFailedSendAsync(

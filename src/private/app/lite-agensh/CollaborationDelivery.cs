@@ -28,7 +28,12 @@ public sealed partial class CollaborationOperations
         transaction.Commit();
     }
 
-    public DeliveryBatch? ClaimBatch(string recipient, bool bootstrap = true)
+    public DeliveryBatch? ClaimBatch(string recipient, bool bootstrap = true) =>
+        ClaimBatch(recipient, bootstrap, null);
+
+    internal DeliveryBatch? ClaimBatch(
+        string recipient, bool bootstrap, WorkAdmission? admission
+    )
     {
         RequireWorker(recipient);
         using var diagnosticActor = SqliteDiagnostics.UseActor(recipient);
@@ -65,6 +70,10 @@ public sealed partial class CollaborationOperations
         }
 
         using var transaction = Sql.BeginTransaction(connection);
+        if (admission?.IsClosed == true)
+        {
+            return null;
+        }
         if (
             Sql.Scalar(
                 connection,
@@ -100,7 +109,7 @@ public sealed partial class CollaborationOperations
             ("$recipient", recipient),
             ("$now", now)
         );
-        if (rows.Count == 0)
+        if (rows.Count == 0 || admission?.IsClosed == true)
         {
             transaction.Commit();
             return null;

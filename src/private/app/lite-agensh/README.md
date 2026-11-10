@@ -52,9 +52,11 @@ or reuse a consumed recovery invocation.
 The [deadline-drain contract](docs/implementation-contracts.md#bounded-deadline-drain)
 separates normal work-admission expiry from bounded completion of existing
 requests, without weakening terminal/usage evidence or immediate safety stops.
-It is a design prerequisite, not a claim of implemented or native-qualified
-deadline behavior; matching implementation and fresh Luna observations remain
-separate gates.
+The application implements separate admission cancellation and fixed bounded
+drain with controlled completion, timeout, interruption, credit-wait and cap
+renewal scenarios. These scenarios do not establish installed-native deadline
+behavior or a successful Luna journey; fresh native observations remain a
+separate gate.
 
 The [native-host design](docs/architecture.md#native-sdk-mcp-and-instruction-boundary)
 specifies one owned runtime/client with independent peer sessions and a

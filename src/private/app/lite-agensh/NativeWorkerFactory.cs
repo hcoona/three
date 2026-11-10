@@ -20,10 +20,13 @@ internal interface INativeWorker : IAsyncDisposable
         string cwd,
         string? exactSession,
         CancellationToken cancellationToken,
-        string? recoveryLabel = null
+        string? recoveryLabel = null,
+        WorkAdmission? admission = null
     );
 
-    Task<JsonObject> PromptAsync(string text, CancellationToken cancellationToken);
+    Task<JsonObject> PromptAsync(
+        string text, CancellationToken cancellationToken, WorkAdmission? admission = null
+    );
 
     Task VerifyCreditsAsync(CancellationToken cancellationToken);
 

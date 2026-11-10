@@ -11,6 +11,117 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 {
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow("complete", "completed", "deadline")]
+    [DataRow("timeout", "timed-out", "deadline")]
+    [DataRow("pause", "interrupted", "owner-pause")]
+    [DataRow("caller", "interrupted", "caller-cancelled")]
+    [DataRow("failure", "interrupted", "native_stopped")]
+    public async Task DeadlineDrainPreservesExistingWorkWithoutAdmittingAnotherBatch(
+        string stopMode, string expectedOutcome, string expectedReason
+    )
+    {
+        CancellationToken token = testContext.CancellationToken;
+        ScenarioClock clock = new();
+        using GitScenario fixture = await GitScenario.CreateAsync(token, clock: clock);
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        fixture.Database.SaveConfiguration(fixture.Database.Configuration with
+        {
+            CreditAllocation = "shared",
+            RunAiCreditAllowance = 300,
+            PlanningSeconds = 0,
+        });
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Coordinator coordinator = new(
+            fixture.Database, fixture.Collaboration, fixture.Operations,
+            (database, _, credits) => new ControlledNativeFactory(
+                database, credits, native.DirectoryPath,
+                onPrompt: async (reservation, cancellationToken) =>
+                {
+                    if (reservation.Worker == "worker1")
+                    {
+                        await release.Task.WaitAsync(cancellationToken);
+                        if (stopMode == "failure")
+                        {
+                            throw new OperationException(
+                                "native_stopped", "Controlled failure during drain."
+                            );
+                        }
+                    }
+                }
+            )
+        );
+        await native.PrepareAsync(coordinator, token);
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
+        try
+        {
+            await WaitUntilAsync(
+                () => native.OrdinaryPrompts().Length == 2 && AcknowledgedWorkers(fixture) == 1,
+                execution, token
+            );
+            clock.Advance(TimeSpan.FromSeconds(121));
+            await WaitUntilAsync(
+                () => fixture.Database.ReadMetadata("lifecycle") == "draining", execution, token
+            );
+            Assert.IsFalse(execution.IsCompleted);
+            Scenario.Call(fixture.Collaboration, "owner", "message_send",
+                new { recipient = "worker1", body = "Retain this for later.", urgent = true });
+            switch (stopMode)
+            {
+                case "complete":
+                case "failure":
+                    release.TrySetResult();
+                    break;
+                case "timeout":
+                    clock.Advance(TimeSpan.FromSeconds(30));
+                    break;
+                case "pause":
+                    Scenario.Data(coordinator.RequestControl("pause"));
+                    break;
+                case "caller":
+                    await stop.CancelAsync();
+                    break;
+            }
+            if (stopMode == "caller")
+            {
+                await Assert.ThrowsAsync<OperationCanceledException>(
+                    () => execution.WaitAsync(token)
+                );
+            }
+            else
+            {
+                JsonObject result = await execution.WaitAsync(token);
+                if (stopMode == "failure")
+                {
+                    Assert.IsFalse(result["ok"]!.GetValue<bool>(), result.ToJsonString());
+                }
+                else
+                {
+                    Scenario.Data(result);
+                }
+            }
+            JsonObject status = Scenario.Data(coordinator.Status());
+            Assert.AreEqual(expectedReason, status["stopReason"]!.GetValue<string>());
+            Assert.AreEqual(
+                expectedOutcome, status["deadlineDrain"]!["outcome"]!.GetValue<string>()
+            );
+            Assert.AreEqual(
+                expectedReason, status["deadlineDrain"]!["stopReason"]!.GetValue<string>()
+            );
+            Assert.HasCount(2, native.OrdinaryPrompts());
+            Assert.AreEqual(stopMode == "complete" ? 2 : 1, AcknowledgedWorkers(fixture));
+            AssertSettled(fixture);
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await StopExecutionAsync(stop, execution);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
     [DataRow("per-session", false)]
     [DataRow("shared", false)]
     [DataRow("shared", true)]

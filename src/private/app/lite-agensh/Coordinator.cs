@@ -10,6 +10,7 @@ namespace LiteAgensh;
 
 public sealed class Coordinator
 {
+    private const int DeadlineDrainSeconds = 30;
     private readonly RunDatabase database;
     private readonly CollaborationOperations collaboration;
     private readonly GitOperations git;
@@ -204,6 +205,7 @@ public sealed class Coordinator
             ["lifecycle"] = database.ReadMetadata("lifecycle") ?? "initialized",
             ["active"] = IsOwned(),
             ["stopReason"] = database.ReadMetadata("lifecycle:stop_reason"),
+            ["deadlineDrain"] = ReadDeadlineDrain(),
             ["workers"] = workers,
             ["credits"] = credits.Status(
                 database.RunId,
@@ -546,12 +548,17 @@ public sealed class Coordinator
         Exception? failure = null;
         JsonArray settlementFailures = [];
         JsonArray settlementDetails = [];
+        WorkAdmission? workAdmission = null;
+        DateTimeOffset workDeadline = default;
+        bool draining = false;
+        string? drainOutcome = null;
         try
         {
             RecoverCompletedTurns();
             collaboration.RecoverInterrupted();
             DateTimeOffset deadline;
             (segment, deadline) = BeginSegment(mode);
+            workDeadline = deadline;
             database.WriteMetadata("lifecycle:settlement_failures", "[]");
             TimeSpan remaining = deadline - database.Now;
             if (remaining <= TimeSpan.Zero)
@@ -561,8 +568,9 @@ public sealed class Coordinator
             }
             else
             {
-                stop.CancelAfter(remaining);
-                await git.InitializeAsync(stop.Token).ConfigureAwait(false);
+                WorkAdmission admissionBudget = new(database.TimeProvider, deadline, stop.Token);
+                workAdmission = admissionBudget;
+                await git.InitializeAsync(admissionBudget.Token).ConfigureAwait(false);
                 database.WriteMetadata("lifecycle", "preflighting");
                 string[] ids = database.Configuration.WorkerIds;
                 bool planning =
@@ -575,6 +583,7 @@ public sealed class Coordinator
                 string? admissionId = null;
                 async Task StartWorkerAsync(string id)
                 {
+                    admissionBudget.ThrowIfClosed();
                     INativeWorker native = nativeWorkers.Create(
                         allocations[id],
                         calibration: false
@@ -584,7 +593,10 @@ public sealed class Coordinator
                     try
                     {
                         await native
-                            .StartAsync(git.GetWorkerPath(id), exact, stop.Token)
+                            .StartAsync(
+                                git.GetWorkerPath(id), exact, admissionBudget.Token,
+                                admission: admissionBudget
+                            )
                             .ConfigureAwait(false);
                     }
                     catch (OperationException exception)
@@ -592,7 +604,7 @@ public sealed class Coordinator
                     {
                         await native.DisposeAsync().ConfigureAwait(false);
                         workers.Remove(native);
-                        stop.Token.ThrowIfCancellationRequested();
+                        admissionBudget.ThrowIfClosed();
                         CreditReservation fresh = Reserve(id, 1);
                         INativeWorker replacement = nativeWorkers.Create(
                             fresh,
@@ -603,9 +615,10 @@ public sealed class Coordinator
                             .StartAsync(
                                 git.GetWorkerPath(id),
                                 null,
-                                stop.Token,
+                                admissionBudget.Token,
                                 recoveryLabel: "fresh-summary-fallback: "
-                                    + "exact-session load unavailable or failed"
+                                    + "exact-session load unavailable or failed",
+                                admission: admissionBudget
                             )
                             .ConfigureAwait(false);
                     }
@@ -613,6 +626,10 @@ public sealed class Coordinator
 
                 void StartLoop(string id, INativeWorker native)
                 {
+                    if (admissionBudget.IsClosed)
+                    {
+                        return;
+                    }
                     if (!planning || released || id == "worker1")
                     {
                         collaboration.QueueKickoff(
@@ -629,15 +646,86 @@ public sealed class Coordinator
                             native,
                             () => !planning || released || id == "worker1",
                             planning && id == "worker1",
+                            admissionBudget,
                             stop.Token
                         )
                     );
                 }
 
+                async Task DrainAsync()
+                {
+                    draining = true;
+                    await admissionBudget.CloseAsync().ConfigureAwait(false);
+                    database.WriteMetadata("lifecycle", "draining");
+                    RecordDeadlineDrain(segment, deadline, "draining", "deadline");
+                    DateTimeOffset drainDeadline = deadline.AddSeconds(DeadlineDrainSeconds);
+                    TimeSpan grace = drainDeadline - database.Now;
+                    if (grace <= TimeSpan.Zero)
+                    {
+                        drainOutcome = "timed-out";
+                        await stop.CancelAsync().ConfigureAwait(false);
+                        return;
+                    }
+                    stop.CancelAfter(grace);
+                    while (!stop.IsCancellationRequested)
+                    {
+                        long? control = PendingControl(out string? action);
+                        if (control is not null)
+                        {
+                            reason = action == "pause" ? "owner-pause" : "owner-finalize";
+                            finalize = action == "finalize";
+                            drainOutcome = "interrupted";
+                            return;
+                        }
+                        if (database.ReadMetadata("lifecycle:root_closed_by") == "owner")
+                        {
+                            reason = "owner-root-closure";
+                            finalize = true;
+                            drainOutcome = "interrupted";
+                            return;
+                        }
+                        foreach (Task loop in loops.Where(task => task.IsCompleted))
+                        {
+                            await loop.ConfigureAwait(false);
+                        }
+                        if (admission is { IsCompleted: true })
+                        {
+                            try
+                            {
+                                await admission.ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException) when (
+                                admissionBudget.IsClosed && !stop.IsCancellationRequested
+                            )
+                            {
+                            }
+                        }
+                        credits.RequirePaidAdmission();
+                        if (database.Now >= drainDeadline)
+                        {
+                            drainOutcome = "timed-out";
+                            return;
+                        }
+                        if (loops.All(task => task.IsCompleted)
+                            && (admission is null || admission.IsCompleted))
+                        {
+                            drainOutcome = "completed";
+                            return;
+                        }
+                        await Task.Delay(
+                            TimeSpan.FromMilliseconds(250), database.TimeProvider, stop.Token
+                        ).ConfigureAwait(false);
+                    }
+                    drainOutcome = cancellationToken.IsCancellationRequested
+                        ? "interrupted" : "timed-out";
+                }
+
+                bool normalDeadline = false;
                 try
                 {
                     for (int i = 0; i < ids.Length; i++)
                     {
+                        admissionBudget.ThrowIfClosed();
                         CreditReservation? previous =
                             mode == "reconnect" ? ReadReconnectReservation(ids[i]) : null;
                         if (previous is not null)
@@ -673,7 +761,6 @@ public sealed class Coordinator
                     {
                         reason = "deadline";
                         finalize = true;
-                        await stop.CancelAsync().ConfigureAwait(false);
                     }
 
                     foreach ((string id, INativeWorker native) in ids.Zip(workers))
@@ -685,7 +772,7 @@ public sealed class Coordinator
                         (deadline - database.Now).TotalSeconds <= 900 ? [900] : [];
                     while (!stop.IsCancellationRequested)
                     {
-                        if (database.Now >= deadline)
+                        if (admissionBudget.IsClosed)
                         {
                             reason = "deadline";
                             finalize = true;
@@ -717,6 +804,10 @@ public sealed class Coordinator
                         if (ended is not null)
                         {
                             await ended.ConfigureAwait(false);
+                            if (admissionBudget.IsClosed)
+                            {
+                                continue;
+                            }
                             throw new OperationException(
                                 "worker_stopped",
                                 "A worker loop ended before run quiescence."
@@ -728,7 +819,7 @@ public sealed class Coordinator
                             Task completedAdmission = admission;
                             admission = null;
                             await completedAdmission.ConfigureAwait(false);
-                            stop.Token.ThrowIfCancellationRequested();
+                            admissionBudget.ThrowIfClosed();
                             if (workers.Count == 1)
                             {
                                 plannerDeadline = database.Now.AddSeconds(
@@ -764,7 +855,7 @@ public sealed class Coordinator
                             continue;
                         }
 
-                        await git.ProcessPendingAsync(stop.Token).ConfigureAwait(false);
+                        await git.ProcessPendingAsync(admissionBudget.Token).ConfigureAwait(false);
                         if (
                             planning
                             && !released
@@ -802,20 +893,40 @@ public sealed class Coordinator
                             : "deadline";
                         finalize = !cancellationToken.IsCancellationRequested;
                     }
+                    normalDeadline = reason == "deadline" && !stop.IsCancellationRequested;
+                }
+                catch (OperationCanceledException) when (
+                    admissionBudget.IsClosed && !stop.IsCancellationRequested
+                )
+                {
+                    reason = "deadline";
+                    finalize = true;
+                    normalDeadline = true;
                 }
                 finally
                 {
                     try
                     {
-                        await stop.CancelAsync().ConfigureAwait(false);
-                        if (admission is not null)
+                        try
                         {
-                            try
+                            if (normalDeadline)
                             {
-                                await admission.ConfigureAwait(false);
+                                await DrainAsync().ConfigureAwait(false);
                             }
-                            catch (OperationCanceledException) when (stop.IsCancellationRequested)
+                        }
+                        finally
+                        {
+                            await stop.CancelAsync().ConfigureAwait(false);
+                            if (admission is not null)
                             {
+                                try
+                                {
+                                    await admission.ConfigureAwait(false);
+                                }
+                                catch (OperationCanceledException)
+                                    when (stop.IsCancellationRequested)
+                                {
+                                }
                             }
                         }
                     }
@@ -840,10 +951,17 @@ public sealed class Coordinator
                 }
             }
         }
-        catch (OperationCanceledException) when (stop.IsCancellationRequested)
+        catch (OperationCanceledException) when (
+            stop.IsCancellationRequested || workAdmission?.IsClosed == true
+        )
         {
             reason = cancellationToken.IsCancellationRequested ? "caller-cancelled" : "deadline";
             finalize = !cancellationToken.IsCancellationRequested;
+            if (draining)
+            {
+                drainOutcome = cancellationToken.IsCancellationRequested
+                    ? "interrupted" : "timed-out";
+            }
         }
         catch (Exception exception)
         {
@@ -855,6 +973,10 @@ public sealed class Coordinator
         finally
         {
             await stop.CancelAsync().ConfigureAwait(false);
+            if (draining)
+            {
+                RecordDeadlineDrain(segment, workDeadline, drainOutcome ?? "interrupted", reason);
+            }
             database.WriteMetadata("lifecycle", "pausing");
             database.WriteMetadata("lifecycle:stop_reason", reason);
             try
@@ -995,6 +1117,8 @@ public sealed class Coordinator
                 database.WriteMetadata("lifecycle:failure", failure.Message);
             }
         }
+
+        workAdmission?.Dispose();
 
         if (failure is not null)
         {
@@ -1237,6 +1361,7 @@ public sealed class Coordinator
         INativeWorker native,
         Func<bool> enabled,
         bool planner,
+        WorkAdmission admission,
         CancellationToken cancellationToken
     )
     {
@@ -1245,7 +1370,7 @@ public sealed class Coordinator
         bool initialPlanner = planner;
         string bootstrapKey = $"native:bootstrap:{native.SessionId}";
         bool bootstrap = database.ReadMetadata(bootstrapKey) != "true";
-        while (!cancellationToken.IsCancellationRequested)
+        while (!admission.IsClosed)
         {
             if (!enabled())
             {
@@ -1258,7 +1383,7 @@ public sealed class Coordinator
                 continue;
             }
 
-            DeliveryBatch? batch = collaboration.ClaimBatch(id, bootstrap);
+            DeliveryBatch? batch = collaboration.ClaimBatch(id, bootstrap, admission);
             if (batch is null)
             {
                 if (
@@ -1289,7 +1414,7 @@ public sealed class Coordinator
                 if (bootstrap)
                 {
                     changes = (
-                        await git.InvokeAsync(id, "change_list", new(), cancellationToken)
+                        await git.InvokeAsync(id, "change_list", new(), admission.Token)
                             .ConfigureAwait(false)
                     ).ToJsonString();
                 }
@@ -1301,7 +1426,7 @@ public sealed class Coordinator
                     initialPlanner,
                     bootstrap
                 );
-                cancellationToken.ThrowIfCancellationRequested();
+                admission.ThrowIfClosed();
                 modelAttempted = true;
                 credits.RequirePromptAllowance(
                     database.RunId,
@@ -1309,7 +1434,7 @@ public sealed class Coordinator
                     database.Configuration.RunAiCreditAllowance
                 );
                 JsonObject result = await native
-                    .PromptAsync(text, cancellationToken)
+                    .PromptAsync(text, cancellationToken, admission)
                     .ConfigureAwait(false);
                 nativeCompleted = true;
                 initialPlanner = false;
@@ -1335,7 +1460,9 @@ public sealed class Coordinator
                     );
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (
+                cancellationToken.IsCancellationRequested || (!modelAttempted && admission.IsClosed)
+            )
             {
                 if (!nativeCompleted)
                 {
@@ -1345,6 +1472,10 @@ public sealed class Coordinator
                     );
                 }
 
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
                 throw;
             }
             catch (Exception exception)
@@ -1381,6 +1512,11 @@ public sealed class Coordinator
                 }
 
                 collaboration.FailBatch(batch.Id, exception.Message);
+                if (exception is OperationException { Code: "admission_closed" }
+                    && admission.IsClosed && !cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
                 if (!modelAttempted && IsExpected(exception))
                 {
                     continue;
@@ -1850,7 +1986,29 @@ public sealed class Coordinator
         );
         transaction.Commit();
         database.WriteMetadata("lifecycle:deadline", deadline.ToString("O"));
+        RecordDeadlineDrain(id, deadline, "not-entered", null);
         return (id, deadline);
+    }
+
+    private void RecordDeadlineDrain(
+        long segment, DateTimeOffset deadline, string outcome, string? reason
+    ) => database.WriteMetadata(
+        $"lifecycle:deadline_drain:{segment}",
+        new JsonObject
+        {
+            ["workDeadline"] = deadline.ToString("O"),
+            ["drainDeadline"] = deadline.AddSeconds(DeadlineDrainSeconds).ToString("O"),
+            ["outcome"] = outcome,
+            ["stopReason"] = reason,
+        }.ToJsonString()
+    );
+
+    private JsonNode? ReadDeadlineDrain()
+    {
+        using SqliteConnection connection = database.Open();
+        return Sql.Scalar(
+            connection, "SELECT id FROM coordinator_segments ORDER BY id DESC LIMIT 1;"
+        ) is long segment ? ParseMetadata($"lifecycle:deadline_drain:{segment}") : null;
     }
 
     private void EndSegment(long segment, string state, string reason)

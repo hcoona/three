@@ -59,7 +59,8 @@ internal sealed class NativeWorker : INativeWorker
         string cwd,
         string? exactSession,
         CancellationToken cancellationToken,
-        string? recoveryLabel = null
+        string? recoveryLabel = null,
+        WorkAdmission? admission = null
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -69,7 +70,7 @@ internal sealed class NativeWorker : INativeWorker
         await turn.WaitAsync(linked.Token).ConfigureAwait(false);
         try
         {
-            await StartCoreAsync(cwd, exactSession, recoveryLabel, linked.Token)
+            await StartCoreAsync(cwd, exactSession, recoveryLabel, admission, linked.Token)
                 .ConfigureAwait(false);
         }
         finally
@@ -82,10 +83,12 @@ internal sealed class NativeWorker : INativeWorker
         string cwd,
         string? exactSession,
         string? recoveryLabel,
+        WorkAdmission? admission,
         CancellationToken cancellationToken
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        admission?.ThrowIfClosed();
         if (exactSession is not null && exactSession != reservation?.SessionId)
         {
             throw new OperationException("credit_unknown", "Exact session association mismatched.");
@@ -95,9 +98,10 @@ internal sealed class NativeWorker : INativeWorker
         if (reservation is { Shared: true })
         {
             reservation = await credits
-                .AcquireSharedWindowAsync(reservation.Id, cancellationToken)
+                .AcquireSharedWindowAsync(reservation.Id, cancellationToken, admission: admission)
                 .ConfigureAwait(false);
         }
+        admission?.ThrowIfClosed();
         limit =
             reservation is null ? 30
             : exactSession is null ? reservation.Allowance
@@ -134,6 +138,7 @@ internal sealed class NativeWorker : INativeWorker
             );
         }
 
+        admission?.ThrowIfClosed();
         session = host.CreateSession(cwd, calibration);
         (NativeUsage Usage, long Dispatches)? priorUsage = null;
         try
@@ -240,7 +245,9 @@ internal sealed class NativeWorker : INativeWorker
         }
     }
 
-    public async Task<JsonObject> PromptAsync(string text, CancellationToken cancellationToken)
+    public async Task<JsonObject> PromptAsync(
+        string text, CancellationToken cancellationToken, WorkAdmission? admission = null
+    )
     {
         if (reservation is null || !verified || session is null || stopped)
         {
@@ -254,27 +261,46 @@ internal sealed class NativeWorker : INativeWorker
             cancellationToken,
             stop.Token
         );
-        await turn.WaitAsync(linked.Token).ConfigureAwait(false);
+        using CancellationTokenSource preparing = CancellationTokenSource.CreateLinkedTokenSource(
+            linked.Token, admission?.Token ?? CancellationToken.None
+        );
+        bool turnOwned = false;
+        bool nativeOperationPending = false;
+        bool dispatched = false;
         try
         {
-            await VerifyCreditsCoreAsync(linked.Token).ConfigureAwait(false);
+            await turn.WaitAsync(preparing.Token).ConfigureAwait(false);
+            turnOwned = true;
+            admission?.ThrowIfClosed();
+            nativeOperationPending = true;
+            await VerifyCreditsCoreAsync(preparing.Token).ConfigureAwait(false);
+            nativeOperationPending = false;
+            admission?.ThrowIfClosed();
             if (reservation.Shared)
             {
                 reservation = await credits
-                    .AcquireSharedWindowAsync(reservation.Id, linked.Token)
+                    .AcquireSharedWindowAsync(
+                        reservation.Id, preparing.Token, admission: admission
+                    )
                     .ConfigureAwait(false);
+                admission?.ThrowIfClosed();
                 limit = reservation.Allowance - windowBaseline;
+                nativeOperationPending = true;
                 NativeUsage usage = await session
-                    .UpdateLimitAsync(SessionId!, limit, linked.Token)
+                    .UpdateLimitAsync(SessionId!, limit, preparing.Token)
                     .ConfigureAwait(false);
                 SaveDiagnostic(usage);
                 credits.RecordSdkUsage(reservation.Id, usage);
+                nativeOperationPending = false;
             }
             credits.BeginDispatch(
                 database.RunId,
                 reservation.Id,
-                database.Configuration.RunAiCreditAllowance
+                database.Configuration.RunAiCreditAllowance,
+                admission
             );
+            dispatched = true;
+            admission?.ThrowIfClosed();
             nativeIdle = false;
             database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "prompting");
             JsonObject result = await session
@@ -284,22 +310,43 @@ internal sealed class NativeWorker : INativeWorker
                         ? TimeSpan.FromMinutes(2)
                         : TimeSpan.FromSeconds(database.Configuration.DurationSeconds),
                     linked.Token,
-                    reservation.Shared ? RenewLimitAsync : null
+                    reservation.Shared ? token => RenewLimitAsync(admission, token) : null,
+                    admission
                 )
                 .ConfigureAwait(false);
             nativeIdle = true;
             database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "ready");
             return result;
         }
-        catch
+        catch (OperationCanceledException exception) when (
+            !dispatched && !nativeOperationPending && admission?.IsClosed == true
+            && !linked.IsCancellationRequested
+        )
+        {
+            throw new OperationException(
+                "admission_closed", "Work admission ended before native dispatch.", exception
+            );
+        }
+        catch (Exception exception)
         {
             verified = false;
             credits.MarkUncertain(reservation.Id);
+            if (exception is OperationCanceledException && admission?.IsClosed == true
+                && !linked.IsCancellationRequested)
+            {
+                throw new OperationException(
+                    "credit_unknown",
+                    "Admission closed while a native operation remained unresolved.", exception
+                );
+            }
             throw;
         }
         finally
         {
-            turn.Release();
+            if (turnOwned)
+            {
+                turn.Release();
+            }
         }
     }
 
@@ -363,16 +410,25 @@ internal sealed class NativeWorker : INativeWorker
         }
     }
 
-    private async Task<decimal> RenewLimitAsync(CancellationToken cancellationToken)
+    private async Task<decimal> RenewLimitAsync(
+        WorkAdmission? admission, CancellationToken cancellationToken
+    )
     {
+        admission?.ThrowIfClosed();
+        using CancellationTokenSource renewing = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, admission?.Token ?? CancellationToken.None
+        );
         NativeUsage usage = await session!
-            .ReadAsync(SessionId!, limit, cancellationToken)
+            .ReadAsync(SessionId!, limit, renewing.Token)
             .ConfigureAwait(false);
         SaveDiagnostic(usage);
         credits.RecordSdkUsage(reservation!.Id, usage);
         reservation = await credits
-            .AcquireSharedWindowAsync(reservation.Id, cancellationToken, renew: true)
+            .AcquireSharedWindowAsync(
+                reservation.Id, renewing.Token, renew: true, admission: admission
+            )
             .ConfigureAwait(false);
+        admission?.ThrowIfClosed();
         limit = reservation.Allowance - windowBaseline;
         return limit;
     }

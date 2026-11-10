@@ -23,6 +23,70 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
+    public async Task PromptWaitingForBackingStopsWithoutDispatchOrNewUncertaintyAtAdmissionExpiry()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using RunFixture fixture = new();
+        RunDatabase database = ControlledDatabase(fixture, "shared");
+        LocalTools tools = new(database);
+        _ = new Coordinator(database, tools.Collaboration, tools.Git);
+        CreditLedger ledger = new(database.Configuration.CampaignLedgerPath, 600);
+        ControlledSdkHost host = new("none", token, evidenceDatabase: database);
+        NativeWorkerFactory factory = new(database, new(database), ledger, () => host);
+        CreditReservation reservation = ledger.Reserve(
+            database.RunId, "worker1", 0, 300,
+            Path.Combine(fixture.RootPath, "admission.sdk-evidence"), shared: true
+        );
+        INativeWorker peer = factory.Create(reservation, calibration: false);
+        try
+        {
+            await peer.StartAsync(fixture.RepositoryPath, null, token);
+            await peer.PromptAsync("Earlier completed request.", token);
+            await peer.VerifyCreditsAsync(token);
+            List<CreditReservation> blockers = [];
+            foreach (string worker in new[] { "worker2", "worker3", "worker4" })
+            {
+                CreditReservation blocker = ledger.Reserve(
+                    database.RunId, worker, 0, 300,
+                    Path.Combine(fixture.RootPath, worker + ".sdk-evidence"), shared: true
+                );
+                blockers.Add(await ledger.AcquireSharedWindowAsync(blocker.Id, token));
+            }
+            ScenarioClock clock = new();
+            using WorkAdmission admission = new(clock, clock.GetUtcNow().AddSeconds(1), token);
+            Task<JsonObject> preparing = peer.PromptAsync(
+                "Must not dispatch after admission expiry.", token, admission
+            );
+            Assert.IsFalse(preparing.IsCompleted);
+            clock.Advance(TimeSpan.FromSeconds(2));
+            OperationException ended = await Assert.ThrowsExactlyAsync<OperationException>(
+                () => preparing.WaitAsync(token)
+            );
+            Assert.AreEqual("admission_closed", ended.Code);
+            Assert.AreEqual(1L, ledger.ReadCompleteSdkUsage(reservation.Id)!.Value.Dispatches);
+            CreditReservation retained = ledger.Reservations()
+                .Single(row => row.Id == reservation.Id);
+            Assert.AreEqual("active", retained.State);
+            Assert.IsFalse(retained.GrantOpen);
+            foreach (CreditReservation blocker in blockers)
+            {
+                Assert.AreEqual(blocker.Allowance,
+                    ledger.Reservations().Single(row => row.Id == blocker.Id).Allowance);
+                ledger.ReleaseUnstarted(blocker.Id);
+            }
+        }
+        finally
+        {
+            host.Release.TrySetResult();
+            await factory.CompleteAsync();
+        }
+        Assert.AreEqual("reconciled",
+            ledger.Reservations().Single(row => row.Id == reservation.Id).State);
+        ledger.RequirePaidAdmission();
+    }
+
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
     [DataRow("verify")]
     [DataRow("stop")]
     public async Task CompletedTurnRetainsBackingUntilBackgroundCompactionSettles(string operation)
@@ -2540,10 +2604,12 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
         public Task<JsonObject> SendAsync(
             string text, TimeSpan timeout, CancellationToken cancellationToken,
-            Func<CancellationToken, Task<decimal>>? renewLimit = null
+            Func<CancellationToken, Task<decimal>>? renewLimit = null,
+            WorkAdmission? admission = null
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            admission?.ThrowIfClosed();
             Sent = true;
             requests++;
             usageFence.SetTurnPending(true);
