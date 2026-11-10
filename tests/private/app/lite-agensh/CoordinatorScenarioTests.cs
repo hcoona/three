@@ -101,6 +101,7 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
     }
 
     [TestMethod]
+    [DoNotParallelize]
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task SharedZeroIntervalDispatchReturnsBackingBeforeTheNextAdmissionCompletes()
     {
