@@ -23,7 +23,11 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
-    public async Task PromptWaitingForBackingStopsWithoutDispatchOrNewUncertaintyAtAdmissionExpiry()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task PromptWaitingForBackingStopsWithoutDispatchOrNewUncertaintyAtAdmissionExpiry(
+        bool activeCancellation
+    )
     {
         CancellationToken token = testContext.CancellationToken;
         using RunFixture fixture = new();
@@ -53,16 +57,30 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 blockers.Add(await ledger.AcquireSharedWindowAsync(blocker.Id, token));
             }
             ScenarioClock clock = new();
-            using WorkAdmission admission = new(clock, clock.GetUtcNow().AddSeconds(1), token);
+            using CancellationTokenSource active =
+                CancellationTokenSource.CreateLinkedTokenSource(token);
+            using WorkAdmission admission = new(
+                clock, clock.GetUtcNow().AddSeconds(1), active.Token
+            );
             Task<JsonObject> preparing = peer.PromptAsync(
-                "Must not dispatch after admission expiry.", token, admission
+                "Must not dispatch after admission expiry.", active.Token, admission
             );
             Assert.IsFalse(preparing.IsCompleted);
             clock.Advance(TimeSpan.FromSeconds(2));
-            OperationException ended = await Assert.ThrowsExactlyAsync<OperationException>(
-                () => preparing.WaitAsync(token)
-            );
-            Assert.AreEqual("admission_closed", ended.Code);
+            if (activeCancellation)
+            {
+                await active.CancelAsync();
+                await Assert.ThrowsAsync<OperationCanceledException>(
+                    () => preparing.WaitAsync(token)
+                );
+            }
+            else
+            {
+                OperationException ended = await Assert.ThrowsExactlyAsync<OperationException>(
+                    () => preparing.WaitAsync(token)
+                );
+                Assert.AreEqual("admission_closed", ended.Code);
+            }
             Assert.AreEqual(1L, ledger.ReadCompleteSdkUsage(reservation.Id)!.Value.Dispatches);
             CreditReservation retained = ledger.Reservations()
                 .Single(row => row.Id == reservation.Id);

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -549,9 +550,13 @@ public sealed class Coordinator
         JsonArray settlementFailures = [];
         JsonArray settlementDetails = [];
         WorkAdmission? workAdmission = null;
+        CancellationToken requestDeadlineToken = default;
         DateTimeOffset workDeadline = default;
         bool draining = false;
         string? drainOutcome = null;
+        OperationException? drainAccountingStop = null;
+        long drainAccountingObserved = 0;
+        string? drainAccountingCause = null;
         try
         {
             RecoverCompletedTurns();
@@ -568,6 +573,19 @@ public sealed class Coordinator
             }
             else
             {
+                TimeSpan requestRemaining =
+                    deadline.AddSeconds(DeadlineDrainSeconds) - database.Now;
+                using CancellationTokenSource requestDeadline = new(
+                    requestRemaining > TimeSpan.Zero ? requestRemaining : TimeSpan.Zero,
+                    database.TimeProvider
+                );
+                if (requestRemaining <= TimeSpan.Zero)
+                {
+                    await requestDeadline.CancelAsync().ConfigureAwait(false);
+                }
+                requestDeadlineToken = requestDeadline.Token;
+                using CancellationTokenRegistration deadlineStop =
+                    requestDeadlineToken.Register(stop.Cancel);
                 WorkAdmission admissionBudget = new(database.TimeProvider, deadline, stop.Token);
                 workAdmission = admissionBudget;
                 await git.InitializeAsync(admissionBudget.Token).ConfigureAwait(false);
@@ -666,7 +684,6 @@ public sealed class Coordinator
                         await stop.CancelAsync().ConfigureAwait(false);
                         return;
                     }
-                    stop.CancelAfter(grace);
                     while (!stop.IsCancellationRequested)
                     {
                         long? control = PendingControl(out string? action);
@@ -700,7 +717,22 @@ public sealed class Coordinator
                             {
                             }
                         }
-                        credits.RequirePaidAdmission();
+                        try
+                        {
+                            credits.RequirePaidAdmission();
+                        }
+                        catch (OperationException exception) when (
+                            exception.Code == "credit_unknown"
+                        )
+                        {
+                            drainAccountingObserved = Stopwatch.GetTimestamp();
+                            drainAccountingStop = exception;
+                            drainAccountingCause = cancellationToken.IsCancellationRequested
+                                ? "caller-cancelled"
+                                : requestDeadlineToken.IsCancellationRequested
+                                    ? "deadline" : "credit_unknown";
+                            throw;
+                        }
                         if (database.Now >= drainDeadline)
                         {
                             drainOutcome = "timed-out";
@@ -893,10 +925,14 @@ public sealed class Coordinator
                             : "deadline";
                         finalize = !cancellationToken.IsCancellationRequested;
                     }
-                    normalDeadline = reason == "deadline" && !stop.IsCancellationRequested;
+                    normalDeadline = reason == "deadline"
+                        && (!stop.IsCancellationRequested
+                            || requestDeadlineToken.IsCancellationRequested);
                 }
                 catch (OperationCanceledException) when (
-                    admissionBudget.IsClosed && !stop.IsCancellationRequested
+                    admissionBudget.IsClosed
+                    && (!stop.IsCancellationRequested
+                        || requestDeadlineToken.IsCancellationRequested)
                 )
                 {
                     reason = "deadline";
@@ -970,13 +1006,31 @@ public sealed class Coordinator
             reason = exception is OperationException operation
                 ? operation.Code
                 : "coordinator-failed";
+            if (ReferenceEquals(exception, drainAccountingStop))
+            {
+                drainOutcome = drainAccountingCause == "deadline" ? "timed-out" : "interrupted";
+                finalize = drainAccountingCause == "deadline";
+                if (drainAccountingCause != "credit_unknown")
+                {
+                    reason = drainAccountingCause!;
+                    failure = null;
+                }
+            }
         }
         finally
         {
             await stop.CancelAsync().ConfigureAwait(false);
+            if (!draining && requestDeadlineToken.IsCancellationRequested)
+            {
+                draining = true;
+                drainOutcome = reason == "deadline" ? "timed-out" : "interrupted";
+            }
             if (draining)
             {
-                RecordDeadlineDrain(segment, workDeadline, drainOutcome ?? "interrupted", reason);
+                RecordDeadlineDrain(
+                    segment, workDeadline, drainOutcome ?? "interrupted", reason,
+                    drainAccountingStop
+                );
             }
             database.WriteMetadata("lifecycle", "pausing");
             database.WriteMetadata("lifecycle:stop_reason", reason);
@@ -1089,6 +1143,22 @@ public sealed class Coordinator
                     database.WriteMetadata("lifecycle", "unresolved");
                 }
             }
+            if (drainAccountingStop is not null && ReferenceEquals(failure, drainAccountingStop))
+            {
+                // Later shutdown errors must not replace the accounting stop's actual origin.
+                Exception? originating = loops.Where(loop => loop.IsFaulted)
+                    .SelectMany(loop => loop.Exception!.Flatten().InnerExceptions)
+                    .Where(error => error.Data["liteagensh.nativeFailureObserved"] is long observed
+                        && observed <= drainAccountingObserved)
+                    .OrderBy(error => (long)error.Data["liteagensh.nativeFailureObserved"]!)
+                    .FirstOrDefault();
+                if (originating is not null)
+                {
+                    failure = originating;
+                    reason = originating is OperationException operation
+                        ? operation.Code : "coordinator-failed";
+                }
+            }
             try
             {
                 await nativeWorkers.CompleteAsync().ConfigureAwait(false);
@@ -1120,6 +1190,14 @@ public sealed class Coordinator
         }
 
         workAdmission?.Dispose();
+
+        if (drainAccountingStop is not null)
+        {
+            database.WriteMetadata("lifecycle:stop_reason", reason);
+            RecordDeadlineDrain(
+                segment, workDeadline, drainOutcome ?? "interrupted", reason, drainAccountingStop
+            );
+        }
 
         if (failure is not null)
         {
@@ -1992,17 +2070,27 @@ public sealed class Coordinator
     }
 
     private void RecordDeadlineDrain(
-        long segment, DateTimeOffset deadline, string outcome, string? reason
-    ) => database.WriteMetadata(
-        $"lifecycle:deadline_drain:{segment}",
-        new JsonObject
+        long segment, DateTimeOffset deadline, string outcome, string? reason,
+        OperationException? accountingStop = null
+    )
+    {
+        JsonObject state = new()
         {
             ["workDeadline"] = deadline.ToString("O"),
             ["drainDeadline"] = deadline.AddSeconds(DeadlineDrainSeconds).ToString("O"),
             ["outcome"] = outcome,
             ["stopReason"] = reason,
-        }.ToJsonString()
-    );
+        };
+        if (accountingStop is not null)
+        {
+            state["accountingStop"] = new JsonObject
+            {
+                ["code"] = accountingStop.Code,
+                ["message"] = accountingStop.Message,
+            };
+        }
+        database.WriteMetadata($"lifecycle:deadline_drain:{segment}", state.ToJsonString());
+    }
 
     private JsonNode? ReadDeadlineDrain()
     {

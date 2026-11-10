@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -16,7 +17,8 @@ internal sealed class ControlledNativeFactory(
     Func<CreditReservation, CancellationToken, Task>? onStart = null,
     Func<Task>? onHostSettlement = null,
     Action<CreditReservation, string>? onSettlement = null,
-    Func<CreditReservation, CancellationToken, Task>? onPrompt = null
+    Func<CreditReservation, CancellationToken, Task>? onPrompt = null,
+    Func<CreditReservation, Exception, CancellationToken, Task>? onPromptFailure = null
 ) : INativeWorkerFactory
 {
     private readonly List<(ControlledNativeWorker Worker, CreditReservation? Reservation)> workers =
@@ -37,7 +39,8 @@ internal sealed class ControlledNativeFactory(
             onExactLoadSettled,
             onStart,
             onSettlement,
-            onPrompt
+            onPrompt,
+            onPromptFailure
         );
         workers.Add((worker, reservation));
         return worker;
@@ -183,7 +186,8 @@ internal sealed class ControlledNativeWorker(
     Func<CancellationToken, Task>? onExactLoadSettled = null,
     Func<CreditReservation, CancellationToken, Task>? onStart = null,
     Action<CreditReservation, string>? onSettlement = null,
-    Func<CreditReservation, CancellationToken, Task>? onPrompt = null
+    Func<CreditReservation, CancellationToken, Task>? onPrompt = null,
+    Func<CreditReservation, Exception, CancellationToken, Task>? onPromptFailure = null
 ) : INativeWorker
 {
     private readonly CancellationTokenSource stop = new();
@@ -467,9 +471,13 @@ internal sealed class ControlledNativeWorker(
             };
         }
         catch (OperationCanceledException exception) when (
-            !dispatched && admission?.IsClosed == true && !linked.IsCancellationRequested
+            !dispatched
         )
         {
+            if (linked.IsCancellationRequested || admission?.IsClosed != true)
+            {
+                throw;
+            }
             throw new OperationException(
                 "admission_closed", "Controlled admission ended before dispatch.", exception
             );
@@ -481,7 +489,12 @@ internal sealed class ControlledNativeWorker(
                 Record(directory, "native-error-canceled", SessionId);
             }
 
+            exception.Data["liteagensh.nativeFailureObserved"] = Stopwatch.GetTimestamp();
             credits.MarkUncertain(reservation.Id);
+            if (!calibration && onPromptFailure is not null)
+            {
+                await onPromptFailure(reservation, exception, linked.Token);
+            }
             throw;
         }
         finally

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
@@ -138,7 +139,6 @@ internal sealed class NativeWorker : INativeWorker
             );
         }
 
-        admission?.ThrowIfClosed();
         session = host.CreateSession(cwd, calibration);
         (NativeUsage Usage, long Dispatches)? priorUsage = null;
         try
@@ -148,6 +148,7 @@ internal sealed class NativeWorker : INativeWorker
                 priorUsage = credits.ReadCompleteSdkUsage(reservation.Id);
             }
 
+            admission?.ThrowIfClosed();
             await session
                 .OpenAsync(worker, id, limit, exactSession, evidencePath, cancellationToken)
                 .ConfigureAwait(false);
@@ -319,10 +320,13 @@ internal sealed class NativeWorker : INativeWorker
             return result;
         }
         catch (OperationCanceledException exception) when (
-            !dispatched && !nativeOperationPending && admission?.IsClosed == true
-            && !linked.IsCancellationRequested
+            !dispatched && !nativeOperationPending
         )
         {
+            if (linked.IsCancellationRequested || admission?.IsClosed != true)
+            {
+                throw;
+            }
             throw new OperationException(
                 "admission_closed", "Work admission ended before native dispatch.", exception
             );
@@ -330,6 +334,7 @@ internal sealed class NativeWorker : INativeWorker
         catch (Exception exception)
         {
             verified = false;
+            exception.Data["liteagensh.nativeFailureObserved"] = Stopwatch.GetTimestamp();
             credits.MarkUncertain(reservation.Id);
             if (exception is OperationCanceledException && admission?.IsClosed == true
                 && !linked.IsCancellationRequested)

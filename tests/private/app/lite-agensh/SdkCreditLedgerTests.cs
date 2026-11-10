@@ -51,19 +51,23 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
-    [DataRow(true)]
-    [DataRow(false)]
+    [DataRow(true, false)]
+    [DataRow(false, false)]
+    [DataRow(true, true)]
+    [DataRow(false, true)]
     public async Task CancellationDuringExactStartupPreservesOnlyEstablishedCompleteUsage(
-        bool complete
+        bool complete, bool admissionExpiry
     )
     {
         using RunFixture fixture = new();
-        RunDatabase database = NativeDatabase(fixture);
+        ScenarioClock clock = new();
+        RunDatabase database = NativeDatabase(fixture, clock);
         CreditLedger ledger = new(fixture.Configuration.CampaignLedgerPath, 180);
         CreditReservation continuation = ledger.ContinueExact(
             CompleteForContinuation(database, ledger, fixture).Id,
             Evidence(fixture)
         );
+        var baseline = ledger.ReadCompleteSdkUsage(continuation.Id);
         if (!complete)
         {
             using SqliteConnection campaign = Open(fixture);
@@ -75,10 +79,16 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
         using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
             testContext.CancellationToken
         );
+        using WorkAdmission admission = new(
+            clock, clock.GetUtcNow().AddSeconds(120), stop.Token
+        );
         using SqliteConnection connection = database.Open();
         using SqliteTransaction blockedAssociation = connection.BeginTransaction();
         Task startup = Task.Run(
-            () => worker.StartAsync(fixture.RepositoryPath, continuation.SessionId, stop.Token),
+            () => worker.StartAsync(
+                fixture.RepositoryPath, continuation.SessionId, stop.Token,
+                admission: admissionExpiry ? admission : null
+            ),
             testContext.CancellationToken
         );
         try
@@ -94,7 +104,16 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
                 await Task.Delay(TimeSpan.FromMilliseconds(10), testContext.CancellationToken);
             }
 
-            await stop.CancelAsync();
+            if (admissionExpiry)
+            {
+                clock.Advance(TimeSpan.FromSeconds(121));
+                Assert.IsTrue(admission.IsClosed);
+                Assert.IsFalse(stop.IsCancellationRequested);
+            }
+            else
+            {
+                await stop.CancelAsync();
+            }
         }
         finally
         {
@@ -106,6 +125,7 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
         {
             await worker.DisposeAsync();
             ledger.RequirePaidAdmission();
+            Assert.AreEqual(baseline, ledger.ReadCompleteSdkUsage(continuation.Id));
         }
         else
         {
@@ -127,8 +147,14 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
         CreditReservation retained = Assert.ContainsSingle(ledger.Reservations());
         Assert.AreEqual(complete ? "reconciled" : "uncertain", retained.State);
         Assert.AreEqual(10m, retained.Actual);
+        Assert.AreEqual(continuation.SessionId, retained.SessionId);
         Assert.AreEqual(complete ? 10m : 60m, Committed(ledger));
         Assert.AreEqual(0L, Sql.Scalar(connection, "SELECT COUNT(*) FROM process_leases;"));
+        if (admissionExpiry)
+        {
+            Assert.IsNull(worker.SessionId);
+            Assert.AreEqual(1L, Sql.Scalar(connection, "SELECT COUNT(*) FROM native_attempts;"));
+        }
     }
 
     [TestMethod]
@@ -608,7 +634,7 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
         Assert.IsNull(Assert.ContainsSingle(ledger.Reservations()).Actual);
     }
 
-    private static RunDatabase NativeDatabase(RunFixture fixture)
+    private static RunDatabase NativeDatabase(RunFixture fixture, TimeProvider? clock = null)
     {
         RunDatabase database = new(
             fixture.StatePath,
@@ -617,7 +643,8 @@ public sealed class SdkCreditLedgerTests(TestContext testContext)
                 NativeExecutable = Path.Combine(fixture.RootPath, "missing-native-runtime.exe"),
                 RunAiCreditAllowance = 120,
                 CampaignAiCreditAllowance = 180,
-            }
+            },
+            clock
         );
         CollaborationOperations collaboration = new(database);
         _ = new Coordinator(database, collaboration, new(database, collaboration));
