@@ -93,6 +93,15 @@ Use `creditAllocation: shared` and the same continuing campaign ledger.
 Keep the existing native backend, trusted-host policy, read-only source
 boundary, empty checks and all ownership/accounting stops.
 
+On a binary implementing the separately accepted
+[bounded deadline drain](implementation-contracts.md#bounded-deadline-drain),
+the 300 seconds bound work admission. Retain the separately limited 30-second
+drain and existing subsequent settlement, with no new prompt, session or
+spending-window admission during drain. Capture the work deadline, drain
+deadline/outcome and any earlier operator/safety cancellation. Do not extend
+the work budget, caps or credit allowance or treat drain/recovery as acceptance.
+The actual operation's outer bound must include drain and settlement.
+
 Use one shared Chinese goal for a small, source-backed review of the declared
 LiteAgensh lifecycle/reporting scope. Both peers select work and independently
 review findings through ordinary tasks, claims and messages, not fixed roles

@@ -49,6 +49,13 @@ Installed-native session loadability and accounting-window preservation still
 require a separately reviewed observation. Do not bypass the version guard
 or reuse a consumed recovery invocation.
 
+The [deadline-drain contract](docs/implementation-contracts.md#bounded-deadline-drain)
+separates normal work-admission expiry from bounded completion of existing
+requests, without weakening terminal/usage evidence or immediate safety stops.
+It is a design prerequisite, not a claim of implemented or native-qualified
+deadline behavior; matching implementation and fresh Luna observations remain
+separate gates.
+
 The [native-host design](docs/architecture.md#native-sdk-mcp-and-instruction-boundary)
 specifies one owned runtime/client with independent peer sessions and a
 cohort-settlement barrier. The application shares the operation's runtime and
