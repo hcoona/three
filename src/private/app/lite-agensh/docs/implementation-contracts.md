@@ -137,6 +137,9 @@ startup and waiting. Normal expiry closes admission immediately, then permits
 at most 30 seconds for requests already dispatched before that deadline to
 finish. This fixed grace is not another configuration surface, a restarted
 segment, extra credit or permission for another model turn.
+The [audit protocol](user-audit-protocol.md#continuing-accounting-and-finite-effects)
+reserves this grace within its accepted per-run execution ceiling; drain
+does not authorize extending that ceiling.
 
 - Keep work admission separate from cancellation of an in-flight SDK send.
   At expiry, admit no new native session, delivery batch, prompt or spending
@@ -150,8 +153,9 @@ segment, extra credit or permission for another model turn.
   stop those worker loops without claiming another batch. Do not send a
   wrap-up/review prompt, continue pending work or export a report.
 - Enter a visible draining lifecycle only for normal deadline expiry. Retain
-  the original work deadline, finite drain deadline and completed/timed-out
-  drain outcome in owned state. Keep polling owner controls while draining.
+  the original work deadline, finite drain deadline and completed, timed-out
+  or interrupted drain outcome in owned state, including the actual reason
+  for interruption. Keep polling owner controls while draining.
   Caller/operator cancellation, an admitted worker failure, unknown accounting,
   ownership ambiguity or another safety stop immediately cancels affected work
   rather than receiving grace. Native per-call timeout also remains effective.

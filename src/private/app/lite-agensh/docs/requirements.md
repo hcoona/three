@@ -190,8 +190,9 @@ Distinguish the work-admission deadline from the fixed, finite deadline-drain
 bound and subsequent existing process/accounting settlement. Startup and
 waiting consume the work budget; drain never restarts it. Work completed while
 draining remains inside the same run/campaign credit allowances and native
-limits. Retain the stop reason and whether drain completed or exhausted its
-bound; neither outcome alone establishes successful task delivery.
+limits. Retain the stop reason and whether drain completed, exhausted its
+bound or was interrupted earlier, including the actual interruption reason.
+No drain outcome alone establishes successful task delivery.
 
 Support an explicitly selected shared AI-credit allocation mode. Workers draw
 from one finite run allowance and the same continuing campaign allowance,

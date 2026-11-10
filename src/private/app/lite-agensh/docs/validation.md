@@ -46,11 +46,16 @@ prompt, worker session or credit renewal after admission closes, including
 preparation waiting for backing. Preserve the existing per-call timeout.
 Cover caller/owner cancellation and worker/accounting failure during drain
 without waiting for grace; an idle peer must not make a healthy draining peer
-look prematurely stopped. Retain truthful deadline/drain status and unresolved
-terminal/usage evidence on timeout, with the cohort barrier unchanged.
-Controlled success does not prove native timing. Separately observe three new
-fresh two-peer Luna journeys on one accepted repaired binary before claiming
-repeatable native collaboration; an intervening failed actual cannot be skipped.
+look prematurely stopped. Retain truthful deadline/drain status, including
+interrupted outcomes with the actual stop reason, and unresolved terminal/usage
+evidence on timeout, with the cohort barrier unchanged.
+Controlled success does not prove native timing. Separately require three
+consecutive fresh two-peer actual Luna journeys, each successful and
+independently qualified on one accepted repaired binary, before claiming
+repeatable native collaboration. A failed actual breaks the sequence; a binary
+change requires a fresh sequence with matching receipts. Initialization,
+preflight, calibration, controlled tests and financial-only recovery do not
+count as successful collaboration journeys.
 
 ## Required scenarios
 
