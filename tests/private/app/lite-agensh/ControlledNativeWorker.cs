@@ -18,7 +18,8 @@ internal sealed class ControlledNativeFactory(
     Func<Task>? onHostSettlement = null,
     Action<CreditReservation, string>? onSettlement = null,
     Func<CreditReservation, CancellationToken, Task>? onPrompt = null,
-    Func<CreditReservation, Exception, CancellationToken, Task>? onPromptFailure = null
+    Func<CreditReservation, Exception, CancellationToken, Task>? onPromptFailure = null,
+    Func<CreditReservation, CancellationToken, Task>? onVerify = null
 ) : INativeWorkerFactory
 {
     private readonly List<(ControlledNativeWorker Worker, CreditReservation? Reservation)> workers =
@@ -40,7 +41,8 @@ internal sealed class ControlledNativeFactory(
             onStart,
             onSettlement,
             onPrompt,
-            onPromptFailure
+            onPromptFailure,
+            onVerify
         );
         workers.Add((worker, reservation));
         return worker;
@@ -187,7 +189,8 @@ internal sealed class ControlledNativeWorker(
     Func<CreditReservation, CancellationToken, Task>? onStart = null,
     Action<CreditReservation, string>? onSettlement = null,
     Func<CreditReservation, CancellationToken, Task>? onPrompt = null,
-    Func<CreditReservation, Exception, CancellationToken, Task>? onPromptFailure = null
+    Func<CreditReservation, Exception, CancellationToken, Task>? onPromptFailure = null,
+    Func<CreditReservation, CancellationToken, Task>? onVerify = null
 ) : INativeWorker
 {
     private readonly CancellationTokenSource stop = new();
@@ -517,6 +520,10 @@ internal sealed class ControlledNativeWorker(
         try
         {
             await VerifyCreditsCoreAsync(linked.Token);
+            if (!calibration && onVerify is not null)
+            {
+                await onVerify(reservation!, linked.Token);
+            }
         }
         finally
         {

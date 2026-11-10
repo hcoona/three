@@ -334,7 +334,10 @@ internal sealed class NativeWorker : INativeWorker
         catch (Exception exception)
         {
             verified = false;
-            exception.Data["liteagensh.nativeFailureObserved"] = Stopwatch.GetTimestamp();
+            if (exception.Data["liteagensh.nativeFailureObserved"] is not long)
+            {
+                exception.Data["liteagensh.nativeFailureObserved"] = Stopwatch.GetTimestamp();
+            }
             credits.MarkUncertain(reservation.Id);
             if (exception is OperationCanceledException && admission?.IsClosed == true
                 && !linked.IsCancellationRequested)
@@ -381,9 +384,23 @@ internal sealed class NativeWorker : INativeWorker
 
         try
         {
-            NativeUsage usage = await (nativeIdle
-                ? session.ReadSettledAsync(SessionId, limit, cancellationToken)
-                : session.ReadAsync(SessionId, limit, cancellationToken)).ConfigureAwait(false);
+            NativeUsage usage;
+            try
+            {
+                usage = await (nativeIdle
+                    ? session.ReadSettledAsync(SessionId, limit, cancellationToken)
+                    : session.ReadAsync(SessionId, limit, cancellationToken)).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException exception) when (
+                !cancellationToken.IsCancellationRequested
+            )
+            {
+                throw new OperationException(
+                    "native_probe_failed",
+                    "Native usage verification was canceled before caller cancellation.",
+                    exception
+                );
+            }
             void Record()
             {
                 SaveDiagnostic(usage);
@@ -407,9 +424,13 @@ internal sealed class NativeWorker : INativeWorker
                 database.Configuration.RunAiCreditAllowance
             );
         }
-        catch
+        catch (Exception exception)
         {
             verified = false;
+            if (exception.Data["liteagensh.nativeFailureObserved"] is not long)
+            {
+                exception.Data["liteagensh.nativeFailureObserved"] = Stopwatch.GetTimestamp();
+            }
             credits.MarkUncertain(reservation.Id);
             throw;
         }
