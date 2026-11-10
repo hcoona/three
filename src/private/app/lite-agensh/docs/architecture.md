@@ -270,6 +270,23 @@ before that release. Exact recovery, budget admission and native settlement
 retain their existing contracts. No new scheduler service or worker role is
 introduced.
 
+### Deadline admission and bounded drain
+
+The existing coordinator owns two distinct stop boundaries: admission of new
+work at the segment deadline, and cancellation of already-dispatched requests.
+For normal expiry only, separate these tokens and drain existing requests
+within the [fixed lifecycle bound](implementation-contracts.md#bounded-deadline-drain).
+Worker preparation and shared-credit acquisition observe admission closure;
+an already-dispatched SDK send and its acknowledgement/usage verification
+observe the independent cancellation boundary. Exhausted-window renewal still
+observes admission closure. Do not move task assignment into the coordinator.
+
+The coordinator retains the drain state/outcome and continues observing owner
+controls and worker failures during grace. A safety stop or grace expiry
+cancels active requests and uses the existing cohort settlement barrier.
+Successful native send completion supplies the original terminal boundary;
+drain adds no alternative accounting proof, automatic reconnect or service.
+
 ### Controlled native dependency in scenarios
 
 Keep the coordinator's native-worker dependency internal and replaceable in

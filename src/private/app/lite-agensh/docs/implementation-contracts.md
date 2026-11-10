@@ -130,6 +130,58 @@ quality or cost improvement.
 
 [agensh-paper]: https://arxiv.org/html/2609.26781v1
 
+## Bounded deadline drain
+
+`durationSeconds` remains the finite segment work-admission budget, including
+startup and waiting. Normal expiry closes admission immediately, then permits
+at most 30 seconds for requests already dispatched before that deadline to
+finish. This fixed grace is not another configuration surface, a restarted
+segment, extra credit or permission for another model turn.
+The [audit protocol](user-audit-protocol.md#continuing-accounting-and-finite-effects)
+reserves this grace within its accepted per-run execution ceiling; drain
+does not authorize extending that ceiling.
+
+- Keep work admission separate from cancellation of an in-flight SDK send.
+  At expiry, admit no new native session, delivery batch, prompt or spending
+  window. Cancel admission still waiting for credit or session startup.
+  Prompt preparation must observe admission cancellation before durable
+  dispatch; a call waiting for backing is not an already-dispatched request.
+  An in-flight exhausted-window request may not acquire a renewal in drain.
+- Existing dispatched calls retain their original per-call timeout, native
+  caps and run/campaign backing. Let successful SDK sends return through the
+  existing terminal-event, acknowledgement and complete-usage fences; then
+  stop those worker loops without claiming another batch. Do not send a
+  wrap-up/review prompt, continue pending work or export a report.
+- Enter a visible draining lifecycle only for normal deadline expiry. Retain
+  the original work deadline, finite drain deadline and completed, timed-out
+  or interrupted drain outcome in owned state, including the actual reason
+  for interruption. Keep polling owner controls while draining.
+  Caller/operator cancellation, an admitted worker failure, unknown accounting,
+  ownership ambiguity or another safety stop immediately cancels affected work
+  rather than receiving grace. Native per-call timeout also remains effective.
+- On the 30-second bound, cancel outstanding requests and follow the existing
+  session/cohort/process settlement ordering. Drain does not replace or extend
+  those settlement bounds. Missing SDK terminal delivery or complete usage
+  remains unresolved with backing retained; do not clear a pending-turn fence
+  because an abort RPC returned, an idle event arrived or the host exited.
+  The existing explicit settlement-only reconnect remains a separate financial
+  recovery operation, not an automatic retry or successful original delivery.
+- A fully drained deadline still has stop reason `deadline`; failed checks,
+  open tasks, interrupted peer review and mismatched latest outputs remain
+  visible. No legacy failure or receipt is relabeled, and changed binaries
+  require their own applicable preflight/calibration evidence.
+
+The released [SDK 1.0.28 package][sdk-drain-package] XML documentation for
+`CopilotSession.SendAndWaitAsync(MessageOptions, TimeSpan?, CancellationToken)`
+specifies response-completion delivery, throws on timeout/cancellation, and
+states that timeout controls the wait rather than aborting native work.
+`AbortAsync` requests abort; its completion does not document final accounting
+or successful original send delivery. These are dependency contracts, not
+proof that a particular native request will finish during grace. Preserve the
+existing application-owned usage fence and exact-session recovery boundary.
+
+[sdk-drain-package]: https://www.nuget.org/packages/GitHub.Copilot.SDK/1.0.28
+
 ## Shared platform boundary
 
 The following public application contracts permit independent units without a

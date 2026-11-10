@@ -93,6 +93,15 @@ Use `creditAllocation: shared` and the same continuing campaign ledger.
 Keep the existing native backend, trusted-host policy, read-only source
 boundary, empty checks and all ownership/accounting stops.
 
+On a binary implementing the separately accepted
+[bounded deadline drain](implementation-contracts.md#bounded-deadline-drain),
+the 300 seconds bound work admission. Retain the separately limited 30-second
+drain and existing subsequent settlement, with no new prompt, session or
+spending-window admission during drain. Capture the work deadline, drain
+deadline/outcome and any earlier operator/safety cancellation. Do not extend
+the work budget, caps or credit allowance or treat drain/recovery as acceptance.
+The actual operation's outer bound must include drain and settlement.
+
 Use one shared Chinese goal for a small, source-backed review of the declared
 LiteAgensh lifecycle/reporting scope. Both peers select work and independently
 review findings through ordinary tasks, claims and messages, not fixed roles
@@ -107,9 +116,13 @@ Preserve the report, original source, all process identities and complete
 native-reported accounting. Financial settlement alone does not establish
 automatic delivery.
 
-After independent qualification of the smaller scenario, subsequent Luna
-attempts may increase peers, duration and run allowance within the existing
-32-worker, 1,800-second and 20,000-credit ceilings. Record the exact finite
+Require the validation basis's three consecutive fresh, successful and
+independently qualified two-peer Luna journeys on the same accepted repaired
+binary before subsequent scale/model advancement. A failed actual breaks the
+sequence; a binary change requires a fresh sequence with matching receipts.
+After that checkpoint, subsequent Luna attempts may increase peers, duration
+and run allowance within the existing 32-worker, 1,800-second total
+work-and-drain and 20,000-credit ceilings. Record the exact finite
 configuration, shared goal and operation/effects review before each attempt.
 Use fresh initialization and matching receipts whenever relied-on inputs change.
 Do not advance to Terra while a runtime failure observed on Luna remains
@@ -160,8 +173,14 @@ rather than creating another. Do not spend old remaining allowances or create
 parallel budgets. No subsequent reset is authorized.
 
 The final Terra attempt has a 20,000-AI-Credit total run allowance and
-a 1,800-second run deadline. Luna attempts use the smaller declared settings
-above within those same ceilings, not an additional campaign allowance.
+a 1,800-second execution ceiling, including work admission and any deadline
+drain. On a drain-capable accepted binary, configure `durationSeconds: 1770`
+for that attempt so the fixed 30-second drain ends no later than the existing
+ceiling; earlier native per-call timeouts and safety stops remain effective.
+Legacy binaries without drain retain their 1,800-second configured deadline.
+Luna attempts use the smaller declared settings above within the same
+work-plus-drain ceiling, not an additional campaign allowance. Subsequent
+existing bounded process/accounting settlement remains separate and unchanged.
 Use `creditAllocation: shared` after its source repair is accepted; do not repeat the fixed equal-share failure by silently
 using the legacy mode. Calibration, all workers, failed attempts, repeats,
 fresh sessions and paid diagnostics count in that same new campaign ledger.
@@ -384,11 +403,17 @@ successful operational run does not prove migration completeness, general
 
 ## Stops, retained evidence and cleanup
 
-Stop dispatch and request controlled cancellation on owner stop, configured
-deadline/credit exhaustion, unknown accounting, unverified native policy,
-unexpected effects or ambiguous ownership. Never replace a live/unknown
-writer, suppress a failure to obtain success, weaken a gate, retry a failed
-observation blindly or reset state to repair accounting.
+For drain-capable accepted binaries, normal work-budget expiry stops admission
+immediately and permits only already-dispatched requests to use the
+[bounded deadline drain](implementation-contracts.md#bounded-deadline-drain);
+request controlled cancellation of outstanding requests at drain expiry.
+Legacy binaries without drain request cancellation at their configured deadline.
+Caller/owner stop, credit exhaustion, unknown accounting, unverified native
+policy, unexpected effects, ambiguous ownership and other safety failures
+always stop dispatch and request controlled cancellation immediately.
+Never replace a live/unknown writer, suppress a failure to obtain success,
+weaken a gate, retry a failed observation blindly or reset state to repair
+accounting.
 
 Keep configuration, goal, terminal transcript, SQLite/journals, source
 worktrees, exact native associations, process leases, usage, outputs and

@@ -145,6 +145,16 @@ success. Crash reconnect attempts the exact saved session when supported;
 explicit resume starts fresh native sessions with durable project-state
 summaries. These paths shall not be conflated.
 
+Normal work-budget expiry shall first stop admission of new sessions, turns
+and spending windows. Already-dispatched requests may finish within the
+separately bounded deadline drain defined by the
+[lifecycle contract](implementation-contracts.md#bounded-deadline-drain),
+including their existing acknowledgement and usage verification. Expiry of
+that bound requests cancellation and retains existing uncertainty on missing
+terminal or accounting evidence. Operator/caller cancellation, ownership or
+accounting ambiguity, and other safety failures shall not wait for this grace.
+Draining shall not send a finalization prompt or manufacture a completed review.
+
 For an ended failed run whose lifecycle remains unresolved, explicit `reconnect`
 shall also support bounded, non-dispatch recovery of associated native usage.
 Resolve ownership and verify exact saved sessions before measured settlement;
@@ -175,6 +185,14 @@ and bounded liveness recovery. Native connection silence alone shall not establi
 tool or process is dead. Task closure and budget expiry are stop reasons, not
 proof that final checks passed. Do not claim an aggregate token-request cutoff
 or exact spend metering without a verified native interface.
+
+Distinguish the work-admission deadline from the fixed, finite deadline-drain
+bound and subsequent existing process/accounting settlement. Startup and
+waiting consume the work budget; drain never restarts it. Work completed while
+draining remains inside the same run/campaign credit allowances and native
+limits. Retain the stop reason and whether drain completed, exhausted its
+bound or was interrupted earlier, including the actual interruption reason.
+No drain outcome alone establishes successful task delivery.
 
 Support an explicitly selected shared AI-credit allocation mode. Workers draw
 from one finite run allowance and the same continuing campaign allowance,
