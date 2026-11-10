@@ -912,6 +912,7 @@ public sealed class Coordinator
                             if (normalDeadline)
                             {
                                 await DrainAsync().ConfigureAwait(false);
+                                cancellationToken.ThrowIfCancellationRequested();
                             }
                         }
                         finally

@@ -11,6 +11,90 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
 {
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task CancellationAtDrainEntryCannotFinalizeRetainedWork(bool graceAlreadyExpired)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        DrainCancellationClock clock = new();
+        using GitScenario fixture = await GitScenario.CreateAsync(token, clock: clock);
+        ScriptedNative native = await ScriptedNative.BuildAsync(fixture, "complete", token);
+        string sentinel = Path.Combine(fixture.Fixture.RootPath, "unexpected-final-check.txt");
+        fixture.Database.SaveConfiguration(fixture.Database.Configuration with
+        {
+            CreditAllocation = "shared",
+            RunAiCreditAllowance = 300,
+            PlanningSeconds = 0,
+            FinalChecks =
+            [
+                new()
+                {
+                    Executable = "pwsh",
+                    Arguments =
+                    [
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        "Set-Content -LiteralPath '"
+                            + sentinel.Replace("'", "''", StringComparison.Ordinal)
+                            + "' -Value 'unexpected finalization'",
+                    ],
+                },
+            ],
+        });
+        Coordinator coordinator = native.CreateCoordinator(fixture);
+        await native.PrepareAsync(coordinator, token);
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
+        try
+        {
+            await WaitUntilAsync(() => AcknowledgedWorkers(fixture) == 2, execution, token);
+            void CancelAtDrainEntry()
+            {
+                if (fixture.Database.ReadMetadata("lifecycle") == "draining")
+                {
+                    stop.Cancel();
+                }
+                else
+                {
+                    clock.OnNextRead = CancelAtDrainEntry;
+                }
+            }
+            clock.OnNextRead = CancelAtDrainEntry;
+            clock.Advance(TimeSpan.FromSeconds(
+                fixture.Database.Configuration.DurationSeconds + (graceAlreadyExpired ? 31 : 1)
+            ));
+            await Assert.ThrowsAsync<OperationCanceledException>(() => execution.WaitAsync(token));
+            Assert.IsFalse(File.Exists(sentinel), "Caller cancellation must not run final checks.");
+            JsonObject status = Scenario.Data(coordinator.Status());
+            Assert.AreEqual("paused", status["lifecycle"]!.GetValue<string>());
+            Assert.AreEqual("caller-cancelled", status["stopReason"]!.GetValue<string>());
+            Assert.AreEqual("interrupted", status["deadlineDrain"]!["outcome"]!.GetValue<string>());
+            Assert.AreEqual(
+                "caller-cancelled", status["deadlineDrain"]!["stopReason"]!.GetValue<string>()
+            );
+            Assert.IsNull(fixture.Database.ReadMetadata("git:finalized"));
+            using (SqliteConnection connection = fixture.Database.Open())
+            {
+                Assert.AreEqual(
+                    "caller-cancelled",
+                    Sql.Scalar(connection,
+                        "SELECT stop_reason FROM coordinator_segments ORDER BY id DESC LIMIT 1;")
+                );
+            }
+            Assert.HasCount(2, native.OrdinaryPrompts());
+            AssertSettled(fixture);
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            clock.OnNextRead = null;
+            await StopExecutionAsync(stop, execution);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
     [DataRow("complete", "completed", "deadline")]
     [DataRow("timeout", "timed-out", "deadline")]
     [DataRow("pause", "interrupted", "owner-pause")]
@@ -2002,6 +2086,33 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             ["stdout"] = await output,
             ["stderr"] = await error,
         };
+    }
+
+    private sealed class DrainCancellationClock : TimeProvider
+    {
+        private readonly Lock gate = new();
+        private readonly ScenarioClock clock = new();
+
+        public Action? OnNextRead { get; set; }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            lock (gate)
+            {
+                Action? onRead = OnNextRead;
+                OnNextRead = null;
+                onRead?.Invoke();
+                return clock.GetUtcNow();
+            }
+        }
+
+        public void Advance(TimeSpan interval)
+        {
+            lock (gate)
+            {
+                clock.Advance(interval);
+            }
+        }
     }
 
     private static bool CoordinatorLockReleased(GitScenario fixture)
