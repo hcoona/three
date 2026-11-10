@@ -7,7 +7,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace LiteAgensh.Tests;
 
 [TestClass]
-[DoNotParallelize]
 public sealed class CoordinatorScenarioTests(TestContext testContext)
 {
     [TestMethod]
@@ -102,6 +101,7 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
     }
 
     [TestMethod]
+    [DoNotParallelize]
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task SharedZeroIntervalDispatchReturnsBackingBeforeTheNextAdmissionCompletes()
     {
@@ -1190,6 +1190,9 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                 release == "integration" ? "true" : null,
                 fixture.Database.ReadMetadata("git:plan_integrated")
             );
+            coordinator.RequestControl("pause");
+            Scenario.Data(await execution);
+            AssertSettled(fixture);
             using (SqliteConnection retained = fixture.Database.Open())
             {
                 Assert.AreEqual(
@@ -1208,9 +1211,6 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                 );
             }
 
-            coordinator.RequestControl("pause");
-            Scenario.Data(await execution);
-            AssertSettled(fixture);
             Assert.IsTrue(
                 new CreditLedger(fixture.Database.Configuration.CampaignLedgerPath, 600).Status(
                     fixture.Database.RunId,
