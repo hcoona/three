@@ -1,7 +1,8 @@
 # Real User Audit Protocol
 
 This record owns the exact operational observation boundary for the owner's
-32-peer migration audit and execution/repair loop carried by
+32-peer migration audit, preceding lightweight Luna stabilization and
+execution/repair loop carried by
 [Issue #1552](https://github.com/hcoona/three/issues/1552). The executor,
 diagnostician and independent evidence reviewer consume it; the owner maintains
 it when the subject or effects change. Without it, normal product use could
@@ -33,9 +34,10 @@ metadata, limits and usage contracts, and recheck required installed CLI flags.
 Pause affected work if an interface changed. Disable native automatic updates
 and SDK runtime acquisition; do not install another backend or CLI.
 
-Use only existing authentication and entitlement, explicitly selecting
-GPT-6.1 Terra through its supported native model identifier. Verify actual model
-readback before paid dispatch; an unavailable model is not permission to fall
+Use only existing authentication and entitlement, explicitly selecting Luna
+during lightweight stabilization and GPT-6.1 Terra only after that prerequisite
+is satisfied. Resolve each through its supported native model identifier.
+Verify actual model readback before paid dispatch; an unavailable model is not permission to fall
 back. The non-model preflight may read the supported model catalog solely to
 resolve that identifier; retain the selected identifier, not account details.
 No account balance, personal usage, quota, credential or authentication-material
@@ -56,8 +58,8 @@ and original-file preservation baselines. Keep run state and outputs outside
 the source checkout. The coordinator may create its owned worker worktrees,
 branches, collaboration SQLite, process leases and native sessions.
 
-Configure 32 workers, `planningSeconds: 0`, and one shared Chinese goal and
-cooperation template. Workers select tasks, advisory claims, Board work and
+For the final Terra audit, configure 32 workers, `planningSeconds: 0`, and one
+shared Chinese goal and cooperation template. Workers select tasks, advisory claims, Board work and
 peer review themselves; no fixed worker responsibilities, permanent leader or
 central intelligent scheduler. The same goal covers the entire pinned migration
 map and required behavior, not a preassigned partition. Keep
@@ -81,6 +83,40 @@ Peers claim its preparation through normal cooperation to avoid concurrent
 overwrites and publish matching content to the team channel under the title
 `最终核验汇总`. Source identifiers, quoted evidence and paths keep their original
 form. Repository records remain English.
+
+### Lightweight Luna stabilization
+
+Before any further Terra audit, start with two equal Luna peers,
+`planningSeconds: 0`, `workerStartIntervalSeconds: 0`, a 300-second deadline
+and a total run allowance of 1,000 AI Credits, including calibration.
+Use `creditAllocation: shared` and the same continuing campaign ledger.
+Keep the existing native backend, trusted-host policy, read-only source
+boundary, empty checks and all ownership/accounting stops.
+
+Use one shared Chinese goal for a small, source-backed review of the declared
+LiteAgensh lifecycle/reporting scope. Both peers select work and independently
+review findings through ordinary tasks, claims and messages, not fixed roles
+or a central partition. The goal names one owned private report path and the
+same team title, `最终核验汇总`. It does not claim whole-migration coverage.
+
+Require actual dispatch of both peers, meaningful cooperation and independent
+review, and automatic equality of the latest team report and peer-written file
+after work quiesces. Let peers finish review and synchronization; a first report,
+historical matching pair, operator export or deadline stop is not success.
+Preserve the report, original source, all process identities and complete
+native-reported accounting. Financial settlement alone does not establish
+automatic delivery.
+
+After independent qualification of the smaller scenario, subsequent Luna
+attempts may increase peers, duration and run allowance within the existing
+32-worker, 1,800-second and 20,000-credit ceilings. Record the exact finite
+configuration, shared goal and operation/effects review before each attempt.
+Use fresh initialization and matching receipts whenever relied-on inputs change.
+Do not advance to Terra while a runtime failure observed on Luna remains
+unresolved. Independent outcome review must identify the qualified scale,
+exercised failure paths and remaining limits rather than infer larger-scale
+stability from a small run. The final Terra audit retains its full shared goal,
+32 peers and substantive migration-coverage requirements.
 
 ### Dependency preparation
 
@@ -123,9 +159,10 @@ identity/path; if the transition has already occurred, reuse that ledger
 rather than creating another. Do not spend old remaining allowances or create
 parallel budgets. No subsequent reset is authorized.
 
-Each newly initialized attempt has a 20,000-AI-Credit total run allowance and
-a 1,800-second run deadline. Use `creditAllocation: shared` after its source
-repair is accepted; do not repeat the fixed equal-share failure by silently
+The final Terra attempt has a 20,000-AI-Credit total run allowance and
+a 1,800-second run deadline. Luna attempts use the smaller declared settings
+above within those same ceilings, not an additional campaign allowance.
+Use `creditAllocation: shared` after its source repair is accepted; do not repeat the fixed equal-share failure by silently
 using the legacy mode. Calibration, all workers, failed attempts, repeats,
 fresh sessions and paid diagnostics count in that same new campaign ledger.
 There is no separate run-count quota; cumulative credit and per-run worker/time
@@ -169,8 +206,8 @@ The owner accepts that original native endpoint plus fresh supported accounting
 and new-boundary settlement, not individual final-return proof for every
 historical cancelled request or provider-final invoices.
 Keep pending-work continuation and transcript recovery
-disabled; verify identity, working directory, Terra model, positive remaining
-backing and the unchanged finite native ceiling under the
+disabled; verify identity, working directory, the original attempt's selected
+model, positive remaining backing and the unchanged finite native ceiling under the
 [coordinate contract](implementation-contracts.md#exact-recovery-limit-coordinates)
 before fresh fenced complete cumulative metrics and runtime settlement.
 Require fresh usage to cover the original public amount and persisted
@@ -241,11 +278,12 @@ publish only a sanitized outcome with independent review.
 Cancellation may resolve the selected authorization, not prove provider-final
 spend. Every other unknown still blocks paid work. A new actual attempt still
 requires its own matching accepted-source preflight, calibration, immutable
-inputs and all existing 32-peer, model, finite-credit and outcome gates.
+inputs and all applicable phase-specific peer, model, finite-credit and outcome gates.
 
 ## Owned memory observations
 
-The actual audit, not a synthetic stress/crash test, is the observation subject.
+The actual audit or its Luna stabilization, not a synthetic stress/crash test,
+is the observation subject.
 Retain timestamped aggregate host physical-memory, commit/limit and pagefile
 counters and current/available peak memory counters for exact owned coordinator,
 native and registered descendant identities. Verify PID plus process creation
@@ -274,8 +312,8 @@ failure. Retain the missing allocation stack/peak as a limitation when absent.
    Initialize fresh owned attempt state pointing to the continuing ledger,
    not a cloned or reset active ledger.
 2. **Preflight:** use the unchanged product's non-model operation to verify
-   actual SDK/runtime/session identity, working directory, explicit Terra
-   selection, configured limits and worker-bound local MCP. For shared mode,
+   actual SDK/runtime/session identity, working directory, explicit phase-selected
+   model, configured limits and worker-bound local MCP. For shared mode,
    verify the supported options update and readback with finite diagnostic
    caps of 30, 60 and 30 credits in the same never-prompted session. Preserve
    its identity and zero request count; an empty-session metric is not billing
@@ -293,8 +331,9 @@ failure. Retain the missing allocation stack/peak as a limitation when absent.
    cumulative usage and a matching actual build/configuration receipt before
    ordinary dispatch. Failed or unknown calibration is not automatically
    repeated; retain and diagnose its result first.
-4. **Run:** start the actual foreground coordinator in psmux. Verify all 32
-   ordinary workers actually dispatch, not merely start. Inspect product
+4. **Run:** start the actual foreground coordinator in psmux. Verify every
+   configured ordinary worker actually dispatches, not merely starts; the final
+   Terra audit requires all 32. Inspect product
    status and durable cooperation while it runs; retain observed task/claim,
    Board and peer-message activity, actual completed turns and interruptions.
    Do not inject a central task partition or treat progress counters as an
@@ -321,7 +360,7 @@ failure. Retain the missing allocation stack/peak as a limitation when absent.
    Existing pause, reconnect and explicit fresh-summary resume may be used
    only within their accepted ownership, identity and remaining-budget
    contracts after a real interruption; do not induce crash/recovery tests.
-6. **Finish and reconcile:** require a substantive Chinese audit summary in
+6. **Finish and reconcile:** require a substantive Chinese review summary in
    team state and the declared private output. It names actual migration and
    requirement coverage, source-backed findings and independent
    classifications, checks actually run, missing coverage, unresolved
@@ -330,7 +369,8 @@ failure. Retain the missing allocation stack/peak as a limitation when absent.
    children, complete native usage for actual calls and, for each reservation,
    measured reconciliation, existing unstarted release or the separately
    verified cancellation.
-   Session closure
+   A Luna summary must delimit its smaller source/review scope, not claim
+   completion of the full migration audit. Session closure
    alone is not shared-host settlement: stage final readings, settle the common
    runtime once, and only then finalize their accounting or eligible cancellation. Retain product
    delivery/check status truthfully; empty final checks are not acceptance.
