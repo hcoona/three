@@ -94,14 +94,23 @@ ends a grant. Git and the proposing PR retain the reason and history.
   execute the actual read-only migration review with 32 equal peers and one
   shared Chinese goal in a foreground psmux coordinator, diagnose retained
   failures, and repeat after bounded, reviewed repairs until the user journey
-  works. Keep runtime usability distinct from the audit's semantic conclusion
+  works. First stabilize the runtime journey with short, small-peer Luna
+  executions, expanding on Luna only after the smaller scenario succeeds.
+  Require observed startup, peer cooperation, automatic latest-team/file report
+  convergence after quiescence, and complete process/usage settlement before
+  advancing to Terra; do not use Terra to debug an unstable runtime journey.
+  Lightweight success is a prerequisite, not completion of the 32-peer audit.
+  Keep runtime usability distinct from the audit's semantic conclusion
   about migration completeness; a test pass or merely launched coordinator is
   not completion. Source repairs use the existing refinement entry and its
   accepted product decisions, not a new product or recovery architecture.
 - **Owner risk decision and effects:** the owner requests paid use of the
   existing Windows Copilot SDK/CLI, existing authentication and trusted-host
-  policy for this actual repository audit, explicitly selecting the supported
-  GPT-6.1 Terra model without provider substitution. Workers may process
+  policy for this actual repository audit, explicitly selecting Luna for
+  lightweight stabilization and the supported GPT-6.1 Terra model only after
+  that prerequisite. Resolve and verify each selected model through its
+  supported native identifier without fallback or provider substitution.
+  Workers may process
   the declared repository through that model service; worktrees are not a
   host-permission sandbox. Permit owned worktree/state/process creation,
   worker-bound local MCP cooperation, private audit output, read-only public
@@ -120,9 +129,14 @@ ends a grant. Git and the proposing PR retain the reason and history.
   aggregate host physical/commit/pagefile counters and memory counters bound
   to its owned process identities. Do not inspect unrelated processes or
   change host/pagefile settings.
-- **Finite execution boundary:** retain 32 workers, no privileged planner,
-  a 1,800-second per-run deadline, 20,000 AI Credits in total per initialized
-  attempt and 100,000 AI Credits cumulatively across all subsequent trials.
+- **Finite execution boundary:** retain no privileged planner and ceilings of
+  32 workers, a 1,800-second per-run deadline, 20,000 AI Credits in total per
+  initialized attempt and 100,000 AI Credits cumulatively across all subsequent
+  trials. Luna stabilization uses fewer workers, shorter deadlines and smaller
+  run allowances declared in the separately accepted operational protocol;
+  the final Terra audit retains the 32-peer configuration. Model or scale
+  changes require fresh initialized inputs and matching preflight/calibration
+  receipts, not changes to an already initialized attempt.
   Include every worker, calibration, failed attempt, repetition, fresh session
   and paid diagnostic in those allowances; they are not per-worker budgets.
   The owner explicitly authorizes one new forward-only campaign ledger now,
