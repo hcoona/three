@@ -4114,6 +4114,12 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     [DataRow("worker-entry", true)]
     [DataRow("worker-post", false)]
     [DataRow("sdk-post", true)]
+    [DataRow("sdk-verification", false)]
+    [DataRow("sdk-verification", true)]
+    [DataRow("sdk-apply", false)]
+    [DataRow("sdk-apply", true)]
+    [DataRow("sdk-dispatch", false)]
+    [DataRow("sdk-dispatch", true)]
     public async Task RealRenewalBoundaryCancellationPreservesAccountingCause(
         string phase, bool delayed
     )
@@ -4141,11 +4147,20 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         bool readEntered = false;
         bool callbackReturned = false;
         bool backedBeforeClosure = false;
+        bool sdkOwned = phase is "sdk-verification" or "sdk-apply" or "sdk-dispatch";
+        bool applying = phase is "sdk-verification" or "sdk-apply";
+        bool applied = false;
         CancellationToken request = default;
         CancellationToken child = default;
         CancellationToken sending = default;
+        OperationCanceledException? applyCancellation = null;
+        NativeSdkSession.RequestedReadCanceledException? readCancellation = null;
         int applications = 0;
+        int verifications = 0;
+        int sdkSends = 0;
         int dispatches = 0;
+        TaskCompletionSource<AssistantMessageEvent?> nativeResponse = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource sent = new(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource start = new(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource reading = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -4183,6 +4198,11 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                             }
                             active = session;
                             session.FailureSource = source;
+                            if (phase == "sdk-dispatch")
+                            {
+                                session.SettledRead = _ => Task.FromResult(
+                                    new NativeUsage(session.SessionId, null, null, 0));
+                            }
                             session.OnFailureRead = () =>
                             {
                                 if (!delayed && aborting.Task.IsCompleted)
@@ -4225,6 +4245,17 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                                 await source.CompleteSendAsync(async () =>
                                 {
                                     await start.Task.WaitAsync(token);
+                                    if (sdkOwned)
+                                    {
+                                        Task<AssistantMessageEvent?> original = source.StartSend(
+                                            () =>
+                                            {
+                                                Interlocked.Increment(ref sdkSends);
+                                                return nativeResponse.Task;
+                                            }, admission);
+                                        Assert.IsFalse(original.IsCompleted);
+                                        Assert.AreNotEqual("sdk-dispatch", phase);
+                                    }
                                     await NativeSdkSession.HandleExhaustedLimitAsync(
                                         "queued-before-deadline", async renewal =>
                                         {
@@ -4235,6 +4266,12 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                                             }
                                             decimal limit = await renew!(renewal);
                                             callbackReturned = true;
+                                            if (applying)
+                                            {
+                                                Assert.AreEqual(200m, Own().Allowance);
+                                                Assert.IsLessThan(deadline, clock.GetUtcNow());
+                                                backedBeforeClosure = true;
+                                            }
                                             if (phase == "sdk-post")
                                             {
                                                 Assert.AreEqual(200m, Own().Allowance);
@@ -4242,11 +4279,67 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                                                 clock.Advance(TimeSpan.FromSeconds(121));
                                             }
                                             return limit;
-                                        }, (_, _, _) =>
+                                        }, async (_, response, suppliedRequest) =>
                                         {
                                             Interlocked.Increment(ref applications);
-                                            return Task.CompletedTask;
-                                        }, (_, _) => Task.CompletedTask, supplied, admission);
+                                            Assert.IsTrue(callbackReturned);
+                                            Assert.AreEqual(200m, Own().Allowance);
+                                            Assert.AreEqual(
+                                                UISessionLimitsExhaustedResponseAction.Set,
+                                                response.Action);
+                                            Assert.AreEqual(200d, response.MaxAiCredits);
+                                            Assert.IsLessThan(deadline, clock.GetUtcNow());
+                                            if (phase == "sdk-apply")
+                                            {
+                                                request = suppliedRequest;
+                                                TaskCompletionSource pending = new(
+                                                    TaskCreationOptions
+                                                        .RunContinuationsAsynchronously);
+                                                using CancellationTokenRegistration canceled =
+                                                    suppliedRequest.Register(
+                                                        () => pending.TrySetCanceled(
+                                                            suppliedRequest));
+                                                reading.TrySetResult();
+                                                try
+                                                {
+                                                    await pending.Task;
+                                                }
+                                                catch (OperationCanceledException exception)
+                                                {
+                                                    applyCancellation = exception;
+                                                    throw;
+                                                }
+                                            }
+                                            session.Metadata!["appliedLimit"] =
+                                                response.MaxAiCredits;
+                                            applied = true;
+                                        }, async (limit, suppliedRequest) =>
+                                        {
+                                            Interlocked.Increment(ref verifications);
+                                            Assert.IsTrue(applied);
+                                            Assert.AreEqual(200m, limit);
+                                            request = suppliedRequest;
+                                            try
+                                            {
+                                                await NativeSdkSession.ReadProbeAsync(
+                                                    async probe =>
+                                                    {
+                                                        child = probe;
+                                                        reading.TrySetResult();
+                                                        await Task.Delay(
+                                                            Timeout.InfiniteTimeSpan, probe);
+                                                        return new NativeUsage(session.SessionId,
+                                                            0, "complete", 1);
+                                                    }, suppliedRequest);
+                                            }
+                                            catch (
+                                                NativeSdkSession.RequestedReadCanceledException
+                                                exception)
+                                            {
+                                                readCancellation = exception;
+                                                throw;
+                                            }
+                                        }, supplied, admission);
                                     return new JsonObject();
                                 }, async () =>
                                 {
@@ -4274,25 +4367,67 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 Assert.IsTrue(release.Task.Wait(TimeSpan.FromSeconds(30)));
             };
             await held.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
-            if (phase == "sdk-entry")
+            using (SqliteConnection campaign = Campaign(fixture.Database))
+            {
+                Assert.AreEqual(1L, Sql.Scalar(campaign,
+                    "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
+                    null, ("$id", Own().Id)));
+                Assert.AreEqual("pending", Sql.Scalar(campaign,
+                    "SELECT status FROM credit_sdk_usage WHERE reservation_id=$id;",
+                    null, ("$id", Own().Id)));
+            }
+            Assert.AreEqual("prompting",
+                fixture.Database.ReadMetadata("worker:worker1:lifecycle"));
+            if (phase is "sdk-entry" or "sdk-dispatch")
             {
                 clock.Advance(TimeSpan.FromSeconds(121));
             }
             start.TrySetResult();
-            if (phase == "read")
+            if (phase == "read" || applying)
             {
                 await reading.Task.WaitAsync(TimeSpan.FromSeconds(2), token);
                 clock.Advance(TimeSpan.FromSeconds(121));
             }
             await aborting.Task.WaitAsync(TimeSpan.FromSeconds(2), token);
-            Assert.AreEqual(phase != "sdk-entry", callbackEntered);
-            Assert.AreEqual(phase is "read" or "worker-post" or "sdk-post", readEntered);
-            Assert.AreEqual(phase == "sdk-post", callbackReturned);
-            Assert.AreEqual(phase is "worker-post" or "sdk-post", backedBeforeClosure);
-            if (phase == "read")
+            Assert.AreEqual(phase is not ("sdk-entry" or "sdk-dispatch"), callbackEntered);
+            Assert.AreEqual(
+                phase is "read" or "worker-post" or "sdk-post" || applying, readEntered);
+            Assert.AreEqual(phase == "sdk-post" || applying, callbackReturned);
+            Assert.AreEqual(phase is "worker-post" or "sdk-post" || applying, backedBeforeClosure);
+            if (phase == "read" || applying)
             {
                 Assert.IsTrue(request.IsCancellationRequested);
-                Assert.IsTrue(child.IsCancellationRequested);
+                if (phase != "sdk-apply")
+                {
+                    Assert.IsTrue(child.IsCancellationRequested);
+                }
+            }
+            if (phase == "sdk-apply")
+            {
+                Assert.IsNotNull(applyCancellation);
+                Assert.AreEqual(request, applyCancellation.CancellationToken);
+                Assert.IsFalse(applied);
+                Assert.AreEqual(CancellationToken.None, child);
+            }
+            if (phase == "sdk-verification")
+            {
+                Assert.AreNotEqual(request, child);
+                Assert.IsNotNull(readCancellation);
+                Assert.AreEqual(request, readCancellation.RequestToken);
+                Assert.AreEqual(child, readCancellation.CancellationToken);
+            }
+            if (phase == "sdk-dispatch")
+            {
+                // Reaching the unopened transport proves the real turn fence never started.
+                await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+                    source.ReadSettledAsync(active!.SessionId, 100, token));
+            }
+            else if (applying)
+            {
+                OperationException unresolved =
+                    await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                        source.ReadSettledAsync(active!.SessionId, 200, token));
+                Assert.AreEqual("credit_unknown", unresolved.Code);
             }
             Assert.IsFalse(sending.IsCancellationRequested);
             if (!delayed)
@@ -4325,7 +4460,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             JsonObject status = Scenario.Data(coordinator.Status());
             testContext.WriteLine($"Boundary={phase}; delayed={delayed}; "
                 + $"read={readEntered}; grant={Own().Allowance}; returned={callbackReturned}; "
-                + $"SDK cause={source.FirstFailure}");
+                + $"SDK sends={sdkSends}; Set={applications}; verified={verifications}; "
+                + $"applied={applied}; SDK cause={source.FirstFailure}");
             Assert.AreEqual("credit_unknown", status["stopReason"]!.GetValue<string>());
             Assert.AreEqual("interrupted",
                 status["deadlineDrain"]!["outcome"]!.GetValue<string>());
@@ -4337,12 +4473,31 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 status["deadlineDrain"]!["drainDeadline"]!.GetValue<string>());
             Assert.IsNull(source.FirstFailure);
             Assert.AreEqual(1, dispatches);
-            Assert.AreEqual(0, applications);
-            Assert.AreEqual(100d, active!.Metadata!["appliedLimit"]!.GetValue<double>());
+            Assert.AreEqual(applying ? 1 : 0, applications);
+            Assert.AreEqual(phase == "sdk-verification" ? 1 : 0, verifications);
+            Assert.AreEqual(applying ? 1 : 0, sdkSends);
+            Assert.AreEqual(TimeSpan.FromSeconds(120), active!.LastSendTimeout);
+            if (phase != "sdk-apply")
+            {
+                Assert.AreEqual(applied ? 200d : 100d,
+                    active!.Metadata!["appliedLimit"]!.GetValue<double>());
+            }
             CreditReservation retained = Own();
             Assert.AreEqual(backedBeforeClosure ? 200m : 100m, retained.Allowance);
             Assert.AreEqual("uncertain", retained.State);
             Assert.IsTrue(retained.GrantOpen);
+            using (SqliteConnection campaign = Campaign(fixture.Database))
+            {
+                Assert.AreEqual(1L, Sql.Scalar(campaign,
+                    "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
+                    null, ("$id", retained.Id)));
+                if (phase == "sdk-dispatch")
+                {
+                    Assert.AreNotEqual("complete", Sql.Scalar(campaign,
+                        "SELECT status FROM credit_sdk_usage WHERE reservation_id=$id;",
+                        null, ("$id", retained.Id)));
+                }
+            }
             JsonObject usage = Assert.ContainsSingle(status["credits"]!["reported"]!
                 .AsArray().OfType<JsonObject>()
                 .Where(item => item["reservationId"]!.GetValue<string>() == retained.Id));

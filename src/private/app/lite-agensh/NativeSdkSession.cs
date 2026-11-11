@@ -622,9 +622,8 @@ internal sealed class NativeSdkSession : INativeSdkSession
         Task<SessionLimitsExhaustedRequestedData>? pending = null;
         return await CompleteSendAsync(async () =>
         {
-            admission?.ThrowIfClosed();
-            usageFence.SetTurnPending(true);
-            sending = active.SendAndWaitAsync(text, timeout, linked.Token);
+            sending = StartSend(
+                () => active.SendAndWaitAsync(text, timeout, linked.Token), admission);
             while (requests is not null && !sending.IsCompleted)
             {
                 pending = requests.Reader.ReadAsync(linked.Token).AsTask();
@@ -679,6 +678,15 @@ internal sealed class NativeSdkSession : INativeSdkSession
         }, cancellationToken).ConfigureAwait(false);
     }
 
+    internal Task<AssistantMessageEvent?> StartSend(
+        Func<Task<AssistantMessageEvent?>> send, WorkAdmission? admission
+    )
+    {
+        NativeWorker.CheckRenewalAdmission(admission);
+        usageFence.SetTurnPending(true);
+        return send();
+    }
+
     internal async Task<JsonObject> CompleteSendAsync(
         Func<Task<JsonObject>> send, Func<Task> abort, Func<Task> cleanup,
         CancellationToken cancellationToken
@@ -716,16 +724,29 @@ internal sealed class NativeSdkSession : INativeSdkSession
         );
         decimal limit = await renewLimit(renewing.Token).ConfigureAwait(false);
         NativeWorker.CheckRenewalAdmission(admission);
-        await apply(
-            requestId,
-            new UISessionLimitsExhaustedResponse
-            {
-                Action = UISessionLimitsExhaustedResponseAction.Set,
-                MaxAiCredits = NativeLimit(limit),
-            },
-            renewing.Token
-        ).ConfigureAwait(false);
-        await verify(limit, renewing.Token).ConfigureAwait(false);
+        try
+        {
+            await apply(
+                requestId,
+                new UISessionLimitsExhaustedResponse
+                {
+                    Action = UISessionLimitsExhaustedResponseAction.Set,
+                    MaxAiCredits = NativeLimit(limit),
+                },
+                renewing.Token
+            ).ConfigureAwait(false);
+            await verify(limit, renewing.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (
+            admission?.Token.IsCancellationRequested == true
+            && !cancellationToken.IsCancellationRequested
+            && (exception.CancellationToken == renewing.Token
+                || exception is RequestedReadCanceledException read
+                    && read.RequestToken == renewing.Token)
+        )
+        {
+            throw new NativeWorker.RenewalAdmissionCanceledException(exception);
+        }
     }
 
     public IDisposable ObserveRequest(CancellationToken cancellationToken) =>
