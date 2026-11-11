@@ -8,15 +8,21 @@ namespace LiteAgensh.Tests;
 
 internal sealed class RunFixture : IDisposable
 {
-    public RunFixture()
+    public RunFixture(bool pathsWithSpaces = false)
     {
         RootPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "LiteAgensh.Tests",
             Guid.NewGuid().ToString("N")
         );
-        RepositoryPath = Path.Combine(RootPath, "repository");
-        StatePath = Path.Combine(RootPath, "repository-state");
+        RepositoryPath = Path.Combine(
+            RootPath,
+            pathsWithSpaces ? "repository with spaces" : "repository"
+        );
+        StatePath = Path.Combine(
+            RootPath,
+            pathsWithSpaces ? "repository state" : "repository-state"
+        );
         Directory.CreateDirectory(RepositoryPath);
         Configuration = new RunConfiguration
         {

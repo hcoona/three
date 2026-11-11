@@ -1947,15 +1947,31 @@ public sealed class GitOperations
             }
         }
 
-        string root = (
-            await GitAsync(path, ["rev-parse", "--show-toplevel"], token).ConfigureAwait(false)
-        ).Trim();
+        string[] paths = (
+            await GitAsync(
+                    path,
+                    ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
+                    token
+                )
+                .ConfigureAwait(false)
+        ).Split('\n');
+        if (
+            paths.Length != 3
+            || paths[2].Length != 0
+            || string.IsNullOrWhiteSpace(paths[0])
+            || string.IsNullOrWhiteSpace(paths[1])
+        )
+        {
+            throw new OperationException(
+                "unavailable",
+                "Git worktree identity output was incomplete or malformed."
+            );
+        }
+
+        string root = paths[0].Trim();
+        string common = paths[1].Trim();
         string branch = (
             await GitAsync(path, ["symbolic-ref", "-q", "HEAD"], token).ConfigureAwait(false)
-        ).Trim();
-        string common = (
-            await GitAsync(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"], token)
-                .ConfigureAwait(false)
         ).Trim();
         string repositoryCommon = (
             await GitAsync(

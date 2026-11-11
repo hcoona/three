@@ -19,11 +19,12 @@ internal sealed class GitScenario : IDisposable
     private GitScenario(
         Func<RunConfiguration, RunConfiguration>? configure,
         TimeProvider? clock,
-        Action<string>? trace
+        Action<string>? trace,
+        bool pathsWithSpaces
     )
     {
         this.trace = trace;
-        Fixture = new();
+        Fixture = new(pathsWithSpaces);
         Directory.CreateDirectory(Path.Combine(Fixture.RootPath, "fixture-hooks"));
         RunConfiguration configuration =
             configure?.Invoke(Fixture.Configuration) ?? Fixture.Configuration;
@@ -45,10 +46,11 @@ internal sealed class GitScenario : IDisposable
         CancellationToken token,
         Func<RunConfiguration, RunConfiguration>? configure = null,
         TimeProvider? clock = null,
-        Action<string>? trace = null
+        Action<string>? trace = null,
+        bool pathsWithSpaces = false
     )
     {
-        GitScenario scenario = new(configure, clock, trace);
+        GitScenario scenario = new(configure, clock, trace, pathsWithSpaces);
         try
         {
             string repository = scenario.Fixture.RepositoryPath;

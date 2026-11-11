@@ -9,6 +9,18 @@ namespace LiteAgensh.Tests;
 public sealed class GitScenarioTests(TestContext testContext)
 {
     [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task InitializeAndReinitializeWorktreesWithSpacesPreservesDirtyOriginal()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario fixture = await GitScenario.CreateAsync(token, pathsWithSpaces: true);
+
+        await fixture.Operations.InitializeAsync(token);
+
+        await fixture.AssertOriginalPreservedAsync(token);
+    }
+
+    [TestMethod]
     [DataRow(true)]
     [DataRow(false)]
     [Timeout(120000, CooperativeCancellation = true)]
