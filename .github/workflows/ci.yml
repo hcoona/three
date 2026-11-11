@@ -581,7 +581,7 @@ jobs:
             run-host-tests: false
             run-deployment-validation: true
           - build-os: Linux
-            build-runner: ubuntu-latest
+            build-runner: ubuntu-24.04
             target-os: Linux
             target-rid: linux-x64
             run-host-tests: true
