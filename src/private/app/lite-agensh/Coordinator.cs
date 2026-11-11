@@ -562,6 +562,7 @@ public sealed class Coordinator
         OperationException? drainAccountingStop = null;
         long drainAccountingObserved = 0;
         string? drainAccountingCause = null;
+        OperationCanceledException? nonRequestCancellation = null;
         void CheckNativeFailures()
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -584,6 +585,12 @@ public sealed class Coordinator
             cancellationToken.ThrowIfCancellationRequested();
             if (originating is not null)
             {
+                if (originating is OperationCanceledException cancelled
+                    && cancelled.Data["liteagensh.nativeFailureCancelled"] is false)
+                {
+                    nonRequestCancellation = cancelled;
+                    finalize = false;
+                }
                 throw originating;
             }
         }
@@ -636,6 +643,7 @@ public sealed class Coordinator
                         allocations[id],
                         calibration: false
                     );
+                    native.BindOwner(stop.Token);
                     lock (workerMembership)
                     {
                         workers.Add(native);
@@ -664,6 +672,7 @@ public sealed class Coordinator
                             fresh,
                             calibration: false
                         );
+                        replacement.BindOwner(stop.Token);
                         lock (workerMembership)
                         {
                             workers.Add(replacement);
@@ -983,8 +992,9 @@ public sealed class Coordinator
                         && (!stop.IsCancellationRequested
                             || requestDeadlineToken.IsCancellationRequested);
                 }
-                catch (OperationCanceledException) when (
-                    admissionBudget.IsClosed
+                catch (OperationCanceledException exception) when (
+                    !ReferenceEquals(exception, nonRequestCancellation)
+                    && admissionBudget.IsClosed
                     && (!stop.IsCancellationRequested
                         || requestDeadlineToken.IsCancellationRequested)
                 )
@@ -1042,8 +1052,10 @@ public sealed class Coordinator
                 }
             }
         }
-        catch (OperationCanceledException) when (
-            stop.IsCancellationRequested || workAdmission?.IsClosed == true
+        catch (OperationCanceledException exception) when (
+            (stop.IsCancellationRequested || workAdmission?.IsClosed == true)
+            && (cancellationToken.IsCancellationRequested
+                || !ReferenceEquals(exception, nonRequestCancellation))
         )
         {
             reason = cancellationToken.IsCancellationRequested ? "caller-cancelled" : "deadline";

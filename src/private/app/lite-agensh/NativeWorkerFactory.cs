@@ -18,6 +18,8 @@ internal interface INativeWorker : IAsyncDisposable
 
     Exception? FirstFailure => null;
 
+    void BindOwner(CancellationToken cancellationToken) { }
+
     NativeRequest BeginRequest(CancellationToken cancellationToken) => new(cancellationToken);
 
     Task StartAsync(

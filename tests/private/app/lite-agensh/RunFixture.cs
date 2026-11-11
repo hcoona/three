@@ -2,7 +2,7 @@ using System.Text;
 using LiteAgensh;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-[assembly: Parallelize(Scope = ExecutionScope.MethodLevel)]
+[assembly: Parallelize(Workers = 2, Scope = ExecutionScope.MethodLevel)]
 
 namespace LiteAgensh.Tests;
 

@@ -19,6 +19,8 @@ internal interface INativeSdkSession : IAsyncDisposable
 
     IDisposable? ObserveRequest(CancellationToken cancellationToken) => null;
 
+    void MarkDispatchPending() { }
+
     JsonObject? Metadata { get; }
 
     Task<OriginalNativeShutdown> ReadOriginalShutdownAsync(
@@ -491,7 +493,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
         using CancellationTokenSource deadline =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(database.Configuration.DurationSeconds));
-        return await usageFence.CaptureAsync(
+        return await CaptureUsageAsync(
             token => verifyLocalWork
                 ? ReadIdleRecoveryUsageAsync(
                     next => ReadAsync(expectedSession, expectedLimit, next, validateEvents),
@@ -536,6 +538,10 @@ internal sealed class NativeSdkSession : INativeSdkSession
     }
 
     public void WithSettledUsage(NativeUsage usage, Action record) => usageFence.Use(usage, record);
+
+    internal Task<NativeUsage> CaptureUsageAsync(
+        Func<CancellationToken, Task<NativeUsage>> read, CancellationToken cancellationToken
+    ) => usageFence.CaptureAsync(read, cancellationToken);
 
     internal static void ValidateMetadata(
         SessionMetadataSnapshot metadata,
@@ -659,8 +665,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
             {
                 try
                 {
-                    await sending.ConfigureAwait(false);
-                    usageFence.SetTurnPending(false);
+                    await CompleteTerminalAsync(sending).ConfigureAwait(false);
                 }
                 catch (Exception)
                 {
@@ -683,8 +688,16 @@ internal sealed class NativeSdkSession : INativeSdkSession
     )
     {
         NativeWorker.CheckRenewalAdmission(admission);
-        usageFence.SetTurnPending(true);
+        MarkDispatchPending();
         return send();
+    }
+
+    public void MarkDispatchPending() => usageFence.SetTurnPending(true);
+
+    internal async Task CompleteTerminalAsync(Task sending)
+    {
+        await sending.ConfigureAwait(false);
+        usageFence.SetTurnPending(false);
     }
 
     internal async Task<JsonObject> CompleteSendAsync(

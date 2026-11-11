@@ -17,6 +17,8 @@ internal sealed class NativeWorker : INativeWorker
     private readonly SemaphoreSlim turn = new(1, 1);
     private readonly SemaphoreSlim settlement = new(1, 1);
     private readonly CancellationTokenSource stop = new();
+    private CancellationTokenRegistration ownerCancellation;
+    private IDisposable? ownershipObservation;
     private INativeSdkSession? session;
     private bool started;
     private bool stopped;
@@ -57,6 +59,9 @@ internal sealed class NativeWorker : INativeWorker
     public string? NativeFailure => session?.NativeFailure;
 
     public Exception? FirstFailure => session?.FirstFailure;
+
+    public void BindOwner(CancellationToken cancellationToken) =>
+        ownerCancellation = cancellationToken.Register(stop.Cancel);
 
     public async Task StartAsync(
         string cwd,
@@ -142,6 +147,7 @@ internal sealed class NativeWorker : INativeWorker
         }
 
         session = host.CreateSession(cwd, calibration);
+        ownershipObservation = session.ObserveRequest(stop.Token);
         (NativeUsage Usage, long Dispatches)? priorUsage = null;
         try
         {
@@ -318,6 +324,7 @@ internal sealed class NativeWorker : INativeWorker
                 admission
             );
             dispatched = true;
+            session.MarkDispatchPending();
             admission?.ThrowIfClosed();
             nativeIdle = false;
             database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "prompting");
@@ -597,6 +604,7 @@ internal sealed class NativeWorker : INativeWorker
                     if (session is not null)
                     {
                         session.Quiesce();
+                        ownershipObservation?.Dispose();
                         if (calibration || undispatchedBaseline is not null)
                         {
                             try
@@ -671,6 +679,7 @@ internal sealed class NativeWorker : INativeWorker
         }
         finally
         {
+            ownerCancellation.Dispose();
             settlement.Release();
         }
     }

@@ -334,6 +334,11 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
         TaskCompletionSource pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource cancelled = new(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource releaseTurn = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource verified = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource releaseVerified =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource peerReleased = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken pendingToken = default;
         Coordinator coordinator = new(
             fixture.Database, fixture.Collaboration, fixture.Operations,
             (database, _, credits) => new ControlledNativeFactory(
@@ -350,6 +355,7 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                 {
                     if (reservation.Worker == "worker2")
                     {
+                        pendingToken = cancellationToken;
                         pending.TrySetResult();
                         try
                         {
@@ -362,6 +368,16 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                             cancelled.TrySetResult();
                             throw;
                         }
+                    }
+                },
+                onVerify: async (reservation, cancellationToken) =>
+                {
+                    if (reservation.Worker == "worker1")
+                    {
+                        // Publication, durable ACK and real usage verification precede this.
+                        verified.TrySetResult();
+                        await releaseVerified.Task.WaitAsync(cancellationToken);
+                        peerReleased.TrySetResult();
                     }
                 }
             )
@@ -382,6 +398,7 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                 () => pending.Task.IsCompleted && AcknowledgedWorkers(fixture) == 1,
                 execution, token
             );
+            await verified.Task.WaitAsync(token);
             await fixture.CommitAsync("worker1", "a.txt", "bounded atomic integration", token);
             JsonObject change = await fixture.SubmitAsync("worker1", token);
             await fixture.ApproveAsync(change, "worker2", token);
@@ -389,17 +406,32 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
             await fixture.QueueAsync(change, token);
             await WaitUntilAsync(() => File.Exists(entered), execution, token);
             int admitted = native.OrdinaryPrompts().Length;
+            Assert.AreEqual(2, admitted);
+            Assert.AreEqual(2L, Dispatches());
+            using (SqliteConnection connection = fixture.Database.Open())
+            {
+                Assert.AreEqual(2L, Sql.Scalar(connection,
+                    "SELECT COUNT(*) FROM delivery_batches;"));
+                Assert.AreNotEqual(0L, Sql.Scalar(connection,
+                    "SELECT COUNT(*) FROM events WHERE recipient='worker1' AND state='pending';"));
+            }
 
             clock.Advance(TimeSpan.FromSeconds(60));
             Assert.IsFalse(cancelled.Task.IsCompleted, "Admission expiry must not abort the turn.");
+            Assert.IsFalse(pendingToken.IsCancellationRequested);
+            // Release an eligible peer with real notifications queued, not after the assertion.
+            releaseVerified.TrySetResult();
+            await peerReleased.Task.WaitAsync(TimeSpan.FromSeconds(2), token);
             clock.Advance(TimeSpan.FromSeconds(29));
             Assert.IsFalse(cancelled.Task.IsCompleted);
+            Assert.IsFalse(pendingToken.IsCancellationRequested);
             clock.Advance(TimeSpan.FromSeconds(1));
             await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(2), token);
             Assert.IsFalse(File.Exists(release));
             Assert.IsFalse(execution.IsCompleted, "Git's atomic advance must remain protected.");
             Assert.AreNotEqual("draining", fixture.Database.ReadMetadata("lifecycle"));
             Assert.HasCount(admitted, native.OrdinaryPrompts());
+            Assert.AreEqual(2L, Dispatches());
 
             File.WriteAllText(release, "");
             Scenario.Data(await execution.WaitAsync(token));
@@ -415,6 +447,13 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
                 status["deadlineDrain"]!["drainDeadline"]!.GetValue<DateTimeOffset>()
             );
             AssertSettled(fixture);
+            Assert.HasCount(admitted, native.OrdinaryPrompts());
+            Assert.AreEqual(2L, Dispatches());
+            using (SqliteConnection connection = fixture.Database.Open())
+            {
+                Assert.AreEqual(2L, Sql.Scalar(connection,
+                    "SELECT COUNT(*) FROM delivery_batches;"));
+            }
             File.Delete(entered);
             File.Delete(release);
             await fixture.AssertOriginalPreservedAsync(token);
@@ -422,10 +461,27 @@ public sealed class CoordinatorScenarioTests(TestContext testContext)
         finally
         {
             releaseStart.TrySetResult();
+            releaseVerified.TrySetResult();
             File.WriteAllText(release, "");
             await StopExecutionAsync(stop, execution);
             File.Delete(entered);
             File.Delete(release);
+        }
+
+        long Dispatches()
+        {
+            using SqliteConnection connection = new(new SqliteConnectionStringBuilder
+            {
+                DataSource = fixture.Database.Configuration.CampaignLedgerPath,
+                Pooling = false,
+            }.ToString());
+            connection.Open();
+            return (long)Sql.Scalar(connection,
+                """
+                SELECT SUM(u.dispatch_count) FROM credit_sdk_usage u
+                JOIN credit_reservations r ON r.id=u.reservation_id
+                WHERE r.run_id=$run AND r.worker IN ('worker1','worker2');
+                """, null, ("$run", fixture.Database.RunId))!;
         }
     }
 

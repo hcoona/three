@@ -4008,10 +4008,21 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         private readonly List<DeadlineTimer> timers = [];
         private Action? nextRead;
         private Action? nextWake;
+        private int readThread;
 
         public Action? OnNextRead
         {
-            set => Volatile.Write(ref nextRead, value);
+            set
+            {
+                readThread = 0;
+                Volatile.Write(ref nextRead, value);
+            }
+        }
+
+        public void OnNextReadForCurrentThread(Action action)
+        {
+            readThread = Environment.CurrentManagedThreadId;
+            Volatile.Write(ref nextRead, action);
         }
 
         public Action? OnNextWake
@@ -4021,7 +4032,10 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
         public override DateTimeOffset GetUtcNow()
         {
-            Interlocked.Exchange(ref nextRead, null)?.Invoke();
+            if (readThread == 0 || readThread == Environment.CurrentManagedThreadId)
+            {
+                Interlocked.Exchange(ref nextRead, null)?.Invoke();
+            }
             lock (gate)
             {
                 return clock.GetUtcNow();
@@ -4200,8 +4214,9 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                             session.FailureSource = source;
                             if (phase == "sdk-dispatch")
                             {
-                                session.SettledRead = _ => Task.FromResult(
-                                    new NativeUsage(session.SessionId, null, null, 0));
+                                session.RecordedDispatchFence = true;
+                                session.SettledRead = supplied => source.ReadSettledAsync(
+                                    session.SessionId, 100, supplied, validateEvents: false);
                             }
                             session.OnFailureRead = () =>
                             {
@@ -4416,17 +4431,12 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 Assert.AreEqual(request, readCancellation.RequestToken);
                 Assert.AreEqual(child, readCancellation.CancellationToken);
             }
-            if (phase == "sdk-dispatch")
-            {
-                // Reaching the unopened transport proves the real turn fence never started.
-                await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
-                    source.ReadSettledAsync(active!.SessionId, 100, token));
-            }
-            else if (applying)
+            if (phase == "sdk-dispatch" || applying)
             {
                 OperationException unresolved =
                     await Assert.ThrowsExactlyAsync<OperationException>(() =>
-                        source.ReadSettledAsync(active!.SessionId, 200, token));
+                        source.ReadSettledAsync(active!.SessionId,
+                            phase == "sdk-dispatch" ? 100 : 200, token));
                 Assert.AreEqual("credit_unknown", unresolved.Code);
             }
             Assert.IsFalse(sending.IsCancellationRequested);
@@ -4759,6 +4769,470 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         }
     }
 
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow("unrelated")]
+    [DataRow("caller")]
+    [DataRow("earlier-native")]
+    public async Task LiveNonRequestCancellationSurvivesCoordinatorCleanup(string origin)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        DelayedDrainClock clock = new();
+        using GitScenario fixture = await DeadlineFixtureAsync(clock, token);
+        await using NativeSdkSession source = new(fixture.Database,
+            new ProcessRunner(fixture.Database), fixture.Database.Configuration.RepositoryPath,
+            isolated: false);
+        using CancellationTokenSource unrelated = new();
+        OperationCanceledException original = new("Unrelated send cancellation.", unrelated.Token);
+        bool armed = false;
+        CancellationToken request = default;
+        TaskCompletionSource sent = NewSignal();
+        TaskCompletionSource fail = NewSignal();
+        TaskCompletionSource aborting = NewSignal();
+        TaskCompletionSource abort = NewSignal();
+        TaskCompletionSource poll = NewSignal();
+        TaskCompletionSource resume = NewSignal();
+        TaskCompletionSource stopped = NewSignal();
+        TaskCompletionSource cleaned = NewSignal();
+        Coordinator coordinator = SourceCoordinator(fixture, () => armed, session =>
+        {
+            session.FailureSource = source;
+            session.DuringSend = async (supplied, _, _) =>
+            {
+                request = supplied;
+                using CancellationTokenRegistration stopping = supplied.Register(
+                    () => stopped.TrySetResult());
+                await source.CompleteSendAsync(async () =>
+                {
+                    sent.TrySetResult();
+                    await fail.Task.WaitAsync(token);
+                    if (origin == "earlier-native")
+                    {
+                        RecordIdleError(source);
+                    }
+                    throw original;
+                }, async () =>
+                {
+                    aborting.TrySetResult();
+                    await abort.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+                }, () =>
+                {
+                    Assert.IsTrue(supplied.IsCancellationRequested);
+                    cleaned.TrySetResult();
+                    return Task.CompletedTask;
+                }, supplied);
+            };
+        }, token);
+        Scenario.Data(await coordinator.PreflightAsync(token));
+        Scenario.Data(await coordinator.CalibrateAsync(token));
+        armed = true;
+        using CancellationTokenSource caller =
+            CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", caller.Token);
+        try
+        {
+            await sent.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
+            clock.OnNextWake = () =>
+            {
+                poll.TrySetResult();
+                Assert.IsTrue(resume.Task.Wait(TimeSpan.FromSeconds(15)));
+            };
+            await poll.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
+            fail.TrySetResult();
+            await aborting.Task.WaitAsync(TimeSpan.FromSeconds(2), token);
+            Assert.IsFalse(request.IsCancellationRequested);
+            Assert.IsFalse(unrelated.IsCancellationRequested);
+            Assert.AreEqual(false, source.FirstFailure!.Data["liteagensh.nativeFailureCancelled"]);
+            Exception retained = source.FirstFailure;
+            if (origin == "caller")
+            {
+                await caller.CancelAsync();
+            }
+            resume.TrySetResult();
+            await stopped.Task.WaitAsync(TimeSpan.FromSeconds(2), token);
+            Assert.IsFalse(abort.Task.IsCompleted);
+            Assert.AreSame(retained, source.FirstFailure);
+            abort.TrySetResult();
+            Scenario.Failure(await execution.WaitAsync(token), "ownership_or_usage_unresolved");
+            await cleaned.Task.WaitAsync(TimeSpan.FromSeconds(2), token);
+            string reason = origin == "caller" ? "caller-cancelled"
+                : origin == "earlier-native" ? "native_stopped" : "coordinator-failed";
+            JsonObject status = Scenario.Data(coordinator.Status());
+            Assert.AreEqual(reason, status["stopReason"]!.GetValue<string>());
+            Assert.AreEqual("not-entered", status["deadlineDrain"]!["outcome"]!.GetValue<string>());
+            Assert.AreNotEqual("true", fixture.Database.ReadMetadata("git:finalized"));
+            Assert.AreSame(retained, source.FirstFailure);
+            if (origin != "earlier-native")
+            {
+                Assert.AreSame(original, retained);
+            }
+            Assert.AreEqual(false, retained.Data["liteagensh.nativeFailureCancelled"]);
+            Assert.IsFalse(unrelated.IsCancellationRequested);
+            Assert.AreEqual("uncertain", WorkerReservation(fixture.Database).State);
+            Assert.IsTrue(WorkerReservation(fixture.Database).GrantOpen);
+            using SqliteConnection connection = fixture.Database.Open();
+            Assert.AreEqual(reason, Sql.Scalar(connection,
+                "SELECT stop_reason FROM coordinator_segments ORDER BY id DESC LIMIT 1;"));
+            Assert.AreEqual(0L, Sql.Scalar(connection, "SELECT COUNT(*) FROM coordinator_turns;"));
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            clock.OnNextWake = null;
+            fail.TrySetResult();
+            resume.TrySetResult();
+            abort.TrySetResult();
+            await caller.CancelAsync();
+            await execution.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow("before-owner-cancel")]
+    [DataRow("after-owner-cancel")]
+    [DataRow("caller")]
+    public async Task IdleErrorRetainsActualSessionOwnerProvenance(string schedule)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        DelayedDrainClock clock = new();
+        DateTimeOffset deadline = clock.GetUtcNow().AddSeconds(120);
+        using GitScenario fixture = await DeadlineFixtureAsync(clock, token);
+        await using NativeSdkSession source = new(fixture.Database,
+            new ProcessRunner(fixture.Database), fixture.Database.Configuration.RepositoryPath,
+            isolated: false);
+        bool armed = false;
+        int observation = 0;
+        TaskCompletionSource requestEnded = NewSignal();
+        TaskCompletionSource held = NewSignal();
+        TaskCompletionSource release = NewSignal();
+        ControlledSdkSession? active = null;
+        Coordinator coordinator = SourceCoordinator(fixture, () => armed, session =>
+        {
+            active = session;
+            session.FailureSource = source;
+            session.SourceTransport = true;
+            session.RequestDisposed = () => requestEnded.TrySetResult();
+            session.OnFailureRead = () =>
+            {
+                if (requestEnded.Task.IsCompleted
+                    && Interlocked.Exchange(ref observation, 1) == 0)
+                {
+                    clock.OnNextReadForCurrentThread(() =>
+                    {
+                        held.TrySetResult();
+                        Assert.IsTrue(release.Task.Wait(TimeSpan.FromSeconds(30)));
+                    });
+                }
+            };
+        }, token);
+        Scenario.Data(await coordinator.PreflightAsync(token));
+        Scenario.Data(await coordinator.CalibrateAsync(token));
+        armed = true;
+        using CancellationTokenSource caller =
+            CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", caller.Token);
+        try
+        {
+            await requestEnded.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
+            await held.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
+            Assert.IsTrue(active!.HasSession);
+            Assert.AreEqual(1L, active.RequestCount);
+            Assert.IsFalse(active.AdmittedRequestToken.IsCancellationRequested);
+            using (SqliteConnection connection = fixture.Database.Open())
+            {
+                Assert.AreEqual("acknowledged", Sql.Scalar(connection,
+                    "SELECT state FROM coordinator_turns;"));
+                Assert.AreEqual("sent", Sql.Scalar(connection,
+                    "SELECT state FROM delivery_batches;"));
+            }
+            CreditReservation idle = WorkerReservation(fixture.Database);
+            Assert.AreEqual(1m, idle.Actual);
+            Assert.IsFalse(idle.GrantOpen);
+            clock.Advance(TimeSpan.FromSeconds(121));
+            if (schedule == "caller")
+            {
+                await caller.CancelAsync();
+            }
+            if (schedule == "after-owner-cancel")
+            {
+                clock.Advance(TimeSpan.FromSeconds(31));
+            }
+            RecordIdleError(source);
+            Exception original = source.FirstFailure!;
+            long observed = Assert.IsInstanceOfType<long>(
+                original.Data["liteagensh.nativeFailureObserved"]);
+            if (schedule != "after-owner-cancel")
+            {
+                clock.Advance(TimeSpan.FromSeconds(31));
+            }
+            release.TrySetResult();
+            if (schedule == "caller")
+            {
+                await Assert.ThrowsAsync<OperationCanceledException>(
+                    () => execution.WaitAsync(token));
+            }
+            else
+            {
+                JsonObject result = await execution.WaitAsync(token);
+                if (schedule == "before-owner-cancel")
+                {
+                    Scenario.Failure(result, "native_stopped");
+                }
+            }
+            JsonObject status = Scenario.Data(coordinator.Status());
+            string reason = schedule == "caller" ? "caller-cancelled"
+                : schedule == "after-owner-cancel" ? "deadline" : "native_stopped";
+            Assert.AreEqual(reason, status["stopReason"]!.GetValue<string>());
+            Assert.AreEqual(reason, status["deadlineDrain"]!["stopReason"]!.GetValue<string>());
+            Assert.AreEqual(schedule == "after-owner-cancel" ? "timed-out" : "interrupted",
+                status["deadlineDrain"]!["outcome"]!.GetValue<string>());
+            Assert.AreEqual(deadline.ToString("O"),
+                status["deadlineDrain"]!["workDeadline"]!.GetValue<string>());
+            Assert.AreEqual(deadline.AddSeconds(30).ToString("O"),
+                status["deadlineDrain"]!["drainDeadline"]!.GetValue<string>());
+            Assert.AreSame(original, source.FirstFailure);
+            Assert.AreEqual(observed, original.Data["liteagensh.nativeFailureObserved"]);
+            Assert.AreEqual(schedule != "before-owner-cancel",
+                original.Data["liteagensh.nativeFailureCancelled"]);
+            // A completed/disposed request is not the lifetime of the still-owned idle session.
+            Assert.IsFalse(active.AdmittedRequestToken.IsCancellationRequested);
+            Assert.AreEqual("reconciled", WorkerReservation(fixture.Database).State);
+            Assert.IsFalse(WorkerReservation(fixture.Database).GrantOpen);
+            Assert.IsTrue(active.CloseAttempted);
+            Assert.AreEqual(1L, active.RequestCount);
+            if (schedule != "after-owner-cancel")
+            {
+                Assert.AreNotEqual("true", fixture.Database.ReadMetadata("git:finalized"));
+            }
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            clock.OnNextRead = null;
+            release.TrySetResult();
+            await caller.CancelAsync();
+            try
+            {
+                await execution.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+            }
+            catch (OperationCanceledException) when (caller.IsCancellationRequested) { }
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow("worker-guard")]
+    [DataRow("sdk-guard")]
+    [DataRow("healthy")]
+    public async Task SecondDurableDispatchCannotReusePriorTerminalUsage(string phase)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        DelayedDrainClock clock = new();
+        using GitScenario fixture = await DeadlineFixtureAsync(clock, token);
+        await using NativeSdkSession source = new(fixture.Database,
+            new ProcessRunner(fixture.Database), fixture.Database.Configuration.RepositoryPath,
+            isolated: false);
+        bool armed = false;
+        bool second = false;
+        bool reached = false;
+        string? reservationId = null;
+        int observation = 0;
+        int ended = 0;
+        TaskCompletionSource first = NewSignal();
+        TaskCompletionSource complete = NewSignal();
+        TaskCompletionSource held = NewSignal();
+        TaskCompletionSource release = NewSignal();
+        ControlledSdkSession? active = null;
+        long DispatchCount()
+        {
+            using SqliteConnection connection = Campaign(fixture.Database);
+            return (long)Sql.Scalar(connection,
+                "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
+                null, ("$id", reservationId))!;
+        }
+        void CloseAtCommittedDispatch()
+        {
+            if (DispatchCount() == 2)
+            {
+                Assert.AreEqual(1L, active!.RequestCount);
+                Assert.AreEqual("ready",
+                    fixture.Database.ReadMetadata("worker:worker1:lifecycle"));
+                reached = true;
+                clock.Advance(TimeSpan.FromSeconds(121));
+            }
+            else
+            {
+                clock.OnNextRead = CloseAtCommittedDispatch;
+            }
+        }
+        Coordinator coordinator = SourceCoordinator(fixture, () => armed, session =>
+        {
+            active = session;
+            session.SourceTransport = true;
+            session.FailureSource = source;
+            session.RequestDisposed = () =>
+            {
+                if (Interlocked.Increment(ref ended) == 1)
+                {
+                    first.TrySetResult();
+                }
+                else
+                {
+                    complete.TrySetResult();
+                }
+            };
+            session.OnFailureRead = () =>
+            {
+                if (first.Task.IsCompleted && Interlocked.Exchange(ref observation, 1) == 0)
+                {
+                    clock.OnNextReadForCurrentThread(() =>
+                    {
+                        held.TrySetResult();
+                        Assert.IsTrue(release.Task.Wait(TimeSpan.FromSeconds(30)));
+                    });
+                }
+            };
+            session.BeforeSourceSend = () =>
+            {
+                if (second && phase == "sdk-guard")
+                {
+                    Assert.AreEqual(2L, DispatchCount());
+                    Assert.AreEqual("prompting",
+                        fixture.Database.ReadMetadata("worker:worker1:lifecycle"));
+                    reached = true;
+                    clock.Advance(TimeSpan.FromSeconds(121));
+                }
+            };
+        }, token);
+        Scenario.Data(await coordinator.PreflightAsync(token));
+        Scenario.Data(await coordinator.CalibrateAsync(token));
+        armed = true;
+        using CancellationTokenSource caller =
+            CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", caller.Token);
+        try
+        {
+            await first.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
+            await held.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
+            reservationId = WorkerReservation(fixture.Database).Id;
+            Assert.AreEqual(1L, DispatchCount());
+            Assert.AreEqual(1m, WorkerReservation(fixture.Database).Actual);
+            Assert.IsFalse(WorkerReservation(fixture.Database).GrantOpen);
+            second = true;
+            if (phase == "worker-guard")
+            {
+                clock.OnNextRead = CloseAtCommittedDispatch;
+            }
+            fixture.Collaboration.QueueKickoff("worker1", "Second backed turn.");
+            await complete.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
+            Assert.AreEqual(2L, DispatchCount());
+            Assert.AreEqual(phase == "healthy" ? 2L : 1L, active!.RequestCount);
+            if (phase == "healthy")
+            {
+                coordinator.RequestControl("pause");
+            }
+            else
+            {
+                Assert.IsTrue(reached);
+                Assert.IsTrue(WorkerReservation(fixture.Database).GrantOpen);
+                NativeUsage prior = await active.ReadAsync(
+                    active.SessionId, 100, token, validateEvents: false);
+                Assert.AreEqual(1_000_000_000d, prior.TotalNanoAiu);
+                Assert.AreEqual(1L, prior.TotalUserRequests);
+                Assert.AreEqual(1m, prior.RequireComplete());
+            }
+            release.TrySetResult();
+            JsonObject result = await execution.WaitAsync(token);
+            CreditReservation retained = WorkerReservation(fixture.Database);
+            Assert.AreEqual(phase == "healthy" ? "reconciled" : "uncertain", retained.State);
+            Assert.AreEqual(phase != "healthy", retained.GrantOpen);
+            Assert.AreEqual(phase == "healthy" ? 2m : 1m, retained.Actual);
+            Assert.IsTrue(active.CloseAttempted);
+            Assert.IsFalse(active.HasSession);
+            Assert.AreEqual(2L, DispatchCount());
+            if (phase == "healthy")
+            {
+                Scenario.Data(result);
+            }
+            else
+            {
+                Scenario.Failure(result, "ownership_or_usage_unresolved");
+                Assert.AreEqual("credit_unknown",
+                    Scenario.Data(coordinator.Status())["stopReason"]!.GetValue<string>());
+                Assert.AreNotEqual("true", fixture.Database.ReadMetadata("git:finalized"));
+            }
+            using SqliteConnection state = fixture.Database.Open();
+            Assert.AreEqual(phase == "healthy" ? 2L : 1L, Sql.Scalar(state,
+                "SELECT COUNT(*) FROM coordinator_turns WHERE state='acknowledged';"));
+            Assert.AreEqual(phase == "healthy" ? 2L : 1L, Sql.Scalar(state,
+                "SELECT COUNT(*) FROM delivery_batches WHERE state='sent';"));
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            clock.OnNextRead = null;
+            release.TrySetResult();
+            await caller.CancelAsync();
+            try
+            {
+                await execution.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+            }
+            catch (OperationCanceledException) when (caller.IsCancellationRequested) { }
+        }
+    }
+
+    private static TaskCompletionSource NewSignal() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private static Task<GitScenario> DeadlineFixtureAsync(
+        DelayedDrainClock clock, CancellationToken token
+    ) => GitScenario.CreateAsync(token, configuration => configuration with
+    {
+        WorkerCount = 1,
+        PlanningSeconds = 0,
+        DurationSeconds = 120,
+        CreditAllocation = "shared",
+        RunAiCreditAllowance = 300,
+        CampaignAiCreditAllowance = 600,
+        NativeExecutable = Path.Combine(configuration.RepositoryPath, "missing-native.exe"),
+    }, clock: clock);
+
+    private static CreditReservation WorkerReservation(RunDatabase database) =>
+        new CreditLedger(database.Configuration.CampaignLedgerPath, 600).Reservations()
+            .Single(row => row.Worker == "worker1");
+
+    private static Coordinator SourceCoordinator(
+        GitScenario fixture, Func<bool> armed, Action<ControlledSdkSession> configure,
+        CancellationToken token
+    ) => new(fixture.Database, fixture.Collaboration, fixture.Operations,
+        (database, processes, credits) => new NativeWorkerFactory(database, processes, credits,
+            () =>
+            {
+                ControlledSdkHost host = new("none", token, evidenceDatabase: database,
+                    onCreate: session =>
+                    {
+                        if (armed())
+                        {
+                            configure(session);
+                        }
+                    });
+                host.Release.TrySetResult();
+                return host;
+            }));
+
+    private static void RecordIdleError(NativeSdkSession source) =>
+        source.RecordEvent(SessionEvent.FromJson(
+            """
+            {
+              "id":"00000000-0000-0000-0000-000000000022",
+              "timestamp":"2026-01-01T00:00:00Z",
+              "type":"session.error",
+              "data":{"errorType":"query","message":"Genuine owned session failure."}
+            }
+            """
+        )!);
+
     private sealed class ControlledSdkHost(
         string failure, CancellationToken token, bool missingMetrics = false,
         RunDatabase? evidenceDatabase = null, bool emptyStatus = false,
@@ -4886,6 +5360,16 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
         public Func<CancellationToken, Task<NativeUsage>>? SettledRead { get; set; }
 
+        public bool SourceTransport { get; set; }
+
+        public bool RecordedDispatchFence { get; set; }
+
+        public long RequestCount => requests;
+
+        public Action? BeforeSourceSend { get; set; }
+
+        public Action? RequestDisposed { get; set; }
+
         public Func<string?, CancellationToken, Task>? BeforeOpen { get; set; }
 
         public Action? OnFailureRead { get; set; }
@@ -4921,7 +5405,28 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         public IDisposable? ObserveRequest(CancellationToken cancellationToken)
         {
             AdmittedRequestToken = cancellationToken;
-            return FailureSource?.ObserveRequest(cancellationToken);
+            IDisposable? observation = FailureSource?.ObserveRequest(cancellationToken);
+            return RequestDisposed is null ? observation : new RequestObservation(
+                observation, () => RequestDisposed?.Invoke());
+        }
+
+        private sealed class RequestObservation(
+            IDisposable? observation, Action ended
+        ) : IDisposable
+        {
+            public void Dispose()
+            {
+                observation?.Dispose();
+                ended();
+            }
+        }
+
+        public void MarkDispatchPending()
+        {
+            if (SourceTransport || RecordedDispatchFence)
+            {
+                ((NativeSdkSession)FailureSource!).MarkDispatchPending();
+            }
         }
 
         public string SessionId { get; private set; } = "";
@@ -5054,6 +5559,12 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             {
                 return await SettledRead(cancellationToken);
             }
+            if (SourceTransport)
+            {
+                return await ((NativeSdkSession)FailureSource!).CaptureUsageAsync(
+                    next => ReadAsync(expectedSession, expectedLimit, next, validateEvents),
+                    cancellationToken);
+            }
             using CancellationTokenSource local =
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             OnSettledRead?.Invoke(cancellationToken, local);
@@ -5077,8 +5588,17 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 local.Token);
         }
 
-        public void WithSettledUsage(NativeUsage usage, Action record) =>
-            usageFence.Use(usage, record);
+        public void WithSettledUsage(NativeUsage usage, Action record)
+        {
+            if (SourceTransport)
+            {
+                FailureSource!.WithSettledUsage(usage, record);
+            }
+            else
+            {
+                usageFence.Use(usage, record);
+            }
+        }
 
         public async Task<JsonObject> SendAsync(
             string text, TimeSpan timeout, CancellationToken cancellationToken,
@@ -5087,6 +5607,32 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (SourceTransport)
+            {
+                NativeSdkSession source = (NativeSdkSession)FailureSource!;
+                Sent = true;
+                LastPrompt = text;
+                LastSendTimeout = timeout;
+                Task<AssistantMessageEvent?>? response = null;
+                return await source.CompleteSendAsync(async () =>
+                {
+                    BeforeSourceSend?.Invoke();
+                    response = source.StartSend(() =>
+                    {
+                        requests++;
+                        OnSend?.Invoke();
+                        return Task.FromResult<AssistantMessageEvent?>(null);
+                    }, admission);
+                    await response;
+                    return new JsonObject { ["stopReason"] = "end_turn", ["text"] = "Completed." };
+                }, () => AbortAsync(CancellationToken.None), async () =>
+                {
+                    if (response is not null)
+                    {
+                        await source.CompleteTerminalAsync(response);
+                    }
+                }, cancellationToken);
+            }
             admission?.ThrowIfClosed();
             Sent = true;
             LastPrompt = text;
