@@ -455,15 +455,30 @@ internal sealed class NativeWorker : INativeWorker
             .ConfigureAwait(false);
         SaveDiagnostic(usage);
         credits.RecordSdkUsage(reservation!.Id, usage);
-        reservation = await credits
-            .AcquireSharedWindowAsync(
-                reservation.Id, renewing.Token, renew: true, admission: admission
-            )
-            .ConfigureAwait(false);
+        try
+        {
+            reservation = await credits
+                .AcquireSharedWindowAsync(
+                    reservation.Id, renewing.Token, renew: true, admission: admission
+                )
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (
+            admission?.Token.IsCancellationRequested == true
+            && (exception.CancellationToken == renewing.Token
+                || exception.CancellationToken == admission.Token)
+        )
+        {
+            // This known admission-bound wait is not an independent SDK failure.
+            throw new RenewalAdmissionCanceledException(exception);
+        }
         admission?.ThrowIfClosed();
         limit = reservation.Allowance - windowBaseline;
         return limit;
     }
+
+    internal sealed class RenewalAdmissionCanceledException(OperationCanceledException cause)
+        : OperationCanceledException(cause.Message, cause, cause.CancellationToken);
 
     public Task CancelAsync(CancellationToken cancellationToken = default) =>
         session?.AbortAsync(cancellationToken) ?? Task.CompletedTask;

@@ -539,6 +539,7 @@ public sealed class Coordinator
         }
 
         List<INativeWorker> workers = [];
+        Lock workerMembership = new();
         List<Task> loops = [];
         using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken
@@ -568,7 +569,12 @@ public sealed class Coordinator
             {
                 return;
             }
-            Exception? originating = workers.Select(worker => worker.FirstFailure)
+            INativeWorker[] snapshot;
+            lock (workerMembership)
+            {
+                snapshot = [.. workers];
+            }
+            Exception? originating = snapshot.Select(worker => worker.FirstFailure)
                 .OfType<Exception>()
                 .Where(error => error.Data["liteagensh.nativeFailureObserved"] is long observed
                     && observed <= Volatile.Read(ref stopObserved)
@@ -630,7 +636,10 @@ public sealed class Coordinator
                         allocations[id],
                         calibration: false
                     );
-                    workers.Add(native);
+                    lock (workerMembership)
+                    {
+                        workers.Add(native);
+                    }
                     string? exact = reconnecting.Contains(id) ? allocations[id].SessionId : null;
                     try
                     {
@@ -645,14 +654,20 @@ public sealed class Coordinator
                         when (exception.Code == "session_load_failed")
                     {
                         await native.DisposeAsync().ConfigureAwait(false);
-                        workers.Remove(native);
+                        lock (workerMembership)
+                        {
+                            workers.Remove(native);
+                        }
                         admissionBudget.ThrowIfClosed();
                         CreditReservation fresh = Reserve(id, 1);
                         INativeWorker replacement = nativeWorkers.Create(
                             fresh,
                             calibration: false
                         );
-                        workers.Add(replacement);
+                        lock (workerMembership)
+                        {
+                            workers.Add(replacement);
+                        }
                         await replacement
                             .StartAsync(
                                 git.GetWorkerPath(id),

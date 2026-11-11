@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using GitHub.Copilot;
 using GitHub.Copilot.Rpc;
 using LiteAgensh;
@@ -8,6 +9,55 @@ namespace LiteAgensh.Tests;
 [TestClass]
 public sealed class NativeMetadataTests(TestContext testContext)
 {
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task SendFailureScopeDoesNotDiscardUnrelatedCancellation(bool callerCanceled)
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        await using NativeSdkSession native = new(database, new ProcessRunner(database),
+            fixture.RepositoryPath, isolated: false);
+        using CancellationTokenSource caller = new();
+        using CancellationTokenSource unrelated = new();
+        await unrelated.CancelAsync();
+        if (callerCanceled)
+        {
+            await caller.CancelAsync();
+        }
+        OperationCanceledException cause = new(
+            callerCanceled ? caller.Token : unrelated.Token);
+        bool retainedBeforeAbort = false;
+        bool cleaned = false;
+        OperationCanceledException observed =
+            await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+                native.CompleteSendAsync(() => Task.FromException<JsonObject>(cause),
+                    () =>
+                    {
+                        retainedBeforeAbort = ReferenceEquals(cause, native.FirstFailure);
+                        return Task.CompletedTask;
+                    },
+                    () =>
+                    {
+                        cleaned = true;
+                        return Task.CompletedTask;
+                    }, caller.Token));
+        Assert.AreEqual(callerCanceled ? caller.Token : unrelated.Token,
+            observed.CancellationToken);
+        Assert.AreEqual(!callerCanceled, retainedBeforeAbort);
+        Assert.IsTrue(cleaned);
+        if (callerCanceled)
+        {
+            Assert.IsNull(native.FirstFailure);
+        }
+        else
+        {
+            Assert.AreSame(cause, observed);
+            Assert.AreSame(cause, native.FirstFailure);
+            Assert.AreEqual(false, cause.Data["liteagensh.nativeFailureCancelled"]);
+        }
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]

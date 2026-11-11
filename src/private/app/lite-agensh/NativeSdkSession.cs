@@ -458,6 +458,8 @@ internal sealed class NativeSdkSession : INativeSdkSession
         bool validateEvents = true, bool verifyLocalWork = false
     )
     {
+        // Keep callback provenance on the request, not the local usage-query deadline.
+        using IDisposable observation = ObserveSend(cancellationToken);
         using CancellationTokenSource deadline =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(database.Configuration.DurationSeconds));
@@ -590,7 +592,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
         }
         Task<AssistantMessageEvent?>? sending = null;
         Task<SessionLimitsExhaustedRequestedData>? pending = null;
-        try
+        return await CompleteSendAsync(async () =>
         {
             admission?.ThrowIfClosed();
             usageFence.SetTurnPending(true);
@@ -619,18 +621,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
             AssistantMessageEvent? response = await sending.ConfigureAwait(false);
             CheckEvents(cancellationToken);
             return new() { ["stopReason"] = "end_turn", ["text"] = response?.Data.Content };
-        }
-        catch (Exception exception)
-        {
-            RetainFailure(exception, cancellationToken);
-            await AbortFailedSendAsync(
-                    () => AbortAsync(CancellationToken.None),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-            throw;
-        }
-        finally
+        }, () => AbortAsync(CancellationToken.None), async () =>
         {
             lock (callbacks)
             {
@@ -657,6 +648,28 @@ internal sealed class NativeSdkSession : INativeSdkSession
                 }
                 catch (OperationCanceledException) { }
             }
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<JsonObject> CompleteSendAsync(
+        Func<Task<JsonObject>> send, Func<Task> abort, Func<Task> cleanup,
+        CancellationToken cancellationToken
+    )
+    {
+        using IDisposable observation = ObserveSend(cancellationToken);
+        try
+        {
+            return await send().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            RetainFailure(exception, cancellationToken);
+            await AbortFailedSendAsync(abort, cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+        finally
+        {
+            await cleanup().ConfigureAwait(false);
         }
     }
 
@@ -702,6 +715,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
         lock (callbacks)
         {
             if (firstFailure is not null
+                || failure is NativeWorker.RenewalAdmissionCanceledException
                 || (failure is OperationCanceledException
                     && cancellationToken?.IsCancellationRequested == true))
             {
