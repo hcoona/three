@@ -83,6 +83,12 @@ storage scenarios cover acquisition failures, completion and missing evidence.
 Prior incident captures are not overwritten; exhausted capacity is explicit.
 This does not identify the original failed audit's competing lock holder or
 establish complete attribution of external/uninstrumented connections.
+The same bounded diagnostics also capture SQLite I/O failures. A compact failure
+summary retains codes, phase and owned activity identity in captured stderr even
+when local incident persistence fails or a test fixture is later removed.
+I/O summaries exclude exception messages and local incident paths; raw incident
+files remain local. Controlled injected failures verify retention, not the cause
+of a historical filesystem error.
 
 The [credit contract](docs/implementation-contracts.md#verified-pre-dispatch-cancellation)
 specifies a distinct verified cancellation before first dispatch, not measured
