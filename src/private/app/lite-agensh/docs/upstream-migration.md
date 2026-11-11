@@ -283,6 +283,35 @@ Keep the existing interface-recheck trigger and independent review; actual
 status, settings, session identity, finite cap, fenced complete metrics and
 settlement remain operational evidence obligations.
 
+### MCP 2.4.0 interface recheck
+
+The selected [MCP 2.4.0 release][mcp240-release] resolves to
+`4cbf42ef107763f0bc75c358af8cb2dfe47a769a`. The separately inspected released
+[ModelContextProtocol][mcp240-package] and [Core][mcp240-core-package] archives
+have SHA-256 `163fe0d45ae6a0ee906f65afac21e5c01088ace5c5bec5b603dcb25e26df7cad`
+and `3b600797816a51297df17869249f7c710f24b7cc7e6434371d838863415d5986`.
+Both package repository metadata entries identify that commit. The main package
+requires Core exactly 2.4.0, and both supply `net10.0` assemblies and XML
+documentation.
+
+The pinned [server handlers][mcp240-handlers] retain `ListToolsHandler` and
+`CallToolHandler`; [stdio transport][mcp240-stdio] retains the named-server
+constructor used by LiteAgensh. Released Core XML documents those members,
+`McpServer.Create` and `RunAsync(CancellationToken)`. These are source/package
+surface findings for the existing low-level actor-bound tool host, not a
+reproducible-binary or native-client compatibility claim.
+
+The release notes report cancellation, notification and transport reliability
+changes. Its new experimental Skills extension is a separate package, not a
+selected LiteAgensh capability; this application adds no Skills, HTTP or OAuth
+surface. Existing serialized stdio discovery/call and owned-child settlement
+checks remain relevant under the [validation basis](validation.md).
+Managed results belong in the governing PR. Earlier MCP 2.3.x observations do
+not establish the new selection's installed-native behavior; exact-build
+preflight, calibration and operational evidence remain separate obligations.
+The [dependency contract](implementation-contracts.md#application-and-dependencies)
+owns the selection; the existing mutable-contract recheck trigger still applies.
+
 ## Evidence boundary and material differences
 
 The 68 responsibility rows and 29 tool rows are a migration inventory, not a
@@ -340,4 +369,9 @@ Implementation ports must retain applicable source notices as well.
 [sqlite-async]: https://learn.microsoft.com/dotnet/standard/data/sqlite/async
 [sdk]: https://github.com/github/copilot-sdk/tree/fa108e71ee3025663e0dac20f2a071055d3a6b14
 [sdk-package]: https://api.nuget.org/v3-flatcontainer/github.copilot.sdk/1.0.28/github.copilot.sdk.1.0.28.nupkg
+[mcp240-release]: https://github.com/modelcontextprotocol/csharp-sdk/releases/tag/v2.4.0
+[mcp240-package]: https://api.nuget.org/v3-flatcontainer/modelcontextprotocol/2.4.0/modelcontextprotocol.2.4.0.nupkg
+[mcp240-core-package]: https://api.nuget.org/v3-flatcontainer/modelcontextprotocol.core/2.4.0/modelcontextprotocol.core.2.4.0.nupkg
+[mcp240-handlers]: https://github.com/modelcontextprotocol/csharp-sdk/blob/4cbf42ef107763f0bc75c358af8cb2dfe47a769a/src/ModelContextProtocol.Core/Server/McpServerHandlers.cs#L24-L66
+[mcp240-stdio]: https://github.com/modelcontextprotocol/csharp-sdk/blob/4cbf42ef107763f0bc75c358af8cb2dfe47a769a/src/ModelContextProtocol.Core/Server/StdioServerTransport.cs#L11-L35
 [ahp]: https://microsoft.github.io/agent-host-protocol/guide/ahp-and-acp

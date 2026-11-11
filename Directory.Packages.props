@@ -28,16 +28,16 @@
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.14" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.64.1" />
-    <PackageVersion Include="Microsoft.SemanticKernel" Version="1.81.0" />
-    <PackageVersion Include="Microsoft.SemanticKernel.Connectors.AzureOpenAI" Version="1.81.0" />
-    <PackageVersion Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.81.0" />
+    <PackageVersion Include="Microsoft.SemanticKernel" Version="1.82.0" />
+    <PackageVersion Include="Microsoft.SemanticKernel.Connectors.AzureOpenAI" Version="1.82.0" />
+    <PackageVersion Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.82.0" />
     <!-- MSTest.Sdk owns these versions for SDK-style MSTest projects. -->
     <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.10.0" Condition="'$(UsingMSTestSdk)' != 'true'" />
     <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.3.3" Condition="'$(UsingMSTestSdk)' != 'true'" />
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2957" />
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
-    <PackageVersion Include="ModelContextProtocol" Version="2.3.1" Condition="'$(MSBuildProjectName)' == 'LiteAgensh' or '$(MSBuildProjectName)' == 'LiteAgensh.Tests'" />
+    <PackageVersion Include="ModelContextProtocol" Version="2.4.0" Condition="'$(MSBuildProjectName)' == 'LiteAgensh' or '$(MSBuildProjectName)' == 'LiteAgensh.Tests'" />
     <PackageVersion Include="Nito.Guids" Version="1.1.1" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
     <PackageVersion Include="NuGet.Commands" Version="7.9.0" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />

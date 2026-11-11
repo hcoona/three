@@ -38,9 +38,12 @@ uncertainty does not release automatically.
 The MCP 2.3.0 upgrade is covered by controlled stdio contracts, not a new
 native acceptance run; PR #1530 retains the earlier dependency baseline.
 The [dependency contract](docs/implementation-contracts.md#application-and-dependencies)
-now selects MCP 2.3.1. That selection does not extend the earlier native
-observations; dependent user-audit work requires matching current build,
-interface and operational evidence under its existing protocol.
+now selects MCP 2.4.0. The
+[interface recheck](docs/upstream-migration.md#mcp-240-interface-recheck)
+records its released package and relied-on source surface, not native
+interoperability. That selection does not extend the earlier native observations;
+dependent user-audit work requires matching current build, interface and
+operational evidence under its existing protocol.
 The application selects installed CLI 1.0.107 under the unchanged SDK 1.0.28,
 retaining exact typed version verification. It implements the
 [retained-1.0.105 recovery bridge](docs/implementation-contracts.md#retained-cli-10105-to-selected-cli-10107)
