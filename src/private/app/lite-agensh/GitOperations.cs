@@ -1582,6 +1582,12 @@ public sealed class GitOperations
         CancellationToken token
     )
     {
+        if (commands.Length == 0)
+        {
+            token.ThrowIfCancellationRequested();
+            return true;
+        }
+
         string tree = (
             await GitAsync(Repository, ["rev-parse", commit + "^{tree}"], token)
                 .ConfigureAwait(false)
