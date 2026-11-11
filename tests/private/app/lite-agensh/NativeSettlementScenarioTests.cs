@@ -5189,6 +5189,226 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow("native-error")]
+    [DataRow("no-error")]
+    [DataRow("caller")]
+    [DataRow("after-owner-cancel")]
+    [DataRow("after-quiescence")]
+    public async Task CompletedDrainRetainsFailureAfterItsFinalPoll(string schedule)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        DelayedDrainClock clock = new();
+        DateTimeOffset deadline = clock.GetUtcNow().AddSeconds(120);
+        using GitScenario fixture = await DeadlineFixtureAsync(clock, token);
+        await using NativeSdkSession source = new(fixture.Database,
+            new ProcessRunner(fixture.Database), fixture.Database.Configuration.RepositoryPath,
+            isolated: false);
+        bool armed = false;
+        int observation = 0;
+        int settlementReads = 0;
+        CancellationToken owner = default;
+        Task? loop = null;
+        TaskCompletionSource requestEnded = NewSignal();
+        TaskCompletionSource beforeDrain = NewSignal();
+        TaskCompletionSource enterDrain = NewSignal();
+        TaskCompletionSource finalPoll = NewSignal();
+        TaskCompletionSource release = NewSignal();
+        TaskCompletionSource quiesced = NewSignal();
+        ControlledSdkSession? active = null;
+        Coordinator coordinator = SourceCoordinator(fixture, () => armed, session =>
+        {
+            active = session;
+            session.FailureSource = source;
+            session.SourceTransport = true;
+            session.RequestObserved = supplied =>
+            {
+                if (!owner.CanBeCanceled)
+                {
+                    owner = supplied;
+                }
+            };
+            session.RequestDisposed = () => requestEnded.TrySetResult();
+            session.OnRead = () =>
+            {
+                if (owner.IsCancellationRequested)
+                {
+                    Interlocked.Increment(ref settlementReads);
+                }
+            };
+            session.Quiesced = () =>
+            {
+                if (schedule == "after-quiescence")
+                {
+                    RecordIdleError(source);
+                    Assert.IsNull(source.FirstFailure);
+                }
+                quiesced.TrySetResult();
+            };
+            session.OnFailureRead = () =>
+            {
+                if (requestEnded.Task.IsCompleted && loop is not null
+                    && Interlocked.CompareExchange(ref observation, 1, 0) == 0)
+                {
+                    clock.OnNextReadForCurrentThread(() =>
+                    {
+                        beforeDrain.TrySetResult();
+                        Assert.IsTrue(enterDrain.Task.Wait(TimeSpan.FromSeconds(15)));
+                    });
+                }
+                else if (loop is { IsCompletedSuccessfully: true }
+                    && Interlocked.CompareExchange(ref observation, 3, 2) == 2)
+                {
+                    clock.OnNextReadForCurrentThread(() =>
+                    {
+                        finalPoll.TrySetResult();
+                        Assert.IsTrue(release.Task.Wait(TimeSpan.FromSeconds(15)));
+                    });
+                }
+            };
+        }, loops =>
+        {
+            if (loops.Count == 1)
+            {
+                loop = loops[0];
+            }
+        }, token);
+        Scenario.Data(await coordinator.PreflightAsync(token));
+        Scenario.Data(await coordinator.CalibrateAsync(token));
+        armed = true;
+        using CancellationTokenSource caller =
+            CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", caller.Token);
+        try
+        {
+            await beforeDrain.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
+            Assert.AreEqual(1m, WorkerReservation(fixture.Database).Actual);
+            Assert.IsFalse(WorkerReservation(fixture.Database).GrantOpen);
+            clock.Advance(TimeSpan.FromSeconds(121));
+            await loop!.WaitAsync(TimeSpan.FromSeconds(15), token);
+            Assert.IsTrue(loop.IsCompletedSuccessfully);
+            Volatile.Write(ref observation, 2);
+            enterDrain.TrySetResult();
+            await finalPoll.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
+            Assert.AreEqual("draining", fixture.Database.ReadMetadata("lifecycle"));
+            Assert.IsNull(source.FirstFailure);
+            Assert.IsTrue(loop.IsCompletedSuccessfully);
+            Assert.IsTrue(active!.HasSession);
+            Assert.IsFalse(owner.IsCancellationRequested);
+            Assert.IsFalse(caller.IsCancellationRequested);
+            Assert.IsFalse(active.AdmittedRequestToken.IsCancellationRequested);
+            Assert.IsGreaterThan(deadline, clock.GetUtcNow());
+            Assert.IsLessThan(deadline.AddSeconds(30), clock.GetUtcNow());
+            Exception? original = null;
+            object? observed = null;
+            if (schedule is "native-error" or "caller")
+            {
+                RecordIdleError(source);
+                original = source.FirstFailure;
+                Assert.IsInstanceOfType<OperationException>(original);
+                observed = original.Data["liteagensh.nativeFailureObserved"];
+                Assert.IsInstanceOfType<long>(observed);
+                Assert.AreEqual(false, original.Data["liteagensh.nativeFailureCancelled"]);
+            }
+            using CancellationTokenRegistration afterOwner = schedule == "after-owner-cancel"
+                ? owner.Register(() => RecordIdleError(source)) : default;
+            if (schedule == "caller")
+            {
+                await caller.CancelAsync();
+            }
+            release.TrySetResult();
+            JsonObject? result = null;
+            if (schedule == "caller")
+            {
+                await Assert.ThrowsAsync<OperationCanceledException>(
+                    () => execution.WaitAsync(token));
+            }
+            else
+            {
+                result = await execution.WaitAsync(token);
+            }
+            Assert.IsTrue(quiesced.Task.IsCompletedSuccessfully);
+            Assert.IsTrue(loop.IsCompletedSuccessfully);
+            Assert.IsTrue(owner.IsCancellationRequested);
+            Assert.IsLessThan(deadline.AddSeconds(30), clock.GetUtcNow());
+            Assert.IsGreaterThan(0, Volatile.Read(ref settlementReads));
+            CreditReservation settled = WorkerReservation(fixture.Database);
+            Assert.AreEqual("reconciled", settled.State);
+            Assert.AreEqual(1m, settled.Actual);
+            Assert.IsFalse(settled.GrantOpen);
+            Assert.AreEqual(1L, active.RequestCount);
+            Assert.AreEqual(TimeSpan.FromSeconds(120), active.LastSendTimeout);
+            Assert.IsTrue(active.CloseAttempted);
+            JsonObject runtime = JsonNode.Parse(fixture.Database.ReadMetadata(
+                $"native:runtime:{active.Metadata!["runtimeId"]}")!)!.AsObject();
+            Assert.AreEqual("settled", runtime["state"]!.GetValue<string>());
+            if (original is not null)
+            {
+                Assert.AreSame(original, source.FirstFailure);
+                Assert.AreEqual(observed, original.Data["liteagensh.nativeFailureObserved"]);
+                Assert.AreEqual(false, original.Data["liteagensh.nativeFailureCancelled"]);
+            }
+            else if (schedule == "after-owner-cancel")
+            {
+                Assert.IsInstanceOfType<OperationException>(source.FirstFailure);
+                Assert.IsInstanceOfType<long>(
+                    source.FirstFailure.Data["liteagensh.nativeFailureObserved"]);
+                Assert.AreEqual(true,
+                    source.FirstFailure.Data["liteagensh.nativeFailureCancelled"]);
+            }
+            else
+            {
+                Assert.IsNull(source.FirstFailure);
+            }
+            JsonObject status = Scenario.Data(coordinator.Status());
+            string reason = schedule == "native-error" ? "native_stopped"
+                : schedule == "caller" ? "caller-cancelled" : "deadline";
+            string outcome = schedule is "native-error" or "caller" ? "interrupted" : "completed";
+            testContext.WriteLine($"Completed-drain schedule={schedule}; "
+                + $"reason={status["stopReason"]}; drain={status["deadlineDrain"]!["outcome"]}; "
+                + $"usage={settled.Actual}; finalized="
+                + $"{fixture.Database.ReadMetadata("git:finalized")}.");
+            Assert.AreEqual(reason, status["stopReason"]!.GetValue<string>());
+            Assert.AreEqual(reason, status["deadlineDrain"]!["stopReason"]!.GetValue<string>());
+            Assert.AreEqual(outcome, status["deadlineDrain"]!["outcome"]!.GetValue<string>());
+            Assert.AreEqual(deadline.ToString("O"),
+                status["deadlineDrain"]!["workDeadline"]!.GetValue<string>());
+            Assert.AreEqual(deadline.AddSeconds(30).ToString("O"),
+                status["deadlineDrain"]!["drainDeadline"]!.GetValue<string>());
+            if (schedule == "native-error")
+            {
+                Scenario.Failure(result!, "native_stopped");
+            }
+            else if (schedule != "caller")
+            {
+                Scenario.Data(result!);
+            }
+            Assert.AreEqual(schedule is "native-error" or "caller" ? null : "true",
+                fixture.Database.ReadMetadata("git:finalized"));
+            using SqliteConnection connection = fixture.Database.Open();
+            Assert.AreEqual(reason, Sql.Scalar(connection,
+                "SELECT stop_reason FROM coordinator_segments ORDER BY id DESC LIMIT 1;"));
+            Assert.AreEqual(1L, Sql.Scalar(connection,
+                "SELECT COUNT(*) FROM coordinator_turns WHERE state='acknowledged';"));
+            Assert.AreEqual(1L, Sql.Scalar(connection, "SELECT COUNT(*) FROM delivery_batches;"));
+            Assert.AreEqual("sent", Sql.Scalar(connection, "SELECT state FROM delivery_batches;"));
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            clock.OnNextRead = null;
+            enterDrain.TrySetResult();
+            release.TrySetResult();
+            await caller.CancelAsync();
+            try
+            {
+                await execution.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+            }
+            catch (OperationCanceledException) when (caller.IsCancellationRequested) { }
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
     [DataRow("worker-guard")]
     [DataRow("sdk-guard")]
     [DataRow("healthy")]
@@ -5550,6 +5770,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
         public Action? OnFailureRead { get; set; }
 
+        public Action? Quiesced { get; set; }
+
         public bool Processing { get; set; }
 
         public bool ActiveWork { get; set; }
@@ -5841,7 +6063,14 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         public Task AbortAsync(CancellationToken cancellationToken) =>
             DuringAbort?.Invoke() ?? Task.CompletedTask;
 
-        public void Quiesce() { }
+        public void Quiesce()
+        {
+            if (SourceTransport)
+            {
+                FailureSource!.Quiesce();
+            }
+            Quiesced?.Invoke();
+        }
 
         public void RequireHealthy() { }
 

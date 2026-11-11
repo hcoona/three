@@ -1217,9 +1217,9 @@ public sealed class Coordinator
             }
             bool accountingFailure = drainAccountingStop is not null
                 && ReferenceEquals(failure, drainAccountingStop);
-            bool hardDeadlineFailure = draining && reason == "deadline"
-                && drainOutcome == "timed-out";
-            if (accountingFailure || hardDeadlineFailure)
+            bool deadlineDrainExit = draining && reason == "deadline"
+                && drainOutcome is "timed-out" or "completed";
+            if (accountingFailure || deadlineDrainExit)
             {
                 long observedBefore = accountingFailure
                     ? drainAccountingObserved : Volatile.Read(ref stopObserved);
