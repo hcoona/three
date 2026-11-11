@@ -1586,6 +1586,12 @@ public sealed class Coordinator
             }
             catch (Exception exception)
             {
+                if (exception.Data["liteagensh.nativeFailureObserved"] is not long)
+                {
+                    exception.Data["liteagensh.nativeFailureCancelled"] =
+                        cancellationToken.IsCancellationRequested;
+                    exception.Data["liteagensh.nativeFailureObserved"] = Stopwatch.GetTimestamp();
+                }
                 exception.Data["liteagensh.batchId"] = batch.Id;
                 exception.Data["liteagensh.phase"] = nativeCompleted
                     ? acknowledged ? "credit-verification" : "acknowledgement"
@@ -1610,11 +1616,16 @@ public sealed class Coordinator
                         );
                     }
 
-                    throw new OperationException(
+                    OperationException deliveryFailure = new(
                         "post_delivery_failed",
                         $"Completed native turn retained without retry: {exception.Message}",
                         exception
                     );
+                    deliveryFailure.Data["liteagensh.nativeFailureObserved"] =
+                        exception.Data["liteagensh.nativeFailureObserved"];
+                    deliveryFailure.Data["liteagensh.nativeFailureCancelled"] =
+                        exception.Data["liteagensh.nativeFailureCancelled"];
+                    throw deliveryFailure;
                 }
 
                 collaboration.FailBatch(batch.Id, exception.Message);
