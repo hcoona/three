@@ -4889,6 +4889,173 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow("unrelated")]
+    [DataRow("deadline-crossing")]
+    [DataRow("caller")]
+    [DataRow("requested")]
+    [DataRow("earlier-native")]
+    public async Task CompletedWorkerCancellationPreservesItsPreCleanupCause(string schedule)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        DelayedDrainClock clock = new();
+        DateTimeOffset deadline = clock.GetUtcNow().AddSeconds(120);
+        using GitScenario fixture = await DeadlineFixtureAsync(clock, token);
+        await using NativeSdkSession source = new(fixture.Database,
+            new ProcessRunner(fixture.Database), fixture.Database.Configuration.RepositoryPath,
+            isolated: false);
+        using CancellationTokenSource unrelated = new();
+        using CancellationTokenSource caller =
+            CancellationTokenSource.CreateLinkedTokenSource(token);
+        OperationCanceledException original = new("Unrelated completed send.", unrelated.Token);
+        bool armed = false;
+        int observation = 0;
+        int aborts = 0;
+        CancellationToken request = default;
+        CancellationToken owner = default;
+        TaskCompletionSource sent = NewSignal();
+        TaskCompletionSource fail = NewSignal();
+        TaskCompletionSource held = NewSignal();
+        TaskCompletionSource release = NewSignal();
+        IReadOnlyList<Task>? completedLoops = null;
+        ControlledSdkSession? active = null;
+        Coordinator coordinator = SourceCoordinator(fixture, () => armed, session =>
+        {
+            active = session;
+            session.FailureSource = source;
+            session.SourceTransport = true;
+            session.RequestObserved = supplied =>
+            {
+                if (!owner.CanBeCanceled)
+                {
+                    owner = supplied;
+                }
+            };
+            session.DuringSend = async (supplied, _, _) =>
+            {
+                request = supplied;
+                sent.TrySetResult();
+                await fail.Task.WaitAsync(token);
+                if (schedule == "earlier-native")
+                {
+                    RecordIdleError(source);
+                }
+                throw original;
+            };
+            session.DuringAbort = () =>
+            {
+                if (Interlocked.Increment(ref aborts) == 1)
+                {
+                    Assert.AreEqual(schedule == "requested", request.IsCancellationRequested);
+                    Assert.AreEqual(schedule == "requested", source.FirstFailure is null);
+                }
+                return Task.CompletedTask;
+            };
+        }, loops =>
+        {
+            if (sent.Task.IsCompleted && Interlocked.Exchange(ref observation, 1) == 0)
+            {
+                completedLoops = loops;
+                held.TrySetResult();
+                Assert.IsTrue(release.Task.Wait(TimeSpan.FromSeconds(15)));
+            }
+        }, token);
+        Scenario.Data(await coordinator.PreflightAsync(token));
+        Scenario.Data(await coordinator.CalibrateAsync(token));
+        armed = true;
+        Task<JsonObject> execution = coordinator.RunAsync("run", caller.Token);
+        try
+        {
+            await held.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
+            Assert.IsNull(source.FirstFailure);
+            Task loop = Assert.ContainsSingle(completedLoops!);
+            Assert.IsFalse(loop.IsCompleted);
+            Assert.IsLessThan(deadline, clock.GetUtcNow());
+            CreditReservation dispatched = WorkerReservation(fixture.Database);
+            long before = Stopwatch.GetTimestamp();
+            if (schedule == "requested")
+            {
+                await caller.CancelAsync();
+            }
+            fail.TrySetResult();
+            Exception propagated = schedule == "earlier-native"
+                ? await Assert.ThrowsExactlyAsync<OperationException>(() => loop.WaitAsync(token))
+                : await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+                    () => loop.WaitAsync(token));
+            Assert.AreEqual(schedule != "earlier-native", loop.IsCanceled);
+            Assert.AreEqual(schedule == "requested", owner.IsCancellationRequested);
+            Assert.AreEqual(schedule == "requested", request.IsCancellationRequested);
+            Assert.IsGreaterThanOrEqualTo(1, Volatile.Read(ref aborts));
+            Exception retained = source.FirstFailure ?? propagated;
+            long observed = Assert.IsInstanceOfType<long>(
+                retained.Data["liteagensh.nativeFailureObserved"]);
+            Assert.IsGreaterThanOrEqualTo(before, observed);
+            Assert.IsLessThanOrEqualTo(Stopwatch.GetTimestamp(), observed);
+            Assert.AreEqual(schedule == "requested",
+                retained.Data["liteagensh.nativeFailureCancelled"]);
+            if (schedule == "requested")
+            {
+                Assert.IsNull(source.FirstFailure);
+                Assert.AreEqual(request,
+                    ((OperationCanceledException)propagated).CancellationToken);
+                Assert.IsNull(original.Data["liteagensh.nativeFailureObserved"]);
+            }
+            else if (schedule != "earlier-native")
+            {
+                Assert.AreSame(original, propagated);
+                Assert.AreSame(original, retained);
+            }
+            if (schedule == "caller")
+            {
+                await caller.CancelAsync();
+            }
+            if (schedule == "deadline-crossing")
+            {
+                clock.Advance(TimeSpan.FromSeconds(121));
+                Assert.IsFalse(owner.IsCancellationRequested);
+            }
+            release.TrySetResult();
+            Scenario.Failure(await execution.WaitAsync(token), "ownership_or_usage_unresolved");
+            Assert.IsTrue(owner.IsCancellationRequested);
+            string reason = schedule is "caller" or "requested" ? "caller-cancelled"
+                : schedule == "earlier-native" ? "native_stopped" : "coordinator-failed";
+            JsonObject status = Scenario.Data(coordinator.Status());
+            string outcome = status["deadlineDrain"]!["outcome"]!.GetValue<string>();
+            testContext.WriteLine($"Completed-worker schedule={schedule}; drain={outcome}; "
+                + $"reason={status["stopReason"]}; observed={observed}.");
+            Assert.AreEqual(reason, status["stopReason"]!.GetValue<string>());
+            Assert.IsTrue(schedule == "deadline-crossing"
+                ? outcome is "not-entered" or "interrupted" : outcome == "not-entered");
+            Assert.AreNotEqual("true", fixture.Database.ReadMetadata("git:finalized"));
+            Assert.AreEqual(observed, retained.Data["liteagensh.nativeFailureObserved"]);
+            Assert.AreEqual(schedule == "requested",
+                retained.Data["liteagensh.nativeFailureCancelled"]);
+            Assert.IsFalse(unrelated.IsCancellationRequested);
+            Assert.AreEqual(1L, active!.RequestCount);
+            Assert.AreEqual(TimeSpan.FromSeconds(120), active.LastSendTimeout);
+            CreditReservation reservation = WorkerReservation(fixture.Database);
+            Assert.AreEqual("uncertain", reservation.State);
+            Assert.IsTrue(reservation.GrantOpen);
+            Assert.AreEqual(dispatched.Actual, reservation.Actual);
+            Assert.IsTrue(active.CloseAttempted);
+            using SqliteConnection connection = fixture.Database.Open();
+            Assert.AreEqual(reason, Sql.Scalar(connection,
+                "SELECT stop_reason FROM coordinator_segments ORDER BY id DESC LIMIT 1;"));
+            Assert.AreEqual(0L, Sql.Scalar(connection, "SELECT COUNT(*) FROM coordinator_turns;"));
+            Assert.AreEqual(1L, Sql.Scalar(connection,
+                "SELECT COUNT(*) FROM delivery_batches WHERE state='failed';"));
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            fail.TrySetResult();
+            release.TrySetResult();
+            await caller.CancelAsync();
+            await execution.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
     [DataRow("before-owner-cancel")]
     [DataRow("after-owner-cancel")]
     [DataRow("caller")]
@@ -5205,6 +5372,11 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     private static Coordinator SourceCoordinator(
         GitScenario fixture, Func<bool> armed, Action<ControlledSdkSession> configure,
         CancellationToken token
+    ) => SourceCoordinator(fixture, armed, configure, null, token);
+
+    private static Coordinator SourceCoordinator(
+        GitScenario fixture, Func<bool> armed, Action<ControlledSdkSession> configure,
+        Action<IReadOnlyList<Task>>? observeWorkerCompletion, CancellationToken token
     ) => new(fixture.Database, fixture.Collaboration, fixture.Operations,
         (database, processes, credits) => new NativeWorkerFactory(database, processes, credits,
             () =>
@@ -5219,7 +5391,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                     });
                 host.Release.TrySetResult();
                 return host;
-            }));
+            }), observeWorkerCompletion);
 
     private static void RecordIdleError(NativeSdkSession source) =>
         source.RecordEvent(SessionEvent.FromJson(
@@ -5370,6 +5542,10 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
         public Action? RequestDisposed { get; set; }
 
+        public Action<CancellationToken>? RequestObserved { get; set; }
+
+        public Func<Task>? DuringAbort { get; set; }
+
         public Func<string?, CancellationToken, Task>? BeforeOpen { get; set; }
 
         public Action? OnFailureRead { get; set; }
@@ -5404,6 +5580,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
         public IDisposable? ObserveRequest(CancellationToken cancellationToken)
         {
+            RequestObserved?.Invoke(cancellationToken);
             AdmittedRequestToken = cancellationToken;
             IDisposable? observation = FailureSource?.ObserveRequest(cancellationToken);
             return RequestDisposed is null ? observation : new RequestObservation(
@@ -5617,11 +5794,15 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 return await source.CompleteSendAsync(async () =>
                 {
                     BeforeSourceSend?.Invoke();
-                    response = source.StartSend(() =>
+                    response = source.StartSend(async () =>
                     {
                         requests++;
                         OnSend?.Invoke();
-                        return Task.FromResult<AssistantMessageEvent?>(null);
+                        if (DuringSend is not null)
+                        {
+                            await DuringSend(cancellationToken, renewLimit, admission);
+                        }
+                        return null;
                     }, admission);
                     await response;
                     return new JsonObject { ["stopReason"] = "end_turn", ["text"] = "Completed." };
@@ -5629,7 +5810,7 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                 {
                     if (response is not null)
                     {
-                        await source.CompleteTerminalAsync(response);
+                        await source.SettleSendAsync(response);
                     }
                 }, cancellationToken);
             }
@@ -5657,7 +5838,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             };
         }
 
-        public Task AbortAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task AbortAsync(CancellationToken cancellationToken) =>
+            DuringAbort?.Invoke() ?? Task.CompletedTask;
 
         public void Quiesce() { }
 

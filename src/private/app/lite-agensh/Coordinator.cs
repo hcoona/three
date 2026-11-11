@@ -18,6 +18,7 @@ public sealed class Coordinator
     private readonly ProcessRunner processes;
     private readonly CreditLedger credits;
     private readonly INativeWorkerFactory nativeWorkers;
+    private readonly Action<IReadOnlyList<Task>>? observeWorkerCompletion;
     private readonly string nativeEvidenceKind;
     private readonly string ledgerBinding;
 
@@ -42,12 +43,14 @@ public sealed class Coordinator
         RunDatabase database,
         CollaborationOperations collaboration,
         GitOperations git,
-        Func<RunDatabase, ProcessRunner, CreditLedger, INativeWorkerFactory>? nativeWorkerFactory
+        Func<RunDatabase, ProcessRunner, CreditLedger, INativeWorkerFactory>? nativeWorkerFactory,
+        Action<IReadOnlyList<Task>>? observeWorkerCompletion = null
     )
     {
         this.database = database;
         this.collaboration = collaboration;
         this.git = git;
+        this.observeWorkerCompletion = observeWorkerCompletion;
         processes = new(database);
         credits = new(
             database.Configuration.CampaignLedgerPath,
@@ -562,7 +565,10 @@ public sealed class Coordinator
         OperationException? drainAccountingStop = null;
         long drainAccountingObserved = 0;
         string? drainAccountingCause = null;
-        OperationCanceledException? nonRequestCancellation = null;
+        bool IsNonRequestCancellation(OperationCanceledException exception) =>
+            exception.Data["liteagensh.nativeFailureObserved"] is long observed
+            && observed <= Volatile.Read(ref stopObserved)
+            && exception.Data["liteagensh.nativeFailureCancelled"] is false;
         void CheckNativeFailures()
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -586,9 +592,8 @@ public sealed class Coordinator
             if (originating is not null)
             {
                 if (originating is OperationCanceledException cancelled
-                    && cancelled.Data["liteagensh.nativeFailureCancelled"] is false)
+                    && IsNonRequestCancellation(cancelled))
                 {
-                    nonRequestCancellation = cancelled;
                     finalize = false;
                 }
                 throw originating;
@@ -895,6 +900,7 @@ public sealed class Coordinator
                             collaboration.ReopenWorkerClosedRoot();
                         }
 
+                        observeWorkerCompletion?.Invoke(loops);
                         Task? ended = loops.FirstOrDefault(task => task.IsCompleted);
                         if (ended is not null)
                         {
@@ -993,7 +999,7 @@ public sealed class Coordinator
                             || requestDeadlineToken.IsCancellationRequested);
                 }
                 catch (OperationCanceledException exception) when (
-                    !ReferenceEquals(exception, nonRequestCancellation)
+                    !IsNonRequestCancellation(exception)
                     && admissionBudget.IsClosed
                     && (!stop.IsCancellationRequested
                         || requestDeadlineToken.IsCancellationRequested)
@@ -1055,7 +1061,7 @@ public sealed class Coordinator
         catch (OperationCanceledException exception) when (
             (stop.IsCancellationRequested || workAdmission?.IsClosed == true)
             && (cancellationToken.IsCancellationRequested
-                || !ReferenceEquals(exception, nonRequestCancellation))
+                || !IsNonRequestCancellation(exception))
         )
         {
             reason = cancellationToken.IsCancellationRequested ? "caller-cancelled" : "deadline";

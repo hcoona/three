@@ -663,14 +663,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
             await linked.CancelAsync().ConfigureAwait(false);
             if (sending is not null)
             {
-                try
-                {
-                    await CompleteTerminalAsync(sending).ConfigureAwait(false);
-                }
-                catch (Exception)
-                {
-                    // The send's original failure is preserved above.
-                }
+                await SettleSendAsync(sending).ConfigureAwait(false);
             }
             if (pending is not null)
             {
@@ -698,6 +691,18 @@ internal sealed class NativeSdkSession : INativeSdkSession
     {
         await sending.ConfigureAwait(false);
         usageFence.SetTurnPending(false);
+    }
+
+    internal async Task SettleSendAsync(Task sending)
+    {
+        try
+        {
+            await CompleteTerminalAsync(sending).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // The send's original failure is preserved above.
+        }
     }
 
     internal async Task<JsonObject> CompleteSendAsync(
