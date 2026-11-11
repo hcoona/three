@@ -336,6 +336,8 @@ internal sealed class NativeWorker : INativeWorker
             verified = false;
             if (exception.Data["liteagensh.nativeFailureObserved"] is not long)
             {
+                exception.Data["liteagensh.nativeFailureCancelled"] =
+                    linked.IsCancellationRequested;
                 exception.Data["liteagensh.nativeFailureObserved"] = Stopwatch.GetTimestamp();
             }
             credits.MarkUncertain(reservation.Id);
@@ -429,6 +431,8 @@ internal sealed class NativeWorker : INativeWorker
             verified = false;
             if (exception.Data["liteagensh.nativeFailureObserved"] is not long)
             {
+                exception.Data["liteagensh.nativeFailureCancelled"] =
+                    cancellationToken.IsCancellationRequested;
                 exception.Data["liteagensh.nativeFailureObserved"] = Stopwatch.GetTimestamp();
             }
             credits.MarkUncertain(reservation.Id);

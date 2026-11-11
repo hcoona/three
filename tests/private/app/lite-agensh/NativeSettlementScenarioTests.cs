@@ -2353,6 +2353,135 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
 
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task DelayedDrainObservationPreservesOnlyFailuresBeforeHardCancellation(
+        bool afterCancellation
+    )
+    {
+        CancellationToken token = testContext.CancellationToken;
+        DelayedDrainClock clock = new();
+        using GitScenario fixture = await GitScenario.CreateAsync(token, configuration =>
+            configuration with
+            {
+                WorkerCount = 1,
+                PlanningSeconds = 0,
+                DurationSeconds = 120,
+                CreditAllocation = "shared",
+                RunAiCreditAllowance = 300,
+                CampaignAiCreditAllowance = 600,
+                NativeExecutable = Path.Combine(
+                    configuration.RepositoryPath, "missing-native-runtime.exe"
+                ),
+            }, clock: clock);
+        bool armed = false;
+        // Inline fault propagation finishes before the test advances the absolute bound.
+        TaskCompletionSource verification = new();
+        TaskCompletionSource reading = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource held = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        OperationException originating = new("native_stopped", "Controlled verification failure.");
+        Coordinator coordinator = new(
+            fixture.Database, fixture.Collaboration, fixture.Operations,
+            (database, processes, credits) => new NativeWorkerFactory(
+                database, processes, credits, () =>
+                {
+                    ControlledSdkHost host = new("none", token, evidenceDatabase: database,
+                        onCreate: session =>
+                        {
+                            if (armed)
+                            {
+                                session.BeforeRead = _ =>
+                                {
+                                    if (!session.Sent)
+                                    {
+                                        return Task.CompletedTask;
+                                    }
+                                    reading.TrySetResult();
+                                    return verification.Task;
+                                };
+                            }
+                        });
+                    host.Release.TrySetResult();
+                    return host;
+                })
+        );
+        Scenario.Data(await coordinator.PreflightAsync(token));
+        Scenario.Data(await coordinator.CalibrateAsync(token));
+        armed = true;
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<JsonObject> execution = coordinator.RunAsync("run", stop.Token);
+        try
+        {
+            await reading.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
+            clock.Advance(TimeSpan.FromSeconds(121));
+            using CancellationTokenSource bound =
+                CancellationTokenSource.CreateLinkedTokenSource(token);
+            bound.CancelAfter(TimeSpan.FromSeconds(15));
+            while (fixture.Database.ReadMetadata("lifecycle") != "draining")
+            {
+                if (execution.IsCompleted)
+                {
+                    Assert.Fail((await execution).ToJsonString());
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(25), bound.Token);
+            }
+            clock.OnNextWake = () => clock.OnNextRead = () =>
+            {
+                held.TrySetResult();
+                Assert.IsTrue(release.Task.Wait(TimeSpan.FromSeconds(30)));
+            };
+            await held.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
+            if (afterCancellation)
+            {
+                clock.Advance(TimeSpan.FromSeconds(31));
+            }
+            verification.TrySetException(originating);
+            Assert.AreEqual("credit-verification", originating.Data["liteagensh.phase"]);
+            Assert.IsInstanceOfType<long>(originating.Data["liteagensh.nativeFailureObserved"]);
+            if (!afterCancellation)
+            {
+                clock.Advance(TimeSpan.FromSeconds(31));
+            }
+            release.TrySetResult();
+            JsonObject result = await execution.WaitAsync(token);
+            Scenario.Failure(result, "ownership_or_usage_unresolved");
+            string expectedReason = afterCancellation ? "deadline" : "native_stopped";
+            JsonObject status = Scenario.Data(coordinator.Status());
+            Assert.AreEqual(expectedReason, status["stopReason"]!.GetValue<string>());
+            Assert.AreEqual(expectedReason,
+                status["deadlineDrain"]!["stopReason"]!.GetValue<string>());
+            Assert.AreEqual(afterCancellation ? "timed-out" : "interrupted",
+                status["deadlineDrain"]!["outcome"]!.GetValue<string>());
+            Assert.IsNull(status["deadlineDrain"]!["accountingStop"]);
+            Assert.AreNotEqual("true", fixture.Database.ReadMetadata("git:finalized"));
+            CreditLedger ledger = new(fixture.Database.Configuration.CampaignLedgerPath, 600);
+            CreditReservation retained = Assert.ContainsSingle(ledger.Reservations()
+                .Where(row => row.Worker == "worker1"));
+            Assert.AreEqual("uncertain", retained.State);
+            Assert.IsTrue(retained.GrantOpen);
+            Assert.AreEqual("credit_unknown",
+                Assert.ThrowsExactly<OperationException>(ledger.RequirePaidAdmission).Code);
+            using SqliteConnection connection = fixture.Database.Open();
+            Assert.AreEqual(expectedReason, Sql.Scalar(connection,
+                "SELECT stop_reason FROM coordinator_segments ORDER BY id DESC LIMIT 1;"));
+            Assert.AreEqual(1L, Sql.Scalar(connection,
+                "SELECT COUNT(*) FROM coordinator_turns WHERE state='acknowledged';"));
+            await fixture.AssertOriginalPreservedAsync(token);
+        }
+        finally
+        {
+            clock.OnNextWake = null;
+            clock.OnNextRead = null;
+            verification.TrySetException(originating);
+            release.TrySetResult();
+            await stop.CancelAsync();
+            await execution.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
     public async Task LocalSettledUsageCancellationDuringGraceIsNotAnAbsoluteDeadline()
     {
         CancellationToken token = testContext.CancellationToken;
@@ -2645,6 +2774,107 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     }
 
     // Controlled SDK effects only; production workers, cohort and SQLite accounting remain real.
+    private sealed class DelayedDrainClock : TimeProvider
+    {
+        private readonly Lock gate = new();
+        private readonly ScenarioClock clock = new();
+        private readonly List<DeadlineTimer> timers = [];
+        private Action? nextRead;
+        private Action? nextWake;
+
+        public Action? OnNextRead
+        {
+            set => Volatile.Write(ref nextRead, value);
+        }
+
+        public Action? OnNextWake
+        {
+            set => Volatile.Write(ref nextWake, value);
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            Interlocked.Exchange(ref nextRead, null)?.Invoke();
+            lock (gate)
+            {
+                return clock.GetUtcNow();
+            }
+        }
+
+        public override ITimer CreateTimer(
+            TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period
+        )
+        {
+            if (dueTime < TimeSpan.FromSeconds(30))
+            {
+                return System.CreateTimer(value =>
+                {
+                    Interlocked.Exchange(ref nextWake, null)?.Invoke();
+                    callback(value);
+                }, state, dueTime, period);
+            }
+            lock (gate)
+            {
+                DeadlineTimer timer = new(this, callback, state);
+                timers.Add(timer);
+                timer.Change(dueTime, period);
+                return timer;
+            }
+        }
+
+        public void Advance(TimeSpan interval)
+        {
+            DeadlineTimer[] ready;
+            lock (gate)
+            {
+                clock.Advance(interval);
+                ready = timers.Where(timer => timer.Due <= clock.GetUtcNow()).ToArray();
+                foreach (DeadlineTimer timer in ready)
+                {
+                    timer.Due = DateTimeOffset.MaxValue;
+                }
+            }
+            foreach (DeadlineTimer timer in ready)
+            {
+                timer.Invoke();
+            }
+        }
+
+        private sealed class DeadlineTimer(
+            DelayedDrainClock owner, TimerCallback callback, object? state
+        ) : ITimer
+        {
+            public DateTimeOffset Due { get; set; }
+
+            public void Invoke() => callback(state);
+
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                Assert.AreEqual(Timeout.InfiniteTimeSpan, period);
+                lock (owner.gate)
+                {
+                    Due = dueTime == Timeout.InfiniteTimeSpan
+                        ? DateTimeOffset.MaxValue : owner.clock.GetUtcNow() + dueTime;
+                    return owner.timers.Contains(this);
+                }
+            }
+
+            public void Dispose()
+            {
+                lock (owner.gate)
+                {
+                    owner.timers.Remove(this);
+                }
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
     private sealed class ControlledSdkHost(
         string failure, CancellationToken token, bool missingMetrics = false,
         RunDatabase? evidenceDatabase = null, bool emptyStatus = false,

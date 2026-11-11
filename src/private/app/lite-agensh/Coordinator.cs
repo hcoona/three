@@ -543,6 +543,10 @@ public sealed class Coordinator
         using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken
         );
+        long stopObserved = long.MaxValue;
+        using CancellationTokenRegistration stopObservation = stop.Token.Register(() =>
+            Interlocked.CompareExchange(ref stopObserved, Stopwatch.GetTimestamp(), long.MaxValue)
+        );
         string reason = "startup-failed";
         long segment = 0;
         bool finalize = false;
@@ -741,6 +745,19 @@ public sealed class Coordinator
                         if (loops.All(task => task.IsCompleted)
                             && (admission is null || admission.IsCompleted))
                         {
+                            await Task.WhenAll(loops).ConfigureAwait(false);
+                            if (admission is not null)
+                            {
+                                try
+                                {
+                                    await admission.ConfigureAwait(false);
+                                }
+                                catch (OperationCanceledException) when (
+                                    admissionBudget.IsClosed && !stop.IsCancellationRequested
+                                )
+                                {
+                                }
+                            }
                             drainOutcome = "completed";
                             return;
                         }
@@ -1143,13 +1160,21 @@ public sealed class Coordinator
                     database.WriteMetadata("lifecycle", "unresolved");
                 }
             }
-            if (drainAccountingStop is not null && ReferenceEquals(failure, drainAccountingStop))
+            bool accountingFailure = drainAccountingStop is not null
+                && ReferenceEquals(failure, drainAccountingStop);
+            bool hardDeadlineFailure = draining && reason == "deadline"
+                && drainOutcome == "timed-out";
+            if (accountingFailure || hardDeadlineFailure)
             {
-                // Later shutdown errors must not replace the accounting stop's actual origin.
+                long observedBefore = accountingFailure
+                    ? drainAccountingObserved : Volatile.Read(ref stopObserved);
+                // A later cancellation-induced fault cannot become the original interruption.
                 Exception? originating = loops.Where(loop => loop.IsFaulted)
                     .SelectMany(loop => loop.Exception!.Flatten().InnerExceptions)
                     .Where(error => error.Data["liteagensh.nativeFailureObserved"] is long observed
-                        && observed <= drainAccountingObserved)
+                        && observed <= observedBefore
+                        && (accountingFailure
+                            || error.Data["liteagensh.nativeFailureCancelled"] is false))
                     .OrderBy(error => (long)error.Data["liteagensh.nativeFailureObserved"]!)
                     .FirstOrDefault();
                 if (originating is not null)
@@ -1157,6 +1182,8 @@ public sealed class Coordinator
                     failure = originating;
                     reason = originating is OperationException operation
                         ? operation.Code : "coordinator-failed";
+                    drainOutcome = "interrupted";
+                    finalize = false;
                 }
             }
             try
@@ -1191,7 +1218,7 @@ public sealed class Coordinator
 
         workAdmission?.Dispose();
 
-        if (drainAccountingStop is not null)
+        if (draining)
         {
             database.WriteMetadata("lifecycle:stop_reason", reason);
             RecordDeadlineDrain(
