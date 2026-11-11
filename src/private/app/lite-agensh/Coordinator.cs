@@ -561,6 +561,26 @@ public sealed class Coordinator
         OperationException? drainAccountingStop = null;
         long drainAccountingObserved = 0;
         string? drainAccountingCause = null;
+        void CheckNativeFailures()
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (stop.IsCancellationRequested)
+            {
+                return;
+            }
+            Exception? originating = workers.Select(worker => worker.FirstFailure)
+                .OfType<Exception>()
+                .Where(error => error.Data["liteagensh.nativeFailureObserved"] is long observed
+                    && observed <= Volatile.Read(ref stopObserved)
+                    && error.Data["liteagensh.nativeFailureCancelled"] is not true)
+                .OrderBy(error => (long)error.Data["liteagensh.nativeFailureObserved"]!)
+                .FirstOrDefault();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (originating is not null)
+            {
+                throw originating;
+            }
+        }
         try
         {
             RecoverCompletedTurns();
@@ -690,6 +710,7 @@ public sealed class Coordinator
                     }
                     while (!stop.IsCancellationRequested)
                     {
+                        CheckNativeFailures();
                         long? control = PendingControl(out string? action);
                         if (control is not null)
                         {
@@ -821,6 +842,7 @@ public sealed class Coordinator
                         (deadline - database.Now).TotalSeconds <= 900 ? [900] : [];
                     while (!stop.IsCancellationRequested)
                     {
+                        CheckNativeFailures();
                         if (admissionBudget.IsClosed)
                         {
                             reason = "deadline";
@@ -1171,6 +1193,7 @@ public sealed class Coordinator
                 // A later cancellation-induced fault cannot become the original interruption.
                 Exception? originating = loops.Where(loop => loop.IsFaulted)
                     .SelectMany(loop => loop.Exception!.Flatten().InnerExceptions)
+                    .Concat(workers.Select(worker => worker.FirstFailure).OfType<Exception>())
                     .Where(error => error.Data["liteagensh.nativeFailureObserved"] is long observed
                         && observed <= observedBefore
                         && (accountingFailure
@@ -1489,7 +1512,21 @@ public sealed class Coordinator
                 continue;
             }
 
-            DeliveryBatch? batch = collaboration.ClaimBatch(id, bootstrap, admission);
+            DeliveryBatch? batch;
+            try
+            {
+                batch = collaboration.ClaimBatch(id, bootstrap, admission);
+            }
+            catch (Exception exception)
+            {
+                if (exception.Data["liteagensh.nativeFailureObserved"] is not long)
+                {
+                    exception.Data["liteagensh.nativeFailureCancelled"] =
+                        cancellationToken.IsCancellationRequested;
+                    exception.Data["liteagensh.nativeFailureObserved"] = Stopwatch.GetTimestamp();
+                }
+                throw;
+            }
             if (batch is null)
             {
                 if (

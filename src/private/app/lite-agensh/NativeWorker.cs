@@ -56,6 +56,8 @@ internal sealed class NativeWorker : INativeWorker
 
     public string? NativeFailure => session?.NativeFailure;
 
+    public Exception? FirstFailure => session?.FirstFailure;
+
     public async Task StartAsync(
         string cwd,
         string? exactSession,

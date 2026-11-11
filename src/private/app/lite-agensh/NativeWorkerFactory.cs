@@ -16,6 +16,8 @@ internal interface INativeWorker : IAsyncDisposable
 
     string? NativeFailure { get; }
 
+    Exception? FirstFailure => null;
+
     Task StartAsync(
         string cwd,
         string? exactSession,

@@ -131,6 +131,12 @@ public sealed class NativeMetadataTests(TestContext testContext)
             Assert.Contains("00000000-0000-0000-0000-000000000002", failed.Message);
             Assert.DoesNotContain("Later abort error", failed.Message);
         }
+        OperationException original =
+            Assert.IsInstanceOfType<OperationException>(native.FirstFailure);
+        Assert.Contains("Prompt exceeds model input budget.", original.Message);
+        Assert.IsNull(original.Data["liteagensh.nativeFailureCancelled"]);
+        await native.DisposeAsync();
+        Assert.AreSame(original, native.FirstFailure);
     }
 
     // Pinned SDK DTOs used by the real application's metadata guard.

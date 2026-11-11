@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
@@ -13,6 +14,8 @@ internal interface INativeSdkSession : IAsyncDisposable
     bool HasSession { get; }
 
     string? NativeFailure { get; }
+
+    Exception? FirstFailure => null;
 
     JsonObject? Metadata { get; }
 
@@ -71,6 +74,8 @@ internal sealed class NativeSdkSession : INativeSdkSession
     private CopilotSession? session;
     private bool acceptingCallbacks = true;
     private string? eventFailure;
+    private Exception? firstFailure;
+    private CancellationToken? sendCancellation;
     private string? actualRuntimeVersion;
     private string? recoveryEvidencePath;
     private bool disposed;
@@ -125,6 +130,17 @@ internal sealed class NativeSdkSession : INativeSdkSession
             lock (callbacks)
             {
                 return eventFailure;
+            }
+        }
+    }
+
+    public Exception? FirstFailure
+    {
+        get
+        {
+            lock (callbacks)
+            {
+                return firstFailure;
             }
         }
     }
@@ -555,6 +571,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
         WorkAdmission? admission = null
     )
     {
+        using IDisposable observation = ObserveSend(cancellationToken);
         CheckEvents(cancellationToken);
         CopilotSession active =
             session ?? throw new InvalidOperationException("No native session.");
@@ -603,8 +620,9 @@ internal sealed class NativeSdkSession : INativeSdkSession
             CheckEvents(cancellationToken);
             return new() { ["stopReason"] = "end_turn", ["text"] = response?.Data.Content };
         }
-        catch
+        catch (Exception exception)
         {
+            RetainFailure(exception, cancellationToken);
             await AbortFailedSendAsync(
                     () => AbortAsync(CancellationToken.None),
                     cancellationToken
@@ -667,6 +685,52 @@ internal sealed class NativeSdkSession : INativeSdkSession
             renewing.Token
         ).ConfigureAwait(false);
         await verify(limit, renewing.Token).ConfigureAwait(false);
+    }
+
+    internal IDisposable ObserveSend(CancellationToken cancellationToken)
+    {
+        lock (callbacks)
+        {
+            SendObservation observation = new(this, sendCancellation);
+            sendCancellation = cancellationToken;
+            return observation;
+        }
+    }
+
+    private void RetainFailure(Exception failure, CancellationToken? cancellationToken)
+    {
+        lock (callbacks)
+        {
+            if (firstFailure is not null
+                || (failure is OperationCanceledException
+                    && cancellationToken?.IsCancellationRequested == true))
+            {
+                return;
+            }
+            if (failure.Data["liteagensh.nativeFailureObserved"] is not long)
+            {
+                if (cancellationToken is { } supplied)
+                {
+                    failure.Data["liteagensh.nativeFailureCancelled"] =
+                        supplied.IsCancellationRequested;
+                }
+                failure.Data["liteagensh.nativeFailureObserved"] = Stopwatch.GetTimestamp();
+            }
+            firstFailure = failure;
+        }
+    }
+
+    private sealed class SendObservation(
+        NativeSdkSession owner, CancellationToken? previous
+    ) : IDisposable
+    {
+        public void Dispose()
+        {
+            lock (owner.callbacks)
+            {
+                owner.sendCancellation = previous;
+            }
+        }
     }
 
     internal async Task AbortFailedSendAsync(
@@ -830,6 +894,8 @@ internal sealed class NativeSdkSession : INativeSdkSession
 
             if (eventFailure is not null)
             {
+                RetainFailure(new OperationException("native_stopped", eventFailure),
+                    sendCancellation);
                 eventStop.Cancel();
             }
         }
