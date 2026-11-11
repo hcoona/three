@@ -10,6 +10,63 @@ namespace LiteAgensh.Tests;
 public sealed class NativeMetadataTests(TestContext testContext)
 {
     [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    [DataRow("requested")]
+    [DataRow("unrelated-live")]
+    [DataRow("unrelated-canceled")]
+    [DataRow("local-timeout")]
+    public async Task ReadProbeDistinguishesActualChildFromUnrelatedCancellation(string schedule)
+    {
+        using CancellationTokenSource request =
+            CancellationTokenSource.CreateLinkedTokenSource(testContext.CancellationToken);
+        using CancellationTokenSource unrelated = new();
+        await unrelated.CancelAsync();
+        OperationCanceledException other = new(unrelated.Token);
+        CancellationToken child = default;
+        Task<NativeUsage> reading = NativeSdkSession.ReadProbeAsync(async probe =>
+        {
+            child = probe;
+            Assert.AreNotEqual(request.Token, probe);
+            if (schedule is "requested" or "unrelated-canceled")
+            {
+                await request.CancelAsync();
+            }
+            if (schedule.StartsWith("unrelated", StringComparison.Ordinal))
+            {
+                throw other;
+            }
+            await Task.Delay(Timeout.InfiniteTimeSpan, probe);
+            return new NativeUsage("unused", 0, "complete", 0);
+        }, request.Token);
+        if (schedule is "unrelated-live" or "local-timeout")
+        {
+            OperationException failure =
+                await Assert.ThrowsExactlyAsync<OperationException>(() => reading);
+            Assert.AreEqual("native_probe_failed", failure.Code);
+            Assert.IsFalse(request.IsCancellationRequested);
+            Assert.Contains(schedule == "local-timeout" ? "exceeded" : "before caller",
+                failure.Message);
+        }
+        else if (schedule == "unrelated-canceled")
+        {
+            Assert.AreSame(other,
+                await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => reading));
+        }
+        else
+        {
+            NativeSdkSession.RequestedReadCanceledException failure =
+                await Assert.ThrowsExactlyAsync<NativeSdkSession.RequestedReadCanceledException>(
+                    () => reading);
+            Assert.AreEqual(request.Token, failure.RequestToken);
+            Assert.AreEqual(child, failure.CancellationToken);
+            Assert.AreEqual(child,
+                Assert.IsInstanceOfType<OperationCanceledException>(
+                    failure.InnerException).CancellationToken);
+            Assert.IsTrue(child.IsCancellationRequested);
+        }
+    }
+
+    [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
     public async Task SendFailureScopeDoesNotDiscardUnrelatedCancellation(bool callerCanceled)

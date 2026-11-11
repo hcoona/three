@@ -248,6 +248,21 @@ internal sealed class NativeWorker : INativeWorker
         }
     }
 
+    public NativeRequest BeginRequest(CancellationToken cancellationToken)
+    {
+        CancellationTokenSource request = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, stop.Token);
+        try
+        {
+            return new(request.Token, request, session?.ObserveRequest(request.Token));
+        }
+        catch
+        {
+            request.Dispose();
+            throw;
+        }
+    }
+
     public async Task<JsonObject> PromptAsync(
         string text, CancellationToken cancellationToken, WorkAdmission? admission = null
     )
@@ -446,17 +461,17 @@ internal sealed class NativeWorker : INativeWorker
         WorkAdmission? admission, CancellationToken cancellationToken
     )
     {
-        admission?.ThrowIfClosed();
+        CheckRenewalAdmission(admission);
         using CancellationTokenSource renewing = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, admission?.Token ?? CancellationToken.None
         );
-        NativeUsage usage = await session!
-            .ReadAsync(SessionId!, limit, renewing.Token)
-            .ConfigureAwait(false);
-        SaveDiagnostic(usage);
-        credits.RecordSdkUsage(reservation!.Id, usage);
         try
         {
+            NativeUsage usage = await session!
+                .ReadAsync(SessionId!, limit, renewing.Token)
+                .ConfigureAwait(false);
+            SaveDiagnostic(usage);
+            credits.RecordSdkUsage(reservation!.Id, usage);
             reservation = await credits
                 .AcquireSharedWindowAsync(
                     reservation.Id, renewing.Token, renew: true, admission: admission
@@ -466,15 +481,31 @@ internal sealed class NativeWorker : INativeWorker
         catch (OperationCanceledException exception) when (
             admission?.Token.IsCancellationRequested == true
             && (exception.CancellationToken == renewing.Token
-                || exception.CancellationToken == admission.Token)
+                || exception.CancellationToken == admission.Token
+                || exception is NativeSdkSession.RequestedReadCanceledException read
+                    && read.RequestToken == renewing.Token)
         )
         {
-            // This known admission-bound wait is not an independent SDK failure.
+            // Only known request/read-child cancellation belongs to admission.
             throw new RenewalAdmissionCanceledException(exception);
         }
-        admission?.ThrowIfClosed();
+        CheckRenewalAdmission(admission);
         limit = reservation.Allowance - windowBaseline;
         return limit;
+    }
+
+    internal static void CheckRenewalAdmission(WorkAdmission? admission)
+    {
+        try
+        {
+            admission?.ThrowIfClosed();
+        }
+        catch (OperationCanceledException exception) when (
+            exception.CancellationToken == admission?.Token
+        )
+        {
+            throw new RenewalAdmissionCanceledException(exception);
+        }
     }
 
     internal sealed class RenewalAdmissionCanceledException(OperationCanceledException cause)

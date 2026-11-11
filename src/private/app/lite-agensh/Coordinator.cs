@@ -1591,8 +1591,10 @@ public sealed class Coordinator
                     native.ReservationId,
                     database.Configuration.RunAiCreditAllowance
                 );
+                // Keep the worker-bound request alive through durable ACK and verification.
+                using NativeRequest request = native.BeginRequest(cancellationToken);
                 JsonObject result = await native
-                    .PromptAsync(text, cancellationToken, admission)
+                    .PromptAsync(text, request.Token, admission)
                     .ConfigureAwait(false);
                 nativeCompleted = true;
                 initialPlanner = false;
@@ -1607,7 +1609,7 @@ public sealed class Coordinator
                 MarkAcknowledged(batch.Id);
                 acknowledged = true;
                 // Unknown usage after a completed model response forbids the next model call.
-                await native.VerifyCreditsAsync(cancellationToken).ConfigureAwait(false);
+                await native.VerifyCreditsAsync(request.Token).ConfigureAwait(false);
                 lastWork = database.Now;
                 string? stopReason = result["stopReason"]?.GetValue<string>();
                 if (stopReason is not ("end_turn" or "max_turn_requests"))
