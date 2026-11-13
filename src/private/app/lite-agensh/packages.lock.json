@@ -10,12 +10,12 @@
       },
       "GitHub.Copilot.SDK": {
         "type": "Direct",
-        "requested": "[1.0.28, )",
-        "resolved": "1.0.28",
-        "contentHash": "mYmpMjEHTQBUM71UAtO86e6uZ/ACPOLEhMS00ZqRMdAqmblygMtqo5uJbLFh6FCl0RzdwFH9j9g7EGpdfg6Hcg==",
+        "requested": "[1.0.31, )",
+        "resolved": "1.0.31",
+        "contentHash": "KNCmV5CGcbHQXegtiKBxMtdA1o84hNY84+mR/K+gamJQ+aVLXdSsvoZd7txaIrMYFR3KOZmi4vz1LA+S+Ti3hQ==",
         "dependencies": {
-          "Microsoft.Extensions.AI.Abstractions": "10.2.0",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.2"
+          "Microsoft.Extensions.AI.Abstractions": "10.11.0",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.14"
         }
       },
       "Microsoft.Data.Sqlite": {
