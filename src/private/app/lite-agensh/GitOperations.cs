@@ -213,9 +213,19 @@ public sealed class GitOperations
             database.SaveConfiguration(configuration with { BaseRevision = baseCommit });
         }
 
+        string repositoryCommon = (
+            await GitAsync(
+                    Repository,
+                    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
+        ).Trim();
         database.WriteMetadata("git:base", baseCommit);
         database.WriteMetadata("git:base_commit", baseCommit);
-        await EnsureWorktreeAsync(IntegrationBranch, IntegrationPath, baseCommit, cancellationToken)
+        await EnsureWorktreeAsync(
+                IntegrationBranch, IntegrationPath, baseCommit, repositoryCommon, cancellationToken
+            )
             .ConfigureAwait(false);
         database.WriteMetadata("git:integration_branch", IntegrationBranch);
         database.WriteMetadata("git:integration_path", IntegrationPath);
@@ -223,9 +233,27 @@ public sealed class GitOperations
         foreach (string worker in database.Configuration.WorkerIds)
         {
             string path = GetWorkerPath(worker);
-            await EnsureWorktreeAsync(WorkerBranch(worker), path, baseCommit, cancellationToken)
+            await EnsureWorktreeAsync(
+                    WorkerBranch(worker), path, baseCommit, repositoryCommon, cancellationToken
+                )
                 .ConfigureAwait(false);
             database.WriteMetadata("worktree:" + worker, path);
+        }
+
+        string currentCommon = (
+            await GitAsync(
+                    Repository,
+                    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
+        ).Trim();
+        if (!SamePath(repositoryCommon, currentCommon))
+        {
+            throw new OperationException(
+                "conflict",
+                "Repository identity changed during worktree initialization."
+            );
         }
 
         database.WriteMetadata("git:initialized", "true");
@@ -389,7 +417,7 @@ public sealed class GitOperations
                 }
             }
 
-            await VerifyWorktreeAsync(IntegrationBranch, IntegrationPath, cancellationToken)
+            await VerifyWorktreeAsync(IntegrationBranch, IntegrationPath, null, cancellationToken)
                 .ConfigureAwait(false);
             await RequireCleanAsync(IntegrationPath, cancellationToken).ConfigureAwait(false);
             string head = await ResolveAsync(IntegrationBranch, cancellationToken)
@@ -519,7 +547,8 @@ public sealed class GitOperations
             // Preflight every resource before removing any; dirty worker work is never discarded.
             foreach ((string reference, string path) in resources)
             {
-                await VerifyWorktreeAsync(reference, path, cancellationToken).ConfigureAwait(false);
+                await VerifyWorktreeAsync(reference, path, null, cancellationToken)
+                    .ConfigureAwait(false);
                 await RequireCleanAsync(path, cancellationToken).ConfigureAwait(false);
             }
 
@@ -1012,7 +1041,8 @@ public sealed class GitOperations
         RequireOpen(change);
         await RequireSubmittedHeadAsync(change, submitted, token).ConfigureAwait(false);
         EnforceHealth(change);
-        await VerifyWorktreeAsync(IntegrationBranch, IntegrationPath, token).ConfigureAwait(false);
+        await VerifyWorktreeAsync(IntegrationBranch, IntegrationPath, null, token)
+            .ConfigureAwait(false);
         await RequireCleanAsync(IntegrationPath, token).ConfigureAwait(false);
         string parent = await ResolveAsync(IntegrationBranch, token).ConfigureAwait(false);
         await RequireReviewsAsync(change, parent, token).ConfigureAwait(false);
@@ -1022,7 +1052,7 @@ public sealed class GitOperations
             "worktrees",
             "candidate-" + requestId.ToString(CultureInfo.InvariantCulture)
         );
-        await EnsureWorktreeAsync(candidateBranch, path, parent, token).ConfigureAwait(false);
+        await EnsureWorktreeAsync(candidateBranch, path, parent, null, token).ConfigureAwait(false);
         ProcessResult merge = await GitResultAsync(
                 path,
                 ["merge", "--no-ff", "--no-edit", "-m", $"Integrate change {changeId}", submitted],
@@ -1198,7 +1228,7 @@ public sealed class GitOperations
             string current = await ResolveAsync(IntegrationBranch, token).ConfigureAwait(false);
             if (ready && candidate is not null && current == candidate)
             {
-                await VerifyWorktreeAsync(IntegrationBranch, IntegrationPath, token)
+                await VerifyWorktreeAsync(IntegrationBranch, IntegrationPath, null, token)
                     .ConfigureAwait(false);
                 string tree = (
                     await GitAsync(Repository, ["rev-parse", candidate + "^{tree}"], token)
@@ -1333,7 +1363,7 @@ public sealed class GitOperations
         bool passed;
         if (forceChecks || old is null || old["commit"]!.GetValue<string>() != head)
         {
-            await VerifyWorktreeAsync(IntegrationBranch, IntegrationPath, token)
+            await VerifyWorktreeAsync(IntegrationBranch, IntegrationPath, null, token)
                 .ConfigureAwait(false);
             await RequireCleanAsync(IntegrationPath, token).ConfigureAwait(false);
             passed = await RunChecksAsync(
@@ -1811,6 +1841,7 @@ public sealed class GitOperations
         string reference,
         string path,
         string commit,
+        string? repositoryCommon,
         CancellationToken token
     )
     {
@@ -1867,7 +1898,8 @@ public sealed class GitOperations
 
         if (state == "ready")
         {
-            await VerifyWorktreeAsync(reference, path, token).ConfigureAwait(false);
+            await VerifyWorktreeAsync(reference, path, repositoryCommon, token)
+                .ConfigureAwait(false);
             return;
         }
 
@@ -1905,7 +1937,7 @@ public sealed class GitOperations
                 .ConfigureAwait(false);
         }
 
-        await VerifyWorktreeAsync(reference, path, token).ConfigureAwait(false);
+        await VerifyWorktreeAsync(reference, path, repositoryCommon, token).ConfigureAwait(false);
         using SqliteConnection store = database.Open();
         using SqliteTransactionScope transaction = Sql.BeginTransaction(store);
         Sql.Execute(
@@ -1918,7 +1950,12 @@ public sealed class GitOperations
         transaction.Commit();
     }
 
-    private async Task VerifyWorktreeAsync(string reference, string path, CancellationToken token)
+    private async Task VerifyWorktreeAsync(
+        string reference,
+        string path,
+        string? repositoryCommon,
+        CancellationToken token
+    )
     {
         using (SqliteConnection connection = database.Open())
         {
@@ -1973,7 +2010,7 @@ public sealed class GitOperations
         string branch = (
             await GitAsync(path, ["symbolic-ref", "-q", "HEAD"], token).ConfigureAwait(false)
         ).Trim();
-        string repositoryCommon = (
+        repositoryCommon ??= (
             await GitAsync(
                     Repository,
                     ["rev-parse", "--path-format=absolute", "--git-common-dir"],
