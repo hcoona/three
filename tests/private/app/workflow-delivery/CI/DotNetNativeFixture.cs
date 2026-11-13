@@ -17,7 +17,8 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
     internal static string SdkSelection => RepositoryToolSelection.GlobalJson("MSTest.Sdk");
 
     internal static async Task<DotNetNativeFixture> CreateAsync(string capability,
-        CancellationToken token, bool nbgv = false, bool failNet8Test = false)
+        CancellationToken token, bool nbgv = false, bool failNet8Test = false,
+        bool pauseTest = false)
     {
         GitFixture repo = await GitFixture.CreateAsync(token);
         try
@@ -153,6 +154,28 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                             Assert.Fail("Intentional native net8.0 test failure");
                     #endif
                     """, StringComparison.Ordinal);
+            if (pauseTest)
+            {
+                string signal = System.Security.SecurityElement.Escape(
+                    Path.Combine(repo.Directory, "phase-observation"))!;
+                files["tests/native.runsettings"] = files["tests/native.runsettings"].Replace(
+                    "</TestRunParameters>",
+                    $"""<Parameter name="PhaseDirectory" value="{signal}" /></TestRunParameters>""",
+                    StringComparison.Ordinal);
+                files["tests/NativeTests.cs"] = files["tests/NativeTests.cs"].Replace(
+                    "Assert.AreEqual(42, DependencyValue.Answer);", """
+                    string signal = context.Properties["PhaseDirectory"]!.ToString()!;
+                    Directory.CreateDirectory(signal);
+                    File.WriteAllText(Path.Combine(signal, "started"), "");
+                    var wait = System.Diagnostics.Stopwatch.StartNew();
+                    while (!File.Exists(Path.Combine(signal, "release")) &&
+                        wait.Elapsed < TimeSpan.FromSeconds(20))
+                        Thread.Sleep(20);
+                    Assert.IsTrue(File.Exists(Path.Combine(signal, "release")),
+                        "The owned observer did not release this bounded test.");
+                    Assert.AreEqual(42, DependencyValue.Answer);
+                    """, StringComparison.Ordinal);
+            }
             foreach ((string path, string content) in files)
                 await repo.SetAsync(path, content);
             string initial = await repo.CommitAsync();
