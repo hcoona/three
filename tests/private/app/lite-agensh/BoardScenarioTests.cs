@@ -296,31 +296,52 @@ public sealed class BoardScenarioTests(TestContext testContext)
         using RunFixture fixture = new();
         RunDatabase database = fixture.CreateDatabase();
         CollaborationOperations board = new(database);
-        long first = 0;
+        long first;
         using (SqliteConnection anchor = database.Open())
         {
             _ = Sql.Scalar(anchor, "SELECT COUNT(*) FROM sqlite_schema;");
-            long started = System.Diagnostics.Stopwatch.GetTimestamp();
-            for (int index = 0; index <= 2000; index++)
-            {
-                testContext.CancellationToken.ThrowIfCancellationRequested();
-                JsonObject admitted = Scenario.Call(
+            testContext.CancellationToken.ThrowIfCancellationRequested();
+            first = Scenario.Id(
+                Scenario.Call(
                     board,
                     "worker1",
                     "board_publish",
-                    new { type = "OBSERVED", content = $"unique-finding-{index:D4}" }
-                );
-                if (index == 0)
-                {
-                    first = Scenario.Id(admitted);
-                }
+                    new { type = "OBSERVED", content = "unique-finding-0000" }
+                )
+            );
 
-                if (index % 500 == 0)
-                {
-                    TimeSpan elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(started);
-                    testContext.WriteLine($"Board admissions: {index + 1}; elapsed: {elapsed}.");
-                }
+            // Arrange capacity directly; the first admission and boundary crossing stay real.
+            testContext.CancellationToken.ThrowIfCancellationRequested();
+            using (SqliteTransactionScope transaction = Sql.BeginTransaction(anchor))
+            {
+                Sql.Execute(
+                    anchor,
+                    """
+                    WITH RECURSIVE filler(n) AS (
+                        SELECT 1 UNION ALL SELECT n+1 FROM filler WHERE n<1999
+                    )
+                    INSERT INTO board_history(actor,type,content,created_at,
+                        verified_checkpoint,local_failures)
+                    SELECT h.actor,h.type,printf('unique-finding-%04d',f.n),h.created_at,
+                        h.verified_checkpoint,h.local_failures
+                    FROM filler f JOIN board_history h ON h.id=$first;
+
+                    INSERT INTO board_recent(revision_id,first_at)
+                    SELECT id,created_at FROM board_history WHERE id>$first ORDER BY id;
+                    """,
+                    transaction,
+                    ("$first", first)
+                );
+                transaction.Commit();
             }
+
+            testContext.CancellationToken.ThrowIfCancellationRequested();
+            Scenario.Call(
+                board,
+                "worker1",
+                "board_publish",
+                new { type = "OBSERVED", content = "unique-finding-2000" }
+            );
         }
 
         Assert.AreEqual(
