@@ -447,12 +447,14 @@ internal sealed class NativeSdkSession : INativeSdkSession
     internal static async Task<NativeUsage> ReadProbeAsync(
         Func<CancellationToken, Task<NativeUsage>> read,
         CancellationToken cancellationToken,
-        Func<string>? phase = null
+        Func<string>? phase = null,
+        TimeProvider? timeProvider = null
     )
     {
+        using CancellationTokenSource timeout = new(
+            TimeSpan.FromSeconds(ProbeTimeoutSeconds), timeProvider ?? TimeProvider.System);
         using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken);
-        deadline.CancelAfter(TimeSpan.FromSeconds(ProbeTimeoutSeconds));
+            cancellationToken, timeout.Token);
         try
         {
             return await read(deadline.Token).ConfigureAwait(false);

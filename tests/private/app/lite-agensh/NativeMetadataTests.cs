@@ -176,6 +176,7 @@ public sealed class NativeMetadataTests(TestContext testContext)
         await unrelated.CancelAsync();
         OperationCanceledException other = new(unrelated.Token);
         CancellationToken child = default;
+        DeadlineClock? clock = schedule == "local-timeout" ? new() : null;
         Task<NativeUsage> reading = NativeSdkSession.ReadProbeAsync(async probe =>
         {
             child = probe;
@@ -190,7 +191,18 @@ public sealed class NativeMetadataTests(TestContext testContext)
             }
             await Task.Delay(Timeout.InfiniteTimeSpan, probe);
             return new NativeUsage("unused", 0, "complete", 0);
-        }, request.Token);
+        }, request.Token, timeProvider: clock);
+        if (clock is not null)
+        {
+            Assert.IsFalse(child.IsCancellationRequested);
+            Assert.IsFalse(reading.IsCompleted);
+            clock.Advance(TimeSpan.FromSeconds(30) - TimeSpan.FromMilliseconds(1));
+            Assert.IsFalse(child.IsCancellationRequested);
+            Assert.IsFalse(reading.IsCompleted);
+            clock.Advance(TimeSpan.FromMilliseconds(1));
+            Assert.IsTrue(child.IsCancellationRequested);
+            Assert.IsFalse(request.IsCancellationRequested);
+        }
         if (schedule is "unrelated-live" or "local-timeout")
         {
             OperationException failure =

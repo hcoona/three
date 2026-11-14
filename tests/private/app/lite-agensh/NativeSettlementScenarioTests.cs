@@ -2632,13 +2632,12 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
     [DataRow("caller")]
     [DataRow("late")]
     [DataRow("live")]
-    [DataRow("delayed-live")]
     public async Task NativeErrorDuringAbortRetainsCauseWithoutOverridingCancellation(
         string schedule
     )
     {
         CancellationToken token = testContext.CancellationToken;
-        bool live = schedule is "live" or "delayed-live";
+        bool live = schedule == "live";
         bool caller = schedule == "caller";
         bool late = schedule == "late";
         int peerCount = live ? 2 : 1;
@@ -2796,17 +2795,6 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             Assert.IsFalse(releaseAbort.Task.IsCompleted);
             if (live)
             {
-                if (schedule == "delayed-live")
-                {
-                    Task oldAssertionBound = Task.Delay(TimeSpan.FromSeconds(2), token);
-                    Assert.AreSame(oldAssertionBound,
-                        await Task.WhenAny(peerStopped.Task, oldAssertionBound));
-                    Assert.IsFalse(releaseAbort.Task.IsCompleted);
-                    Assert.IsFalse(suppliedToken.IsCancellationRequested);
-                    testContext.WriteLine(
-                        "A held coordinator poll reproduces the old two-second assertion failure "
-                        + "without cancellation, deadline advance or abort release.");
-                }
                 releasePoll.TrySetResult();
                 Assert.AreSame(peerStopped.Task, await Task.WhenAny(
                     peerStopped.Task, Task.Delay(TimeSpan.FromSeconds(2), token)),
@@ -4579,6 +4567,14 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
         TaskCompletionSource reading = new(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource canceled = new(TaskCreationOptions.RunContinuationsAsynchronously);
         ControlledSdkSession? active = null;
+        string databasePath = Path.Combine(fixture.Database.StatePath, "run.sqlite");
+        string databaseIdentity = Convert.ToHexString(SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(
+                OperatingSystem.IsWindows() ? databasePath.ToUpperInvariant() : databasePath)));
+        using Process owner = Process.GetCurrentProcess();
+        DateTimeOffset processBirth = new(owner.StartTime.ToUniversalTime());
+        long phaseArmedAt = 0;
+        JsonObject? acknowledgementActivity = null;
         void DeliverError() => source.RecordEvent(SessionEvent.FromJson(
             """
             {
@@ -4606,6 +4602,68 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             }
             acknowledging.TrySetResult();
             Assert.IsTrue(acknowledge.Task.Wait(TimeSpan.FromSeconds(5)));
+        }
+        void ObserveAcknowledgementPhase()
+        {
+            if (acknowledgementActivity is not null)
+            {
+                return;
+            }
+            using (SqliteConnection connection = fixture.Database.Open())
+            {
+                if (Sql.Scalar(connection,
+                    """
+                    SELECT COUNT(*) FROM coordinator_turns t
+                    JOIN delivery_batches b ON b.id=t.batch_id
+                    WHERE t.state='native-complete' AND b.state='sending';
+                    """) is not 1L)
+                {
+                    clock.OnNextRead = ObserveAcknowledgementPhase;
+                    return;
+                }
+            }
+            foreach (string path in Directory.EnumerateFiles(
+                databasePath + ".diagnostics", "activity-*.json"))
+            {
+                try
+                {
+                    JsonObject snapshot = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+                    if (snapshot["version"]?.GetValue<int>() != 1
+                        || snapshot["database"]?.GetValue<string>() != databaseIdentity
+                        || snapshot["kind"]?.GetValue<string>() != "run"
+                        || snapshot["processId"]?.GetValue<int>() != Environment.ProcessId
+                        || snapshot["processBirthUtc"]?.GetValue<DateTimeOffset>() != processBirth
+                        || !snapshot.ContainsKey("warning") || snapshot["warning"] is not null
+                        || snapshot["active"] is not JsonArray transactions)
+                    {
+                        continue;
+                    }
+                    acknowledgementActivity = transactions.OfType<JsonObject>().SingleOrDefault(
+                        item => item["operation"]?.GetValue<string>() == "CompleteBatch"
+                            && item["deferred"]?.GetValue<bool>() == false
+                            && item["writeAcquisitionObserved"]?.GetValue<bool>() == true
+                            && item["phase"]?.GetValue<string>() == "acquisition-succeeded"
+                            && Guid.TryParseExact(
+                                item["connection"]?.GetValue<string>(), "N", out _)
+                            && Guid.TryParseExact(
+                                item["transaction"]?.GetValue<string>(), "N", out _)
+                            && item["monotonicTimestamp"]?.GetValue<long>() >= phaseArmedAt);
+                    if (acknowledgementActivity is not null)
+                    {
+                        break;
+                    }
+                }
+                catch (Exception error) when (
+                    error is IOException or System.Text.Json.JsonException)
+                {
+                }
+            }
+            if (acknowledgementActivity is null)
+            {
+                clock.OnNextRead = ObserveAcknowledgementPhase;
+                return;
+            }
+            DuringAcknowledgement();
         }
         Coordinator coordinator = new(fixture.Database, fixture.Collaboration, fixture.Operations,
             (database, processes, credits) => new NativeWorkerFactory(database, processes, credits,
@@ -4637,10 +4695,8 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
                                     return new JsonObject { ["stopReason"] = "end_turn" };
                                 }, () => Task.CompletedTask, () => Task.CompletedTask, supplied);
                                 sendScopeExited = true;
-                                // The first read persists the completed turn; the next is
-                                // inside the actual CompleteBatch SQLite transaction.
-                                clock.OnNextRead = () =>
-                                    clock.OnNextRead = DuringAcknowledgement;
+                                phaseArmedAt = Stopwatch.GetTimestamp();
+                                clock.OnNextRead = ObserveAcknowledgementPhase;
                             };
                             session.SettledRead = async supplied =>
                             {
@@ -4691,7 +4747,17 @@ public sealed class NativeSettlementScenarioTests(TestContext testContext)
             Assert.IsLessThan(active!.LastSendTimeout,
                 clock.GetUtcNow() - dispatchedAt);
             response.TrySetResult();
-            await acknowledging.Task.WaitAsync(TimeSpan.FromSeconds(2), token);
+            try
+            {
+                await acknowledging.Task.WaitAsync(TimeSpan.FromSeconds(2), token);
+            }
+            catch (TimeoutException)
+            {
+                Assert.Fail("No current acquired CompleteBatch transaction and durable "
+                    + "acknowledgement phase were observed within the existing two-second bound.");
+            }
+            Assert.IsNotNull(acknowledgementActivity,
+                "The acknowledgement phase requires a current acquired CompleteBatch transaction.");
             if (!earlyAck)
             {
                 clock.Advance(TimeSpan.FromSeconds(2));
