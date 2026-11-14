@@ -8,7 +8,6 @@ namespace LiteAgensh.Tests;
 internal sealed class GitScenario : IDisposable
 {
     private static readonly int[] RootTask = [1];
-    private readonly ProcessRunner processes;
     private readonly Action<string>? trace;
     private string originalHead = "";
     private string originalStatus = "";
@@ -31,7 +30,6 @@ internal sealed class GitScenario : IDisposable
         Database = new(Fixture.StatePath, configuration, clock);
         Collaboration = new(Database);
         Operations = new(Database, Collaboration);
-        processes = new(Database);
     }
 
     public RunFixture Fixture { get; }
@@ -197,8 +195,22 @@ internal sealed class GitScenario : IDisposable
     {
         long started = Stopwatch.GetTimestamp();
         trace?.Invoke($"Fixture git started: {string.Join(' ', arguments)}");
-        ProcessResult result = await processes.RunAsync(
-            "git",
+        token.ThrowIfCancellationRequested();
+        using CancellationTokenSource deadline = new(TimeSpan.FromSeconds(30));
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
+            token, deadline.Token
+        );
+        // Fixture-actor commands must not create application process leases.
+        ProcessStartInfo start = new("git")
+        {
+            WorkingDirectory = cwd,
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        string[] commandArguments =
             [
                 "-c",
                 "user.name=ScriptedFixture",
@@ -211,19 +223,53 @@ internal sealed class GitScenario : IDisposable
                 "-c",
                 "core.hooksPath=" + Path.Combine(Fixture.RootPath, "fixture-hooks"),
                 .. arguments,
-            ],
-            cwd,
-            TimeSpan.FromSeconds(30),
-            token
-        );
+            ];
+        foreach (string argument in commandArguments)
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        using Process process = new() { StartInfo = start };
+        Task<string> output = Task.FromResult("");
+        Task<string> error = Task.FromResult("");
+        bool timedOut = false;
+        Assert.IsTrue(process.Start(), "Fixture Git did not start.");
+        try
+        {
+            output = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
+            error = process.StandardError.ReadToEndAsync(CancellationToken.None);
+            process.StandardInput.Close();
+            try
+            {
+                await process.WaitForExitAsync(linked.Token);
+                await Task.WhenAll(output, error).WaitAsync(linked.Token);
+            }
+            catch (OperationCanceledException) when (linked.IsCancellationRequested)
+            {
+                timedOut = deadline.IsCancellationRequested;
+            }
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            await process.WaitForExitAsync(CancellationToken.None)
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.WhenAll(output, error).WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        token.ThrowIfCancellationRequested();
         trace?.Invoke(
             $"Fixture git completed in {Stopwatch.GetElapsedTime(started)}: "
-                + $"{string.Join(' ', arguments)}; exit {result.ExitCode}; "
-                + $"timed out {result.TimedOut}."
+                + $"{string.Join(' ', arguments)}; exit {process.ExitCode}; "
+                + $"timed out {timedOut}."
         );
-        Assert.AreEqual(0, result.ExitCode, result.StandardError);
-        Assert.IsFalse(result.TimedOut);
-        return result.StandardOutput;
+        Assert.AreEqual(0, process.ExitCode, await error);
+        Assert.IsFalse(timedOut);
+        return await output;
     }
 
     public async Task AssertOriginalPreservedAsync(CancellationToken token)
