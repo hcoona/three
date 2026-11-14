@@ -19,10 +19,10 @@
     "@commitlint/config-conventional": "^21.0.0",
     "@commitlint/format": "^21.0.0",
     "@commitlint/types": "^21.0.0",
-    "@playwright/mcp": "0.0.84",
-    "@upstash/context7-mcp": "4.5.1",
+    "@playwright/mcp": "0.0.85",
+    "@upstash/context7-mcp": "4.6.0",
     "ap-style-title-case": "^2.0.0",
     "markdownlint-cli2": "0.24.0",
-    "prettier": "3.9.10"
+    "prettier": "3.10.0"
   }
 }

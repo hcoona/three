@@ -24,11 +24,11 @@ importers:
         specifier: ^21.0.0
         version: 21.2.3
       '@playwright/mcp':
-        specifier: 0.0.84
-        version: 0.0.84
+        specifier: 0.0.85
+        version: 0.0.85
       '@upstash/context7-mcp':
-        specifier: 4.5.1
-        version: 4.5.1
+        specifier: 4.6.0
+        version: 4.6.0
       ap-style-title-case:
         specifier: ^2.0.0
         version: 2.0.0
@@ -36,8 +36,8 @@ importers:
         specifier: 0.24.0
         version: 0.24.0
       prettier:
-        specifier: 3.9.10
-        version: 3.9.10
+        specifier: 3.10.0
+        version: 3.10.0
 
   src/private/app/im-acp-gateway/poc/telegram-bot-verifier:
     devDependencies:
@@ -642,8 +642,8 @@ packages:
   '@oxc-project/types@0.156.0':
     resolution: {integrity: sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw==}
 
-  '@playwright/mcp@0.0.84':
-    resolution: {integrity: sha512-weqLrA7/D8MJzNV9/t3Hnjp100tS2sxFXKeb2gH6Nhktqmdfvx5qRA9AZ5Mhjnre1jY0wltsrRK5VZS5NBgcvw==}
+  '@playwright/mcp@0.0.85':
+    resolution: {integrity: sha512-bSfECMbLXhJdWkGhLzNMxTZuazG+9IDJ679gflji3yyD94e7ARnGdqmJmG6lTPB+gYX+OiFLmX5myBl62+wZEw==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -986,8 +986,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@upstash/context7-mcp@4.5.1':
-    resolution: {integrity: sha512-rUD1IdPVihgV8iifD7EvmtdH5X53zwvAUJ1a/ltaIla80m7Nga+lgx5Mk2ckLMF7r5WjDkFfd7qEQ54xbvEwiA==}
+  '@upstash/context7-mcp@4.6.0':
+    resolution: {integrity: sha512-V/ve0WbDojzajy7ZwHVi3MRxujeyqvzX1uGO9QZSXuD+WUe2swll1OB3Mv+kI9ZU6fMFkbUM9MUgBA+Hc1j2tA==}
     engines: {node: '>=20.18.1'}
     hasBin: true
 
@@ -2277,19 +2277,24 @@ packages:
   pkg-types@2.4.0:
     resolution: {integrity: sha512-07Fys7iVx0X6TcviMOgogM1Lk33ZyqOezMnU79S+kffWqwolG/5W9V8EgQSeYCIfFTYVgssRbnH630Oa2+soBA==}
 
-  playwright-core@1.65.0-alpha-2026-10-30:
-    resolution: {integrity: sha512-LPMw8B/HRQKMcJeXTqWSrkB/AfCKKmbDQMbu0p7zg8MgibOWaKMjZWR/StAtrQkOxvOmZEju1o1TnPgdoOCwrg==}
+  playwright-core@1.66.0-alpha-2026-11-09:
+    resolution: {integrity: sha512-HZVc/E3nqrasH7PPvJNwc7aCNsKXKjvtViZBpeFfopGOeB0zr3r5q4TKfqzkrdIcCKWCulyLVVGtla/LYbmxUQ==}
     engines: {node: '>=20'}
     hasBin: true
 
-  playwright@1.65.0-alpha-2026-10-30:
-    resolution: {integrity: sha512-dmAJMVHKzHvMQjn+XDcaq/pxaZ0W6n8i78rwTM+VGRtQ3WBF5ZiSdB1yL/cyoYUGUMwg3jxN65KqC9cERaCbIg==}
+  playwright@1.66.0-alpha-2026-11-09:
+    resolution: {integrity: sha512-raaHhtTYsm9ydMdGa11MEIwI8KM9RP4CuyvAb/lbd6e3bYhsBHXPMVGvyYJWldQxwUgMYnngY2VY5vCpimB2Dg==}
     engines: {node: '>=20'}
     hasBin: true
 
   postcss@8.5.32:
     resolution: {integrity: sha512-LJlKCCAUFKOuZxipUdYw1NzIITEsPcgyOG9LkvRJvuKj/bRzbuRY0ARXvL0pWGpsZvn8jku+LMep2eU0seHp8g==}
     engines: {node: ^10 || ^12 || >=14}
+
+  prettier@3.10.0:
+    resolution: {integrity: sha512-mBi4765LgjO1PFjlEs7pUeK0nb1bw71c+N4/ItfeUWNdY5cV2pRKaFpbbFRYmDJMO+5ZwzGxHRqHxFZna7iv5w==}
+    engines: {node: '>=14'}
+    hasBin: true
 
   prettier@3.9.10:
     resolution: {integrity: sha512-skGHTH1Yb9QvaTC4hWnRTzEYtCpApF0UMBPz+t/0ZPzP8ihefo/btKd+QA7pUE0fEwA1SbS/NmhyEcstdXOIdA==}
@@ -3351,10 +3356,10 @@ snapshots:
 
   '@oxc-project/types@0.156.0': {}
 
-  '@playwright/mcp@0.0.84':
+  '@playwright/mcp@0.0.85':
     dependencies:
-      playwright: 1.65.0-alpha-2026-10-30
-      playwright-core: 1.65.0-alpha-2026-10-30
+      playwright: 1.66.0-alpha-2026-11-09
+      playwright-core: 1.66.0-alpha-2026-11-09
 
   '@quansync/fs@1.1.0':
     dependencies:
@@ -3570,7 +3575,7 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
-  '@upstash/context7-mcp@4.5.1':
+  '@upstash/context7-mcp@4.6.0':
     dependencies:
       '@modelcontextprotocol/node': 2.1.1(@modelcontextprotocol/server@2.3.1)
       '@modelcontextprotocol/server': 2.3.1
@@ -4937,17 +4942,19 @@ snapshots:
       exsolve: 1.2.0
       pathe: 2.0.3
 
-  playwright-core@1.65.0-alpha-2026-10-30: {}
+  playwright-core@1.66.0-alpha-2026-11-09: {}
 
-  playwright@1.65.0-alpha-2026-10-30:
+  playwright@1.66.0-alpha-2026-11-09:
     dependencies:
-      playwright-core: 1.65.0-alpha-2026-10-30
+      playwright-core: 1.66.0-alpha-2026-11-09
 
   postcss@8.5.32:
     dependencies:
       nanoid: 3.3.20
       picocolors: 1.1.1
       source-map-js: 1.2.2
+
+  prettier@3.10.0: {}
 
   prettier@3.9.10: {}
 
