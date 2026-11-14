@@ -16,18 +16,48 @@ internal interface INativeWorker : IAsyncDisposable
 
     string? NativeFailure { get; }
 
+    Exception? FirstFailure => null;
+
+    void BindOwner(CancellationToken cancellationToken) { }
+
+    NativeRequest BeginRequest(CancellationToken cancellationToken) => new(cancellationToken);
+
     Task StartAsync(
         string cwd,
         string? exactSession,
         CancellationToken cancellationToken,
-        string? recoveryLabel = null
+        string? recoveryLabel = null,
+        WorkAdmission? admission = null
     );
 
-    Task<JsonObject> PromptAsync(string text, CancellationToken cancellationToken);
+    Task<JsonObject> PromptAsync(
+        string text, CancellationToken cancellationToken, WorkAdmission? admission = null
+    );
 
     Task VerifyCreditsAsync(CancellationToken cancellationToken);
 
     Task StopAsync();
+}
+
+internal sealed class NativeRequest(
+    CancellationToken token,
+    CancellationTokenSource? lifetime = null,
+    IDisposable? observation = null
+) : IDisposable
+{
+    public CancellationToken Token { get; } = token;
+
+    public void Dispose()
+    {
+        try
+        {
+            observation?.Dispose();
+        }
+        finally
+        {
+            lifetime?.Dispose();
+        }
+    }
 }
 
 internal interface INativeWorkerFactory

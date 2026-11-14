@@ -228,8 +228,25 @@ internal static class SqliteDiagnostics
             {
                 Persist(database);
             }
-            if (sqlite?.SqliteErrorCode is 5 or 6)
+            if (sqlite?.SqliteErrorCode is 5 or 6 or 10)
             {
+                try
+                {
+                    Warn("SQLite failure summary: " + JsonSerializer.Serialize(
+                        new
+                        {
+                            database = database.Identity,
+                            processId = Environment.ProcessId,
+                            failure = record,
+                        },
+                        Json.Options
+                    ));
+                }
+                catch (Exception exception) when (IsDiagnosticFailure(exception))
+                {
+                    Warn("SQLite failure summary unavailable; original database error preserved.");
+                }
+
                 Capture(database, record, sqlite);
             }
         }
@@ -383,7 +400,9 @@ internal static class SqliteDiagnostics
                     output.Write(bytes);
                     output.Flush();
                     error.Data["LiteAgensh.SqliteIncident"] = path;
-                    Warn($"SQLite contention evidence: {path}");
+                    Warn(error.SqliteErrorCode == 10
+                        ? "SQLite I/O evidence retained locally."
+                        : $"SQLite contention evidence: {path}");
                     return;
                 }
                 catch (IOException) when (File.Exists(path))

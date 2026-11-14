@@ -55,9 +55,11 @@ or reuse a consumed recovery invocation.
 The [deadline-drain contract](docs/implementation-contracts.md#bounded-deadline-drain)
 separates normal work-admission expiry from bounded completion of existing
 requests, without weakening terminal/usage evidence or immediate safety stops.
-It is a design prerequisite, not a claim of implemented or native-qualified
-deadline behavior; matching implementation and fresh Luna observations remain
-separate gates.
+The application implements separate admission cancellation and fixed bounded
+drain with controlled completion, timeout, interruption, credit-wait and cap
+renewal scenarios. These scenarios do not establish installed-native deadline
+behavior or a successful Luna journey; fresh native observations remain a
+separate gate.
 
 The [native-host design](docs/architecture.md#native-sdk-mcp-and-instruction-boundary)
 specifies one owned runtime/client with independent peer sessions and a
@@ -81,6 +83,12 @@ storage scenarios cover acquisition failures, completion and missing evidence.
 Prior incident captures are not overwritten; exhausted capacity is explicit.
 This does not identify the original failed audit's competing lock holder or
 establish complete attribution of external/uninstrumented connections.
+The same bounded diagnostics also capture SQLite I/O failures. A compact failure
+summary retains codes, phase and owned activity identity in captured stderr even
+when local incident persistence fails or a test fixture is later removed.
+I/O summaries exclude exception messages and local incident paths; raw incident
+files remain local. Controlled injected failures verify retention, not the cause
+of a historical filesystem error.
 
 The [credit contract](docs/implementation-contracts.md#verified-pre-dispatch-cancellation)
 specifies a distinct verified cancellation before first dispatch, not measured

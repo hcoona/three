@@ -16,6 +16,66 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
     internal const string Project = "tests/NativeTests.csproj";
     internal static string SdkSelection => RepositoryToolSelection.GlobalJson("MSTest.Sdk");
 
+    // The named test target is a controlled substitute, not MTP interoperability evidence.
+    internal static async Task<DotNetNativeFixture> CreatePhaseObservationAsync(
+        CancellationToken token)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(token);
+        try
+        {
+            await repo.SetAsync("global.json", SdkSelection);
+            await repo.SetAsync(Project, """
+                <Project>
+                  <PropertyGroup>
+                    <FixtureOutput
+                      >$(MSBuildProjectDirectory)/native-bin/phase-output.bin</FixtureOutput>
+                  </PropertyGroup>
+                  <UsingTask TaskName="HoldPhase" TaskFactory="RoslynCodeTaskFactory"
+                    AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+                    <ParameterGroup>
+                      <SignalDirectory ParameterType="System.String" Required="true" />
+                    </ParameterGroup>
+                    <Task><Code Type="Method" Language="cs"><![CDATA[
+                      public override bool Execute()
+                      {
+                          System.IO.Directory.CreateDirectory(SignalDirectory);
+                          System.IO.File.WriteAllText(
+                              System.IO.Path.Combine(SignalDirectory, "started"), "");
+                          string release = System.IO.Path.Combine(SignalDirectory, "release");
+                          var wait = System.Diagnostics.Stopwatch.StartNew();
+                          while (!System.IO.File.Exists(release) &&
+                              wait.Elapsed < System.TimeSpan.FromSeconds(20))
+                              System.Threading.Thread.Sleep(20);
+                          if (!System.IO.File.Exists(release))
+                          {
+                              Log.LogError(
+                                  "The owned observer did not release this bounded target.");
+                              return false;
+                          }
+                          return true;
+                      }
+                    ]]></Code></Task>
+                  </UsingTask>
+                  <Target Name="Build">
+                    <MakeDir Directories="$(MSBuildProjectDirectory)/native-bin" />
+                    <WriteLinesToFile File="$(FixtureOutput)" Lines="owned phase output"
+                      Overwrite="true" />
+                  </Target>
+                  <Target Name="GetTargetPath" Returns="@(FixtureOutput)">
+                    <ItemGroup><FixtureOutput Include="$(FixtureOutput)" /></ItemGroup>
+                  </Target>
+                  <Target Name="InvokeTestingPlatform">
+                    <HoldPhase SignalDirectory="$(MSBuildProjectDirectory)/../phase-observation" />
+                  </Target>
+                </Project>
+                """);
+            string candidate = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", candidate);
+            return new(repo, candidate);
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
     internal static async Task<DotNetNativeFixture> CreateAsync(string capability,
         CancellationToken token, bool nbgv = false, bool failNet8Test = false)
     {

@@ -438,7 +438,12 @@ public sealed class CreditLedger
         transaction.Commit();
     }
 
-    public void BeginDispatch(string runId, string id, decimal runAllowance)
+    public void BeginDispatch(string runId, string id, decimal runAllowance) =>
+        BeginDispatch(runId, id, runAllowance, null);
+
+    internal void BeginDispatch(
+        string runId, string id, decimal runAllowance, WorkAdmission? admission
+    )
     {
         using SqliteConnection connection = Open();
         using SqliteTransactionScope transaction =
@@ -446,6 +451,7 @@ public sealed class CreditLedger
         RequirePromptAllowance(
             connection, transaction, runId, id, runAllowance, requireGrant: true
         );
+        admission?.ThrowIfClosed();
         Sql.Execute(
             connection,
             """
@@ -681,13 +687,15 @@ public sealed class CreditLedger
     internal async Task<CreditReservation> AcquireSharedWindowAsync(
         string id,
         CancellationToken cancellationToken,
-        bool renew = false
+        bool renew = false,
+        WorkAdmission? admission = null
     )
     {
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            CreditReservation? grant = TryAcquireSharedWindow(id, renew);
+            admission?.ThrowIfClosed();
+            CreditReservation? grant = TryAcquireSharedWindow(id, renew, admission);
             if (grant is not null)
             {
                 return grant;
@@ -698,11 +706,14 @@ public sealed class CreditLedger
         }
     }
 
-    private CreditReservation? TryAcquireSharedWindow(string id, bool renew)
+    private CreditReservation? TryAcquireSharedWindow(
+        string id, bool renew, WorkAdmission? admission
+    )
     {
         using SqliteConnection connection = Open();
         using SqliteTransactionScope transaction =
             Sql.BeginTransaction(connection, deferred: false);
+        admission?.ThrowIfClosed();
         List<CreditReservation> rows = Read(connection, transaction);
         CreditReservation own = rows.Single(row => row.Id == id);
         bool ready = Sql.Scalar(
@@ -764,6 +775,7 @@ public sealed class CreditLedger
             return null;
         }
 
+        admission?.ThrowIfClosed();
         Sql.Execute(
             connection,
             """

@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using GitHub.Copilot;
 using GitHub.Copilot.Rpc;
 using LiteAgensh;
@@ -8,6 +9,277 @@ namespace LiteAgensh.Tests;
 [TestClass]
 public sealed class NativeMetadataTests(TestContext testContext)
 {
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow("unrelated-admission")]
+    [DataRow("wrong-read-request")]
+    [DataRow("caller")]
+    [DataRow("probe")]
+    [DataRow("earlier-native")]
+    public async Task SdkOwnedRenewalPreservesIndependentFailureOrigins(string schedule)
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        await using NativeSdkSession native = new(database, new ProcessRunner(database),
+            fixture.RepositoryPath, isolated: false);
+        using CancellationTokenSource caller =
+            CancellationTokenSource.CreateLinkedTokenSource(testContext.CancellationToken);
+        using CancellationTokenSource other =
+            CancellationTokenSource.CreateLinkedTokenSource(testContext.CancellationToken);
+        if (schedule != "wrong-read-request")
+        {
+            await other.CancelAsync();
+        }
+        OperationCanceledException unrelated = new(other.Token);
+        ScenarioClock clock = new();
+        using WorkAdmission admission = new(clock, clock.GetUtcNow().AddSeconds(120), caller.Token);
+        CancellationToken effective = default;
+        CancellationToken child = default;
+        OperationException? earlierNative = null;
+        Exception? retainedAtAbort = null;
+        bool cleaned = false;
+        int applications = 0;
+        int verifications = 0;
+        Task<JsonObject> completing = native.CompleteSendAsync(async () =>
+        {
+            await NativeSdkSession.HandleExhaustedLimitAsync("origin-contrast",
+                _ => Task.FromResult(200m), async (_, _, supplied) =>
+                {
+                    effective = supplied;
+                    applications++;
+                    if (schedule is "wrong-read-request" or "probe")
+                    {
+                        return;
+                    }
+                    if (schedule == "earlier-native")
+                    {
+                        native.RecordEvent(SessionEvent.FromJson(
+                            """
+                            {
+                              "id":"00000000-0000-0000-0000-000000000021",
+                              "timestamp":"2026-01-01T00:00:00Z",
+                              "type":"session.error",
+                              "data":{"errorType":"query","message":"Earlier genuine error."}
+                            }
+                            """
+                        )!);
+                        earlierNative = Assert.IsInstanceOfType<OperationException>(
+                            native.FirstFailure);
+                    }
+                    if (schedule == "caller")
+                    {
+                        await caller.CancelAsync();
+                    }
+                    else
+                    {
+                        await admission.CloseAsync();
+                    }
+                    if (schedule == "unrelated-admission")
+                    {
+                        throw unrelated;
+                    }
+                    await Task.Delay(Timeout.InfiniteTimeSpan, supplied);
+                }, async (_, supplied) =>
+                {
+                    verifications++;
+                    if (schedule == "probe")
+                    {
+                        await NativeSdkSession.ReadProbeAsync(
+                            _ => Task.FromException<NativeUsage>(unrelated), supplied);
+                        return;
+                    }
+                    await NativeSdkSession.ReadProbeAsync(async probe =>
+                    {
+                        child = probe;
+                        await admission.CloseAsync();
+                        await other.CancelAsync();
+                        await Task.Delay(Timeout.InfiniteTimeSpan, probe);
+                        return new NativeUsage("unused", 0, "complete", 0);
+                    }, other.Token);
+                }, caller.Token, admission);
+            return new JsonObject();
+        }, () =>
+        {
+            retainedAtAbort = native.FirstFailure;
+            return Task.CompletedTask;
+        }, () =>
+        {
+            cleaned = true;
+            return Task.CompletedTask;
+        }, caller.Token);
+        if (schedule is "probe" or "earlier-native")
+        {
+            OperationException failure =
+                await Assert.ThrowsExactlyAsync<OperationException>(() => completing);
+            Assert.AreEqual(schedule == "probe" ? "native_probe_failed" : "native_stopped",
+                failure.Code);
+            if (schedule == "probe")
+            {
+                Assert.AreSame(failure, native.FirstFailure);
+            }
+            else
+            {
+                Assert.AreSame(earlierNative, native.FirstFailure);
+                Assert.AreEqual(earlierNative!.Message, failure.Message);
+                Assert.Contains("Earlier genuine error.", failure.Message);
+            }
+        }
+        else
+        {
+            OperationCanceledException failure =
+                await Assert.ThrowsAsync<OperationCanceledException>(() => completing);
+            if (schedule == "caller")
+            {
+                Assert.AreEqual(caller.Token, failure.CancellationToken);
+                Assert.IsNull(native.FirstFailure);
+            }
+            else
+            {
+                Assert.AreSame(failure, native.FirstFailure);
+                if (schedule == "unrelated-admission")
+                {
+                    Assert.AreSame(unrelated, failure);
+                    Assert.IsTrue(admission.IsClosed);
+                }
+                else
+                {
+                    NativeSdkSession.RequestedReadCanceledException reading =
+                        Assert.IsInstanceOfType<NativeSdkSession.RequestedReadCanceledException>(
+                            failure);
+                    Assert.AreEqual(other.Token, reading.RequestToken);
+                    Assert.AreNotEqual(effective, reading.RequestToken);
+                    Assert.AreEqual(child, reading.CancellationToken);
+                }
+            }
+        }
+        Assert.IsTrue(cleaned);
+        Assert.AreEqual(1, applications);
+        Assert.AreEqual(schedule is "probe" or "wrong-read-request" ? 1 : 0, verifications);
+        if (schedule != "caller")
+        {
+            Assert.AreSame(native.FirstFailure, retainedAtAbort);
+            Assert.AreEqual(false, native.FirstFailure!.Data["liteagensh.nativeFailureCancelled"]);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    [DataRow("requested")]
+    [DataRow("unrelated-live")]
+    [DataRow("unrelated-canceled")]
+    [DataRow("local-timeout")]
+    public async Task ReadProbeDistinguishesActualChildFromUnrelatedCancellation(string schedule)
+    {
+        using CancellationTokenSource request =
+            CancellationTokenSource.CreateLinkedTokenSource(testContext.CancellationToken);
+        using CancellationTokenSource unrelated = new();
+        await unrelated.CancelAsync();
+        OperationCanceledException other = new(unrelated.Token);
+        CancellationToken child = default;
+        DeadlineClock? clock = schedule == "local-timeout" ? new() : null;
+        Task<NativeUsage> reading = NativeSdkSession.ReadProbeAsync(async probe =>
+        {
+            child = probe;
+            Assert.AreNotEqual(request.Token, probe);
+            if (schedule is "requested" or "unrelated-canceled")
+            {
+                await request.CancelAsync();
+            }
+            if (schedule.StartsWith("unrelated", StringComparison.Ordinal))
+            {
+                throw other;
+            }
+            await Task.Delay(Timeout.InfiniteTimeSpan, probe);
+            return new NativeUsage("unused", 0, "complete", 0);
+        }, request.Token, timeProvider: clock);
+        if (clock is not null)
+        {
+            Assert.IsFalse(child.IsCancellationRequested);
+            Assert.IsFalse(reading.IsCompleted);
+            clock.Advance(TimeSpan.FromSeconds(30) - TimeSpan.FromMilliseconds(1));
+            Assert.IsFalse(child.IsCancellationRequested);
+            Assert.IsFalse(reading.IsCompleted);
+            clock.Advance(TimeSpan.FromMilliseconds(1));
+            Assert.IsTrue(child.IsCancellationRequested);
+            Assert.IsFalse(request.IsCancellationRequested);
+        }
+        if (schedule is "unrelated-live" or "local-timeout")
+        {
+            OperationException failure =
+                await Assert.ThrowsExactlyAsync<OperationException>(() => reading);
+            Assert.AreEqual("native_probe_failed", failure.Code);
+            Assert.IsFalse(request.IsCancellationRequested);
+            Assert.Contains(schedule == "local-timeout" ? "exceeded" : "before caller",
+                failure.Message);
+        }
+        else if (schedule == "unrelated-canceled")
+        {
+            Assert.AreSame(other,
+                await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => reading));
+        }
+        else
+        {
+            NativeSdkSession.RequestedReadCanceledException failure =
+                await Assert.ThrowsExactlyAsync<NativeSdkSession.RequestedReadCanceledException>(
+                    () => reading);
+            Assert.AreEqual(request.Token, failure.RequestToken);
+            Assert.AreEqual(child, failure.CancellationToken);
+            Assert.AreEqual(child,
+                Assert.IsInstanceOfType<OperationCanceledException>(
+                    failure.InnerException).CancellationToken);
+            Assert.IsTrue(child.IsCancellationRequested);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task SendFailureScopeDoesNotDiscardUnrelatedCancellation(bool callerCanceled)
+    {
+        using RunFixture fixture = new();
+        RunDatabase database = fixture.CreateDatabase();
+        await using NativeSdkSession native = new(database, new ProcessRunner(database),
+            fixture.RepositoryPath, isolated: false);
+        using CancellationTokenSource caller = new();
+        using CancellationTokenSource unrelated = new();
+        await unrelated.CancelAsync();
+        if (callerCanceled)
+        {
+            await caller.CancelAsync();
+        }
+        OperationCanceledException cause = new(
+            callerCanceled ? caller.Token : unrelated.Token);
+        bool retainedBeforeAbort = false;
+        bool cleaned = false;
+        OperationCanceledException observed =
+            await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+                native.CompleteSendAsync(() => Task.FromException<JsonObject>(cause),
+                    () =>
+                    {
+                        retainedBeforeAbort = ReferenceEquals(cause, native.FirstFailure);
+                        return Task.CompletedTask;
+                    },
+                    () =>
+                    {
+                        cleaned = true;
+                        return Task.CompletedTask;
+                    }, caller.Token));
+        Assert.AreEqual(callerCanceled ? caller.Token : unrelated.Token,
+            observed.CancellationToken);
+        Assert.AreEqual(!callerCanceled, retainedBeforeAbort);
+        Assert.IsTrue(cleaned);
+        if (callerCanceled)
+        {
+            Assert.IsNull(native.FirstFailure);
+        }
+        else
+        {
+            Assert.AreSame(cause, observed);
+            Assert.AreSame(cause, native.FirstFailure);
+            Assert.AreEqual(false, cause.Data["liteagensh.nativeFailureCancelled"]);
+        }
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
@@ -131,10 +403,51 @@ public sealed class NativeMetadataTests(TestContext testContext)
             Assert.Contains("00000000-0000-0000-0000-000000000002", failed.Message);
             Assert.DoesNotContain("Later abort error", failed.Message);
         }
+        OperationException original =
+            Assert.IsInstanceOfType<OperationException>(native.FirstFailure);
+        Assert.Contains("Prompt exceeds model input budget.", original.Message);
+        Assert.IsNull(original.Data["liteagensh.nativeFailureCancelled"]);
+        await native.DisposeAsync();
+        Assert.AreSame(original, native.FirstFailure);
     }
 
     // Pinned SDK DTOs used by the real application's metadata guard.
 #pragma warning disable GHCP001
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ExpiredAdmissionCannotIncreaseAnExhaustedNativeCap(bool closeDuringRenewal)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        ScenarioClock clock = new();
+        using WorkAdmission admission = new(clock, clock.GetUtcNow().AddSeconds(1), token);
+        double? appliedLimit = 100;
+        if (!closeDuringRenewal)
+        {
+            clock.Advance(TimeSpan.FromSeconds(2));
+        }
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            NativeSdkSession.HandleExhaustedLimitAsync(
+                "controlled-expiry",
+                _ =>
+                {
+                    clock.Advance(TimeSpan.FromSeconds(2));
+                    return Task.FromResult(200m);
+                },
+                (_, response, _) =>
+                {
+                    appliedLimit = response.MaxAiCredits;
+                    return Task.CompletedTask;
+                },
+                (_, _) => Task.CompletedTask,
+                token,
+                admission
+            )
+        );
+        Assert.AreEqual(100d, appliedLimit);
+    }
+
     [TestMethod]
     [DataRow("supported")]
     [DataRow("unsupported")]

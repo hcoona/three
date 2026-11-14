@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -10,12 +11,14 @@ namespace LiteAgensh;
 
 public sealed class Coordinator
 {
+    private const int DeadlineDrainSeconds = 30;
     private readonly RunDatabase database;
     private readonly CollaborationOperations collaboration;
     private readonly GitOperations git;
     private readonly ProcessRunner processes;
     private readonly CreditLedger credits;
     private readonly INativeWorkerFactory nativeWorkers;
+    private readonly Action<IReadOnlyList<Task>>? observeWorkerCompletion;
     private readonly string nativeEvidenceKind;
     private readonly string ledgerBinding;
 
@@ -40,12 +43,14 @@ public sealed class Coordinator
         RunDatabase database,
         CollaborationOperations collaboration,
         GitOperations git,
-        Func<RunDatabase, ProcessRunner, CreditLedger, INativeWorkerFactory>? nativeWorkerFactory
+        Func<RunDatabase, ProcessRunner, CreditLedger, INativeWorkerFactory>? nativeWorkerFactory,
+        Action<IReadOnlyList<Task>>? observeWorkerCompletion = null
     )
     {
         this.database = database;
         this.collaboration = collaboration;
         this.git = git;
+        this.observeWorkerCompletion = observeWorkerCompletion;
         processes = new(database);
         credits = new(
             database.Configuration.CampaignLedgerPath,
@@ -204,6 +209,7 @@ public sealed class Coordinator
             ["lifecycle"] = database.ReadMetadata("lifecycle") ?? "initialized",
             ["active"] = IsOwned(),
             ["stopReason"] = database.ReadMetadata("lifecycle:stop_reason"),
+            ["deadlineDrain"] = ReadDeadlineDrain(),
             ["workers"] = workers,
             ["credits"] = credits.Status(
                 database.RunId,
@@ -536,9 +542,14 @@ public sealed class Coordinator
         }
 
         List<INativeWorker> workers = [];
+        Lock workerMembership = new();
         List<Task> loops = [];
         using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken
+        );
+        long stopObserved = long.MaxValue;
+        using CancellationTokenRegistration stopObservation = stop.Token.Register(() =>
+            Interlocked.CompareExchange(ref stopObserved, Stopwatch.GetTimestamp(), long.MaxValue)
         );
         string reason = "startup-failed";
         long segment = 0;
@@ -546,12 +557,55 @@ public sealed class Coordinator
         Exception? failure = null;
         JsonArray settlementFailures = [];
         JsonArray settlementDetails = [];
+        WorkAdmission? workAdmission = null;
+        CancellationToken requestDeadlineToken = default;
+        DateTimeOffset workDeadline = default;
+        bool draining = false;
+        string? drainOutcome = null;
+        OperationException? drainAccountingStop = null;
+        long drainAccountingObserved = 0;
+        string? drainAccountingCause = null;
+        bool IsNonRequestCancellation(OperationCanceledException exception) =>
+            exception.Data["liteagensh.nativeFailureObserved"] is long observed
+            && observed <= Volatile.Read(ref stopObserved)
+            && exception.Data["liteagensh.nativeFailureCancelled"] is false;
+        void CheckNativeFailures()
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (stop.IsCancellationRequested)
+            {
+                return;
+            }
+            INativeWorker[] snapshot;
+            lock (workerMembership)
+            {
+                snapshot = [.. workers];
+            }
+            Exception? originating = snapshot.Select(worker => worker.FirstFailure)
+                .OfType<Exception>()
+                .Where(error => error.Data["liteagensh.nativeFailureObserved"] is long observed
+                    && observed <= Volatile.Read(ref stopObserved)
+                    && error.Data["liteagensh.nativeFailureCancelled"] is not true)
+                .OrderBy(error => (long)error.Data["liteagensh.nativeFailureObserved"]!)
+                .FirstOrDefault();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (originating is not null)
+            {
+                if (originating is OperationCanceledException cancelled
+                    && IsNonRequestCancellation(cancelled))
+                {
+                    finalize = false;
+                }
+                throw originating;
+            }
+        }
         try
         {
             RecoverCompletedTurns();
             collaboration.RecoverInterrupted();
             DateTimeOffset deadline;
             (segment, deadline) = BeginSegment(mode);
+            workDeadline = deadline;
             database.WriteMetadata("lifecycle:settlement_failures", "[]");
             TimeSpan remaining = deadline - database.Now;
             if (remaining <= TimeSpan.Zero)
@@ -561,8 +615,22 @@ public sealed class Coordinator
             }
             else
             {
-                stop.CancelAfter(remaining);
-                await git.InitializeAsync(stop.Token).ConfigureAwait(false);
+                TimeSpan requestRemaining =
+                    deadline.AddSeconds(DeadlineDrainSeconds) - database.Now;
+                using CancellationTokenSource requestDeadline = new(
+                    requestRemaining > TimeSpan.Zero ? requestRemaining : TimeSpan.Zero,
+                    database.TimeProvider
+                );
+                if (requestRemaining <= TimeSpan.Zero)
+                {
+                    await requestDeadline.CancelAsync().ConfigureAwait(false);
+                }
+                requestDeadlineToken = requestDeadline.Token;
+                using CancellationTokenRegistration deadlineStop =
+                    requestDeadlineToken.Register(stop.Cancel);
+                WorkAdmission admissionBudget = new(database.TimeProvider, deadline, stop.Token);
+                workAdmission = admissionBudget;
+                await git.InitializeAsync(admissionBudget.Token).ConfigureAwait(false);
                 database.WriteMetadata("lifecycle", "preflighting");
                 string[] ids = database.Configuration.WorkerIds;
                 bool planning =
@@ -575,37 +643,53 @@ public sealed class Coordinator
                 string? admissionId = null;
                 async Task StartWorkerAsync(string id)
                 {
+                    admissionBudget.ThrowIfClosed();
                     INativeWorker native = nativeWorkers.Create(
                         allocations[id],
                         calibration: false
                     );
-                    workers.Add(native);
+                    native.BindOwner(stop.Token);
+                    lock (workerMembership)
+                    {
+                        workers.Add(native);
+                    }
                     string? exact = reconnecting.Contains(id) ? allocations[id].SessionId : null;
                     try
                     {
                         await native
-                            .StartAsync(git.GetWorkerPath(id), exact, stop.Token)
+                            .StartAsync(
+                                git.GetWorkerPath(id), exact, admissionBudget.Token,
+                                admission: admissionBudget
+                            )
                             .ConfigureAwait(false);
                     }
                     catch (OperationException exception)
                         when (exception.Code == "session_load_failed")
                     {
                         await native.DisposeAsync().ConfigureAwait(false);
-                        workers.Remove(native);
-                        stop.Token.ThrowIfCancellationRequested();
+                        lock (workerMembership)
+                        {
+                            workers.Remove(native);
+                        }
+                        admissionBudget.ThrowIfClosed();
                         CreditReservation fresh = Reserve(id, 1);
                         INativeWorker replacement = nativeWorkers.Create(
                             fresh,
                             calibration: false
                         );
-                        workers.Add(replacement);
+                        replacement.BindOwner(stop.Token);
+                        lock (workerMembership)
+                        {
+                            workers.Add(replacement);
+                        }
                         await replacement
                             .StartAsync(
                                 git.GetWorkerPath(id),
                                 null,
-                                stop.Token,
+                                admissionBudget.Token,
                                 recoveryLabel: "fresh-summary-fallback: "
-                                    + "exact-session load unavailable or failed"
+                                    + "exact-session load unavailable or failed",
+                                admission: admissionBudget
                             )
                             .ConfigureAwait(false);
                     }
@@ -613,6 +697,10 @@ public sealed class Coordinator
 
                 void StartLoop(string id, INativeWorker native)
                 {
+                    if (admissionBudget.IsClosed)
+                    {
+                        return;
+                    }
                     if (!planning || released || id == "worker1")
                     {
                         collaboration.QueueKickoff(
@@ -629,15 +717,114 @@ public sealed class Coordinator
                             native,
                             () => !planning || released || id == "worker1",
                             planning && id == "worker1",
+                            admissionBudget,
                             stop.Token
                         )
                     );
                 }
 
+                async Task DrainAsync()
+                {
+                    draining = true;
+                    await admissionBudget.CloseAsync().ConfigureAwait(false);
+                    database.WriteMetadata("lifecycle", "draining");
+                    RecordDeadlineDrain(segment, deadline, "draining", "deadline");
+                    DateTimeOffset drainDeadline = deadline.AddSeconds(DeadlineDrainSeconds);
+                    TimeSpan grace = drainDeadline - database.Now;
+                    if (grace <= TimeSpan.Zero)
+                    {
+                        drainOutcome = "timed-out";
+                        await stop.CancelAsync().ConfigureAwait(false);
+                        return;
+                    }
+                    while (!stop.IsCancellationRequested)
+                    {
+                        CheckNativeFailures();
+                        long? control = PendingControl(out string? action);
+                        if (control is not null)
+                        {
+                            reason = action == "pause" ? "owner-pause" : "owner-finalize";
+                            finalize = action == "finalize";
+                            drainOutcome = "interrupted";
+                            return;
+                        }
+                        if (database.ReadMetadata("lifecycle:root_closed_by") == "owner")
+                        {
+                            reason = "owner-root-closure";
+                            finalize = true;
+                            drainOutcome = "interrupted";
+                            return;
+                        }
+                        foreach (Task loop in loops.Where(task => task.IsCompleted))
+                        {
+                            await loop.ConfigureAwait(false);
+                        }
+                        if (admission is { IsCompleted: true })
+                        {
+                            try
+                            {
+                                await admission.ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException) when (
+                                admissionBudget.IsClosed && !stop.IsCancellationRequested
+                            )
+                            {
+                            }
+                        }
+                        try
+                        {
+                            credits.RequirePaidAdmission();
+                        }
+                        catch (OperationException exception) when (
+                            exception.Code == "credit_unknown"
+                        )
+                        {
+                            drainAccountingObserved = Stopwatch.GetTimestamp();
+                            drainAccountingStop = exception;
+                            drainAccountingCause = cancellationToken.IsCancellationRequested
+                                ? "caller-cancelled"
+                                : requestDeadlineToken.IsCancellationRequested
+                                    ? "deadline" : "credit_unknown";
+                            throw;
+                        }
+                        if (database.Now >= drainDeadline)
+                        {
+                            drainOutcome = "timed-out";
+                            return;
+                        }
+                        if (loops.All(task => task.IsCompleted)
+                            && (admission is null || admission.IsCompleted))
+                        {
+                            await Task.WhenAll(loops).ConfigureAwait(false);
+                            if (admission is not null)
+                            {
+                                try
+                                {
+                                    await admission.ConfigureAwait(false);
+                                }
+                                catch (OperationCanceledException) when (
+                                    admissionBudget.IsClosed && !stop.IsCancellationRequested
+                                )
+                                {
+                                }
+                            }
+                            drainOutcome = "completed";
+                            return;
+                        }
+                        await Task.Delay(
+                            TimeSpan.FromMilliseconds(250), database.TimeProvider, stop.Token
+                        ).ConfigureAwait(false);
+                    }
+                    drainOutcome = cancellationToken.IsCancellationRequested
+                        ? "interrupted" : "timed-out";
+                }
+
+                bool normalDeadline = false;
                 try
                 {
                     for (int i = 0; i < ids.Length; i++)
                     {
+                        admissionBudget.ThrowIfClosed();
                         CreditReservation? previous =
                             mode == "reconnect" ? ReadReconnectReservation(ids[i]) : null;
                         if (previous is not null)
@@ -673,7 +860,6 @@ public sealed class Coordinator
                     {
                         reason = "deadline";
                         finalize = true;
-                        await stop.CancelAsync().ConfigureAwait(false);
                     }
 
                     foreach ((string id, INativeWorker native) in ids.Zip(workers))
@@ -685,7 +871,8 @@ public sealed class Coordinator
                         (deadline - database.Now).TotalSeconds <= 900 ? [900] : [];
                     while (!stop.IsCancellationRequested)
                     {
-                        if (database.Now >= deadline)
+                        CheckNativeFailures();
+                        if (admissionBudget.IsClosed)
                         {
                             reason = "deadline";
                             finalize = true;
@@ -713,10 +900,15 @@ public sealed class Coordinator
                             collaboration.ReopenWorkerClosedRoot();
                         }
 
+                        observeWorkerCompletion?.Invoke(loops);
                         Task? ended = loops.FirstOrDefault(task => task.IsCompleted);
                         if (ended is not null)
                         {
                             await ended.ConfigureAwait(false);
+                            if (admissionBudget.IsClosed)
+                            {
+                                continue;
+                            }
                             throw new OperationException(
                                 "worker_stopped",
                                 "A worker loop ended before run quiescence."
@@ -728,7 +920,7 @@ public sealed class Coordinator
                             Task completedAdmission = admission;
                             admission = null;
                             await completedAdmission.ConfigureAwait(false);
-                            stop.Token.ThrowIfCancellationRequested();
+                            admissionBudget.ThrowIfClosed();
                             if (workers.Count == 1)
                             {
                                 plannerDeadline = database.Now.AddSeconds(
@@ -764,7 +956,7 @@ public sealed class Coordinator
                             continue;
                         }
 
-                        await git.ProcessPendingAsync(stop.Token).ConfigureAwait(false);
+                        await git.ProcessPendingAsync(admissionBudget.Token).ConfigureAwait(false);
                         if (
                             planning
                             && !released
@@ -802,20 +994,46 @@ public sealed class Coordinator
                             : "deadline";
                         finalize = !cancellationToken.IsCancellationRequested;
                     }
+                    normalDeadline = reason == "deadline"
+                        && (!stop.IsCancellationRequested
+                            || requestDeadlineToken.IsCancellationRequested);
+                }
+                catch (OperationCanceledException exception) when (
+                    !IsNonRequestCancellation(exception)
+                    && admissionBudget.IsClosed
+                    && (!stop.IsCancellationRequested
+                        || requestDeadlineToken.IsCancellationRequested)
+                )
+                {
+                    reason = "deadline";
+                    finalize = true;
+                    normalDeadline = true;
                 }
                 finally
                 {
                     try
                     {
-                        await stop.CancelAsync().ConfigureAwait(false);
-                        if (admission is not null)
+                        try
                         {
-                            try
+                            if (normalDeadline)
                             {
-                                await admission.ConfigureAwait(false);
+                                await DrainAsync().ConfigureAwait(false);
                             }
-                            catch (OperationCanceledException) when (stop.IsCancellationRequested)
+                            cancellationToken.ThrowIfCancellationRequested();
+                        }
+                        finally
+                        {
+                            await stop.CancelAsync().ConfigureAwait(false);
+                            if (admission is not null)
                             {
+                                try
+                                {
+                                    await admission.ConfigureAwait(false);
+                                }
+                                catch (OperationCanceledException)
+                                    when (stop.IsCancellationRequested)
+                                {
+                                }
                             }
                         }
                     }
@@ -840,10 +1058,19 @@ public sealed class Coordinator
                 }
             }
         }
-        catch (OperationCanceledException) when (stop.IsCancellationRequested)
+        catch (OperationCanceledException exception) when (
+            (stop.IsCancellationRequested || workAdmission?.IsClosed == true)
+            && (cancellationToken.IsCancellationRequested
+                || !IsNonRequestCancellation(exception))
+        )
         {
             reason = cancellationToken.IsCancellationRequested ? "caller-cancelled" : "deadline";
             finalize = !cancellationToken.IsCancellationRequested;
+            if (draining)
+            {
+                drainOutcome = cancellationToken.IsCancellationRequested
+                    ? "interrupted" : "timed-out";
+            }
         }
         catch (Exception exception)
         {
@@ -851,10 +1078,32 @@ public sealed class Coordinator
             reason = exception is OperationException operation
                 ? operation.Code
                 : "coordinator-failed";
+            if (ReferenceEquals(exception, drainAccountingStop))
+            {
+                drainOutcome = drainAccountingCause == "deadline" ? "timed-out" : "interrupted";
+                finalize = drainAccountingCause == "deadline";
+                if (drainAccountingCause != "credit_unknown")
+                {
+                    reason = drainAccountingCause!;
+                    failure = null;
+                }
+            }
         }
         finally
         {
             await stop.CancelAsync().ConfigureAwait(false);
+            if (!draining && requestDeadlineToken.IsCancellationRequested)
+            {
+                draining = true;
+                drainOutcome = reason == "deadline" ? "timed-out" : "interrupted";
+            }
+            if (draining)
+            {
+                RecordDeadlineDrain(
+                    segment, workDeadline, drainOutcome ?? "interrupted", reason,
+                    drainAccountingStop
+                );
+            }
             database.WriteMetadata("lifecycle", "pausing");
             database.WriteMetadata("lifecycle:stop_reason", reason);
             try
@@ -966,6 +1215,33 @@ public sealed class Coordinator
                     database.WriteMetadata("lifecycle", "unresolved");
                 }
             }
+            bool accountingFailure = drainAccountingStop is not null
+                && ReferenceEquals(failure, drainAccountingStop);
+            bool deadlineDrainExit = draining && reason == "deadline"
+                && drainOutcome is "timed-out" or "completed";
+            if (accountingFailure || deadlineDrainExit)
+            {
+                long observedBefore = accountingFailure
+                    ? drainAccountingObserved : Volatile.Read(ref stopObserved);
+                // A later cancellation-induced fault cannot become the original interruption.
+                Exception? originating = loops.Where(loop => loop.IsFaulted)
+                    .SelectMany(loop => loop.Exception!.Flatten().InnerExceptions)
+                    .Concat(workers.Select(worker => worker.FirstFailure).OfType<Exception>())
+                    .Where(error => error.Data["liteagensh.nativeFailureObserved"] is long observed
+                        && observed <= observedBefore
+                        && (accountingFailure
+                            || error.Data["liteagensh.nativeFailureCancelled"] is false))
+                    .OrderBy(error => (long)error.Data["liteagensh.nativeFailureObserved"]!)
+                    .FirstOrDefault();
+                if (originating is not null)
+                {
+                    failure = originating;
+                    reason = originating is OperationException operation
+                        ? operation.Code : "coordinator-failed";
+                    drainOutcome = "interrupted";
+                    finalize = false;
+                }
+            }
             try
             {
                 await nativeWorkers.CompleteAsync().ConfigureAwait(false);
@@ -994,6 +1270,16 @@ public sealed class Coordinator
                 database.WriteMetadata("lifecycle", "unresolved");
                 database.WriteMetadata("lifecycle:failure", failure.Message);
             }
+        }
+
+        workAdmission?.Dispose();
+
+        if (draining)
+        {
+            database.WriteMetadata("lifecycle:stop_reason", reason);
+            RecordDeadlineDrain(
+                segment, workDeadline, drainOutcome ?? "interrupted", reason, drainAccountingStop
+            );
         }
 
         if (failure is not null)
@@ -1237,6 +1523,7 @@ public sealed class Coordinator
         INativeWorker native,
         Func<bool> enabled,
         bool planner,
+        WorkAdmission admission,
         CancellationToken cancellationToken
     )
     {
@@ -1245,7 +1532,7 @@ public sealed class Coordinator
         bool initialPlanner = planner;
         string bootstrapKey = $"native:bootstrap:{native.SessionId}";
         bool bootstrap = database.ReadMetadata(bootstrapKey) != "true";
-        while (!cancellationToken.IsCancellationRequested)
+        while (!admission.IsClosed)
         {
             if (!enabled())
             {
@@ -1258,7 +1545,21 @@ public sealed class Coordinator
                 continue;
             }
 
-            DeliveryBatch? batch = collaboration.ClaimBatch(id, bootstrap);
+            DeliveryBatch? batch;
+            try
+            {
+                batch = collaboration.ClaimBatch(id, bootstrap, admission);
+            }
+            catch (Exception exception)
+            {
+                if (exception.Data["liteagensh.nativeFailureObserved"] is not long)
+                {
+                    exception.Data["liteagensh.nativeFailureCancelled"] =
+                        cancellationToken.IsCancellationRequested;
+                    exception.Data["liteagensh.nativeFailureObserved"] = Stopwatch.GetTimestamp();
+                }
+                throw;
+            }
             if (batch is null)
             {
                 if (
@@ -1289,7 +1590,7 @@ public sealed class Coordinator
                 if (bootstrap)
                 {
                     changes = (
-                        await git.InvokeAsync(id, "change_list", new(), cancellationToken)
+                        await git.InvokeAsync(id, "change_list", new(), admission.Token)
                             .ConfigureAwait(false)
                     ).ToJsonString();
                 }
@@ -1301,15 +1602,17 @@ public sealed class Coordinator
                     initialPlanner,
                     bootstrap
                 );
-                cancellationToken.ThrowIfCancellationRequested();
+                admission.ThrowIfClosed();
                 modelAttempted = true;
                 credits.RequirePromptAllowance(
                     database.RunId,
                     native.ReservationId,
                     database.Configuration.RunAiCreditAllowance
                 );
+                // Keep the worker-bound request alive through durable ACK and verification.
+                using NativeRequest request = native.BeginRequest(cancellationToken);
                 JsonObject result = await native
-                    .PromptAsync(text, cancellationToken)
+                    .PromptAsync(text, request.Token, admission)
                     .ConfigureAwait(false);
                 nativeCompleted = true;
                 initialPlanner = false;
@@ -1324,7 +1627,7 @@ public sealed class Coordinator
                 MarkAcknowledged(batch.Id);
                 acknowledged = true;
                 // Unknown usage after a completed model response forbids the next model call.
-                await native.VerifyCreditsAsync(cancellationToken).ConfigureAwait(false);
+                await native.VerifyCreditsAsync(request.Token).ConfigureAwait(false);
                 lastWork = database.Now;
                 string? stopReason = result["stopReason"]?.GetValue<string>();
                 if (stopReason is not ("end_turn" or "max_turn_requests"))
@@ -1335,7 +1638,9 @@ public sealed class Coordinator
                     );
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (
+                cancellationToken.IsCancellationRequested || (!modelAttempted && admission.IsClosed)
+            )
             {
                 if (!nativeCompleted)
                 {
@@ -1345,10 +1650,20 @@ public sealed class Coordinator
                     );
                 }
 
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
                 throw;
             }
             catch (Exception exception)
             {
+                if (exception.Data["liteagensh.nativeFailureObserved"] is not long)
+                {
+                    exception.Data["liteagensh.nativeFailureCancelled"] =
+                        cancellationToken.IsCancellationRequested;
+                    exception.Data["liteagensh.nativeFailureObserved"] = Stopwatch.GetTimestamp();
+                }
                 exception.Data["liteagensh.batchId"] = batch.Id;
                 exception.Data["liteagensh.phase"] = nativeCompleted
                     ? acknowledged ? "credit-verification" : "acknowledgement"
@@ -1373,14 +1688,24 @@ public sealed class Coordinator
                         );
                     }
 
-                    throw new OperationException(
+                    OperationException deliveryFailure = new(
                         "post_delivery_failed",
                         $"Completed native turn retained without retry: {exception.Message}",
                         exception
                     );
+                    deliveryFailure.Data["liteagensh.nativeFailureObserved"] =
+                        exception.Data["liteagensh.nativeFailureObserved"];
+                    deliveryFailure.Data["liteagensh.nativeFailureCancelled"] =
+                        exception.Data["liteagensh.nativeFailureCancelled"];
+                    throw deliveryFailure;
                 }
 
                 collaboration.FailBatch(batch.Id, exception.Message);
+                if (exception is OperationException { Code: "admission_closed" }
+                    && admission.IsClosed && !cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
                 if (!modelAttempted && IsExpected(exception))
                 {
                     continue;
@@ -1850,7 +2175,39 @@ public sealed class Coordinator
         );
         transaction.Commit();
         database.WriteMetadata("lifecycle:deadline", deadline.ToString("O"));
+        RecordDeadlineDrain(id, deadline, "not-entered", null);
         return (id, deadline);
+    }
+
+    private void RecordDeadlineDrain(
+        long segment, DateTimeOffset deadline, string outcome, string? reason,
+        OperationException? accountingStop = null
+    )
+    {
+        JsonObject state = new()
+        {
+            ["workDeadline"] = deadline.ToString("O"),
+            ["drainDeadline"] = deadline.AddSeconds(DeadlineDrainSeconds).ToString("O"),
+            ["outcome"] = outcome,
+            ["stopReason"] = reason,
+        };
+        if (accountingStop is not null)
+        {
+            state["accountingStop"] = new JsonObject
+            {
+                ["code"] = accountingStop.Code,
+                ["message"] = accountingStop.Message,
+            };
+        }
+        database.WriteMetadata($"lifecycle:deadline_drain:{segment}", state.ToJsonString());
+    }
+
+    private JsonNode? ReadDeadlineDrain()
+    {
+        using SqliteConnection connection = database.Open();
+        return Sql.Scalar(
+            connection, "SELECT id FROM coordinator_segments ORDER BY id DESC LIMIT 1;"
+        ) is long segment ? ParseMetadata($"lifecycle:deadline_drain:{segment}") : null;
     }
 
     private void EndSegment(long segment, string state, string reason)

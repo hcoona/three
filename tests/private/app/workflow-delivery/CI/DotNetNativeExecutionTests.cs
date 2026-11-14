@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using Microsoft.Build.Evaluation;
@@ -146,6 +149,143 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         Assert.DoesNotContain("Intentional native net8.0 test failure",
             result.Tests.Single(test => test.Key == passed).Log);
         Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
+        using JsonDocument first = await ReadProgressAsync(fixture, 0, context.CancellationToken);
+        using JsonDocument second = await ReadProgressAsync(fixture, 1, context.CancellationToken);
+        Assert.AreNotEqual(first.RootElement.GetProperty("submissionId").GetInt32(),
+            second.RootElement.GetProperty("submissionId").GetInt32());
+        foreach (JsonDocument progress in new[] { first, second })
+        {
+            context.WriteLine(progress.RootElement.GetRawText());
+            Assert.IsTrue(progress.RootElement.GetProperty("observed")
+                .TryGetProperty("callbackObserved", out _));
+        }
+    }
+
+    [TestMethod]
+    [Timeout(180000, CooperativeCancellation = true)]
+    public async Task NativeInFlightPhaseEvidenceDoesNotReplaceReceiptsOrFailTheirWrites()
+    {
+        using var fixture = await DotNetNativeFixture.CreatePhaseObservationAsync(
+            context.CancellationToken);
+        CiPlan plan = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate, "MTP",
+            DotNetNativeFixture.Globals(), DotNetNativeFixture.Project);
+        string signal = Directory.CreateDirectory(
+            Path.Combine(fixture.Root, "phase-observation")).FullName;
+        Task<DotNetRunResult> execution = DotNetExecution.RunAsync(plan,
+            new(fixture.Root, fixture.RunScratch, NativeCommandDeadlineSeconds),
+            context.CancellationToken);
+        DotNetRunResult result;
+        string partial = Path.Combine(fixture.RunScratch, "test-receipts", "progress",
+            "entry-0.json.partial");
+        try
+        {
+            while (!File.Exists(Path.Combine(signal, "started")) && !execution.IsCompleted)
+                await Task.Delay(25, context.CancellationToken);
+            if (execution.IsCompleted)
+                Assert.Fail("Native test ended before the in-flight observation: " +
+                    Diagnostics(await execution));
+            using JsonDocument progress = await WaitForInFlightProgressAsync(fixture, execution);
+            context.WriteLine(progress.RootElement.GetRawText());
+            JsonElement facts = progress.RootElement.GetProperty("observed");
+            Assert.IsTrue(facts.TryGetProperty("ownedRootProjectStarted", out _));
+            Assert.IsTrue(facts.TryGetProperty("testStarted", out _));
+            Assert.IsTrue(facts.TryGetProperty("executeAsyncReturned", out _));
+            Assert.IsFalse(facts.TryGetProperty("callbackObserved", out _));
+            Assert.IsFalse(File.Exists(DotNetTestTask.Receipt(
+                Path.Combine(fixture.RunScratch, "test-receipts"), 0)));
+            // A later optional snapshot failure must preserve this positive observation
+            // and must neither delete an unexpected file nor fail the original receipt.
+            await File.WriteAllTextAsync(partial, "owned failure sentinel",
+                context.CancellationToken);
+        }
+        finally
+        {
+            await File.WriteAllTextAsync(Path.Combine(signal, "release"), "",
+                CancellationToken.None);
+            result = await execution;
+        }
+        Assert.IsTrue(result.Results.All(item => item.Status == CheckStatus.Passed),
+            Diagnostics(result));
+        Assert.IsNotNull(result.TestBatch);
+        Assert.Contains("Native phase diagnostics unavailable for entry 0.",
+            result.TestBatch.Result.Stderr);
+        Assert.AreEqual("owned failure sentinel",
+            await File.ReadAllTextAsync(partial, context.CancellationToken));
+        using JsonDocument retained = await ReadProgressAsync(fixture, 0,
+            context.CancellationToken);
+        context.WriteLine(retained.RootElement.GetRawText());
+        Assert.IsTrue(retained.RootElement.GetProperty("observed")
+            .TryGetProperty("testStarted", out _));
+        Assert.IsFalse(retained.RootElement.GetProperty("observed")
+            .TryGetProperty("callbackObserved", out _));
+        Assert.AreEqual("Success", Assert.ContainsSingle(result.Tests).Test);
+        Assert.IsTrue(File.Exists(DotNetTestTask.Receipt(
+            Path.Combine(fixture.RunScratch, "test-receipts"), 0)));
+        Assert.IsTrue(ResultCollector.Collect(plan, result.Results).Satisfied);
+    }
+
+    private async Task<JsonDocument> WaitForInFlightProgressAsync(DotNetNativeFixture fixture,
+        Task<DotNetRunResult> execution)
+    {
+        using var allowance = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken);
+        TimeSpan limit = TimeSpan.FromSeconds(10);
+        allowance.CancelAfter(limit);
+        long started = Stopwatch.GetTimestamp();
+        while (Stopwatch.GetElapsedTime(started) < limit)
+        {
+            if (execution.IsCompleted)
+                Assert.Fail("Native execution ended before the required in-flight facts: " +
+                    Diagnostics(await execution));
+            JsonDocument progress = await ReadProgressAsync(fixture, 0, allowance.Token);
+            try
+            {
+                allowance.Token.ThrowIfCancellationRequested();
+                JsonElement facts = progress.RootElement.GetProperty("observed");
+                if (!execution.IsCompleted && Stopwatch.GetElapsedTime(started) < limit &&
+                    facts.TryGetProperty("ownedRootProjectStarted", out _) &&
+                    facts.TryGetProperty("testStarted", out _) &&
+                    facts.TryGetProperty("executeAsyncReturned", out _))
+                    return progress;
+            }
+            catch
+            {
+                progress.Dispose();
+                throw;
+            }
+            progress.Dispose();
+            await Task.Delay(25, allowance.Token);
+        }
+        Assert.Fail("The bounded in-flight phase observation expired.");
+        throw new InvalidOperationException("Unreachable after assertion failure.");
+    }
+
+    private static async Task<JsonDocument> ReadProgressAsync(
+        DotNetNativeFixture fixture, int index, CancellationToken token)
+    {
+        string receipt = Path.Combine(fixture.RunScratch, "test-receipts", "progress",
+            "entry-" + index + ".json");
+        using var stream = new FileStream(receipt, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        Assert.IsInRange(1L, 8192L, stream.Length);
+        JsonDocument progress = await JsonDocument.ParseAsync(stream,
+            cancellationToken: token);
+        try
+        {
+            Assert.AreEqual(index, progress.RootElement.GetProperty("entryIndex").GetInt32());
+            string original = await File.ReadAllTextAsync(
+                Path.Combine(fixture.RunScratch, "test-request.json"), token);
+            Assert.AreEqual(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(original))),
+                progress.RootElement.GetProperty("requestTextSha256").GetString());
+            Assert.IsInRange(1, 10, progress.RootElement.GetProperty("observed")
+                .EnumerateObject().Count());
+            return progress;
+        }
+        catch
+        {
+            progress.Dispose();
+            throw;
+        }
     }
 
     private static string Diagnostics(DotNetRunResult result) => string.Join("\n",

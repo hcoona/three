@@ -10,6 +10,84 @@ namespace LiteAgensh.Tests;
 public sealed class RunDatabaseTests
 {
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    [DoNotParallelize]
+    public void IoFailureRetainsOriginalErrorAndSafeSummaryWhenLocalEvidenceIsUnavailable(
+        bool blockEvidence
+    )
+    {
+        using RunFixture fixture = new();
+        string directory = Path.Combine(fixture.StatePath, "run.sqlite.diagnostics");
+        if (blockEvidence)
+        {
+            Directory.CreateDirectory(fixture.StatePath);
+            File.WriteAllText(directory, "Owned fixture blocks diagnostic persistence.");
+        }
+
+        RunDatabase database = fixture.CreateDatabase();
+        database.WriteMetadata("io-preserved", "before");
+        using SqliteConnection connection = database.Open();
+        string secret = "private-io-message-" + Guid.NewGuid().ToString("N");
+        SqliteException original = new(secret, 10, 778);
+        int calls = 0;
+        using StringWriter output = new();
+        TextWriter previous = Console.Error;
+        SqliteException error;
+        try
+        {
+            Console.SetError(output);
+            error = Assert.ThrowsExactly<SqliteException>(() =>
+                SqliteDiagnostics.Observe<int>(
+                    connection, "IoProbe", "statement",
+                    () => { calls++; throw original; }
+                )
+            );
+        }
+        finally
+        {
+            Console.SetError(previous);
+        }
+
+        Assert.AreSame(original, error);
+        Assert.AreEqual(1, calls);
+        Assert.AreEqual("before", database.ReadMetadata("io-preserved"));
+        string captured = output.ToString();
+        const string prefix = "SQLite failure summary: ";
+        string summary = Assert.ContainsSingle(
+            captured.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+                .Where(line => line.StartsWith(prefix, StringComparison.Ordinal))
+        );
+        using JsonDocument document = JsonDocument.Parse(summary[prefix.Length..]);
+        JsonElement failure = document.RootElement.GetProperty("failure");
+        Assert.AreEqual(10, failure.GetProperty("primaryCode").GetInt32());
+        Assert.AreEqual(778, failure.GetProperty("extendedCode").GetInt32());
+        Assert.AreEqual("IoProbe", failure.GetProperty("operation").GetString());
+        Assert.AreEqual("statement-failed", failure.GetProperty("phase").GetString());
+        Assert.DoesNotContain(secret, captured);
+        Assert.DoesNotContain(fixture.StatePath, captured);
+        if (blockEvidence)
+        {
+            Assert.IsNull(error.Data["LiteAgensh.SqliteIncident"]);
+            Assert.Contains(
+                "original database error preserved",
+                Assert.IsInstanceOfType<string>(
+                    error.Data["LiteAgensh.SqliteDiagnosticWarning"])
+            );
+        }
+        else
+        {
+            string path = Assert.IsInstanceOfType<string>(error.Data["LiteAgensh.SqliteIncident"]);
+            using JsonDocument incident = JsonDocument.Parse(File.ReadAllText(path));
+            Assert.AreEqual(
+                778,
+                incident.RootElement.GetProperty("failure").GetProperty("extendedCode").GetInt32()
+            );
+            Assert.DoesNotContain(secret, File.ReadAllText(path));
+        }
+    }
+
+    [TestMethod]
     public void BusyClaimRetainsAvailableWriterAndUnknownCoverageWithoutSqlOrPayloads()
     {
         using RunFixture fixture = new();
