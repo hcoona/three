@@ -94,13 +94,38 @@ public sealed class GitOperations
             Directory.CreateDirectory(Repository);
         }
 
+        string? repositoryCommon = null;
+        string repositoryRoot = "";
         ProcessResult probe = await GitResultAsync(
                 Repository,
-                ["rev-parse", "--show-toplevel"],
+                ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
                 cancellationToken
             )
             .ConfigureAwait(false);
-        if (probe.ExitCode != 0)
+        if (probe.ExitCode == 0 && !probe.TimedOut)
+        {
+            string[] paths = probe.StandardOutput.Split('\n');
+            if (
+                paths.Length != 3
+                || paths[2].Length != 0
+                || string.IsNullOrWhiteSpace(paths[0])
+                || string.IsNullOrWhiteSpace(paths[1])
+            )
+            {
+                throw new OperationException(
+                    "unavailable",
+                    "Git repository identity output was incomplete or malformed."
+                );
+            }
+
+            repositoryRoot = paths[0].Trim();
+            if (SamePath(repositoryRoot, Repository))
+            {
+                repositoryCommon = paths[1].Trim();
+            }
+        }
+
+        if (probe.ExitCode != 0 || probe.TimedOut)
         {
             if (
                 !configuration.CreateRepository
@@ -117,7 +142,7 @@ public sealed class GitOperations
             await GitAsync(Repository, ["init", "--quiet"], cancellationToken)
                 .ConfigureAwait(false);
         }
-        else if (!SamePath(probe.StandardOutput.Trim(), Repository))
+        else if (!SamePath(repositoryRoot, Repository))
         {
             if (
                 !configuration.CreateRepository
@@ -213,7 +238,7 @@ public sealed class GitOperations
             database.SaveConfiguration(configuration with { BaseRevision = baseCommit });
         }
 
-        string repositoryCommon = (
+        repositoryCommon ??= (
             await GitAsync(
                     Repository,
                     ["rev-parse", "--path-format=absolute", "--git-common-dir"],

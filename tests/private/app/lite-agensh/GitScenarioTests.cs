@@ -21,6 +21,72 @@ public sealed class GitScenarioTests(TestContext testContext)
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task ExplicitEmptyRepositoryInitializationUsesItsOwnIdentity(bool insideParent)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenario? parent = insideParent
+            ? await GitScenario.CreateAsync(token)
+            : null;
+        using RunFixture fixture = new(pathsWithSpaces: true);
+        string repository = parent is null
+            ? fixture.RepositoryPath
+            : Path.Combine(parent.Fixture.RepositoryPath, "explicit empty repository");
+        Directory.CreateDirectory(repository);
+        RunDatabase database = new(
+            fixture.StatePath,
+            fixture.Configuration with
+            {
+                RepositoryPath = repository,
+                BaseRevision = "HEAD",
+                CreateRepository = true,
+            }
+        );
+        CollaborationOperations collaboration = new(database);
+        GitOperations operations = new(database, collaboration);
+        try
+        {
+            await operations.InitializeAsync(token);
+            string baseCommit = database.Configuration.BaseRevision;
+            Assert.AreNotEqual("HEAD", baseCommit);
+            Assert.AreEqual(baseCommit, database.ReadMetadata("git:base_commit"));
+            Assert.AreEqual("true", database.ReadMetadata("git:initialized"));
+            Assert.IsTrue(Directory.Exists(Path.Combine(repository, ".git")));
+            foreach (string worker in database.Configuration.WorkerIds)
+            {
+                Assert.IsTrue(Directory.Exists(operations.GetWorkerPath(worker)));
+            }
+            if (parent is not null)
+            {
+                Assert.AreNotEqual(parent.Database.Configuration.BaseRevision, baseCommit);
+            }
+
+            await operations.InitializeAsync(token);
+            await operations.CleanupAsync(token);
+        }
+        finally
+        {
+            if (parent is not null)
+            {
+                foreach (string file in Directory.EnumerateFiles(
+                    repository, "*", SearchOption.AllDirectories
+                ))
+                {
+                    File.SetAttributes(file, FileAttributes.Normal);
+                }
+                Directory.Delete(repository, recursive: true);
+            }
+        }
+
+        if (parent is not null)
+        {
+            await parent.AssertOriginalPreservedAsync(token);
+        }
+    }
+
+    [TestMethod]
     [DataRow(true)]
     [DataRow(false)]
     [Timeout(120000, CooperativeCancellation = true)]
