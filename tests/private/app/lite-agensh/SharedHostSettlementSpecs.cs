@@ -627,7 +627,7 @@ public sealed class SharedHostSettlementSpecs(TestContext context)
                 Assert.AreEqual(host.LeaseId, runtime["runtimeLeaseId"]!.GetValue<long>());
                 Assert.AreEqual("ready", runtime["state"]!.GetValue<string>());
                 Assert.AreEqual(
-                    NativeSdkSession.RuntimeVersion,
+                    Phase6NativeControl.RuntimeVersion,
                     runtime["runtimeVersion"]!.GetValue<string>()
                 );
                 JsonObject start = JsonNode
@@ -1149,7 +1149,7 @@ public sealed class SharedHostSettlementSpecs(TestContext context)
                 diagnostic["sdkVersion"]!.GetValue<string>()
             );
             Assert.AreEqual(
-                NativeSdkSession.RuntimeVersion,
+                Phase6NativeControl.RuntimeVersion,
                 diagnostic["runtimeVersion"]!.GetValue<string>()
             );
             Assert.AreEqual(
@@ -1584,7 +1584,7 @@ public sealed class SharedHostSettlementSpecs(TestContext context)
                     proof["runtime"]!["runtimeLeaseId"]!.GetValue<long>()
                 );
                 Assert.AreEqual(
-                    NativeSdkSession.RuntimeVersion,
+                    Phase6NativeControl.RuntimeVersion,
                     proof["runtime"]!["runtimeVersion"]!.GetValue<string>()
                 );
                 Assert.AreEqual("settled", proof["runtime"]!["state"]!.GetValue<string>());
@@ -1681,7 +1681,7 @@ public sealed class SharedHostSettlementSpecs(TestContext context)
         Assert.AreEqual(host.LeaseId, diagnostic["runtimeLeaseId"]!.GetValue<long>());
         Assert.AreEqual(NativeSdkSession.SdkVersion, diagnostic["sdkVersion"]!.GetValue<string>());
         Assert.AreEqual(
-            NativeSdkSession.RuntimeVersion,
+            Phase6NativeControl.RuntimeVersion,
             diagnostic["runtimeVersion"]!.GetValue<string>()
         );
         Assert.AreEqual(cwd, diagnostic["workingDirectory"]!.GetValue<string>());

@@ -1757,7 +1757,6 @@ public sealed class Coordinator
                 new
                 {
                     sdk = NativeSdkSession.SdkVersion,
-                    runtime = NativeSdkSession.RuntimeVersion,
                     accounting = "sdk-session-cumulative-nano-aiu-complete-v1",
                     nativeEvidenceKind,
                     build = typeof(Coordinator).Assembly.ManifestModule.ModuleVersionId,
@@ -1791,7 +1790,7 @@ public sealed class Coordinator
             throw new OperationException(
                 "unavailable",
                 "A successful non-model SDK metadata preflight is required for this exact "
-                    + "build, runtime, native invocation and accounting contract."
+                    + "build, SDK, native invocation and accounting contract."
             );
         }
     }

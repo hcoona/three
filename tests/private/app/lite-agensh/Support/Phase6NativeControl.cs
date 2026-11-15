@@ -9,6 +9,9 @@ namespace LiteAgensh.Tests.Support;
 // and their separate original-owner executable. Never native authorization.
 internal sealed class Phase6NativeControl(RunDatabase database) : IAsyncDisposable
 {
+    // Controlled provenance shared with the offline owner, not a CLI selection.
+    internal const string RuntimeVersion = "1.0.107";
+
     internal List<Host> Hosts { get; } = [];
     internal bool MissingLimitCapability { get; set; }
     internal bool FailPaidStop { get; set; }
@@ -103,7 +106,7 @@ internal sealed class Phase6NativeControl(RunDatabase database) : IAsyncDisposab
                 {
                     ["runtimeId"] = Id,
                     ["runtimeLeaseId"] = LeaseId,
-                    ["runtimeVersion"] = NativeSdkSession.RuntimeVersion,
+                    ["runtimeVersion"] = RuntimeVersion,
                     ["state"] = state,
                     ["evidenceKind"] = "controlled-native-dependency",
                 }.ToJsonString()
@@ -258,7 +261,7 @@ internal sealed class Phase6NativeControl(RunDatabase database) : IAsyncDisposab
                 ["appliedLimit"] = NativeSdkSession.NativeLimit(cap),
                 ["runtimeId"] = host.Id,
                 ["runtimeLeaseId"] = host.LeaseId,
-                ["runtimeVersion"] = NativeSdkSession.RuntimeVersion,
+                ["runtimeVersion"] = RuntimeVersion,
                 ["sdkVersion"] = NativeSdkSession.SdkVersion,
             };
             return Task.FromResult(current!);

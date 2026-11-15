@@ -46,14 +46,15 @@ dependent user-audit work requires matching current build, interface and
 operational evidence under its existing protocol.
 The [dependency policy](docs/implementation-contracts.md#application-and-dependencies)
 now permits the installed Copilot CLI without a version restriction or a new
-approval solely for a version change, under unchanged SDK 1.0.28. The existing
-implementation still selects CLI 1.0.107 until its separately accepted repair.
-It implements the earlier
+approval solely for a version change, under unchanged SDK 1.0.28. The application
+records the actual typed runtime version without a version or ordered-pair
+allowlist, retaining required interface, identity, cap and settlement checks.
+It preserves the original runtime provenance under the
 [retained-session recovery boundary](docs/implementation-contracts.md#retained-cli-10105-to-selected-cli-10107)
 with controlled startup-lineage, rejection and preservation scenarios.
 Installed-native session loadability and accounting-window preservation still
-require a separately reviewed observation. Do not use the changed policy before
-its implementation is accepted or reuse a consumed recovery invocation.
+require a separately reviewed observation. Do not reuse a consumed recovery
+invocation.
 
 The [deadline-drain contract](docs/implementation-contracts.md#bounded-deadline-drain)
 separates normal work-admission expiry from bounded completion of existing

@@ -86,11 +86,11 @@ internal sealed class NativeSdkHost(
                 GetStatusResponse status = await client
                     .GetStatusAsync(deadline.Token)
                     .ConfigureAwait(false);
-                if (status.Version != NativeSdkSession.RuntimeVersion)
+                if (string.IsNullOrWhiteSpace(status.Version))
                 {
                     throw new OperationException(
                         "unavailable",
-                        "The installed native runtime does not match the application's CLI pin."
+                        "The installed native runtime did not report its version."
                     );
                 }
 
