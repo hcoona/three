@@ -44,13 +44,16 @@ records its released package and relied-on source surface, not native
 interoperability. That selection does not extend the earlier native observations;
 dependent user-audit work requires matching current build, interface and
 operational evidence under its existing protocol.
-The application selects installed CLI 1.0.107 under the unchanged SDK 1.0.28,
-retaining exact typed version verification. It implements the
-[retained-1.0.105 recovery bridge](docs/implementation-contracts.md#retained-cli-10105-to-selected-cli-10107)
+The [dependency policy](docs/implementation-contracts.md#application-and-dependencies)
+now permits the installed Copilot CLI without a version restriction or a new
+approval solely for a version change, under unchanged SDK 1.0.28. The existing
+implementation still selects CLI 1.0.107 until its separately accepted repair.
+It implements the earlier
+[retained-session recovery boundary](docs/implementation-contracts.md#retained-cli-10105-to-selected-cli-10107)
 with controlled startup-lineage, rejection and preservation scenarios.
 Installed-native session loadability and accounting-window preservation still
-require a separately reviewed observation. Do not bypass the version guard
-or reuse a consumed recovery invocation.
+require a separately reviewed observation. Do not use the changed policy before
+its implementation is accepted or reuse a consumed recovery invocation.
 
 The [deadline-drain contract](docs/implementation-contracts.md#bounded-deadline-drain)
 separates normal work-admission expiry from bounded completion of existing
@@ -112,8 +115,8 @@ in this overview.
 
 ## Running and checking the application
 
-Use the repository-selected .NET SDK and the existing Copilot CLI version
-selected by the [implementation contracts](docs/implementation-contracts.md).
+Use the repository-selected .NET SDK and the existing installed Copilot CLI
+under the [implementation contracts](docs/implementation-contracts.md).
 SDK CLI acquisition and native automatic updates are disabled. Keep the
 existing native authentication and default model unless an explicitly selected
 supported model is required by the owning operational protocol; no provider

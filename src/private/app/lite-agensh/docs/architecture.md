@@ -156,7 +156,8 @@ recovery have their own bounded operation lifetime; none leaves a persistent
 runtime for a later CLI invocation.
 
 Reuse the installed CLI, disable its automatic update, and disable SDK build-time
-CLI acquisition. Verify the matched runtime version, explicit session identity,
+CLI acquisition. Record the observed typed runtime version without a version
+allowlist or version-change approval gate. Verify explicit session identity,
 absolute working directory and native applied session limit before paid
 dispatch. Configure local stdio MCP and supported tool filters through typed
 SDK session settings. Disable recursive native team spawning where supported.
@@ -468,10 +469,12 @@ owns the coordinate translation and supported retained evidence for
 non-dispatch recovery. Verify cumulative metrics against the saved accounting
 baseline; unknown or regressing usage stops paid work rather than regranting
 spent capacity. A new host or changed cap does not reset either baseline.
-The same contract owns the narrowly selected original-1.0.105/current-1.0.107
-runtime bridge under unchanged SDK identity. Preserve historical provenance
-and verify the temporary host against the current exact application pin;
-do not introduce a version-range fallback, SDK migration or receipt rewrite.
+The same contract owns exact recovery across observed runtime versions under
+unchanged SDK identity. Preserve consistent original runtime provenance and
+record the temporary host's actual nonempty version separately. Runtime
+versions are evidence, not an ordered-pair allowlist. Native rejection leaves
+recovery unavailable; do not introduce a fallback runtime, SDK migration or
+receipt rewrite.
 
 Retain SQLite together with its live journal state and worktrees through
 pause/finalize; do not copy a live main database file and call it a backup.

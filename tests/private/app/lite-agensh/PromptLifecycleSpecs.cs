@@ -475,12 +475,12 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                         ("$batch", batch)
                     )
                 );
-                Assert.AreEqual(20m, state.Reservation("worker1").Actual);
                 GitScenarioState.Data(
                     await state
                         .StopRunningAsync("pause", state.WorkDeadline, token)
                         .ConfigureAwait(false)
                 );
+                Assert.AreEqual(20m, state.Reservation("worker1").Actual);
             })
             .ConfigureAwait(false);
     }
