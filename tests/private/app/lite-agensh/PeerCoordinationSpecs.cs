@@ -5,7 +5,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace LiteAgensh.Tests;
 
 [TestClass]
-[DoNotParallelize]
 public sealed class PeerCoordinationSpecs(TestContext testContext)
 {
     private static readonly string[] peerActors = ["worker1", "worker2"];
@@ -653,7 +652,6 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     Path.Combine(state.Git.Repository, ".github", "copilot-instructions.md"),
                     Path.Combine(state.Git.Repository, ".vscode", "settings.json"),
                     Path.Combine(state.Git.Repository, ".claude", "settings.json"),
-                    state.Git.PathFor("home", ".copilot", "config.json"),
                 ];
                 foreach (string file in protectedFiles)
                 {
@@ -663,6 +661,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         "{\"fixture\":\"owned-user-policy-not-a-credential\"}\n"
                     );
                 }
+                protectedFiles = [.. protectedFiles, TestAssembly.PolicyFile];
                 Dictionary<string, byte[]> preserved = protectedFiles.ToDictionary(
                     file => file,
                     File.ReadAllBytes,

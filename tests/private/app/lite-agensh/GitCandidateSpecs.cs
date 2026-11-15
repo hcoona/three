@@ -7,7 +7,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace LiteAgensh.Tests;
 
 [TestClass]
-[DoNotParallelize]
 public sealed class GitCandidateSpecs(TestContext testContext)
 {
     private static readonly string[] OwnedEnvironmentNames =
@@ -173,9 +172,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             Assert.IsFalse(File.Exists(Path.Combine(path, "untracked.txt")));
         }
 
-        // An outer finally restores even on failure; this successful-path observation also
-        // verifies exact captured host strings, without following any captured config path.
-        state.RestoreEnvironment();
+        GitScenarioState.AssertEnvironmentUnchanged();
         foreach ((string name, string? value) in hostEnvironment)
         {
             Assert.AreEqual(value, Environment.GetEnvironmentVariable(name), name);

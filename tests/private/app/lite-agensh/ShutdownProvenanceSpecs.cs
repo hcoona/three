@@ -4,7 +4,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace LiteAgensh.Tests;
 
 [TestClass]
-[DoNotParallelize]
 public sealed class ShutdownProvenanceSpecs(TestContext context)
 {
     [TestMethod]

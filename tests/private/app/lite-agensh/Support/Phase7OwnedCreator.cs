@@ -92,7 +92,7 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
                     secondary.Add(error);
                 }
             }
-            RestoreFailedEnvironment(git, environment, secondary);
+            VerifyFailedEnvironment(git, environment, secondary);
             foreach (Exception error in secondary)
             {
                 Console.Error.WriteLine(
@@ -134,7 +134,7 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
             }
             if (primary is not null || secondary.Count != 0)
             {
-                RestoreFailedEnvironment(Git, Environment, secondary);
+                VerifyFailedEnvironment(Git, Environment, secondary);
             }
             foreach (Exception error in secondary)
             {
@@ -151,18 +151,18 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
         }
     }
 
-    private static void RestoreFailedEnvironment(
+    private static void VerifyFailedEnvironment(
         GitScenarioState git,
         Dictionary<string, string?> expected,
         List<Exception> secondary
     )
     {
-        bool restored = false,
+        bool unchanged = false,
             verified = false;
         try
         {
-            git.RestoreEnvironment();
-            restored = true;
+            GitScenarioState.AssertEnvironmentUnchanged();
+            unchanged = true;
         }
         catch (Exception error)
         {
@@ -195,8 +195,8 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
             "PHASE7_ORIGINAL_ENVIRONMENT_CLEANUP "
                 + new JsonObject
                 {
-                    ["restoreAttempted"] = true,
-                    ["restoreReturned"] = restored,
+                    ["inheritedEnvironmentCheckAttempted"] = true,
+                    ["inheritedEnvironmentUnchanged"] = unchanged,
                     ["baselineVerificationAttempted"] = true,
                     ["baselineVerified"] = verified,
                     ["rootPreserved"] = git.Repository,

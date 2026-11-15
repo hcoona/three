@@ -6,7 +6,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace LiteAgensh.Tests;
 
 [TestClass]
-[DoNotParallelize]
 public sealed class OfflineReconcileSpecs(TestContext context)
 {
     private static readonly string[] cancellationFailureCodes =

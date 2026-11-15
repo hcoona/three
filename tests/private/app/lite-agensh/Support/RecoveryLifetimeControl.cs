@@ -17,19 +17,22 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
     private readonly string originalVersion;
     private readonly bool undelivered;
     private readonly Dictionary<string, string?> environment;
+    private readonly CancellationToken originalLifetime;
 
     private RecoveryLifetimeControl(
         GitScenarioState git,
         bool shared,
         string version,
         bool undelivered,
-        Dictionary<string, string?> environment
+        Dictionary<string, string?> environment,
+        CancellationToken originalLifetime
     )
     {
         this.git = git;
         originalVersion = version;
         this.undelivered = undelivered;
         this.environment = environment;
+        this.originalLifetime = originalLifetime;
         RunConfiguration configuration = git.Database.Configuration with
         {
             StatePath = git.PathFor("original-lifetime"),
@@ -84,6 +87,10 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         bool undelivered = false
     )
     {
+        using CancellationTokenSource lifetime =
+            CancellationTokenSource.CreateLinkedTokenSource(token);
+        lifetime.CancelAfter(TimeSpan.FromSeconds(120));
+        token = lifetime.Token;
         // Test-host strings only, never inspect user/global/system file contents.
         string[] names =
         [
@@ -99,7 +106,8 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
             StringComparer.Ordinal
         );
         GitScenarioState git = await GitScenarioState.CreateAsync(token).ConfigureAwait(false);
-        RecoveryLifetimeControl state = new(git, shared, version, undelivered, environment);
+        RecoveryLifetimeControl state =
+            new(git, shared, version, undelivered, environment, token);
         try
         {
             await state.Coordinator.InitializeAsync(token).ConfigureAwait(false);
@@ -329,7 +337,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                         {
                             root = Root,
                             rootAbsent = !Directory.Exists(Root),
-                            capturedTestEnvironmentRestored = environment.All(pair =>
+                            capturedTestEnvironmentUnchanged = environment.All(pair =>
                                 Environment.GetEnvironmentVariable(pair.Key) == pair.Value
                             ),
                             owned = hosts
@@ -445,10 +453,12 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
             WorkAdmission? admission = null
         )
         {
+            using CancellationTokenSource coordination =
+                CancellationTokenSource.CreateLinkedTokenSource(token, state.originalLifetime);
             if (worker == "worker2")
             {
                 await state
-                    .originalFailed.Task.WaitAsync(TimeSpan.FromSeconds(5), token)
+                    .originalFailed.Task.WaitAsync(coordination.Token)
                     .ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
                 throw state.OriginalFailure;
@@ -456,7 +466,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
             try
             {
                 await state
-                    .peerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), token)
+                    .peerStarted.Task.WaitAsync(coordination.Token)
                     .ConfigureAwait(false);
                 for (int turn = 0; turn < 3; turn++)
                 {
@@ -551,7 +561,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                     )!;
             }
             child = new();
-            process = child.StartDirect();
+            process = child.StartDirect(role: OwnedChildControl.ControlledNativeHostRole);
             LeaseId = new ProcessRunner(state.Database).Register(process, $"native:runtime:{Id}");
             Ready = await child.ReadReadyAsync(token).ConfigureAwait(false);
             Assert.AreEqual(process.Id, Ready.Pid);

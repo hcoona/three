@@ -203,7 +203,7 @@ public sealed class TrustedBoundarySpecs(TestContext context)
             {
                 try
                 {
-                    state.RestoreEnvironment();
+                    GitScenarioState.AssertEnvironmentUnchanged();
                 }
                 catch (Exception secondary)
                 {

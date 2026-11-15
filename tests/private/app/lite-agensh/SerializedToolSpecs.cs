@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using LiteAgensh.Tests.Support;
@@ -6,7 +7,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace LiteAgensh.Tests;
 
 [TestClass]
-[DoNotParallelize]
 public sealed class SerializedToolSpecs(TestContext context)
 {
     [TestMethod]
@@ -648,7 +648,7 @@ public sealed class SerializedToolSpecs(TestContext context)
             {
                 try
                 {
-                    state.RestoreEnvironment();
+                    GitScenarioState.AssertEnvironmentUnchanged();
                 }
                 catch (Exception secondary)
                 {
@@ -1001,24 +1001,44 @@ public sealed class SerializedToolSpecs(TestContext context)
         }
     }
 
-    internal static string SourcePath(string relative)
+    internal static string SourcePath(string relative, [CallerFilePath] string caller = "")
     {
-        DirectoryInfo? directory = new(AppContext.BaseDirectory);
-        while (
-            directory is not null && !File.Exists(Path.Combine(directory.FullName, "global.json"))
+        foreach (
+            string start in new[] { AppContext.BaseDirectory, Path.GetDirectoryName(caller) ?? "" }
         )
         {
-            directory = directory.Parent;
+            if (string.IsNullOrEmpty(start))
+            {
+                continue;
+            }
+            for (
+                DirectoryInfo? directory = new(start);
+                directory is not null;
+                directory = directory.Parent
+            )
+            {
+                string project = Path.Combine(
+                    directory.FullName,
+                    "src",
+                    "private",
+                    "app",
+                    "lite-agensh"
+                );
+                string path = Path.Combine(
+                    project,
+                    relative.Replace('/', Path.DirectorySeparatorChar)
+                );
+                if (
+                    File.Exists(Path.Combine(directory.FullName, "global.json"))
+                    && File.Exists(Path.Combine(project, "LiteAgensh.csproj"))
+                    && (relative == "." ? Directory.Exists(path) : File.Exists(path))
+                )
+                {
+                    return path;
+                }
+            }
         }
-        return Path.Combine(
-            directory?.FullName
-                ?? throw new InvalidOperationException("Runtime worktree root not found."),
-            "src",
-            "private",
-            "app",
-            "lite-agensh",
-            relative.Replace('/', Path.DirectorySeparatorChar)
-        );
+        throw new InvalidOperationException("Runtime worktree root not found.");
     }
 
     private static long Id(JsonObject value) => value["id"]!.GetValue<long>();

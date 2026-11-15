@@ -6,32 +6,10 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LiteAgensh.Tests.Support;
 
-// Real Git/SQLite arrangement only. Both consumers must remain DoNotParallelize:
-// the captured strings are test-host environment, never contents of user config.
+// Each case owns its Git/SQLite state; inherited Git configuration is assembly-owned.
 internal sealed class GitScenarioState : IDisposable
 {
-    private static readonly string[] EnvironmentNames =
-    [
-        "GIT_CONFIG_GLOBAL",
-        "GIT_CONFIG_SYSTEM",
-        "GIT_CONFIG_NOSYSTEM",
-        "HOME",
-        "USERPROFILE",
-        "XDG_CONFIG_HOME",
-        "GIT_CONFIG",
-        "GIT_CONFIG_COUNT",
-        "GIT_CONFIG_PARAMETERS",
-        "GIT_DIR",
-        "GIT_COMMON_DIR",
-        "GIT_WORK_TREE",
-        "GIT_INDEX_FILE",
-        "GIT_OBJECT_DIRECTORY",
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-        "GIT_NAMESPACE",
-        "GIT_CEILING_DIRECTORIES",
-    ];
     private readonly ScratchDirectory scratch = new();
-    private readonly Dictionary<string, string?> environment = new(StringComparer.Ordinal);
     private readonly ProcessRunner processes;
 
     private GitScenarioState(
@@ -42,32 +20,8 @@ internal sealed class GitScenarioState : IDisposable
     {
         try
         {
-            foreach (string name in EnvironmentNames)
-            {
-                environment.Add(name, Environment.GetEnvironmentVariable(name));
-                Environment.SetEnvironmentVariable(name, null);
-            }
-
-            Directory.CreateDirectory(PathFor("home"));
-            Directory.CreateDirectory(PathFor("xdg"));
+            AssertEnvironmentUnchanged();
             Directory.CreateDirectory(PathFor("hooks"));
-            File.WriteAllText(
-                GlobalConfig,
-                "[user]\n\tname = Owned Global Author\n\temail = owned-global@localhost\n"
-                    + "[core]\n\tautocrlf = false\n[commit]\n\tgpgSign = false\n",
-                new UTF8Encoding(false)
-            );
-            File.WriteAllText(
-                SystemConfig,
-                "[liteFixture]\n\tmarker = owned-system\n",
-                new UTF8Encoding(false)
-            );
-            Environment.SetEnvironmentVariable("GIT_CONFIG_GLOBAL", GlobalConfig);
-            Environment.SetEnvironmentVariable("GIT_CONFIG_SYSTEM", SystemConfig);
-            Environment.SetEnvironmentVariable("GIT_CONFIG_NOSYSTEM", "1");
-            Environment.SetEnvironmentVariable("HOME", PathFor("home"));
-            Environment.SetEnvironmentVariable("USERPROFILE", PathFor("home"));
-            Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", PathFor("xdg"));
             Directory.CreateDirectory(Repository);
             RunConfiguration configuration = new()
             {
@@ -101,9 +55,9 @@ internal sealed class GitScenarioState : IDisposable
 
     internal string Repository => PathFor("checkout");
 
-    internal string GlobalConfig => PathFor("global.gitconfig");
+    internal string GlobalConfig { get; } = TestAssembly.GlobalConfig;
 
-    internal string SystemConfig => PathFor("system.gitconfig");
+    internal string SystemConfig { get; } = TestAssembly.SystemConfig;
 
     internal string IntegrationRef => $"refs/heads/lite-agensh/{Database.RunId}/integration";
 
@@ -367,15 +321,9 @@ internal sealed class GitScenarioState : IDisposable
         }
         finally
         {
-            RestoreEnvironment();
+            AssertEnvironmentUnchanged();
         }
     }
 
-    internal void RestoreEnvironment()
-    {
-        foreach ((string name, string? value) in environment)
-        {
-            Environment.SetEnvironmentVariable(name, value);
-        }
-    }
+    internal static void AssertEnvironmentUnchanged() => TestAssembly.AssertEnvironmentUnchanged();
 }

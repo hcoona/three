@@ -86,7 +86,7 @@ internal sealed class Phase6OwnedCreator : IAsyncDisposable
             {
                 try
                 {
-                    git.RestoreEnvironment();
+                    GitScenarioState.AssertEnvironmentUnchanged();
                     Phase6State.VerifyEnvironment(environment);
                 }
                 catch (Exception secondary)
@@ -395,7 +395,7 @@ internal sealed class Phase6OwnedCreator : IAsyncDisposable
             }
             else
             {
-                Cleanup(git.RestoreEnvironment);
+                Cleanup(GitScenarioState.AssertEnvironmentUnchanged);
                 Console.WriteLine("PHASE6_PRESERVED_OWNED_ROOT " + Root);
             }
             Cleanup(() => Phase6State.VerifyEnvironment(environment));

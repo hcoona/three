@@ -95,7 +95,7 @@ internal sealed class Phase6PublicRun : IAsyncDisposable
             {
                 try
                 {
-                    git.RestoreEnvironment();
+                    GitScenarioState.AssertEnvironmentUnchanged();
                     Phase6State.VerifyEnvironment(environment);
                 }
                 catch (Exception secondary)
@@ -204,7 +204,7 @@ internal sealed class Phase6PublicRun : IAsyncDisposable
             }
             else
             {
-                git.RestoreEnvironment();
+                GitScenarioState.AssertEnvironmentUnchanged();
                 Console.WriteLine("PHASE6_PRESERVED_PUBLIC_ROOT " + Database.StatePath);
             }
         }

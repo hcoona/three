@@ -139,7 +139,7 @@ internal sealed class Phase7Run
             }
             else
             {
-                git.RestoreEnvironment();
+                GitScenarioState.AssertEnvironmentUnchanged();
                 Console.Error.WriteLine("PHASE7_SETUP_PRIMARY " + Json.ExceptionDetails(primary));
                 Console.WriteLine("PHASE7_PRESERVED_SETUP_ROOT " + git.Repository);
             }
@@ -540,14 +540,14 @@ internal sealed class Phase7Run
             }
             else
             {
-                Git.RestoreEnvironment();
+                GitScenarioState.AssertEnvironmentUnchanged();
                 Console.WriteLine("PHASE7_PRESERVED_ROOT " + Database.StatePath);
             }
             foreach ((string name, string? expected) in environment)
             {
                 Assert.AreEqual(expected, Environment.GetEnvironmentVariable(name), name);
             }
-            Console.WriteLine("PHASE7_ENVIRONMENT_RESTORED " + environment.Count);
+            Console.WriteLine("PHASE7_INHERITED_ENVIRONMENT_UNCHANGED " + environment.Count);
         }
         catch (Exception error)
         {
