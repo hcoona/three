@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
-    <AssemblyName>LiteAgensh.Tests</AssemblyName>
+    <AssemblyName>LiteAgensh.OfflineOwner</AssemblyName>
     <PackageId>LiteAgensh.OfflineOwner</PackageId>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

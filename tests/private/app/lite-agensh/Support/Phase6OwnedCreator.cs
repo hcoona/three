@@ -37,7 +37,7 @@ internal sealed class Phase6OwnedCreator : IAsyncDisposable
     internal CreditReservation Target =>
         Ledger.Reservations(Database.RunId).Single(row => row.Id == TargetId);
     internal static string Executable =>
-        Path.Combine(AppContext.BaseDirectory, "offline-owner", "LiteAgensh.Tests.exe");
+        Path.Combine(AppContext.BaseDirectory, "LiteAgensh.OfflineOwner.exe");
 
     private Phase6OwnedCreator(GitScenarioState git, Dictionary<string, string?> environment)
     {

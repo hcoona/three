@@ -275,6 +275,13 @@
           "YamlDotNet": "[18.1.0, )"
         }
       },
+      "liteagensh.offlineowner": {
+        "type": "Project",
+        "dependencies": {
+          "LiteAgensh": "[1.0.0, )",
+          "LiteAgensh.TestProcess": "[1.0.0, )"
+        }
+      },
       "liteagensh.testprocess": {
         "type": "Project"
       },

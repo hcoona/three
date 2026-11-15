@@ -8,21 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\src\private\app\lite-agensh\LiteAgensh.csproj" />
     <ProjectReference Include="..\lite-agensh-test-process\LiteAgensh.TestProcess.csproj" />
-    <ProjectReference Include="..\lite-agensh-offline-owner\LiteAgensh.OfflineOwner.csproj"
-                      ReferenceOutputAssembly="false" Private="false"
-                      OutputItemType="_OfflineOwnerTargetPath" />
+    <ProjectReference Include="..\lite-agensh-offline-owner\LiteAgensh.OfflineOwner.csproj" />
   </ItemGroup>
-  <Target Name="CopyOfflineOwnerOutput" AfterTargets="Build">
-    <Error Condition="'@(_OfflineOwnerTargetPath->Count())' != '1'"
-           Text="Exactly one separately built offline owner target is required." />
-    <PropertyGroup>
-      <_OfflineOwnerOutputDirectory>@(_OfflineOwnerTargetPath->'%(RootDir)%(Directory)')</_OfflineOwnerOutputDirectory>
-    </PropertyGroup>
-    <ItemGroup>
-      <_OfflineOwnerOutputFile Include="$(_OfflineOwnerOutputDirectory)**\*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_OfflineOwnerOutputFile)"
-          DestinationFiles="@(_OfflineOwnerOutputFile->'$(TargetDir)offline-owner\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
 </Project>
