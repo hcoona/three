@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
+    <AssemblyName>LiteAgensh.Tests</AssemblyName>
+    <PackageId>LiteAgensh.OfflineOwner</PackageId>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsTestProject>false</IsTestProject>
+    <IsPackable>false</IsPackable>
+    <CopilotSkipCliDownload>true</CopilotSkipCliDownload>
+    <CopilotCliVersion>1.0.107</CopilotCliVersion>
+    <CopilotCliBinaryPath></CopilotCliBinaryPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\src\private\app\lite-agensh\LiteAgensh.csproj" />
+    <ProjectReference Include="..\lite-agensh-test-process\LiteAgensh.TestProcess.csproj" />
+    <Compile Include="..\lite-agensh\Support\OwnedChildControl.cs" Link="Support\OwnedChildControl.cs" />
+    <Compile Include="..\lite-agensh\Support\Phase6NativeControl.cs" Link="Support\Phase6NativeControl.cs" />
+    <Compile Include="..\lite-agensh\Support\Phase7Clock.cs" Link="Support\Phase7Clock.cs" />
+    <Compile Include="..\lite-agensh\Support\ManualScenarioClock.cs" Link="Support\ManualScenarioClock.cs" />
+    <Compile Include="..\lite-agensh\Support\Phase7Sessions.cs" Link="Support\Phase7Sessions.cs" />
+    <Compile Include="..\lite-agensh\Support\Phase7Journal.cs" Link="Support\Phase7Journal.cs" />
+  </ItemGroup>
+</Project>

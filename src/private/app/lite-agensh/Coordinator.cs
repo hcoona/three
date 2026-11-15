@@ -847,7 +847,34 @@ public sealed class Coordinator
                     {
                         foreach (string id in ids)
                         {
-                            await StartWorkerAsync(id).ConfigureAwait(false);
+                            admission = StartWorkerAsync(id);
+                            while (!admission.IsCompleted)
+                            {
+                                CheckNativeFailures();
+                                long? control = PendingControl(out string? action);
+                                if (control is not null)
+                                {
+                                    reason = action == "pause" ? "owner-pause" : "owner-finalize";
+                                    finalize = action == "finalize";
+                                    await stop.CancelAsync().ConfigureAwait(false);
+                                    break;
+                                }
+                                try
+                                {
+                                    await admission.WaitAsync(
+                                        TimeSpan.FromMilliseconds(250), database.TimeProvider,
+                                        stop.Token
+                                    ).ConfigureAwait(false);
+                                }
+                                catch (TimeoutException)
+                                {
+                                    // Observe completion below as well: a native timeout remains
+                                    // the startup task's failure, not a successful polling tick.
+                                }
+                            }
+                            await admission.ConfigureAwait(false);
+                            admission = null;
+                            admissionBudget.ThrowIfClosed();
                         }
                     }
 
@@ -1064,8 +1091,14 @@ public sealed class Coordinator
                 || !IsNonRequestCancellation(exception))
         )
         {
-            reason = cancellationToken.IsCancellationRequested ? "caller-cancelled" : "deadline";
-            finalize = !cancellationToken.IsCancellationRequested;
+            if (cancellationToken.IsCancellationRequested
+                || reason is not ("owner-pause" or "owner-finalize"))
+            {
+                reason = cancellationToken.IsCancellationRequested
+                    ? "caller-cancelled"
+                    : "deadline";
+                finalize = !cancellationToken.IsCancellationRequested;
+            }
             if (draining)
             {
                 drainOutcome = cancellationToken.IsCancellationRequested
