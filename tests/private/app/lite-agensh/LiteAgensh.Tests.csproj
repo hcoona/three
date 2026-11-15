@@ -7,5 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\src\private\app\lite-agensh\LiteAgensh.csproj" />
+    <ProjectReference Include="..\lite-agensh-test-process\LiteAgensh.TestProcess.csproj" />
+    <ProjectReference Include="..\lite-agensh-offline-owner\LiteAgensh.OfflineOwner.csproj" />
   </ItemGroup>
 </Project>

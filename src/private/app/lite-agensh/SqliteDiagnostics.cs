@@ -119,7 +119,7 @@ internal static class SqliteDiagnostics
         }
     }
 
-    internal static void Complete(SqliteConnection connection)
+    internal static void Complete(SqliteConnection connection, string transaction)
     {
         if (!Connections.TryGetValue(connection, out ConnectionActivity? activity))
         {
@@ -128,6 +128,11 @@ internal static class SqliteDiagnostics
 
         lock (activity.Database.Gate)
         {
+            if (activity.Transaction != transaction)
+            {
+                return;
+            }
+
             activity.Transaction = null;
             activity.Acquired = false;
             activity.Deferred = null;
@@ -186,34 +191,45 @@ internal static class SqliteDiagnostics
 
         lock (activity.Database.Gate)
         {
-            if (transaction is not null)
+            string observedOperation = SafeIdentifier(operation) ? operation : "UnknownOperation";
+            // A completed scope's disposal is history, not current connection ownership.
+            bool historicalDisposal = transaction is not null
+                && transaction != activity.Transaction
+                && phase.StartsWith("transaction-dispose-", StringComparison.Ordinal);
+            if (transaction is not null && !historicalDisposal)
             {
                 activity.Transaction = transaction;
                 activity.Deferred = deferred;
-                activity.TransactionOperation =
-                    SafeIdentifier(operation) ? operation : "UnknownOperation";
+                activity.TransactionOperation = observedOperation;
             }
 
             if (phase == "acquisition-succeeded")
             {
                 activity.Acquired = true;
             }
-            else if (phase is "commit-succeeded" or "rollback-succeeded")
+            else if (!historicalDisposal
+                && phase is "commit-succeeded" or "rollback-succeeded"
+                    or "transaction-dispose-succeeded")
             {
                 activity.Acquired = false;
             }
 
             SqliteException? sqlite = error as SqliteException;
             Activity record = new(
-                activity.Id, activity.Transaction, activity.Actor,
-                activity.TransactionOperation
-                    ?? (SafeIdentifier(operation) ? operation : "UnknownOperation"),
-                SafeIdentifier(operation) ? operation : "UnknownOperation", phase,
-                DateTimeOffset.UtcNow, Stopwatch.GetTimestamp(), elapsed, activity.Deferred,
-                activity.Acquired && activity.Deferred == false,
+                activity.Id, historicalDisposal ? transaction : activity.Transaction,
+                activity.Actor,
+                historicalDisposal ? observedOperation
+                    : activity.TransactionOperation ?? observedOperation,
+                observedOperation, phase,
+                DateTimeOffset.UtcNow, Stopwatch.GetTimestamp(), elapsed,
+                historicalDisposal ? deferred : activity.Deferred,
+                !historicalDisposal && activity.Acquired && activity.Deferred == false,
                 sqlite?.SqliteErrorCode, sqlite?.SqliteExtendedErrorCode
             );
-            activity.Last = record;
+            if (!historicalDisposal)
+            {
+                activity.Last = record;
+            }
             DatabaseActivity database = activity.Database;
             database.Recent.Enqueue(record);
             if (database.Recent.Count > MaximumRecords)
@@ -228,8 +244,25 @@ internal static class SqliteDiagnostics
             {
                 Persist(database);
             }
-            if (sqlite?.SqliteErrorCode is 5 or 6)
+            if (sqlite?.SqliteErrorCode is 5 or 6 or 10)
             {
+                try
+                {
+                    Warn("SQLite failure summary: " + JsonSerializer.Serialize(
+                        new
+                        {
+                            database = database.Identity,
+                            processId = Environment.ProcessId,
+                            failure = record,
+                        },
+                        Json.Options
+                    ));
+                }
+                catch (Exception exception) when (IsDiagnosticFailure(exception))
+                {
+                    Warn("SQLite failure summary unavailable; original database error preserved.");
+                }
+
                 Capture(database, record, sqlite);
             }
         }
@@ -383,7 +416,9 @@ internal static class SqliteDiagnostics
                     output.Write(bytes);
                     output.Flush();
                     error.Data["LiteAgensh.SqliteIncident"] = path;
-                    Warn($"SQLite contention evidence: {path}");
+                    Warn(error.SqliteErrorCode == 10
+                        ? "SQLite I/O evidence retained locally."
+                        : $"SQLite contention evidence: {path}");
                     return;
                 }
                 catch (IOException) when (File.Exists(path))
@@ -567,7 +602,7 @@ public sealed class SqliteTransactionScope : IDisposable
             connection, operation, "commit",
             () => { transaction.Commit(); return true; }, Id, deferred
         );
-        SqliteDiagnostics.Complete(connection);
+        SqliteDiagnostics.Complete(connection, Id);
     }
 
     public void Rollback()
@@ -576,7 +611,7 @@ public sealed class SqliteTransactionScope : IDisposable
             connection, operation, "rollback",
             () => { transaction.Rollback(); return true; }, Id, deferred
         );
-        SqliteDiagnostics.Complete(connection);
+        SqliteDiagnostics.Complete(connection, Id);
     }
 
     public void Dispose()
@@ -595,6 +630,7 @@ public sealed class SqliteTransactionScope : IDisposable
                 connection, operation, "transaction-dispose",
                 () => { transaction.Dispose(); return true; }, Id, deferred
             );
+            SqliteDiagnostics.Complete(connection, Id);
         }
     }
 }

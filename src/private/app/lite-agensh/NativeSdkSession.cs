@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
@@ -13,6 +14,12 @@ internal interface INativeSdkSession : IAsyncDisposable
     bool HasSession { get; }
 
     string? NativeFailure { get; }
+
+    Exception? FirstFailure => null;
+
+    IDisposable? ObserveRequest(CancellationToken cancellationToken) => null;
+
+    void MarkDispatchPending() { }
 
     JsonObject? Metadata { get; }
 
@@ -43,7 +50,8 @@ internal interface INativeSdkSession : IAsyncDisposable
 
     Task<JsonObject> SendAsync(
         string text, TimeSpan timeout, CancellationToken cancellationToken,
-        Func<CancellationToken, Task<decimal>>? renewLimit = null
+        Func<CancellationToken, Task<decimal>>? renewLimit = null,
+        WorkAdmission? admission = null
     );
 
     Task AbortAsync(CancellationToken cancellationToken);
@@ -70,6 +78,8 @@ internal sealed class NativeSdkSession : INativeSdkSession
     private CopilotSession? session;
     private bool acceptingCallbacks = true;
     private string? eventFailure;
+    private Exception? firstFailure;
+    private CancellationToken? sendCancellation;
     private string? actualRuntimeVersion;
     private string? recoveryEvidencePath;
     private bool disposed;
@@ -124,6 +134,17 @@ internal sealed class NativeSdkSession : INativeSdkSession
             lock (callbacks)
             {
                 return eventFailure;
+            }
+        }
+    }
+
+    public Exception? FirstFailure
+    {
+        get
+        {
+            lock (callbacks)
+            {
+                return firstFailure;
             }
         }
     }
@@ -361,15 +382,11 @@ internal sealed class NativeSdkSession : INativeSdkSession
     {
         CopilotSession active =
             session ?? throw new InvalidOperationException("No native session.");
-        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken
-        );
-        deadline.CancelAfter(TimeSpan.FromSeconds(ProbeTimeoutSeconds));
         string phase = "metadata";
-        try
+        return await ReadProbeAsync(async probe =>
         {
             SessionMetadataSnapshot metadata = await active
-                .Rpc.Metadata.SnapshotAsync(deadline.Token)
+                .Rpc.Metadata.SnapshotAsync(probe)
                 .ConfigureAwait(false);
             ValidateMetadata(
                 metadata,
@@ -382,7 +399,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
 
             phase = "usage";
             UsageGetMetricsResult usage = await active
-                .Rpc.Usage.GetMetricsAsync(deadline.Token)
+                .Rpc.Usage.GetMetricsAsync(probe)
                 .ConfigureAwait(false);
             Metadata = new()
             {
@@ -399,7 +416,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
             };
             if (validateEvents)
             {
-                CheckEvents();
+                CheckEvents(CancellationToken.None);
             }
             NativeUsage reading = new(
                 expectedSession,
@@ -420,20 +437,52 @@ internal sealed class NativeSdkSession : INativeSdkSession
                     ["evidenceLevel"] = "fresh-native-reading-not-yet-settled",
                 };
                 await File.AppendAllTextAsync(recoveryEvidencePath,
-                    evidence.ToJsonString() + Environment.NewLine, deadline.Token)
+                    evidence.ToJsonString() + Environment.NewLine, probe)
                     .ConfigureAwait(false);
             }
             return reading;
+        }, cancellationToken, () => phase).ConfigureAwait(false);
+    }
+
+    internal static async Task<NativeUsage> ReadProbeAsync(
+        Func<CancellationToken, Task<NativeUsage>> read,
+        CancellationToken cancellationToken,
+        Func<string>? phase = null,
+        TimeProvider? timeProvider = null
+    )
+    {
+        using CancellationTokenSource timeout = new(
+            TimeSpan.FromSeconds(ProbeTimeoutSeconds), timeProvider ?? TimeProvider.System);
+        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, timeout.Token);
+        try
+        {
+            return await read(deadline.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
+            string query = phase?.Invoke() ?? "metadata";
             throw new OperationException(
                 "native_probe_failed",
                 deadline.IsCancellationRequested
-                    ? $"Native {phase} query exceeded its {ProbeTimeoutSeconds}-second deadline."
-                    : $"Native {phase} query was canceled before caller cancellation."
+                    ? $"Native {query} query exceeded its {ProbeTimeoutSeconds}-second deadline."
+                    : $"Native {query} query was canceled before caller cancellation."
             );
         }
+        catch (OperationCanceledException exception) when (
+            exception.CancellationToken == deadline.Token
+            && cancellationToken.IsCancellationRequested
+        )
+        {
+            throw new RequestedReadCanceledException(exception, cancellationToken);
+        }
+    }
+
+    internal sealed class RequestedReadCanceledException(
+        OperationCanceledException cause, CancellationToken requestToken
+    ) : OperationCanceledException(cause.Message, cause, cause.CancellationToken)
+    {
+        public CancellationToken RequestToken { get; } = requestToken;
     }
 
     public async Task<NativeUsage> ReadSettledAsync(
@@ -441,10 +490,12 @@ internal sealed class NativeSdkSession : INativeSdkSession
         bool validateEvents = true, bool verifyLocalWork = false
     )
     {
+        // Keep callback provenance on the request, not the local usage-query deadline.
+        using IDisposable observation = ObserveSend(cancellationToken);
         using CancellationTokenSource deadline =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(database.Configuration.DurationSeconds));
-        return await usageFence.CaptureAsync(
+        return await CaptureUsageAsync(
             token => verifyLocalWork
                 ? ReadIdleRecoveryUsageAsync(
                     next => ReadAsync(expectedSession, expectedLimit, next, validateEvents),
@@ -489,6 +540,10 @@ internal sealed class NativeSdkSession : INativeSdkSession
     }
 
     public void WithSettledUsage(NativeUsage usage, Action record) => usageFence.Use(usage, record);
+
+    internal Task<NativeUsage> CaptureUsageAsync(
+        Func<CancellationToken, Task<NativeUsage>> read, CancellationToken cancellationToken
+    ) => usageFence.CaptureAsync(read, cancellationToken);
 
     internal static void ValidateMetadata(
         SessionMetadataSnapshot metadata,
@@ -550,9 +605,11 @@ internal sealed class NativeSdkSession : INativeSdkSession
         string text,
         TimeSpan timeout,
         CancellationToken cancellationToken,
-        Func<CancellationToken, Task<decimal>>? renewLimit = null
+        Func<CancellationToken, Task<decimal>>? renewLimit = null,
+        WorkAdmission? admission = null
     )
     {
+        using IDisposable observation = ObserveSend(cancellationToken);
         CheckEvents(cancellationToken);
         CopilotSession active =
             session ?? throw new InvalidOperationException("No native session.");
@@ -571,10 +628,10 @@ internal sealed class NativeSdkSession : INativeSdkSession
         }
         Task<AssistantMessageEvent?>? sending = null;
         Task<SessionLimitsExhaustedRequestedData>? pending = null;
-        try
+        return await CompleteSendAsync(async () =>
         {
-            usageFence.SetTurnPending(true);
-            sending = active.SendAndWaitAsync(text, timeout, linked.Token);
+            sending = StartSend(
+                () => active.SendAndWaitAsync(text, timeout, linked.Token), admission);
             while (requests is not null && !sending.IsCompleted)
             {
                 pending = requests.Reader.ReadAsync(linked.Token).AsTask();
@@ -592,23 +649,14 @@ internal sealed class NativeSdkSession : INativeSdkSession
                     {
                         await ReadAsync(SessionId, limit, token).ConfigureAwait(false);
                     },
-                    linked.Token
+                    linked.Token,
+                    admission
                 ).ConfigureAwait(false);
             }
             AssistantMessageEvent? response = await sending.ConfigureAwait(false);
             CheckEvents(cancellationToken);
             return new() { ["stopReason"] = "end_turn", ["text"] = response?.Data.Content };
-        }
-        catch
-        {
-            await AbortFailedSendAsync(
-                    () => AbortAsync(CancellationToken.None),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-            throw;
-        }
-        finally
+        }, () => AbortAsync(CancellationToken.None), async () =>
         {
             lock (callbacks)
             {
@@ -617,15 +665,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
             await linked.CancelAsync().ConfigureAwait(false);
             if (sending is not null)
             {
-                try
-                {
-                    await sending.ConfigureAwait(false);
-                    usageFence.SetTurnPending(false);
-                }
-                catch (Exception)
-                {
-                    // The send's original failure is preserved above.
-                }
+                await SettleSendAsync(sending).ConfigureAwait(false);
             }
             if (pending is not null)
             {
@@ -635,6 +675,57 @@ internal sealed class NativeSdkSession : INativeSdkSession
                 }
                 catch (OperationCanceledException) { }
             }
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal Task<AssistantMessageEvent?> StartSend(
+        Func<Task<AssistantMessageEvent?>> send, WorkAdmission? admission
+    )
+    {
+        NativeWorker.CheckRenewalAdmission(admission);
+        MarkDispatchPending();
+        return send();
+    }
+
+    public void MarkDispatchPending() => usageFence.SetTurnPending(true);
+
+    internal async Task CompleteTerminalAsync(Task sending)
+    {
+        await sending.ConfigureAwait(false);
+        usageFence.SetTurnPending(false);
+    }
+
+    internal async Task SettleSendAsync(Task sending)
+    {
+        try
+        {
+            await CompleteTerminalAsync(sending).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // The send's original failure is preserved above.
+        }
+    }
+
+    internal async Task<JsonObject> CompleteSendAsync(
+        Func<Task<JsonObject>> send, Func<Task> abort, Func<Task> cleanup,
+        CancellationToken cancellationToken
+    )
+    {
+        using IDisposable observation = ObserveSend(cancellationToken);
+        try
+        {
+            return await send().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            RetainFailure(exception, cancellationToken);
+            await AbortFailedSendAsync(abort, cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+        finally
+        {
+            await cleanup().ConfigureAwait(false);
         }
     }
 
@@ -643,20 +734,89 @@ internal sealed class NativeSdkSession : INativeSdkSession
         Func<CancellationToken, Task<decimal>> renewLimit,
         Func<string, UISessionLimitsExhaustedResponse, CancellationToken, Task> apply,
         Func<decimal, CancellationToken, Task> verify,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        WorkAdmission? admission = null
     )
     {
-        decimal limit = await renewLimit(cancellationToken).ConfigureAwait(false);
-        await apply(
-            requestId,
-            new UISessionLimitsExhaustedResponse
+        NativeWorker.CheckRenewalAdmission(admission);
+        using CancellationTokenSource renewing = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, admission?.Token ?? CancellationToken.None
+        );
+        decimal limit = await renewLimit(renewing.Token).ConfigureAwait(false);
+        NativeWorker.CheckRenewalAdmission(admission);
+        try
+        {
+            await apply(
+                requestId,
+                new UISessionLimitsExhaustedResponse
+                {
+                    Action = UISessionLimitsExhaustedResponseAction.Set,
+                    MaxAiCredits = NativeLimit(limit),
+                },
+                renewing.Token
+            ).ConfigureAwait(false);
+            await verify(limit, renewing.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (
+            admission?.Token.IsCancellationRequested == true
+            && !cancellationToken.IsCancellationRequested
+            && (exception.CancellationToken == renewing.Token
+                || exception is RequestedReadCanceledException read
+                    && read.RequestToken == renewing.Token)
+        )
+        {
+            throw new NativeWorker.RenewalAdmissionCanceledException(exception);
+        }
+    }
+
+    public IDisposable ObserveRequest(CancellationToken cancellationToken) =>
+        ObserveSend(cancellationToken);
+
+    internal IDisposable ObserveSend(CancellationToken cancellationToken)
+    {
+        lock (callbacks)
+        {
+            SendObservation observation = new(this, sendCancellation);
+            sendCancellation = cancellationToken;
+            return observation;
+        }
+    }
+
+    private void RetainFailure(Exception failure, CancellationToken? cancellationToken)
+    {
+        lock (callbacks)
+        {
+            if (firstFailure is not null
+                || failure is NativeWorker.RenewalAdmissionCanceledException
+                || (failure is OperationCanceledException
+                    && cancellationToken?.IsCancellationRequested == true))
             {
-                Action = UISessionLimitsExhaustedResponseAction.Set,
-                MaxAiCredits = NativeLimit(limit),
-            },
-            cancellationToken
-        ).ConfigureAwait(false);
-        await verify(limit, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            if (failure.Data["liteagensh.nativeFailureObserved"] is not long)
+            {
+                if (cancellationToken is { } supplied)
+                {
+                    failure.Data["liteagensh.nativeFailureCancelled"] =
+                        supplied.IsCancellationRequested;
+                }
+                failure.Data["liteagensh.nativeFailureObserved"] = Stopwatch.GetTimestamp();
+            }
+            firstFailure = failure;
+        }
+    }
+
+    private sealed class SendObservation(
+        NativeSdkSession owner, CancellationToken? previous
+    ) : IDisposable
+    {
+        public void Dispose()
+        {
+            lock (owner.callbacks)
+            {
+                owner.sendCancellation = previous;
+            }
+        }
     }
 
     internal async Task AbortFailedSendAsync(
@@ -820,6 +980,8 @@ internal sealed class NativeSdkSession : INativeSdkSession
 
             if (eventFailure is not null)
             {
+                RetainFailure(new OperationException("native_stopped", eventFailure),
+                    sendCancellation);
                 eventStop.Cancel();
             }
         }

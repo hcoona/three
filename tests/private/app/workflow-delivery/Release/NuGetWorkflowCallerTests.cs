@@ -105,7 +105,7 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
             ?? "dotnet",
     };
 
-    private Task<NativeCommandResult> Step(NuGetReleaseTestFixture fixture, string job,
+    private async Task<NativeCommandResult> Step(NuGetReleaseTestFixture fixture, string job,
         string name, Dictionary<string, string?> environment)
     {
         // Only the native destination observation is controlled. The actual workflow
@@ -146,9 +146,17 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         YamlMappingNode step = steps.Children.Cast<YamlMappingNode>().Single(value =>
             value.Children.TryGetValue("name", out YamlNode? label) && label.ToString() == name);
         string script = shim + "\n" + step.Children["run"];
-        return NativeProcess.ExecuteAsync(new("pwsh", fixture.Root,
+        NativeCommandResult result = await NativeProcess.ExecuteAsync(new("pwsh", fixture.Root,
             ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
                 Convert.ToBase64String(Encoding.Unicode.GetBytes(script))], 30, environment),
             context.CancellationToken);
+        // Fixture disposal can otherwise replace the original command failure.
+        context.WriteLine($"Workflow step '{job}/{name}': {result.Termination}, "
+            + $"exit {result.ExitCode}, duration {result.DurationSeconds}s; error: {result.Error}");
+        context.WriteLine($"stdout (last 4096 characters): "
+            + result.Stdout[^Math.Min(result.Stdout.Length, 4096)..]);
+        context.WriteLine($"stderr (last 4096 characters): "
+            + result.Stderr[^Math.Min(result.Stderr.Length, 4096)..]);
+        return result;
     }
 }

@@ -12,6 +12,7 @@
   <ItemGroup>
     <AssemblyMetadata Include="CopilotCliVersion" Value="$(CopilotCliVersion)" />
     <InternalsVisibleTo Include="LiteAgensh.Tests" />
+    <InternalsVisibleTo Include="LiteAgensh.OfflineOwner" />
     <PackageReference Include="GitHub.Copilot.SDK" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="ModelContextProtocol" />
