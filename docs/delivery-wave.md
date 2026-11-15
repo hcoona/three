@@ -120,8 +120,14 @@ ends a grant. Git and the proposing PR retain the reason and history.
   [user-audit protocol](../src/private/app/lite-agensh/docs/user-audit-protocol.md#dependency-preparation).
   Downloads, restoration and generated dependency directories or normal tool
   caches are environment preparation, not permission to change source,
-  dependency declarations, declared versions or lockfiles. Native backend,
-  CLI, authentication and access restrictions remain unchanged.
+  dependency declarations, declared versions or lockfiles. The owner permits
+  the existing installed Copilot CLI without a version restriction; a CLI
+  version change alone requires no further owner approval. Record the observed
+  version and verify the required supported interfaces before dependent native
+  work. Separately accept the corresponding owning-record and implementation
+  changes before use. Retain the existing SDK selection, disabled runtime
+  acquisition and automatic updates, and no CLI installation, backend
+  substitution, authentication or access change.
   Workers must not edit those protected inputs or workflows, commit/push,
   mutate GitHub, invoke nested agents/models or inspect unrelated host,
   credential, account or historical-session data. The executor may inspect
