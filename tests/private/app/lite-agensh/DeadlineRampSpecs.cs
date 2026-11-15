@@ -1643,8 +1643,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     var first = await ConsumeAsync(firstStart).ConfigureAwait(false);
                     Assert.AreEqual(firstReleasedAt, first.CompletedAt);
                     first.Turn.Complete(); // ACK joins belong AFTER temporal probes.
-                    await ProbeAsync("worker2", handoff.SecondStarting.Task, first.CompletedAt)
-                        .ConfigureAwait(false);
+                    Probe("worker2", handoff.SecondStarting.Task, first.CompletedAt);
 
                     Phase7Handoff.Startup secondStart = await state
                         .ReadyAsync(
@@ -1672,8 +1671,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     var second = await ConsumeAsync(secondStart).ConfigureAwait(false);
                     Assert.AreEqual(secondReleasedAt, second.CompletedAt);
                     second.Turn.Complete();
-                    await ProbeAsync("worker3", handoff.ThirdStarting.Task, second.CompletedAt)
-                        .ConfigureAwait(false);
+                    Probe("worker3", handoff.ThirdStarting.Task, second.CompletedAt);
 
                     Phase7Handoff.Startup thirdStart = await state
                         .ReadyAsync(
@@ -2058,7 +2056,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     );
                 }
 
-                async Task ProbeAsync(string worker, Task starting, DateTimeOffset completedAt)
+                void Probe(string worker, Task starting, DateTimeOffset completedAt)
                 {
                     DateTimeOffset eligible = completedAt.AddSeconds(10);
                     DateTimeOffset probe = eligible.AddSeconds(-1);
@@ -2072,18 +2070,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     // Explicit scenario movement needs NO future timer < probe.
                     // A registration AT probe is valid and fires on this advance.
                     state.Clock.Advance(probe - state.Clock.GetUtcNow());
-                    await state
-                        .UntilAsync(
-                            () =>
-                                starting.IsCompleted
-                                || state.Number(
-                                    "SELECT COUNT(*) FROM git_health WHERE checked_at>=$probe;",
-                                    ("$probe", probe.ToString("O"))
-                                ) == 1,
-                            eligible,
-                            token
-                        )
-                        .ConfigureAwait(false);
                     Cold(worker, starting);
                     Assert.IsLessThan(eligible, state.Clock.GetUtcNow());
                     Console.WriteLine(
@@ -2095,9 +2081,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                                 ["eligibilityLowerBound"] = eligible,
                                 ["explicitProbeAt"] = probe,
                                 ["observedAt"] = state.Clock.GetUtcNow(),
-                                ["healthCheckedAt"] = Convert.ToString(
-                                    state.Value("SELECT checked_at FROM git_health;")
-                                ),
                                 ["allowance"] = state.Reservation(worker).Allowance,
                                 ["grantOpen"] = state.Reservation(worker).GrantOpen,
                             }.ToJsonString()

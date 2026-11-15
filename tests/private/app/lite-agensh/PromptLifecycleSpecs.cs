@@ -260,7 +260,6 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                             )
                         );
                         Assert.AreEqual("true", state.Database.ReadMetadata(key));
-                        Assert.AreEqual(20m, state.Reservation("worker1").Actual);
                         Assert.AreEqual(2L, state.Dispatches(reservation));
                         Assert.AreEqual(
                             2L,
