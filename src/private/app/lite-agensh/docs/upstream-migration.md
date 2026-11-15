@@ -273,15 +273,43 @@ The complete independently reviewed stop and owner decision belong in
 [Issue #1552](https://github.com/hcoona/three/issues/1552), not a claim that
 any retained session recovered or any usage settled.
 
-The owner permits the installed 1.0.107 selection. The
+At that decision, the owner permitted the installed 1.0.107 selection. The
 [dependency contract](implementation-contracts.md#application-and-dependencies)
-owns the exact application override under the unchanged SDK package, and the
+then specified the exact application override under the unchanged SDK package, and the
 [recovery contract](implementation-contracts.md#retained-cli-10105-to-selected-cli-10107)
-owns the narrow historical-runtime bridge. Those are application decisions,
+then owned the narrow historical-runtime bridge. Those were application decisions,
 not changes to the released SDK's default or source evidence of native success.
 Keep the existing interface-recheck trigger and independent review; actual
 status, settings, session identity, finite cap, fenced complete metrics and
 settlement remain operational evidence obligations.
+
+### Installed CLI without a version gate
+
+The owner subsequently removed CLI version restrictions and approval solely
+for version changes. The
+[dependency contract](implementation-contracts.md#application-and-dependencies)
+owns that current application decision, superseding the earlier selection and
+ordered recovery pair without changing SDK 1.0.28 or historical observations.
+
+A version/help-only recheck on 2026-11-15 reported installed CLI 1.0.112.
+The configured executable's SHA-256 was
+`32d01e0b0100fcdeaa684fba2cc8d00b6f127ac408749ff3c1b1a6fa0b2b8698`.
+The [official release][cli112] resolves to
+`a0d26c24bac920219dccbd39ee99632d67fe1cbe`; its notes include changed resumed
+session credit-limit accounting. Public installed help retains
+`--no-auto-update`, explicitly describing execution of the launched binary
+rather than a previously downloaded runtime. Headless hosting is a relied-on
+SDK startup mechanism, not a capability established by the public help text.
+
+The unchanged released SDK archive still matches the package hash above.
+Its typed XML surface retains existing-runtime `ForUri`, runtime status,
+session settings/limits, metadata snapshots, complete cumulative usage and
+persisted-event recovery. These are source/package findings, not observations
+of current native wire compatibility, cap coordinates, OTel flush, recovery or
+a completed Luna journey. Required non-model preflight, sole paid calibration,
+live checks and outcome evidence remain separate under the user-audit protocol.
+No new version allowlist, runtime installation, fallback or paid probe is
+introduced by this recheck.
 
 ### MCP 2.4.0 interface recheck
 
@@ -338,6 +366,7 @@ Implementation ports must retain applicable source notices as well.
 
 [upstream]: https://github.com/microsoft/Agensh/tree/2dae4e14a653da48549fd9aa093f834841475d6c
 [cli107]: https://github.com/github/copilot-cli/releases/tag/v1.0.107
+[cli112]: https://github.com/github/copilot-cli/releases/tag/v1.0.112
 [state]: https://github.com/microsoft/Agensh/blob/2dae4e14a653da48549fd9aa093f834841475d6c/mini-router/src/state.ts
 [dispatcher]: https://github.com/microsoft/Agensh/blob/2dae4e14a653da48549fd9aa093f834841475d6c/mini-router/src/dispatcher.ts
 [router]: https://github.com/microsoft/Agensh/blob/2dae4e14a653da48549fd9aa093f834841475d6c/mini-router/src/main.ts

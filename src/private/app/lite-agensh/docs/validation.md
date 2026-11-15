@@ -150,18 +150,18 @@ and native rejection/readback mismatch. Rejection preserves uncertainty and
 does not create backing, reset baselines or book error-derived usage. Controlled
 success establishes application translation, not installed-native support.
 
-Exercise the selected CLI 1.0.107 pin without changing the SDK package:
-actual typed status must match exactly, not merely exceed the SDK's historical
-default. Cover both same-selected-runtime recovery and the explicitly admitted
-original-1.0.105/current-1.0.107 bridge with real retained startup/association
-evidence and SDK-shaped live metadata. Preserve original runtime provenance
-while the fresh live reading reports the selected runtime. Reject other version
-pairs, changed SDK identity, conflicting original lineage, mismatched live
-version/cap and unsettled or incomplete/regressing usage. Preserve receipts,
+Exercise installed-runtime use without a CLI version gate or an SDK change.
+Actual typed status must provide an observed version; version numbers alone
+neither admit nor reject compatibility. Cover same-version and changed-version
+exact recovery with real retained startup/association evidence and SDK-shaped
+live metadata. Preserve original runtime provenance while the fresh live
+reading reports the current runtime. Reject missing runtime identity, changed
+SDK identity, conflicting original lineage, mismatched live cap and unsettled
+or incomplete/regressing usage. Preserve receipts,
 baselines, allowances, failed lifecycle and unrelated uncertainty in each case.
-These controlled scenarios protect the application's use of its version and
+These controlled scenarios protect the application's use of its identity and
 coordinate contracts, not vendor compatibility or provider billing. Separately
-review and observe the installed 1.0.107 exact-session operation under the
+review and observe an actual installed exact-session operation under the
 user-audit protocol before claiming native bridge effectiveness or resuming
 paid admission; a release note or successful managed build is insufficient.
 

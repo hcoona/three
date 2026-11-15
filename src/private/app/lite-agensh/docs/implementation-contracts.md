@@ -13,11 +13,19 @@ Use one `LiteAgensh.csproj` executable under the project root, namespace
 Select `Microsoft.Data.Sqlite` 10.0.14 and `ModelContextProtocol` 2.4.0 through
 CPM; retain existing `Microsoft.Extensions.Hosting` selection. Select
 `GitHub.Copilot.SDK` 1.0.28. Its packaged `CopilotCliVersion` default remains
-1.0.105; explicitly override that property to 1.0.107 in this application and
-record the selected value in its existing assembly metadata. Reuse the
-installed CLI 1.0.107 and require exact typed runtime-status equality with that
-selected value; do not accept a minimum version, range or arbitrary newer patch.
-This application selection does not change or repackage the SDK. Set
+1.0.105, but this application connects to its owned installed runtime rather
+than acquiring the packaged runtime. Do not select or enforce a CLI version,
+minimum, range or ordered version-pair allowlist. A CLI version change alone
+requires no owner approval. Require a nonempty typed runtime-status version
+and retain that observed version in runtime/session evidence; it is provenance,
+not proof of compatibility. Establish the required session, settings, model,
+limit and usage behavior through the existing typed checks, non-model
+preflight and calibration. Unsupported interfaces leave the operation
+unavailable without fallback. Bind receipts to the exact application build,
+SDK, configured native invocation and existing configuration/accounting
+subject, not a compiled CLI version. Record the observed executable identity
+and versions for operational evidence without turning them into a version
+approval gate. This policy does not change or repackage the SDK. Set
 `CopilotSkipCliDownload=true` and retain disabled automatic acquisition/update.
 Its normal transitive AI abstractions do not
 authorize another provider or reasoning layer. Do not copy SDK source or
@@ -786,27 +794,27 @@ separate evidence and operational invocation gates.
 
 #### Retained CLI 1.0.105 to selected CLI 1.0.107
 
-In addition to an original session matching the selected runtime, admit only
-the explicit ordered recovery bridge from original CLI 1.0.105 to selected
-CLI 1.0.107 with the unchanged SDK 1.0.28 package. This is not a generic
-cross-version, SDK-upgrade or session-migration mechanism. Preserve the
+This heading retains the historical recovery-bridge reference. Exact recovery
+now uses the installed runtime without a version or ordered-pair restriction,
+under the [dependency policy](#application-and-dependencies). This is not an
+SDK-upgrade or application-managed session-migration mechanism. Preserve the
 original start, latest session, runtime and lease evidence unchanged; their
 original runtime versions must still agree. All unique associations, raw
 zero-origin proof, working directory, model, exact SDK identity, original
 runtime/lease bindings, latest applied ceiling `A` and positive backing `H`
 remain required.
 
-The temporary recovery host must report the application's exactly selected
-1.0.107 runtime. Its live session must retain the original session identity,
+The temporary recovery host must report its actual nonempty runtime version.
+Its live session must retain the original session identity,
 working directory, model and exact SDK identity, and read back the unchanged
-absolute ceiling. Compare its runtime version with the selected current pin,
-not the historical receipt's version. Do not rewrite that receipt, either
+absolute ceiling. Record the current observed runtime version separately from
+the historical receipt's version. Do not rewrite that receipt, either
 baseline or the original cap to make the versions match.
 
-Reject any other ordered version pair, a changed SDK identity, conflicting
-original lineage, unavailable settings or incomplete/regressing live metrics.
+Reject missing runtime identity, a changed SDK identity, conflicting original
+lineage, unavailable settings or incomplete/regressing live metrics.
 Require the same fresh usage fence and session/host settlement before booking
-the measured cumulative delta. Neither the owner's version selection nor a
+the measured cumulative delta. Neither unrestricted version selection nor a
 controlled bridge scenario proves installed-native session loadability,
 preserved accounting-window behavior or complete billing. Native rejection
 retains uncertainty; no new prompt, grant, fallback or automatic retry follows.

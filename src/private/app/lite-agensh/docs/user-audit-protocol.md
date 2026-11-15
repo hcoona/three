@@ -23,15 +23,19 @@ that unchanged binary for initialization, preflight, calibration, execution and
 inspection. Changed relied-on inputs require matching receipts, not reused ones.
 
 Use the owner's Windows host, root-selected .NET SDK, installed Git and existing
-Copilot CLI. The owner permits the installed CLI 1.0.107. Keep official
-`GitHub.Copilot.SDK` 1.0.28 unchanged and select the application's explicit
-CLI 1.0.107 override under the
+Copilot CLI. The owner does not restrict its version and requires no further
+approval solely because the installed CLI version changes. Keep official
+`GitHub.Copilot.SDK` 1.0.28 unchanged and use the installed runtime under the
 [dependency contract](implementation-contracts.md#application-and-dependencies),
-not the package's historical 1.0.105 default. After protocol acceptance and
+not SDK runtime acquisition. The package's historical 1.0.105 default is not an
+application version gate. After protocol acceptance and
 before relying on them,
 record installed versions, inspect the pinned package's typed session,
 metadata, limits and usage contracts, and recheck required installed CLI flags.
-Pause affected work if an interface changed. Disable native automatic updates
+Pause affected work only when a required interface is unsupported or uncertain,
+not because the version differs from a prior observation. Use the existing
+preflight, calibration and live metadata/usage checks; do not infer universal
+compatibility from the absence of a version gate. Disable native automatic updates
 and SDK runtime acquisition; do not install another backend or CLI.
 
 Use only existing authentication and entitlement, explicitly selecting Luna
@@ -236,13 +240,14 @@ retains uncertainty; original cancelled-compaction/delivery failures remain.
 No new grant, worker dispatch, prompt, fallback session, paid calibration,
 account query or report export is permitted.
 
-Retained actual11 original CLI 1.0.105 evidence may enter only the contract's
-explicit 1.0.105-to-1.0.107 bridge with the unchanged SDK package. Accept that
-contract and its implementation before a new settlement invocation. Record
-and independently review the exact installed 1.0.107 executable identity,
-selected application pin, relied-on SDK/CLI interface and startup-setting
+Retained actual11 original CLI 1.0.105 evidence follows the contract's
+[runtime-provenance boundary](implementation-contracts.md#retained-cli-10105-to-selected-cli-10107)
+with the unchanged SDK package and no ordered version-pair restriction. Accept
+that contract and its implementation before a new settlement invocation. Record
+and independently review the exact installed executable identity and observed
+version, relied-on SDK/CLI interface and startup-setting
 rechecks, original lineage and fresh owned-state proof. The recovery host's
-typed status and session readbacks must establish the selected version and
+typed status and session readbacks must establish the actual runtime identity and
 required settings; unsupported behavior stops without prompting or retry.
 Preserve original 1.0.105 receipts and the consumed failed invocation. This
 version permission neither restores that invocation nor permits a ledger reset,
