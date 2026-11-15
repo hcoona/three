@@ -75,6 +75,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         );
     internal List<Host> RecoveryHosts { get; } = [];
     internal string RecoveryCase { get; set; } = "";
+    internal string RecoveryVersion { get; set; } = Phase6NativeControl.RuntimeVersion;
     internal double FreshNano { get; set; } = 247_000_000_000d;
     internal ManualScenarioClock HistoryClock { get; } = new();
     internal string Cwd => Original.Cwd;
@@ -134,7 +135,16 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                     connection,
                     "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;"
                 )! == 1;
-        Host host = new(this, original, recovery, original ? originalVersion : "1.0.107");
+        Host host = new(
+            this,
+            original,
+            recovery,
+            original
+                ? originalVersion
+                : recovery
+                    ? RecoveryVersion
+                    : Phase6NativeControl.RuntimeVersion
+        );
         hosts.Add(host);
         if (recovery)
         {
@@ -201,7 +211,6 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                 )!
         );
         Assert.AreEqual(Original.SessionId, Reservation.SessionId);
-        Assert.AreEqual("1.0.107", NativeSdkSession.RuntimeVersion);
         Assert.StartsWith("1.0.28", NativeSdkSession.SdkVersion);
         Console.WriteLine(
             "PHASE5_ORIGINAL_IDENTITY "
@@ -279,6 +288,9 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                 break;
             case "changed-sdk":
                 observation["sdkVersion"] = "1.0.27";
+                break;
+            case "runtime-version":
+                observation["runtimeVersion"] = "conflicting-original-runtime";
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(selection));
@@ -798,7 +810,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                 ["runtimeId"] = host.Id,
                 ["runtimeLeaseId"] = host.LeaseId,
                 ["runtimeVersion"] =
-                    fresh && state.RecoveryCase == "live-version" ? "1.0.106" : host.Version,
+                    fresh && state.RecoveryCase == "missing-live-version" ? "" : host.Version,
                 ["sdkVersion"] = NativeSdkSession.SdkVersion,
             };
             if (fresh && state.RecoveryCase == "during-read")

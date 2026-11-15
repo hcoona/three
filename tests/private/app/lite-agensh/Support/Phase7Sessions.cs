@@ -212,7 +212,7 @@ internal sealed class Phase7Sessions(
                 {
                     ["runtimeId"] = Id,
                     ["runtimeLeaseId"] = LeaseId,
-                    ["runtimeVersion"] = NativeSdkSession.RuntimeVersion,
+                    ["runtimeVersion"] = Phase6NativeControl.RuntimeVersion,
                     ["state"] = state,
                     ["evidenceKind"] = "controlled-native-dependency",
                 }.ToJsonString()
@@ -361,7 +361,7 @@ internal sealed class Phase7Sessions(
                 ["appliedLimit"] = NativeSdkSession.NativeLimit(cap),
                 ["runtimeId"] = host.Id,
                 ["runtimeLeaseId"] = host.LeaseId,
-                ["runtimeVersion"] = NativeSdkSession.RuntimeVersion,
+                ["runtimeVersion"] = Phase6NativeControl.RuntimeVersion,
                 ["sdkVersion"] = NativeSdkSession.SdkVersion,
                 ["pid"] = host.Ready!.Pid,
                 ["birthTicks"] = host.Ready.BirthTicks,

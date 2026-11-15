@@ -134,7 +134,7 @@ public sealed class TrustedBoundarySpecs(TestContext context)
             // Declared/source selection, NOT installed CLI or native policy readback.
             XDocument project = XDocument.Load(SerializedToolSpecs.SourcePath("LiteAgensh.csproj"));
             Assert.AreEqual("true", project.Descendants("CopilotSkipCliDownload").Single().Value);
-            Assert.AreEqual("1.0.107", project.Descendants("CopilotCliVersion").Single().Value);
+            Assert.IsEmpty(project.Descendants("CopilotCliVersion"));
             Assert.ContainsSingle(
                 project
                     .Descendants("PackageReference")
@@ -165,7 +165,6 @@ public sealed class TrustedBoundarySpecs(TestContext context)
                 "GitHub.Copilot.SDK"
             ]!.AsObject();
             Assert.AreEqual("1.0.28", dependency["resolved"]!.GetValue<string>());
-            Assert.AreEqual("1.0.107", NativeSdkSession.RuntimeVersion);
             Console.WriteLine(
                 "PHASE8_TRUST_EFFECTS "
                     + new JsonObject
@@ -186,7 +185,7 @@ public sealed class TrustedBoundarySpecs(TestContext context)
                         ["checkoutHeadPreserved"] = true,
                         ["checkoutStatusPreserved"] = true,
                         ["sdkDeclaredSelection"] = "1.0.28",
-                        ["cliDeclaredSelection"] = NativeSdkSession.RuntimeVersion,
+                        ["cliDeclaredSelection"] = "installed-without-version-restriction",
                         ["installedNativeReadback"] = false,
                         ["nativePolicyEffectivenessObserved"] = false,
                     }.ToJsonString()

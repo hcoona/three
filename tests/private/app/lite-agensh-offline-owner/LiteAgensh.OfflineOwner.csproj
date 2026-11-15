@@ -9,7 +9,6 @@
     <IsTestProject>false</IsTestProject>
     <IsPackable>false</IsPackable>
     <CopilotSkipCliDownload>true</CopilotSkipCliDownload>
-    <CopilotCliVersion>1.0.107</CopilotCliVersion>
     <CopilotCliBinaryPath></CopilotCliBinaryPath>
   </PropertyGroup>
   <ItemGroup>

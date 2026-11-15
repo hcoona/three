@@ -115,7 +115,7 @@ internal sealed class Phase7Journal(string path)
                         Producer = "controlled-session-events",
                         Version = 1,
                         SessionId = id,
-                        CopilotVersion = NativeSdkSession.RuntimeVersion,
+                        CopilotVersion = Phase6NativeControl.RuntimeVersion,
                         AlreadyInUse = false,
                         StartTime = now,
                     },

@@ -109,13 +109,6 @@ internal sealed class NativeSdkSession : INativeSdkSession
         this.isolated = isolated;
     }
 
-    public static string RuntimeVersion =>
-        typeof(NativeSdkSession)
-            .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-            .Single(attribute => attribute.Key == "CopilotCliVersion")
-            .Value
-        ?? throw new InvalidOperationException("The SDK runtime pin is missing.");
-
     public static string SdkVersion =>
         typeof(CopilotClient)
             .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()

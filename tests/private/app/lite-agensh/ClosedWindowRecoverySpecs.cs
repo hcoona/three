@@ -156,7 +156,7 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
     [DataRow("1.0.106")]
     [DataRow("1.0.108")]
     [Timeout(120_000)]
-    public async Task SelectedVersionBridgeOtherOriginalOrderedPairRejectsWithoutRewriting(
+    public async Task RuntimeProvenanceMismatchRejectsWithoutRewritingOriginal(
         string original
     )
     {
@@ -167,6 +167,11 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
         await state.RunBodyAsync(async () =>
         {
             state.AssertOriginalLifetime();
+            Assert.AreEqual(
+                247m,
+                (await state.RecoverAsync(context.CancellationToken)).Usage.RequireComplete()
+            );
+            state.DamageSavedObservation("runtime-version");
             var before = state.FinancialSnapshot.ToJsonString();
             var failure = await Assert.ThrowsExactlyAsync<OperationException>(() =>
                 state.RecoverAsync(context.CancellationToken)
@@ -179,16 +184,16 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
                 original,
                 state.Original.Metadata!["runtimeVersion"]!.GetValue<string>()
             );
-            Assert.IsEmpty(state.RecoveryHosts);
+            Assert.HasCount(1, state.RecoveryHosts);
             Assert.AreEqual(before, state.FinancialSnapshot.ToJsonString());
         });
     }
 
     [TestMethod]
-    [DataRow("live-version", "compatible original zero-origin and verified cap evidence")]
+    [DataRow("missing-live-version", "compatible original zero-origin and verified cap evidence")]
     [DataRow("live-cap", "limit")]
     [Timeout(120_000)]
-    public async Task SelectedVersionBridgeEligibleThenLiveMismatchNoDisposition(
+    public async Task InstalledRuntimeRecoveryRequiresLiveIdentityAndCap(
         string fault,
         string reason
     )
@@ -246,7 +251,7 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
     [DataRow("1.0.107")]
     [DataRow("1.0.105")]
     [Timeout(120_000)]
-    public async Task SelectedVersionBridgeDeclaredOriginalLifetimeOnlySelectedOr105(
+    public async Task InstalledRuntimeRecoveryPreservesOriginalVersionWithoutPairAllowlist(
         string original
     )
     {
@@ -257,6 +262,7 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
         await state.RunBodyAsync(async () =>
         {
             state.AssertOriginalLifetime();
+            state.RecoveryVersion = "1.0.112";
             var before = state.FinancialSnapshot.ToJsonString();
 
             var recovered = await state.RecoverAsync(context.CancellationToken);
@@ -267,7 +273,7 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
                 state.Original.Metadata!["runtimeVersion"]!.GetValue<string>()
             );
             Assert.AreEqual(
-                "1.0.107",
+                "1.0.112",
                 state.RecoveryHosts.Single().Sessions.Single().Metadata![
                     "runtimeVersion"
                 ]!.GetValue<string>()

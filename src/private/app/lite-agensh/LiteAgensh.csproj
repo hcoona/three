@@ -7,10 +7,8 @@
     <IsPackable>false</IsPackable>
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
     <CopilotSkipCliDownload>true</CopilotSkipCliDownload>
-    <CopilotCliVersion>1.0.107</CopilotCliVersion>
   </PropertyGroup>
   <ItemGroup>
-    <AssemblyMetadata Include="CopilotCliVersion" Value="$(CopilotCliVersion)" />
     <InternalsVisibleTo Include="LiteAgensh.Tests" />
     <InternalsVisibleTo Include="LiteAgensh.OfflineOwner" />
     <PackageReference Include="GitHub.Copilot.SDK" />

@@ -134,7 +134,7 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
             {
                 ["runtimeId"] = Id,
                 ["runtimeLeaseId"] = LeaseId,
-                ["runtimeVersion"] = NativeSdkSession.RuntimeVersion,
+                ["runtimeVersion"] = Phase6NativeControl.RuntimeVersion,
                 ["state"] = state,
                 ["evidenceKind"] = "controlled-native-dependency",
             }.ToJsonString()
