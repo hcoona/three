@@ -629,9 +629,14 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     .ConfigureAwait(false);
                 if (!duringGrace)
                 {
-                    await state
-                        .Clock.WaitForPollAsync(token, state.WorkDeadline)
-                        .ConfigureAwait(false);
+                    Assert.AreEqual(
+                        "sent",
+                        state.Value(
+                            "SELECT state FROM delivery_batches WHERE id=$id;",
+                            ("$id", batch)
+                        )
+                    );
+                    Assert.IsLessThan(state.WorkDeadline, state.Clock.GetUtcNow());
                     state.Clock.Advance(state.Clock.WorkDeadline!.Value - state.Clock.GetUtcNow());
                 }
                 await state

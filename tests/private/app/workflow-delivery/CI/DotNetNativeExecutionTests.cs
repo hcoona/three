@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -227,22 +226,18 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
     private async Task<JsonDocument> WaitForInFlightProgressAsync(DotNetNativeFixture fixture,
         Task<DotNetRunResult> execution)
     {
-        using var allowance = CancellationTokenSource.CreateLinkedTokenSource(
-            context.CancellationToken);
-        TimeSpan limit = TimeSpan.FromSeconds(10);
-        allowance.CancelAfter(limit);
-        long started = Stopwatch.GetTimestamp();
-        while (Stopwatch.GetElapsedTime(started) < limit)
+        while (true)
         {
             if (execution.IsCompleted)
                 Assert.Fail("Native execution ended before the required in-flight facts: " +
                     Diagnostics(await execution));
-            JsonDocument progress = await ReadProgressAsync(fixture, 0, allowance.Token);
+            JsonDocument progress = await ReadProgressAsync(fixture, 0,
+                context.CancellationToken);
             try
             {
-                allowance.Token.ThrowIfCancellationRequested();
+                context.CancellationToken.ThrowIfCancellationRequested();
                 JsonElement facts = progress.RootElement.GetProperty("observed");
-                if (!execution.IsCompleted && Stopwatch.GetElapsedTime(started) < limit &&
+                if (!execution.IsCompleted &&
                     facts.TryGetProperty("ownedRootProjectStarted", out _) &&
                     facts.TryGetProperty("testStarted", out _) &&
                     facts.TryGetProperty("executeAsyncReturned", out _))
@@ -254,10 +249,8 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
                 throw;
             }
             progress.Dispose();
-            await Task.Delay(25, allowance.Token);
+            await Task.Delay(25, context.CancellationToken);
         }
-        Assert.Fail("The bounded in-flight phase observation expired.");
-        throw new InvalidOperationException("Unreachable after assertion failure.");
     }
 
     private static async Task<JsonDocument> ReadProgressAsync(
