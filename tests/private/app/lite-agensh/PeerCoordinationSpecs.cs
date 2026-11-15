@@ -567,6 +567,12 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 planner.Complete();
                 peer.Complete();
                 await state
+                    .WaitAckAsync(plannerBatch, state.DrainDeadline, token)
+                    .ConfigureAwait(false);
+                await state
+                    .WaitAckAsync(followerBatch, state.DrainDeadline, token)
+                    .ConfigureAwait(false);
+                await state
                     .UntilAsync(() => state.Active.IsCompleted, state.DrainDeadline, token)
                     .ConfigureAwait(false);
                 GitScenarioState.Data(await state.Active.ConfigureAwait(false));
@@ -1066,7 +1072,6 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                                     "native:bootstrap:" + fallback.Session.SessionId
                                 )
                             );
-                            Assert.AreEqual(10m, state.Reservation("worker1").Actual);
                             Assert.AreEqual(
                                 10m,
                                 state
@@ -1081,6 +1086,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                                     .StopRunningAsync("pause", state.WorkDeadline, token)
                                     .ConfigureAwait(false)
                             );
+                            Assert.AreEqual(10m, state.Reservation("worker1").Actual);
                             Assert.AreEqual(
                                 27.25m,
                                 state.Ledger.Status(

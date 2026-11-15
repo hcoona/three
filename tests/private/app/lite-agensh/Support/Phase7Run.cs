@@ -463,14 +463,43 @@ internal sealed class Phase7Run
         long batch,
         DateTimeOffset strictlyBefore,
         CancellationToken token
-    ) =>
-        UntilAsync(
-            () =>
-                (string?)Value("SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch))
-                == "sent",
-            strictlyBefore,
+    )
+    {
+        // ACK follows the released response, not a future virtual timer.
+        return ObserveAsync(
+            async next =>
+            {
+                next.ThrowIfCancellationRequested();
+                Assert.IsLessThan(strictlyBefore, Clock.GetUtcNow());
+                while (!IsSent())
+                {
+                    await Task.Delay(10, next).ConfigureAwait(false);
+                }
+                next.ThrowIfCancellationRequested();
+                Assert.IsLessThan(strictlyBefore, Clock.GetUtcNow());
+                return true;
+            },
+            async (goal, next) =>
+            {
+                await Task.WhenAny(goal, Active).WaitAsync(next).ConfigureAwait(false);
+                if (Active.IsCompleted)
+                {
+                    await Active.ConfigureAwait(false);
+                    if (!IsSent())
+                    {
+                        throw new InvalidOperationException(
+                            "Subject ended before the required durable goal."
+                        );
+                    }
+                }
+            },
             token
         );
+
+        bool IsSent() =>
+            (string?)Value("SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch))
+            == "sent";
+    }
 
     internal async Task RunBodyAsync(Func<Task> body)
     {

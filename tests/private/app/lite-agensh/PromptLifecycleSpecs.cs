@@ -252,13 +252,6 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                                 ("$id", batch)
                             )
                         );
-                        Assert.AreEqual(
-                            "acknowledged",
-                            state.Value(
-                                "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
-                                ("$id", batch)
-                            )
-                        );
                         Assert.AreEqual("true", state.Database.ReadMetadata(key));
                         Assert.AreEqual(2L, state.Dispatches(reservation));
                         Assert.AreEqual(
@@ -285,6 +278,13 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                             await state
                                 .StopRunningAsync("pause", state.WorkDeadline, token)
                                 .ConfigureAwait(false)
+                        );
+                        Assert.AreEqual(
+                            "acknowledged",
+                            state.Value(
+                                "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
+                                ("$id", batch)
+                            )
                         );
                         Assert.AreEqual("reconciled", state.Reservation("worker1").State);
                         Assert.AreEqual(20m, state.Reservation("worker1").Actual);
@@ -341,14 +341,6 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                 Assert.IsNull(
                     state.Database.ReadMetadata("native:bootstrap:" + first.Session.SessionId)
                 );
-                first.Complete();
-                await state
-                    .WaitAckAsync(firstBatch, state.WorkDeadline, token)
-                    .ConfigureAwait(false);
-                Assert.AreEqual(
-                    "true",
-                    state.Database.ReadMetadata("native:bootstrap:" + first.Session.SessionId)
-                );
 
                 List<long> messages = [];
                 for (int index = 0; index < 35; index++)
@@ -384,6 +376,14 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                         ["workLabel"] = "prompt-advisory",
                         ["ttlSeconds"] = 60,
                     }
+                );
+                first.Complete();
+                await state
+                    .WaitAckAsync(firstBatch, state.WorkDeadline, token)
+                    .ConfigureAwait(false);
+                Assert.AreEqual(
+                    "true",
+                    state.Database.ReadMetadata("native:bootstrap:" + first.Session.SessionId)
                 );
                 await state
                     .UntilAsync(
