@@ -153,7 +153,8 @@ internal static class SqliteDiagnostics
             Record(connection, "connection", "closed", 0);
             activity.Database.Active.Remove(activity.Id);
             Interlocked.Decrement(ref activity.Database.AttachedConnections);
-            if (acquired || activity.Database.IsIdle)
+            if (acquired
+                || (activity.Database.IsIdle && activity.Database.Lease is not null))
             {
                 Persist(activity.Database);
             }

@@ -542,7 +542,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             CheckCommand held = new()
             {
                 Executable = OwnedChildControl.ExecutablePath,
-                Arguments = control.Arguments(),
+                Arguments = control.Arguments(role: OwnedChildControl.HeldCandidateCheckRole),
             };
             GitScenarioState state = await GitScenarioState
                 .CreateAsync(token, [held])

@@ -19,10 +19,11 @@ internal static class Program
         }
 
         bool controlledHost = arguments.Length > 0 && arguments[0] == "controlled-native-host";
+        bool heldCandidateCheck = arguments.Length > 0 && arguments[0] == "held-candidate-check";
         if (
             arguments.Length is < 3 or > 4
-            || (arguments[0] != "hold" && !controlledHost)
-            || (controlledHost && arguments.Length != 3)
+            || (arguments[0] != "hold" && !controlledHost && !heldCandidateCheck)
+            || ((controlledHost || heldCandidateCheck) && arguments.Length != 3)
             || !IsOwnedPipeName(arguments[1])
             || !TryExitCode(arguments[2], out int exitCode)
             || (arguments.Length == 4 && !IsOwnedPipeName(arguments[3]))
@@ -80,13 +81,13 @@ internal static class Program
             );
             await writer.WriteLineAsync(ready.AsMemory(), guard.Token).ConfigureAwait(false);
             // The default still has exactly one whole-protocol five-second
-            // guard. Only the explicit host role gets a separate nonrenewing
-            // post-READY hold: existing case120 + usage-stop30 + teardown30.
-            using CancellationTokenSource? hostHold = controlledHost
-                ? new(TimeSpan.FromSeconds(180))
+            // guard. Explicit roles get a nonrenewing post-READY hold: the
+            // candidate's case120, or the host's case120 + usage-stop30 + teardown30.
+            using CancellationTokenSource? postReadyHold = controlledHost || heldCandidateCheck
+                ? new(TimeSpan.FromSeconds(controlledHost ? 180 : 120))
                 : null;
             string? release = await reader
-                .ReadLineAsync(hostHold?.Token ?? guard.Token)
+                .ReadLineAsync(postReadyHold?.Token ?? guard.Token)
                 .ConfigureAwait(false);
             if (release != "RELEASE")
             {

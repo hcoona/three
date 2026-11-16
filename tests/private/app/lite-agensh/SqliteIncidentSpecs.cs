@@ -238,6 +238,53 @@ public sealed class SqliteIncidentSpecs
     }
 
     [TestMethod]
+    public void IdleReadHistoryIsCapturedOnFailureWithoutRewritingRetiredOwnership()
+    {
+        using SqliteScenarioState state = new();
+        using (SqliteConnection writer = state.Open())
+        {
+            using SqliteTransactionScope transaction = Sql.BeginTransaction(
+                writer,
+                operation: "InitialWriter"
+            );
+            Sql.Execute(writer, "INSERT INTO entries VALUES('initial','value');", transaction);
+            transaction.Commit();
+        }
+        string activity = Assert.ContainsSingle(
+            Directory.GetFiles(state.DiagnosticsPath, "activity-*.json")
+        );
+        byte[] retained = File.ReadAllBytes(activity);
+
+        using (SqliteConnection reader = state.Open("worker2"))
+        {
+            Assert.AreEqual(1L, Sql.Scalar(reader, "SELECT COUNT(*) FROM entries;"));
+        }
+
+        Assert.IsTrue(
+            retained.AsSpan().SequenceEqual(File.ReadAllBytes(activity)),
+            "An unleased idle observation must not rewrite the retired ownership snapshot."
+        );
+        using SqliteConnection observer = state.Open();
+        JsonObject incident = ReadIncident(ObserveIoFailure(observer, "AfterIdleRead"));
+        Assert.IsEmpty(Active(incident));
+        Assert.IsTrue(
+            Recent(incident)
+                .Any(record =>
+                    record["actor"]?.GetValue<string>() == "worker2"
+                    && record["boundary"]?.GetValue<string>() == "Scalar"
+                    && record["phase"]?.GetValue<string>() == "statement-succeeded"
+                )
+        );
+        Assert.IsTrue(
+            Recent(incident)
+                .Any(record =>
+                    record["actor"]?.GetValue<string>() == "worker2"
+                    && record["phase"]?.GetValue<string>() == "closed"
+                )
+        );
+    }
+
+    [TestMethod]
     public void ConnectionCloseWithOwnedTransactionRemovesHolderAndRollsBackItsWrite()
     {
         using SqliteScenarioState state = new();
