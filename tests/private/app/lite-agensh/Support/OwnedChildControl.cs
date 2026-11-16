@@ -18,6 +18,7 @@ internal sealed record OwnedChildIdentity(
 internal sealed class OwnedChildControl : IAsyncDisposable
 {
     internal const string ControlledNativeHostRole = "controlled-native-host";
+    internal const string HeldCandidateCheckRole = "held-candidate-check";
     private readonly NamedPipeServerStream pipe;
     private StreamReader? reader;
     private StreamWriter? writer;
@@ -49,7 +50,7 @@ internal sealed class OwnedChildControl : IAsyncDisposable
         string? role = null
     )
     {
-        if (role is not (null or ControlledNativeHostRole))
+        if (role is not (null or ControlledNativeHostRole or HeldCandidateCheckRole))
         {
             throw new ArgumentOutOfRangeException(nameof(role), role, "Unknown owned-helper role.");
         }
@@ -58,7 +59,7 @@ internal sealed class OwnedChildControl : IAsyncDisposable
             if (descendantPipe is not null)
             {
                 throw new ArgumentException(
-                    "Controlled host role does not create descendants.",
+                    "Controlled helper roles do not create descendants.",
                     nameof(descendantPipe)
                 );
             }
