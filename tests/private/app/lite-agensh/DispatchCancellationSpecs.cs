@@ -335,6 +335,9 @@ public sealed class DispatchCancellationSpecs(TestContext context)
     )
     {
         Phase4SessionControl host = new() { HoldHost = true };
+        Task? completion = null;
+        Exception? primaryFailure = null;
+        bool completionObserved = false;
         try
         {
             await host.StartOwnedRuntimeAsync(context.CancellationToken);
@@ -345,7 +348,7 @@ public sealed class DispatchCancellationSpecs(TestContext context)
             await one.StartAsync(host.State.Cwd("worker1"), null, context.CancellationToken);
             await two.StartAsync(host.State.Cwd("worker2"), null, context.CancellationToken);
             await two.PromptAsync("Binding rejection must preserve me.", context.CancellationToken);
-            Task completion = host.Factory.CompleteAsync();
+            completion = host.Factory.CompleteAsync();
             try
             {
                 await host.HostEntered.Task.WaitAsync(
@@ -402,6 +405,7 @@ public sealed class DispatchCancellationSpecs(TestContext context)
             OperationException error = await Assert.ThrowsExactlyAsync<OperationException>(() =>
                 completion
             );
+            completionObserved = true;
             Assert.AreEqual("credit_or_ownership_unknown", error.Code);
             Assert.Contains(
                 scenario switch
@@ -429,9 +433,62 @@ public sealed class DispatchCancellationSpecs(TestContext context)
             );
             Assert.IsEmpty(host.State.Accounting["cancellations"]!.AsArray());
         }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+            throw;
+        }
         finally
         {
-            await host.CleanupAsync();
+            host.ReleaseHost();
+            try
+            {
+                if (completion is not null)
+                {
+                    try
+                    {
+                        await completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+                    }
+                    catch (Exception) when (completionObserved)
+                    {
+                        // The body already asserted this terminal settlement failure.
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                if (primaryFailure is null)
+                {
+                    primaryFailure = exception;
+                }
+                else
+                {
+                    context.WriteLine("Secondary factory completion failure: {0}", exception);
+                }
+            }
+            finally
+            {
+                bool preserveState = completion is { IsCompleted: false };
+                if (preserveState)
+                {
+                    context.WriteLine(
+                        "Retained state for pending factory completion: {0}",
+                        host.State.Cwd(string.Empty)
+                    );
+                }
+                try
+                {
+                    await host.CleanupAsync(preserveState);
+                }
+                catch (Exception exception) when (primaryFailure is not null)
+                {
+                    context.WriteLine("Secondary fixture cleanup failure: {0}", exception);
+                }
+            }
+        }
+        if (primaryFailure is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(primaryFailure).Throw();
         }
     }
 
