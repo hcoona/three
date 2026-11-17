@@ -641,6 +641,44 @@ public sealed class Coordinator
                 HashSet<string> reconnecting = [];
                 Task? admission = null;
                 string? admissionId = null;
+                async Task WaitForProgressAsync(Task[] subjects)
+                {
+                    stop.Token.ThrowIfCancellationRequested();
+                    if (subjects.Any(task => task.IsCompleted))
+                    {
+                        return;
+                    }
+                    using CancellationTokenSource polling =
+                        CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+                    Task poll = Task.Delay(
+                        TimeSpan.FromMilliseconds(250), database.TimeProvider, polling.Token
+                    );
+                    try
+                    {
+                        if (subjects.Length == 0)
+                        {
+                            await poll.ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            await Task.WhenAny(subjects.Append(poll))
+                                .WaitAsync(stop.Token).ConfigureAwait(false);
+                            stop.Token.ThrowIfCancellationRequested();
+                        }
+                    }
+                    finally
+                    {
+                        await polling.CancelAsync().ConfigureAwait(false);
+                        try
+                        {
+                            await poll.ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (polling.IsCancellationRequested)
+                        {
+                        }
+                    }
+                }
+
                 async Task StartWorkerAsync(string id)
                 {
                     admissionBudget.ThrowIfClosed();
@@ -739,6 +777,12 @@ public sealed class Coordinator
                     }
                     while (!stop.IsCancellationRequested)
                     {
+                        // Keep completions that race the checks below, but do not
+                        // repeatedly wake on already-consumed successful idle loops.
+                        Task[] pending = loops
+                            .Concat(admission is null ? [] : new[] { admission })
+                            .Where(task => !task.IsCompleted)
+                            .ToArray();
                         CheckNativeFailures();
                         long? control = PendingControl(out string? action);
                         if (control is not null)
@@ -811,9 +855,7 @@ public sealed class Coordinator
                             drainOutcome = "completed";
                             return;
                         }
-                        await Task.Delay(
-                            TimeSpan.FromMilliseconds(250), database.TimeProvider, stop.Token
-                        ).ConfigureAwait(false);
+                        await WaitForProgressAsync(pending).ConfigureAwait(false);
                     }
                     drainOutcome = cancellationToken.IsCancellationRequested
                         ? "interrupted" : "timed-out";
@@ -1006,10 +1048,8 @@ public sealed class Coordinator
 
                         PublishReminders(deadline, reminders);
                         PublishCreditWarning();
-                        await Task.Delay(
-                                TimeSpan.FromMilliseconds(250),
-                                database.TimeProvider,
-                                stop.Token
+                        await WaitForProgressAsync(
+                                loops.Concat(admission is null ? [] : new[] { admission }).ToArray()
                             )
                             .ConfigureAwait(false);
                     }

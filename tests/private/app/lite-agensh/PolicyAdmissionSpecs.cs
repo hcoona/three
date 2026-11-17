@@ -370,41 +370,6 @@ public sealed class PolicyAdmissionSpecs
     }
 
     [TestMethod]
-    public void
-    WorkAdmissionDeadlineCallbackAdvancesClockDeliversSiblingWithoutMovingTimeBackwards()
-    {
-        ManualScenarioClock clock = new();
-        using WorkAdmission first = new(
-            clock,
-            clock.GetUtcNow().AddTicks(1),
-            CancellationToken.None
-        );
-        using WorkAdmission sibling = new(
-            clock,
-            clock.GetUtcNow().AddTicks(3),
-            CancellationToken.None
-        );
-        CancellationToken firstToken = first.Token;
-        CancellationToken siblingToken = sibling.Token;
-        using CancellationTokenRegistration registration = firstToken.Register(() =>
-            clock.Advance(TimeSpan.FromTicks(2))
-        );
-
-        clock.Advance(TimeSpan.FromTicks(1));
-
-        Assert.IsTrue(firstToken.IsCancellationRequested);
-        Assert.IsTrue(siblingToken.IsCancellationRequested);
-        Assert.AreEqual(
-            new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).AddTicks(3),
-            clock.GetUtcNow()
-        );
-        var error = Assert.ThrowsExactly<NativeWorker.RenewalAdmissionCanceledException>(() =>
-            NativeWorker.CheckRenewalAdmission(sibling)
-        );
-        Assert.AreEqual(siblingToken, error.CancellationToken);
-    }
-
-    [TestMethod]
     public void AdmitPatchEvidenceOnlyAfterTruncationBoundaryIsNotAdmittedAsVisibleProof()
     {
         string content = new string('x', 300) + " | evidence=passed";

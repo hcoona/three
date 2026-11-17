@@ -139,8 +139,16 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         token
                     )
                     .ConfigureAwait(false);
+                TaskCompletionSource integrationPass = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                state.ObserveWorkerCompletion = _ => integrationPass.TrySetResult();
                 await state
-                    .UntilAsync(
+                    .UntilAsync(integrationPass.Task, state.WorkDeadline, token)
+                    .ConfigureAwait(false);
+                state.ObserveWorkerCompletion = null;
+                await state
+                    .WaitDurableAsync(
                         () =>
                             state.Number("SELECT COUNT(*) FROM changes WHERE state='integrated';")
                             == 2,
@@ -312,13 +320,11 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 await state.Clock.WaitForPollAsync(token, state.WorkDeadline).ConfigureAwait(false);
                 DateTimeOffset openedAt = state.Clock.GetUtcNow();
                 release.TrySetResult();
-                await state
-                    .FixedAsync(next => handoff.FirstStarted.Task.WaitAsync(next), token)
+                Phase7Handoff.Startup plannerStart = await state
+                    .FixedAsync(next => handoff.FirstStarting.Task.WaitAsync(next), token)
                     .ConfigureAwait(false);
+                await state.FixedAsync(plannerStart.Operation, token).ConfigureAwait(false);
                 Assert.AreEqual(openedAt, state.Clock.GetUtcNow());
-                // Resume one registered step only after real startup. Then freeze
-                // through asynchronous bootstrap/Git and typed preparation readiness.
-                await state.StepAsync(state.WorkDeadline, token).ConfigureAwait(false);
                 DateTimeOffset admittedAt = state.Clock.GetUtcNow();
                 DateTimeOffset readyAt = await state
                     .FixedAsync(next => plannerReady.Task.WaitAsync(next), token)
@@ -347,12 +353,22 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         }.ToJsonString()
                 );
                 Assert.Contains("initial planner", planner.Text);
-                // Observe actual coordinator work AFTER first readiness, while no
-                // test-side Git operation can write this health projection. Drive
-                // supported registrations to that durable business milestone, not
-                // an assumed poll count/role or an immediate clock-only check.
+                TaskCompletionSource healthPass = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                state.ObserveWorkerCompletion = _ =>
+                {
+                    if (state.Clock.GetUtcNow() > readyAt)
+                    {
+                        healthPass.TrySetResult();
+                    }
+                };
                 await state
-                    .UntilAsync(
+                    .UntilAsync(healthPass.Task, planningDeadline, token)
+                    .ConfigureAwait(false);
+                state.ObserveWorkerCompletion = null;
+                await state
+                    .WaitDurableAsync(
                         () =>
                             handoff.SecondStarting.Task.IsCompleted
                             || state.Number(
@@ -409,8 +425,16 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         )
                         .ConfigureAwait(false);
                     Assert.AreEqual(submittedAt, state.Clock.GetUtcNow());
+                    TaskCompletionSource integrationPass = new(
+                        TaskCreationOptions.RunContinuationsAsynchronously
+                    );
+                    state.ObserveWorkerCompletion = _ => integrationPass.TrySetResult();
                     await state
-                        .UntilAsync(
+                        .UntilAsync(integrationPass.Task, planningDeadline, token)
+                        .ConfigureAwait(false);
+                    state.ObserveWorkerCompletion = null;
+                    await state
+                        .WaitDurableAsync(
                             () => state.Database.ReadMetadata("git:plan_integrated") == "true",
                             planningDeadline,
                             token
@@ -444,13 +468,10 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 // Eligibility alone did not invoke admission. Keep driving the
                 // supported registered surface until the REAL startup call returns
                 // its task, rechecking that operation goal/subject at every step.
-                Phase7Handoff.Startup startup = await state
-                    .ReadyAsync(
-                        next => handoff.SecondStarting.Task.WaitAsync(next),
-                        releaseCutoff,
-                        token
-                    )
+                await state.UntilAsync(handoff.SecondStarting.Task, releaseCutoff, token)
                     .ConfigureAwait(false);
+                Phase7Handoff.Startup startup = await handoff.SecondStarting.Task
+                    .WaitAsync(token).ConfigureAwait(false);
                 Assert.AreEqual("worker2", startup.Worker);
                 Assert.AreEqual(state.Reservation("worker2").Id, startup.ReservationId);
                 Assert.AreEqual(state.WorkerPath("worker2"), startup.Cwd);
@@ -474,7 +495,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 // predate admission; a real sending batch means the admitted loop
                 // has CLAIMED work before its asynchronous bootstrap Git operation.
                 await state
-                    .UntilAsync(
+                    .WaitDurableAsync(
                         () =>
                             state.Number(
                                 (
@@ -572,9 +593,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 await state
                     .WaitAckAsync(followerBatch, state.DrainDeadline, token)
                     .ConfigureAwait(false);
-                await state
-                    .UntilAsync(() => state.Active.IsCompleted, state.DrainDeadline, token)
-                    .ConfigureAwait(false);
+                await state.Active.WaitAsync(token).ConfigureAwait(false);
                 GitScenarioState.Data(await state.Active.ConfigureAwait(false));
                 Assert.AreEqual("deadline", state.Database.ReadMetadata("lifecycle:stop_reason"));
                 Assert.AreEqual(10m, state.Reservation("worker1").Actual);
@@ -920,9 +939,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 state.Clock.Advance(state.Clock.WorkDeadline!.Value - state.Clock.GetUtcNow());
                 one.Complete();
                 two.Complete();
-                await state
-                    .UntilAsync(() => state.Active.IsCompleted, state.DrainDeadline, token)
-                    .ConfigureAwait(false);
+                await state.Active.WaitAsync(token).ConfigureAwait(false);
                 _ = await state.Active.ConfigureAwait(false);
                 Assert.AreEqual("deadline", state.Database.ReadMetadata("lifecycle:stop_reason"));
             })
@@ -977,13 +994,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         _ = state.Start("reconnect");
                         if (minimumBacking)
                         {
-                            await state
-                                .UntilAsync(
-                                    () => state.Active.IsCompleted,
-                                    state.WorkDeadline,
-                                    token
-                                )
-                                .ConfigureAwait(false);
+                            await state.Active.WaitAsync(token).ConfigureAwait(false);
                             JsonObject denied = await state.Active.ConfigureAwait(false);
                             Assert.IsFalse(denied["ok"]!.GetValue<bool>());
                             Assert.AreEqual("credit_exhausted", denied["code"]!.GetValue<string>());
@@ -1024,9 +1035,8 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         else
                         {
                             Phase7Sessions.Turn fallback = await state
-                                .ReadyAsync(
+                                .FixedAsync(
                                     next => state.Sessions.NextTurnAsync("worker1", next),
-                                    state.WorkDeadline,
                                     token
                                 )
                                 .ConfigureAwait(false);
