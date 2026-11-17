@@ -168,7 +168,7 @@
       "liteagensh": {
         "type": "Project",
         "dependencies": {
-          "GitHub.Copilot.SDK": "[1.0.28, )",
+          "GitHub.Copilot.SDK": "[1.0.34, )",
           "Microsoft.Data.Sqlite": "[10.0.14, )",
           "ModelContextProtocol": "[2.4.0, )",
           "YamlDotNet": "[18.1.0, )"
@@ -179,12 +179,12 @@
       },
       "GitHub.Copilot.SDK": {
         "type": "CentralTransitive",
-        "requested": "[1.0.28, )",
-        "resolved": "1.0.28",
-        "contentHash": "mYmpMjEHTQBUM71UAtO86e6uZ/ACPOLEhMS00ZqRMdAqmblygMtqo5uJbLFh6FCl0RzdwFH9j9g7EGpdfg6Hcg==",
+        "requested": "[1.0.34, )",
+        "resolved": "1.0.34",
+        "contentHash": "HtvvUiVpNsewkGkwKNVODt1TC8lnvQdIu5eHGApbm15M9AV+GgT9rluRZIzAiLe4ZlW0zTmrl25NIlkNuXPTKA==",
         "dependencies": {
-          "Microsoft.Extensions.AI.Abstractions": "10.2.0",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.2"
+          "Microsoft.Extensions.AI.Abstractions": "10.11.0",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.14"
         }
       },
       "Microsoft.Data.Sqlite": {
