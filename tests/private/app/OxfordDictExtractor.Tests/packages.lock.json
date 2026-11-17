@@ -155,7 +155,7 @@
         "dependencies": {
           "HtmlAgilityPack": "[1.13.1, )",
           "Nito.Guids": "[1.1.1, )",
-          "WebMarkupMin.Core": "[2.23.0, )"
+          "WebMarkupMin.Core": "[2.24.0, )"
         }
       },
       "HtmlAgilityPack": {
@@ -178,9 +178,9 @@
       },
       "WebMarkupMin.Core": {
         "type": "CentralTransitive",
-        "requested": "[2.23.0, )",
-        "resolved": "2.23.0",
-        "contentHash": "h+Sy/aov7PqbRCd+EhXPDxpr44hhlOfS0VtrbpzCovO6fm0sxVUHh5QttlfNMPGzRG/JI/kW0+BolqYbvc/XxA==",
+        "requested": "[2.24.0, )",
+        "resolved": "2.24.0",
+        "contentHash": "dBPq1tgH6mCe6Cf2/pW5IUAiRwPP6Ps1IcGxStCsew35LkR9yEkMqYVHwR2CvNe8ZCOJ21eP2ezDgy+GoLpqXA==",
         "dependencies": {
           "AdvancedStringBuilder": "0.2.0"
         }
