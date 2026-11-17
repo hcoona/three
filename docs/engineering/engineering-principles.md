@@ -111,6 +111,12 @@ calls, mock call counts, class layouts or incidental internal ordering. Required
 ordering remains observable behavior to test. A behavior-preserving refactor
 should not require rewriting business expectations.
 
+Keep development-only fixtures and exploratory harnesses in local temporary
+projects outside the repository; do not commit them. Design committed test
+projects against the testing principles in this section and the owning project's
+accepted behavior and contracts. Do not copy a development fixture directly into
+the repository test suite as a substitute for that design.
+
 Test layers and matrices describe coverage responsibilities, not a requirement
 to repeat every case at every level. Choose the least costly level that
 establishes the property. Rely on documented dependency contracts for delegated
