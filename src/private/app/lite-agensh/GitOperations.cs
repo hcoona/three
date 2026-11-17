@@ -19,10 +19,17 @@ public sealed class GitOperations
     private string Stamp => database.Now.ToString("O", CultureInfo.InvariantCulture);
 
     public GitOperations(RunDatabase database, CollaborationOperations collaboration)
+        : this(database, collaboration, TimeProvider.System) { }
+
+    internal GitOperations(
+        RunDatabase database,
+        CollaborationOperations collaboration,
+        TimeProvider commandTimeProvider
+    )
     {
         this.database = database;
         this.collaboration = collaboration;
-        processes = new ProcessRunner(database);
+        processes = new ProcessRunner(database, commandTimeProvider);
         using SqliteConnection connection = database.Open();
         using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         Sql.Execute(

@@ -87,7 +87,8 @@ internal sealed class NativeWorkerFactory(
     RunDatabase database,
     ProcessRunner processes,
     CreditLedger credits,
-    Func<INativeSdkHost>? createHost = null
+    Func<INativeSdkHost>? createHost = null,
+    TimeProvider? settlementTimeProvider = null
 ) : INativeWorkerFactory
 {
     private static readonly string[] RecoveryMetadataKeys =
@@ -111,7 +112,8 @@ internal sealed class NativeWorkerFactory(
         {
             NativeWorker worker = new(
                 database, GetHost(), credits, reservation, calibration,
-                createHost is null ? "native-sdk" : "controlled-native-dependency"
+                createHost is null ? "native-sdk" : "controlled-native-dependency",
+                settlementTimeProvider
             );
             workers.Add((worker, reservation));
             return worker;

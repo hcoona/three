@@ -1026,17 +1026,15 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             );
         CancellationToken token = lifetime.Token;
         await using OwnedChildControl control = new();
-        // A public minimum-valid command configuration, not a changed product/default
-        // bound. The helper's post-connect five-second failure guard stays unchanged.
-        // Actual readiness and the recorded timeout result, never elapsed time, qualify it.
+        ManualScenarioClock commandClock = new();
         CheckCommand held = new()
         {
             Executable = OwnedChildControl.ExecutablePath,
-            Arguments = control.Arguments(),
+            Arguments = control.Arguments(role: OwnedChildControl.HeldCandidateCheckRole),
             TimeoutSeconds = 1,
         };
         using GitScenarioState state = await GitScenarioState
-            .CreateAsync(token, [held])
+            .CreateAsync(token, [held], commandTimeProvider: commandClock)
             .ConfigureAwait(false);
         using CancellationTokenSource cancellation =
             CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -1060,8 +1058,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             OwnedChildIdentity ready = await control
                 .ReadReadyAsync(processing, token)
                 .ConfigureAwait(false);
-            // Deliberately do not release: exercise the application's configured check
-            // deadline against a positively started child, not a shell/sleep executor.
+            commandClock.Advance(TimeSpan.FromSeconds(1));
             await processing.ConfigureAwait(false);
             JsonObject read = await state.ReadAsync(change, token).ConfigureAwait(false);
             JsonObject request = Assert

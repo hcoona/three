@@ -13,10 +13,15 @@ public sealed record ProcessResult(
 public sealed class ProcessRunner
 {
     private readonly RunDatabase database;
+    private readonly TimeProvider commandTimeProvider;
 
     public ProcessRunner(RunDatabase database)
+        : this(database, TimeProvider.System) { }
+
+    internal ProcessRunner(RunDatabase database, TimeProvider commandTimeProvider)
     {
         this.database = database;
+        this.commandTimeProvider = commandTimeProvider;
         using SqliteConnection connection = database.Open();
         Sql.Execute(
             connection,
@@ -77,7 +82,7 @@ public sealed class ProcessRunner
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
 
         cancellationToken.ThrowIfCancellationRequested();
-        using CancellationTokenSource deadline = new(timeout);
+        using CancellationTokenSource deadline = new(timeout, commandTimeProvider);
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
             deadline.Token

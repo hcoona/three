@@ -14,10 +14,19 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
     private ProcessRunner? processes;
     private bool settled;
 
-    internal Phase4SessionControl(TypedHostControl? state = null)
+    internal Phase4SessionControl(
+        TypedHostControl? state = null,
+        TimeProvider? settlementTimeProvider = null
+    )
     {
         State = state ?? new();
-        Factory = new(State.Database, new ProcessRunner(State.Database), State.Ledger, () => this);
+        Factory = new(
+            State.Database,
+            new ProcessRunner(State.Database),
+            State.Ledger,
+            () => this,
+            settlementTimeProvider
+        );
     }
 
     internal TypedHostControl State { get; }
@@ -117,14 +126,17 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
         settled = true;
     }
 
-    internal async Task CleanupAsync()
+    internal async Task CleanupAsync(bool preserveState = false)
     {
         ReleaseHost();
         if (child is not null)
         {
             await child.DisposeAsync().ConfigureAwait(false);
         }
-        State.Dispose();
+        if (!preserveState)
+        {
+            State.Dispose();
+        }
     }
 
     private void RecordRuntime(string state) =>
@@ -194,7 +206,9 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
 
         internal TaskCompletionSource SendEntered { get; } = Signal();
 
-        internal TaskCompletionSource FenceEntered { get; } = Signal();
+        internal TaskCompletionSource FenceEntered { get; private set; } = Signal();
+
+        internal Task ArmFence() => (FenceEntered = Signal()).Task;
 
         internal TaskCompletionSource SendRelease { get; } = Signal();
 

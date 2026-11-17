@@ -14,6 +14,7 @@ internal sealed class NativeWorker : INativeWorker
     private CreditReservation? reservation;
     private readonly bool calibration;
     private readonly string evidenceKind;
+    private readonly TimeProvider settlementTimeProvider;
     private readonly SemaphoreSlim turn = new(1, 1);
     private readonly SemaphoreSlim settlement = new(1, 1);
     private readonly CancellationTokenSource stop = new();
@@ -38,7 +39,8 @@ internal sealed class NativeWorker : INativeWorker
         CreditLedger credits,
         CreditReservation? reservation = null,
         bool calibration = false,
-        string evidenceKind = "native-sdk"
+        string evidenceKind = "native-sdk",
+        TimeProvider? settlementTimeProvider = null
     )
     {
         this.database = database;
@@ -47,6 +49,7 @@ internal sealed class NativeWorker : INativeWorker
         this.reservation = reservation;
         this.calibration = calibration;
         this.evidenceKind = evidenceKind;
+        this.settlementTimeProvider = settlementTimeProvider ?? TimeProvider.System;
     }
 
     public string? SessionId { get; private set; }
@@ -570,7 +573,9 @@ internal sealed class NativeWorker : INativeWorker
                     }
                     else
                     {
-                        using CancellationTokenSource deadline = new(TimeSpan.FromSeconds(30));
+                        using CancellationTokenSource deadline = new(
+                            TimeSpan.FromSeconds(30), settlementTimeProvider
+                        );
                         finalUsage = await (
                             session ?? throw new InvalidOperationException("No SDK connection.")
                         )

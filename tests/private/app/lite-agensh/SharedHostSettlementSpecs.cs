@@ -231,48 +231,104 @@ public sealed class SharedHostSettlementSpecs(TestContext context)
     public async Task
     CommonHostBarrierOwnsFinalityMeasuredUsageRemainsBackedUntilEnteredBarrierReleases()
     {
-        using TypedHostControl host = new() { HoldSettlement = true };
-        CreditReservation own = host.Reserve("worker1");
-        INativeWorker worker = host.Factory.Create(own, calibration: false);
-        await worker.StartAsync(host.Cwd("worker1"), null, context.CancellationToken);
-        await worker.PromptAsync("Complete a measured turn.", context.CancellationToken);
-
-        Task completion = host.Factory.CompleteAsync();
+        TypedHostControl host = new() { HoldSettlement = true };
+        Task? completion = null;
+        Exception? primaryFailure = null;
         try
         {
-            await host.SettlementEntered.Task.WaitAsync(
-                TimeSpan.FromSeconds(5),
-                context.CancellationToken
-            );
-            Assert.IsTrue(host.Sessions[0].Closed);
-            Assert.AreEqual("stopped", host.Database.ReadMetadata("worker:worker1:lifecycle"));
-            Assert.AreEqual("active", host.Read(own).State);
+            CreditReservation own = host.Reserve("worker1");
+            INativeWorker worker = host.Factory.Create(own, calibration: false);
+            await worker.StartAsync(host.Cwd("worker1"), null, context.CancellationToken);
+            await worker.PromptAsync("Complete a measured turn.", context.CancellationToken);
+
+            completion = host.Factory.CompleteAsync();
+            try
+            {
+                await host.SettlementEntered.Task.WaitAsync(
+                    TimeSpan.FromSeconds(5),
+                    context.CancellationToken
+                );
+                Assert.IsTrue(host.Sessions[0].Closed);
+                Assert.AreEqual("stopped", host.Database.ReadMetadata("worker:worker1:lifecycle"));
+                Assert.AreEqual("active", host.Read(own).State);
+                Assert.AreEqual(7.25m, host.Read(own).Actual);
+                Assert.IsTrue(host.Read(own).GrantOpen);
+                Assert.AreEqual(
+                    92.75m,
+                    host.Accounting["outstandingAuthorization"]!.GetValue<decimal>()
+                );
+                Assert.AreEqual(
+                    own.SessionId,
+                    host.RunValue(
+                        "SELECT session_id FROM native_sessions WHERE reservation_id=$id;",
+                        own.Id
+                    )
+                );
+            }
+            finally
+            {
+                host.ReleaseSettlement();
+            }
+            await completion.WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken);
+            Assert.AreEqual("reconciled", host.Read(own).State);
             Assert.AreEqual(7.25m, host.Read(own).Actual);
-            Assert.IsTrue(host.Read(own).GrantOpen);
-            Assert.AreEqual(
-                92.75m,
-                host.Accounting["outstandingAuthorization"]!.GetValue<decimal>()
-            );
-            Assert.AreEqual(
-                own.SessionId,
-                host.RunValue(
-                    "SELECT session_id FROM native_sessions WHERE reservation_id=$id;",
-                    own.Id
-                )
-            );
+            Assert.IsFalse(host.Read(own).GrantOpen);
+            Assert.AreEqual(7.25m, host.Accounting["actualReported"]!.GetValue<decimal>());
+            Assert.AreEqual(7.25m, host.Accounting["runCommitted"]!.GetValue<decimal>());
+            Assert.AreEqual(0m, host.Accounting["outstandingAuthorization"]!.GetValue<decimal>());
+        }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+            throw;
         }
         finally
         {
             host.ReleaseSettlement();
-            await completion.WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken);
+            try
+            {
+                if (completion is not null)
+                {
+                    await completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+                }
+            }
+            catch (Exception exception)
+            {
+                if (primaryFailure is null)
+                {
+                    primaryFailure = exception;
+                }
+                else
+                {
+                    context.WriteLine("Secondary factory completion failure: {0}", exception);
+                }
+            }
+            finally
+            {
+                if (completion is { IsCompleted: false })
+                {
+                    context.WriteLine(
+                        "Retained state for pending factory completion: {0}",
+                        host.Cwd(string.Empty)
+                    );
+                }
+                else
+                {
+                    try
+                    {
+                        host.Dispose();
+                    }
+                    catch (Exception exception) when (primaryFailure is not null)
+                    {
+                        context.WriteLine("Secondary fixture cleanup failure: {0}", exception);
+                    }
+                }
+            }
         }
-
-        Assert.AreEqual("reconciled", host.Read(own).State);
-        Assert.AreEqual(7.25m, host.Read(own).Actual);
-        Assert.IsFalse(host.Read(own).GrantOpen);
-        Assert.AreEqual(7.25m, host.Accounting["actualReported"]!.GetValue<decimal>());
-        Assert.AreEqual(7.25m, host.Accounting["runCommitted"]!.GetValue<decimal>());
-        Assert.AreEqual(0m, host.Accounting["outstandingAuthorization"]!.GetValue<decimal>());
+        if (primaryFailure is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(primaryFailure).Throw();
+        }
     }
 
     private static long Dispatches(TypedHostControl host, CreditReservation reservation) =>
@@ -1302,7 +1358,13 @@ public sealed class SharedHostSettlementSpecs(TestContext context)
     [TestMethod]
     public async Task CompactionReadFenceMissingTerminalHitsExistingBoundAndRetainsUncertainty()
     {
-        Phase4SessionControl host = new();
+        ManualScenarioClock settlementClock = new();
+        Phase4SessionControl host = new(settlementTimeProvider: settlementClock);
+        Task? completion = null;
+        Task? finalReadEntered = null;
+        Exception? primaryFailure = null;
+        bool deadlineAdvanced = false;
+        bool completionObserved = false;
         try
         {
             CreditReservation own = host.Reserve("worker1");
@@ -1314,11 +1376,15 @@ public sealed class SharedHostSettlementSpecs(TestContext context)
             await one.PromptAsync("Missing background terminal.", context.CancellationToken);
             await two.PromptAsync("Peer remains measured.", context.CancellationToken);
             host.Sessions[0].CompactionStart();
-            // Exercise the product's existing 30-second stop-read bound, not a sleep
-            // or an elapsed-time threshold. No own process is needed for this guard.
-            OperationException error = await Assert.ThrowsExactlyAsync<OperationException>(
-                host.Factory.CompleteAsync
+            finalReadEntered = host.Sessions[0].ArmFence();
+            completion = host.Factory.CompleteAsync();
+            await finalReadEntered.WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken);
+            settlementClock.Advance(TimeSpan.FromSeconds(30));
+            deadlineAdvanced = true;
+            OperationException error = await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                completion.WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken)
             );
+            completionObserved = true;
             Assert.AreEqual("credit_or_ownership_unknown", error.Code);
             Assert.Contains("Native cohort settlement retained unresolved evidence", error.Message);
             Assert.AreEqual("uncertain", host.State.Read(own).State);
@@ -1329,9 +1395,69 @@ public sealed class SharedHostSettlementSpecs(TestContext context)
             Assert.AreEqual(7.25m, host.State.Read(peer).Actual);
             Assert.IsNotEmpty(host.Factory.SettlementDetails);
         }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+            throw;
+        }
         finally
         {
-            await host.CleanupAsync();
+            try
+            {
+                if (completion is not null)
+                {
+                    if (!deadlineAdvanced)
+                    {
+                        await finalReadEntered!.WaitAsync(
+                            TimeSpan.FromSeconds(5),
+                            CancellationToken.None
+                        );
+                        settlementClock.Advance(TimeSpan.FromSeconds(30));
+                    }
+                    try
+                    {
+                        await completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+                    }
+                    catch (Exception) when (completionObserved)
+                    {
+                        // The body already asserted this terminal settlement failure.
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                if (primaryFailure is null)
+                {
+                    primaryFailure = exception;
+                }
+                else
+                {
+                    context.WriteLine("Secondary factory completion failure: {0}", exception);
+                }
+            }
+            finally
+            {
+                bool preserveState = completion is { IsCompleted: false };
+                if (preserveState)
+                {
+                    context.WriteLine(
+                        "Retained state for pending factory completion: {0}",
+                        host.State.Cwd(string.Empty)
+                    );
+                }
+                try
+                {
+                    await host.CleanupAsync(preserveState);
+                }
+                catch (Exception exception) when (primaryFailure is not null)
+                {
+                    context.WriteLine("Secondary fixture cleanup failure: {0}", exception);
+                }
+            }
+        }
+        if (primaryFailure is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(primaryFailure).Throw();
         }
     }
 
@@ -1776,6 +1902,12 @@ public sealed class SharedHostSettlementSpecs(TestContext context)
     {
         Phase4SessionControl host = new();
         using CancellationTokenSource owner = new();
+        Task<JsonObject>? firstSend = null;
+        Task<JsonObject>? secondSend = null;
+        Task? ownerCancellation = null;
+        Task? completion = null;
+        Exception? primaryFailure = null;
+        bool completionObserved = false;
         try
         {
             CreditReservation own = host.Reserve("worker1");
@@ -1792,22 +1924,25 @@ public sealed class SharedHostSettlementSpecs(TestContext context)
             await three.PromptAsync("Already measured unrelated peer.", context.CancellationToken);
             host.Sessions[0].HoldSend = true;
             host.Sessions[1].HoldSend = true;
-            Task<JsonObject> firstSend = one.PromptAsync(
+            firstSend = one.PromptAsync(
                 "First pending cohort send.",
                 context.CancellationToken
             );
-            Task<JsonObject> secondSend = two.PromptAsync(
+            secondSend = two.PromptAsync(
                 "Second pending cohort send.",
                 context.CancellationToken
             );
             await Task.WhenAll(host.Sessions[0].SendEntered.Task, host.Sessions[1].SendEntered.Task)
                 .WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken);
-            await owner.CancelAsync();
+            ownerCancellation = owner.CancelAsync();
+            await ownerCancellation;
             await Assert.ThrowsAsync<OperationCanceledException>(() => firstSend);
             await Assert.ThrowsAsync<OperationCanceledException>(() => secondSend);
-            OperationException error = await Assert.ThrowsExactlyAsync<OperationException>(
-                host.Factory.CompleteAsync
+            completion = host.Factory.CompleteAsync();
+            OperationException error = await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                completion
             );
+            completionObserved = true;
             Assert.Contains("Native send has no delivered terminal boundary", error.Message);
             Assert.AreEqual("uncertain", host.State.Read(own).State);
             Assert.AreEqual("uncertain", host.State.Read(second).State);
@@ -1822,10 +1957,80 @@ public sealed class SharedHostSettlementSpecs(TestContext context)
                 host.State.Accounting["outstandingAuthorization"]!.GetValue<decimal>()
             );
         }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+            throw;
+        }
         finally
         {
-            await owner.CancelAsync();
-            await host.CleanupAsync();
+            try
+            {
+                ownerCancellation ??= owner.CancelAsync();
+            }
+            catch (Exception exception)
+            {
+                ownerCancellation = Task.FromException(exception);
+            }
+            Task[] operations =
+            [
+                .. new Task?[] { firstSend, secondSend, ownerCancellation, completion }
+                    .OfType<Task>(),
+            ];
+            try
+            {
+                try
+                {
+                    await Task.WhenAll(operations)
+                        .WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+                }
+                catch (Exception) when (
+                    operations.All(operation => operation.IsCompleted)
+                    && ownerCancellation.IsCompletedSuccessfully
+                    && firstSend is not { IsFaulted: true }
+                    && secondSend is not { IsFaulted: true }
+                    && (completion is null || completionObserved)
+                )
+                {
+                    // Requested send cancellation and the asserted settlement fault are terminal.
+                }
+            }
+            catch (Exception exception)
+            {
+                if (primaryFailure is null)
+                {
+                    primaryFailure = exception;
+                }
+                else
+                {
+                    context.WriteLine(
+                        "Secondary owned-operation completion failure: {0}", exception
+                    );
+                }
+            }
+            finally
+            {
+                bool preserveState = operations.Any(operation => !operation.IsCompleted);
+                if (preserveState)
+                {
+                    context.WriteLine(
+                        "Retained state for pending owned operations: {0}",
+                        host.State.Cwd(string.Empty)
+                    );
+                }
+                try
+                {
+                    await host.CleanupAsync(preserveState);
+                }
+                catch (Exception exception) when (primaryFailure is not null)
+                {
+                    context.WriteLine("Secondary fixture cleanup failure: {0}", exception);
+                }
+            }
+        }
+        if (primaryFailure is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(primaryFailure).Throw();
         }
     }
 }
