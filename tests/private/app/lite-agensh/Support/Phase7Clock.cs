@@ -2,8 +2,8 @@ using System.Text.Json.Nodes;
 
 namespace LiteAgensh.Tests.Support;
 
-// Observe the supported timer surface; ManualScenarioClock alone schedules and
-// invokes callbacks. Observation lifetime belongs to the test's public run.
+// Observe timer registrations; the official fake owns scheduling and callbacks.
+// Observation lifetime belongs to the test's public run.
 internal sealed class Phase7Clock : TimeProvider
 {
     private readonly ManualScenarioClock clock = new();
@@ -49,6 +49,12 @@ internal sealed class Phase7Clock : TimeProvider
         lock (gate)
         {
             RegisteredTimer timer = new(this, observation, ++nextTimer);
+            // A zero-due callback can run before CreateTimer or Change returns.
+            timer.SetDue(dueTime, period);
+            if (observation != 0)
+            {
+                timers.Add(timer);
+            }
             timer.Inner = clock.CreateTimer(
                 value =>
                 {
@@ -62,11 +68,6 @@ internal sealed class Phase7Clock : TimeProvider
                 dueTime,
                 period
             );
-            timer.SetDue(dueTime, period);
-            if (observation != 0)
-            {
-                timers.Add(timer);
-            }
             timer.Record("registered");
             Pulse();
             return timer;
@@ -340,11 +341,15 @@ internal sealed class Phase7Clock : TimeProvider
         {
             lock (owner.gate)
             {
-                if (!Inner!.Change(dueTime, period))
+                if (Disposed)
                 {
                     return false;
                 }
                 SetDue(dueTime, period);
+                if (!Inner!.Change(dueTime, period))
+                {
+                    return false;
+                }
                 Record("changed");
                 owner.Pulse();
                 return true;

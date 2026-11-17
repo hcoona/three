@@ -93,6 +93,7 @@ public sealed class ShutdownProvenanceSpecs(TestContext context)
             );
             var before = state.FinancialSnapshot.ToJsonString();
             state.RecoveryCase = fault;
+            long historyStarted = state.HistoryClock.GetTimestamp();
             var failure = await Assert.ThrowsExactlyAsync<OperationException>(() =>
                 state.RecoverAsync(context.CancellationToken)
             );
@@ -106,7 +107,10 @@ public sealed class ShutdownProvenanceSpecs(TestContext context)
             if (fault == "page-budget")
             {
                 Assert.HasCount(2, state.RecoveryHosts.Last().Sessions.Single().PageTokens);
-                Assert.AreEqual(TimeSpan.FromSeconds(31).Ticks, state.HistoryClock.GetTimestamp());
+                Assert.AreEqual(
+                    TimeSpan.FromSeconds(31),
+                    state.HistoryClock.GetElapsedTime(historyStarted)
+                );
             }
         });
     }

@@ -157,7 +157,7 @@ internal static class Phase7CreatorProgram
             Phase7Sessions.Turn first;
             try
             {
-                await clock.UntilAsync(entered, active, workDeadline, token).ConfigureAwait(false);
+                await WaitFixedAsync(entered).ConfigureAwait(false);
                 first = await entered.ConfigureAwait(false);
             }
             finally
@@ -178,18 +178,38 @@ internal static class Phase7CreatorProgram
                 "Bootstrap was confirmed before the original Send completed."
             );
             first.Complete();
-            await clock
-                .UntilAsync(
-                    () =>
-                        (string?)Scalar(
-                            "SELECT state FROM delivery_batches WHERE id=$id;",
-                            ("$id", batch)
-                        ) == "sent",
-                    active,
-                    workDeadline,
-                    token
-                )
-                .ConfigureAwait(false);
+            Require(clock.GetUtcNow() < workDeadline, "Original ACK observation reached deadline.");
+            using (CancellationTokenSource ackRead =
+                CancellationTokenSource.CreateLinkedTokenSource(token))
+            {
+                Task acknowledged = ReadAckAsync(ackRead.Token);
+                Exception? acknowledgementFailure = null;
+                try
+                {
+                    await WaitFixedAsync(acknowledged).ConfigureAwait(false);
+                }
+                catch (Exception error)
+                {
+                    acknowledgementFailure = error;
+                    throw;
+                }
+                finally
+                {
+                    ackRead.Cancel();
+                    try
+                    {
+                        await acknowledged.ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (ackRead.IsCancellationRequested) { }
+                    catch (Exception error) when (acknowledgementFailure is not null)
+                    {
+                        Console.Error.WriteLine(
+                            "PHASE7_READINESS_SECONDARY " + LiteAgensh.Json.ExceptionDetails(error)
+                        );
+                    }
+                }
+            }
+            Require(clock.GetUtcNow() < workDeadline, "Original ACK observation reached deadline.");
             string confirmation =
                 database.ReadMetadata("native:bootstrap:" + sessionId)
                 ?? throw new InvalidOperationException(
@@ -200,8 +220,37 @@ internal static class Phase7CreatorProgram
                 "Original Send did not actually complete."
             );
             caller.Cancel();
-            await clock.UntilAsync(settled.Task, active, workDeadline, token).ConfigureAwait(false);
+            await WaitFixedAsync(settled.Task).ConfigureAwait(false);
             await settled.Task.ConfigureAwait(false);
+
+            async Task WaitFixedAsync(Task goal)
+            {
+                token.ThrowIfCancellationRequested();
+                Task<JsonObject> subject = active
+                    ?? throw new InvalidOperationException("Original run has not started.");
+                await Task.WhenAny(goal, subject).WaitAsync(token).ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
+                if (subject.IsCompleted)
+                {
+                    await subject.ConfigureAwait(false);
+                    Require(
+                        goal.IsCompleted, "Original run ended before the required observation."
+                    );
+                }
+                await goal.WaitAsync(token).ConfigureAwait(false);
+            }
+
+            async Task ReadAckAsync(CancellationToken next)
+            {
+                next.ThrowIfCancellationRequested();
+                while ((string?)Scalar(
+                    "SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch)
+                ) != "sent")
+                {
+                    await Task.Delay(10, next).ConfigureAwait(false);
+                }
+                next.ThrowIfCancellationRequested();
+            }
             CreditReservation target = ledger
                 .Reservations(database.RunId)
                 .Single(row => row.Worker == "worker1");

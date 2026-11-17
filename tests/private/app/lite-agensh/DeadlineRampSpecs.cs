@@ -413,6 +413,23 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
             .ConfigureAwait(false);
         Assert.AreEqual(origin.AddSeconds(7), clock.GetUtcNow());
         Assert.IsFalse(deadlineFired);
+
+        using ITimer immediate = clock.CreateTimer(
+            _ => { }, null, TimeSpan.Zero, Timeout.InfiniteTimeSpan
+        );
+        clock.Advance(TimeSpan.Zero);
+        using ITimer future = clock.CreateTimer(
+            _ => { }, null, TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan
+        );
+        await clock.TickAsync(token, origin.AddSeconds(10)).ConfigureAwait(false);
+        Assert.AreEqual(origin.AddSeconds(8), clock.GetUtcNow());
+        Assert.IsTrue(immediate.Change(TimeSpan.Zero, Timeout.InfiniteTimeSpan));
+        clock.Advance(TimeSpan.Zero);
+        using ITimer changedFuture = clock.CreateTimer(
+            _ => { }, null, TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan
+        );
+        await clock.TickAsync(token, origin.AddSeconds(10)).ConfigureAwait(false);
+        Assert.AreEqual(origin.AddSeconds(9), clock.GetUtcNow());
     }
 
     [TestMethod]
@@ -553,15 +570,13 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 }
                 _ = state.Start();
                 Phase7Sessions.Session waiting = await state
-                    .ReadyAsync(next => entered.Task.WaitAsync(next), state.WorkDeadline, token)
+                    .FixedAsync(next => entered.Task.WaitAsync(next), token)
                     .ConfigureAwait(false);
                 await state.Clock.WaitForPollAsync(token, state.WorkDeadline).ConfigureAwait(false);
                 Assert.AreEqual(boundary == "prepare", waiting.HasSession);
                 Assert.AreEqual(0, waiting.CompletedTurns);
                 state.Clock.Advance(TimeSpan.FromSeconds(10));
-                await state
-                    .UntilAsync(() => state.Active.IsCompleted, state.DrainDeadline, token)
-                    .ConfigureAwait(false);
+                await state.Active.WaitAsync(token).ConfigureAwait(false);
                 JsonObject result = await state.Active.ConfigureAwait(false);
                 Assert.AreEqual(
                     "ownership_or_usage_unresolved",
@@ -639,9 +654,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     Assert.IsLessThan(state.WorkDeadline, state.Clock.GetUtcNow());
                     state.Clock.Advance(state.Clock.WorkDeadline!.Value - state.Clock.GetUtcNow());
                 }
-                await state
-                    .UntilAsync(() => state.Active.IsCompleted, state.DrainDeadline, token)
-                    .ConfigureAwait(false);
+                await state.Active.WaitAsync(token).ConfigureAwait(false);
                 GitScenarioState.Data(await state.Active.ConfigureAwait(false));
                 JsonObject status = GitScenarioState.Data(state.Coordinator().Status());
                 Assert.AreEqual(
@@ -736,12 +749,25 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
         await state
             .RunBodyAsync(async () =>
             {
+                TaskCompletionSource<Task[]> loopTasks = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                state.ObserveWorkerCompletion = loops =>
+                {
+                    if (loops.Count == 2)
+                    {
+                        loopTasks.TrySetResult(loops.ToArray());
+                    }
+                };
                 _ = state.Start();
                 Phase7Sessions.Turn idle = await state
                     .Sessions.NextTurnAsync("worker1", token)
                     .ConfigureAwait(false);
                 Phase7Sessions.Turn healthy = await state
                     .Sessions.NextTurnAsync("worker2", token)
+                    .ConfigureAwait(false);
+                Task[] actualLoops = await state
+                    .FixedAsync(next => loopTasks.Task.WaitAsync(next), token)
                     .ConfigureAwait(false);
                 long idleBatch = state.SendingBatch("worker1");
                 long healthyBatch = state.SendingBatch("worker2");
@@ -758,6 +784,11 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         token
                     )
                     .ConfigureAwait(false);
+                await state.FixedAsync(actualLoops[0], token).ConfigureAwait(false);
+                await state.Clock
+                    .WaitForPollAsync(token, state.DrainDeadline)
+                    .ConfigureAwait(false);
+                DateTimeOffset drainAt = state.Clock.GetUtcNow();
                 Assert.IsFalse(healthy.Token.IsCancellationRequested);
                 Assert.AreEqual(
                     "sending",
@@ -768,9 +799,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 );
                 Assert.AreEqual(TimeSpan.FromSeconds(10), healthy.Timeout);
                 healthy.Complete();
-                await state
-                    .UntilAsync(() => state.Active.IsCompleted, state.DrainDeadline, token)
-                    .ConfigureAwait(false);
+                await state.Active.WaitAsync(token).ConfigureAwait(false);
+                Assert.AreEqual(drainAt, state.Clock.GetUtcNow());
                 GitScenarioState.Data(await state.Active.ConfigureAwait(false));
                 Assert.AreEqual(
                     "sent",
@@ -813,9 +843,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 DateTimeOffset began = state.Clock.GetUtcNow();
                 _ = state.Start();
                 Phase7Sessions.Turn turn = await state
-                    .ReadyAsync(
+                    .FixedAsync(
                         next => state.Sessions.NextTurnAsync("worker1", next),
-                        began.AddSeconds(10),
                         token
                     )
                     .ConfigureAwait(false);
@@ -882,8 +911,9 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 {
                     GitScenarioState.Data(state.Coordinator().RequestControl("pause"));
                     await state
-                        .UntilAsync(() => state.Active.IsCompleted, began.AddSeconds(10), token)
+                        .UntilAsync(state.Handoff!.OwnerStopped.Task, began.AddSeconds(10), token)
                         .ConfigureAwait(false);
+                    await state.Active.WaitAsync(token).ConfigureAwait(false);
                     _ = await state.Active.ConfigureAwait(false);
                 }
                 else
@@ -904,9 +934,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     Assert.IsTrue(turn.Response.IsFaulted);
                     Assert.IsFalse(turn.Response.IsCanceled);
                     Assert.IsFalse(turn.Response.IsCompletedSuccessfully);
-                    await state
-                        .UntilAsync(() => state.Active.IsCompleted, began.AddSeconds(10), token)
-                        .ConfigureAwait(false);
+                    await state.Active.WaitAsync(token).ConfigureAwait(false);
                     JsonObject result = await state.Active.ConfigureAwait(false);
                     Assert.IsFalse(result["ok"]!.GetValue<bool>());
                     Assert.AreEqual(
@@ -1069,7 +1097,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     .ConfigureAwait(false);
                 await state.FixedAsync(firstStart.Operation, token).ConfigureAwait(false);
                 await state
-                    .UntilAsync(
+                    .WaitDurableAsync(
                         () =>
                             state.Number(
                                 (
@@ -1090,11 +1118,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 // Capture the REAL second operation while the first100 grant still
                 // leaves only20 backing: entry is not successful startup/consumption.
                 Phase7Handoff.Startup secondStart = await state
-                    .ReadyAsync(
-                        next => handoff.SecondStarting.Task.WaitAsync(next),
-                        state.WorkDeadline,
-                        token
-                    )
+                    .FixedAsync(next => handoff.SecondStarting.Task.WaitAsync(next), token)
                     .ConfigureAwait(false);
                 Assert.AreEqual("worker2", secondStart.Worker);
                 Assert.AreEqual(state.Reservation("worker2").Id, secondStart.ReservationId);
@@ -1123,7 +1147,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 await state.FixedAsync(secondStart.Operation, token).ConfigureAwait(false);
                 Assert.AreEqual(accountingAt, state.Clock.GetUtcNow());
                 await state
-                    .UntilAsync(
+                    .WaitDurableAsync(
                         () =>
                             state.Number(
                                 (
@@ -1156,19 +1180,16 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     }
                 );
                 await state
-                    .UntilAsync(
-                        () =>
-                            state.Number(
-                                (
-                                    "SELECT COUNT(*) FROM delivery_batches WHERE "
-                                    + "recipient='worker1' AND state='sending' AND id!=$first;"
-                                ),
-                                ("$first", firstBatch)
-                            ) == 1,
-                        state.WorkDeadline,
-                        token
-                    )
+                    .UntilAsync(handoff.FollowupPreparation.Task, state.WorkDeadline, token)
                     .ConfigureAwait(false);
+                Assert.AreEqual(
+                    1L,
+                    state.Number(
+                        "SELECT COUNT(*) FROM delivery_batches WHERE recipient='worker1' "
+                            + "AND state='sending' AND id!=$first;",
+                        ("$first", firstBatch)
+                    )
+                );
                 long followupBatch = state.SendingBatch("worker1");
                 Assert.AreNotEqual(firstBatch, followupBatch);
                 // This same worker's NEW claim follows its previous ACK/verification,
@@ -1249,9 +1270,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 Assert.IsFalse(second.Token.IsCancellationRequested);
                 Assert.AreEqual(TimeSpan.FromSeconds(60), second.Timeout);
                 second.Complete();
-                await state
-                    .UntilAsync(() => state.Active.IsCompleted, state.DrainDeadline, token)
-                    .ConfigureAwait(false);
+                await state.Active.WaitAsync(token).ConfigureAwait(false);
                 GitScenarioState.Data(await state.Active.ConfigureAwait(false));
                 Assert.AreEqual("deadline", state.Database.ReadMetadata("lifecycle:stop_reason"));
                 Assert.AreEqual(1L, state.Dispatches(state.Reservation("worker1").Id));
@@ -1305,16 +1324,14 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 state.Exhaustion = exhaustion;
                 _ = state.Start();
                 Phase7Sessions.Turn turn = await state
-                    .ReadyAsync(
+                    .FixedAsync(
                         next => state.Sessions.NextTurnAsync("worker1", next),
-                        state.WorkDeadline,
                         token
                     )
                     .ConfigureAwait(false);
                 await state
-                    .ReadyAsync(
+                    .FixedAsync(
                         next => exhaustion.Entered.Task.WaitAsync(next),
-                        state.WorkDeadline,
                         token
                     )
                     .ConfigureAwait(false);
@@ -1336,15 +1353,12 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 Assert.IsFalse(turn.Token.IsCancellationRequested);
                 exhaustion.Request();
                 await state
-                    .ReadyAsync(
+                    .FixedAsync(
                         next => exhaustion.Rejected.Task.WaitAsync(next),
-                        state.DrainDeadline,
                         token
                     )
                     .ConfigureAwait(false);
-                await state
-                    .UntilAsync(() => state.Active.IsCompleted, state.DrainDeadline, token)
-                    .ConfigureAwait(false);
+                await state.Active.WaitAsync(token).ConfigureAwait(false);
                 JsonObject result = await state.Active.ConfigureAwait(false);
                 Assert.AreEqual(
                     "ownership_or_usage_unresolved",
@@ -1403,9 +1417,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
             {
                 _ = state.Start();
                 Phase7Sessions.Turn first = await state
-                    .ReadyAsync(
+                    .FixedAsync(
                         next => state.Sessions.NextTurnAsync("worker1", next),
-                        state.WorkDeadline,
                         token
                     )
                     .ConfigureAwait(false);
@@ -1428,9 +1441,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     .ConfigureAwait(false);
                 first.Complete();
                 await state.WaitAckAsync(batch, state.DrainDeadline, token).ConfigureAwait(false);
-                await state
-                    .UntilAsync(() => state.Active.IsCompleted, state.DrainDeadline, token)
-                    .ConfigureAwait(false);
+                await state.Active.WaitAsync(token).ConfigureAwait(false);
                 GitScenarioState.Data(await state.Active.ConfigureAwait(false));
                 Assert.AreEqual("deadline", state.Database.ReadMetadata("lifecycle:stop_reason"));
                 Assert.AreEqual(10m, state.Reservation("worker1").Actual);
@@ -1465,9 +1476,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
             {
                 _ = state.Start();
                 Phase7Sessions.Turn first = await state
-                    .ReadyAsync(
+                    .FixedAsync(
                         next => state.Sessions.NextTurnAsync("worker1", next),
-                        state.WorkDeadline,
                         token
                     )
                     .ConfigureAwait(false);
@@ -1499,15 +1509,45 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 // Real settled paused time, not an edited segment or reset scheduler.
                 state.Clock.Advance(TimeSpan.FromSeconds(100));
                 DateTimeOffset resumedAt = state.Clock.GetUtcNow();
-                _ = state.Start("resume");
-                Phase7Sessions.Turn resumed = await state
-                    .ReadyAsync(
-                        next => state.Sessions.NextTurnAsync("worker1", next),
-                        resumedAt.AddSeconds(1),
-                        token
-                    )
-                    .ConfigureAwait(false);
+                TaskCompletionSource entered = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                TaskCompletionSource release = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                state.Sessions.BeforeOpen = async (session, business) =>
+                {
+                    if (session.Operation == "resume" && session.Worker == "worker1")
+                    {
+                        entered.TrySetResult();
+                        await release.Task.WaitAsync(business).ConfigureAwait(false);
+                    }
+                };
+                Phase7Sessions.Turn resumed;
+                try
+                {
+                    _ = state.Start("resume");
+                    Phase7Handoff.Startup startup = await state
+                        .FixedAsync(
+                            next => state.Handoff!.FirstStarting.Task.WaitAsync(next), token
+                        )
+                        .ConfigureAwait(false);
+                    await state.FixedAsync(entered.Task, token).ConfigureAwait(false);
+                    await state.Clock
+                        .WaitForPollAsync(token, resumedAt.AddSeconds(1))
+                        .ConfigureAwait(false);
+                    release.TrySetResult();
+                    await state.FixedAsync(startup.Operation, token).ConfigureAwait(false);
+                    resumed = await state
+                        .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
+                        .ConfigureAwait(false);
+                }
+                finally
+                {
+                    release.TrySetResult();
+                }
                 DateTimeOffset admitted = state.Clock.GetUtcNow();
+                Assert.AreEqual(resumedAt, admitted);
                 Assert.IsLessThan(resumedAt.AddSeconds(1), admitted);
                 Assert.AreNotEqual(first.Session.SessionId, resumed.Session.SessionId);
                 Assert.AreEqual(
@@ -1547,12 +1587,14 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         .SelectMany(host => host.Sessions)
                         .Where(session => session.Worker == "worker2")
                 );
+                await state
+                    .UntilAsync(state.Handoff!.SecondStarting.Task, state.WorkDeadline, token)
+                    .ConfigureAwait(false);
+                Phase7Handoff.Startup peerStart = await state.Handoff.SecondStarting.Task
+                    .WaitAsync(token).ConfigureAwait(false);
+                await state.FixedAsync(peerStart.Operation, token).ConfigureAwait(false);
                 Phase7Sessions.Turn peer = await state
-                    .ReadyAsync(
-                        next => state.Sessions.NextTurnAsync("worker2", next),
-                        state.WorkDeadline,
-                        token
-                    )
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 Assert.IsGreaterThanOrEqualTo(admitted.AddSeconds(20), state.Clock.GetUtcNow());
                 Assert.AreEqual(95m, state.Reservation("worker2").Allowance);
@@ -1650,13 +1692,10 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     first.Turn.Complete(); // ACK joins belong AFTER temporal probes.
                     Probe("worker2", handoff.SecondStarting.Task, first.CompletedAt);
 
-                    Phase7Handoff.Startup secondStart = await state
-                        .ReadyAsync(
-                            next => handoff.SecondStarting.Task.WaitAsync(next),
-                            state.WorkDeadline,
-                            token
-                        )
+                    await state.UntilAsync(handoff.SecondStarting.Task, state.WorkDeadline, token)
                         .ConfigureAwait(false);
+                    Phase7Handoff.Startup secondStart = await handoff.SecondStarting.Task
+                        .WaitAsync(token).ConfigureAwait(false);
                     await HeldAsync(secondStart, secondEntered.Task).ConfigureAwait(false);
                     Assert.IsGreaterThanOrEqualTo(
                         first.CompletedAt.AddSeconds(10),
@@ -1678,13 +1717,10 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     second.Turn.Complete();
                     Probe("worker3", handoff.ThirdStarting.Task, second.CompletedAt);
 
-                    Phase7Handoff.Startup thirdStart = await state
-                        .ReadyAsync(
-                            next => handoff.ThirdStarting.Task.WaitAsync(next),
-                            state.WorkDeadline,
-                            token
-                        )
+                    await state.UntilAsync(handoff.ThirdStarting.Task, state.WorkDeadline, token)
                         .ConfigureAwait(false);
+                    Phase7Handoff.Startup thirdStart = await handoff.ThirdStarting.Task
+                        .WaitAsync(token).ConfigureAwait(false);
                     var third = await ConsumeAsync(thirdStart).ConfigureAwait(false);
                     Assert.IsGreaterThanOrEqualTo(
                         second.CompletedAt.AddSeconds(10),
@@ -1823,7 +1859,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                             .WaitAckAsync(batch, state.WorkDeadline, token)
                             .ConfigureAwait(false);
                         await state
-                            .UntilAsync(
+                            .WaitDurableAsync(
                                 () =>
                                     (string?)
                                         state.Value(
@@ -1853,7 +1889,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         );
                     }
                     await state
-                        .UntilAsync(
+                        .WaitDurableAsync(
                             () =>
                                 workerNames.All(worker =>
                                     state.Reservation(worker).Actual == 10m
@@ -1951,7 +1987,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     // For the two HELD operations this is their genuine completion
                     // phase. Consumption is a separate, later durable milestone.
                     await state
-                        .UntilAsync(
+                        .WaitDurableAsync(
                             () =>
                                 state.Number(
                                     (

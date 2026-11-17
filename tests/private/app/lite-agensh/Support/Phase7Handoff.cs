@@ -2,12 +2,15 @@ using System.Text.Json.Nodes;
 
 namespace LiteAgensh.Tests.Support;
 
-// Only the two preparation/ramp journeys need these operation-completion
-// observations. No background driver, ledger action, timer or native response
-// is supplied here. In particular ACK is not treated as financial settlement.
+// Observe actual operation boundaries, not scheduling or native responses.
+// In particular ACK is not treated as financial settlement.
 internal sealed class Phase7Handoff : IDisposable
 {
     private bool followingUp;
+    private bool observingOwner;
+    private CancellationTokenRegistration ownerObservation;
+    internal TaskCompletionSource OwnerStopped { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal TaskCompletionSource<bool> FirstStarted { get; } =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal TaskCompletionSource<bool> SecondStarted { get; } =
@@ -32,6 +35,8 @@ internal sealed class Phase7Handoff : IDisposable
 
     public void Dispose()
     {
+        ownerObservation.Dispose();
+        OwnerStopped.TrySetCanceled();
         FirstStarted.TrySetCanceled();
         SecondStarted.TrySetCanceled();
         FirstStarting.TrySetCanceled();
@@ -63,7 +68,17 @@ internal sealed class Phase7Handoff : IDisposable
         public string? NativeFailure => inner.NativeFailure;
         public Exception? FirstFailure => inner.FirstFailure;
 
-        public void BindOwner(CancellationToken token) => inner.BindOwner(token);
+        public void BindOwner(CancellationToken token)
+        {
+            inner.BindOwner(token);
+            if (!observation.observingOwner)
+            {
+                observation.observingOwner = true;
+                observation.ownerObservation = token.Register(() =>
+                    observation.OwnerStopped.TrySetResult()
+                );
+            }
+        }
 
         public NativeRequest BeginRequest(CancellationToken token) => inner.BeginRequest(token);
 

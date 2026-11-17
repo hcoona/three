@@ -35,6 +35,7 @@ internal sealed class Phase7Run
     private readonly CancellationTokenSource owner;
     private Task<JsonObject>? active;
     private IDisposable? clockObservation;
+    private Phase7Handoff? currentHandoff;
 
     private Phase7Run(
         GitScenarioState git,
@@ -71,6 +72,7 @@ internal sealed class Phase7Run
     internal Phase7Sessions Sessions { get; }
     internal Phase7Exhaustion? Exhaustion { get; set; }
     internal Phase7Handoff? Handoff { get; set; }
+    internal Action<IReadOnlyList<Task>>? ObserveWorkerCompletion { get; set; }
     internal Task<JsonObject> Active =>
         active ?? throw new InvalidOperationException("Run has not started.");
     internal DateTimeOffset WorkDeadline =>
@@ -201,10 +203,20 @@ internal sealed class Phase7Run
     }
 
     internal Coordinator Coordinator(string operation = "run") =>
-        new(Database, Collaboration, Operations, (_, _, _) => new Factory(this, operation));
+        new(
+            Database, Collaboration, Operations, (_, _, _) => new Factory(this, operation),
+            loops => ObserveWorkerCompletion?.Invoke(loops)
+        );
 
     internal Task<JsonObject> Start(string mode = "run")
     {
+        currentHandoff?.Dispose();
+        if (ReferenceEquals(Handoff, currentHandoff))
+        {
+            Handoff = null;
+        }
+        Handoff ??= new();
+        currentHandoff = Handoff;
         clockObservation?.Dispose();
         clockObservation = Clock.BeginObservation();
         Clock.WorkDeadline =
@@ -231,6 +243,12 @@ internal sealed class Phase7Run
         DateTimeOffset strictlyBefore,
         CancellationToken token
     ) => Clock.UntilAsync(condition, Active, strictlyBefore, token);
+
+    internal Task UntilAsync(
+        Task goal,
+        DateTimeOffset strictlyBefore,
+        CancellationToken token
+    ) => Clock.UntilAsync(goal, Active, strictlyBefore, token);
 
     // The scenario owns only its channel/entry observation, never the business
     // token. An ended subject cancels and joins that observation before return.
@@ -392,7 +410,8 @@ internal sealed class Phase7Run
     {
         JsonObject request = GitScenarioState.Data(Coordinator().RequestControl(action));
         Assert.AreEqual("pending", request["state"]!.GetValue<string>());
-        await UntilAsync(() => Active.IsCompleted, strictlyBefore, token).ConfigureAwait(false);
+        await UntilAsync(Handoff!.OwnerStopped.Task, strictlyBefore, token).ConfigureAwait(false);
+        await Active.WaitAsync(token).ConfigureAwait(false);
         return await Active.ConfigureAwait(false);
     }
 
@@ -463,15 +482,27 @@ internal sealed class Phase7Run
         long batch,
         DateTimeOffset strictlyBefore,
         CancellationToken token
-    )
-    {
-        // ACK follows the released response, not a future virtual timer.
-        return ObserveAsync(
+    ) => WaitDurableAsync(
+        () =>
+            (string?)Value("SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch))
+            == "sent",
+        strictlyBefore,
+        token
+    );
+
+    // Observe real storage without spending business time; persistence does not
+    // certify completion of the operation that wrote it or financial settlement.
+    internal Task WaitDurableAsync(
+        Func<bool> goal,
+        DateTimeOffset strictlyBefore,
+        CancellationToken token
+    ) =>
+        ObserveAsync(
             async next =>
             {
                 next.ThrowIfCancellationRequested();
                 Assert.IsLessThan(strictlyBefore, Clock.GetUtcNow());
-                while (!IsSent())
+                while (!goal())
                 {
                     await Task.Delay(10, next).ConfigureAwait(false);
                 }
@@ -479,13 +510,13 @@ internal sealed class Phase7Run
                 Assert.IsLessThan(strictlyBefore, Clock.GetUtcNow());
                 return true;
             },
-            async (goal, next) =>
+            async (observation, next) =>
             {
-                await Task.WhenAny(goal, Active).WaitAsync(next).ConfigureAwait(false);
+                await Task.WhenAny(observation, Active).WaitAsync(next).ConfigureAwait(false);
                 if (Active.IsCompleted)
                 {
                     await Active.ConfigureAwait(false);
-                    if (!IsSent())
+                    if (!goal())
                     {
                         throw new InvalidOperationException(
                             "Subject ended before the required durable goal."
@@ -495,11 +526,6 @@ internal sealed class Phase7Run
             },
             token
         );
-
-        bool IsSent() =>
-            (string?)Value("SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch))
-            == "sent";
-    }
 
     internal async Task RunBodyAsync(Func<Task> body)
     {
@@ -584,6 +610,7 @@ internal sealed class Phase7Run
         }
         finally
         {
+            currentHandoff?.Dispose();
             clockObservation?.Dispose();
             owner.Dispose();
             foreach (Exception error in secondary)

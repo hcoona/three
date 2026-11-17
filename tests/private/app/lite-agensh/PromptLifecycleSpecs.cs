@@ -147,9 +147,8 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                         );
                         _ = state.Start("reconnect");
                         Phase7Sessions.Turn next = await state
-                            .ReadyAsync(
+                            .FixedAsync(
                                 nextToken => state.Sessions.NextTurnAsync("worker1", nextToken),
-                                state.WorkDeadline,
                                 token
                             )
                             .ConfigureAwait(false);
@@ -385,17 +384,12 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                     "true",
                     state.Database.ReadMetadata("native:bootstrap:" + first.Session.SessionId)
                 );
-                await state
-                    .UntilAsync(
-                        () =>
-                            state.Database.ReadMetadata("worker:worker1:lifecycle") == "prompting",
-                        state.WorkDeadline,
-                        token
-                    )
-                    .ConfigureAwait(false);
                 Phase7Sessions.Turn later = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
+                Assert.AreEqual(
+                    "prompting", state.Database.ReadMetadata("worker:worker1:lifecycle")
+                );
                 Assert.AreEqual(first.Session.SessionId, later.Session.SessionId);
                 Assert.StartsWith("==== EVENTS ====\n", later.Text);
                 Assert.DoesNotContain("==== DURABLE CHANGES ====", later.Text);
@@ -611,9 +605,7 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                     turn.Fail(
                         new OperationException("bootstrap_send_failed", "Controlled failed send.")
                     );
-                    await state
-                        .UntilAsync(() => state.Active.IsCompleted, state.WorkDeadline, token)
-                        .ConfigureAwait(false);
+                    await state.Active.WaitAsync(token).ConfigureAwait(false);
                     _ = await state.Active.ConfigureAwait(false);
                     Assert.AreEqual(
                         "bootstrap_send_failed",
@@ -669,9 +661,7 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                     .ConfigureAwait(false);
                 long batch = state.SendingBatch("worker1");
                 turn.Complete();
-                await state
-                    .UntilAsync(() => state.Active.IsCompleted, state.WorkDeadline, token)
-                    .ConfigureAwait(false);
+                await state.Active.WaitAsync(token).ConfigureAwait(false);
                 JsonObject result = await state.Active.ConfigureAwait(false);
                 Assert.IsFalse(result["ok"]!.GetValue<bool>());
                 Assert.AreEqual(
