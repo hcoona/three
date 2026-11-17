@@ -831,6 +831,69 @@ public sealed class CreditWindowSpecs
 
     [TestMethod]
     [TestCategory("CapAndUsageConservation")]
+    [DataRow("final-flag", "outside its backed shared spending window")]
+    [DataRow("association", "Settled recovery association changed")]
+    [DataRow("revised-final", "revised a final total")]
+    [Timeout(120_000, CooperativeCancellation = true)]
+    public async Task ClosedWindowMonotonicFinalChargeLedgerTupleGuardPreservesBookedSpend(
+        string fault,
+        string reason
+    )
+    {
+        using CreditWindowState state = new(230, 200);
+        CreditReservation peer = state.Unrelated();
+        CreditReservation reservation = state.Reserve("worker1");
+        await state.Ledger
+            .AcquireSharedWindowAsync(reservation.Id, context.CancellationToken)
+            .ConfigureAwait(false);
+        state.Start(reservation);
+        state.Dispatch(reservation);
+        state.Ledger.RecordSdkUsage(reservation.Id, Usage(reservation, 35, 2));
+        state.Ledger.CloseSharedWindow(reservation.Id);
+        state.Ledger.MarkUncertain(reservation.Id);
+        RecoveredNativeUsage settled = new(
+            state.Read(reservation.Id), Usage(reservation, 45, 3)
+        );
+        if (fault == "revised-final")
+        {
+            state.Ledger.RecordRecoveredSdkUsage(settled);
+        }
+        CreditReservation before = state.Read(reservation.Id);
+        OperationException failure = Assert.ThrowsExactly<OperationException>(() =>
+        {
+            switch (fault)
+            {
+                case "final-flag":
+                    state.Ledger.RecordSdkUsage(before.Id, settled.Usage, final: true);
+                    break;
+                case "association":
+                    state.Ledger.RecordRecoveredSdkUsage(
+                        settled with
+                        {
+                            Reservation = settled.Reservation with { Worker = "worker2" },
+                        }
+                    );
+                    break;
+                case "revised-final":
+                    state.Ledger.RecordRecoveredSdkUsage(
+                        settled with { Usage = Usage(reservation, 46, 3) }
+                    );
+                    break;
+            }
+        });
+        Assert.Contains(reason, failure.Message);
+        CreditReservation after = state.Read(reservation.Id);
+        Assert.AreEqual(before.Actual, after.Actual);
+        Assert.AreEqual(before.Allowance, after.Allowance);
+        Assert.AreEqual(before.Overshoot, after.Overshoot);
+        Assert.AreEqual(before.SessionId, after.SessionId);
+        Assert.AreEqual("uncertain", after.State);
+        Assert.IsFalse(after.GrantOpen);
+        Assert.AreEqual(peer, state.Read(peer.Id));
+    }
+
+    [TestMethod]
+    [TestCategory("CapAndUsageConservation")]
     public void MismatchedAttachCannotReplaceReservedSessionAndDispatchRequiresVerifiedAssociation()
     {
         using CreditWindowState state = new(130, 100);
