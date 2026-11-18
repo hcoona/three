@@ -52,7 +52,7 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
     internal async Task StartOwnedRuntimeAsync(CancellationToken token)
     {
         child = new();
-        process = child.StartDirect();
+        process = child.StartDirect(role: OwnedChildControl.ControlledNativeHostRole);
         processes = new(State.Database);
         LeaseId = processes.Register(process, $"native:runtime:{Id}");
         ReadyIdentity = await child.ReadReadyAsync(token).ConfigureAwait(false);

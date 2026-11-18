@@ -86,7 +86,7 @@ internal sealed class Phase6NativeControl(RunDatabase database) : IAsyncDisposab
             {
                 return;
             }
-            process = child.StartDirect();
+            process = child.StartDirect(role: OwnedChildControl.ControlledNativeHostRole);
             LeaseId = new ProcessRunner(database).Register(process, $"native:runtime:{Id}");
             Ready = await child.ReadReadyAsync(token).ConfigureAwait(false);
             if (
