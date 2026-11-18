@@ -24,13 +24,17 @@ inspection. Changed relied-on inputs require matching receipts, not reused ones.
 
 Use the owner's Windows host, root-selected .NET SDK, installed Git and existing
 Copilot CLI. The owner does not restrict its version and requires no further
-approval solely because the installed CLI version changes. Keep official
-`GitHub.Copilot.SDK` 1.0.28 unchanged and use the installed runtime under the
+approval solely because the installed CLI version changes. Use the official
+`GitHub.Copilot.SDK` selected by root CPM and the installed runtime under the
 [dependency contract](implementation-contracts.md#application-and-dependencies),
-not SDK runtime acquisition. The package's historical 1.0.105 default is not an
-application version gate. After protocol acceptance and
+not SDK runtime acquisition. Normal reviewed SDK upgrades are permitted
+without a historical version allowlist; each attempt still uses its unchanged
+recorded binary and matching receipts. Original-session recovery retains the
+original SDK identity checks, not automatic migration to a newly selected SDK.
+The package's historical CLI default is not an application version gate.
+After protocol acceptance and
 before relying on them,
-record installed versions, inspect the pinned package's typed session,
+record installed versions, inspect the selected package's typed session,
 metadata, limits and usage contracts, and recheck required installed CLI flags.
 Pause affected work only when a required interface is unsupported or uncertain,
 not because the version differs from a prior observation. Use the existing
