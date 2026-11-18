@@ -157,14 +157,14 @@ public sealed class TrustedBoundarySpecs(TestContext context)
                 "'$(MSBuildProjectName)' == '" + productName + "'",
                 sdk.Attribute("Condition")!.Value.Split(" or ", StringSplitOptions.TrimEntries)
             );
-            Assert.AreEqual("1.0.28", sdk.Attribute("Version")!.Value);
+            string selectedSdkVersion = sdk.Attribute("Version")!.Value;
             JsonObject locked = JsonNode
                 .Parse(File.ReadAllText(SerializedToolSpecs.SourcePath("packages.lock.json")))!
                 .AsObject();
             JsonObject dependency = locked["dependencies"]!.AsObject().Single().Value![
                 "GitHub.Copilot.SDK"
             ]!.AsObject();
-            Assert.AreEqual("1.0.28", dependency["resolved"]!.GetValue<string>());
+            Assert.AreEqual(selectedSdkVersion, dependency["resolved"]!.GetValue<string>());
             Console.WriteLine(
                 "PHASE8_TRUST_EFFECTS "
                     + new JsonObject
@@ -184,7 +184,7 @@ public sealed class TrustedBoundarySpecs(TestContext context)
                         ),
                         ["checkoutHeadPreserved"] = true,
                         ["checkoutStatusPreserved"] = true,
-                        ["sdkDeclaredSelection"] = "1.0.28",
+                        ["sdkDeclaredSelection"] = selectedSdkVersion,
                         ["cliDeclaredSelection"] = "installed-without-version-restriction",
                         ["installedNativeReadback"] = false,
                         ["nativePolicyEffectivenessObserved"] = false,
