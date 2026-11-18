@@ -30,6 +30,9 @@ public sealed class DispatchCancellationSpecs(TestContext context)
     )
     {
         Phase4SessionControl host = new() { HoldHost = true };
+        Task? completion = null;
+        Exception? primaryFailure = null;
+        bool completionObserved = false;
         try
         {
             await host.StartOwnedRuntimeAsync(context.CancellationToken);
@@ -63,7 +66,7 @@ public sealed class DispatchCancellationSpecs(TestContext context)
                 )
             );
 
-            Task completion = host.Factory.CompleteAsync();
+            completion = host.Factory.CompleteAsync();
             try
             {
                 await host.HostEntered.Task.WaitAsync(
@@ -89,8 +92,9 @@ public sealed class DispatchCancellationSpecs(TestContext context)
             finally
             {
                 host.ReleaseHost();
-                await completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
             }
+            await completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+            completionObserved = true;
 
             Assert.AreEqual("exited", LeaseState(host));
             JsonObject runtime = JsonNode
@@ -128,9 +132,61 @@ public sealed class DispatchCancellationSpecs(TestContext context)
             Assert.AreEqual(0L, Reports(host, own));
             Assert.AreEqual(1L, Reports(host, peer));
         }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+        }
         finally
         {
-            await host.CleanupAsync();
+            host.ReleaseHost();
+            try
+            {
+                if (completion is not null && !completionObserved)
+                {
+                    await completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+                }
+            }
+            catch (Exception exception)
+            {
+                if (primaryFailure is null)
+                {
+                    primaryFailure = exception;
+                }
+                else
+                {
+                    context.WriteLine("Secondary factory completion failure: {0}", exception);
+                }
+            }
+            finally
+            {
+                bool preserveState = completion is { IsCompleted: false };
+                if (preserveState)
+                {
+                    context.WriteLine(
+                        "Retained state for pending factory completion: {0}",
+                        host.State.Cwd(string.Empty)
+                    );
+                }
+                try
+                {
+                    await host.CleanupAsync(preserveState);
+                }
+                catch (Exception exception)
+                {
+                    if (primaryFailure is null)
+                    {
+                        primaryFailure = exception;
+                    }
+                    else
+                    {
+                        context.WriteLine("Secondary fixture cleanup failure: {0}", exception);
+                    }
+                }
+            }
+        }
+        if (primaryFailure is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(primaryFailure).Throw();
         }
     }
 
@@ -227,6 +283,26 @@ public sealed class DispatchCancellationSpecs(TestContext context)
             );
 
             Assert.AreEqual("credit_or_ownership_unknown", error.Code);
+            bool nonzero = (nano is double total && total != 0) || requests != 0;
+            string phase = nonzero ? "stop" : "final-usage";
+            string reason = nonzero
+                ? "Native usage appeared before this fresh session's first paid dispatch."
+                : nano is null
+                    ? "Native credit usage is absent, invalid or incomplete; reservation retained."
+                    : "Missing, positive or incomplete native usage cannot prove cancellation.";
+            JsonObject detail = Assert.ContainsSingle(
+                host.Factory.SettlementDetails.OfType<JsonObject>()
+                    .Where(item => item["reservationId"]?.GetValue<string>() == own.Id
+                        && item["worker"]?.GetValue<string>() == "worker1"
+                        && item["phase"]?.GetValue<string>() == phase)
+            );
+            JsonObject cause = detail["error"]!.AsObject();
+            if (nonzero)
+            {
+                cause = cause["innerException"]!.AsObject();
+            }
+            Assert.AreEqual("credit_unknown", cause["operationCode"]!.GetValue<string>());
+            Assert.AreEqual(reason, cause["message"]!.GetValue<string>());
             Assert.AreEqual("uncertain", host.State.Read(own).State);
             Assert.IsTrue(host.State.Read(own).GrantOpen);
             Assert.IsNull(host.State.Read(own).Actual);
@@ -503,6 +579,9 @@ public sealed class DispatchCancellationSpecs(TestContext context)
     )
     {
         Phase4SessionControl host = new() { HoldHost = true };
+        Task? completion = null;
+        Exception? primaryFailure = null;
+        bool completionObserved = false;
         string scratchRoot = host.State.Cwd(string.Empty);
         OperationException original = new(
             "controlled_fresh_stop",
@@ -539,7 +618,7 @@ public sealed class DispatchCancellationSpecs(TestContext context)
             {
                 host.Sessions[0].StopFailure = original;
             }
-            Task completion = host.Factory.CompleteAsync();
+            completion = host.Factory.CompleteAsync();
             OperationException? failure = null;
             try
             {
@@ -674,6 +753,7 @@ public sealed class DispatchCancellationSpecs(TestContext context)
                 catch (OperationException exception)
                 {
                     failure = exception;
+                    completionObserved = true;
                 }
             }
             OperationException rejected = Assert.IsInstanceOfType<OperationException>(failure);
@@ -762,13 +842,69 @@ public sealed class DispatchCancellationSpecs(TestContext context)
                 $"Phase4FreshRejectionOutcome: {scenario}: {rejected.Code}: {rejected.Message}"
             );
         }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+        }
         finally
         {
-            await host.CleanupAsync();
-            context.WriteLine(
-                $"Phase4ManagedCleanup: {scratchRoot}; exists={Directory.Exists(scratchRoot)}"
-            );
-            Assert.IsFalse(Directory.Exists(scratchRoot));
+            host.ReleaseHost();
+            try
+            {
+                if (completion is not null && !completionObserved)
+                {
+                    await completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+                }
+            }
+            catch (Exception exception)
+            {
+                if (primaryFailure is null)
+                {
+                    primaryFailure = exception;
+                }
+                else
+                {
+                    context.WriteLine("Secondary factory completion failure: {0}", exception);
+                }
+            }
+            finally
+            {
+                bool preserveState = completion is { IsCompleted: false };
+                if (preserveState)
+                {
+                    context.WriteLine(
+                        "Retained state for pending factory completion: {0}", scratchRoot
+                    );
+                }
+                try
+                {
+                    await host.CleanupAsync(preserveState);
+                    context.WriteLine(
+                        $"Phase4ManagedCleanup: {scratchRoot}; exists={Directory.Exists(
+                            scratchRoot
+                        )}"
+                    );
+                    if (!preserveState)
+                    {
+                        Assert.IsFalse(Directory.Exists(scratchRoot));
+                    }
+                }
+                catch (Exception exception)
+                {
+                    if (primaryFailure is null)
+                    {
+                        primaryFailure = exception;
+                    }
+                    else
+                    {
+                        context.WriteLine("Secondary fixture cleanup failure: {0}", exception);
+                    }
+                }
+            }
+        }
+        if (primaryFailure is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(primaryFailure).Throw();
         }
     }
 

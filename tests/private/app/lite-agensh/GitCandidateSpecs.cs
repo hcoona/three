@@ -185,7 +185,13 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         using GitScenarioState state = await GitScenarioState
-            .CreateAsync(token)
+            .CreateAsync(
+                token,
+                candidateChecks:
+                [
+                    new() { Executable = "git", Arguments = ["rev-parse", "HEAD", "HEAD^{tree}"] },
+                ]
+            )
             .ConfigureAwait(false);
         await state.Operations.InitializeAsync(token).ConfigureAwait(false);
         string firstHead = await state
@@ -218,6 +224,32 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         JsonObject second = await state
             .SubmitAsync("worker2", "Beta feature", token)
             .ConfigureAwait(false);
+        JsonObject selfReview = await state
+            .ReviewAsync("worker1", first, token)
+            .ConfigureAwait(false);
+        JsonObject refusedQueue = await state.QueueAsync(first, token).ConfigureAwait(false);
+        await state.Operations.ProcessPendingAsync(token).ConfigureAwait(false);
+        JsonObject refused = await state.ReadAsync(first, token).ConfigureAwait(false);
+        JsonObject refusedRequest = Assert.ContainsSingle(
+            refused["integrationRequests"]!.AsArray().OfType<JsonObject>()
+                .Where(item => item["requestId"]!.GetValue<long>()
+                    == refusedQueue["requestId"]!.GetValue<long>())
+        );
+        Assert.AreEqual("failed", refusedRequest["state"]!.GetValue<string>());
+        Assert.AreEqual("review_required", refusedRequest["resultCode"]!.GetValue<string>());
+        Assert.Contains("A different worker", refusedRequest["message"]!.GetValue<string>());
+        Assert.IsEmpty(refused["checks"]!.AsArray());
+        Assert.AreEqual(
+            state.BaseCommit,
+            await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
+        );
+        JsonObject retainedSelfReview = Assert.ContainsSingle(
+            refused["reviews"]!.AsArray().OfType<JsonObject>()
+                .Where(item => item["id"]!.GetValue<long>() == selfReview["id"]!.GetValue<long>())
+        );
+        Assert.AreEqual("worker1", retainedSelfReview["actor"]!.GetValue<string>());
+        Assert.AreEqual(firstHead, retainedSelfReview["head"]!.GetValue<string>());
+        Assert.AreEqual("approve", retainedSelfReview["decision"]!.GetValue<string>());
         JsonObject firstReview = await state
             .ReviewAsync("worker2", first, token)
             .ConfigureAwait(false);
@@ -226,11 +258,30 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             .ConfigureAwait(false);
         JsonObject firstQueue = await state.QueueAsync(first, token).ConfigureAwait(false);
         JsonObject secondQueue = await state.QueueAsync(second, token).ConfigureAwait(false);
+        Assert.AreNotEqual(
+            refusedQueue["requestId"]!.GetValue<long>(),
+            firstQueue["requestId"]!.GetValue<long>()
+        );
 
         await state.Operations.ProcessPendingAsync(token).ConfigureAwait(false);
 
         JsonObject firstRead = await state.ReadAsync(first, token).ConfigureAwait(false);
         JsonObject secondRead = await state.ReadAsync(second, token).ConfigureAwait(false);
+        Assert.HasCount(2, firstRead["integrationRequests"]!.AsArray());
+        Assert.HasCount(2, firstRead["reviews"]!.AsArray());
+        Assert.AreEqual(
+            "review_required",
+            firstRead["integrationRequests"]!.AsArray().OfType<JsonObject>()
+                .Single(item => item["requestId"]!.GetValue<long>()
+                    == refusedQueue["requestId"]!.GetValue<long>())["resultCode"]!
+                .GetValue<string>()
+        );
+        JsonObject finalSelfReview = firstRead["reviews"]!.AsArray().OfType<JsonObject>()
+            .Single(item => item["id"]!.GetValue<long>()
+                == selfReview["id"]!.GetValue<long>());
+        Assert.AreEqual("worker1", finalSelfReview["actor"]!.GetValue<string>());
+        Assert.AreEqual(firstHead, finalSelfReview["head"]!.GetValue<string>());
+        Assert.AreEqual("approve", finalSelfReview["decision"]!.GetValue<string>());
         string firstCandidate = await AssertExactIntegrationAsync(
                 state,
                 firstRead,
@@ -311,6 +362,221 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             state.BaseCommit,
             await state.ResolveAsync("HEAD", token).ConfigureAwait(false)
         );
+    }
+
+    [TestMethod]
+    [TestCategory("SerialExactCandidateIntegration")]
+    public async Task ProtectedChangeRequiresExactOwnerApprovalAfterPeerApproval()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenarioState state = await GitScenarioState.CreateAsync(
+            token,
+            protectedPaths: ["protected.txt"]
+        ).ConfigureAwait(false);
+        await state.Operations.InitializeAsync(token).ConfigureAwait(false);
+        string head = await state.CommitAsync(
+            state.Operations.GetWorkerPath("worker1"),
+            "protected.txt",
+            "Owner-reviewed protected change.\n",
+            token
+        ).ConfigureAwait(false);
+        JsonObject change = await state.SubmitAsync("worker1", "Protected change", token)
+            .ConfigureAwait(false);
+        JsonObject peerReview = await state.ReviewAsync("worker2", change, token)
+            .ConfigureAwait(false);
+        JsonObject refusedQueue = await state.QueueAsync(change, token).ConfigureAwait(false);
+        await state.Operations.ProcessPendingAsync(token).ConfigureAwait(false);
+        JsonObject refused = await state.ReadAsync(change, token).ConfigureAwait(false);
+        JsonObject refusal = Assert.ContainsSingle(
+            refused["integrationRequests"]!.AsArray().OfType<JsonObject>()
+                .Where(item => item["requestId"]!.GetValue<long>()
+                    == refusedQueue["requestId"]!.GetValue<long>())
+        );
+        Assert.AreEqual("failed", refusal["state"]!.GetValue<string>());
+        Assert.AreEqual("review_required", refusal["resultCode"]!.GetValue<string>());
+        Assert.Contains(
+            "Protected paths require owner approval",
+            refusal["message"]!.GetValue<string>()
+        );
+        Assert.IsEmpty(refused["checks"]!.AsArray());
+        Assert.AreEqual(
+            state.BaseCommit,
+            await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
+        );
+        JsonObject ownerReview = await state.ReviewAsync("owner", change, token)
+            .ConfigureAwait(false);
+        JsonObject acceptedQueue = await state.QueueAsync(change, token).ConfigureAwait(false);
+        Assert.AreNotEqual(
+            refusedQueue["requestId"]!.GetValue<long>(),
+            acceptedQueue["requestId"]!.GetValue<long>()
+        );
+        await state.Operations.ProcessPendingAsync(token).ConfigureAwait(false);
+        JsonObject integrated = await state.ReadAsync(change, token).ConfigureAwait(false);
+        Assert.AreEqual("integrated", integrated["state"]!.GetValue<string>());
+        Assert.HasCount(2, integrated["integrationRequests"]!.AsArray());
+        JsonObject accepted = Assert.ContainsSingle(
+            integrated["integrationRequests"]!.AsArray().OfType<JsonObject>()
+                .Where(item => item["requestId"]!.GetValue<long>()
+                    == acceptedQueue["requestId"]!.GetValue<long>())
+        );
+        Assert.AreEqual("succeeded", accepted["state"]!.GetValue<string>());
+        Assert.AreEqual("ok", accepted["resultCode"]!.GetValue<string>());
+        Assert.AreEqual(head, accepted["head"]!.GetValue<string>());
+        JsonObject retainedRefusal = Assert.ContainsSingle(
+            integrated["integrationRequests"]!.AsArray().OfType<JsonObject>()
+                .Where(item => item["requestId"]!.GetValue<long>()
+                    == refusedQueue["requestId"]!.GetValue<long>())
+        );
+        Assert.AreEqual("failed", retainedRefusal["state"]!.GetValue<string>());
+        Assert.AreEqual("review_required", retainedRefusal["resultCode"]!.GetValue<string>());
+        Assert.AreEqual(head, retainedRefusal["head"]!.GetValue<string>());
+        string candidate = accepted["integratedCommit"]!.GetValue<string>();
+        Assert.AreEqual(
+            candidate,
+            await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
+        );
+        Assert.AreEqual(
+            state.BaseCommit,
+            await state.ResolveAsync(candidate + "^1", token).ConfigureAwait(false)
+        );
+        Assert.AreEqual(
+            head,
+            await state.ResolveAsync(candidate + "^2", token).ConfigureAwait(false)
+        );
+        JsonObject check = Assert.ContainsSingle(integrated["checks"]!.AsArray())!.AsObject();
+        Assert.AreEqual(candidate, check["commit"]!.GetValue<string>());
+        Assert.AreEqual("passed", check["status"]!.GetValue<string>());
+        Assert.AreEqual(0, check["exitCode"]!.GetValue<int>());
+        Assert.Contains(
+            "owned check exit 0",
+            File.ReadAllText(check["logPath"]!.GetValue<string>())
+        );
+        foreach ((JsonObject review, string actor) in new[]
+        {
+            (peerReview, "worker2"), (ownerReview, "owner"),
+        })
+        {
+            JsonObject recorded = Assert.ContainsSingle(
+                integrated["reviews"]!.AsArray().OfType<JsonObject>()
+                    .Where(item => item["id"]!.GetValue<long>() == review["id"]!.GetValue<long>())
+            );
+            Assert.AreEqual(actor, recorded["actor"]!.GetValue<string>());
+            Assert.AreEqual(head, recorded["head"]!.GetValue<string>());
+            Assert.AreEqual("approve", recorded["decision"]!.GetValue<string>());
+        }
+        Assert.AreEqual(
+            "Owner-reviewed protected change.\n",
+            await state.GitAsync(state.Repository, token, "show", candidate + ":protected.txt")
+                .ConfigureAwait(false)
+        );
+        Assert.AreEqual(
+            state.BaseCommit,
+            await state.ResolveAsync("HEAD", token).ConfigureAwait(false)
+        );
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task EmptyRepositoryRequiresExplicitInitializationOptIn(bool createRepository)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using ScratchDirectory scratch = new();
+        string repository = scratch.PathFor("empty-checkout");
+        Directory.CreateDirectory(repository);
+        RunConfiguration denied = new()
+        {
+            RepositoryPath = repository,
+            StatePath = scratch.PathFor("state"),
+            CampaignLedgerPath = scratch.PathFor("campaign.sqlite"),
+            Goal = "Initialize only an explicitly authorized empty repository.",
+        };
+        RunConfiguration configuration = createRepository
+            ? denied with { CreateRepository = true }
+            : denied;
+        RunDatabase database = new(configuration.StatePath, configuration);
+        CollaborationOperations collaboration = new(database);
+        GitOperations operations = new(database, collaboration);
+        ProcessRunner processes = new(database);
+        try
+        {
+            if (!createRepository)
+            {
+                OperationException error = await Assert.ThrowsExactlyAsync<OperationException>(
+                    () => operations.InitializeAsync(token)
+                ).ConfigureAwait(false);
+                Assert.AreEqual("unavailable", error.Code);
+                Assert.Contains("explicitly authorized empty directory", error.Message);
+                Assert.IsFalse(Directory.Exists(Path.Combine(repository, ".git")));
+                Assert.IsEmpty(Directory.EnumerateFileSystemEntries(repository));
+                using var connection = database.Open();
+                Assert.AreEqual(0L, (long)Sql.Scalar(
+                    connection, "SELECT COUNT(*) FROM git_resources;", null
+                )!);
+                return;
+            }
+
+            await operations.InitializeAsync(token).ConfigureAwait(false);
+            async Task<string> ReadGitAsync(string cwd, params string[] arguments)
+            {
+                ProcessResult result = await processes.RunAsync(
+                    "git", arguments, cwd, TimeSpan.FromSeconds(60), token
+                ).ConfigureAwait(false);
+                Assert.IsFalse(result.TimedOut);
+                Assert.AreEqual(0, result.ExitCode, result.StandardError);
+                return result.StandardOutput;
+            }
+            string head = (await ReadGitAsync(repository, "rev-parse", "--verify", "HEAD^{commit}")
+                .ConfigureAwait(false)).Trim();
+            Assert.AreEqual(head, database.Configuration.BaseRevision);
+            Assert.AreEqual(head, database.ReadMetadata("git:base_commit"));
+            Assert.AreEqual("true", database.ReadMetadata("git:initialized"));
+            Assert.IsEmpty(await ReadGitAsync(repository, "ls-tree", "-r", "--name-only", head)
+                .ConfigureAwait(false));
+            List<(string Ref, string Path)> resources = [];
+            using (var connection = database.Open())
+            using (var command = Sql.Command(
+                connection, "SELECT ref,path FROM git_resources WHERE state='ready' AND retained=0;"
+            ))
+            using (var reader = Sql.Reader(command))
+            {
+                while (reader.Read())
+                {
+                    resources.Add((reader.GetString(0), reader.GetString(1)));
+                }
+            }
+            Assert.HasCount(configuration.WorkerCount + 1, resources);
+            Assert.Contains(
+                database.ReadMetadata("git:integration_path")!,
+                resources.Select(item => item.Path)
+            );
+            foreach (string worker in configuration.WorkerIds)
+            {
+                Assert.Contains(
+                    operations.GetWorkerPath(worker),
+                    resources.Select(item => item.Path)
+                );
+            }
+            foreach ((string reference, string path) in resources)
+            {
+                Assert.AreEqual(head, (await ReadGitAsync(
+                    repository, "rev-parse", "--verify", reference
+                )
+                    .ConfigureAwait(false)).Trim());
+                Assert.AreEqual(head, (await ReadGitAsync(path, "rev-parse", "HEAD")
+                    .ConfigureAwait(false)).Trim());
+            }
+        }
+        finally
+        {
+            foreach (string file in Directory.EnumerateFiles(
+                scratch.Root, "*", SearchOption.AllDirectories
+            ))
+            {
+                File.SetAttributes(file, File.GetAttributes(file) & ~FileAttributes.ReadOnly);
+            }
+            GitScenarioState.AssertEnvironmentUnchanged();
+        }
     }
 
     [TestMethod]
@@ -1249,9 +1515,11 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     )
     {
         Assert.AreEqual("integrated", change["state"]!.GetValue<string>());
-        JsonObject request = Assert
-            .ContainsSingle(change["integrationRequests"]!.AsArray())!
-            .AsObject();
+        JsonObject request = Assert.ContainsSingle(
+            change["integrationRequests"]!.AsArray().OfType<JsonObject>()
+                .Where(item => item["requestId"]!.GetValue<long>()
+                    == queued["requestId"]!.GetValue<long>())
+        );
         Assert.AreEqual(
             queued["requestId"]!.GetValue<long>(),
             request["requestId"]!.GetValue<long>()
@@ -1281,22 +1549,37 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         Assert.AreEqual("passed", check["status"]!.GetValue<string>());
         Assert.AreEqual(0, check["exitCode"]!.GetValue<int>());
         Assert.AreEqual(
-            OwnedChildControl.ExecutablePath,
+            "git",
             check["command"]!["executable"]!.GetValue<string>()
         );
         JsonArray arguments = check["command"]!["arguments"]!.AsArray();
-        Assert.HasCount(2, arguments);
-        Assert.AreEqual("exit", arguments[0]!.GetValue<string>());
-        Assert.AreEqual("0", arguments[1]!.GetValue<string>());
+        Assert.HasCount(3, arguments);
+        Assert.AreEqual("rev-parse", arguments[0]!.GetValue<string>());
+        Assert.AreEqual("HEAD", arguments[1]!.GetValue<string>());
+        Assert.AreEqual("HEAD^{tree}", arguments[2]!.GetValue<string>());
         Assert.AreEqual(
             state.Database.Configuration.CandidateChecks[0].TimeoutSeconds,
             check["command"]!["timeoutSeconds"]!.GetValue<int>()
         );
-        Assert.Contains(
-            "owned check exit 0",
-            File.ReadAllText(check["logPath"]!.GetValue<string>())
+        string log = File.ReadAllText(check["logPath"]!.GetValue<string>())
+            .ReplaceLineEndings("\n");
+        const string outputStart = "stdout:\n";
+        const string outputEnd = "\nstderr:\n";
+        Assert.StartsWith(outputStart, log);
+        int end = log.IndexOf(outputEnd, outputStart.Length, StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(outputStart.Length, end);
+        string[] output = log[outputStart.Length..end]
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.HasCount(2, output);
+        Assert.AreEqual(candidate, output[0]);
+        Assert.AreEqual(
+            await state.ResolveAsync(candidate + "^{tree}", token).ConfigureAwait(false),
+            output[1]
         );
-        JsonObject exactReview = Assert.ContainsSingle(change["reviews"]!.AsArray())!.AsObject();
+        JsonObject exactReview = Assert.ContainsSingle(
+            change["reviews"]!.AsArray().OfType<JsonObject>()
+                .Where(item => item["id"]!.GetValue<long>() == review["id"]!.GetValue<long>())
+        );
         Assert.AreEqual(review["id"]!.GetValue<long>(), exactReview["id"]!.GetValue<long>());
         Assert.AreEqual(submitted, exactReview["head"]!.GetValue<string>());
         Assert.AreEqual(
