@@ -320,6 +320,14 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
     private async ValueTask DisposeAsync(Exception? primaryFailure)
     {
         List<Exception> cleanupFailures = [];
+        try
+        {
+            ReportSqliteIncidents();
+        }
+        catch (Exception exception)
+        {
+            cleanupFailures.Add(exception);
+        }
         foreach (Host host in hosts)
         {
             try
@@ -396,6 +404,27 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
             if (primaryFailure is null)
             {
                 throw new AggregateException("Phase5 fixture cleanup failed.", cleanupFailures);
+            }
+        }
+    }
+
+    private void ReportSqliteIncidents()
+    {
+        string[] directories =
+        [
+            Path.Combine(Root, "run.sqlite.diagnostics"),
+            git.PathFor("original-lifetime-campaign.sqlite.diagnostics"),
+        ];
+        foreach (string directory in directories)
+        {
+            if (!Directory.Exists(directory))
+            {
+                continue;
+            }
+            foreach (string path in Directory.EnumerateFiles(directory, "incident-*.json"))
+            {
+                JsonNode? incident = JsonNode.Parse(File.ReadAllText(path));
+                Console.WriteLine("PHASE5_SQLITE_INCIDENT " + incident!.ToJsonString());
             }
         }
     }

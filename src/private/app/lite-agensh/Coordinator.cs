@@ -494,6 +494,40 @@ public sealed class Coordinator
         CancellationToken cancellationToken = default
     )
     {
+        using Activity? activity =
+            ApplicationTelemetry.Source.StartActivity("coordinator.run");
+        if (mode is "run" or "resume" or "reconnect")
+        {
+            activity?.SetTag("liteagensh.mode", mode);
+        }
+        try
+        {
+            JsonObject result = await RunCoreAsync(mode, cancellationToken).ConfigureAwait(false);
+            activity?.SetTag("liteagensh.result.code", result["code"]?.GetValue<string>());
+            if (result["ok"]?.GetValue<bool>() == false)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error);
+            }
+            return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            activity?.SetTag("liteagensh.result.code", "cancelled");
+            throw;
+        }
+        catch (Exception exception)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error);
+            activity?.SetTag("error.type", exception.GetType().FullName);
+            throw;
+        }
+    }
+
+    private async Task<JsonObject> RunCoreAsync(
+        string mode,
+        CancellationToken cancellationToken
+    )
+    {
         if (mode is not ("run" or "resume" or "reconnect"))
         {
             return Failure("invalid_arguments", "Mode must be run, resume or reconnect.");
