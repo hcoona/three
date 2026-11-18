@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using LiteAgensh.Tests.Support;
 using Microsoft.Data.Sqlite;
@@ -411,6 +412,35 @@ public sealed class SqliteIncidentSpecs
         Assert.AreEqual(522, failure["extendedCode"]!.GetValue<int>());
         Assert.AreEqual("owned-path-blocker", File.ReadAllText(state.DiagnosticsPath));
         Assert.AreEqual(0L, Sql.Scalar(connection, "SELECT COUNT(*) FROM entries;"));
+    }
+
+    [TestMethod]
+    public void FixtureReportingContinuesAfterIncompleteIncidentAndRetainsFailure()
+    {
+        using ScratchDirectory scratch = new();
+        string incomplete = scratch.PathFor("incident-incomplete.json");
+        string run = scratch.PathFor("incident-run.json");
+        string campaign = scratch.PathFor("incident-campaign.json");
+        File.WriteAllText(incomplete, "{\"version\":");
+        File.WriteAllText(run, "{\"database\":\"run\"}");
+        File.WriteAllText(campaign, "{\"database\":\"campaign\"}");
+        string[] paths = [incomplete, run, campaign];
+        using StringWriter output = new(CultureInfo.InvariantCulture);
+        List<Exception> failures = [];
+
+        RecoveryLifetimeControl.ReportSqliteIncidentFiles(paths, output, failures);
+
+        string[] reportedDatabases = output
+            .ToString()
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line =>
+                JsonNode.Parse(line["PHASE5_SQLITE_INCIDENT ".Length..])!["database"]!
+                    .GetValue<string>()
+            )
+            .ToArray();
+        Assert.Contains("run", reportedDatabases);
+        Assert.Contains("campaign", reportedDatabases);
+        Assert.IsInstanceOfType<JsonException>(Assert.ContainsSingle(failures));
     }
 
     [TestMethod]

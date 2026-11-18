@@ -322,7 +322,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         List<Exception> cleanupFailures = [];
         try
         {
-            ReportSqliteIncidents();
+            ReportSqliteIncidents(cleanupFailures);
         }
         catch (Exception exception)
         {
@@ -408,7 +408,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         }
     }
 
-    private void ReportSqliteIncidents()
+    private void ReportSqliteIncidents(List<Exception> cleanupFailures)
     {
         string[] directories =
         [
@@ -421,10 +421,30 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
             {
                 continue;
             }
-            foreach (string path in Directory.EnumerateFiles(directory, "incident-*.json"))
+            ReportSqliteIncidentFiles(
+                Directory.EnumerateFiles(directory, "incident-*.json"),
+                Console.Out,
+                cleanupFailures
+            );
+        }
+    }
+
+    internal static void ReportSqliteIncidentFiles(
+        IEnumerable<string> paths,
+        TextWriter output,
+        List<Exception> failures
+    )
+    {
+        foreach (string path in paths)
+        {
+            try
             {
                 JsonNode? incident = JsonNode.Parse(File.ReadAllText(path));
-                Console.WriteLine("PHASE5_SQLITE_INCIDENT " + incident!.ToJsonString());
+                output.WriteLine("PHASE5_SQLITE_INCIDENT " + incident!.ToJsonString());
+            }
+            catch (Exception exception)
+            {
+                failures.Add(exception);
             }
         }
     }
