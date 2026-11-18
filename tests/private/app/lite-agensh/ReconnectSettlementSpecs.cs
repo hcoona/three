@@ -215,9 +215,8 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
     [Timeout(120_000)]
     [DataRow("association")]
     [DataRow("partial")]
-    [DataRow("ownership")]
-    [DataRow("session")]
-    [DataRow("host")]
+    [DataRow("reader-error")]
+    [DataRow("association-first")]
     public async Task MixedRecoveryPreservesPaidGates(string rejection)
     {
         Phase6PublicRun state = await Phase6PublicRun.CreateAsync(2, context.CancellationToken);
@@ -231,29 +230,74 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                     .Where(row => row.Worker != "calibration"),
             ];
             Assert.HasCount(2, originals);
-            JsonObject history = Phase6State.History(state.Database);
-            state.Reader = (row, token) =>
+            Assert.AreNotEqual(originals[0].Id, originals[1].Id);
+            foreach (CreditReservation original in originals)
             {
-                token.ThrowIfCancellationRequested();
-                if (row.Id == originals[0].Id)
+                Assert.AreEqual("uncertain", original.State);
+                Assert.AreEqual(80m, original.Actual);
+            }
+            JsonObject history = Phase6State.History(state.Database);
+            JsonObject before = Phase6State.Financial(state.Database, state.Ledger);
+            const string readerCause =
+                "Controlled generic recovery reader failed before a settled result.";
+            if (rejection == "reader-error")
+            {
+                bool laterReaderEntered = false;
+                state.Reader = (row, token) =>
                 {
+                    token.ThrowIfCancellationRequested();
+                    if (row.Id == originals[0].Id)
+                    {
+                        throw new OperationException("credit_unknown", readerCause);
+                    }
+                    laterReaderEntered = true;
                     return Task.FromResult(
                         new RecoveredNativeUsage(
                             row,
                             new(row.SessionId!, 120_000_000_000d, "complete", 2)
                         )
                     );
-                }
-                if (rejection is "ownership" or "session" or "host")
+                };
+                JsonObject earlyFailure = await state
+                    .Reopen()
+                    .RunAsync("reconnect", context.CancellationToken);
+                Assert.IsFalse(earlyFailure["ok"]!.GetValue<bool>());
+                Assert.AreEqual("credit_unknown", earlyFailure["code"]!.GetValue<string>());
+                Assert.Contains(readerCause, earlyFailure["message"]!.GetValue<string>());
+                Assert.AreEqual(
+                    "usage-settlement",
+                    earlyFailure["data"]!["operation"]!.GetValue<string>()
+                );
+                Assert.IsTrue(earlyFailure["data"]!["runUncertain"]!.GetValue<bool>());
+                Assert.IsFalse(laterReaderEntered);
+                Assert.AreEqual(
+                    before.ToJsonString(),
+                    Phase6State.Financial(state.Database, state.Ledger).ToJsonString()
+                );
+                Assert.AreEqual(
+                    history.ToJsonString(),
+                    Phase6State.History(state.Database).ToJsonString()
+                );
+                Assert.AreEqual(
+                    "credit_unknown",
+                    Assert.ThrowsExactly<OperationException>(state.Ledger.RequirePaidAdmission).Code
+                );
+                AssertRecoveryFailure(state, originals[0], "usage-recovery", readerCause);
+            }
+            bool rejectionFirst = rejection == "association-first";
+            int rejectedIndex = rejectionFirst ? 0 : 1;
+            int settledIndex = rejectionFirst ? 1 : 0;
+            state.Reader = (row, token) =>
+            {
+                token.ThrowIfCancellationRequested();
+                bool rejects = row.Id == originals[rejectedIndex].Id;
+                if (rejects && rejection == "reader-error")
                 {
-                    throw new OperationException(
-                        "credit_unknown",
-                        "Controlled validated-reader rejected " + rejection + " uncertainty."
-                    );
+                    throw new OperationException("credit_unknown", readerCause);
                 }
                 return Task.FromResult(
                     new RecoveredNativeUsage(
-                        rejection == "association"
+                        rejects && (rejection is "association" or "association-first")
                             ? row with
                             {
                                 UsagePath = row.UsagePath + ".foreign",
@@ -262,7 +306,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                         new(
                             row.SessionId!,
                             120_000_000_000d,
-                            rejection == "partial" ? "partial" : "complete",
+                            rejects && rejection == "partial" ? "partial" : "complete",
                             2
                         )
                     )
@@ -281,12 +325,68 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                     .Ledger.Reservations(state.Database.RunId)
                     .Where(row => row.Worker != "calibration"),
             ];
-            Assert.AreEqual("reconciled", actual[0].State);
-            Assert.AreEqual(120m, actual[0].Actual);
-            Assert.AreEqual(40m, actual[0].Actual!.Value - originals[0].Actual!.Value);
-            Assert.AreEqual("uncertain", actual[1].State);
-            Assert.AreEqual(80m, actual[1].Actual);
-            Assert.AreEqual(originals[1].Allowance, actual[1].Allowance);
+            Assert.AreEqual(originals[settledIndex].Id, actual[settledIndex].Id);
+            Assert.AreEqual(originals[rejectedIndex].Id, actual[rejectedIndex].Id);
+            Assert.AreEqual("reconciled", actual[settledIndex].State);
+            Assert.AreEqual(120m, actual[settledIndex].Actual);
+            Assert.AreEqual(
+                40m,
+                actual[settledIndex].Actual!.Value - originals[settledIndex].Actual!.Value
+            );
+            Assert.AreEqual("uncertain", actual[rejectedIndex].State);
+            Assert.AreEqual(80m, actual[rejectedIndex].Actual);
+            Assert.AreEqual(originals[rejectedIndex].Allowance, actual[rejectedIndex].Allowance);
+            JsonObject after = Phase6State.Financial(state.Database, state.Ledger);
+            AssertOldReportsPreserved(before, after);
+            Assert.AreEqual(
+                before["reports"]!.AsArray().Count + 1,
+                after["reports"]!.AsArray().Count
+            );
+            JsonObject finalReport = Assert.ContainsSingle(
+                after["reports"]!.AsArray().OfType<JsonObject>().Where(report =>
+                    report["reservation_id"]!.GetValue<string>() == originals[settledIndex].Id
+                    && !before["reports"]!.AsArray().Any(old =>
+                        old!["id"]!.GetValue<long>() == report["id"]!.GetValue<long>()
+                    )
+                )
+            );
+            Assert.AreEqual(
+                120m,
+                decimal.Parse(
+                    finalReport["actual"]!.GetValue<string>(),
+                    System.Globalization.CultureInfo.InvariantCulture
+                )
+            );
+            if (rejectionFirst)
+            {
+                JsonObject raw = Assert.ContainsSingle(
+                    after["usage"]!.AsArray().OfType<JsonObject>().Where(row =>
+                        row["reservation_id"]!.GetValue<string>() == originals[0].Id
+                    )
+                );
+                Assert.AreEqual(
+                    120_000_000_000d,
+                    double.Parse(
+                        raw["reported_nano_aiu"]!.GetValue<string>(),
+                        System.Globalization.CultureInfo.InvariantCulture
+                    )
+                );
+                Assert.AreEqual("complete", raw["status"]!.GetValue<string>());
+                Assert.AreEqual(2L, raw["reported_requests"]!.GetValue<long>());
+            }
+            AssertRecoveryFailure(
+                state,
+                originals[rejectedIndex],
+                rejection == "reader-error" ? "usage-recovery" : "usage-recovery-ledger",
+                rejection == "reader-error"
+                    ? readerCause
+                    : rejection == "partial" ? "absent, invalid or incomplete"
+                    : "Settled recovery association changed"
+            );
+            Assert.AreEqual(
+                "credit_unknown",
+                Assert.ThrowsExactly<OperationException>(state.Ledger.RequirePaidAdmission).Code
+            );
             Assert.AreEqual(
                 history.ToJsonString(),
                 Phase6State.History(state.Database).ToJsonString()
@@ -299,6 +399,31 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                 Phase6State.History(state.Database).ToJsonString()
             );
         });
+    }
+
+    private static void AssertRecoveryFailure(
+        Phase6PublicRun state,
+        CreditReservation reservation,
+        string phase,
+        string cause
+    )
+    {
+        using var connection = state.Database.Open();
+        JsonObject detail = Assert.ContainsSingle(
+            Phase6State.Rows(
+                connection,
+                "SELECT value FROM meta WHERE key LIKE 'native:recovery_failure_details:%';"
+            )
+                .OfType<JsonObject>()
+                .SelectMany(row => JsonNode.Parse(row["value"]!.GetValue<string>())!.AsArray())
+                .OfType<JsonObject>()
+                .Where(row =>
+                    row["reservationId"]?.GetValue<string>() == reservation.Id
+                    && row["phase"]?.GetValue<string>() == phase
+                )
+        );
+        Assert.AreEqual(reservation.Worker, detail["worker"]!.GetValue<string>());
+        Assert.Contains(cause, detail["error"]!.ToJsonString());
     }
 
     private static void AssertOldReportsPreserved(JsonObject before, JsonObject after)
