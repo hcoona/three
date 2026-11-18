@@ -211,7 +211,6 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                 )!
         );
         Assert.AreEqual(Original.SessionId, Reservation.SessionId);
-        Assert.StartsWith("1.0.28", NativeSdkSession.SdkVersion);
         Console.WriteLine(
             "PHASE5_ORIGINAL_IDENTITY "
                 + System.Text.Json.JsonSerializer.Serialize(

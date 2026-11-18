@@ -45,8 +45,10 @@ interoperability. That selection does not extend the earlier native observations
 dependent user-audit work requires matching current build, interface and
 operational evidence under its existing protocol.
 The [dependency policy](docs/implementation-contracts.md#application-and-dependencies)
-now permits the installed Copilot CLI without a version restriction or a new
-approval solely for a version change, under unchanged SDK 1.0.28. The application
+permits normal reviewed CPM/Renovate SDK upgrades without a historical version
+allowlist, and the installed Copilot CLI without a version restriction or a new
+approval solely for a version change. Original-session SDK identity checks
+remain required; an SDK upgrade is not session migration. The application
 records the actual typed runtime version without a version or ordered-pair
 allowlist, retaining required interface, identity, cap and settlement checks.
 It preserves the original runtime provenance under the

@@ -24,7 +24,7 @@ python = "3.14"
 ruby = "4.0.9"
 
 # Package Managers
-pnpm = "12.18.0"
+pnpm = "12.21.0"
 uv = "0.13.8"
 
 # Git Commit Hook Manager
@@ -66,7 +66,7 @@ gopass = "1.17.4"
 ripgrep = "latest"
 github-cli = "latest"
 "github:microsoft/apm" = "v0.35.1"
-"github:alibaba/open-code-review" = { version = "v1.13.9", bin = "ocr" }
+"github:alibaba/open-code-review" = { version = "v1.13.10", bin = "ocr" }
 
 #
 # Environment Variables
