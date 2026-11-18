@@ -227,8 +227,12 @@ maintainers intended a particular restriction. Public help and searches did not
 establish that intent. No final native credit report exists for that attempt;
 its reservation remains uncertain, not measured zero.
 
-Select official [Copilot SDK v1.0.28][sdk] at
+The retained interface baseline is official [Copilot SDK v1.0.28][sdk] at
 `fa108e71ee3025663e0dac20f2a071055d3a6b14`, not moving repository main.
+Current package selection follows root CPM under the
+[dependency contract](implementation-contracts.md#application-and-dependencies),
+not a historical version allowlist. This retained baseline does not establish
+the interfaces or native effectiveness of a later package.
 Its `nodejs/package.json` pins CLI 1.0.105. The separately inspected
 [released NuGet archive][sdk-package] has SHA-256
 `29A9EF27B3ABE58CB056CF47E6733B93B70F2DC58D5A02BC0344F6ED277B9E8A`;
@@ -288,8 +292,10 @@ settlement remain operational evidence obligations.
 The owner subsequently removed CLI version restrictions and approval solely
 for version changes. The
 [dependency contract](implementation-contracts.md#application-and-dependencies)
-owns that current application decision, superseding the earlier selection and
-ordered recovery pair without changing SDK 1.0.28 or historical observations.
+owns that application decision, superseding the earlier selection and
+ordered recovery pair. That change did not change SDK 1.0.28 or historical
+observations; normal reviewed SDK upgrades now follow the same dependency
+contract without rewriting this retained evidence.
 
 A version/help-only recheck on 2026-11-15 reported installed CLI 1.0.112.
 The configured executable's SHA-256 was

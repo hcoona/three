@@ -150,7 +150,11 @@ and native rejection/readback mismatch. Rejection preserves uncertainty and
 does not create backing, reset baselines or book error-derived usage. Controlled
 success establishes application translation, not installed-native support.
 
-Exercise installed-runtime use without a CLI version gate or an SDK change.
+Exercise installed-runtime use without a CLI version gate and normal reviewed
+SDK package upgrades without a historical version allowlist. Fresh controlled
+scenarios use the selected package, not a copied historical SDK version.
+Keep this separate from original-session recovery: its exact SDK identity
+checks remain required, and a package upgrade is not session migration.
 Actual typed status must provide an observed version; version numbers alone
 neither admit nor reject compatibility. Cover same-version and changed-version
 exact recovery with real retained startup/association evidence and SDK-shaped

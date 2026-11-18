@@ -12,9 +12,14 @@ Use one `LiteAgensh.csproj` executable under the project root, namespace
 `LiteAgensh`, target `$(CurrentTargetFramework)`. Use root SDK/CPM/NBGV rules.
 Select `Microsoft.Data.Sqlite` 10.0.14 and `ModelContextProtocol` 2.4.0 through
 CPM; retain existing `Microsoft.Extensions.Hosting` selection. Select
-`GitHub.Copilot.SDK` 1.0.28. Its packaged `CopilotCliVersion` default remains
-1.0.105, but this application connects to its owned installed runtime rather
-than acquiring the packaged runtime. Do not select or enforce a CLI version,
+`GitHub.Copilot.SDK` through root CPM and its lockfiles. Normal reviewed
+CPM/Renovate SDK upgrades are permitted; a historical package version is not
+a compatibility allowlist. Retain the exact selected SDK identity in build
+and session evidence. Upgrading the package does not migrate an original
+session or relax its SDK identity checks.
+
+The application connects to its owned installed runtime rather than acquiring
+the SDK's packaged runtime. Do not select or enforce a CLI version,
 minimum, range or ordered version-pair allowlist. A CLI version change alone
 requires no owner approval. Require a nonempty typed runtime-status version
 and retain that observed version in runtime/session evidence; it is provenance,
@@ -739,7 +744,7 @@ Known new background work, callbacks, session and temporary host must settle
 without invalidating the fresh reading before the existing atomic delta
 booking. No new grant, prompt, baseline reset or original-fence clearing occurs.
 
-These primitives are documented in the selected SDK 1.0.28's
+These primitives are documented in the retained SDK 1.0.28 source baseline's
 [public generated RPC contract][sdk-recovery-rpc] and
 [event contract][sdk-recovery-events]: persisted snapshot paging, current-local
 activity, observed-call completeness and public shutdown accounting projections.
