@@ -71,6 +71,7 @@ internal sealed class Phase7Run
     internal CollaborationOperations Collaboration { get; }
     internal GitOperations Operations { get; }
     internal Phase7Sessions Sessions { get; }
+    internal TimeProvider? SettlementTimeProvider { get; set; }
     internal Phase7Exhaustion? Exhaustion { get; set; }
     internal Phase7Handoff? Handoff { get; set; }
     internal Action<IReadOnlyList<Task>>? ObserveWorkerCompletion { get; set; }
@@ -637,7 +638,8 @@ internal sealed class Phase7Run
                 INativeSdkHost host = state.Sessions.CreateHost(operation);
                 host = state.Handoff?.Wrap(host) ?? host;
                 return state.Exhaustion?.Wrap(host) ?? host;
-            }
+            },
+            settlementTimeProvider: state.SettlementTimeProvider
         );
         public JsonArray SettlementFailures => real.SettlementFailures;
         public JsonArray SettlementDetails => real.SettlementDetails;

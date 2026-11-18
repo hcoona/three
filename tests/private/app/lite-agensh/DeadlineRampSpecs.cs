@@ -535,13 +535,18 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     )
     {
         CancellationToken token = testContext.CancellationToken;
+        ManualScenarioClock settlementClock = new();
         Phase7Run state = await Phase7Run
             .CreateAsync(token, workers: 1, interval: 1, duration: 10, allocation: "shared")
             .ConfigureAwait(false);
+        state.SettlementTimeProvider = settlementClock;
         await state
             .RunBodyAsync(async () =>
             {
                 TaskCompletionSource<Phase7Sessions.Session> entered = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                TaskCompletionSource<CancellationToken> settlementRead = new(
                     TaskCreationOptions.RunContinuationsAsynchronously
                 );
                 TaskCompletionSource release = new(
@@ -549,44 +554,68 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 );
                 async Task Hold(Phase7Sessions.Session session, CancellationToken business)
                 {
+                    if (state.Clock.GetUtcNow() >= state.WorkDeadline)
+                    {
+                        settlementRead.TrySetResult(business);
+                    }
                     entered.TrySetResult(session);
                     await release.Task.WaitAsync(business).ConfigureAwait(false);
                 }
-                if (boundary == "open")
+                try
                 {
-                    state.Sessions.BeforeOpen = Hold;
+                    if (boundary == "open")
+                    {
+                        state.Sessions.BeforeOpen = Hold;
+                    }
+                    else
+                    {
+                        state.Sessions.BeforeRead = (session, business) =>
+                            state.Database.ReadMetadata($"worker:{session.Worker}:lifecycle")
+                                == "ready"
+                            && session.CompletedTurns == 0
+                                ? Hold(session, business)
+                                : Task.CompletedTask;
+                    }
+                    _ = state.Start();
+                    Phase7Sessions.Session waiting = await state
+                        .FixedAsync(next => entered.Task.WaitAsync(next), token)
+                        .ConfigureAwait(false);
+                    await state.Clock
+                        .WaitForPollAsync(token, state.WorkDeadline)
+                        .ConfigureAwait(false);
+                    Assert.AreEqual(boundary == "prepare", waiting.HasSession);
+                    Assert.AreEqual(0, waiting.CompletedTurns);
+                    state.Clock.Advance(TimeSpan.FromSeconds(10));
+                    if (boundary == "prepare")
+                    {
+                        CancellationToken settlement = await state
+                            .FixedAsync(next => settlementRead.Task.WaitAsync(next), token)
+                            .ConfigureAwait(false);
+                        Assert.IsFalse(settlement.IsCancellationRequested);
+                        settlementClock.Advance(TimeSpan.FromSeconds(30));
+                        Assert.IsTrue(settlement.IsCancellationRequested);
+                    }
+                    await state.Active.WaitAsync(token).ConfigureAwait(false);
+                    JsonObject result = await state.Active.ConfigureAwait(false);
+                    Assert.AreEqual(
+                        "ownership_or_usage_unresolved",
+                        result["code"]!.GetValue<string>()
+                    );
+                    Assert.AreEqual("uncertain", state.Reservation("worker1").State);
+                    Assert.IsNull(state.Reservation("worker1").Actual);
+                    Assert.AreEqual(0L, state.Number("SELECT COUNT(*) FROM coordinator_turns;"));
+                    Assert.IsNull(
+                        state.Database.ReadMetadata("native:bootstrap:" + waiting.SessionId)
+                    );
+                    Assert.AreEqual(0, waiting.CompletedTurns);
+                    // This is missing startup/preparation evidence, not measured zero
+                    // usage or verified pre-dispatch cancellation.
+                    Assert.IsGreaterThan(0m, state.Reservation("worker1").Allowance);
                 }
-                else
+                finally
                 {
-                    state.Sessions.BeforeRead = (session, business) =>
-                        state.Database.ReadMetadata($"worker:{session.Worker}:lifecycle") == "ready"
-                        && session.CompletedTurns == 0
-                            ? Hold(session, business)
-                            : Task.CompletedTask;
+                    release.TrySetResult();
                 }
-                _ = state.Start();
-                Phase7Sessions.Session waiting = await state
-                    .FixedAsync(next => entered.Task.WaitAsync(next), token)
-                    .ConfigureAwait(false);
-                await state.Clock.WaitForPollAsync(token, state.WorkDeadline).ConfigureAwait(false);
-                Assert.AreEqual(boundary == "prepare", waiting.HasSession);
-                Assert.AreEqual(0, waiting.CompletedTurns);
-                state.Clock.Advance(TimeSpan.FromSeconds(10));
-                await state.Active.WaitAsync(token).ConfigureAwait(false);
-                JsonObject result = await state.Active.ConfigureAwait(false);
-                Assert.AreEqual(
-                    "ownership_or_usage_unresolved",
-                    result["code"]!.GetValue<string>()
-                );
-                Assert.AreEqual("uncertain", state.Reservation("worker1").State);
-                Assert.IsNull(state.Reservation("worker1").Actual);
-                Assert.AreEqual(0L, state.Number("SELECT COUNT(*) FROM coordinator_turns;"));
-                Assert.IsNull(state.Database.ReadMetadata("native:bootstrap:" + waiting.SessionId));
-                Assert.AreEqual(0, waiting.CompletedTurns);
-                // This is missing startup/preparation evidence, not measured zero
-                // usage or verified pre-dispatch cancellation.
-                Assert.IsGreaterThan(0m, state.Reservation("worker1").Allowance);
-                release.TrySetResult();
             })
             .ConfigureAwait(false);
     }
