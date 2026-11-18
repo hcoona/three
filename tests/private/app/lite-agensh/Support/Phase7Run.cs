@@ -579,6 +579,19 @@ internal sealed class Phase7Run
         {
             secondary.Add(error);
         }
+        try
+        {
+            string[] directories =
+            [
+                Path.Combine(Database.StatePath, "run.sqlite.diagnostics"),
+                Database.Configuration.CampaignLedgerPath + ".diagnostics",
+            ];
+            SqliteIncidentOutput.Report(directories, Console.Out, secondary);
+        }
+        catch (Exception error)
+        {
+            secondary.Add(error);
+        }
         if (BeforeGitCleanup is { } cleanup)
         {
             try

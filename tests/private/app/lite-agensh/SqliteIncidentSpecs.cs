@@ -428,7 +428,7 @@ public sealed class SqliteIncidentSpecs
         using StringWriter output = new(CultureInfo.InvariantCulture);
         List<Exception> failures = [];
 
-        RecoveryLifetimeControl.ReportSqliteIncidentFiles(paths, output, failures);
+        SqliteIncidentOutput.ReportFiles(paths, output, failures);
 
         string[] reportedDatabases = output
             .ToString()
