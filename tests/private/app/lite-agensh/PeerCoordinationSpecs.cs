@@ -887,7 +887,8 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     public async Task PeerTaskClosureDoesNotClosePeerWorkOrTheRun()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(token).ConfigureAwait(false);
+        Phase7Run state = await Phase7Run.CreateAsync(token, ownedHosts: false)
+            .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
@@ -895,6 +896,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 Phase7Sessions.Turn one = await state
                     .Sessions.NextTurnAsync("worker1", token)
                     .ConfigureAwait(false);
+                long ownBatch = state.SendingBatch("worker1");
                 Phase7Sessions.Turn two = await state
                     .Sessions.NextTurnAsync("worker2", token)
                     .ConfigureAwait(false);
@@ -935,13 +937,97 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 Assert.IsNull(state.Database.ReadMetadata("lifecycle:stop_reason"));
                 Assert.IsFalse(one.Token.IsCancellationRequested);
                 Assert.IsFalse(two.Token.IsCancellationRequested);
-                await state.Clock.WaitForPollAsync(token, state.WorkDeadline).ConfigureAwait(false);
-                state.Clock.Advance(state.Clock.WorkDeadline!.Value - state.Clock.GetUtcNow());
-                one.Complete();
+                state.Invoke(
+                    "worker1",
+                    "task_write",
+                    new() { ["action"] = "close", ["id"] = 1 }
+                );
+                Assert.AreEqual("closed", state.Value("SELECT state FROM tasks WHERE id=1;"));
+                Assert.AreEqual("worker1", state.Value("SELECT closed_by FROM tasks WHERE id=1;"));
+                await state.UntilAsync(
+                    () => (string?)state.Value("SELECT state FROM tasks WHERE id=1;") == "open",
+                    state.WorkDeadline,
+                    token
+                ).ConfigureAwait(false);
+                Assert.AreEqual("worker1", state.Database.ReadMetadata("lifecycle:root_closed_by"));
+                Assert.AreEqual("worker1", state.Value("SELECT closed_by FROM tasks WHERE id=1;"));
+                JsonObject reopened = JsonNode.Parse((string)state.Value(
+                    "SELECT payload FROM events WHERE recipient='worker2' AND kind='task_reopened';"
+                )!)!.AsObject();
+                Assert.AreEqual(1L, reopened["taskId"]!.GetValue<long>());
+                Assert.AreEqual("worker1", reopened["closedBy"]!.GetValue<string>());
+                Assert.IsNull(state.Database.ReadMetadata("lifecycle:stop_reason"));
+                Assert.IsFalse(one.Token.IsCancellationRequested);
+                Assert.IsFalse(two.Token.IsCancellationRequested);
+                long peerBatch = state.SendingBatch("worker2");
                 two.Complete();
+                await state.WaitAckAsync(peerBatch, state.WorkDeadline, token)
+                    .ConfigureAwait(false);
+                Phase7Sessions.Turn followup = await state.FixedAsync(
+                    next => state.Sessions.NextTurnAsync("worker2", next), token
+                ).ConfigureAwait(false);
+                long followupBatch = state.SendingBatch("worker2");
+                Assert.AreEqual(two.Session.SessionId, followup.Session.SessionId);
+                Assert.Contains("task_reopened", followup.Text);
+                Assert.AreEqual(1, two.Session.CompletedTurns);
+                Assert.AreEqual(
+                    "open",
+                    state.Value(
+                        "SELECT state FROM tasks WHERE id=$id;",
+                        ("$id", peer["id"]!.GetValue<long>())
+                    )
+                );
+                state.Invoke(
+                    "owner",
+                    "task_write",
+                    new() { ["action"] = "close", ["id"] = 1 }
+                );
+                await state.UntilAsync(
+                    state.Handoff!.OwnerStopped.Task, state.WorkDeadline, token
+                ).ConfigureAwait(false);
                 await state.Active.WaitAsync(token).ConfigureAwait(false);
-                _ = await state.Active.ConfigureAwait(false);
-                Assert.AreEqual("deadline", state.Database.ReadMetadata("lifecycle:stop_reason"));
+                JsonObject result = await state.Active.ConfigureAwait(false);
+                Assert.IsFalse(result["ok"]!.GetValue<bool>());
+                Assert.AreEqual(
+                    "ownership_or_usage_unresolved", result["code"]!.GetValue<string>()
+                );
+                Assert.AreEqual(
+                    "owner-root-closure", state.Database.ReadMetadata("lifecycle:stop_reason")
+                );
+                Assert.AreEqual("owner", state.Database.ReadMetadata("lifecycle:root_closed_by"));
+                Assert.AreEqual("owner", state.Value("SELECT closed_by FROM tasks WHERE id=1;"));
+                Assert.AreEqual("closed", state.Value("SELECT state FROM tasks WHERE id=1;"));
+                Assert.AreEqual("unresolved", state.Database.ReadMetadata("lifecycle"));
+                Assert.AreEqual(0L, state.Number(
+                    "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;"
+                ));
+                Assert.AreEqual("owner-root-closure", state.Value(
+                    "SELECT stop_reason FROM coordinator_segments ORDER BY id DESC LIMIT 1;"
+                ));
+                Assert.IsTrue(one.Token.IsCancellationRequested);
+                Assert.IsTrue(followup.Token.IsCancellationRequested);
+                foreach (long heldBatch in new[] { ownBatch, followupBatch })
+                {
+                    Assert.AreEqual("failed", state.Value(
+                        "SELECT state FROM delivery_batches WHERE id=$id;", ("$id", heldBatch)
+                    ));
+                    Assert.AreEqual(
+                        "Turn interrupted by coordinator stop; durable replay may repeat actions.",
+                        state.Value(
+                            "SELECT last_error FROM delivery_batches WHERE id=$id;",
+                            ("$id", heldBatch)
+                        )
+                    );
+                }
+                Assert.AreEqual(0, one.Session.CompletedTurns);
+                Assert.AreEqual(1, followup.Session.CompletedTurns);
+                Assert.AreEqual("uncertain", state.Reservation("worker1").State);
+                Assert.IsNull(state.Reservation("worker1").Actual);
+                Assert.AreEqual("uncertain", state.Reservation("worker2").State);
+                Assert.AreEqual(10m, state.Reservation("worker2").Actual);
+                Assert.AreEqual(
+                    0L, state.Number("SELECT COUNT(*) FROM checks WHERE kind='final';")
+                );
             })
             .ConfigureAwait(false);
     }

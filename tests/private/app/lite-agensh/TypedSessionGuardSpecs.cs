@@ -376,6 +376,240 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
         Assert.IsFalse(context.CancellationToken.IsCancellationRequested);
     }
 
+#pragma warning disable GHCP001 // Selected public typed history and accounting contracts.
+    [TestMethod]
+    [DataRow("later-shutdown", "Original routine termination or accounting frontier is invalid")]
+    [DataRow("error-shutdown", "Original routine termination or accounting frontier is invalid")]
+    [DataRow("frontier", "Original routine termination or accounting frontier is invalid")]
+    [DataRow("blank-cursor", "Original native history is expired, incomplete or unsupported")]
+    [DataRow("expired", "Original native history is expired, incomplete or unsupported")]
+    [DataRow("incomplete", "Matching original routine native termination is missing")]
+    [DataRow("reused-cursor", "Native history cursor was reused")]
+    [DataRow("page-error", "Later typed history page failed")]
+    public async Task ReadOriginalShutdownTypedHistoryRejectsOneFaultAfterHealthyControl(
+        string fault,
+        string reason
+    )
+    {
+        var (origin, history) = TypedOriginalHistory();
+        OperationException pageFailure = new(
+            "native_history_failed",
+            "Later typed history page failed."
+        );
+        Task<OriginalNativeShutdown> ReadAsync(string selection)
+        {
+            int nextPage = 0;
+            return NativeSdkSession.ReadOriginalShutdownAsync(
+                origin,
+                (_, token) =>
+                {
+                    token.ThrowIfCancellationRequested();
+                    int index = nextPage++;
+                    if (selection == "page-error" && index == 1)
+                    {
+                        throw pageFailure;
+                    }
+                    return Task.FromResult(
+                        new EventsReadResult
+                        {
+                            CursorStatus = selection == "expired" && index == history.Length
+                                ? EventsCursorStatus.Expired
+                                : EventsCursorStatus.Ok,
+                            Cursor = selection == "blank-cursor" && index == history.Length
+                                ? ""
+                                : selection == "reused-cursor" && index > 0
+                                    ? "1"
+                                    : (index + 1).ToString(
+                                        System.Globalization.CultureInfo.InvariantCulture
+                                    ),
+                            Events = index < history.Length ? [history[index]] : [],
+                            HasMore = selection != "incomplete" && index < history.Length,
+                        }
+                    );
+                },
+                context.CancellationToken
+            );
+        }
+
+        OriginalNativeShutdown healthy = await ReadAsync("");
+        Assert.AreEqual(230_000_000_000d, healthy.TotalNanoAiu);
+        Assert.AreEqual(history[^1].Id, healthy.EventId);
+        Assert.AreEqual(history[^1].Timestamp, healthy.Timestamp);
+        Assert.AreEqual(3L, healthy.Watermarks[origin.SessionId]);
+        if (fault is "later-shutdown" or "error-shutdown" or "frontier")
+        {
+            var terminal = (SessionShutdownEvent)history[^1];
+            Dictionary<string, long> marks = new(
+                terminal.Data.UsageAccountingWatermarks!,
+                StringComparer.Ordinal
+            );
+            if (fault == "frontier")
+            {
+                marks[origin.SessionId] = 2;
+            }
+            history[^1] = new SessionShutdownEvent
+            {
+                Id = terminal.Id,
+                Timestamp = terminal.Timestamp,
+                Data = new()
+                {
+                    CodeChanges = terminal.Data.CodeChanges,
+                    ModelMetrics = terminal.Data.ModelMetrics,
+                    TotalApiDuration = terminal.Data.TotalApiDuration,
+                    SessionStartTime = terminal.Data.SessionStartTime
+                        + (fault == "later-shutdown" ? 1 : 0),
+                    ShutdownType = fault == "error-shutdown"
+                        ? ShutdownType.Error
+                        : terminal.Data.ShutdownType,
+                    TotalNanoAiu = terminal.Data.TotalNanoAiu,
+                    UsageAccountingWatermarks = marks,
+                },
+            };
+        }
+
+        OperationException failure = await Assert.ThrowsExactlyAsync<OperationException>(() =>
+            ReadAsync(fault)
+        );
+
+        Assert.AreEqual(
+            fault == "page-error" ? "native_history_failed" : "credit_unknown",
+            failure.Code
+        );
+        Assert.Contains(reason, failure.Message);
+        if (fault == "page-error")
+        {
+            Assert.AreSame(pageFailure, failure);
+        }
+    }
+
+    [TestMethod]
+    public async Task ReadOriginalShutdownPagesShareOneThirtySecondProbeBudgetAndToken()
+    {
+        var (origin, history) = TypedOriginalHistory();
+        ManualScenarioClock clock = new();
+        long started = clock.GetTimestamp();
+        List<CancellationToken> pageTokens = [];
+        Task<NativeUsage> probe = NativeSdkSession.ReadProbeAsync(
+            async budget =>
+            {
+                OriginalNativeShutdown original = await NativeSdkSession.ReadOriginalShutdownAsync(
+                    origin,
+                    (cursor, token) =>
+                    {
+                        pageTokens.Add(token);
+                        int index = cursor is null ? 0 : 1;
+                        clock.Advance(TimeSpan.FromSeconds(index == 0 ? 20 : 11));
+                        token.ThrowIfCancellationRequested();
+                        return Task.FromResult(
+                            new EventsReadResult
+                            {
+                                CursorStatus = EventsCursorStatus.Ok,
+                                Cursor = (index + 1).ToString(
+                                    System.Globalization.CultureInfo.InvariantCulture
+                                ),
+                                Events = [history[index]],
+                                HasMore = true,
+                            }
+                        );
+                    },
+                    budget
+                );
+                return new NativeUsage(origin.SessionId, original.TotalNanoAiu, "complete", 3);
+            },
+            context.CancellationToken,
+            () => "original history composition",
+            clock
+        );
+
+        OperationException failure = await Assert.ThrowsExactlyAsync<OperationException>(
+            () => probe
+        );
+
+        Assert.AreEqual("native_probe_failed", failure.Code);
+        Assert.AreEqual(
+            "Native original history composition query exceeded its 30-second deadline.",
+            failure.Message
+        );
+        Assert.HasCount(2, pageTokens);
+        Assert.AreEqual(pageTokens[0], pageTokens[1]);
+        Assert.IsTrue(pageTokens[0].IsCancellationRequested);
+        Assert.IsFalse(context.CancellationToken.IsCancellationRequested);
+        Assert.AreEqual(TimeSpan.FromSeconds(31), clock.GetElapsedTime(started));
+    }
+
+    private static (NativeRecoveryOrigin Origin, SessionEvent[] History) TypedOriginalHistory()
+    {
+        DateTimeOffset segment = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        DateTimeOffset start = segment.AddSeconds(1);
+        const string session = "typed-history-only-session";
+        const string version = "typed-history-only-runtime";
+        NativeRecoveryOrigin origin = new(
+            session,
+            version,
+            "typed-history-only-origin",
+            0,
+            0,
+            start,
+            segment,
+            segment,
+            segment.AddSeconds(4)
+        );
+        SessionEvent[] history =
+        [
+            new SessionStartEvent
+            {
+                Id = Guid.NewGuid(),
+                Timestamp = start,
+                Data = new()
+                {
+                    Producer = "typed-history-predicate",
+                    Version = 1,
+                    SessionId = session,
+                    CopilotVersion = version,
+                    AlreadyInUse = false,
+                    StartTime = start,
+                },
+            },
+            new AssistantUsageEvent
+            {
+                Id = Guid.NewGuid(),
+                Timestamp = segment.AddSeconds(2),
+                Data = new()
+                {
+                    Model = "controlled-model",
+                    Accounting = new()
+                    {
+                        SourceSessionId = session,
+                        Sequence = 3,
+                        UsageId = "typed-history-receipt",
+                    },
+                },
+            },
+            new SessionShutdownEvent
+            {
+                Id = Guid.NewGuid(),
+                Timestamp = segment.AddSeconds(3),
+                Data = new()
+                {
+                    CodeChanges = new()
+                    {
+                        FilesModified = [],
+                        LinesAdded = 0,
+                        LinesRemoved = 0,
+                    },
+                    ModelMetrics = new Dictionary<string, ShutdownModelMetric>(),
+                    TotalApiDuration = TimeSpan.Zero,
+                    SessionStartTime = start.ToUnixTimeMilliseconds(),
+                    ShutdownType = ShutdownType.Routine,
+                    TotalNanoAiu = 230_000_000_000d,
+                    UsageAccountingWatermarks = new Dictionary<string, long> { [session] = 3 },
+                },
+            },
+        ];
+        return (origin, history);
+    }
+#pragma warning restore GHCP001
+
     [TestMethod]
     [DataRow(0)]
     [DataRow(-1)]
@@ -487,7 +721,9 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
     }
 
     [TestMethod]
-    public async Task NativeUsageFenceWorkChangesInsideReadRejectsStaleCapture()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task NativeUsageFenceWorkChangesInsideReadRejectsStaleCapture(bool assistantUsage)
     {
         NativeUsageFence fence = new();
 
@@ -495,8 +731,22 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
             fence.CaptureAsync(
                 _ =>
                 {
-                    fence.Observe(Start("compact-new"));
-                    fence.Observe(Complete("compact-new", success: true));
+                    if (assistantUsage)
+                    {
+                        fence.Observe(
+                            new AssistantUsageEvent
+                            {
+                                Id = Guid.NewGuid(),
+                                Timestamp = DateTimeOffset.UtcNow,
+                                Data = new() { Model = "controlled-model" },
+                            }
+                        );
+                    }
+                    else
+                    {
+                        fence.Observe(Start("compact-new"));
+                        fence.Observe(Complete("compact-new", success: true));
+                    }
                     return Task.FromResult(
                         new NativeUsage("session-local", 40_000_000_000, "complete", 1)
                     );
