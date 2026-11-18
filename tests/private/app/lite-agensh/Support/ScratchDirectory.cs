@@ -1,3 +1,5 @@
+using Microsoft.Data.Sqlite;
+
 namespace LiteAgensh.Tests.Support;
 
 internal sealed class ScratchDirectory : IDisposable
@@ -13,5 +15,19 @@ internal sealed class ScratchDirectory : IDisposable
     internal string PathFor(params string[] parts) =>
         Path.Combine([Root, .. parts]);
 
-    public void Dispose() => Directory.Delete(Root, recursive: true);
+    public void Dispose()
+    {
+        EnumerationOptions options = new()
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip = FileAttributes.ReparsePoint,
+        };
+        foreach (string path in Directory.EnumerateFiles(Root, "*.sqlite", options))
+        {
+            using SqliteConnection connection = new(Sql.ConnectionStringFor(path));
+            SqliteConnection.ClearPool(connection);
+        }
+
+        Directory.Delete(Root, recursive: true);
+    }
 }
