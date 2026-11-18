@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using WorkflowDelivery.Platform;
@@ -14,20 +16,23 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
     [DataRow("Absent", "true")]
     public async Task ActualStateStepConsumesSerializedObservation(string state, string needed)
     {
-        using var fixture = new NuGetReleaseTestFixture();
-        Directory.CreateDirectory(Path.Combine(fixture.Root, "observation"));
-        fixture.Write("observation/observation.json", fixture.Observe(
-            Enum.Parse<ReleaseFileState>(state)),
-            TransferJson.Default.NuGetObservationResult);
-        var environment = Environment(fixture);
-        environment["GITHUB_OUTPUT"] = Path.Combine(fixture.Root, "output");
+        var fixture = new NuGetReleaseTestFixture();
+        await WithCleanup(async () =>
+        {
+            Directory.CreateDirectory(Path.Combine(fixture.Root, "observation"));
+            fixture.Write("observation/observation.json", fixture.Observe(
+                Enum.Parse<ReleaseFileState>(state)),
+                TransferJson.Default.NuGetObservationResult);
+            var environment = Environment(fixture);
+            environment["GITHUB_OUTPUT"] = Path.Combine(fixture.Root, "output");
 
-        NativeCommandResult result = await Step(fixture, "observe",
-            "Describe native state and dry-run writes", environment);
+            NativeCommandResult result = await Step(fixture, "observe",
+                "Describe native state and dry-run writes", environment);
 
-        Assert.IsTrue(result.Succeeded, result.Stderr);
-        Assert.AreEqual("write-needed=" + needed + "\n", File.ReadAllText(
-            environment["GITHUB_OUTPUT"]!));
+            Assert.IsTrue(result.Succeeded, result.Stderr);
+            Assert.AreEqual("write-needed=" + needed + "\n", File.ReadAllText(
+                environment["GITHUB_OUTPUT"]!));
+        }, fixture.Dispose);
     }
 
     [TestMethod]
@@ -36,58 +41,133 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
     public async Task ActualVerificationStepRetainsTypedRegistryOutcome(string state,
         int expectedExit, string expectedState)
     {
-        using var fixture = new NuGetReleaseTestFixture();
-        foreach (string phase in new[] { "prepared", "observation" })
-            Directory.CreateDirectory(Path.Combine(fixture.Root, phase));
-        fixture.Write("prepared/preparation.json", fixture.Preparation,
-            TransferJson.Default.NuGetPreparationResult);
-        fixture.Write("observation/observation.json", fixture.Observe(ReleaseFileState.Exact),
-            TransferJson.Default.NuGetObservationResult);
-        fixture.Write("controlled-final.json", fixture.Observe(
-            Enum.Parse<ReleaseFileState>(state)),
-            TransferJson.Default.NuGetObservationResult);
-        var environment = Environment(fixture);
-        environment["CONTROLLED_OBSERVATION"] = Path.Combine(fixture.Root,
-            "controlled-final.json");
-        // The actual observe command exits 1 for a handled conflict or unknown state; both
-        // take the same caller branch, and ReleaseStateTests maps each typed state.
-        environment["CONTROLLED_OBSERVATION_EXIT"] = state == "Exact" ? "0" : "1";
-        Assert.IsTrue((await Step(fixture, "verify-result", "Receive transferred preparation",
-            environment)).Succeeded);
+        string[] phases = ["prepared", "observation"];
+        var fixture = new NuGetReleaseTestFixture();
+        await WithCleanup(async () =>
+        {
+            foreach (string phase in phases)
+                Directory.CreateDirectory(Path.Combine(fixture.Root, phase));
+            fixture.Write("prepared/preparation.json", fixture.Preparation,
+                TransferJson.Default.NuGetPreparationResult);
+            fixture.Write("observation/observation.json", fixture.Observe(ReleaseFileState.Exact),
+                TransferJson.Default.NuGetObservationResult);
+            fixture.Write("controlled-final.json", fixture.Observe(
+                Enum.Parse<ReleaseFileState>(state)),
+                TransferJson.Default.NuGetObservationResult);
+            var environment = Environment(fixture);
+            environment["CONTROLLED_OBSERVATION"] = Path.Combine(fixture.Root,
+                "controlled-final.json");
+            // The actual observe command exits 1 for a handled conflict or unknown state; both
+            // take the same caller branch, and ReleaseStateTests maps each typed state.
+            environment["CONTROLLED_OBSERVATION_EXIT"] = state == "Exact" ? "0" : "1";
+            Assert.IsTrue((await Step(fixture, "verify-result", "Receive transferred preparation",
+                environment)).Succeeded);
 
-        NativeCommandResult result = await Step(fixture, "verify-result",
-            "Verify registry coordinate and original bytes", environment);
+            NativeCommandResult result = await Step(fixture, "verify-result",
+                "Verify registry coordinate and original bytes", environment);
 
-        Assert.AreEqual(expectedExit, result.ExitCode, result.Stderr);
-        NuGetCompletionResult outcome = JsonSerializer.Deserialize(File.ReadAllText(
-            Path.Combine(fixture.Root, "verification/outcome.json")),
-            TransferJson.Default.NuGetCompletionResult)!;
-        Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expectedState), outcome.Outcome.State);
-        Assert.AreEqual(fixture.Prepared.Subject, outcome.Outcome.Subject);
-        Assert.IsFalse(outcome.MutationAttempted);
+            Assert.AreEqual(expectedExit, result.ExitCode, result.Stderr);
+            NuGetCompletionResult outcome = JsonSerializer.Deserialize(File.ReadAllText(
+                Path.Combine(fixture.Root, "verification/outcome.json")),
+                TransferJson.Default.NuGetCompletionResult)!;
+            Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expectedState), outcome.Outcome.State);
+            Assert.AreEqual(fixture.Prepared.Subject, outcome.Outcome.Subject);
+            Assert.IsFalse(outcome.MutationAttempted);
+        }, fixture.Dispose);
     }
 
     [TestMethod]
     public async Task ActualVerificationStepStopsOnUnhandledObservationFailure()
     {
-        using var fixture = new NuGetReleaseTestFixture();
-        foreach (string phase in new[] { "prepared", "observation" })
-            Directory.CreateDirectory(Path.Combine(fixture.Root, phase));
-        fixture.Write("prepared/preparation.json", fixture.Preparation,
-            TransferJson.Default.NuGetPreparationResult);
-        fixture.Write("observation/observation.json", fixture.Observe(ReleaseFileState.Exact),
-            TransferJson.Default.NuGetObservationResult);
-        var environment = Environment(fixture);
-        // Exit 2 is an unhandled native failure, not a typed destination state.
-        environment["CONTROLLED_OBSERVATION_EXIT"] = "2";
-        Assert.IsTrue((await Step(fixture, "verify-result", "Receive transferred preparation",
-            environment)).Succeeded);
+        string[] phases = ["prepared", "observation"];
+        var fixture = new NuGetReleaseTestFixture();
+        await WithCleanup(async () =>
+        {
+            foreach (string phase in phases)
+                Directory.CreateDirectory(Path.Combine(fixture.Root, phase));
+            fixture.Write("prepared/preparation.json", fixture.Preparation,
+                TransferJson.Default.NuGetPreparationResult);
+            fixture.Write("observation/observation.json", fixture.Observe(ReleaseFileState.Exact),
+                TransferJson.Default.NuGetObservationResult);
+            var environment = Environment(fixture);
+            // Exit 2 is an unhandled native failure, not a typed destination state.
+            environment["CONTROLLED_OBSERVATION_EXIT"] = "2";
+            Assert.IsTrue((await Step(fixture, "verify-result", "Receive transferred preparation",
+                environment)).Succeeded);
 
-        NativeCommandResult result = await Step(fixture, "verify-result",
-            "Verify registry coordinate and original bytes", environment);
+            NativeCommandResult result = await Step(fixture, "verify-result",
+                "Verify registry coordinate and original bytes", environment);
 
-        Assert.AreEqual(2, result.ExitCode, result.Stderr);
-        Assert.IsFalse(File.Exists(Path.Combine(fixture.Root, "verification/outcome.json")));
+            Assert.AreEqual(2, result.ExitCode, result.Stderr);
+            Assert.IsFalse(File.Exists(Path.Combine(fixture.Root, "verification/outcome.json")));
+        }, fixture.Dispose);
+    }
+
+    [TestMethod]
+    public async Task BodyAndCleanupFailuresRetainOriginalExceptionsAndStacks()
+    {
+        var bodyFailure = new AssertFailedException("Original body assertion.");
+        var cleanupFailure = new IOException("Controlled cleanup failure.");
+        int disposals = 0;
+        async Task FailBody()
+        {
+            await Task.Yield();
+            throw bodyFailure;
+        }
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void FailCleanup()
+        {
+            disposals++;
+            throw cleanupFailure;
+        }
+
+        AggregateException failure = await Assert.ThrowsExactlyAsync<AggregateException>(
+            () => WithCleanup(FailBody, FailCleanup));
+
+        Assert.HasCount(2, failure.InnerExceptions);
+        Assert.AreSame(bodyFailure, failure.InnerExceptions[0]);
+        Assert.AreSame(cleanupFailure, failure.InnerExceptions[1]);
+        Assert.Contains(nameof(FailBody), bodyFailure.StackTrace ?? "");
+        Assert.Contains(nameof(FailCleanup), cleanupFailure.StackTrace ?? "");
+        Assert.AreEqual(1, disposals);
+    }
+
+    [TestMethod]
+    public async Task CleanupFailureAfterSuccessfulBodyRemainsFailure()
+    {
+        var cleanupFailure = new IOException("Controlled cleanup failure.");
+        int disposals = 0;
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void FailCleanup()
+        {
+            disposals++;
+            throw cleanupFailure;
+        }
+
+        IOException failure = await Assert.ThrowsExactlyAsync<IOException>(
+            () => WithCleanup(() => Task.CompletedTask, FailCleanup));
+
+        Assert.AreSame(cleanupFailure, failure);
+        Assert.Contains(nameof(FailCleanup), failure.StackTrace ?? "");
+        Assert.AreEqual(1, disposals);
+    }
+
+    private static async Task WithCleanup(Func<Task> body, Action dispose)
+    {
+        ExceptionDispatchInfo? bodyFailure = null;
+        try { await body(); }
+        catch (Exception exception) { bodyFailure = ExceptionDispatchInfo.Capture(exception); }
+
+        ExceptionDispatchInfo? cleanupFailure = null;
+        try { dispose(); }
+        catch (Exception exception) { cleanupFailure = ExceptionDispatchInfo.Capture(exception); }
+
+        if (bodyFailure is not null && cleanupFailure is not null)
+            throw new AggregateException(
+                bodyFailure.SourceException, cleanupFailure.SourceException
+            );
+        bodyFailure?.Throw();
+        cleanupFailure?.Throw();
     }
 
     private static Dictionary<string, string?> Environment(NuGetReleaseTestFixture fixture) => new()
