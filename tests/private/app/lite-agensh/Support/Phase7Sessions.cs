@@ -10,7 +10,8 @@ namespace LiteAgensh.Tests.Support;
 internal sealed class Phase7Sessions(
     RunDatabase database,
     string? hostRole,
-    Phase7Journal? journal = null
+    Phase7Journal? journal = null,
+    bool ownedHosts = true
 ) : IAsyncDisposable
 {
     private readonly Dictionary<string, Channel<Turn>> turns = new(StringComparer.Ordinal);
@@ -30,7 +31,7 @@ internal sealed class Phase7Sessions(
 
     internal Host CreateHost(string operation)
     {
-        Host host = new(this, database, operation, hostRole);
+        Host host = new(this, database, operation, hostRole, ownedHosts);
         Hosts.Add(host);
         return host;
     }
@@ -103,13 +104,16 @@ internal sealed class Phase7Sessions(
         Phase7Sessions control,
         RunDatabase database,
         string operation,
-        string? role
+        string? role,
+        bool owned
     ) : INativeSdkHost
     {
-        private readonly OwnedChildControl child = new();
+        private readonly OwnedChildControl? child = owned ? new() : null;
         private readonly SemaphoreSlim startup = new(1, 1);
         private Process? process;
         private bool normalExit;
+        private bool managedReady;
+        private bool managedSettled;
         private bool wrapperDisposed;
         private long? helperStarted;
         private int? observedExitCode;
@@ -126,11 +130,13 @@ internal sealed class Phase7Sessions(
                 ["helperAgeMilliseconds"] = helperStarted is { } began
                     ? Stopwatch.GetElapsedTime(began).TotalMilliseconds
                     : null,
-                ["observedExitCode"] = observedExitCode ?? child.ObservedExitCode,
+                ["observedExitCode"] = observedExitCode ?? child?.ObservedExitCode,
                 ["leaseId"] = LeaseId,
                 ["readyPid"] = Ready?.Pid,
                 ["readyBirthTicks"] = Ready?.BirthTicks,
                 ["normalExitBeforeWrapperDispose"] = normalExit,
+                ["managedSettlementBeforeWrapperDispose"] = managedSettled,
+                ["hostKind"] = child is null ? "managed" : "owned-process",
                 ["wrapperDisposed"] = wrapperDisposed,
                 ["operation"] = Operation,
             };
@@ -147,8 +153,14 @@ internal sealed class Phase7Sessions(
             await startup.WaitAsync(token).ConfigureAwait(false);
             try
             {
-                if (Ready is not null)
+                if (Ready is not null || managedReady)
                 {
+                    return;
+                }
+                if (child is null)
+                {
+                    managedReady = true;
+                    Record("ready");
                     return;
                 }
                 helperStarted = Stopwatch.GetTimestamp();
@@ -168,43 +180,6 @@ internal sealed class Phase7Sessions(
             }
         }
 
-        internal TimeSpan StartupOwnerObservationWindow()
-        {
-            Require(Operation == "run", "Owner observation requires the run host.");
-            Require(
-                role is null,
-                "The focused owner observer must use the default whole-five-second role."
-            );
-            long started =
-                helperStarted ?? throw new InvalidOperationException("Run host has not started.");
-            Require(Ready is not null, "Owner observation requires actual READY.");
-            TimeSpan elapsed = Stopwatch.GetElapsedTime(started);
-            TimeSpan headroom = TimeSpan.FromSeconds(2);
-            TimeSpan window = TimeSpan.FromSeconds(5) - elapsed - headroom;
-            Require(
-                window > TimeSpan.Zero,
-                (
-                    "PHASE7_FIXTURE_LIFETIME_BUDGET: insufficient remaining helper time; "
-                    + "not an owner RED."
-                )
-            );
-            Console.WriteLine(
-                "PHASE7_OWNER_OBSERVATION_BUDGET "
-                    + new JsonObject
-                    {
-                        ["runtimeId"] = Id,
-                        ["readyPid"] = Ready!.Pid,
-                        ["readyBirthTicks"] = Ready.BirthTicks,
-                        ["elapsedMilliseconds"] = elapsed.TotalMilliseconds,
-                        ["observationMilliseconds"] = window.TotalMilliseconds,
-                        ["releaseHeadroomMilliseconds"] = headroom.TotalMilliseconds,
-                        ["contractMilliseconds"] = 5000,
-                        ["origin"] = "monotonic-before-StartDirect",
-                    }.ToJsonString()
-            );
-            return window;
-        }
-
         private void Record(string state) =>
             database.WriteMetadata(
                 $"native:runtime:{Id}",
@@ -214,12 +189,23 @@ internal sealed class Phase7Sessions(
                     ["runtimeLeaseId"] = LeaseId,
                     ["runtimeVersion"] = Phase6NativeControl.RuntimeVersion,
                     ["state"] = state,
-                    ["evidenceKind"] = "controlled-native-dependency",
+                    ["evidenceKind"] = child is null
+                        ? "controlled-managed-dependency" : "controlled-native-dependency",
                 }.ToJsonString()
             );
 
         public async ValueTask DisposeAsync()
         {
+            if (child is null)
+            {
+                if (!managedSettled)
+                {
+                    managedSettled = true;
+                    Record("settled");
+                    Console.WriteLine("PHASE7_MANAGED_HOST_SETTLED " + Witness.ToJsonString());
+                }
+                return;
+            }
             if (normalExit || process is null)
             {
                 return;
@@ -244,12 +230,13 @@ internal sealed class Phase7Sessions(
         internal async Task CleanupAsync()
         {
             List<Exception> failures = [];
-            bool childCleaned = false,
+            bool childCleaned = child is null,
                 startupDisposed = false;
             try
             {
                 // Exceptional cleanup is NOT normal application settlement.
-                if (!normalExit && process is not null && !process.HasExited && Ready is not null)
+                if (child is not null && !normalExit
+                    && process is not null && !process.HasExited && Ready is not null)
                 {
                     await child.ReleaseAsync(CancellationToken.None).ConfigureAwait(false);
                     await process
@@ -265,7 +252,10 @@ internal sealed class Phase7Sessions(
             }
             try
             {
-                await child.DisposeAsync().ConfigureAwait(false);
+                if (child is not null)
+                {
+                    await child.DisposeAsync().ConfigureAwait(false);
+                }
                 childCleaned = true;
             }
             catch (Exception error)
@@ -290,7 +280,7 @@ internal sealed class Phase7Sessions(
                 }
             }
             JsonObject receipt = Witness;
-            receipt["childCleanupAttempted"] = true;
+            receipt["childCleanupAttempted"] = child is not null;
             receipt["childCleanupSucceeded"] = childCleaned;
             receipt["startupDisposeAttempted"] = true;
             receipt["startupDisposed"] = startupDisposed;
@@ -363,9 +353,12 @@ internal sealed class Phase7Sessions(
                 ["runtimeLeaseId"] = host.LeaseId,
                 ["runtimeVersion"] = Phase6NativeControl.RuntimeVersion,
                 ["sdkVersion"] = NativeSdkSession.SdkVersion,
-                ["pid"] = host.Ready!.Pid,
-                ["birthTicks"] = host.Ready.BirthTicks,
             };
+            if (host.Ready is { } ready)
+            {
+                Metadata["pid"] = ready.Pid;
+                Metadata["birthTicks"] = ready.BirthTicks;
+            }
             (double nano, long requests) =
                 control.Journal?.Open(Metadata, worker, exactSession, database.Now) ?? (0d, 0L);
             usage = new(sessionId, nano, requests == 0 ? null : "complete", requests);

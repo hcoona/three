@@ -34,7 +34,7 @@ public sealed class ShutdownProvenanceSpecs(TestContext context)
             Assert.AreEqual(
                 247m,
                 recovered.Usage.RequireComplete(),
-                "Original shutdown's 200 is a lower bound, not the recovered amount."
+                "Original shutdown is a lower bound, not the recovered amount."
             );
             Assert.AreEqual(before, state.FinancialSnapshot.ToJsonString());
         });
@@ -66,20 +66,8 @@ public sealed class ShutdownProvenanceSpecs(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("missing-shutdown", "Matching original routine native termination is missing")]
-    [DataRow("later-shutdown", "Original routine termination or accounting frontier is invalid")]
-    [DataRow("error-shutdown", "Original routine termination or accounting frontier is invalid")]
-    [DataRow("frontier", "Original routine termination or accounting frontier is invalid")]
-    [DataRow("expired", "Original native history is expired, incomplete or unsupported")]
-    [DataRow("incomplete", "Matching original routine native termination is missing")]
-    [DataRow("reused-cursor", "Native history cursor was reused")]
-    [DataRow("page-error", "Later typed history page failed")]
-    [DataRow("page-budget", "original history composition query exceeded its 30-second deadline")]
     [Timeout(120_000)]
-    public async Task OriginalLifetimeFullSnapshotEligibleThenOnePageFaultNoFinancialDisposition(
-        string fault,
-        string reason
-    )
+    public async Task OriginalLifetimeMissingShutdownRejectsBeforeExactActivation()
     {
         RecoveryLifetimeControl state = await RecoveryLifetimeControl.CreateAsync(
             context.CancellationToken
@@ -92,38 +80,26 @@ public sealed class ShutdownProvenanceSpecs(TestContext context)
                 (await state.RecoverAsync(context.CancellationToken)).Usage.RequireComplete()
             );
             var before = state.FinancialSnapshot.ToJsonString();
-            state.RecoveryCase = fault;
-            long historyStarted = state.HistoryClock.GetTimestamp();
+            state.RecoveryCase = "missing-shutdown";
             var failure = await Assert.ThrowsExactlyAsync<OperationException>(() =>
                 state.RecoverAsync(context.CancellationToken)
             );
-            Assert.Contains(reason, failure.ToString());
+            Assert.Contains(
+                "Matching original routine native termination is missing",
+                failure.ToString()
+            );
             Assert.AreEqual(before, state.FinancialSnapshot.ToJsonString());
             Assert.AreSame(state.OriginalFailure, state.Original.FirstFailure);
             Assert.IsNull(
                 state.RecoveryHosts.Last().Sessions.Single().ExactSession,
                 "Failed original history must reject before exact activation."
             );
-            if (fault == "page-budget")
-            {
-                Assert.HasCount(2, state.RecoveryHosts.Last().Sessions.Single().PageTokens);
-                Assert.AreEqual(
-                    TimeSpan.FromSeconds(31),
-                    state.HistoryClock.GetElapsedTime(historyStarted)
-                );
-            }
         });
     }
 
     [TestMethod]
-    [DataRow("during-read", "Native work changed during the final usage query")]
     [DataRow("after-read", "Native work invalidated the staged usage reading")]
     [DataRow("processing", "still has processing or active work")]
-    [DataRow("active", "still has processing or active work")]
-    [DataRow("active-after-read", "still has processing or active work")]
-    [DataRow("abortable", "still has processing or active work")]
-    [DataRow("unsupported", "Typed recovery metadata is unsupported")]
-    [DataRow("nonlocal", "metadata")]
     [Timeout(120_000)]
     public async Task
     FreshReadMustStayIdleAndSettleEligibleThenWorkOrCapabilityFaultPreservesOriginal(

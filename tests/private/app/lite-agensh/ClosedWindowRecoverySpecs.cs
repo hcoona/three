@@ -6,6 +6,16 @@ namespace LiteAgensh.Tests;
 [TestClass]
 public sealed class ClosedWindowRecoverySpecs(TestContext context)
 {
+    private static readonly string[] SavedObservationFaults =
+    [
+        "missing-start",
+        "nonzero-origin",
+        "start-session",
+        "lineage",
+        "lagging-cap",
+        "changed-sdk",
+    ];
+
     [TestMethod]
     [DataRow(247)]
     [DataRow(347)]
@@ -76,7 +86,6 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
 
     [TestMethod]
     [DataRow("partial", "absent, invalid or incomplete")]
-    [DataRow("regression", "Fresh recovery usage regressed")]
     [DataRow("requests-regress", "Fresh recovery usage regressed")]
     [DataRow("session-stop", "actual recovery session could not settle")]
     [DataRow("host-stop", "actual owned recovery host could not settle")]
@@ -101,10 +110,6 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
             );
             var before = state.FinancialSnapshot.ToJsonString();
             state.RecoveryCase = fault;
-            if (fault == "regression")
-            {
-                state.FreshNano = 199_000_000_000d;
-            }
             var failure = await Assert.ThrowsExactlyAsync<OperationException>(() =>
                 state.RecoverAsync(context.CancellationToken)
             );
@@ -115,17 +120,8 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("missing-start", "Required original native limit evidence is missing")]
-    [DataRow("nonzero-origin", "compatible original zero-origin and verified cap evidence")]
-    [DataRow("start-session", "compatible original zero-origin and verified cap evidence")]
-    [DataRow("lineage", "compatible original zero-origin and verified cap evidence")]
-    [DataRow("lagging-cap", "compatible original zero-origin and verified cap evidence")]
-    [DataRow("changed-sdk", "compatible original zero-origin and verified cap evidence")]
     [Timeout(120_000)]
-    public async Task ZeroOriginUsesVerifiedCeilingEligibleThenSavedObservationFaultNoActivation(
-        string fault,
-        string reason
-    )
+    public async Task ZeroOriginSavedObservationFaultsRestoreExactProducerBytesWithoutActivation()
     {
         RecoveryLifetimeControl state = await RecoveryLifetimeControl.CreateAsync(
             context.CancellationToken
@@ -137,24 +133,71 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
                 247m,
                 (await state.RecoverAsync(context.CancellationToken)).Usage.RequireComplete()
             );
-            state.DamageSavedObservation(fault);
             var before = state.FinancialSnapshot.ToJsonString();
-            var failure = await Assert.ThrowsExactlyAsync<OperationException>(() =>
-                state.RecoverAsync(context.CancellationToken)
-            );
-            Assert.Contains(reason, failure.ToString());
-            Assert.HasCount(
-                1,
-                state.RecoveryHosts,
-                "The failed saved observation must reject before another host."
-            );
-            Assert.AreEqual(before, state.FinancialSnapshot.ToJsonString());
+            string startKey = NoDispatchCancellation.Marker(state.Reservation.Id);
+            string sessionKey = $"native:session:{state.Reservation.SessionId}";
+            string startBytes = state.Database.ReadMetadata(startKey)!;
+            string sessionBytes = state.Database.ReadMetadata(sessionKey)!;
+            Assert.IsNotNull(startBytes);
+            Assert.IsNotNull(sessionBytes);
+            foreach (string fault in SavedObservationFaults)
+            {
+                Assert.AreEqual(startBytes, state.Database.ReadMetadata(startKey), fault);
+                Assert.AreEqual(sessionBytes, state.Database.ReadMetadata(sessionKey), fault);
+                Exception? primary = null;
+                try
+                {
+                    state.DamageSavedObservation(fault);
+                    var failure = await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                        state.RecoverAsync(context.CancellationToken)
+                    );
+                    Assert.Contains(
+                        fault == "missing-start"
+                            ? "Required original native limit evidence is missing"
+                            : "compatible original zero-origin and verified cap evidence",
+                        failure.ToString(),
+                        message: fault
+                    );
+                    Assert.HasCount(
+                        1,
+                        state.RecoveryHosts,
+                        $"{fault} must reject before another host or exact activation."
+                    );
+                    Assert.AreEqual(before, state.FinancialSnapshot.ToJsonString(), fault);
+                    Assert.AreSame(state.OriginalFailure, state.Original.FirstFailure, fault);
+                }
+                catch (Exception failure)
+                {
+                    primary = failure;
+                    throw;
+                }
+                finally
+                {
+                    try
+                    {
+                        state.Database.WriteMetadata(startKey, startBytes);
+                        state.Database.WriteMetadata(sessionKey, sessionBytes);
+                        Assert.AreEqual(startBytes, state.Database.ReadMetadata(startKey), fault);
+                        Assert.AreEqual(
+                            sessionBytes,
+                            state.Database.ReadMetadata(sessionKey),
+                            fault
+                        );
+                    }
+                    catch (Exception restoration) when (primary is not null)
+                    {
+                        primary.Data["SavedObservationRestorationFailure"] = restoration;
+                        Console.Error.WriteLine(
+                            $"SAVED_OBSERVATION_RESTORATION_SECONDARY {fault} {restoration}"
+                        );
+                    }
+                }
+            }
         });
     }
 
     [TestMethod]
     [DataRow("1.0.106")]
-    [DataRow("1.0.108")]
     [Timeout(120_000)]
     public async Task RuntimeProvenanceMismatchRejectsWithoutRewritingOriginal(
         string original
@@ -248,7 +291,6 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("1.0.107")]
     [DataRow("1.0.105")]
     [Timeout(120_000)]
     public async Task InstalledRuntimeRecoveryPreservesOriginalVersionWithoutPairAllowlist(

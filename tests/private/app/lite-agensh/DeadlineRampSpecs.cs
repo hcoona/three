@@ -20,7 +20,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7Run state = await Phase7Run
-            .CreateAsync(token, workers: 1, hostRole: null)
+            .CreateAsync(token, workers: 1, hostRole: OwnedChildControl.ControlledNativeHostRole)
             .ConfigureAwait(false);
         CancellationTokenRegistration registration = default;
         Exception? primary = null;
@@ -76,16 +76,12 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         );
                         long requestId = request["requestId"]!.GetValue<long>();
                         Assert.AreEqual("pending", request["state"]!.GetValue<string>());
-                        TimeSpan observationWindow = state
-                            .Sessions.Hosts.Single(item => item.Operation == "run")
-                            .StartupOwnerObservationWindow();
+                        TimeSpan observationWindow = TimeSpan.FromSeconds(5);
                         observation = CancellationTokenSource.CreateLinkedTokenSource(token);
                         drive = DriveOwnerPollingAsync(state, cancelled.Task, observation.Token);
                         try
                         {
-                            // This lifetime-budgeted watchdog observes only. Its expiry does not
-                            // cancel
-                            // the caller, business token, native operation or run.
+                            // Observation expiry does not cancel the caller or business work.
                             await drive.WaitAsync(observationWindow, token).ConfigureAwait(false);
                         }
                         catch (TimeoutException)
@@ -606,7 +602,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7Run state = await Phase7Run
-            .CreateAsync(token, workers: 1, duration: 10)
+            .CreateAsync(token, workers: 1, duration: 10, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -616,6 +612,35 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     .Sessions.NextTurnAsync("worker1", token)
                     .ConfigureAwait(false);
                 long batch = state.SendingBatch("worker1");
+                long? pendingEvent = null;
+                long batches = state.Number("SELECT COUNT(*) FROM delivery_batches;");
+                long dispatches = state.Dispatches(state.Reservation("worker1").Id);
+                if (duringGrace)
+                {
+                    JsonObject message = state.Invoke(
+                        "owner",
+                        "message_send",
+                        new()
+                        {
+                            ["recipient"] = "worker1",
+                            ["body"] = "Retain this followup without claiming it during drain.",
+                        }
+                    );
+                    pendingEvent = state.Number(
+                        "SELECT id FROM events WHERE recipient='worker1' AND dedup_key=$key;",
+                        ("$key", "message:" + message["id"]!.GetValue<long>())
+                    );
+                    Assert.IsGreaterThan(0L, pendingEvent.Value);
+                    Assert.AreEqual("pending", state.Value(
+                        "SELECT state FROM events WHERE id=$id;", ("$id", pendingEvent.Value)
+                    ));
+                    Assert.IsNull(state.Value(
+                        "SELECT batch_id FROM events WHERE id=$id;", ("$id", pendingEvent.Value)
+                    ));
+                    Assert.AreEqual(0L, state.Number(
+                        "SELECT attempts FROM events WHERE id=$id;", ("$id", pendingEvent.Value)
+                    ));
+                }
                 Assert.AreEqual(TimeSpan.FromSeconds(10), turn.Timeout);
                 await state.Clock.WaitForPollAsync(token, state.WorkDeadline).ConfigureAwait(false);
                 state.Clock.Advance(TimeSpan.FromSeconds(duringGrace ? 10 : 9));
@@ -653,6 +678,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     );
                     Assert.IsLessThan(state.WorkDeadline, state.Clock.GetUtcNow());
                     state.Clock.Advance(state.Clock.WorkDeadline!.Value - state.Clock.GetUtcNow());
+                    await state.UntilAsync(state.Active, state.DrainDeadline, token)
+                        .ConfigureAwait(false);
                 }
                 await state.Active.WaitAsync(token).ConfigureAwait(false);
                 GitScenarioState.Data(await state.Active.ConfigureAwait(false));
@@ -674,8 +701,117 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 );
                 Assert.AreEqual(1, turn.Session.CompletedTurns);
                 Assert.AreEqual(1L, state.Number("SELECT COUNT(*) FROM coordinator_segments;"));
+                if (pendingEvent is long eventId)
+                {
+                    Assert.AreEqual("pending", state.Value(
+                        "SELECT state FROM events WHERE id=$id;", ("$id", eventId)
+                    ));
+                    Assert.IsNull(state.Value(
+                        "SELECT batch_id FROM events WHERE id=$id;", ("$id", eventId)
+                    ));
+                    Assert.AreEqual(0L, state.Number(
+                        "SELECT attempts FROM events WHERE id=$id;", ("$id", eventId)
+                    ));
+                    Assert.AreEqual(
+                        batches, state.Number("SELECT COUNT(*) FROM delivery_batches;")
+                    );
+                    Assert.AreEqual(dispatches, state.Dispatches(state.Reservation("worker1").Id));
+                }
             })
             .ConfigureAwait(false);
+    }
+
+    [TestMethod]
+    [TestCategory("InterruptionAndPeerDrainSafety")]
+    [Timeout(120_000, CooperativeCancellation = true)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task EnteredDrainOwnerPauseOrCallerCancellationInterruptsHeldTurn(bool caller)
+    {
+        CancellationToken token = testContext.CancellationToken;
+        Phase7Run state = await Phase7Run.CreateAsync(
+            token, workers: 1, duration: 10, ownedHosts: false
+        ).ConfigureAwait(false);
+        await state.RunBodyAsync(async () =>
+        {
+            _ = state.Start();
+            Phase7Sessions.Turn turn = await state.Sessions.NextTurnAsync("worker1", token)
+                .ConfigureAwait(false);
+            long batch = state.SendingBatch("worker1");
+            await state.Clock.WaitForPollAsync(token, state.WorkDeadline).ConfigureAwait(false);
+            state.Clock.Advance(state.WorkDeadline - state.Clock.GetUtcNow());
+            await state.UntilAsync(
+                () => state.Database.ReadMetadata("lifecycle") == "draining",
+                state.DrainDeadline,
+                token
+            ).ConfigureAwait(false);
+            Assert.IsFalse(turn.Token.IsCancellationRequested);
+            long? requestId = null;
+            if (caller)
+            {
+                state.CancelCaller();
+            }
+            else
+            {
+                JsonObject request = GitScenarioState.Data(
+                    state.Coordinator().RequestControl("pause")
+                );
+                requestId = request["requestId"]!.GetValue<long>();
+                Assert.AreEqual("pending", request["state"]!.GetValue<string>());
+            }
+            await state.UntilAsync(
+                state.Handoff!.OwnerStopped.Task, state.DrainDeadline, token
+            ).ConfigureAwait(false);
+            JsonObject result = await state.Active.WaitAsync(token).ConfigureAwait(false);
+            Assert.IsLessThan(state.DrainDeadline, state.Clock.GetUtcNow());
+            Assert.IsFalse(token.IsCancellationRequested);
+            Assert.IsTrue(turn.Token.IsCancellationRequested);
+            Assert.AreEqual(0, turn.Session.CompletedTurns);
+            Assert.IsFalse(result["ok"]!.GetValue<bool>());
+            Assert.AreEqual("ownership_or_usage_unresolved", result["code"]!.GetValue<string>());
+            string reason = caller ? "caller-cancelled" : "owner-pause";
+            JsonObject status = GitScenarioState.Data(state.Coordinator().Status());
+            Assert.AreEqual("interrupted", status["deadlineDrain"]!["outcome"]!.GetValue<string>());
+            Assert.AreEqual(reason, status["stopReason"]!.GetValue<string>());
+            Assert.AreEqual(reason, state.Value(
+                "SELECT stop_reason FROM coordinator_segments ORDER BY id DESC LIMIT 1;"
+            ));
+            Assert.AreEqual("unresolved", state.Database.ReadMetadata("lifecycle"));
+            Assert.AreEqual(0L, state.Number(
+                "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;"
+            ));
+            Assert.AreEqual("uncertain", state.Reservation("worker1").State);
+            Assert.IsNull(state.Reservation("worker1").Actual);
+            Assert.IsGreaterThan(0m, state.Reservation("worker1").Allowance);
+            Assert.IsNull(
+                state.Database.ReadMetadata("native:bootstrap:" + turn.Session.SessionId)
+            );
+            Assert.AreEqual("failed", state.Value(
+                "SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch)
+            ));
+            Assert.AreEqual(
+                "Turn interrupted by coordinator stop; durable replay may repeat actions.",
+                state.Value(
+                    "SELECT last_error FROM delivery_batches WHERE id=$id;", ("$id", batch)
+                )
+            );
+            Assert.AreEqual(0L, state.Number(
+                "SELECT COUNT(*) FROM coordinator_turns WHERE batch_id=$id;", ("$id", batch)
+            ));
+            if (requestId is long id)
+            {
+                Assert.AreEqual("pending", state.Value(
+                    "SELECT state FROM coordinator_controls WHERE id=$id;", ("$id", id)
+                ));
+                Assert.IsNull(state.Value(
+                    "SELECT completed_at FROM coordinator_controls WHERE id=$id;", ("$id", id)
+                ));
+            }
+            Phase7Sessions.Host host = state.Sessions.Hosts.Single(item => item.Operation == "run");
+            Assert.AreEqual("managed", host.Witness["hostKind"]!.GetValue<string>());
+            Assert.IsTrue(host.Witness["managedSettlementBeforeWrapperDispose"]!.GetValue<bool>());
+            Assert.IsFalse(host.Witness["normalExitBeforeWrapperDispose"]!.GetValue<bool>());
+        }).ConfigureAwait(false);
     }
 
     [TestMethod]

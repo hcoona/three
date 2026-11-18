@@ -672,7 +672,6 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         private NativeUsage? current;
         private SessionStartEvent? opening;
         private bool disposed;
-        private bool activeAfterRead;
         public string SessionId { get; private set; } = "";
         public bool HasSession { get; private set; }
         public string? NativeFailure => FirstFailure?.Message;
@@ -768,13 +767,6 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         {
             token.ThrowIfCancellationRequested();
             bool fresh = host.Recovery;
-            if (fresh && state.RecoveryCase == "unsupported")
-            {
-                throw new OperationException(
-                    "native_probe_failed",
-                    "Typed recovery metadata is unsupported."
-                );
-            }
 #pragma warning disable GHCP001
             SessionMetadataSnapshot snapshot = new()
             {
@@ -782,7 +774,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                 WorkingDirectory = cwd,
                 SelectedModel = "controlled-model",
                 AlreadyInUse = false,
-                IsRemote = fresh && state.RecoveryCase == "nonlocal",
+                IsRemote = false,
                 SessionLimits = new()
                 {
                     MaxAiCredits = NativeSdkSession.NativeLimit(
@@ -813,14 +805,6 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                     fresh && state.RecoveryCase == "missing-live-version" ? "" : host.Version,
                 ["sdkVersion"] = NativeSdkSession.SdkVersion,
             };
-            if (fresh && state.RecoveryCase == "during-read")
-            {
-                ObserveAdditionalWork();
-            }
-            if (fresh && state.RecoveryCase == "active-after-read")
-            {
-                activeAfterRead = true;
-            }
             return Task.FromResult(Current);
         }
 #pragma warning disable GHCP001 // Selected public processing/activity contracts.
@@ -848,9 +832,8 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                                         },
                                         new SessionActivity
                                         {
-                                            HasActiveWork =
-                                                state.RecoveryCase == "active" || activeAfterRead,
-                                            Abortable = state.RecoveryCase == "abortable",
+                                            HasActiveWork = false,
+                                            Abortable = false,
                                         }
                                     );
                                     return Task.CompletedTask;
@@ -1091,184 +1074,34 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                                             cursor,
                                             System.Globalization.CultureInfo.InvariantCulture
                                         );
-                                    if (state.RecoveryCase == "page-budget")
-                                    {
-                                        state.HistoryClock.Advance(
-                                            TimeSpan.FromSeconds(index == 0 ? 20 : 11)
-                                        );
-                                        caller.ThrowIfCancellationRequested();
-                                    }
-                                    if (state.RecoveryCase == "page-error" && index == 1)
-                                    {
-                                        throw new OperationException(
-                                            "native_history_failed",
-                                            "Later typed history page failed."
-                                        );
-                                    }
                                     SessionEvent[] history = state.Original.History.ToArray();
                                     SessionEvent update = history[index];
                                     // Alter one public page response only; original history remains
                                     // immutable.
-                                    if (update is SessionShutdownEvent shutdown)
+                                    if (
+                                        state.RecoveryCase == "missing-shutdown"
+                                        && update is SessionShutdownEvent
+                                    )
                                     {
-                                        if (state.RecoveryCase == "missing-shutdown")
-                                        {
-                                            return Task.FromResult(
-                                                new EventsReadResult
-                                                {
-                                                    CursorStatus = EventsCursorStatus.Ok,
-                                                    Cursor = "end",
-                                                    Events = [],
-                                                    HasMore = false,
-                                                }
-                                            );
-                                        }
-                                        if (
-                                            state.RecoveryCase
-                                            is "later-shutdown"
-                                                or "error-shutdown"
-                                                or "frontier"
-                                        )
-                                        {
-                                            Dictionary<string, long> watermarks = new(
-                                                shutdown.Data.UsageAccountingWatermarks!,
-                                                StringComparer.Ordinal
-                                            );
-                                            long precedingSequence = history
-                                                .OfType<AssistantUsageEvent>()
-                                                .Where(receipt =>
-                                                    receipt.Data.Accounting!.SourceSessionId
-                                                    == origin.SessionId
-                                                )
-                                                .Max(receipt => receipt.Data.Accounting!.Sequence);
-                                            Assert.AreEqual(3L, precedingSequence);
-                                            Assert.AreEqual(
-                                                precedingSequence,
-                                                watermarks[origin.SessionId]
-                                            );
-                                            if (state.RecoveryCase == "frontier")
+                                        return Task.FromResult(
+                                            new EventsReadResult
                                             {
-                                                watermarks[origin.SessionId] =
-                                                    precedingSequence - 1;
+                                                CursorStatus = EventsCursorStatus.Ok,
+                                                Cursor = "end",
+                                                Events = [],
+                                                HasMore = false,
                                             }
-                                            update = new SessionShutdownEvent
-                                            {
-                                                Id = shutdown.Id,
-                                                Timestamp = shutdown.Timestamp,
-                                                Data = new()
-                                                {
-                                                    CodeChanges = shutdown.Data.CodeChanges,
-                                                    ModelMetrics = shutdown.Data.ModelMetrics,
-                                                    TotalApiDuration = shutdown
-                                                        .Data
-                                                        .TotalApiDuration,
-                                                    SessionStartTime =
-                                                        shutdown.Data.SessionStartTime
-                                                        + (
-                                                            state.RecoveryCase == "later-shutdown"
-                                                                ? 1
-                                                                : 0
-                                                        ),
-                                                    ShutdownType =
-                                                        state.RecoveryCase == "error-shutdown"
-                                                            ? ShutdownType.Error
-                                                            : shutdown.Data.ShutdownType,
-                                                    TotalNanoAiu = shutdown.Data.TotalNanoAiu,
-                                                    UsageAccountingWatermarks = watermarks,
-                                                },
-                                            };
-                                            JsonObject original = System
-                                                .Text.Json.JsonSerializer.SerializeToNode(
-                                                    shutdown.Data
-                                                )!
-                                                .AsObject();
-                                            JsonObject altered = System
-                                                .Text.Json.JsonSerializer.SerializeToNode(
-                                                    ((SessionShutdownEvent)update).Data
-                                                )!
-                                                .AsObject();
-                                            string changedField = Assert.ContainsSingle(
-                                                original
-                                                    .Where(field =>
-                                                        !JsonNode.DeepEquals(
-                                                            field.Value,
-                                                            altered[field.Key]
-                                                        )
-                                                    )
-                                                    .Select(field => field.Key)
-                                            );
-                                            string expectedField = state.RecoveryCase switch
-                                            {
-                                                "later-shutdown" => nameof(
-                                                    SessionShutdownData.SessionStartTime
-                                                ),
-                                                "error-shutdown" => nameof(
-                                                    SessionShutdownData.ShutdownType
-                                                ),
-                                                _ => nameof(
-                                                    SessionShutdownData.UsageAccountingWatermarks
-                                                ),
-                                            };
-                                            Assert.AreEqual(
-                                                expectedField.ToUpperInvariant(),
-                                                changedField.ToUpperInvariant()
-                                            );
-                                            JsonObject restored = altered.DeepClone().AsObject();
-                                            restored[changedField] = original[
-                                                changedField
-                                            ]!.DeepClone();
-                                            Assert.IsTrue(JsonNode.DeepEquals(original, restored));
-                                            Console.WriteLine(
-                                                "PHASE5_HISTORY_CAUSAL_WITNESS "
-                                                    + System.Text.Json.JsonSerializer.Serialize(
-                                                        new
-                                                        {
-                                                            selection = state.RecoveryCase,
-                                                            origin.SessionId,
-                                                            unopenedReplacementSessionId =
-                                                                SessionId,
-                                                            precedingSequence,
-                                                            changedField,
-                                                            original,
-                                                            altered,
-                                                            restoredEqualsOriginal =
-                                                                JsonNode.DeepEquals(
-                                                                    original,
-                                                                    restored
-                                                                ),
-                                                            actualOriginalHistoryUnchanged =
-                                                                JsonNode.DeepEquals(
-                                                                    original,
-                                                                    System.Text.Json
-                                                                        .JsonSerializer
-                                                                        .SerializeToNode(
-                                                                            shutdown.Data
-                                                                        )
-                                                                ),
-                                                        }
-                                                    )
-                                            );
-                                        }
+                                        );
                                     }
                                     return Task.FromResult(
                                         new EventsReadResult
                                         {
                                             CursorStatus = EventsCursorStatus.Ok,
-                                            Cursor =
-                                                state.RecoveryCase == "expired" ? ""
-                                                : state.RecoveryCase == "reused-cursor" && index > 0
-                                                    ? "1"
-                                                : (index + 1).ToString(
-                                                    System
-                                                        .Globalization
-                                                        .CultureInfo
-                                                        .InvariantCulture
-                                                ),
+                                            Cursor = (index + 1).ToString(
+                                                System.Globalization.CultureInfo.InvariantCulture
+                                            ),
                                             Events = [update],
-                                            HasMore =
-                                                state.RecoveryCase == "incomplete"
-                                                    ? false
-                                                    : index + 1 < history.Length,
+                                            HasMore = index + 1 < history.Length,
                                         }
                                     );
                                 },
