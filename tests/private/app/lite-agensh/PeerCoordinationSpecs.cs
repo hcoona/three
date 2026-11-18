@@ -937,12 +937,12 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 Assert.IsNull(state.Database.ReadMetadata("lifecycle:stop_reason"));
                 Assert.IsFalse(one.Token.IsCancellationRequested);
                 Assert.IsFalse(two.Token.IsCancellationRequested);
-                state.Invoke(
+                JsonObject closedRoot = state.Invoke(
                     "worker1",
                     "task_write",
                     new() { ["action"] = "close", ["id"] = 1 }
                 );
-                Assert.AreEqual("closed", state.Value("SELECT state FROM tasks WHERE id=1;"));
+                Assert.AreEqual("closed", closedRoot["state"]!.GetValue<string>());
                 Assert.AreEqual("worker1", state.Value("SELECT closed_by FROM tasks WHERE id=1;"));
                 await state.UntilAsync(
                     () => (string?)state.Value("SELECT state FROM tasks WHERE id=1;") == "open",
