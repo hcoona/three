@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -1904,6 +1905,8 @@ public sealed class Coordinator
     )
     {
         CreditReservation? recovering = null;
+        Exception? localFailure = null;
+        JsonArray details = [];
         try
         {
             await processes.ResolveSurvivorsAsync(cancellationToken).ConfigureAwait(false);
@@ -1946,30 +1949,71 @@ public sealed class Coordinator
                         credits.MarkUncertain(reservation.Id);
                     }
 
-                    if (!recoverNativeUsage || !credits.HasSdkAssociation(reservation.Id))
+                    CreditReservation current;
+                    try
                     {
-                        throw new OperationException(
-                            "credit_unknown",
-                            "Unknown usage remains reserved. Only exact, non-dispatch SDK "
-                                + "recovery can reconcile known SDK sessions; legacy unknown "
-                                + "reservations require owner disposition."
-                        );
+                        if (!recoverNativeUsage || !credits.HasSdkAssociation(reservation.Id))
+                        {
+                            throw new OperationException(
+                                "credit_unknown",
+                                "Unknown usage remains reserved. Only exact, non-dispatch SDK "
+                                    + "recovery can reconcile known SDK sessions; legacy unknown "
+                                    + "reservations require owner disposition."
+                            );
+                        }
+
+                        current = credits.Reservations()
+                            .Single(row => row.Id == reservation.Id);
+                        ValidateSdkRecoveryAssociation(current);
+                    }
+                    catch (OperationException exception)
+                        when (settlementOnly && exception.Code == "credit_unknown")
+                    {
+                        localFailure ??= exception;
+                        AddSettlementDetails(details, reservation.Worker, reservation.Id,
+                            "usage-recovery-association", exception);
+                        continue;
                     }
 
-                    CreditReservation current = credits.Reservations()
-                        .Single(row => row.Id == reservation.Id);
-                    await RecoverSdkUsageAsync(current, cancellationToken)
+                    RecoveredNativeUsage usage = await nativeWorkers
+                        .ReadSettledUsageAsync(
+                            current,
+                            git.GetWorkerPath(
+                                current.Worker == "calibration" ? "worker1" : current.Worker
+                            ),
+                            EvidencePath("recovery"),
+                            cancellationToken
+                        )
                         .ConfigureAwait(false);
+
+                    try
+                    {
+                        credits.RecordRecoveredSdkUsage(usage);
+                    }
+                    catch (OperationException exception)
+                        when (settlementOnly && exception.Code == "credit_unknown")
+                    {
+                        localFailure ??= exception;
+                        AddSettlementDetails(details, reservation.Worker, reservation.Id,
+                            "usage-recovery-ledger", exception);
+                    }
                 }
+            }
+
+            if (localFailure is not null)
+            {
+                ExceptionDispatchInfo.Throw(localFailure);
             }
         }
         catch (Exception exception)
         {
             if (settlementOnly)
             {
-                JsonArray details = [];
-                AddSettlementDetails(details, recovering?.Worker, recovering?.Id,
-                    "usage-recovery", exception);
+                if (!ReferenceEquals(exception, localFailure))
+                {
+                    AddSettlementDetails(details, recovering?.Worker, recovering?.Id,
+                        "usage-recovery", exception);
+                }
                 try
                 {
                     database.WriteMetadata($"native:recovery_failure_details:{Guid.NewGuid():N}",
@@ -1988,10 +2032,7 @@ public sealed class Coordinator
         }
     }
 
-    private async Task RecoverSdkUsageAsync(
-        CreditReservation reservation,
-        CancellationToken cancellationToken
-    )
+    private void ValidateSdkRecoveryAssociation(CreditReservation reservation)
     {
         using (SqliteConnection connection = database.Open())
         {
@@ -2024,19 +2065,6 @@ public sealed class Coordinator
                 );
             }
         }
-
-        RecoveredNativeUsage usage = await nativeWorkers
-            .ReadSettledUsageAsync(
-                reservation,
-                git.GetWorkerPath(
-                    reservation.Worker == "calibration" ? "worker1" : reservation.Worker
-                ),
-                EvidencePath("recovery"),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        credits.RecordRecoveredSdkUsage(usage);
     }
 
     private CreditReservation? ReadReconnectReservation(string worker)

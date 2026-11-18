@@ -44,7 +44,8 @@ internal sealed class Phase7Run
         string? hostRole,
         Phase7Clock clock,
         Phase7Journal? journal,
-        CancellationToken token
+        CancellationToken token,
+        bool ownedHosts = true
     )
     {
         Git = git;
@@ -57,7 +58,7 @@ internal sealed class Phase7Run
         );
         Collaboration = new(Database);
         Operations = new(Database, Collaboration);
-        Sessions = new(Database, hostRole, journal);
+        Sessions = new(Database, hostRole, journal, ownedHosts);
         // No partially constructed fixture can strand this registration.
         owner = CancellationTokenSource.CreateLinkedTokenSource(token);
     }
@@ -87,7 +88,8 @@ internal sealed class Phase7Run
         int duration = 1800,
         string allocation = "per-session",
         string? hostRole = OwnedChildControl.ControlledNativeHostRole,
-        decimal allowance = 207.25m
+        decimal allowance = 207.25m,
+        bool ownedHosts = true
     )
     {
         Dictionary<string, string?> environment = GitEnvironment.ToDictionary(
@@ -114,7 +116,7 @@ internal sealed class Phase7Run
             };
             Phase7Clock clock = new();
             RunDatabase initialized = new(configuration.StatePath, configuration, clock);
-            state = new(git, initialized, environment, hostRole, clock, null, token);
+            state = new(git, initialized, environment, hostRole, clock, null, token, ownedHosts);
             GitScenarioState.Data(
                 await state.Coordinator("initialize").InitializeAsync(token).ConfigureAwait(false)
             );
