@@ -1355,6 +1355,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task ConfiguredCheckDeadlineRetainsTimedOutEvidenceWithoutAuthorizingDelivery()
     {
+        long began = Stopwatch.GetTimestamp();
         using CancellationTokenSource deadline = new(120_000);
         using CancellationTokenSource lifetime =
             CancellationTokenSource.CreateLinkedTokenSource(
@@ -1388,8 +1389,12 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             .SubmitAsync("worker1", "Timeout is not authorization", token)
             .ConfigureAwait(false);
         await state.ReviewAsync("worker2", change, token).ConfigureAwait(false);
-        await state.QueueAsync(change, token).ConfigureAwait(false);
+        JsonObject queued = await state.QueueAsync(change, token).ConfigureAwait(false);
+        long requestId = queued["requestId"]!.GetValue<long>();
         Task processing = state.Operations.ProcessPendingAsync(cancellation.Token);
+        Exception? primary = null;
+        bool producerJoined = false;
+        ExceptionDispatchInfo? producerCleanupFailure = null;
         try
         {
             OwnedChildIdentity ready = await control
@@ -1441,15 +1446,49 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 )
             );
         }
+        catch (Exception error)
+        {
+            primary = error;
+            throw;
+        }
         finally
         {
-            await cancellation.CancelAsync().ConfigureAwait(false);
             try
             {
-                await processing.ConfigureAwait(false);
+                await cancellation.CancelAsync().ConfigureAwait(false);
+                try
+                {
+                    await processing.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+                {
+                }
+                finally
+                {
+                    producerJoined = processing.IsCompleted;
+                }
             }
-            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+            catch (Exception secondary)
+            {
+                if (primary is null)
+                {
+                    producerCleanupFailure = ExceptionDispatchInfo.Capture(secondary);
+                }
+                else
+                {
+                    primary.Data["CandidateProducerCleanupError"] =
+                        Json.ExceptionDetails(secondary);
+                }
+            }
+            if (primary is not null)
+            {
+                CaptureCandidateAfterJoin(
+                    state, requestId, change["id"]!.GetValue<long>(), processing,
+                    producerJoined, began, primary, testContext.CancellationToken
+                );
+            }
         }
+        producerCleanupFailure?.Throw();
     }
 
     private static void AssertRefusal(
