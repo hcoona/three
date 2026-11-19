@@ -6,16 +6,22 @@ into text, and deterministic tools validate, assemble and convert that text to
 MusicXML. The records here define the text representation and the evidence its
 tools must meet.
 
-**Current state:** experimental. A Python package parses
+**Current state:** experimental; W1 formal measurement is paused. A Python
+package parses
 Text Score 2 documents, validates their grammar and semantics, reports each
 error with its rule class and location, lists review markers, writes canonical
 text, derives the carry-out state of a system document and assembles system
 documents into one score. A forward converter turns a valid assembled score
 without review markers into MusicXML 4.0, and a reverse converter turns a
 MusicXML piano part on two staves back into a valid assembled score. A
-round-trip comparison instrument scores a MusicXML round trip with musicdiff
-under the [comparison protocol](docs/comparison-protocol.md). There is no
-recognizer or model yet. No packaging or release is selected.
+round-trip comparison instrument and execution harness run the
+[comparison protocol](docs/comparison-protocol.md). Formal attempt `formal-2`
+passed preflight on `main` (`397b306f`) and stopped during public PDMX sample
+selection on an overlapping same-staff `octave-shift` guard before completing
+selection or running any selected-file conversion; W1 execution is paused per
+[Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-6729151812)
+(see [Agent handoff](docs/agent-handoff.md)). No acceptance measure has
+completed, and there is no recognizer, model, packaging or release yet.
 
 ## Usage
 
@@ -50,10 +56,13 @@ The W1 round-trip measurement harness runs the
 [comparison protocol](docs/comparison-protocol.md). Its run and download
 directories must be outside the repository:
 
-```shell
-uv run --package sheet-music-omr python -m sheet_music_omr.harness COMMAND --run-dir RUN --downloads DOWNLOADS [options]
+```powershell
+uv run --package sheet-music-omr --group dev `
+  python -m sheet_music_omr.harness COMMAND --run-dir RUN --downloads DOWNLOADS [options]
 ```
 
+`preflight` and `pilot` invoke `pytest` in the active interpreter, so include
+`--group dev` when running the harness.
 The commands, in order, are `preflight` (with `--prior-total` and `--basis`
 for a new download ledger), `download`, `select`, `run` (with
 `--gold-status`, `--gold-cache` and `--jobs`) and `report`. `view --id ID
@@ -101,6 +110,7 @@ does not produce.
 | What must the format, its tools and their acceptance evidence achieve? | [Requirements](docs/requirements.md)                          |
 | What exactly is a valid system document or assembled score?            | [Text Score 2 format](docs/text-format.md)                    |
 | How is a round trip compared and scored?                               | [Comparison protocol](docs/comparison-protocol.md)            |
+| How do I route a change or resume paused W1 work safely?               | [Agent handoff](docs/agent-handoff.md)                        |
 | What work is currently authorized?                                     | Repository [Delivery Wave](../../../../docs/delivery-wave.md) |
 | Where are progress, reviews and findings?                              | The two Issues above and their linked pull requests           |
 
@@ -139,6 +149,17 @@ own carrier because an accepted protocol must be fixed before execution and
 changes only under research-evidence review, independently of format and
 requirement changes. Issues carry its results, not the protocol.
 
-Review execution, findings and progress stay in Issues and pull requests. When
-implementation changes status, update this README rather than creating a second
-progress ledger.
+Replacement coding agents and contributors consume the
+[agent handoff](docs/agent-handoff.md) before modifying project files or
+operating the harness across sessions. It owns change routing, active pause and
+external-state/ledger invariants, and ordered resumption gates. Without it a
+fresh session must reconstruct operational hazards and pause boundaries from
+dozens of Issue comments and risks repeating environment stops, disturbing
+preserved external runs, or bypassing required pre-conversion gates. It needs a
+distinct carrier so this README stays a concise project overview while normative
+requirements, grammar and comparison rules remain separate from operational
+handoff routing.
+
+Review execution, findings and chronological progress stay in Issues and pull
+requests. When implementation or pause status changes, update this README and
+the handoff rather than creating a progress ledger.
