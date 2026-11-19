@@ -147,8 +147,7 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
    `./mxl/12/23/QmUhRXt7YGTniz62wPpVGpCGtvFa1tfdHjrndu5bL2Ftj6.mxl` stopped the
    run with `StepStopError` wrapping
    `ProtocolDefectError: music21 reads an octave shift in measure 1 other than MusicXML does`
-   on two `octave-shift` spans overlapping on the same staff. Selection halted
-   before producing a complete 200-PDMX / 50-Lieder manifest, and no
+   on two `octave-shift` spans overlapping on the same staff. Selection halted before completing PDMX and Lieder sample selection, and no
    selected-file round-trip conversion ran.
 3. **GOV-011 triage of `F1`:** independent triage in
    [#1488 comment 6728641537](https://github.com/hcoona/three/issues/1488#issuecomment-6728641537)
@@ -192,10 +191,10 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   resumed runs in a fresh external run directory (`formal-3` or later) while
   keeping `formal-1` and `formal-2` intact.
 - **Private gold boundary (`OMR-REQ-015`):** read private gold inputs locally
-  and read-only. Keep `gold-mapping.json` confined to the local external run
-  directory. Never commit, log, or publish private file paths, filenames, piece
-  identities, or score content; public records may report only aggregate counts
-  and anonymized batch numbers.
+  and read-only. Keep `RUN/gold/mapping.json` (`harness/privacy.py:GOLD_MAPPING`)
+  confined to the local external run directory. Never commit, log, or publish
+  private file paths, filenames, piece identities, or score content; public
+  records may report only aggregate counts and anonymized batch numbers.
 - **Worktree hygiene:** create new branches from a freshly fetched, clean
   `origin/main` worktree. Do not stage or revive superseded local prototypes
   left in historical developer worktrees—specifically any early
@@ -233,10 +232,12 @@ execute these steps in order:
     ```
 
 4. **Complete selection and publish the manifest before conversion:** run
-   `select` and post the complete 200-PDMX and 50-Lieder selection list to
-   `#1488` before invoking `run`
-   ([Selection before conversion](comparison-protocol.md#selection-before-conversion)).
-   Before relying on heading results, also settle any open check in
+   `select` and post the complete protocol-conforming selection list (up to 200
+   PDMX files and 50 Lieder extracts, or all passing candidates with the smaller
+   count reported when fewer pass;
+   [Selection before conversion](comparison-protocol.md#selection-before-conversion))
+   to `#1488` before invoking `run`. Before relying on heading results, also
+   settle any open check in
    [Evidence limits and open checks](comparison-protocol.md#evidence-limits-and-open-checks)
    (such as `credit` elements without a `credit-type` on the selected files).
 5. **Run all arms on the single preflighted commit:** execute `run` and `report`
