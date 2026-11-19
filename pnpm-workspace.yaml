@@ -14,6 +14,9 @@ allowBuilds:
 
 linkWorkspacePackages: true
 
+patchedDependencies:
+  '@wxt-dev/auto-icons@1.1.2': src/public/lib/steam-account-history-to-csv/patches/@wxt-dev__auto-icons@1.1.2.patch
+
 saveWorkspaceProtocol: true
 
 sharedWorkspaceLockfile: true
