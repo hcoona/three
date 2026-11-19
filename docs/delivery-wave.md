@@ -729,6 +729,52 @@ ends a grant. Git and the proposing PR retain the reason and history.
     - No release, proving or campaign dispatch, publication, credential,
       Environment, account, publisher or other access change.
 
+### Repair the Steam extension WXT build in retained CI
+
+- **Work carrier:** [Issue #1666](https://github.com/hcoona/three/issues/1666)
+  and its separate authorization and implementation pull requests.
+- **Accepted inputs:** the [engineering principles](engineering/engineering-principles.md),
+  the Steam extension's
+  [README](../src/public/lib/steam-account-history-to-csv/README.md),
+  `src/public/lib/steam-account-history-to-csv/wxt.config.ts`, its existing
+  build/versioning scripts and tests, the committed pnpm dependency inputs,
+  and the retained Node checks in `.github/workflows/ci.yml`. The
+  [observed Chrome build failure](https://github.com/hcoona/three/pull/1663#issuecomment-6998381121)
+  identifies the failing boundary, not its cause.
+- **Advancement and outcome:** identify why the retained Chrome WXT build
+  cannot write its generated icon, then make the smallest evidence-backed
+  correction in this package's build configuration, scripts, tests or
+  directly required WXT/icon dependencies and lock entries. Preserve NBGV
+  manifest identity, declared Node/browser behavior and existing assertions.
+  Use supported provider interfaces; do not compensate for an unestablished
+  lower-layer guarantee with speculative application machinery.
+- **Ordering and gates:** merge this authorization before substantive Steam
+  source/dependency changes or local reproduction. Keep the implementation
+  separate from the LiteAgensh repair. Establish and independently classify
+  material findings before remediation; retain applicable engineering, OCR,
+  record-system and research-evidence review and ordinary CI. Any experiment
+  needs an accepted, bounded protocol before execution. New product behavior,
+  a different support range or a wider repair returns to the owner.
+- **Acceptance and closure:** the failure mechanism and smallest correction
+  have reviewable evidence; existing Chrome/Firefox version/build scenarios
+  and affected checks pass across the Node matrix derived from current
+  committed declarations. Preserve failures and evidence limits rather than
+  accepting a retry, longer timeout, weakened assertion or blanket
+  serialization. Normal required checks pass before merge. Delete this entry
+  when the bounded outcome is accepted.
+- **Effects:** permit repository and read-only GitHub/public-provider
+  inspection, package-owned configuration/script/test changes and directly
+  required dependency/lock updates, ordinary dependency restoration,
+  isolated credential-free local builds and tests, independent delegated
+  review, and ordinary Issue/PR/check operations and their normal CI.
+  Development probes and fixtures remain in temporary projects outside the
+  repository; cleanup touches only task-owned state.
+- **Exclusions:** no unrelated project repair, global tool/runtime change,
+  declared Node/browser support change, live Steam/browser-account operation,
+  store submission, release/proving/campaign dispatch, publication,
+  credential/authentication/access change or shared host/certificate-store
+  mutation. This entry does not reopen a closed campaign or waive a check.
+
 ### Restore and validate the Renovate scheduled workflow
 
 - **Work carrier:** [Issue #1531](https://github.com/hcoona/three/issues/1531),
