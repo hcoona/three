@@ -1664,9 +1664,10 @@ public sealed class GitOperations
             int? exit = null;
             string log;
             bool cancelled = false;
+            ProcessResult? completedCommand = null;
             try
             {
-                ProcessResult result = await processes
+                completedCommand = await processes
                     .RunAsync(
                         command.Executable,
                         command.Arguments,
@@ -1675,12 +1676,13 @@ public sealed class GitOperations
                         token
                     )
                     .ConfigureAwait(false);
-                exit = result.ExitCode;
+                exit = completedCommand.ExitCode;
                 status =
-                    result.TimedOut ? "timed-out"
-                    : result.ExitCode == 0 ? "passed"
+                    completedCommand.TimedOut ? "timed-out"
+                    : completedCommand.ExitCode == 0 ? "passed"
                     : "failed";
-                log = $"stdout:\n{result.StandardOutput}\nstderr:\n{result.StandardError}";
+                log = $"stdout:\n{completedCommand.StandardOutput}"
+                    + $"\nstderr:\n{completedCommand.StandardError}";
                 try
                 {
                     await RequireExactTreeAsync(path, commit, token).ConfigureAwait(false);
@@ -1691,12 +1693,37 @@ public sealed class GitOperations
                     log += "\nCandidate identity failure: " + exception.Message;
                 }
             }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            catch (OperationCanceledException exception) when (token.IsCancellationRequested)
             {
                 status = "cancelled";
-                log =
-                    "Caller cancelled the check; ProcessRunner settled owned execution "
-                        + "before returning.";
+                exit = null;
+                log = completedCommand is null
+                    ? "Caller cancelled the check; ProcessRunner settled owned execution "
+                        + "before returning."
+                    : "Caller cancelled the check; post-command verification did not complete.";
+                if (completedCommand is not null)
+                {
+                    log += "\nCompleted configured command evidence:\n"
+                        + new JsonObject
+                        {
+                            ["observedExitCode"] = completedCommand.ExitCode,
+                            ["timedOut"] = completedCommand.TimedOut,
+                            ["stdout"] = ProcessRunner.RetainedOutput(
+                                completedCommand.StandardOutput
+                            ),
+                            ["stderr"] = ProcessRunner.RetainedOutput(
+                                completedCommand.StandardError
+                            ),
+                        }.ToJsonString();
+                }
+                if (exception.Data[ProcessRunner.CancellationEvidenceKey] is string evidence)
+                {
+                    log += completedCommand is null
+                        ? "\nCommand cancellation evidence:\n"
+                        : "\nVerification probe cancellation evidence "
+                            + "(not configured-command output):\n";
+                    log += evidence;
+                }
                 cancelled = true;
             }
             catch (Exception exception)

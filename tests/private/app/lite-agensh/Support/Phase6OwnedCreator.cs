@@ -115,14 +115,18 @@ internal sealed class Phase6OwnedCreator : IAsyncDisposable
         start.ArgumentList.Add("lite-phase6-creator-" + nonce);
         start.ArgumentList.Add(nonce);
         start.ArgumentList.Add(configPath);
+        Console.WriteLine("PHASE6_LAUNCH_ENTER");
         process =
             Process.Start(start)
             ?? throw new InvalidOperationException("Bound offline creator did not start.");
+        Console.WriteLine("PHASE6_LAUNCH_RETURN pid=" + process.Id);
         stdout = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
         stderr = process.StandardError.ReadToEndAsync(CancellationToken.None);
+        Console.WriteLine("PHASE6_CONNECT_ENTER");
         await pipe.WaitForConnectionAsync(token)
             .WaitAsync(TimeSpan.FromSeconds(5), token)
             .ConfigureAwait(false);
+        Console.WriteLine("PHASE6_CONNECT_RETURN");
         reader = new(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
         writer = new(pipe, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
         Hello = await ReceiveAsync("HELLO", token).ConfigureAwait(false);
@@ -141,6 +145,7 @@ internal sealed class Phase6OwnedCreator : IAsyncDisposable
             Hello["productSha256"]!.GetValue<string>()
         );
         await SendAsync("START", token).ConfigureAwait(false);
+        Console.WriteLine("PHASE6_START_SENT");
         Opened = await ReceiveAsync("OPENED", token).ConfigureAwait(false);
         Database = new(configuration.StatePath);
         Ledger = new(configuration.CampaignLedgerPath, configuration.CampaignAiCreditAllowance);
@@ -306,6 +311,7 @@ internal sealed class Phase6OwnedCreator : IAsyncDisposable
 
     private async Task<JsonObject> ReceiveAsync(string stage, CancellationToken token)
     {
+        Console.WriteLine("PHASE6_RECEIVE_ENTER " + stage);
         string? line = await reader!
             .ReadLineAsync(token)
             .AsTask()
@@ -317,6 +323,7 @@ internal sealed class Phase6OwnedCreator : IAsyncDisposable
         Assert.AreEqual(1, message["version"]!.GetValue<int>());
         Assert.AreEqual(nonce, message["nonce"]!.GetValue<string>());
         Assert.AreEqual(stage, message["stage"]!.GetValue<string>());
+        Console.WriteLine("PHASE6_RECEIVE_RETURN " + stage);
         return message["data"]!.AsObject();
     }
 
@@ -324,20 +331,52 @@ internal sealed class Phase6OwnedCreator : IAsyncDisposable
     {
         List<Exception> secondary = [];
         bool ownedFinished = process is null;
+        void Cleanup(Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception error)
+            {
+                secondary.Add(error);
+            }
+        }
         try
         {
             if (process is not null)
             {
                 if (!exitObserved)
                 {
-                    if (!process.HasExited)
+                    bool exitedBeforeCleanup = process.HasExited;
+                    JsonObject processCleanup = new()
                     {
-                        process.Kill(entireProcessTree: true);
+                        ["pid"] = process.Id,
+                        ["exitedBeforeCleanup"] = exitedBeforeCleanup,
+                        ["exitCodeBeforeCleanup"] = exitedBeforeCleanup ? process.ExitCode : null,
+                        ["cleanupKillAttempted"] = false,
+                        ["postJoinExitObserved"] = false,
+                    };
+                    try
+                    {
+                        if (!exitedBeforeCleanup)
+                        {
+                            processCleanup["cleanupKillAttempted"] = true;
+                            process.Kill(entireProcessTree: true);
+                        }
+                        await process
+                            .WaitForExitAsync(CancellationToken.None)
+                            .WaitAsync(TimeSpan.FromSeconds(5))
+                            .ConfigureAwait(false);
+                        processCleanup["postJoinExitObserved"] = true;
+                        processCleanup["postJoinExitCode"] = process.ExitCode;
                     }
-                    await process
-                        .WaitForExitAsync(CancellationToken.None)
-                        .WaitAsync(TimeSpan.FromSeconds(5))
-                        .ConfigureAwait(false);
+                    finally
+                    {
+                        Cleanup(() => Console.WriteLine(
+                            "PHASE6_CREATOR_PROCESS_CLEANUP " + processCleanup.ToJsonString()
+                        ));
+                    }
                     Console.WriteLine(
                         $"PHASE6_CREATOR_EXCEPTIONAL_EXIT pid={process.Id} "
                             + $"exit={process.ExitCode}; not normal settlement"
@@ -367,17 +406,6 @@ internal sealed class Phase6OwnedCreator : IAsyncDisposable
         }
         finally
         {
-            void Cleanup(Action action)
-            {
-                try
-                {
-                    action();
-                }
-                catch (Exception error)
-                {
-                    secondary.Add(error);
-                }
-            }
             Cleanup(() => writer?.Dispose());
             Cleanup(() => reader?.Dispose());
             try

@@ -49,6 +49,11 @@ internal static class Program
             {
                 AutoFlush = true,
             };
+            if (heldCandidateCheck)
+            {
+                Console.WriteLine("owned check diagnostic stdout before READY");
+                Console.Error.WriteLine("owned check diagnostic stderr before READY");
+            }
 
             if (arguments.Length == 4)
             {

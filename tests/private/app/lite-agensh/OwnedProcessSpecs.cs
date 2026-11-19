@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json.Nodes;
 using LiteAgensh.Tests.Support;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -7,6 +8,36 @@ namespace LiteAgensh.Tests;
 [TestClass]
 public sealed class OwnedProcessSpecs(TestContext context)
 {
+    public static IEnumerable<(string? Frame, string Kind)> InvalidReadyFrames =>
+    [
+        (null, "eof"),
+        ("", "empty"),
+        ("private-local-frame", "malformed"),
+        (new string('x', 129) + "private-local-frame", "oversized"),
+    ];
+
+    [TestMethod]
+    [DynamicData(nameof(InvalidReadyFrames))]
+    public void InvalidReadinessClassifiesTheFrameWithoutExportingItsContent(
+        string? frame, string kind
+    )
+    {
+        context.CancellationToken.ThrowIfCancellationRequested();
+        InvalidOperationException error = Assert.ThrowsExactly<InvalidOperationException>(
+            () => OwnedChildControl.ParseReady(frame)
+        );
+        JsonNode details = JsonNode.Parse(error.Message[error.Message.IndexOf('{')..])!;
+
+        Assert.AreEqual(kind, details["frameKind"]!.GetValue<string>());
+        Assert.AreEqual(frame?.Length, details["frameLength"]?.GetValue<int>());
+        Assert.AreEqual("ready-frame", details["stage"]!.GetValue<string>());
+        Assert.IsLessThan(512, error.Message.Length);
+        if (!string.IsNullOrEmpty(frame))
+        {
+            Assert.DoesNotContain(frame, error.Message);
+        }
+    }
+
     [TestMethod]
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task FailedReleaseRetainsItsErrorWhileRemainingOwnedDisposalStillCompletes()
@@ -127,6 +158,58 @@ public sealed class OwnedProcessSpecs(TestContext context)
             Assert.AreEqual("exited", retired.State);
             Assert.AreEqual(live.Pid, retired.Pid);
             Assert.AreEqual(live.BirthTicks, retired.BirthTicks);
+        }
+        finally
+        {
+            await CancelAndDrainAsync(cancellation, running).ConfigureAwait(false);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120_000, CooperativeCancellation = true)]
+    [TestCategory("CancelSettleOnlyOwnedChildren")]
+    public async Task CommandCancellationRetainsDrainedDiagnosticsWithoutReturningSuccess()
+    {
+        using OwnedProcessState state = new();
+        await using OwnedChildControl control = new();
+        using CancellationTokenSource cancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+        Task<ProcessResult> running = state.Runner.RunAsync(
+            OwnedChildControl.ExecutablePath,
+            control.Arguments(role: OwnedChildControl.HeldCandidateCheckRole),
+            state.WorkingDirectory,
+            TimeSpan.FromSeconds(120),
+            cancellation.Token
+        );
+        try
+        {
+            OwnedChildIdentity ready = await control
+                .ReadReadyAsync(context.CancellationToken)
+                .ConfigureAwait(false);
+            await cancellation.CancelAsync().ConfigureAwait(false);
+            OperationCanceledException error = await Assert
+                .ThrowsAsync<OperationCanceledException>(async () =>
+                    await running.ConfigureAwait(false)
+                )
+                .ConfigureAwait(false);
+            JsonNode evidence = JsonNode.Parse(Assert.IsInstanceOfType<string>(
+                error.Data[ProcessRunner.CancellationEvidenceKey]
+            ))!;
+            OwnedLease retired = state.Lease(pid: ready.Pid);
+
+            Assert.AreEqual(cancellation.Token, error.CancellationToken);
+            Assert.AreEqual(retired.Id, evidence["leaseId"]!.GetValue<long>());
+            Assert.AreEqual("exited", retired.State);
+            Assert.IsTrue(evidence["stdout"]!["complete"]!.GetValue<bool>());
+            Assert.IsTrue(evidence["stderr"]!["complete"]!.GetValue<bool>());
+            Assert.Contains(
+                "owned check diagnostic stdout before READY",
+                evidence["stdout"]!["text"]!.GetValue<string>()
+            );
+            Assert.Contains(
+                "owned check diagnostic stderr before READY",
+                evidence["stderr"]!["text"]!.GetValue<string>()
+            );
         }
         finally
         {
