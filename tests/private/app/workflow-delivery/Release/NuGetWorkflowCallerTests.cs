@@ -173,6 +173,7 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         // shell and typed application state/phase/completion commands run unchanged.
         const string shim = """
             $ErrorActionPreference = 'Stop'
+            [Console]::Error.WriteLine('NuGet caller: script entered.')
             function mise {
               $operation = @($args | Select-Object -Skip 4)
               switch ($operation[1]) {
@@ -186,8 +187,11 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
                   }
                 }
                 default {
+                  [Console]::Error.WriteLine('NuGet caller: invocation attempted.')
                   & $env:WORKFLOW_DOTNET $env:WORKFLOW_APP @operation
-                  $global:LASTEXITCODE = $LASTEXITCODE
+                  $exitCode = $LASTEXITCODE
+                  [Console]::Error.WriteLine("NuGet caller: invocation returned; exit $exitCode.")
+                  $global:LASTEXITCODE = $exitCode
                 }
               }
             }
