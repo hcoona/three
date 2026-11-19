@@ -30,14 +30,7 @@ public sealed class RunDatabase
 
         configuration?.Validate();
         Directory.CreateDirectory(StatePath);
-        connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            ForeignKeys = true,
-            DefaultTimeout = 5,
-            Pooling = false,
-        }.ToString();
+        connectionString = Sql.ConnectionStringFor(databasePath);
         using SqliteConnection connection = Open();
         Sql.Execute(connection, "PRAGMA journal_mode=WAL;");
         using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
@@ -161,6 +154,16 @@ public sealed class RunDatabase
 
 public static class Sql
 {
+    internal static string ConnectionStringFor(string path) =>
+        new SqliteConnectionStringBuilder
+        {
+            DataSource = path,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            ForeignKeys = true,
+            DefaultTimeout = 5,
+            Pooling = true,
+        }.ToString();
+
     internal static SqliteConnection Open(SqliteConnection connection, string kind)
     {
         SqliteDiagnostics.Attach(connection, kind);

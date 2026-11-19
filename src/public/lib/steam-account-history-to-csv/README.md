@@ -29,6 +29,8 @@ The [Workflow Delivery browser-store caller](../../../../.github/workflows/workf
 
 This package is built with [WXT](https://wxt.dev). WXT generates `manifest.json` from `wxt.config.ts` and the `src/entrypoints/*` files.
 
+The [exact-version pnpm patch](patches/@wxt-dev__auto-icons@1.1.2.patch) makes the `@wxt-dev/auto-icons` 1.1.2 generator await its icon-directory creation before writing PNG files. The [upstream source](https://github.com/wxt-dev/wxt/blob/e35d533959ad2503aae85e42992c1d700ccbaaeb/packages/auto-icons/src/index.ts#L99-L100) omits that await. Reevaluate the patch when upgrading the module, and remove it when the released version supplies the required ordering.
+
 There is no checked-in `manifest.json` file. Icons are discovered from `public/` (for example `public/icon-32.png`, `public/icon-48.png`).
 
 Versioning is driven by Nerdbank.GitVersioning (NBGV):

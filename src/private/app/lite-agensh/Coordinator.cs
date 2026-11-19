@@ -494,12 +494,48 @@ public sealed class Coordinator
         CancellationToken cancellationToken = default
     )
     {
+        using Activity? activity =
+            ApplicationTelemetry.Source.StartActivity("coordinator.run");
+        if (mode is "run" or "resume" or "reconnect")
+        {
+            activity?.SetTag("liteagensh.mode", mode);
+        }
+        try
+        {
+            JsonObject result = await RunCoreAsync(mode, activity, cancellationToken)
+                .ConfigureAwait(false);
+            activity?.SetTag("liteagensh.result.code", result["code"]?.GetValue<string>());
+            if (result["ok"]?.GetValue<bool>() == false)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error);
+            }
+            return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            activity?.SetTag("liteagensh.result.code", "cancelled");
+            throw;
+        }
+        catch (Exception exception)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error);
+            activity?.SetTag("error.type", exception.GetType().FullName);
+            throw;
+        }
+    }
+
+    private async Task<JsonObject> RunCoreAsync(
+        string mode,
+        Activity? activity,
+        CancellationToken cancellationToken
+    )
+    {
         if (mode is not ("run" or "resume" or "reconnect"))
         {
             return Failure("invalid_arguments", "Mode must be run, resume or reconnect.");
         }
 
-        using FileStream? ownership = TryOwn();
+        using FileStream? ownership = TryOwn(activity);
         if (ownership is null)
         {
             return Failure("conflict", "Another coordinator owns this run.");
@@ -1854,7 +1890,7 @@ public sealed class Coordinator
                 );
     }
 
-    private FileStream? TryOwn()
+    private FileStream? TryOwn(Activity? activity = null)
     {
         try
         {
@@ -1865,8 +1901,18 @@ public sealed class Coordinator
                 FileShare.None
             );
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            activity?.AddEvent(
+                new ActivityEvent(
+                    "coordinator.ownership.failed",
+                    tags: new ActivityTagsCollection
+                    {
+                        ["error.type"] = exception.GetType().FullName,
+                        ["liteagensh.ownership.hresult"] = exception.HResult,
+                    }
+                )
+            );
             return null;
         }
     }
