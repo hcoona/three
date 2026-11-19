@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO.Pipes;
 using System.Text;
+using System.Text.Json.Nodes;
 
 namespace LiteAgensh.TestProcess;
 
@@ -34,16 +35,27 @@ internal static class Program
         }
 
         Process? descendant = null;
+        double? connectReturnedAtMilliseconds = null;
+        double? readyWriteEnteredAtMilliseconds = null;
+        bool? startupCancelledAtReadyEntry = null;
+        string attemptedOperation = "connect";
+        string activeGuard = "startup";
+        CancellationToken activeGuardToken = default;
+        long startupStarted = Stopwatch.GetTimestamp();
         try
         {
             using CancellationTokenSource guard = new(TimeSpan.FromSeconds(5));
+            activeGuardToken = guard.Token;
             using NamedPipeClientStream pipe = new(
                 ".",
                 arguments[1],
                 PipeDirection.InOut,
                 PipeOptions.Asynchronous
             );
-            await pipe.ConnectAsync(guard.Token).ConfigureAwait(false);
+            await pipe.ConnectAsync(activeGuardToken).ConfigureAwait(false);
+            connectReturnedAtMilliseconds = Stopwatch
+                .GetElapsedTime(startupStarted)
+                .TotalMilliseconds;
             using StreamReader reader = new(pipe, Encoding.UTF8, false, 1024, leaveOpen: true);
             using StreamWriter writer = new(pipe, new UTF8Encoding(false), 1024, leaveOpen: true)
             {
@@ -84,14 +96,22 @@ internal static class Program
                     CultureInfo.InvariantCulture
                 )
             );
-            await writer.WriteLineAsync(ready.AsMemory(), guard.Token).ConfigureAwait(false);
+            attemptedOperation = "ready-write";
+            readyWriteEnteredAtMilliseconds = Stopwatch
+                .GetElapsedTime(startupStarted)
+                .TotalMilliseconds;
+            startupCancelledAtReadyEntry = activeGuardToken.IsCancellationRequested;
+            await writer.WriteLineAsync(ready.AsMemory(), activeGuardToken).ConfigureAwait(false);
             // Connection and READY retain the five-second guard. Holding an owned
             // witness uses its case120 bound; hosts also retain stop/teardown time.
             using CancellationTokenSource postReadyHold = new(
                 TimeSpan.FromSeconds(controlledHost ? 180 : 120)
             );
+            attemptedOperation = "release-read";
+            activeGuard = "hold";
+            activeGuardToken = postReadyHold.Token;
             string? release = await reader
-                .ReadLineAsync(postReadyHold.Token)
+                .ReadLineAsync(activeGuardToken)
                 .ConfigureAwait(false);
             if (release != "RELEASE")
             {
@@ -101,9 +121,26 @@ internal static class Program
 
             return ReportExit(exitCode);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException error)
         {
-            Console.Error.WriteLine("Owned-helper protocol failure bound reached.");
+            Console.Error.WriteLine(
+                "Owned-helper protocol failure bound reached. "
+                    + new JsonObject
+                    {
+                        ["attemptedOperation"] = attemptedOperation,
+                        ["activeGuard"] = activeGuard,
+                        ["connectReturnedAtMilliseconds"] = connectReturnedAtMilliseconds,
+                        ["readyWriteEnteredAtMilliseconds"] = readyWriteEnteredAtMilliseconds,
+                        ["startupCancelledAtReadyEntry"] = startupCancelledAtReadyEntry,
+                        ["activeGuardCancellationRequestedAtCatch"] =
+                            activeGuardToken.IsCancellationRequested,
+                        ["exceptionTokenMatchesActiveGuard"] =
+                            error.CancellationToken == activeGuardToken,
+                        ["helperElapsedAtCatchMilliseconds"] = Stopwatch
+                            .GetElapsedTime(startupStarted)
+                            .TotalMilliseconds,
+                    }.ToJsonString()
+            );
             return 90;
         }
         finally

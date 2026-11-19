@@ -53,13 +53,15 @@ public sealed class OwnedProcessSpecs(TestContext context)
                 .ConfigureAwait(false);
             AssertOriginalIdentity(owned, ready);
             using Process observer = OpenObservedOwnedChild(ready.Pid, ready.BirthTicks);
-            owned.Kill(entireProcessTree: true);
-            await RequireExitAsync(owned).ConfigureAwait(false);
-            IOException primary = await Assert
-                .ThrowsExactlyAsync<IOException>(async () =>
-                    await control.ReleaseAsync(context.CancellationToken).ConfigureAwait(false)
+            Assert.IsFalse(observer.HasExited);
+            using CancellationTokenSource releaseCancellation = new();
+            await releaseCancellation.CancelAsync().ConfigureAwait(false);
+            OperationCanceledException primary = await Assert
+                .ThrowsAsync<OperationCanceledException>(async () =>
+                    await control.ReleaseAsync(releaseCancellation.Token).ConfigureAwait(false)
                 )
                 .ConfigureAwait(false);
+            Assert.AreEqual(releaseCancellation.Token, primary.CancellationToken);
             disposalAttempted = true;
             await control.DisposeAsync().ConfigureAwait(false);
             Assert.IsTrue(observer.HasExited);
@@ -76,7 +78,7 @@ public sealed class OwnedProcessSpecs(TestContext context)
                         ["releasePrimary"] = Json.ExceptionDetails(primary),
                         ["ownedExitObserved"] = observer.HasExited,
                         ["ownedProcessDisposed"] = true,
-                        ["intentionalTermination"] = true,
+                        ["intentionalReleaseCancellation"] = true,
                     }.ToJsonString()
             );
         }
