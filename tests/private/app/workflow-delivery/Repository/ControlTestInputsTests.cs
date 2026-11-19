@@ -40,36 +40,39 @@ public sealed class ControlTestInputsTests(TestContext context)
     [TestMethod]
     public async Task NativeReceiptKeepsBothRevisionsAndRemovedAddedResources()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        await repo.SetAsync(ControlTestInputs.Project, Project(Resource));
-        await repo.SetAsync(Resource, "before");
-        string basis = await repo.CommitAsync();
-        await repo.RemoveAsync(Resource);
-        await repo.SetAsync("inputs/moved.json", "after");
-        await repo.SetAsync(ControlTestInputs.Project, Project("inputs/moved.json"));
-        string candidate = await repo.CommitAsync(basis);
-        var request = new ControlTestInputRequest(new(basis, candidate, false), repo.Directory,
-            await MaterializeAsync(repo, "basis", basis),
-            await MaterializeAsync(repo, "candidate", candidate));
+        var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        await FixtureCleanup.RunAsync(async () =>
+        {
+            await repo.SetAsync(ControlTestInputs.Project, Project(Resource));
+            await repo.SetAsync(Resource, "before");
+            string basis = await repo.CommitAsync();
+            await repo.RemoveAsync(Resource);
+            await repo.SetAsync("inputs/moved.json", "after");
+            await repo.SetAsync(ControlTestInputs.Project, Project("inputs/moved.json"));
+            string candidate = await repo.CommitAsync(basis);
+            var request = new ControlTestInputRequest(new(basis, candidate, false), repo.Directory,
+                await MaterializeAsync(repo, "basis", basis),
+                await MaterializeAsync(repo, "candidate", candidate));
 
-        ControlTestInputResponse result = await ControlTestInputs.ReadAsync(request,
-            context.CancellationToken);
+            ControlTestInputResponse result = await ControlTestInputs.ReadAsync(request,
+                context.CancellationToken);
 
-        Assert.AreEqual(request.Comparison, result.Comparison);
-        Assert.AreEqual(basis, result.Basis.Revision);
-        Assert.AreEqual(candidate, result.Candidate.Revision);
-        Assert.AreEqual(ControlTestInputs.Project, result.Basis.Project);
-        Assert.IsTrue(result.Basis.Present);
-        Assert.IsTrue(result.Candidate.Present);
-        Assert.AreEqual(new("Debug", "net10.0"), result.Candidate.Dimension);
-        Assert.AreEqual(Resource, Assert.ContainsSingle(result.Basis.Inputs));
-        Assert.AreEqual("inputs/moved.json", Assert.ContainsSingle(result.Candidate.Inputs));
-        using JsonDocument transfer = JsonDocument.Parse(JsonSerializer.Serialize(result,
-            TransferJson.Default.ControlTestInputResponse));
-        Assert.AreEqual("Debug", transfer.RootElement.GetProperty("basis")
-            .GetProperty("dimension").GetProperty("configuration").GetString());
-        Assert.AreEqual(Resource, transfer.RootElement.GetProperty("basis")
-            .GetProperty("inputs")[0].GetString());
+            Assert.AreEqual(request.Comparison, result.Comparison);
+            Assert.AreEqual(basis, result.Basis.Revision);
+            Assert.AreEqual(candidate, result.Candidate.Revision);
+            Assert.AreEqual(ControlTestInputs.Project, result.Basis.Project);
+            Assert.IsTrue(result.Basis.Present);
+            Assert.IsTrue(result.Candidate.Present);
+            Assert.AreEqual(new("Debug", "net10.0"), result.Candidate.Dimension);
+            Assert.AreEqual(Resource, Assert.ContainsSingle(result.Basis.Inputs));
+            Assert.AreEqual("inputs/moved.json", Assert.ContainsSingle(result.Candidate.Inputs));
+            using JsonDocument transfer = JsonDocument.Parse(JsonSerializer.Serialize(result,
+                TransferJson.Default.ControlTestInputResponse));
+            Assert.AreEqual("Debug", transfer.RootElement.GetProperty("basis")
+                .GetProperty("dimension").GetProperty("configuration").GetString());
+            Assert.AreEqual(Resource, transfer.RootElement.GetProperty("basis")
+                .GetProperty("inputs")[0].GetString());
+        }, repo.Dispose);
     }
 
     [TestMethod]
@@ -97,29 +100,32 @@ public sealed class ControlTestInputsTests(TestContext context)
     [TestMethod]
     public async Task NativeReceiptRetainsCoherentExplicitFullAndCliTransfer()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        await repo.SetAsync(ControlTestInputs.Project, Project(Resource));
-        await repo.SetAsync(Resource);
-        string candidate = await repo.CommitAsync();
-        string endpoint = await MaterializeAsync(repo, "candidate", candidate);
-        var request = new ControlTestInputRequest(new(candidate, candidate, true), repo.Directory,
-            endpoint, endpoint);
-        string path = Path.Combine(Path.GetDirectoryName(repo.Directory)!, "request.json");
-        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(request,
-            TransferJson.Default.ControlTestInputRequest), context.CancellationToken);
-        using var output = new StringWriter();
-        using var error = new StringWriter();
+        var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        await FixtureCleanup.RunAsync(async () =>
+        {
+            await repo.SetAsync(ControlTestInputs.Project, Project(Resource));
+            await repo.SetAsync(Resource);
+            string candidate = await repo.CommitAsync();
+            string endpoint = await MaterializeAsync(repo, "candidate", candidate);
+            var request = new ControlTestInputRequest(new(candidate, candidate, true),
+                repo.Directory, endpoint, endpoint);
+            string path = Path.Combine(Path.GetDirectoryName(repo.Directory)!, "request.json");
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(request,
+                TransferJson.Default.ControlTestInputRequest), context.CancellationToken);
+            using var output = new StringWriter();
+            using var error = new StringWriter();
 
-        int code = Program.Run(["ci", "control-inputs", path], output, error);
+            int code = Program.Run(["ci", "control-inputs", path], output, error);
 
-        Assert.AreEqual(0, code, error.ToString());
-        Assert.AreEqual("", error.ToString());
-        ControlTestInputResponse result = JsonSerializer.Deserialize(output.ToString(),
-            TransferJson.Default.ControlTestInputResponse)!;
-        Assert.AreEqual(new(candidate, candidate, true), result.Comparison);
-        Assert.AreEqual(Resource, Assert.ContainsSingle(result.Basis.Inputs));
-        CollectionAssert.AreEqual(result.Basis.Inputs, result.Candidate.Inputs);
-        Assert.IsTrue(result.Basis.Present);
+            Assert.AreEqual(0, code, error.ToString());
+            Assert.AreEqual("", error.ToString());
+            ControlTestInputResponse result = JsonSerializer.Deserialize(output.ToString(),
+                TransferJson.Default.ControlTestInputResponse)!;
+            Assert.AreEqual(new(candidate, candidate, true), result.Comparison);
+            Assert.AreEqual(Resource, Assert.ContainsSingle(result.Basis.Inputs));
+            CollectionAssert.AreEqual(result.Basis.Inputs, result.Candidate.Inputs);
+            Assert.IsTrue(result.Basis.Present);
+        }, repo.Dispose);
     }
 
     [TestMethod]
@@ -234,7 +240,10 @@ public sealed class ControlTestInputsTests(TestContext context)
     private static async Task<string> MaterializeAsync(GitFixture repo, string name,
         string revision)
     {
-        string path = Path.Combine(Path.GetDirectoryName(repo.Directory)!, name);
+        string parent = Path.GetDirectoryName(repo.Directory)!;
+        File.WriteAllText(Path.Combine(parent, "global.json"),
+            RepositoryToolSelection.GlobalJson());
+        string path = Path.Combine(parent, name);
         await repo.GitAsync("worktree", "add", "--detach", path, revision);
         return path;
     }

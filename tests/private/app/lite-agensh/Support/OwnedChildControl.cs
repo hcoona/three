@@ -128,6 +128,7 @@ internal sealed class OwnedChildControl : IAsyncDisposable
         Exception? primary = null;
         OwnedChildIdentity? result = null;
         AggregateException? cleanupFailure = null;
+        string stage = "connection";
         try
         {
             await Task.WhenAny(producer, connection)
@@ -137,6 +138,7 @@ internal sealed class OwnedChildControl : IAsyncDisposable
             await RequireLiveProducerAsync(producer).ConfigureAwait(false);
             await connection.ConfigureAwait(false);
             observation.Token.ThrowIfCancellationRequested();
+            stage = "ready-frame";
             reader = new(pipe, Encoding.UTF8, false, 1024, leaveOpen: true);
             // The original five-second READY stage starts only after actual connection.
             observation.CancelAfter(TimeSpan.FromSeconds(5));
@@ -151,6 +153,24 @@ internal sealed class OwnedChildControl : IAsyncDisposable
         catch (Exception error)
         {
             primary = error;
+            try
+            {
+                Console.Error.WriteLine(
+                    "OWNED_READINESS_FAILURE "
+                        + new JsonObject
+                        {
+                            ["stage"] = stage,
+                            ["producerTaskStatus"] = producer.Status.ToString(),
+                            ["connectionTaskStatus"] = connection.Status.ToString(),
+                            ["readyTaskStatus"] = line?.Status.ToString(),
+                            ["errorType"] = error.GetType().FullName,
+                        }.ToJsonString()
+                );
+            }
+            catch (Exception secondary)
+            {
+                error.Data["OwnedReadinessCaptureError"] = Json.ExceptionDetails(secondary);
+            }
             throw;
         }
         finally
@@ -221,9 +241,9 @@ internal sealed class OwnedChildControl : IAsyncDisposable
         }
     }
 
-    private static OwnedChildIdentity ParseReady(string? line)
+    internal static OwnedChildIdentity ParseReady(string? line)
     {
-        string[] parts = line?.Split('|') ?? [];
+        string[] parts = line is { Length: > 0 and <= 128 } ? line.Split('|') : [];
         if (
             line is null
             || line.Length > 128
@@ -255,7 +275,22 @@ internal sealed class OwnedChildControl : IAsyncDisposable
             || descendantBirth < 0
         )
         {
-            throw new InvalidOperationException($"Invalid owned-helper readiness: {line}");
+            throw new InvalidOperationException(
+                "Invalid owned-helper readiness: "
+                    + new JsonObject
+                    {
+                        ["stage"] = "ready-frame",
+                        ["frameKind"] = line switch
+                        {
+                            null => "eof",
+                            "" => "empty",
+                            { Length: > 128 } => "oversized",
+                            _ => "malformed",
+                        },
+                        ["frameLength"] = line?.Length,
+                        ["maximumFrameLength"] = 128,
+                    }.ToJsonString()
+            );
         }
 
         return new(pid, birth, descendantPid, descendantBirth);

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using LiteAgensh.Tests.Support;
@@ -803,6 +804,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         long? ownedRequest = null, ownedChange = null;
         Exception? primary = null;
         AggregateException? cleanupFailure = null;
+        bool producerJoined = false;
         try
         {
             CheckCommand held = new()
@@ -977,16 +979,6 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         catch (Exception error)
         {
             primary = error;
-            try
-            {
-                CaptureHeldCheckFailure(
-                    ownedState, ownedRequest, ownedChange, processing, began, error, token
-                );
-            }
-            catch (Exception captureError)
-            {
-                error.Data["HeldCheckCaptureError"] = captureError.ToString();
-            }
             throw;
         }
         finally
@@ -1006,17 +998,27 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 try
                 {
                     await processing.ConfigureAwait(false);
+                    producerJoined = true;
                 }
                 catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
                 {
+                    producerJoined = true;
                 }
                 catch (Exception error)
                 {
+                    producerJoined = processing.IsCompleted;
                     if (!ReferenceEquals(error, primary))
                     {
                         failures.Add(error);
                     }
                 }
+            }
+            if (primary is not null)
+            {
+                CaptureCandidateAfterJoin(
+                    ownedState, ownedRequest, ownedChange, processing, producerJoined, began,
+                    primary, testContext.CancellationToken
+                );
             }
             try
             {
@@ -1061,51 +1063,81 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         }
     }
 
-    private static void CaptureHeldCheckFailure(
+    private static void CaptureCandidateAfterJoin(
         GitScenarioState? state,
         long? request,
         long? change,
         Task? producer,
+        bool joined,
         long began,
         Exception primary,
-        CancellationToken token
+        CancellationToken caseToken
     )
     {
         JsonObject receipt = new()
         {
             ["requestId"] = request,
             ["changeId"] = change,
-            ["producerStatus"] = producer?.Status.ToString(),
-            ["caseCancelledBeforeCleanup"] = token.IsCancellationRequested,
-            ["ownedStatePath"] = state?.Database.StatePath,
+            ["producerTaskStatus"] = producer?.Status.ToString(),
+            ["producerJoinEstablished"] = joined,
+            ["producerCleanupError"] =
+                (primary.Data["CandidateProducerCleanupError"] as JsonNode)?.DeepClone(),
         };
-        // One owned-db snapshot only. Reserve both existing five-second SQLite busy stages;
-        // never start a fresh read when the case budget is exhausted or nearly exhausted.
-        TimeSpan remaining = TimeSpan.FromMilliseconds(120_000) - Stopwatch.GetElapsedTime(began);
-        if (state is not null && request is not null && change is not null
-            && !token.IsCancellationRequested && remaining >= TimeSpan.FromSeconds(5 + 5))
+        try
         {
-            receipt["persistedOwnedState"] = JsonNode.Parse(state.Text(
-                "SELECT json_object("
-                    + "'request',json((SELECT json_object('id',id,'state',state,"
-                    + "'resultCode',result_code,'ready',ready,'candidate',candidate_commit) "
-                    + "FROM integration_requests WHERE id=$request)),"
-                    + "'checks',json((SELECT json_group_array(json_object('id',id,"
-                    + "'status',status,'exitCode',exit_code,'logPath',log_path)) "
-                    + "FROM checks WHERE change_id=$change)),"
-                    + "'leases',json((SELECT json_group_array(json_object('id',id,'pid',pid,"
-                    + "'birthTicks',start_ticks,'kind',kind,'state',state)) "
-                    + "FROM process_leases)));",
-                ("$request", request), ("$change", change)
-            ) ?? "null");
+            // The producer token was cancelled for cleanup. The case-entry budget still
+            // reserves both existing five-second SQLite busy stages for this one snapshot.
+            TimeSpan remaining =
+                TimeSpan.FromMilliseconds(120_000) - Stopwatch.GetElapsedTime(began);
+            if (joined && state is not null && request is not null && change is not null
+                && !caseToken.IsCancellationRequested && remaining >= TimeSpan.FromSeconds(5 + 5))
+            {
+                JsonNode? snapshot = JsonNode.Parse(state.Text(
+                    "SELECT json_object("
+                        + "'request',json((SELECT json_object('id',id,'state',state,"
+                        + "'resultCode',result_code,'ready',ready,'candidate',candidate_commit) "
+                        + "FROM integration_requests WHERE id=$request)),"
+                        + "'check',json((SELECT json_object('id',id,'status',status,"
+                        + "'exitCode',exit_code,'logPath',log_path) FROM checks "
+                        + "WHERE change_id=$change AND kind='candidate' ORDER BY id DESC LIMIT 1)),"
+                        + "'leaseCount',(SELECT count(*) FROM process_leases),"
+                        + "'leases',json((SELECT json_group_array(json_object('id',id,'pid',pid,"
+                        + "'birthTicks',start_ticks,'kind',kind,'state',state)) "
+                        + "FROM (SELECT id,pid,start_ticks,kind,state FROM process_leases "
+                        + "ORDER BY state!='exited' DESC,id DESC LIMIT 8))));",
+                    ("$request", request), ("$change", change)
+                ) ?? "null");
+                receipt["persistedOwnedState"] = snapshot;
+                receipt["leaseSelection"] =
+                    "up to eight rows, unsettled first then latest; not process liveness";
+                if (snapshot?["check"]?["logPath"]?.GetValue<string>() is { } logPath)
+                {
+                    using StreamReader reader = new(logPath);
+                    char[] buffer = new char[131_073];
+                    int read = reader.ReadBlock(buffer, 0, buffer.Length);
+                    receipt["privateCheckLog"] = new string(buffer, 0, Math.Min(read, 131_072));
+                    receipt["privateCheckLogTruncated"] = read > 131_072;
+                }
+            }
+            else
+            {
+                receipt["persistedOwnedState"] =
+                    "unknown: producer join, owned row or remaining case budget unestablished";
+            }
         }
-        else
+        catch (Exception secondary)
         {
-            receipt["persistedOwnedState"] =
-                "not-read: no owned row or insufficient case budget";
+            receipt["captureError"] = Json.ExceptionDetails(secondary);
+            primary.Data["CandidateAfterJoinCaptureError"] = Json.ExceptionDetails(secondary);
         }
-        primary.Data["HeldCheckBeforeProducerCleanup"] = receipt.ToJsonString();
-        Console.Error.WriteLine("HELD_CHECK_BEFORE_CLEANUP " + receipt.ToJsonString());
+        try
+        {
+            Console.Error.WriteLine("CANDIDATE_AFTER_PRODUCER_JOIN " + receipt.ToJsonString());
+        }
+        catch (Exception secondary)
+        {
+            primary.Data["CandidateAfterJoinLoggingError"] = Json.ExceptionDetails(secondary);
+        }
     }
 
     [TestMethod]
@@ -1184,6 +1216,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     public async Task CancelledActualCandidateCheckRetainsEvidenceAndSettlesItsOwnedLease()
     {
         using CancellationTokenSource deadline = new(120_000);
+        long began = Stopwatch.GetTimestamp();
         using CancellationTokenSource lifetime =
             CancellationTokenSource.CreateLinkedTokenSource(
                 testContext.CancellationToken,
@@ -1194,7 +1227,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         CheckCommand held = new()
         {
             Executable = OwnedChildControl.ExecutablePath,
-            Arguments = control.Arguments(),
+            Arguments = control.Arguments(role: OwnedChildControl.HeldCandidateCheckRole),
         };
         using GitScenarioState state = await GitScenarioState
             .CreateAsync(token, [held])
@@ -1214,8 +1247,12 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             .SubmitAsync("worker1", "Cancelled alpha", token)
             .ConfigureAwait(false);
         await state.ReviewAsync("worker2", change, token).ConfigureAwait(false);
-        await state.QueueAsync(change, token).ConfigureAwait(false);
+        JsonObject queued = await state.QueueAsync(change, token).ConfigureAwait(false);
+        long requestId = queued["requestId"]!.GetValue<long>();
         Task processing = state.Operations.ProcessPendingAsync(cancellation.Token);
+        Exception? primary = null;
+        bool producerJoined = false;
+        ExceptionDispatchInfo? producerCleanupFailure = null;
         try
         {
             OwnedChildIdentity identity = await control
@@ -1245,10 +1282,10 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 await state.ResolveAsync(candidate + "^{tree}", token).ConfigureAwait(false),
                 check["tree"]!.GetValue<string>()
             );
-            Assert.Contains(
-                "Caller cancelled the check",
-                File.ReadAllText(check["logPath"]!.GetValue<string>())
-            );
+            string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
+            Assert.Contains("Caller cancelled the check", log);
+            Assert.Contains("owned check diagnostic stdout before READY", log);
+            Assert.Contains("owned check diagnostic stderr before READY", log);
             Assert.AreEqual(
                 state.BaseCommit,
                 await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
@@ -1268,15 +1305,49 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 )
             );
         }
+        catch (Exception error)
+        {
+            primary = error;
+            throw;
+        }
         finally
         {
-            await cancellation.CancelAsync().ConfigureAwait(false);
             try
             {
-                await processing.ConfigureAwait(false);
+                await cancellation.CancelAsync().ConfigureAwait(false);
+                try
+                {
+                    await processing.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+                {
+                }
+                finally
+                {
+                    producerJoined = processing.IsCompleted;
+                }
             }
-            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+            catch (Exception secondary)
+            {
+                if (primary is null)
+                {
+                    producerCleanupFailure = ExceptionDispatchInfo.Capture(secondary);
+                }
+                else
+                {
+                    primary.Data["CandidateProducerCleanupError"] =
+                        Json.ExceptionDetails(secondary);
+                }
+            }
+            if (primary is not null)
+            {
+                CaptureCandidateAfterJoin(
+                    state, requestId, change["id"]!.GetValue<long>(), processing,
+                    producerJoined, began, primary, testContext.CancellationToken
+                );
+            }
         }
+        producerCleanupFailure?.Throw();
     }
 
     [TestMethod]
@@ -1284,6 +1355,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task ConfiguredCheckDeadlineRetainsTimedOutEvidenceWithoutAuthorizingDelivery()
     {
+        long began = Stopwatch.GetTimestamp();
         using CancellationTokenSource deadline = new(120_000);
         using CancellationTokenSource lifetime =
             CancellationTokenSource.CreateLinkedTokenSource(
@@ -1317,8 +1389,12 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             .SubmitAsync("worker1", "Timeout is not authorization", token)
             .ConfigureAwait(false);
         await state.ReviewAsync("worker2", change, token).ConfigureAwait(false);
-        await state.QueueAsync(change, token).ConfigureAwait(false);
+        JsonObject queued = await state.QueueAsync(change, token).ConfigureAwait(false);
+        long requestId = queued["requestId"]!.GetValue<long>();
         Task processing = state.Operations.ProcessPendingAsync(cancellation.Token);
+        Exception? primary = null;
+        bool producerJoined = false;
+        ExceptionDispatchInfo? producerCleanupFailure = null;
         try
         {
             OwnedChildIdentity ready = await control
@@ -1370,15 +1446,49 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 )
             );
         }
+        catch (Exception error)
+        {
+            primary = error;
+            throw;
+        }
         finally
         {
-            await cancellation.CancelAsync().ConfigureAwait(false);
             try
             {
-                await processing.ConfigureAwait(false);
+                await cancellation.CancelAsync().ConfigureAwait(false);
+                try
+                {
+                    await processing.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+                {
+                }
+                finally
+                {
+                    producerJoined = processing.IsCompleted;
+                }
             }
-            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+            catch (Exception secondary)
+            {
+                if (primary is null)
+                {
+                    producerCleanupFailure = ExceptionDispatchInfo.Capture(secondary);
+                }
+                else
+                {
+                    primary.Data["CandidateProducerCleanupError"] =
+                        Json.ExceptionDetails(secondary);
+                }
+            }
+            if (primary is not null)
+            {
+                CaptureCandidateAfterJoin(
+                    state, requestId, change["id"]!.GetValue<long>(), processing,
+                    producerJoined, began, primary, testContext.CancellationToken
+                );
+            }
         }
+        producerCleanupFailure?.Throw();
     }
 
     private static void AssertRefusal(

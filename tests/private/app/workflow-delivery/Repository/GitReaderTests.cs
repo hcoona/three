@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Platform;
@@ -514,6 +515,15 @@ public sealed class GitReaderTests(TestContext context)
         private Task<string> RunAsync(string[] arguments) =>
             NativeProcess.RunAsync("git", Directory, arguments, token);
 
+        private static async Task CaptureAsync(StreamReader reader, StringBuilder text,
+            CancellationToken token)
+        {
+            char[] buffer = new char[4096];
+            int count;
+            while ((count = await reader.ReadAsync(buffer.AsMemory(), token)) != 0)
+                text.Append(buffer, 0, count);
+        }
+
         private async Task<string> FastImportAsync(byte[] input)
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -538,32 +548,75 @@ public sealed class GitReaderTests(TestContext context)
                 "--date-format=now" })
                 process.StartInfo.ArgumentList.Add(argument);
             process.Start();
+            var stdout = new StringBuilder();
+            var stderr = new StringBuilder();
+            Task output = CaptureAsync(process.StandardOutput, stdout, timeout.Token);
+            Task error = CaptureAsync(process.StandardError, stderr, timeout.Token);
+            Task[] readers = [output, error];
+            string stage = "writing input";
+            ExceptionDispatchInfo? primary = null;
+            Exception? cleanupFailure = null;
+            bool deadlineExpired = false;
             try
             {
-                Task<string> output = process.StandardOutput.ReadToEndAsync(timeout.Token);
-                Task<string> error = process.StandardError.ReadToEndAsync(timeout.Token);
                 try
                 {
                     await process.StandardInput.BaseStream.WriteAsync(input, timeout.Token);
+                    stage = "closing input";
                     process.StandardInput.Close();
                 }
                 // A failed import closes its input early; its exit code and stderr explain why.
                 catch (IOException) { }
+                stage = "waiting for exit";
                 await process.WaitForExitAsync(timeout.Token);
-                string message = await error;
+                stage = "reading stderr";
+                await error;
                 if (process.ExitCode != 0)
                     throw new InvalidDataException(
-                        $"Git fast-import failed with exit code {process.ExitCode}: {message}");
-                return await output;
+                        $"Git fast-import failed with exit code {process.ExitCode}: " +
+                        NativeDiagnostic.Tail(stderr.ToString()));
+                stage = "reading stdout";
+                await output;
             }
-            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            catch (Exception exception)
             {
-                throw new TimeoutException("Git fast-import exceeded its 30-second deadline.");
+                deadlineExpired = exception is OperationCanceledException &&
+                    !token.IsCancellationRequested;
+                primary = ExceptionDispatchInfo.Capture(exception);
             }
             finally
             {
-                await StopAsync(process);
+                await timeout.CancelAsync();
+                try
+                {
+                    await StopAsync(process);
+                }
+                catch (Exception exception)
+                {
+                    cleanupFailure = exception;
+                }
+                finally
+                {
+                    await Task.WhenAll(readers).ConfigureAwait(
+                        ConfigureAwaitOptions.SuppressThrowing);
+                }
             }
+            if (deadlineExpired)
+            {
+                var result = new NativeCommandResult(NativeTermination.TimedOut,
+                    process.HasExited ? process.ExitCode : null,
+                    stdout.ToString(), stderr.ToString(), 0,
+                    $"Git fast-import exceeded its 30-second deadline while {stage}. " +
+                    $"stdout capture: {output.Status}; stderr capture: {error.Status}.");
+                primary = ExceptionDispatchInfo.Capture(new TimeoutException(
+                    NativeDiagnostic.Describe(result, includeStdout: true),
+                    primary!.SourceException));
+            }
+            if (primary is not null && cleanupFailure is not null)
+                throw new AggregateException(primary.SourceException, cleanupFailure);
+            primary?.Throw();
+            if (cleanupFailure is not null) ExceptionDispatchInfo.Capture(cleanupFailure).Throw();
+            return stdout.ToString();
         }
 
         // Kill is asynchronous, so cleanup waits for exit under its own bounded deadline.
