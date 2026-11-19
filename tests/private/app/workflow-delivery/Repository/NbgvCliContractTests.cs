@@ -108,6 +108,8 @@ public sealed class NbgvCliContractTests(TestContext context)
         Directory.CreateDirectory(manifest);
         File.Copy(Path.Combine(RepositoryToolSelection.SourceRoot, ".config",
             "dotnet-tools.json"), Path.Combine(manifest, "dotnet-tools.json"));
+        await File.WriteAllTextAsync(Path.Combine(Path.GetDirectoryName(repo.Directory)!,
+            "global.json"), RepositoryToolSelection.GlobalJson(), context.CancellationToken);
         NativeCommandResult answer = await RunAsync(["get-version", "--format", "json"],
             environment, Path.Combine(repo.Directory, Project));
         using JsonDocument cli = JsonDocument.Parse(answer.Stdout);

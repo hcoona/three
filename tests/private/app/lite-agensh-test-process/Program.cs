@@ -80,14 +80,13 @@ internal static class Program
                 )
             );
             await writer.WriteLineAsync(ready.AsMemory(), guard.Token).ConfigureAwait(false);
-            // The default still has exactly one whole-protocol five-second
-            // guard. Explicit roles get a nonrenewing post-READY hold: the
-            // candidate's case120, or the host's case120 + usage-stop30 + teardown30.
-            using CancellationTokenSource? postReadyHold = controlledHost || heldCandidateCheck
-                ? new(TimeSpan.FromSeconds(controlledHost ? 180 : 120))
-                : null;
+            // Connection and READY retain the five-second guard. Holding an owned
+            // witness uses its case120 bound; hosts also retain stop/teardown time.
+            using CancellationTokenSource postReadyHold = new(
+                TimeSpan.FromSeconds(controlledHost ? 180 : 120)
+            );
             string? release = await reader
-                .ReadLineAsync(postReadyHold?.Token ?? guard.Token)
+                .ReadLineAsync(postReadyHold.Token)
                 .ConfigureAwait(false);
             if (release != "RELEASE")
             {

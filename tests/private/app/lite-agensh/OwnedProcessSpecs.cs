@@ -73,6 +73,7 @@ public sealed class OwnedProcessSpecs(TestContext context)
     }
 
     [TestMethod]
+    [Timeout(120_000, CooperativeCancellation = true)]
     [DataRow(0)]
     [DataRow(7)]
     [TestCategory("CancelSettleOnlyOwnedChildren")]
@@ -134,6 +135,7 @@ public sealed class OwnedProcessSpecs(TestContext context)
     }
 
     [TestMethod]
+    [Timeout(120_000, CooperativeCancellation = true)]
     [TestCategory("CancelSettleOnlyOwnedChildren")]
     public async Task CancellationSettlesTheCorrelatedOwnedTreeAndPreservesAnAdjacentOwnedSentinel()
     {
@@ -465,13 +467,23 @@ public sealed class OwnedProcessSpecs(TestContext context)
 
     private static async Task CancelAndDrainAsync(
         CancellationTokenSource cancellation,
-        Task running
+        Task<ProcessResult> running
     )
     {
         await cancellation.CancelAsync().ConfigureAwait(false);
         try
         {
-            await running.ConfigureAwait(false);
+            ProcessResult result = await running.ConfigureAwait(false);
+            Console.WriteLine(
+                "OWNED_COMMAND_TERMINAL "
+                    + new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["exitCode"] = result.ExitCode,
+                        ["timedOut"] = result.TimedOut,
+                        ["stdout"] = result.StandardOutput,
+                        ["stderr"] = result.StandardError,
+                    }.ToJsonString()
+            );
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
     }
