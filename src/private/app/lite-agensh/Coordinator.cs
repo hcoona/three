@@ -129,7 +129,7 @@ public sealed class Coordinator
         using FileStream? ownership = TryOwn();
         if (ownership is null)
         {
-            return Failure("conflict", "Another coordinator owns this run.");
+            return Failure("conflict", "Exclusive coordinator ownership is unavailable.");
         }
         try
         {
@@ -163,7 +163,7 @@ public sealed class Coordinator
         using FileStream? ownership = TryOwn();
         if (ownership is null)
         {
-            return Failure("conflict", "Another coordinator owns this run.");
+            return Failure("conflict", "Exclusive coordinator ownership is unavailable.");
         }
 
         try
@@ -282,7 +282,7 @@ public sealed class Coordinator
         using FileStream? ownership = TryOwn();
         if (ownership is null)
         {
-            return Failure("conflict", "Another coordinator owns this run.");
+            return Failure("conflict", "Exclusive coordinator ownership is unavailable.");
         }
 
         JsonObject? diagnostic = null;
@@ -369,7 +369,7 @@ public sealed class Coordinator
         using FileStream? ownership = TryOwn();
         if (ownership is null)
         {
-            return Failure("conflict", "Another coordinator owns this run.");
+            return Failure("conflict", "Exclusive coordinator ownership is unavailable.");
         }
 
         INativeWorker? native = null;
@@ -535,11 +535,17 @@ public sealed class Coordinator
             return Failure("invalid_arguments", "Mode must be run, resume or reconnect.");
         }
 
+        using Activity? ownershipActivity =
+            ApplicationTelemetry.Source.StartActivity("coordinator.ownership");
+        ownershipActivity?.SetTag("process.pid", Environment.ProcessId);
         using FileStream? ownership = TryOwn(activity);
+        ownershipActivity?.SetTag("liteagensh.ownership.acquired", ownership is not null);
         if (ownership is null)
         {
-            return Failure("conflict", "Another coordinator owns this run.");
+            ownershipActivity?.SetStatus(ActivityStatusCode.Error);
+            return Failure("conflict", "Exclusive coordinator ownership is unavailable.");
         }
+        ownershipActivity?.AddEvent(new ActivityEvent("coordinator.ownership.acquired"));
 
         bool settlementOnly = false;
         try
@@ -1558,7 +1564,7 @@ public sealed class Coordinator
         using FileStream? ownership = TryOwn();
         if (ownership is null)
         {
-            return Failure("conflict", "Cleanup refuses an active coordinator.");
+            return Failure("conflict", "Exclusive coordinator ownership is unavailable.");
         }
 
         if (database.ReadMetadata("lifecycle") is not ("paused" or "finalized" or "stopped"))

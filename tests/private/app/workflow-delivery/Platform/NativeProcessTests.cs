@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Text;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Platform;
 
@@ -90,6 +91,24 @@ public sealed class NativeProcessTests
             Assert.DoesNotContain("omitted-head", error.Message);
             Assert.IsLessThan(2 * NativeDiagnostic.TailLength + 512, error.Message.Length);
         }
+    }
+
+    [TestMethod]
+    [Timeout(15000, CooperativeCancellation = true)]
+    public async Task RunDeadlineRetainsOperationAndTerminalObservation()
+    {
+        var clock = new FakeTimeProvider();
+        Task<string> query = NativeProcess.RunAsync(TestProcess.Executable, Path.GetTempPath(),
+            TestProcess.Arguments("sleep"), TestContext.CancellationToken, Guard(), clock);
+
+        clock.Advance(TimeSpan.FromSeconds(30));
+        TimeoutException error = await Assert.ThrowsExactlyAsync<TimeoutException>(() => query);
+
+        Assert.Contains(Path.GetFileNameWithoutExtension(TestProcess.Executable) + " sleep",
+            error.Message);
+        Assert.Contains("TimedOut, exit ", error.Message);
+        Assert.Contains("30-second deadline", error.Message);
+        Assert.IsInstanceOfType<OperationCanceledException>(error.InnerException);
     }
 
     [TestMethod]

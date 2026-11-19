@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using WorkflowDelivery.Platform;
@@ -17,7 +16,7 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
     public async Task ActualStateStepConsumesSerializedObservation(string state, string needed)
     {
         var fixture = new NuGetReleaseTestFixture();
-        await WithCleanup(async () =>
+        await FixtureCleanup.RunAsync(async () =>
         {
             Directory.CreateDirectory(Path.Combine(fixture.Root, "observation"));
             fixture.Write("observation/observation.json", fixture.Observe(
@@ -43,7 +42,7 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
     {
         string[] phases = ["prepared", "observation"];
         var fixture = new NuGetReleaseTestFixture();
-        await WithCleanup(async () =>
+        await FixtureCleanup.RunAsync(async () =>
         {
             foreach (string phase in phases)
                 Directory.CreateDirectory(Path.Combine(fixture.Root, phase));
@@ -81,7 +80,7 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
     {
         string[] phases = ["prepared", "observation"];
         var fixture = new NuGetReleaseTestFixture();
-        await WithCleanup(async () =>
+        await FixtureCleanup.RunAsync(async () =>
         {
             foreach (string phase in phases)
                 Directory.CreateDirectory(Path.Combine(fixture.Root, phase));
@@ -122,7 +121,7 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         }
 
         AggregateException failure = await Assert.ThrowsExactlyAsync<AggregateException>(
-            () => WithCleanup(FailBody, FailCleanup));
+            () => FixtureCleanup.RunAsync(FailBody, FailCleanup));
 
         Assert.HasCount(2, failure.InnerExceptions);
         Assert.AreSame(bodyFailure, failure.InnerExceptions[0]);
@@ -145,29 +144,11 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         }
 
         IOException failure = await Assert.ThrowsExactlyAsync<IOException>(
-            () => WithCleanup(() => Task.CompletedTask, FailCleanup));
+            () => FixtureCleanup.RunAsync(() => Task.CompletedTask, FailCleanup));
 
         Assert.AreSame(cleanupFailure, failure);
         Assert.Contains(nameof(FailCleanup), failure.StackTrace ?? "");
         Assert.AreEqual(1, disposals);
-    }
-
-    private static async Task WithCleanup(Func<Task> body, Action dispose)
-    {
-        ExceptionDispatchInfo? bodyFailure = null;
-        try { await body(); }
-        catch (Exception exception) { bodyFailure = ExceptionDispatchInfo.Capture(exception); }
-
-        ExceptionDispatchInfo? cleanupFailure = null;
-        try { dispose(); }
-        catch (Exception exception) { cleanupFailure = ExceptionDispatchInfo.Capture(exception); }
-
-        if (bodyFailure is not null && cleanupFailure is not null)
-            throw new AggregateException(
-                bodyFailure.SourceException, cleanupFailure.SourceException
-            );
-        bodyFailure?.Throw();
-        cleanupFailure?.Throw();
     }
 
     private static Dictionary<string, string?> Environment(NuGetReleaseTestFixture fixture) => new()

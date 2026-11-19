@@ -36,6 +36,7 @@ internal sealed class Phase7Run
     private readonly CancellationTokenSource owner;
     private Task<JsonObject>? active;
     private IDisposable? clockObservation;
+    private ActivityListener? ownershipObservation;
     private Phase7Handoff? currentHandoff;
     private TaskCompletionSource<long> ownerPolling = new(
         TaskCreationOptions.RunContinuationsAsynchronously
@@ -123,15 +124,21 @@ internal sealed class Phase7Run
             Phase7Clock clock = new();
             RunDatabase initialized = new(configuration.StatePath, configuration, clock);
             state = new(git, initialized, environment, hostRole, clock, null, token, ownedHosts);
+            Console.WriteLine("PHASE7_SETUP_ENTER initialize");
             GitScenarioState.Data(
                 await state.Coordinator("initialize").InitializeAsync(token).ConfigureAwait(false)
             );
+            Console.WriteLine("PHASE7_SETUP_RETURN initialize");
+            Console.WriteLine("PHASE7_SETUP_ENTER preflight");
             GitScenarioState.Data(
                 await state.Coordinator("preflight").PreflightAsync(token).ConfigureAwait(false)
             );
+            Console.WriteLine("PHASE7_SETUP_RETURN preflight");
+            Console.WriteLine("PHASE7_SETUP_ENTER calibration");
             GitScenarioState.Data(
                 await state.Coordinator("calibration").CalibrateAsync(token).ConfigureAwait(false)
             );
+            Console.WriteLine("PHASE7_SETUP_RETURN calibration");
             Assert.AreEqual(
                 7.25m,
                 state
@@ -143,15 +150,24 @@ internal sealed class Phase7Run
         }
         catch (Exception primary)
         {
-            if (state is not null)
+            Console.Error.WriteLine("PHASE7_SETUP_PRIMARY " + Json.ExceptionDetails(primary));
+            try
             {
-                await state.CleanupAsync(primary).ConfigureAwait(false);
+                if (state is not null)
+                {
+                    await state.CleanupAsync(primary).ConfigureAwait(false);
+                }
+                else
+                {
+                    Console.WriteLine("PHASE7_PRESERVED_SETUP_ROOT " + git.Repository);
+                    GitScenarioState.AssertEnvironmentUnchanged();
+                }
             }
-            else
+            catch (Exception secondary)
             {
-                GitScenarioState.AssertEnvironmentUnchanged();
-                Console.Error.WriteLine("PHASE7_SETUP_PRIMARY " + Json.ExceptionDetails(primary));
-                Console.WriteLine("PHASE7_PRESERVED_SETUP_ROOT " + git.Repository);
+                Console.Error.WriteLine(
+                    "PHASE7_SETUP_CLEANUP_SECONDARY " + Json.ExceptionDetails(secondary)
+                );
             }
             throw;
         }
@@ -232,6 +248,7 @@ internal sealed class Phase7Run
         }
         Handoff ??= new();
         currentHandoff = Handoff;
+        ownershipObservation?.Dispose();
         clockObservation?.Dispose();
         clockObservation = Clock.BeginObservation();
         ownerPolling = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -249,19 +266,61 @@ internal sealed class Phase7Run
                     CultureInfo.InvariantCulture
                 )
                 : Clock.GetUtcNow().AddSeconds(Database.Configuration.DurationSeconds);
-        // Ownership acquisition runs before RunAsync's first await.
         using Activity startup = new Activity("phase7.start").Start();
-        using ActivityListener listener = new()
+        ActivityTraceId traceId = startup.TraceId;
+        ActivitySpanId startupSpanId = startup.SpanId;
+        ActivitySpanId runSpanId = default;
+        ActivityListener listener = new()
         {
             ShouldListenTo = source => source.Name == "LiteAgensh",
             Sample = (ref ActivityCreationOptions<ActivityContext> options) =>
-                options.Name == "coordinator.run" && options.Parent.SpanId == startup.SpanId
+                options.Parent.TraceId == traceId
+                    && (
+                        (options.Name == "coordinator.run"
+                            && options.Parent.SpanId == startupSpanId)
+                        || (options.Name == "coordinator.ownership"
+                            && runSpanId != default && options.Parent.SpanId == runSpanId)
+                    )
                     ? ActivitySamplingResult.AllDataAndRecorded
                     : ActivitySamplingResult.None,
+            ActivityStarted = trace =>
+            {
+                if (trace.OperationName == "coordinator.run"
+                    && trace.TraceId == traceId && trace.ParentSpanId == startupSpanId)
+                {
+                    runSpanId = trace.SpanId;
+                }
+            },
             ActivityStopped = trace =>
             {
+                if (trace.TraceId != traceId)
+                {
+                    return;
+                }
+                if (trace.OperationName == "coordinator.ownership"
+                    && runSpanId != default && trace.ParentSpanId == runSpanId)
+                {
+                    Console.WriteLine(
+                        "PHASE7_OWNERSHIP_SCOPE "
+                            + JsonSerializer.Serialize(new
+                            {
+                                traceId = trace.TraceId.ToString(),
+                                spanId = trace.SpanId.ToString(),
+                                parentSpanId = trace.ParentSpanId.ToString(),
+                                processId = trace.GetTagItem("process.pid"),
+                                acquired = trace.GetTagItem("liteagensh.ownership.acquired"),
+                                acquiredAt = trace.Events.Where(
+                                        item => item.Name == "coordinator.ownership.acquired"
+                                    ).Select(item => (DateTimeOffset?)item.Timestamp)
+                                    .FirstOrDefault(),
+                                managedScopeStartedAt = trace.StartTimeUtc,
+                                managedScopeEndedAt = trace.StartTimeUtc + trace.Duration,
+                            })
+                    );
+                    return;
+                }
                 if (trace.OperationName != "coordinator.run"
-                    || trace.ParentSpanId != startup.SpanId)
+                    || trace.ParentSpanId != startupSpanId)
                 {
                     return;
                 }
@@ -287,6 +346,7 @@ internal sealed class Phase7Run
                 }
             },
         };
+        ownershipObservation = listener;
         ActivitySource.AddActivityListener(listener);
         active = Coordinator(mode).RunAsync(mode, owner.Token);
         return active;
@@ -697,6 +757,8 @@ internal sealed class Phase7Run
         }
         finally
         {
+            ownershipObservation?.Dispose();
+            ownershipObservation = null;
             currentHandoff?.Dispose();
             clockObservation?.Dispose();
             owner.Dispose();

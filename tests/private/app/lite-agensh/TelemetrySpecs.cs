@@ -92,15 +92,20 @@ public sealed class TelemetrySpecs(TestContext context)
         Activity run = Assert.ContainsSingle(
             activities.Where(activity => activity.OperationName == "coordinator.run")
         );
+        Activity ownership = Assert.ContainsSingle(
+            activities.Where(activity => activity.OperationName == "coordinator.ownership")
+        );
         Assert.IsFalse(result["ok"]!.GetValue<bool>());
         Assert.AreEqual(ActivityStatusCode.Error, run.Status);
         Assert.AreEqual(
             result["code"]!.GetValue<string>(), run.GetTagItem("liteagensh.result.code")
         );
         Assert.AreEqual(caller.SpanId, run.ParentSpanId);
+        Assert.AreEqual(run.SpanId, ownership.ParentSpanId);
+        Assert.AreEqual(true, ownership.GetTagItem("liteagensh.ownership.acquired"));
         Assert.IsTrue(activities.Any(activity =>
             activity.GetTagItem("db.system.name") as string == "sqlite"
-            && activity.ParentSpanId == run.SpanId
+            && activity.ParentSpanId == ownership.SpanId
             && activity.TraceId == run.TraceId
         ));
         Assert.AreSame(caller, Activity.Current);
@@ -135,19 +140,25 @@ public sealed class TelemetrySpecs(TestContext context)
         Activity run = Assert.ContainsSingle(
             activities.Where(activity => activity.OperationName == "coordinator.run")
         );
+        Activity ownershipScope = Assert.ContainsSingle(
+            activities.Where(activity => activity.OperationName == "coordinator.ownership")
+        );
         ActivityEvent failure = Assert.ContainsSingle(
             run.Events.Where(item => item.Name == "coordinator.ownership.failed")
         );
         Dictionary<string, object?> tags = failure.Tags.ToDictionary(
             item => item.Key, item => item.Value
         );
-        string exported = JsonSerializer.Serialize(new
+        string exported = JsonSerializer.Serialize(activities.Select(activity => new
         {
-            run.StatusDescription,
-            tags = run.TagObjects,
-            events = run.Events.Select(item => new { item.Name, item.Tags }),
-        });
+            activity.StatusDescription,
+            tags = activity.TagObjects,
+            events = activity.Events.Select(item => new { item.Name, item.Tags }),
+        }));
         Assert.AreEqual("conflict", result["code"]!.GetValue<string>());
+        Assert.AreEqual(run.TraceId, ownershipScope.TraceId);
+        Assert.AreEqual(run.SpanId, ownershipScope.ParentSpanId);
+        Assert.AreEqual(false, ownershipScope.GetTagItem("liteagensh.ownership.acquired"));
         Assert.AreEqual(typeof(IOException).FullName, tags["error.type"]);
         Assert.IsInstanceOfType<int>(tags["liteagensh.ownership.hresult"]);
         Assert.DoesNotContain("private-lock-path", exported);

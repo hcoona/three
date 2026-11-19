@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text;
 
 namespace WorkflowDelivery.Platform;
@@ -132,11 +133,14 @@ internal static class NativeProcess
 
     internal static async Task<string> RunAsync(string executable, string directory,
         string[] arguments, CancellationToken cancellationToken,
-        IReadOnlyDictionary<string, string>? environment = null)
+        IReadOnlyDictionary<string, string>? environment = null, TimeProvider? timeProvider = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        var elapsed = Stopwatch.StartNew();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30),
+            timeProvider ?? TimeProvider.System);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken,
+            deadline.Token);
         using var process = new Process
         {
             StartInfo = new(executable)
@@ -166,10 +170,15 @@ internal static class NativeProcess
         using var output = new StreamReader(process.StandardOutput.BaseStream,
             new UTF8Encoding(false, true), detectEncodingFromByteOrderMarks: false,
             leaveOpen: true);
-        Task<string> stdout = ReadAsync(output, timeout.Token);
-        Task<string> stderr = ReadAsync(process.StandardError, timeout.Token);
+        var stdoutText = new StringBuilder();
+        var stderrText = new StringBuilder();
+        Task<string> stdout = ReadAsync(output, stdoutText, timeout.Token);
+        Task<string> stderr = ReadAsync(process.StandardError, stderrText, timeout.Token);
         Task exit = process.WaitForExitAsync(timeout.Token);
         Task[] tasks = [stdout, stderr, exit];
+        ExceptionDispatchInfo? primary = null;
+        Exception? cleanupFailure = null;
+        bool deadlineExpired = false;
         try
         {
             var pending = new List<Task>(tasks);
@@ -179,20 +188,12 @@ internal static class NativeProcess
                 await completed;
                 pending.Remove(completed);
             }
-            if (process.ExitCode != 0)
-            {
-                var command = new NativeCommand(executable, directory, arguments, 30);
-                var result = new NativeCommandResult(NativeTermination.Exited, process.ExitCode,
-                    await stdout, await stderr, 0, null);
-                throw new InvalidDataException(
-                    $"Native query ({NativeDiagnostic.Operation(command)}) failed: " +
-                    NativeDiagnostic.Describe(result, includeStdout: true));
-            }
-            return await stdout;
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception exception)
         {
-            throw new TimeoutException("Native query exceeded its 30-second deadline.");
+            deadlineExpired = exception is OperationCanceledException &&
+                !cancellationToken.IsCancellationRequested;
+            primary = ExceptionDispatchInfo.Capture(exception);
         }
         finally
         {
@@ -201,11 +202,45 @@ internal static class NativeProcess
             {
                 await StopAsync(process);
             }
+            catch (Exception exception)
+            {
+                cleanupFailure = exception;
+            }
             finally
             {
                 await Task.WhenAll(tasks).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
         }
+        var command = new NativeCommand(executable, directory, arguments, 30);
+        int? code = process.HasExited ? process.ExitCode : null;
+        if (deadlineExpired)
+        {
+            var result = new NativeCommandResult(NativeTermination.TimedOut, code,
+                stdoutText.ToString(), stderrText.ToString(), elapsed.Elapsed.TotalSeconds,
+                "Native query exceeded its 30-second deadline.");
+            primary = ExceptionDispatchInfo.Capture(new TimeoutException(
+                $"Native query ({NativeDiagnostic.Operation(command)}) failed: " +
+                NativeDiagnostic.Describe(result, includeStdout: true),
+                primary!.SourceException));
+        }
+        if (primary is not null && cleanupFailure is not null)
+        {
+            var failures = new AggregateException(primary.SourceException, cleanupFailure);
+            throw new InvalidDataException(
+                $"Native query ({NativeDiagnostic.Operation(command)}) failed: " +
+                failures.Message, failures);
+        }
+        primary?.Throw();
+        if (cleanupFailure is not null) ExceptionDispatchInfo.Capture(cleanupFailure).Throw();
+        if (code != 0)
+        {
+            var result = new NativeCommandResult(NativeTermination.Exited, code,
+                await stdout, await stderr, elapsed.Elapsed.TotalSeconds, null);
+            throw new InvalidDataException(
+                $"Native query ({NativeDiagnostic.Operation(command)}) failed: " +
+                NativeDiagnostic.Describe(result, includeStdout: true));
+        }
+        return await stdout;
     }
 
     private static async Task StopAsync(Process process)
@@ -229,9 +264,9 @@ internal static class NativeProcess
         }
     }
 
-    private static async Task<string> ReadAsync(StreamReader reader, CancellationToken token)
+    private static async Task<string> ReadAsync(StreamReader reader, StringBuilder text,
+        CancellationToken token)
     {
-        var text = new StringBuilder();
         char[] buffer = new char[4096];
         int count;
         while ((count = await reader.ReadAsync(buffer.AsMemory(), token)) != 0)

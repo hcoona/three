@@ -45,6 +45,8 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
 
     internal bool HoldHost { get; set; }
 
+    internal bool ReportSettlement { get; init; }
+
     internal OperationException? HostFailure { get; set; }
 
     internal bool FailExactOpen { get; set; }
@@ -91,17 +93,31 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
         return session;
     }
 
-    internal void ReleaseHost() => release.TrySetResult();
+    internal void ReleaseHost()
+    {
+        bool signalled = release.TrySetResult();
+        ReportSettlementBoundary(signalled ? "release-signalled" : "release-already-signalled");
+    }
 
     public async ValueTask DisposeAsync()
     {
         // The factory invokes this boundary after its worker stop attempts.
         HostEntered.TrySetResult();
+        ReportSettlementBoundary("host-entered");
         if (HoldHost)
         {
-            await release
-                .Task.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
-                .ConfigureAwait(false);
+            try
+            {
+                await release
+                    .Task.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException exception)
+            {
+                ReportSettlementBoundary("release-gate-expired", exception);
+                throw;
+            }
+            ReportSettlementBoundary("release-gate-returned");
         }
         if (HostFailure is not null)
         {
@@ -114,6 +130,7 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
                 .WaitForExitAsync(CancellationToken.None)
                 .WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
                 .ConfigureAwait(false);
+            ReportSettlementBoundary("runtime-exit-observed");
             if (process.ExitCode != 0)
             {
                 throw new InvalidOperationException(
@@ -124,6 +141,7 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
             RecordRuntime("settled");
         }
         settled = true;
+        ReportSettlementBoundary("host-completed");
     }
 
     internal async Task CleanupAsync(bool preserveState = false)
@@ -151,6 +169,29 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
                 ["evidenceKind"] = "controlled-native-dependency",
             }.ToJsonString()
         );
+
+    private void ReportSettlementBoundary(string boundary, Exception? error = null)
+    {
+        if (!ReportSettlement)
+        {
+            return;
+        }
+        Console.WriteLine(
+            "PHASE4_HOST_SETTLEMENT "
+                + new JsonObject
+                {
+                    ["runtimeId"] = Id,
+                    ["runtimeLeaseId"] = LeaseId,
+                    ["pid"] = ReadyIdentity?.Pid,
+                    ["boundary"] = boundary,
+                    ["timestamp"] = Stopwatch.GetTimestamp(),
+                    ["timestampFrequency"] = Stopwatch.Frequency,
+                    ["releaseSignalled"] = release.Task.IsCompletedSuccessfully,
+                    ["settled"] = settled,
+                    ["error"] = error is null ? null : Json.ExceptionDetails(error),
+                }.ToJsonString()
+        );
+    }
 
     internal static TaskCompletionSource Signal() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
