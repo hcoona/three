@@ -1,0 +1,12 @@
+diff --git a/dist/index.mjs b/dist/index.mjs
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -58,7 +58,7 @@ var src_default = defineWxtModule({
+ 				}
+-				mkdir(resolve(outputFolder, "icons"), { recursive: true });
++				await mkdir(resolve(outputFolder, "icons"), { recursive: true });
+ 				await resizedImage.toFile(resolve(outputFolder, `icons/${size}.png`));
+ 				output.publicAssets.push({
+ 					type: "asset",
+ 					fileName: `icons/${size}.png`
+ 				});
