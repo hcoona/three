@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 
 namespace LiteAgensh;
@@ -12,6 +13,8 @@ public sealed record ProcessResult(
 
 public sealed class ProcessRunner
 {
+    internal const string CancellationEvidenceKey = "LiteAgensh.CommandCancellation";
+    private const int CancellationOutputLimit = 8192;
     private readonly RunDatabase database;
     private readonly TimeProvider commandTimeProvider;
 
@@ -170,13 +173,49 @@ public sealed class ProcessRunner
         }
 
         Complete(lease);
-        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch (OperationCanceledException exception)
+        {
+            try
+            {
+                exception.Data[CancellationEvidenceKey] = new JsonObject
+                {
+                    ["leaseId"] = lease,
+                    ["stdout"] = RetainedOutput(
+                        output.IsCompletedSuccessfully ? output.Result : null
+                    ),
+                    ["stderr"] = RetainedOutput(
+                        error.IsCompletedSuccessfully ? error.Result : null
+                    ),
+                }.ToJsonString();
+            }
+            catch (Exception secondary)
+            {
+                exception.Data["LiteAgensh.CommandCancellationCaptureError"] =
+                    Json.ExceptionDetails(secondary);
+            }
+            throw;
+        }
         return new(
             process.ExitCode,
             await output.ConfigureAwait(false),
             await error.ConfigureAwait(false),
             timedOut
         );
+    }
+
+    internal static JsonObject RetainedOutput(string? text)
+    {
+        return new()
+        {
+            ["complete"] = text is not null,
+            ["characters"] = text?.Length,
+            ["truncated"] = text is null ? null : text.Length > CancellationOutputLimit,
+            ["text"] = text is null ? null : text[..Math.Min(text.Length, CancellationOutputLimit)],
+        };
     }
 
     public async Task ResolveSurvivorsAsync(CancellationToken cancellationToken = default)

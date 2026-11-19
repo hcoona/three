@@ -1210,6 +1210,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         internal GraphFixture()
         {
             Directory.CreateDirectory(Root);
+            Write("global.json", RepositoryToolSelection.GlobalJson());
             Write("nuget.config", """
                 <configuration><packageSources><clear />
                   <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />

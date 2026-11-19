@@ -578,7 +578,11 @@ public sealed class DispatchCancellationSpecs(TestContext context)
         string scenario
     )
     {
-        Phase4SessionControl host = new() { HoldHost = true };
+        Phase4SessionControl host = new()
+        {
+            HoldHost = true,
+            ReportSettlement = scenario == "fresh-stop",
+        };
         Task? completion = null;
         Exception? primaryFailure = null;
         bool completionObserved = false;
@@ -617,6 +621,11 @@ public sealed class DispatchCancellationSpecs(TestContext context)
             if (scenario == "fresh-stop")
             {
                 host.Sessions[0].StopFailure = original;
+                context.WriteLine(
+                    "Phase4FreshRejectionFactoryInvoking: {0:O}; runtime={1}",
+                    DateTimeOffset.UtcNow,
+                    host.Id
+                );
             }
             completion = host.Factory.CompleteAsync();
             OperationException? failure = null;
@@ -870,6 +879,43 @@ public sealed class DispatchCancellationSpecs(TestContext context)
             finally
             {
                 bool preserveState = completion is { IsCompleted: false };
+                if (scenario == "fresh-stop")
+                {
+                    try
+                    {
+                        TaskStatus? status = completion?.Status;
+                        bool terminal = status is TaskStatus.RanToCompletion
+                            or TaskStatus.Faulted or TaskStatus.Canceled;
+                        context.WriteLine(
+                            "Phase4FreshRejectionFactorySettlement: {0}",
+                            new JsonObject
+                            {
+                                ["runtimeId"] = host.Id,
+                                ["observedAt"] = DateTimeOffset.UtcNow,
+                                ["factoryStatus"] = status?.ToString(),
+                                ["factoryTerminal"] = terminal,
+                                ["settlementFailures"] = terminal
+                                    ? host.Factory.SettlementFailures.DeepClone() : null,
+                                ["settlementDetails"] = terminal
+                                    ? host.Factory.SettlementDetails.DeepClone() : null,
+                            }.ToJsonString()
+                        );
+                        if (terminal)
+                        {
+                            context.WriteLine(
+                                "Phase4FreshRejectionLedgerAfterFactorySettlement: {0}; {1}",
+                                host.Id,
+                                host.State.Accounting.ToJsonString()
+                            );
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        context.WriteLine(
+                            "Secondary factory settlement evidence failure: {0}", exception
+                        );
+                    }
+                }
                 if (preserveState)
                 {
                     context.WriteLine(

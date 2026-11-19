@@ -23,6 +23,7 @@ internal static class Program
         {
             return 2;
         }
+        Console.Error.WriteLine("PHASE6_CHILD_ENTER");
         using CancellationTokenSource deadline = new(TimeSpan.FromSeconds(120));
         CancellationToken token = deadline.Token;
         using NamedPipeClientStream pipe = new(
@@ -35,15 +36,18 @@ internal static class Program
         int exitCode = 0;
         try
         {
+            Console.Error.WriteLine("PHASE6_CHILD_CONNECT_ENTER");
             await pipe.ConnectAsync(token)
                 .WaitAsync(TimeSpan.FromSeconds(5), token)
                 .ConfigureAwait(false);
+            Console.Error.WriteLine("PHASE6_CHILD_CONNECT_RETURN");
             using StreamReader reader = new(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
             using StreamWriter writer = new(pipe, new UTF8Encoding(false), 4096, leaveOpen: true)
             {
                 AutoFlush = true,
             };
             using Process self = Process.GetCurrentProcess();
+            Console.Error.WriteLine("PHASE6_CHILD_HELLO_ENTER");
             await SendAsync(
                     writer,
                     args[1],
@@ -59,7 +63,9 @@ internal static class Program
                     token
                 )
                 .ConfigureAwait(false);
+            Console.Error.WriteLine("PHASE6_CHILD_HELLO_RETURN");
             await ReceiveAsync(reader, args[1], "START", token).ConfigureAwait(false);
+            Console.Error.WriteLine("PHASE6_CHILD_START_RECEIVED");
             string configurationPath = Path.GetFullPath(args[2]);
             RunConfiguration configuration =
                 JsonSerializer.Deserialize<RunConfiguration>(
