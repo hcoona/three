@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@wxt-dev/auto-icons@1.1.2': 5e7ce5ff4d26f800dc47570b690b5493bfef862042cc7b747e68881a404463dc
+
 importers:
 
   .:
@@ -137,7 +140,7 @@ importers:
         version: 7.0.0-dev.20260707.2
       '@wxt-dev/auto-icons':
         specifier: ^1.1.1
-        version: 1.1.2(@types/node@26.6.6)(wxt@0.21.5(rolldown@1.2.16)(typescript@7.0.2)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))
+        version: 1.1.2(patch_hash=5e7ce5ff4d26f800dc47570b690b5493bfef862042cc7b747e68881a404463dc)(@types/node@26.6.6)(wxt@0.21.5(rolldown@1.2.16)(typescript@7.0.2)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))
       nerdbank-gitversioning:
         specifier: ^3.7.91
         version: 3.10.94
@@ -3628,7 +3631,7 @@ snapshots:
 
   '@webext-core/match-patterns@2.0.0': {}
 
-  '@wxt-dev/auto-icons@1.1.2(@types/node@26.6.6)(wxt@0.21.5(rolldown@1.2.16)(typescript@7.0.2)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))':
+  '@wxt-dev/auto-icons@1.1.2(patch_hash=5e7ce5ff4d26f800dc47570b690b5493bfef862042cc7b747e68881a404463dc)(@types/node@26.6.6)(wxt@0.21.5(rolldown@1.2.16)(typescript@7.0.2)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))':
     dependencies:
       defu: 6.1.7
       sharp: 0.35.5(@types/node@26.6.6)
