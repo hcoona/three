@@ -18,13 +18,13 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
 
     // The named test target is a controlled substitute, not MTP interoperability evidence.
     internal static async Task<DotNetNativeFixture> CreatePhaseObservationAsync(
-        CancellationToken token)
+        int ownerDeadlineSeconds, CancellationToken token)
     {
         GitFixture repo = await GitFixture.CreateAsync(token);
         try
         {
             await repo.SetAsync("global.json", SdkSelection);
-            await repo.SetAsync(Project, """
+            await repo.SetAsync(Project, $$"""
                 <Project>
                   <PropertyGroup>
                     <FixtureOutput
@@ -44,7 +44,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                           string release = System.IO.Path.Combine(SignalDirectory, "release");
                           var wait = System.Diagnostics.Stopwatch.StartNew();
                           while (!System.IO.File.Exists(release) &&
-                              wait.Elapsed < System.TimeSpan.FromSeconds(20))
+                              wait.Elapsed < System.TimeSpan.FromSeconds({{ownerDeadlineSeconds}}))
                               System.Threading.Thread.Sleep(20);
                           if (!System.IO.File.Exists(release))
                           {

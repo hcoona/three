@@ -98,14 +98,19 @@ internal static class SqliteDiagnostics
         bool? deferred = null
     )
     {
-        Record(connection, operation, phase + "-requested", 0, transaction, deferred);
+        using System.Diagnostics.Activity? trace =
+            ApplicationTelemetry.Source.StartActivity("sqlite." + phase);
+        Record(
+            connection, operation, phase + "-requested", 0, transaction, deferred, trace: trace
+        );
         long start = Stopwatch.GetTimestamp();
         try
         {
             T result = action();
             Record(
                 connection, operation, phase + "-succeeded",
-                Stopwatch.GetElapsedTime(start).TotalMilliseconds, transaction, deferred
+                Stopwatch.GetElapsedTime(start).TotalMilliseconds, transaction, deferred,
+                trace: trace
             );
             return result;
         }
@@ -113,7 +118,8 @@ internal static class SqliteDiagnostics
         {
             Record(
                 connection, operation, phase + "-failed",
-                Stopwatch.GetElapsedTime(start).TotalMilliseconds, transaction, deferred, error
+                Stopwatch.GetElapsedTime(start).TotalMilliseconds, transaction, deferred, error,
+                trace
             );
             throw;
         }
@@ -142,6 +148,8 @@ internal static class SqliteDiagnostics
 
     internal static void Close(SqliteConnection connection)
     {
+        using System.Diagnostics.Activity? trace =
+            ApplicationTelemetry.Source.StartActivity("sqlite.closed");
         if (!Connections.TryGetValue(connection, out ConnectionActivity? activity))
         {
             return;
@@ -150,7 +158,7 @@ internal static class SqliteDiagnostics
         lock (activity.Database.Gate)
         {
             bool acquired = activity.Acquired;
-            Record(connection, "connection", "closed", 0);
+            Record(connection, "connection", "closed", 0, trace: trace);
             activity.Database.Active.Remove(activity.Id);
             Interlocked.Decrement(ref activity.Database.AttachedConnections);
             if (acquired
@@ -182,7 +190,8 @@ internal static class SqliteDiagnostics
         double elapsed,
         string? transaction = null,
         bool? deferred = null,
-        Exception? error = null
+        Exception? error = null,
+        System.Diagnostics.Activity? trace = null
     )
     {
         if (!Connections.TryGetValue(connection, out ConnectionActivity? activity))
@@ -232,6 +241,33 @@ internal static class SqliteDiagnostics
                 activity.Last = record;
             }
             DatabaseActivity database = activity.Database;
+            if (trace is { IsAllDataRequested: true })
+            {
+                trace.SetTag("db.system.name", "sqlite");
+                trace.SetTag("db.operation.name", observedOperation);
+                trace.SetTag("liteagensh.sqlite.database_id", database.Identity);
+                trace.SetTag("liteagensh.sqlite.connection_id", record.Connection);
+                trace.SetTag("liteagensh.sqlite.transaction_id", record.Transaction);
+                trace.SetTag("liteagensh.actor", record.Actor);
+                trace.AddEvent(new ActivityEvent(
+                    record.Phase,
+                    tags: new ActivityTagsCollection
+                    {
+                        ["liteagensh.sqlite.elapsed_ms"] = record.ElapsedMilliseconds,
+                        ["liteagensh.sqlite.monotonic_timestamp"] = record.MonotonicTimestamp,
+                        ["liteagensh.sqlite.deferred"] = record.Deferred,
+                        ["liteagensh.sqlite.write_acquisition_observed"] =
+                            record.WriteAcquisitionObserved,
+                    }
+                ));
+                if (error is not null)
+                {
+                    trace.SetStatus(ActivityStatusCode.Error);
+                    trace.SetTag("error.type", error.GetType().FullName);
+                    trace.SetTag("liteagensh.sqlite.primary_code", record.PrimaryCode);
+                    trace.SetTag("liteagensh.sqlite.extended_code", record.ExtendedCode);
+                }
+            }
             database.Recent.Enqueue(record);
             if (database.Recent.Count > MaximumRecords)
             {

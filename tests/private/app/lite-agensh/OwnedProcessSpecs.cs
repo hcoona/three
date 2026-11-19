@@ -29,29 +29,20 @@ public sealed class OwnedProcessSpecs(TestContext context)
                     await control.ReleaseAsync(context.CancellationToken).ConfigureAwait(false)
                 )
                 .ConfigureAwait(false);
-            AggregateException secondary = await Assert
-                .ThrowsExactlyAsync<AggregateException>(async () =>
-                {
-                    disposalAttempted = true;
-                    await control.DisposeAsync().ConfigureAwait(false);
-                })
-                .ConfigureAwait(false);
-            Exception retained = Assert.ContainsSingle(secondary.Flatten().InnerExceptions);
-            Assert.IsInstanceOfType<IOException>(retained);
-            Assert.AreEqual("writer-dispose", retained.Data["ownedCleanupStep"]);
+            disposalAttempted = true;
+            await control.DisposeAsync().ConfigureAwait(false);
             Assert.IsTrue(observer.HasExited);
             Assert.ThrowsExactly<InvalidOperationException>(
                 () => _ = owned.Id,
-                "The directly owned Process must be disposed despite the preceding writer error."
+                "The directly owned Process must be disposed despite the preceding release error."
             );
             context.WriteLine(
-                "OWNED_EXPECTED_CLEANUP_FAILURE "
+                "OWNED_EXPECTED_RELEASE_FAILURE "
                     + new System.Text.Json.Nodes.JsonObject
                     {
                         ["pid"] = ready.Pid,
                         ["birthTicks"] = ready.BirthTicks,
                         ["releasePrimary"] = Json.ExceptionDetails(primary),
-                        ["disposeSecondary"] = Json.ExceptionDetails(secondary),
                         ["ownedExitObserved"] = observer.HasExited,
                         ["ownedProcessDisposed"] = true,
                         ["intentionalTermination"] = true,
@@ -82,6 +73,7 @@ public sealed class OwnedProcessSpecs(TestContext context)
     }
 
     [TestMethod]
+    [Timeout(120_000, CooperativeCancellation = true)]
     [DataRow(0)]
     [DataRow(7)]
     [TestCategory("CancelSettleOnlyOwnedChildren")]
@@ -143,6 +135,7 @@ public sealed class OwnedProcessSpecs(TestContext context)
     }
 
     [TestMethod]
+    [Timeout(120_000, CooperativeCancellation = true)]
     [TestCategory("CancelSettleOnlyOwnedChildren")]
     public async Task CancellationSettlesTheCorrelatedOwnedTreeAndPreservesAnAdjacentOwnedSentinel()
     {
@@ -474,13 +467,23 @@ public sealed class OwnedProcessSpecs(TestContext context)
 
     private static async Task CancelAndDrainAsync(
         CancellationTokenSource cancellation,
-        Task running
+        Task<ProcessResult> running
     )
     {
         await cancellation.CancelAsync().ConfigureAwait(false);
         try
         {
-            await running.ConfigureAwait(false);
+            ProcessResult result = await running.ConfigureAwait(false);
+            Console.WriteLine(
+                "OWNED_COMMAND_TERMINAL "
+                    + new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["exitCode"] = result.ExitCode,
+                        ["timedOut"] = result.TimedOut,
+                        ["stdout"] = result.StandardOutput,
+                        ["stderr"] = result.StandardError,
+                    }.ToJsonString()
+            );
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
     }

@@ -211,9 +211,12 @@ generic plugin framework. Additional internal types do not change this API.
   represented explicitly as the declared shell and arguments.
 - `RunDatabase` opens a local SQLite database below the state directory,
   enables WAL/foreign keys and finite busy timeouts, validates schema version,
-  and offers `Open()` returning a fresh connection. Persist configuration in
-  the database. Domain owners create their tables transactionally; a higher
-  incompatible schema is rejected without recreating it.
+  and offers `Open()` returning a fresh logical connection.
+  [Provider-managed pooling](https://learn.microsoft.com/dotnet/standard/data/sqlite/connection-strings#pooling)
+  reuses physical connections; never share a logical connection across concurrent
+  operations. Persist configuration in the database. Domain owners create their
+  tables transactionally; a higher incompatible schema is rejected without
+  recreating it.
 - `ProcessRunner.RunAsync` runs a declared executable/argument list in an
   explicit cwd with redirected output, a finite deadline and caller token.
   Return exit/stdout/stderr/timeout classification. Cancellation settles owned

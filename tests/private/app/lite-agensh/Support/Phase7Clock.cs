@@ -22,6 +22,17 @@ internal sealed class Phase7Clock : TimeProvider
 
     internal DateTimeOffset? WorkDeadline { get; set; }
 
+    internal long TimerWatermark
+    {
+        get
+        {
+            lock (gate)
+            {
+                return nextTimer;
+            }
+        }
+    }
+
     public override DateTimeOffset GetUtcNow() => clock.GetUtcNow() + epochOffset;
 
     public override long GetTimestamp() => clock.GetTimestamp();
@@ -74,19 +85,35 @@ internal sealed class Phase7Clock : TimeProvider
         }
     }
 
-    private RegisteredTimer? Earliest(DateTimeOffset? strictlyBefore) =>
+    private IEnumerable<RegisteredTimer> EligibleTimers(
+        DateTimeOffset? strictlyBefore,
+        long registeredAfter = 0
+    ) =>
         timers
             .Where(timer =>
                 timer.Observation == observation
+                && timer.Id > registeredAfter
                 && !timer.Disposed
                 && timer.Due is { } due
                 && (strictlyBefore is not { } cutoff || due < cutoff)
-            )
-            .MinBy(timer => timer.Due);
+            );
 
-    internal async Task WaitForPollAsync(
+    private RegisteredTimer? Earliest(
+        DateTimeOffset? strictlyBefore,
+        long registeredAfter = 0
+    ) => EligibleTimers(strictlyBefore, registeredAfter).MinBy(timer => timer.Due);
+
+    internal readonly record struct ObservedPoll(
+        long Observation,
+        long TimerId,
+        DateTimeOffset Due
+    );
+
+    internal async Task<ObservedPoll> WaitForPollAsync(
         CancellationToken token,
-        DateTimeOffset? strictlyBefore = null
+        DateTimeOffset? strictlyBefore = null,
+        bool requireSingle = false,
+        long registeredAfter = 0
     )
     {
         while (true)
@@ -101,9 +128,18 @@ internal sealed class Phase7Clock : TimeProvider
                         "Timer observation must start before the run."
                     );
                 }
-                if (Earliest(strictlyBefore) is not null)
+                if (Earliest(strictlyBefore, registeredAfter) is { } timer)
                 {
-                    return;
+                    if (
+                        requireSingle
+                        && EligibleTimers(strictlyBefore, registeredAfter).Skip(1).Any()
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            "Owner-control readiness requires one poll with native responses held."
+                        );
+                    }
+                    return new(timer.Observation, timer.Id, timer.Due!.Value);
                 }
                 wait = changed.Task;
             }
@@ -246,21 +282,62 @@ internal sealed class Phase7Clock : TimeProvider
             {
                 return false;
             }
-            clock.Advance(target - now);
-            Console.WriteLine(
-                "PHASE7_TIMER_ADVANCE "
-                    + new JsonObject
-                    {
-                        ["observation"] = observation,
-                        ["timerId"] = timer.Id,
-                        ["from"] = now.ToString("O"),
-                        ["selectedDue"] = due.ToString("O"),
-                        ["to"] = target.ToString("O"),
-                        ["strictlyBefore"] = strictlyBefore?.ToString("O"),
-                    }.ToJsonString()
-            );
+            AdvanceTo(timer, now, target, strictlyBefore);
             return true;
         }
+    }
+
+    internal void Advance(
+        ObservedPoll poll,
+        DateTimeOffset strictlyBefore,
+        CancellationToken token
+    )
+    {
+        lock (gate)
+        {
+            token.ThrowIfCancellationRequested();
+            RegisteredTimer? timer = timers.SingleOrDefault(item =>
+                item.Observation == poll.Observation && item.Id == poll.TimerId
+            );
+            DateTimeOffset now = GetUtcNow();
+            if (
+                poll.Observation != observation
+                || timer is null
+                || timer.Disposed
+                || timer.Due != poll.Due
+                || poll.Due < now
+                || poll.Due >= strictlyBefore
+            )
+            {
+                throw new InvalidOperationException(
+                    "The observed owner poll is no longer armed within this phase."
+                );
+            }
+            AdvanceTo(timer, now, poll.Due, strictlyBefore);
+        }
+    }
+
+    private void AdvanceTo(
+        RegisteredTimer timer,
+        DateTimeOffset from,
+        DateTimeOffset target,
+        DateTimeOffset? strictlyBefore
+    )
+    {
+        DateTimeOffset due = timer.Due!.Value;
+        clock.Advance(target - from);
+        Console.WriteLine(
+            "PHASE7_TIMER_ADVANCE "
+                + new JsonObject
+                {
+                    ["observation"] = observation,
+                    ["timerId"] = timer.Id,
+                    ["from"] = from.ToString("O"),
+                    ["selectedDue"] = due.ToString("O"),
+                    ["to"] = target.ToString("O"),
+                    ["strictlyBefore"] = strictlyBefore?.ToString("O"),
+                }.ToJsonString()
+        );
     }
 
     internal void Advance(TimeSpan amount)

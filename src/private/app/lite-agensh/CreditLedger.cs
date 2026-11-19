@@ -34,14 +34,7 @@ public sealed class CreditLedger
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = path,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Pooling = false,
-            DefaultTimeout = 5,
-            ForeignKeys = true,
-        }.ToString();
+        connectionString = Sql.ConnectionStringFor(path);
         campaignAllowance = allowance;
         using SqliteConnection connection = Open();
         Sql.Execute(connection, "PRAGMA journal_mode=WAL;");

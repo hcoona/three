@@ -165,7 +165,7 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
     public async Task NativeInFlightPhaseEvidenceDoesNotReplaceReceiptsOrFailTheirWrites()
     {
         using var fixture = await DotNetNativeFixture.CreatePhaseObservationAsync(
-            context.CancellationToken);
+            NativeCommandDeadlineSeconds, context.CancellationToken);
         CiPlan plan = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate, "MTP",
             DotNetNativeFixture.Globals(), DotNetNativeFixture.Project);
         string signal = Directory.CreateDirectory(

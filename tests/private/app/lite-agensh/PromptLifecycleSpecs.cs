@@ -233,6 +233,9 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                             )
                         );
                         Assert.AreEqual(0L, state.Number("SELECT COUNT(*) FROM phase7_exact_ack;"));
+                        Phase7Clock.ObservedPoll ownerPoll = await state
+                            .ObserveOwnerPollAsync(token)
+                            .ConfigureAwait(false);
                         next.Complete();
                         await state
                             .WaitAckAsync(batch, state.WorkDeadline, token)
@@ -275,7 +278,7 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                         );
                         GitScenarioState.Data(
                             await state
-                                .StopRunningAsync("pause", state.WorkDeadline, token)
+                                .StopRunningAsync("pause", ownerPoll, token)
                                 .ConfigureAwait(false)
                         );
                         Assert.AreEqual(
@@ -457,6 +460,9 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                         ("$batch", batch)
                     )
                 );
+                Phase7Clock.ObservedPoll ownerPoll = await state
+                    .ObserveOwnerPollAsync(token)
+                    .ConfigureAwait(false);
                 later.Complete();
                 await state.WaitAckAsync(batch, state.WorkDeadline, token).ConfigureAwait(false);
                 Assert.AreEqual(
@@ -472,7 +478,7 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                 );
                 GitScenarioState.Data(
                     await state
-                        .StopRunningAsync("pause", state.WorkDeadline, token)
+                        .StopRunningAsync("pause", ownerPoll, token)
                         .ConfigureAwait(false)
                 );
                 Assert.AreEqual(20m, state.Reservation("worker1").Actual);
@@ -518,6 +524,9 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                     "sending",
                     state.Value("SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch))
                 );
+                Phase7Clock.ObservedPoll ownerPoll = await state
+                    .ObserveOwnerPollAsync(token)
+                    .ConfigureAwait(false);
                 turn.Complete();
                 await state.WaitAckAsync(batch, state.WorkDeadline, token).ConfigureAwait(false);
                 Assert.AreEqual(
@@ -551,7 +560,7 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                 );
                 GitScenarioState.Data(
                     await state
-                        .StopRunningAsync("pause", state.WorkDeadline, token)
+                        .StopRunningAsync("pause", ownerPoll, token)
                         .ConfigureAwait(false)
                 );
             })
