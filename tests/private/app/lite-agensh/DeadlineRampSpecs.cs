@@ -1229,13 +1229,16 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 Assert.AreEqual(100m, state.Reservation("worker2").Allowance);
                 long batch1 = state.SendingBatch("worker1");
                 long batch2 = state.SendingBatch("worker2");
+                Phase7Clock.ObservedPoll ownerPoll = await state
+                    .ObserveOwnerPollAsync(token)
+                    .ConfigureAwait(false);
                 one.Complete();
                 two.Complete();
                 await state.WaitAckAsync(batch1, state.WorkDeadline, token).ConfigureAwait(false);
                 await state.WaitAckAsync(batch2, state.WorkDeadline, token).ConfigureAwait(false);
                 GitScenarioState.Data(
                     await state
-                        .StopRunningAsync("pause", state.WorkDeadline, token)
+                        .StopRunningAsync("pause", ownerPoll, token)
                         .ConfigureAwait(false)
                 );
             })
@@ -1639,7 +1642,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
         await state
             .RunBodyAsync(async () =>
             {
-                _ = state.Start();
+                _ = state.Start(ownerPollWorkers: 1);
                 Phase7Sessions.Turn first = await state
                     .FixedAsync(
                         next => state.Sessions.NextTurnAsync("worker1", next),
@@ -1650,11 +1653,14 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 // fair legacy reservation, NOT a shared grant
                 Assert.AreEqual(100m, state.Reservation("worker2").Allowance);
                 long batch = state.SendingBatch("worker1");
+                Phase7Clock.ObservedPoll originalOwnerPoll = await state
+                    .ObserveOwnerPollAsync(token)
+                    .ConfigureAwait(false);
                 first.Complete();
                 await state.WaitAckAsync(batch, state.WorkDeadline, token).ConfigureAwait(false);
                 GitScenarioState.Data(
                     await state
-                        .StopRunningAsync("pause", state.WorkDeadline, token)
+                        .StopRunningAsync("pause", originalOwnerPoll, token)
                         .ConfigureAwait(false)
                 );
                 Assert.AreEqual(
@@ -1735,10 +1741,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         .Where(session => session.Worker == "worker2")
                 );
                 long resumedBatch = state.SendingBatch("worker1");
-                resumed.Complete();
-                await state
-                    .WaitAckAsync(resumedBatch, admitted.AddSeconds(19), token)
-                    .ConfigureAwait(false);
                 await state
                     .Clock.WaitForPollAsync(token, admitted.AddSeconds(20))
                     .ConfigureAwait(false);
@@ -1764,13 +1766,20 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 Assert.IsGreaterThanOrEqualTo(admitted.AddSeconds(20), state.Clock.GetUtcNow());
                 Assert.AreEqual(95m, state.Reservation("worker2").Allowance);
                 long peerBatch = state.SendingBatch("worker2");
+                Phase7Clock.ObservedPoll resumedOwnerPoll = await state
+                    .ObserveOwnerPollAsync(token)
+                    .ConfigureAwait(false);
+                resumed.Complete();
                 peer.Complete();
+                await state
+                    .WaitAckAsync(resumedBatch, state.WorkDeadline, token)
+                    .ConfigureAwait(false);
                 await state
                     .WaitAckAsync(peerBatch, state.WorkDeadline, token)
                     .ConfigureAwait(false);
                 GitScenarioState.Data(
                     await state
-                        .StopRunningAsync("pause", state.WorkDeadline, token)
+                        .StopRunningAsync("pause", resumedOwnerPoll, token)
                         .ConfigureAwait(false)
                 );
                 Assert.AreEqual(
@@ -1790,7 +1799,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7Run state = await Phase7Run
-            .CreateAsync(token, workers: 3, interval: 10, allocation: "shared")
+            .CreateAsync(token, workers: 3, interval: 10, allocation: "shared", allowance: 307.25m)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -1854,7 +1863,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     firstRelease.TrySetResult();
                     var first = await ConsumeAsync(firstStart).ConfigureAwait(false);
                     Assert.AreEqual(firstReleasedAt, first.CompletedAt);
-                    first.Turn.Complete(); // ACK joins belong AFTER temporal probes.
                     Probe("worker2", handoff.SecondStarting.Task, first.CompletedAt);
 
                     await state.UntilAsync(handoff.SecondStarting.Task, state.WorkDeadline, token)
@@ -1879,7 +1887,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     secondRelease.TrySetResult();
                     var second = await ConsumeAsync(secondStart).ConfigureAwait(false);
                     Assert.AreEqual(secondReleasedAt, second.CompletedAt);
-                    second.Turn.Complete();
                     Probe("worker3", handoff.ThirdStarting.Task, second.CompletedAt);
 
                     await state.UntilAsync(handoff.ThirdStarting.Task, state.WorkDeadline, token)
@@ -2017,6 +2024,11 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                                 ["durableBackendLeaseAndAllSessionAssociationsMatched"] = true,
                             }.ToJsonString()
                     );
+                    Phase7Clock.ObservedPoll ownerPoll = await state
+                        .ObserveOwnerPollAsync(token)
+                        .ConfigureAwait(false);
+                    first.Turn.Complete();
+                    second.Turn.Complete();
                     third.Turn.Complete();
                     foreach (long batch in new[] { first.Batch, second.Batch, third.Batch })
                     {
@@ -2066,7 +2078,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         .ConfigureAwait(false);
                     GitScenarioState.Data(
                         await state
-                            .StopRunningAsync("pause", state.WorkDeadline, token)
+                            .StopRunningAsync("pause", ownerPoll, token)
                             .ConfigureAwait(false)
                     );
                     Assert.AreEqual(
@@ -2083,9 +2095,10 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     }
                     Assert.AreEqual(
                         37.25m,
-                        state.Ledger.Status(state.Database.RunId, 207.25m)[
-                            "runCommitted"
-                        ]!.GetValue<decimal>()
+                        state.Ledger.Status(
+                            state.Database.RunId,
+                            state.Database.Configuration.RunAiCreditAllowance
+                        )["runCommitted"]!.GetValue<decimal>()
                     );
                     Console.WriteLine(
                         "PHASE7_DELAYED_FINAL "

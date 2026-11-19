@@ -217,13 +217,16 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 Assert.Contains("Cooperating on #", context2.Text);
                 long batch1 = state.SendingBatch("worker1");
                 long batch2 = state.SendingBatch("worker2");
+                Phase7Clock.ObservedPoll ownerPoll = await state
+                    .ObserveOwnerPollAsync(token)
+                    .ConfigureAwait(false);
                 context1.Complete();
                 context2.Complete();
                 await state.WaitAckAsync(batch1, state.WorkDeadline, token).ConfigureAwait(false);
                 await state.WaitAckAsync(batch2, state.WorkDeadline, token).ConfigureAwait(false);
                 GitScenarioState.Data(
                     await state
-                        .StopRunningAsync("pause", state.WorkDeadline, token)
+                        .StopRunningAsync("pause", ownerPoll, token)
                         .ConfigureAwait(false)
                 );
                 Assert.AreEqual(
@@ -704,11 +707,14 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     turn.Text
                 );
                 long batch = state.SendingBatch("worker1");
+                Phase7Clock.ObservedPoll ownerPoll = await state
+                    .ObserveOwnerPollAsync(token)
+                    .ConfigureAwait(false);
                 turn.Complete();
                 await state.WaitAckAsync(batch, state.WorkDeadline, token).ConfigureAwait(false);
                 GitScenarioState.Data(
                     await state
-                        .StopRunningAsync(action, state.WorkDeadline, token)
+                        .StopRunningAsync(action, ownerPoll, token)
                         .ConfigureAwait(false)
                 );
                 Assert.AreEqual(reason, state.Database.ReadMetadata("lifecycle:stop_reason"));
@@ -1158,6 +1164,9 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                             );
                             Assert.IsNull(fresh["generations"]![0]!["exactSession"]);
                             long batch = state.SendingBatch("worker1");
+                            Phase7Clock.ObservedPoll ownerPoll = await state
+                                .ObserveOwnerPollAsync(token)
+                                .ConfigureAwait(false);
                             fallback.Complete();
                             await state
                                 .WaitAckAsync(batch, state.WorkDeadline, token)
@@ -1179,7 +1188,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                             Assert.AreEqual(1L, state.Dispatches(replacement.Id));
                             GitScenarioState.Data(
                                 await state
-                                    .StopRunningAsync("pause", state.WorkDeadline, token)
+                                    .StopRunningAsync("pause", ownerPoll, token)
                                     .ConfigureAwait(false)
                             );
                             Assert.AreEqual(10m, state.Reservation("worker1").Actual);
@@ -1239,13 +1248,16 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     .Sessions.NextTurnAsync("worker1", token)
                     .ConfigureAwait(false);
                 long originalBatch = state.SendingBatch("worker1");
+                Phase7Clock.ObservedPoll originalOwnerPoll = await state
+                    .ObserveOwnerPollAsync(token)
+                    .ConfigureAwait(false);
                 original.Complete();
                 await state
                     .WaitAckAsync(originalBatch, state.WorkDeadline, token)
                     .ConfigureAwait(false);
                 GitScenarioState.Data(
                     await state
-                        .StopRunningAsync("pause", state.WorkDeadline, token)
+                        .StopRunningAsync("pause", originalOwnerPoll, token)
                         .ConfigureAwait(false)
                 );
                 CreditReservation old = state.Reservation("worker1");
@@ -1283,6 +1295,9 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 );
                 Assert.AreEqual(190m, state.Reservation("worker1").Allowance);
                 long resumedBatch = state.SendingBatch("worker1");
+                Phase7Clock.ObservedPoll resumedOwnerPoll = await state
+                    .ObserveOwnerPollAsync(token)
+                    .ConfigureAwait(false);
                 resumed.Complete();
                 await state
                     .WaitAckAsync(resumedBatch, state.WorkDeadline, token)
@@ -1293,7 +1308,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 );
                 GitScenarioState.Data(
                     await state
-                        .StopRunningAsync("pause", state.WorkDeadline, token)
+                        .StopRunningAsync("pause", resumedOwnerPoll, token)
                         .ConfigureAwait(false)
                 );
                 string settledFinancial = state

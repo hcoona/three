@@ -36,6 +36,10 @@ internal sealed class Phase7Run
     private Task<JsonObject>? active;
     private IDisposable? clockObservation;
     private Phase7Handoff? currentHandoff;
+    private TaskCompletionSource<long> ownerPolling = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+    private int ownerPollWorkers;
 
     private Phase7Run(
         GitScenarioState git,
@@ -208,10 +212,17 @@ internal sealed class Phase7Run
     internal Coordinator Coordinator(string operation = "run") =>
         new(
             Database, Collaboration, Operations, (_, _, _) => new Factory(this, operation),
-            loops => ObserveWorkerCompletion?.Invoke(loops)
+            loops =>
+            {
+                if (loops.Count == ownerPollWorkers)
+                {
+                    ownerPolling.TrySetResult(Clock.TimerWatermark);
+                }
+                ObserveWorkerCompletion?.Invoke(loops);
+            }
         );
 
-    internal Task<JsonObject> Start(string mode = "run")
+    internal Task<JsonObject> Start(string mode = "run", int? ownerPollWorkers = null)
     {
         currentHandoff?.Dispose();
         if (ReferenceEquals(Handoff, currentHandoff))
@@ -222,6 +233,8 @@ internal sealed class Phase7Run
         currentHandoff = Handoff;
         clockObservation?.Dispose();
         clockObservation = Clock.BeginObservation();
+        ownerPolling = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        this.ownerPollWorkers = ownerPollWorkers ?? Database.Configuration.WorkerCount;
         Clock.WorkDeadline =
             mode == "reconnect"
                 ? DateTimeOffset.Parse(
@@ -405,17 +418,34 @@ internal sealed class Phase7Run
         }
     }
 
+    // Exclude startup waits using the actual admitted-cohort main-loop milestone.
+    // Hold responses while observing its next poll, then freeze time through ACK.
+    internal Task<Phase7Clock.ObservedPoll> ObserveOwnerPollAsync(CancellationToken token) =>
+        FixedAsync(
+            async next =>
+            {
+                long registeredAfter = await ownerPolling.Task
+                    .WaitAsync(next).ConfigureAwait(false);
+                return await Clock
+                    .WaitForPollAsync(
+                        next, WorkDeadline, requireSingle: true, registeredAfter: registeredAfter
+                    )
+                    .ConfigureAwait(false);
+            },
+            token
+        );
+
     internal async Task<JsonObject> StopRunningAsync(
         string action,
-        DateTimeOffset strictlyBefore,
+        Phase7Clock.ObservedPoll poll,
         CancellationToken token
     )
     {
         JsonObject request = GitScenarioState.Data(Coordinator().RequestControl(action));
         Assert.AreEqual("pending", request["state"]!.GetValue<string>());
-        await UntilAsync(Handoff!.OwnerStopped.Task, strictlyBefore, token).ConfigureAwait(false);
-        await Active.WaitAsync(token).ConfigureAwait(false);
-        return await Active.ConfigureAwait(false);
+        Clock.Advance(poll, WorkDeadline, token);
+        await FixedAsync(Handoff!.OwnerStopped.Task, token).ConfigureAwait(false);
+        return await Active.WaitAsync(token).ConfigureAwait(false);
     }
 
     internal JsonObject Invoke(string actor, string operation, JsonObject arguments) =>
