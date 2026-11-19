@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using LiteAgensh.Tests.Support;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -110,40 +111,24 @@ public sealed class OwnedProcessSpecs(TestContext context)
     [DataRow(0)]
     [DataRow(7)]
     [TestCategory("CancelSettleOnlyOwnedChildren")]
-    public async Task BuiltChildReadReleaseAndDeclaredExitQualifyTheRealCommandBoundary(
+    public async Task BuiltChildDeclaredExitQualifiesTheRealCommandBoundary(
         int exitCode
     )
     {
         using OwnedProcessState state = new();
-        await using OwnedChildControl control = new();
         using CancellationTokenSource cancellation =
             CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
         Task<ProcessResult> running = state.Runner.RunAsync(
             OwnedChildControl.ExecutablePath,
-            control.Arguments(exitCode),
+            ["exit", exitCode.ToString(CultureInfo.InvariantCulture)],
             state.WorkingDirectory,
             TimeSpan.FromSeconds(120),
             cancellation.Token
         );
         try
         {
-            OwnedChildIdentity ready = await control
-                .ReadReadyAsync(context.CancellationToken)
-                .ConfigureAwait(false);
-            OwnedLease live = state.Lease(pid: ready.Pid);
-            Assert.AreEqual(ready.BirthTicks, live.BirthTicks);
-            Assert.AreEqual("command", live.Kind);
-            Assert.AreEqual("running", live.State);
-            Assert.AreEqual(0, ready.DescendantPid);
-            Assert.AreEqual(0L, ready.DescendantBirthTicks);
-            using Process child = OpenObservedOwnedChild(ready.Pid, ready.BirthTicks);
-            Assert.IsFalse(child.HasExited);
-            context.WriteLine(
-                $"Owned readiness pid={ready.Pid}; birth={ready.BirthTicks}; lease={live.Id}"
-            );
-
-            await control.ReleaseAsync(context.CancellationToken).ConfigureAwait(false);
             ProcessResult result = await running.ConfigureAwait(false);
+            OwnedLease retired = state.Lease();
 
             Assert.AreEqual(exitCode, result.ExitCode);
             Assert.IsFalse(result.TimedOut);
@@ -155,11 +140,11 @@ public sealed class OwnedProcessSpecs(TestContext context)
                 exitCode == 0 ? "" : $"owned check failed {exitCode}{Environment.NewLine}",
                 result.StandardError
             );
-            Assert.IsTrue(child.HasExited);
-            OwnedLease retired = state.Lease(id: live.Id);
+            Assert.IsGreaterThan(0L, retired.Id);
+            Assert.IsGreaterThan(0, retired.Pid);
+            Assert.IsGreaterThan(0L, retired.BirthTicks);
+            Assert.AreEqual("command", retired.Kind);
             Assert.AreEqual("exited", retired.State);
-            Assert.AreEqual(live.Pid, retired.Pid);
-            Assert.AreEqual(live.BirthTicks, retired.BirthTicks);
         }
         finally
         {
@@ -188,6 +173,18 @@ public sealed class OwnedProcessSpecs(TestContext context)
             OwnedChildIdentity ready = await control
                 .ReadReadyAsync(context.CancellationToken)
                 .ConfigureAwait(false);
+            OwnedLease live = state.Lease(pid: ready.Pid);
+            Assert.AreEqual(ready.BirthTicks, live.BirthTicks);
+            Assert.AreEqual("command", live.Kind);
+            Assert.AreEqual("running", live.State);
+            Assert.AreEqual(0, ready.DescendantPid);
+            Assert.AreEqual(0L, ready.DescendantBirthTicks);
+            using Process child = OpenObservedOwnedChild(ready.Pid, ready.BirthTicks);
+            Assert.IsFalse(child.HasExited);
+            context.WriteLine(
+                $"Owned readiness pid={ready.Pid}; birth={ready.BirthTicks}; lease={live.Id}"
+            );
+
             await cancellation.CancelAsync().ConfigureAwait(false);
             OperationCanceledException error = await Assert
                 .ThrowsAsync<OperationCanceledException>(async () =>
@@ -197,11 +194,14 @@ public sealed class OwnedProcessSpecs(TestContext context)
             JsonNode evidence = JsonNode.Parse(Assert.IsInstanceOfType<string>(
                 error.Data[ProcessRunner.CancellationEvidenceKey]
             ))!;
-            OwnedLease retired = state.Lease(pid: ready.Pid);
+            OwnedLease retired = state.Lease(id: live.Id);
 
             Assert.AreEqual(cancellation.Token, error.CancellationToken);
-            Assert.AreEqual(retired.Id, evidence["leaseId"]!.GetValue<long>());
+            Assert.AreEqual(live.Id, evidence["leaseId"]!.GetValue<long>());
             Assert.AreEqual("exited", retired.State);
+            Assert.AreEqual(live.Pid, retired.Pid);
+            Assert.AreEqual(live.BirthTicks, retired.BirthTicks);
+            Assert.IsTrue(child.HasExited);
             Assert.IsTrue(evidence["stdout"]!["complete"]!.GetValue<bool>());
             Assert.IsTrue(evidence["stderr"]!["complete"]!.GetValue<bool>());
             Assert.Contains(

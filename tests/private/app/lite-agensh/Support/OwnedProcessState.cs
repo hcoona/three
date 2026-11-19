@@ -33,7 +33,10 @@ internal sealed class OwnedProcessState : IDisposable
         using SqliteConnection connection = Database.Open();
         using SqliteCommand command = Sql.Command(
             connection,
-            "SELECT id,pid,start_ticks,kind,state FROM process_leases WHERE id=$id OR pid=$pid;",
+            """
+            SELECT id,pid,start_ticks,kind,state FROM process_leases
+            WHERE ($id IS NULL AND $pid IS NULL) OR id=$id OR pid=$pid;
+            """,
             null,
             ("$id", id),
             ("$pid", pid)
