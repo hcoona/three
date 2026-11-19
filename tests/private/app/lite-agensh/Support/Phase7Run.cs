@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Text.Json;
@@ -248,6 +249,45 @@ internal sealed class Phase7Run
                     CultureInfo.InvariantCulture
                 )
                 : Clock.GetUtcNow().AddSeconds(Database.Configuration.DurationSeconds);
+        // Ownership acquisition runs before RunAsync's first await.
+        using Activity startup = new Activity("phase7.start").Start();
+        using ActivityListener listener = new()
+        {
+            ShouldListenTo = source => source.Name == "LiteAgensh",
+            Sample = (ref ActivityCreationOptions<ActivityContext> options) =>
+                options.Name == "coordinator.run" && options.Parent.SpanId == startup.SpanId
+                    ? ActivitySamplingResult.AllDataAndRecorded
+                    : ActivitySamplingResult.None,
+            ActivityStopped = trace =>
+            {
+                if (trace.OperationName != "coordinator.run"
+                    || trace.ParentSpanId != startup.SpanId)
+                {
+                    return;
+                }
+                foreach (
+                    ActivityEvent failure in trace.Events.Where(
+                        item => item.Name == "coordinator.ownership.failed"
+                    )
+                )
+                {
+                    Console.WriteLine(
+                        "PHASE7_OWNERSHIP_FAILURE "
+                            + JsonSerializer.Serialize(new
+                            {
+                                traceId = trace.TraceId.ToString(),
+                                spanId = trace.SpanId.ToString(),
+                                type = failure.Tags
+                                    .FirstOrDefault(item => item.Key == "error.type").Value,
+                                hresult = failure.Tags.FirstOrDefault(
+                                    item => item.Key == "liteagensh.ownership.hresult"
+                                ).Value,
+                            })
+                    );
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
         active = Coordinator(mode).RunAsync(mode, owner.Token);
         return active;
     }
@@ -548,11 +588,12 @@ internal sealed class Phase7Run
                 await Task.WhenAny(observation, Active).WaitAsync(next).ConfigureAwait(false);
                 if (Active.IsCompleted)
                 {
-                    await Active.ConfigureAwait(false);
+                    JsonObject result = await Active.ConfigureAwait(false);
                     if (!goal())
                     {
                         throw new InvalidOperationException(
-                            "Subject ended before the required durable goal."
+                            "Subject ended before the required durable goal: "
+                                + result.ToJsonString()
                         );
                     }
                 }

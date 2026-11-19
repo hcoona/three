@@ -106,6 +106,54 @@ public sealed class TelemetrySpecs(TestContext context)
         Assert.AreSame(caller, Activity.Current);
     }
 
+    [TestMethod]
+    [Timeout(10_000, CooperativeCancellation = true)]
+    public async Task OwnershipConflictRetainsSafeFailureCauseWithoutNativeDispatch()
+    {
+        using ScratchDirectory scratch = new();
+        RunConfiguration configuration = new()
+        {
+            RepositoryPath = scratch.PathFor("checkout"),
+            StatePath = scratch.PathFor("private-lock-path"),
+            CampaignLedgerPath = scratch.PathFor("campaign.sqlite"),
+            Goal = "Retain the ownership failure without exporting its private path.",
+        };
+        RunDatabase database = new(configuration.StatePath, configuration);
+        CollaborationOperations collaboration = new(database);
+        Coordinator coordinator = new(database, collaboration, new(database, collaboration));
+        using FileStream ownership = new(
+            Path.Combine(configuration.StatePath, "coordinator.lock"),
+            FileMode.OpenOrCreate,
+            FileAccess.ReadWrite,
+            FileShare.None
+        );
+        List<Activity> activities = [];
+        using ActivityListener listener = Listen(activities);
+
+        JsonObject result = await coordinator.RunAsync("run", context.CancellationToken);
+
+        Activity run = Assert.ContainsSingle(
+            activities.Where(activity => activity.OperationName == "coordinator.run")
+        );
+        ActivityEvent failure = Assert.ContainsSingle(
+            run.Events.Where(item => item.Name == "coordinator.ownership.failed")
+        );
+        Dictionary<string, object?> tags = failure.Tags.ToDictionary(
+            item => item.Key, item => item.Value
+        );
+        string exported = JsonSerializer.Serialize(new
+        {
+            run.StatusDescription,
+            tags = run.TagObjects,
+            events = run.Events.Select(item => new { item.Name, item.Tags }),
+        });
+        Assert.AreEqual("conflict", result["code"]!.GetValue<string>());
+        Assert.AreEqual(typeof(IOException).FullName, tags["error.type"]);
+        Assert.IsInstanceOfType<int>(tags["liteagensh.ownership.hresult"]);
+        Assert.DoesNotContain("private-lock-path", exported);
+        Assert.DoesNotContain(configuration.StatePath, exported);
+    }
+
     private static ActivityListener Listen(List<Activity> activities)
     {
         ActivityListener listener = new()

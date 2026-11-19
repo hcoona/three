@@ -21,7 +21,6 @@ internal sealed class OwnedChildControl : IAsyncDisposable
     internal const string HeldCandidateCheckRole = "held-candidate-check";
     private readonly NamedPipeServerStream pipe;
     private StreamReader? reader;
-    private StreamWriter? writer;
     private Process? directProcess;
     private string? directRole;
     private long? directlyStarted;
@@ -107,7 +106,6 @@ internal sealed class OwnedChildControl : IAsyncDisposable
             .WaitAsync(TimeSpan.FromSeconds(5), cancellationToken)
             .ConfigureAwait(false);
         reader = new(pipe, Encoding.UTF8, false, 1024, leaveOpen: true);
-        writer = new(pipe, new UTF8Encoding(false), 1024, leaveOpen: true) { AutoFlush = true };
         string? line = await reader
             .ReadLineAsync(cancellationToken)
             .AsTask()
@@ -140,10 +138,6 @@ internal sealed class OwnedChildControl : IAsyncDisposable
             await connection.ConfigureAwait(false);
             observation.Token.ThrowIfCancellationRequested();
             reader = new(pipe, Encoding.UTF8, false, 1024, leaveOpen: true);
-            writer = new(pipe, new UTF8Encoding(false), 1024, leaveOpen: true)
-            {
-                AutoFlush = true,
-            };
             // The original five-second READY stage starts only after actual connection.
             observation.CancelAfter(TimeSpan.FromSeconds(5));
             line = reader.ReadLineAsync(observation.Token).AsTask();
@@ -272,15 +266,15 @@ internal sealed class OwnedChildControl : IAsyncDisposable
         RecordProtocol("release-attempt");
         try
         {
-            if (writer is null)
+            if (reader is null)
             {
                 throw new InvalidOperationException(
                     "Release requires the actual readiness connection."
                 );
             }
 
-            await writer
-                .WriteLineAsync("RELEASE".AsMemory(), cancellationToken)
+            await pipe
+                .WriteAsync("RELEASE\n"u8.ToArray(), cancellationToken)
                 .ConfigureAwait(false);
             RecordProtocol("release-written");
         }
@@ -320,24 +314,13 @@ internal sealed class OwnedChildControl : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         List<Exception> failures = [];
-        bool writerDisposed = false,
-            readerDisposed = false,
+        bool readerDisposed = false,
             pipeDisposed = false;
         bool exitObserved = false,
             processDisposed = false,
             stopAttempted = false;
         int? pid = null;
         long? birth = null;
-        try
-        {
-            writer?.Dispose();
-            writerDisposed = true;
-        }
-        catch (Exception error)
-        {
-            error.Data["ownedCleanupStep"] = "writer-dispose";
-            failures.Add(error);
-        }
         try
         {
             reader?.Dispose();
@@ -421,7 +404,6 @@ internal sealed class OwnedChildControl : IAsyncDisposable
                         ? Stopwatch.GetElapsedTime(began).TotalMilliseconds
                         : null,
                     ["observedExitCode"] = ObservedExitCode,
-                    ["writerDisposed"] = writerDisposed,
                     ["readerDisposed"] = readerDisposed,
                     ["pipeDisposed"] = pipeDisposed,
                     ["stopAttempted"] = stopAttempted,

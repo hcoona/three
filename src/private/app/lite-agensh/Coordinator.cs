@@ -502,7 +502,8 @@ public sealed class Coordinator
         }
         try
         {
-            JsonObject result = await RunCoreAsync(mode, cancellationToken).ConfigureAwait(false);
+            JsonObject result = await RunCoreAsync(mode, activity, cancellationToken)
+                .ConfigureAwait(false);
             activity?.SetTag("liteagensh.result.code", result["code"]?.GetValue<string>());
             if (result["ok"]?.GetValue<bool>() == false)
             {
@@ -525,6 +526,7 @@ public sealed class Coordinator
 
     private async Task<JsonObject> RunCoreAsync(
         string mode,
+        Activity? activity,
         CancellationToken cancellationToken
     )
     {
@@ -533,7 +535,7 @@ public sealed class Coordinator
             return Failure("invalid_arguments", "Mode must be run, resume or reconnect.");
         }
 
-        using FileStream? ownership = TryOwn();
+        using FileStream? ownership = TryOwn(activity);
         if (ownership is null)
         {
             return Failure("conflict", "Another coordinator owns this run.");
@@ -1888,7 +1890,7 @@ public sealed class Coordinator
                 );
     }
 
-    private FileStream? TryOwn()
+    private FileStream? TryOwn(Activity? activity = null)
     {
         try
         {
@@ -1899,8 +1901,18 @@ public sealed class Coordinator
                 FileShare.None
             );
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            activity?.AddEvent(
+                new ActivityEvent(
+                    "coordinator.ownership.failed",
+                    tags: new ActivityTagsCollection
+                    {
+                        ["error.type"] = exception.GetType().FullName,
+                        ["liteagensh.ownership.hresult"] = exception.HResult,
+                    }
+                )
+            );
             return null;
         }
     }
