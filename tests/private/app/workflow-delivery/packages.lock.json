@@ -80,13 +80,13 @@
       },
       "NuGet.Packaging": {
         "type": "Direct",
-        "requested": "[7.9.0, )",
-        "resolved": "7.9.0",
-        "contentHash": "Q2jxuud5kJLV0rUzsC02iC5ts8QsQu9UVyMvF8lULY3TwHL/W/PrnQ9bQFvMR7jJkzF1uilRPI1o+7VOtc2XMg==",
+        "requested": "[8.0.0, )",
+        "resolved": "8.0.0",
+        "contentHash": "QpQjswIGbPXBdKvaTYInULTwcHjwZyCA7GWVF5wqUOLWzKajRoA1NHf/f+xp0ETsDDOJqmTsKgv4GjXsxJyMZQ==",
         "dependencies": {
           "Newtonsoft.Json": "13.0.3",
-          "NuGet.Configuration": "7.9.0",
-          "NuGet.Versioning": "7.9.0",
+          "NuGet.Configuration": "8.0.0",
+          "NuGet.Versioning": "8.0.0",
           "System.Security.Cryptography.Pkcs": "8.0.1"
         }
       },
@@ -232,7 +232,7 @@
           "NuGet.Commands": "[7.9.0, )",
           "NuGet.Configuration": "[8.0.0, )",
           "NuGet.Frameworks": "[8.0.0, )",
-          "NuGet.Packaging": "[7.9.0, )",
+          "NuGet.Packaging": "[8.0.0, )",
           "NuGet.ProjectModel": "[7.9.0, )",
           "NuGet.Protocol": "[7.9.0, )",
           "NuGet.Versioning": "[8.0.0, )",
