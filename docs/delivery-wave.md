@@ -315,6 +315,60 @@ ends a grant. Git and the proposing PR retain the reason and history.
   `release-orchestrate.yml` stack beyond an owner decision recorded separately;
   no new runtime matrix.
 
+### Repair Workflow Delivery dependency cohorts and SDK host compatibility
+
+- **Work carrier:** [Issue #1679](https://github.com/hcoona/three/issues/1679)
+  and its linked authorization and repair PRs, including the NuGet client
+  update in [#1658](https://github.com/hcoona/three/pull/1658) and declared
+  SDK update in [#1652](https://github.com/hcoona/three/pull/1652).
+- **Accepted inputs:** the shared
+  [engineering principles](engineering/engineering-principles.md), root
+  `Directory.Packages.props`, `global.json` and `renovate.json`, and Workflow
+  Delivery's [portal](../src/private/app/workflow-delivery/docs/README.md),
+  [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
+  [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
+  [.NET integration contract](../src/private/app/workflow-delivery/docs/integration/dotnet.md),
+  [NuGet publisher source basis](../src/private/app/workflow-delivery/docs/research/nuget-native-publisher.md)
+  and [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md).
+- **Advancement and outcome:** reconcile the seven directly referenced
+  official NuGet clients as a coherent version-8 cohort, including affected
+  CPM declarations, locks, Renovate grouping and owning selection/source
+  records. Repair the declared SDK 11 compilation and mixed-endpoint task
+  journey without coupling the controller's target runtime to whichever
+  SDK supplies native MSBuild. Keep tool selection derived from committed
+  configuration, not a historical SDK allowlist.
+- **Owner decisions and boundaries:** component owners select the complete
+  engineering-principled implementation, rather than the smallest diff.
+  Preserve current product target frameworks, endpoint-selected native
+  MSBuild responsibilities, publisher behavior and existing transport,
+  recovery and trust boundaries. A required change to those boundaries or
+  a material product/feasibility tradeoff returns to the repository owner;
+  it is not implicitly authorized as dependency maintenance.
+- **Ordering and gates:** merge this authorization before the newly proposed
+  substantive work. Reconcile changed project decisions and version-bound
+  source findings before implementation that depends on them. Retain
+  independent engineering/OCR, record-system and research-evidence review,
+  independent finding classification, explicit-base record checks, applicable
+  HK and ordinary qualification. An earlier client/source qualification does
+  not qualify a new dependency cohort.
+- **Acceptance:** the declared updates pass the existing applicable ordinary
+  checks on their actual source: resolved package/output identities,
+  NBGV/SDK binding, locked native restore and clean consumers, controlled
+  version-sensitive publisher guards, and the base/candidate endpoint
+  journey. Preserve historical failures and original publication evidence
+  without promoting them into new support or destination claims. Delete
+  this entry when the bounded repair is accepted.
+- **Effects:** permit repository and read-only GitHub/public-source inspection,
+  directly affected source, dependencies, locks, Renovate configuration and
+  owning records, locked tool preparation, isolated credential-free local
+  builds/tests, independent delegated review, and ordinary Issue/PR/check
+  operations and their normal CI.
+- **Exclusions:** no campaign replay, new proving generation, release/proving
+  dispatch, publication, credential, authentication, permission or access
+  change; no repository-wide target-framework migration or new runtime
+  matrix. Existing closed-campaign slots remain spent. Ordinary qualification
+  does not revive native experimentation or live-operation grants.
+
 ### Design and plan sheet-music recognition
 
 - **Work carrier:** [Issue #686](https://github.com/hcoona/three/issues/686),
