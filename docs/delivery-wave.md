@@ -439,8 +439,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
   Delete this entry when accepted or when the owner stops W1.
 - **Effects:** permit the design and planning entry's inspection and
   documentation effects; local read-only use of the private inputs above;
-  local installation of musicdiff 6.0.0, xml2abc/abc2xml and, when missing,
-  the MuseScore 4.7.6 command line; download of public scores from OpenScore
+  local installation of musicdiff 6.0.0, xml2abc/abc2xml and, when missing or
+  updated on the host, a MuseScore 4.x command line recorded by exact version
+  and executable SHA-256 per run; download of public scores from OpenScore
   Lieder (CC0) and PDMX, including PDMX's whole-dataset archives, using only
   license-compatible files, and of candidate tokenizer files without model
   weights, all kept outside the repository, stopping to return to the owner
@@ -456,9 +457,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
   than self-authored, public-domain or CC0 material with its provenance; no
   other upload of score material to external recognition, model-hosting or
   storage services; no change to the private transcription repository or its
-  workflow; no change to existing tool or runtime versions, other projects'
-  behavior or required checks, and no new CI workflow; no publication,
-  release, credential or access change.
+  workflow; no change to existing repository tool or runtime versions, other
+  projects' behavior or required checks, and no new CI workflow; no
+  publication, release, credential or access change.
 
 ### Align .NET tests that launch external tools with the engineering principles
 

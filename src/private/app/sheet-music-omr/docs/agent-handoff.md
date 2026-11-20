@@ -3,11 +3,11 @@
 ## Authority and purpose
 
 Read this page before changing `src/private/app/sheet-music-omr/` or running its
-measurement harness. It owns change routing, the current W1 pause and
-external-state boundaries, and ordered resumption gates; it is not a second
-requirements record, format specification, comparison protocol, or
-work-authorization file. The [project portal](../README.md) owns purpose, user
-context, command-line usage, and top-level record routing.
+measurement harness. It owns change routing, prior formal-run and external-state
+boundaries, and ordered execution gates; it is not a second requirements record,
+format specification, comparison protocol, or work-authorization file. The
+[project portal](../README.md) owns purpose, user context, command-line usage,
+and top-level record routing.
 
 The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) is the sole
 positive work authority ([Issue #686](https://github.com/hcoona/three/issues/686)
@@ -121,10 +121,10 @@ The following pre-execution artifacts and open obligations are recorded on
   [Validation basis](requirements.md#validation-basis)) have not yet been
   protocol-reviewed or executed.
 
-## Paused formal-run state and stop boundary
+## Prior formal-run state and resumption boundary
 
 Two formal harness attempts ran on Windows x64 at clean `main` commit
-`397b306f27cf51e15f58d44f5b67c1c0626f1ade` before the repository owner paused W1:
+`397b306f27cf51e15f58d44f5b67c1c0626f1ade` before workstation transition:
 
 1. **`formal-1` (stopped in `preflight`):** runtime observation. `preflight`
    stopped with `PreflightError: calibration failed` (`No module named pytest`)
@@ -160,12 +160,12 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
    MusicXML after annotation. Excluding overlapping same-staff octave shifts in
    the screen changes the accepted sample rule and requires an owner-approved,
    independently reviewed protocol amendment with calibration coverage.
-4. **Pause status, preserved external runs, and protocol routing:** W1 formal
-   execution was paused in
-   [#1488 comment 6729151812](https://github.com/hcoona/three/issues/1488#issuecomment-6729151812).
-   While formal corpus and gold execution awaits owner resumption on `#1488` and
-   staging of out-of-repository `GOLD`, `DOWNLOADS`, and `OMR-REQ-012` inputs on
-   the active Windows + WSL2 workstation:
+4. **Resumed execution status, preserved external runs, and protocol routing:**
+   W1 formal execution was paused in
+   [#1488 comment 6729151812](https://github.com/hcoona/three/issues/1488#issuecomment-6729151812)
+   during workstation transition and resumed by the repository owner in
+   [#1488 comment 7029347075](https://github.com/hcoona/three/issues/1488#issuecomment-7029347075).
+   When executing on the active Windows + WSL2 workstation:
     - preserve the external `formal-1` and `formal-2` run directories and their
       partial selection and ledger artifacts intact (on the prior workstation or
       in their archived copies); never overwrite them or manually edit run
@@ -175,10 +175,11 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
       [octave-shift span screening](comparison-protocol.md#structural-scope-screen),
       [code-tree binding, shared ledger, resumable selection, and split baseline steps](comparison-protocol.md#execution-and-bounds),
       and [stop conditions](comparison-protocol.md#stop-conditions);
-    - keep formal corpus/gold execution (`formal-3`), `OMR-REQ-012`
-      toolchain-class freezing, and W1 tokenizer counts deferred until this
-      protocol/harness baseline is accepted on `main`, external inputs are
-      staged, and the pause is lifted on `#1488`.
+    - run formal corpus/gold execution (`formal-3`) only from a clean
+      `origin/main` checkout after the accepted protocol and Wave baseline are
+      present on `main`; read-only local preparation of the `OMR-REQ-012`
+      toolchain-class finding set may proceed in parallel under the accepted W1
+      Wave entry.
 
 ## External state, privacy and worktree hygiene
 
@@ -211,14 +212,14 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   `TextScore2.csproj` normalizer prototype (superseded by the Python package in
   `#1570`–`#1609`).
 
-## Resumption gates when external artifacts are ready
+## Execution gates when external artifacts are staged
 
-Once out-of-repository `GOLD` (`--gold-status` and `--gold-cache`), `DOWNLOADS`
+With out-of-repository `GOLD` (`--gold-status` and `--gold-cache`), `DOWNLOADS`
 (restored from the previous machine or initialized with `--prior-total
-2343244452`), and the `OMR-REQ-012` desk-study archive are ready and the owner
-resumes formal W1 execution in
-[#1488](https://github.com/hcoona/three/issues/1488), execute these steps in
-order:
+2343244452`), and the `OMR-REQ-012` desk-study archive staged outside OneDrive
+and outside all repository worktrees (resumed in
+[#1488 comment 7029347075](https://github.com/hcoona/three/issues/1488#issuecomment-7029347075)),
+execute these steps in order:
 
 1. **Confirm clean code baseline on `main`:** ensure the protocol and harness
    updates are merged to `origin/main` and `src/private/app/sheet-music-omr/`

@@ -1096,9 +1096,10 @@ that review is a protocol defect: this record is revised under review before
 any corpus or gold run.
 
 As a preflight in Execution step 1, one MuseScore conversion of a calibration
-fixture is run and the settings-file hash is checked before any corpus
-export. The allowlist review and this preflight belong to the screen and to
-the preflight; they are not part of the instrument's pass.
+fixture is run and the eight MusicXML preferences are checked (recording the
+settings-file SHA-256 when present) before any corpus export. The allowlist
+review and this preflight belong to the screen and to the preflight; they are
+not part of the instrument's pass.
 
 ## MuseScore import check
 
