@@ -433,7 +433,15 @@
       "description": "Keep directly referenced NuGet client libraries on a compatible release.",
       "matchManagers": ["nuget"],
       "matchFileNames": ["Directory.Packages.props"],
-      "matchPackageNames": ["NuGet.ProjectModel", "NuGet.Protocol"],
+      "matchPackageNames": [
+        "NuGet.Commands",
+        "NuGet.Configuration",
+        "NuGet.Frameworks",
+        "NuGet.Packaging",
+        "NuGet.ProjectModel",
+        "NuGet.Protocol",
+        "NuGet.Versioning"
+      ],
       "groupName": "NuGet Client Libraries",
       "minimumGroupSize": 2
     },
