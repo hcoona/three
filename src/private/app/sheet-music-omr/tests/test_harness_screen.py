@@ -431,6 +431,124 @@ FAILING_CASES = [
         id="open-tuplet",
     ),
     pytest.param(
+        "octave_shift_span",
+        (
+            _before(
+                "m1s1n1",
+                _direction('<octave-shift type="down" size="8" number="1"/>'),
+            ),
+            _before(
+                "m1s1n2",
+                _direction('<octave-shift type="up" size="8" number="2"/>'),
+            ),
+            _before(
+                "m1s1n4",
+                _direction('<octave-shift type="stop" size="8" number="1"/>')
+                + _direction('<octave-shift type="stop" size="8" number="2"/>'),
+            ),
+        ),
+        id="overlapping-octave-shifts-same-staff",
+    ),
+    pytest.param(
+        "octave_shift_span",
+        (
+            _before(
+                "m1s1n1",
+                _direction('<octave-shift type="down" size="8" number="1"/>'),
+            ),
+        ),
+        id="unclosed-octave-shift",
+    ),
+    pytest.param(
+        "octave_shift_span",
+        (
+            _before(
+                "m1s1n1",
+                _direction('<octave-shift type="down" size="8" number="1"/>')
+                + _direction('<octave-shift type="stop" size="8" number="1"/>'),
+            ),
+        ),
+        id="zero-length-octave-shift",
+    ),
+    pytest.param(
+        "octave_shift_span",
+        (
+            _before(
+                "m1s1n1",
+                _direction(
+                    '<octave-shift type="down" size="8" number="1"/>', staff=2
+                ),
+            ),
+            _before(
+                "m1s1n4",
+                _direction(
+                    '<octave-shift type="stop" size="8" number="1"/>', staff=1
+                ),
+            ),
+        ),
+        id="cross-staff-octave-shift",
+    ),
+    pytest.param(
+        "octave_shift_span",
+        (
+            _before(
+                "m1s1n1",
+                _direction(
+                    '<octave-shift type="down" size="8" number="1"/>', staff=1
+                ),
+            ),
+            _before(
+                "m1s2n1",
+                _direction(
+                    '<octave-shift type="up" size="8" number="1"/>', staff=2
+                ),
+            ),
+            _before(
+                "m1s1n4",
+                _direction(
+                    '<octave-shift type="stop" size="8" number="1"/>', staff=1
+                ),
+            ),
+            _before(
+                "m1s2n2",
+                _direction(
+                    '<octave-shift type="stop" size="8" number="1"/>', staff=2
+                ),
+            ),
+        ),
+        id="reused-open-octave-shift-number",
+    ),
+    pytest.param(
+        "octave_shift_span",
+        (
+            _before(
+                "m1s1n1",
+                _direction(
+                    '<octave-shift type="down" size="8" number="1"/>', staff=1
+                ),
+            ),
+            _before(
+                "m1s1n3",
+                _direction(
+                    '<octave-shift type="up" size="8" number="1"/>', staff=1
+                ),
+            ),
+            _before(
+                "m1s2n2",
+                _direction(
+                    '<octave-shift type="stop" size="8" number="1"/>', staff=1
+                ),
+            ),
+            _before(
+                "m2s1n1",
+                _direction(
+                    '<octave-shift type="stop" size="8" number="1"/>', staff=1
+                ),
+            ),
+        ),
+        id="same-onset-backup-reused-octave-shift-number",
+    ),
+    pytest.param(
         "allowlist",
         (
             _inside(
@@ -604,6 +722,65 @@ def test_single_staff_fixture_fails_staves_inside_the_allowlist() -> None:
                 ),
             ),
             id="integral-decimal-alter",
+        ),
+        pytest.param(
+            (
+                _before(
+                    "m1s1n1",
+                    _direction(
+                        '<octave-shift type="down" size="8" number="1"/>'
+                    ),
+                ),
+                _before(
+                    "m1s1n3",
+                    _direction(
+                        '<octave-shift type="stop" size="8" number="1"/>'
+                    )
+                    + _direction(
+                        '<octave-shift type="up" size="8" number="1"/>'
+                    ),
+                ),
+                _before(
+                    "m1s1n4",
+                    _direction(
+                        '<octave-shift type="stop" size="8" number="1"/>'
+                    ),
+                ),
+            ),
+            id="chained-octave-shifts-same-staff",
+        ),
+        pytest.param(
+            (
+                _before(
+                    "m1s1n1",
+                    _direction(
+                        '<octave-shift type="down" size="8" number="1"/>',
+                        staff=1,
+                    ),
+                ),
+                _before(
+                    "m1s2n1",
+                    _direction(
+                        '<octave-shift type="up" size="8" number="2"/>',
+                        staff=2,
+                    ),
+                ),
+                _before(
+                    "m1s1n4",
+                    _direction(
+                        '<octave-shift type="stop" size="8" number="1"/>',
+                        staff=1,
+                    ),
+                ),
+                _before(
+                    "m1s2n2",
+                    _direction(
+                        '<octave-shift type="stop" size="8" number="2"/>',
+                        staff=2,
+                    ),
+                ),
+            ),
+            id="parallel-octave-shifts-different-staves",
         ),
     ],
 )
