@@ -82,11 +82,15 @@ The following pre-execution artifacts and open obligations are recorded on
   attributed to one of five sources: converter defect, format gap or ambiguity,
   MuseScore export or import, comparator/screen/harness defect, or unsupported
   content in gold.
-- **Structural-screen allowlist review (passed):** independent Round 2 review
-  passed across all eight calibration pair tables (`322` texts, `71` screen
-  tests) before `#1609` merged, recorded in
+- **Structural-screen allowlist review (passed for `#1609`; Phase 1 update
+  required before `formal-4` `select`):** independent Round 2 review passed
+  across all eight calibration pair tables (`322` texts, `71` screen tests)
+  before `#1609` merged, recorded in
   [#1488 comment 6721238428](https://github.com/hcoona/three/issues/1488#issuecomment-6721238428)
-  (source finding).
+  (source finding). Because Phase 1 expands the structural scope screen and
+  calibration fixtures, an updated independent allowlist review against the
+  expanded calibration set is required before `formal-4` sample selection
+  ([Calibration](comparison-protocol.md#calibration)).
 - **Pilot and probe limits:** the final single-fixture harness pilot on the
   rebased `#1609` branch
   ([#1488 comment 6728291229](https://github.com/hcoona/three/issues/1488#issuecomment-6728291229))
@@ -94,14 +98,15 @@ The following pre-execution artifacts and open obligations are recorded on
   acceptance evidence. Earlier pilots and local gold probes
   ([#1488 comment 6722886585](https://github.com/hcoona/three/issues/1488#issuecomment-6722886585))
   ran before `#1608` was accepted and do not count as formal protocol runs.
-- **ABC 2.1 capability mapping (completed):** the earlier `xml2abc`/`abc2xml`
-  execution
+- **ABC 2.1 capability mapping (completed for `be64962a`/`6bc166ac`; Phase 1
+  addendum required before converter implementation):** the earlier
+  `xml2abc`/`abc2xml` execution
   ([#1488 comment 6614290511](https://github.com/hcoona/three/issues/1488#issuecomment-6614290511))
   is retained only as an incomplete toolchain runtime observation (`#1525`).
   After `#1547` (`eb4986a5`) clarified in
   [Validation basis](requirements.md#validation-basis) that source-only
   standards comparisons do not require an experiment protocol, the desk ABC 2.1
-  capability mapping
+  capability mapping for `be64962a`
   ([#1488 comment 6639491389](https://github.com/hcoona/three/issues/1488#issuecomment-6639491389))
   completed independent `research-evidence-review`
   ([#1488 comment 6642511739](https://github.com/hcoona/three/issues/1488#issuecomment-6642511739)),
@@ -109,13 +114,20 @@ The following pre-execution artifacts and open obligations are recorded on
   heading `carry-in` also completed independent `research-evidence-review` and
   GOV-011 triage
   ([#1488 comment 6672103690](https://github.com/hcoona/three/issues/1488#issuecomment-6672103690))
-  (source findings; each mapping cell is a source-backed inference). Revisit
-  this mapping only if a later accepted change modifies the categories or
-  representation invariants in `requirements.md` or `text-format.md`.
+  (source findings; each mapping cell is a source-backed inference). Because
+  Phase 1 amends `requirements.md` and `text-format.md` (`voice` `<line(>` and
+  `line` carry, `fingering` `fDE` on any pitch and `fD-E` substitution,
+  `dynamic` `dyn-text`, and `tempo_rehearsal` `(q=120)`), an independently
+  `research-evidence-review`-verified ABC 2.1 capability-mapping addendum on
+  `#1488` is required after those record changes merge and before converter
+  implementation relies on them (returning to the owner if standard ABC 2.1
+  expresses every required category and invariant without ambiguity).
 - **Unstarted W1 acceptance and auxiliary evidence:** no formal corpus or gold
   round-trip measurement has completed (`OMR-REQ-010`, `OMR-REQ-011`, and the
-  non-gating layout score in `OMR-REQ-013`), the `OMR-REQ-012` toolchain-class
-  finding set is not yet frozen, and W1 tokenizer counts
+  non-gating layout score in `OMR-REQ-013`), the Phase 1 ABC 2.1
+  capability-mapping addendum and updated allowlist review are owed before
+  `formal-4` converter/selection gates as above, the `OMR-REQ-012`
+  toolchain-class finding set is not yet frozen, and W1 tokenizer counts
   ([Delivery Wave](../../../../../docs/delivery-wave.md) `#1488`,
   [OMR-REQ-014](requirements.md#omr-req-014-evidence-separation), and
   [Validation basis](requirements.md#validation-basis)) have not yet been
@@ -160,26 +172,39 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
    MusicXML after annotation. Excluding overlapping same-staff octave shifts in
    the screen changes the accepted sample rule and requires an owner-approved,
    independently reviewed protocol amendment with calibration coverage.
-4. **Resumed execution status, preserved external runs, and protocol routing:**
+4. **Resumed execution status, `formal-3` stop, and protocol routing:**
    W1 formal execution was paused in
    [#1488 comment 6729151812](https://github.com/hcoona/three/issues/1488#issuecomment-6729151812)
    during workstation transition and resumed by the repository owner in
    [#1488 comment 7029347075](https://github.com/hcoona/three/issues/1488#issuecomment-7029347075).
+   Runtime observation: formal attempt `formal-3` passed `preflight` and
+   `select` (`200` PDMX + `50` Lieder;
+   [#1488 comment 7030522396](https://github.com/hcoona/three/issues/1488#issuecomment-7030522396))
+   on clean commit `6f3c38f280264969b4afc00e970223e2a27726fb` (`MuseScore Studio 4.7.7.261109195`,
+   `executable_sha256` `89d9145261eb2bec6aedc208b5234b92c01fe6bc5485fec7e2ce28ec05819f31`)
+   and stopped in `baseline_content` on `l0033`
+   ([#1488 comment 7031008701](https://github.com/hcoona/three/issues/1488#issuecomment-7031008701)),
+   followed by the five-source triage and repository-owner Phase 1 dispositions
+   recorded in
+   [#1488 comment 7034443356](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356).
    When executing on the active Windows + WSL2 workstation:
-    - preserve the external `formal-1` and `formal-2` run directories and their
-      partial selection and ledger artifacts intact (on the prior workstation or
-      in their archived copies); never overwrite them or manually edit run
-      artifacts to skip a stopping file;
+    - preserve the external `formal-1`, `formal-2`, and `formal-3` run
+      directories and their selection and ledger artifacts intact; never
+      overwrite them or manually edit run artifacts to skip a stopping file;
     - follow the [comparison protocol](comparison-protocol.md) for the updated
       [MuseScore 4.x provenance and WSL2/host isolation](comparison-protocol.md#tools-and-environment),
-      [octave-shift span screening](comparison-protocol.md#structural-scope-screen),
+      [structural scope screening](comparison-protocol.md#structural-scope-screen),
+      [supplementary checks](comparison-protocol.md#supplementary-checks),
       [code-tree binding, shared ledger, resumable selection, and split baseline steps](comparison-protocol.md#execution-and-bounds),
       and [stop conditions](comparison-protocol.md#stop-conditions);
-    - run formal corpus/gold execution (`formal-3`) only from a clean
-      `origin/main` checkout after the accepted protocol and Wave baseline are
-      present on `main`; read-only local preparation of the `OMR-REQ-012`
-      toolchain-class finding set may proceed in parallel under the accepted W1
-      Wave entry.
+    - after the Phase 1 record/protocol updates merge to `main`, complete the
+      independently reviewed Phase 1 ABC 2.1 capability-mapping addendum on
+      `#1488` before merging converter implementation, complete the updated
+      structural-screen allowlist review against the expanded calibration
+      fixtures, and run formal corpus/gold execution (`formal-4`) only from a
+      clean `origin/main` checkout; read-only local preparation of the
+      `OMR-REQ-012` toolchain-class finding set may proceed in parallel under
+      the accepted W1 Wave entry.
 
 ## External state, privacy and worktree hygiene
 
@@ -197,8 +222,8 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   and per-run MuseScore identity invariants defined in
   [Tools and environment](comparison-protocol.md#tools-and-environment) and
   [Execution and bounds](comparison-protocol.md#execution-and-bounds). Start
-  resumed formal runs in a fresh external run directory (`formal-3` or later)
-  while keeping `formal-1` and `formal-2` untouched.
+  resumed formal runs in a fresh external run directory (`formal-4` or later)
+  while keeping `formal-1`, `formal-2`, and `formal-3` untouched.
 - **Private gold boundary (`OMR-REQ-015`):** read private gold inputs locally
   and read-only. Keep `RUN/gold/mapping.json` (`harness/privacy.py:GOLD_MAPPING`)
   confined to the local external run directory. Never commit, log, or publish
@@ -221,10 +246,12 @@ and outside all repository worktrees (resumed in
 [#1488 comment 7029347075](https://github.com/hcoona/three/issues/1488#issuecomment-7029347075)),
 execute these steps in order:
 
-1. **Confirm clean code baseline on `main`:** ensure the protocol and harness
-   updates are merged to `origin/main` and `src/private/app/sheet-music-omr/`
-   has a clean code tree. Never bypass a stop by editing run artifacts or
-   skipping files manually.
+1. **Confirm clean code baseline and pre-selection gates on `main`:** ensure the
+   Phase 1 record/protocol updates, Phase 1 ABC 2.1 capability-mapping addendum,
+   converter/comparator/screen implementation, and updated structural-screen
+   allowlist review against the expanded calibration fixtures are complete on
+   `origin/main` and `src/private/app/sheet-music-omr/` has a clean code tree.
+   Never bypass a stop by editing run artifacts or skipping files manually.
 2. **Verify host MuseScore 4 availability (Windows or WSL2):** confirm Windows
    host `MuseScore4.exe` (`4.x`) is reachable (default
    `C:\Program Files\MuseScore 4\bin\MuseScore4.exe` or
@@ -236,7 +263,7 @@ execute these steps in order:
     ```powershell
     uv run --package sheet-music-omr --group dev `
       python -m sheet_music_omr.harness preflight `
-      --run-dir RUN_FORMAL_3 --downloads DOWNLOADS `
+      --run-dir RUN_FORMAL_4 --downloads DOWNLOADS `
       --prior-total 2343244452 `
       --basis "Carried forward from formal-1/formal-2 (#1488 comment 6728507174)"
     ```
@@ -251,10 +278,9 @@ execute these steps in order:
    selection list (up to 200 PDMX files and 50 Lieder extracts, or all passing
    candidates with the smaller count reported when fewer pass;
    [Selection before conversion](comparison-protocol.md#selection-before-conversion))
-   to `#1488` before invoking `run`. Before relying on heading results, also
-   settle any open check in
-   [Evidence limits and open checks](comparison-protocol.md#evidence-limits-and-open-checks)
-   (such as `credit` elements without a `credit-type` on the selected files).
+   to `#1488` before invoking `run`. Before relying on results, also settle
+   any remaining open check in
+   [Evidence limits and open checks](comparison-protocol.md#evidence-limits-and-open-checks).
 5. **Run all arms on the calibrated code tree and MuseScore build:** execute
    `run` and `report` across PDMX, Lieder, their MuseScore `R(X)` re-exports,
    the `X`/`R(X)` baselines, and read-only local gold (including the gold

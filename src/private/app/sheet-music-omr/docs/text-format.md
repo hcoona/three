@@ -259,7 +259,7 @@ step = "A".."G"
 accidental = "##" | "bb" | "#" | "b" | "n"
     | "(##)" | "(bb)" | "(#)" | "(b)" | "(n)"
 octave = "0".."9"
-fingering = "f", "1".."5", ["1".."5"]
+fingering = "f", "1".."5", [("1".."5" | "-", "1".."5")]
 tie_marks = "{", (tie_starts | tie_end | tie_end, ",", tie_starts
     | "tie-in" | "tie-in", ",", tie_starts), "}"
 tie_starts = "tie@", label, ":start" | arc_start, (",", arc_start)*
@@ -302,16 +302,20 @@ direction = "<", plain_body, ">"
     | "<ped)>[rel=pedal@", label, ":line-release]"
     | "<", nonempty_quoted, "(>[rel=dashes@", label, ":start]"
     | "<dashes)>[rel=dashes@", label, ":end]"
+    | "<line(>[rel=line@", label, ":start]"
+    | "<line)>[rel=line@", label, ":end]"
     | "<trill)>[rel=ornament@", label, ":end:extended-trill]"
 ottava_sign = "8va" | "8vb" | "15ma" | "15mb"
 plain_body = ["^"], dynamic
+    | ["^"], "dyn-text ", nonempty_quoted
     | "clef ", clef
     | nonempty_quoted
     | "tempo ", tempo_args
     | "rehearsal ", nonempty_quoted
     | "pedal-sign ", ("down" | "up")
 tempo_args = quoted, sp, metronome | nonempty_quoted
-metronome = ("q." | "h." | "q" | "h" | "e"), "=", pos_int
+metronome = metronome_core | "(", metronome_core, ")"
+metronome_core = ("q." | "h." | "q" | "h" | "e"), "=", pos_int
 dynamic = "pppp" | "ppp" | "pp" | "p" | "mp" | "mf" | "f" | "ff" | "fff"
     | "ffff" | "sf" | "sfz" | "sffz" | "fp" | "rf" | "rfz" | "fz" | "sfp"
     | "sfpp" | "pf"
@@ -340,6 +344,7 @@ open_entry = '{"id":"', label, '","kind":"slur","start":', endpoint, "}"
         ',"variant":"', ottava_sign, '"}'
     | '{"id":"', label, '","kind":"pedal","start":', endpoint, "}"
     | '{"id":"', label, '","kind":"dashes","start":', endpoint, "}"
+    | '{"id":"', label, '","kind":"line","start":', endpoint, "}"
 endpoint = '{"measure":', pos_int, ',"offset":"', rational,
     '","staff":', staff_no, ',"voice":', voice_no, ',"event_index":', pos_int,
     ',"member_index":', (pos_int | "null"), "}"
@@ -545,9 +550,10 @@ Further pitch rules:
   then by accidental token in ASCII order with an absent accidental first. A
   chord shall not repeat a step, accidental and octave. Mixed-staff chords are
   unsupported. `member_index` counts members from 1 in listed order.
-- A pitch has at most one fingering, `f1` to `f5`. A pitch of an event that
-  carries `orn=trill` may instead carry two different digits, such as `f13`,
-  the two fingers of the trill.
+- A pitch has at most one fingering: one digit `f1` to `f5`, two different
+  digits such as `f13` (for example the two fingers of a trill or a finger
+  change on one pitch), or a finger substitution `fD-E` with two different
+  digits from `1` to `5`, such as `f5-4`.
 - A pitch written in parentheses, as in `F3+(A3)/2`, is a parenthesized
   notehead. The parentheses are content and apply to the whole pitch, so its
   accidental shall not be parenthesized again. They do not change how the pitch
@@ -632,8 +638,8 @@ label `rN`.
   least two members at the same onset, possibly on different staves, and is
   never open across a system boundary. `arp` is the unrelated flag for a rolled
   chord within one event.
-- A hairpin, an ottava line, a pedal line and a dashes line are written on
-  directions, as described under directions.
+- A hairpin, an ottava line, a pedal line, a dashes line and a voice-leading
+  line are written on directions, as described under directions.
 
 Rules for all relations:
 
@@ -671,16 +677,20 @@ an event boundary in its line.
 - `<mf>` and the other dynamics: `pppp`, `ppp`, `pp`, `p`, `mp`, `mf`, `f`,
   `ff`, `fff`, `ffff`, `sf`, `sfz`, `sffz`, `fp`, `rf`, `rfz`, `fz`, `sfp`,
   `sfpp` and `pf`. A leading `^`, as in `<^f>`, marks a dynamic printed above
-  the staff and is a layout hint.
+  the staff and is a layout hint. `<dyn-text "sempre">` (and `<^dyn-text
+"sempre">` above the staff) records dynamic modifier text carried in a
+  dynamics mark; its text is trimmed and shall not equal any of the 20 dynamic
+  keywords above.
 - `<clef X>` changes the clef of its line's staff from its onset on. Two clef
   directions for the same staff at the same onset are invalid, and a later
   onset replaces an earlier one.
 - `<"text">` is expression text. Words such as "cresc." and "D.C." are text, not
   hairpins or navigation marks.
-- `<tempo "Allegro">`, `<tempo "Allegro" q=120>` and `<tempo "" q=120>` record
-  tempo text and a metronome mark. The unit is `q.`, `h.`, `q`, `h` or `e`
-  (dotted quarter, dotted half, quarter, half or eighth) and the value is a
-  positive number of units per minute.
+- `<tempo "Allegro">`, `<tempo "Allegro" q=120>`, `<tempo "" q=120>` and
+  `<tempo "" (q=120)>` record tempo text and a metronome mark. The unit is
+  `q.`, `h.`, `q`, `h` or `e` (dotted quarter, dotted half, quarter, half or
+  eighth), the value is a positive number of units per minute, and enclosing
+  parentheses `(q=120)` record a metronome mark printed in parentheses.
 - `<rehearsal "A">` is a rehearsal mark.
 - `<pedal-sign down>` and `<pedal-sign up>` record the pedal glyphs, which are
   distinct from pedal lines. When both are at one onset of a line, the release
@@ -703,6 +713,9 @@ an event boundary in its line.
 - A dashes line is the dashed extension of expression text, such as "dim."
   followed by dashes. It starts with `<"dim."(>[rel=dashes@rN:start]`, which
   also records the text, and ends with `<dashes)>[rel=dashes@rN:end]`.
+- A voice-leading line is an unhooked solid line showing voice movement. It
+  starts with `<line(>[rel=line@rN:start]` and ends with
+  `<line)>[rel=line@rN:end]`.
 - `<trill)>[rel=ornament@rN:end:extended-trill]` ends a carried extended trill
   without a note, as described under relations.
 - `<?>` is an untimed review marker, as described below.
@@ -767,8 +780,8 @@ this order:
   deferred to a tie-in source. A tremolo adds `variant` (the stroke count),
   `written` (the written duration of its first note) and `scale` (its tuplet
   multiplier). An ornament adds `variant` `extended-trill`, a hairpin adds
-  `cresc` or `dim`, and an ottava adds its sign. Slurs, pedal lines and dashes
-  lines add nothing.
+  `cresc` or `dim`, and an ottava adds its sign. Slurs, pedal lines, dashes
+  lines and voice-leading lines add nothing.
 
 The first system of a piece has `measure` 1 and `offset` `"0"`, with empty
 `event_counts`, `accidentals` and `open`.
@@ -785,8 +798,8 @@ from the parsed text and is never written in the document.
   the carry-in counts when that block is also the first block, omitting zero
   counts. `accidentals` holds the state at the end of the block.
 - `open` holds every relation still open after the last block. The carried
-  kinds are arc, tie, slur, tremolo, ornament, hairpin, ottava, pedal and
-  dashes.
+  kinds are arc, tie, slur, tremolo, ornament, hairpin, ottava, pedal, dashes
+  and line.
 
 ### Assembly
 
@@ -914,10 +927,12 @@ tie-break, to them.
   highest noteheads in order, and the digits below go, from the bottom, to the
   lowest. A digit printed beside one notehead belongs to it. A notehead shared
   by events of two voices takes its digit on its pitch in the event with the
-  lower voice number. Two digits over a single pitch whose event carries
-  `orn=trill` are its trill fingering. Otherwise, more digits on one side than
-  the noteheads there, or digits from both sides for one notehead, are
-  unsupported fingering.
+  lower voice number. Two different digits printed for one notehead without a
+  substitution mark, such as over a trilled note (`f13`) or a two-finger change
+  on one pitch (`f54`), are written `fDE`; two different digits joined by a
+  substitution arc or dash for one notehead are written `fD-E`. Otherwise, more
+  digits on one side than the noteheads there, or digits from both sides for
+  one notehead, are unsupported fingering.
 - An arc that joins a notehead to one of the same pitch in the next non-grace
   rhythmic event of its voice line, or in an event of another voice line of the
   same staff that starts when the first event ends, is a tie of those two
@@ -968,6 +983,13 @@ tie-break, to them.
 - A `Ped.` glyph that begins a pedal line is the start of that line.
   `<pedal-sign down>` and `<pedal-sign up>` record only glyphs that are not
   joined to a line.
+- An unhooked solid line printed between noteheads to show voice movement is a
+  voice-leading line (`<line(>` to `<line)>`), taking its start and end onsets
+  by the rule for lines below. A bracket with an end hook is unsupported.
+- Modifier words carried inside a dynamics mark (MusicXML
+  `dynamics/other-dynamics` other than the 20 standard dynamic marks) are
+  encoded as `dyn-text` alongside any accompanying dynamic symbol; words
+  printed as separate text follow the rule for words above.
 
 ### Directions
 
@@ -1087,7 +1109,8 @@ category.
 - `chord_membership`: pitches joined by `+`. Witness: `C4+E4+G4/2`.
 - `accidental`: the printed accidental, in parentheses when printed so.
   Witness: `F#4/4 Cn4/4 B(b)3/4`.
-- `voice`: the voice number in the line prefix. Witness: `1.2: C4/4`.
+- `voice`: the voice number in the line prefix, and voice-leading lines.
+  Witness: `1.2: C4/4`.
 - `cross_staff`: the `xsN` flag. Witness: `C4/8[xs2]`.
 - `clef`: the `clefs` header and `clef` directions. Witness: `<clef F4>`.
 - `key_signature`: the `key` header and the `key=` option. Witness:
@@ -1111,9 +1134,10 @@ category.
 - `tremolo`: single-note and two-note tremolos. Witnesses:
   `C4/2[tremolo=single:3]`; `C4/2[rel=tremolo@r1:two-start:3]`;
   `E4/2[rel=tremolo@r1:two-end:3]`.
-- `fingering`: the pitch suffix `f1` to `f5`, or two digits on a trilled
-  pitch. Witnesses: `C4f1/8 D4f2/8`; `A4f13/4[orn=trill]`.
-- `dynamic`: dynamic directions. Witnesses: `<mf>`; `<^f>`.
+- `fingering`: the pitch suffix `f1` to `f5`, two different digits `fDE`, or a
+  finger substitution `fD-E`. Witnesses: `C4f1/8 D4f2/8`;
+  `A4f13/4[orn=trill]`; `C4f54/2`.
+- `dynamic`: dynamic and dynamic-text directions. Witnesses: `<mf>`; `<^f>`.
 - `hairpin`: hairpin directions. Witnesses:
   `<cresc(>[rel=hairpin@r1:start:cresc]`; `<hairpin)>[rel=hairpin@r1:end]`.
 - `ottava`: ottava directions. Witnesses:
@@ -1129,15 +1153,15 @@ category.
 - `text`: expression text directions and dashes lines. Witnesses:
   `<"dolce">`; `<"dim."(>[rel=dashes@r1:start]`;
   `<dashes)>[rel=dashes@r1:end]`.
-- `tempo_rehearsal`: tempo and rehearsal directions. Witnesses:
-  `<tempo "Allegro" q=120>`; `<rehearsal "A">`.
+- `tempo_rehearsal`: tempo and rehearsal directions, including parenthesized
+  metronome marks. Witnesses: `<tempo "Allegro" q=120>`; `<rehearsal "A">`.
 - `heading`: heading lines. Witness: `heading: "First Waltz"`.
 
 ## Layout, unsupported content and open points
 
 Layout hints are encoded and never count as content differences: the `up` and
 `down` stem flags, the `^` and `_` placement suffixes, `ferm_` against `ferm`,
-and the `^` on a dynamic. Some printed layout has no encoding at all: curve
+and the `^` on a dynamic or dynamic-text direction. Some printed layout has no encoding at all: curve
 shape, spacing, fonts, cautionary key-signature glyphs, a reprinted unchanged
 key or numeric time signature, the printed number and bracket of a tuplet, and
 the closing hook of a volta bracket.

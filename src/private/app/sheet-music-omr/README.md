@@ -6,8 +6,8 @@ into text, and deterministic tools validate, assemble and convert that text to
 MusicXML. The records here define the text representation and the evidence its
 tools must meet.
 
-**Current state:** experimental; W1 formal measurement is resumed for
-`formal-3` once external inputs are staged. A Python package parses
+**Current state:** experimental; W1 formal measurement is iterating after
+`formal-3` stopped at baseline check (`#1488`). A Python package parses
 Text Score 2 documents, validates their grammar and semantics, reports each
 error with its rule class and location, lists review markers, writes canonical
 text, derives the carry-out state of a system document and assembles system
@@ -15,19 +15,19 @@ documents into one score. A forward converter turns a valid assembled score
 without review markers into MusicXML 4.0, and a reverse converter turns a
 MusicXML piano part on two staves back into a valid assembled score. A
 round-trip comparison instrument and execution harness run the
-[comparison protocol](docs/comparison-protocol.md). Formal attempt `formal-2`
-passed preflight on `main` (`397b306f`) and stopped during public PDMX sample
-selection on an overlapping same-staff `octave-shift` guard before completing
-selection or running any selected-file conversion; W1 formal execution was
-paused during workstation transition
-([Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-6729151812))
-and resumed by the repository owner in
-[Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7029347075).
-The [comparison protocol](docs/comparison-protocol.md) and harness screen
-unpairable or overlapping same-staff `octave-shift` spans and record
-WSL2/Windows MuseScore 4.x provenance for `formal-3` (see
-[Agent handoff](docs/agent-handoff.md)). No acceptance measure has completed,
-and there is no recognizer, model, packaging or release yet.
+[comparison protocol](docs/comparison-protocol.md). Formal attempt `formal-3`
+completed selection (`200` PDMX + `50` Lieder;
+[Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7030522396))
+on `main` (`6f3c38f2`) and stopped on `l0033` in `baseline_content`
+([Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7031008701)).
+The [requirements](docs/requirements.md), [Text Score 2 format](docs/text-format.md)
+and [comparison protocol](docs/comparison-protocol.md) incorporate the Phase 1
+owner dispositions from `formal-3` triage
+([Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356))
+ahead of the converter, comparator and screen implementation for `formal-4`
+(see [Agent handoff](docs/agent-handoff.md)).
+No acceptance measure has completed, and there is no recognizer, model,
+packaging or release yet.
 
 ## Usage
 

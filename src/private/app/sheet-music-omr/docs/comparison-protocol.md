@@ -207,29 +207,45 @@ A file passes only if all of the following hold:
 - no staff has notes of more than four `voice` values in one measure;
 - it has no `lyric`, `harmony` or `figured-bass` element, no `cue` element and
   no note `type` with `size="cue"`;
-- it has no `multiple-rest` or `measure-repeat`, no `segno` or `coda`, no note
-  `type` of `breve`, `long` or `maxima`, no `unpitched` note and no `fret` or
-  `string` element;
+- it has no `multiple-rest`, `measure-repeat` or `measure-style`, no `segno`
+  or `coda`, no note `type` longer than `whole` or shorter than `128th`, no
+  `unpitched` note, no pitched note with `print-object="no"`, no `notehead`
+  other than `normal` (when present), and no `fret` or `string` element;
 - every `ending` has a single number;
 - every `key` and `time` element appears before the first note, rest or
   `forward` with a duration in its measure;
 - every `time` has one `beats` and `beat-type` pair with a whole-number
   `beats`, and no `senza-misura`;
-- every `alter` is a whole number, and no `accidental` value is a quarter-tone
-  or other microtonal value;
+- every `alter` is a whole number, no `accidental` value is a quarter-tone or
+  other microtonal value, and no `accidental` has `bracket="yes"` or editorial
+  display attributes other than `parentheses`;
 - every barline is ordinary, final, double or repeat: a `bar-style` that is
   absent, `regular`, `light-light` or `light-heavy`, or `heavy-light` with a
   backward or forward `repeat`;
 - no `chord` note has a `staff` different from the first note of its chord,
   and no chord repeats a pitch;
 - no `tremolo` has `type="unmeasured"` or a stroke count of 0;
-- every note has at most one `fingering` with one digit from 1 to 5, except
-  that a note with a `trill-mark` may have two different such digits;
-- no `bracket` direction appears, and every `dashes` direction follows a
+- every note has at most one fingering of one digit from 1 to 5, two different
+  such digits (as one two-digit mark or two single-digit marks), or a
+  substitution of two different such digits;
+- every `bracket` direction has `type` `start` or `stop`, `line-end="none"`
+  and `line-type` absent or `solid`, paired from `start` to a later `stop`
+  without reusing an open `number`, and every `dashes` direction follows a
   `words` direction;
 - every `metronome` has one `beat-unit` of quarter, half or eighth, with a
-  dot only on a quarter or half, and a `per-minute` value;
-- every beam level and every tuplet that starts in a measure stops in it;
+  dot only on a quarter or half, a `per-minute` value, and optional
+  `parentheses`;
+- every `tie` and `notations/tied` has `type` `start` or `stop` (no
+  `let-ring`), every `slur` is on a pitched note (not a rest), and every `tie`
+  or `tied` mark pairs cleanly between adjacent same-pitch notes on its staff
+  except an incoming `stop` at onset 0 of a measure starting an `ending` other
+  than `1` whose pitch ends the measure before the volta group;
+- every `pedal` direction with `type` `continue` or `discontinue` has
+  `line="yes"`;
+- every beam level and every tuplet that starts in a measure stops in it,
+  every note with a `tuplet` notation has `time-modification`, and every
+  measure's voice timelines and `forward`/`backup` steps stay within the
+  measure length with durations that the format can write;
 - every `octave-shift` starts before its stop on the same staff without
   reusing an open `number`, and no two `octave-shift` spans on one staff
   overlap;
@@ -388,11 +404,14 @@ pass plus every element that a supplementary check defines, counted on that
 score alone. An element that a check counts only when `T(Y)` has a
 counterpart counts without one, so each voice of each measure, each slur, each
 tremolo of type `single` or `start`, each `beam` with value `forward hook` or
-`backward hook` on a note that is not a rest, and each note, rest or chord
-with a `time-modification` is an element, as are each fingering digit, each
-note or rest off its voice's staff, each heading line, each `wavy-line` that
-stops on a later note and each `dashes` line, each parenthesized notehead or
-accidental, each beam on a rest and each note with a `tie` of type `stop`.
+`backward hook` on a note that is not a rest, each note, rest or chord with a
+`time-modification`, and each `dynamics/other-dynamics` mark remaining after
+standard dynamic names are normalized is an element, as are each non-substitution
+fingering digit and each two-finger substitution, each note or rest off its
+voice's staff, each heading line, each `wavy-line` that stops on a later note,
+each `dashes` line and each unhooked solid `bracket` line, each parenthesized
+notehead, accidental or metronome mark, each beam on a rest, and each counted
+tie stop.
 
 A gold piece whose reverse conversion reports unsupported content does not
 pass OMR-REQ-010, and the count of such pieces returns to the owner, because
@@ -496,6 +515,12 @@ Before parsing, the harness therefore gives each such `fermata` the type
 `ProtocolDefectError`. A fermata's placement is not compared; the format
 does not encode it.
 
+MusicXML added `<pf/>` in version 3.1, and MusicXML 3.0 could write `pf` as
+`<other-dynamics>pf</other-dynamics>`, which music21 10.5.2 imports as
+`other-dynamics` rather than `pf`. Before parsing, the harness replaces any
+`dynamics/other-dynamics` whose trimmed text is one of the 20 standard dynamic
+marks of the format with that empty element.
+
 The harness also reads each octave shift as MusicXML gives it. music21 10.5.2
 starts an ottava on a later note, chord or rest of the document, whatever its
 staff or offset; ends it on the last one before its stop in that measure, if
@@ -586,9 +611,15 @@ onset, it also holds the note's grace position: 0 for a non-grace note, and
 for a grace note its 1-based position, in written order, among the grace notes
 of its voice at that onset.
 
-- **Fingering** (`fingering`): each `technical/fingering` digit on a note is
-  one element, keyed by measure, staff, onset, written pitch, written duration
-  and digit.
+- **Fingering** (`fingering`): each single-digit `technical/fingering` on a
+  note without a substitution mark is one element, keyed by measure, staff,
+  onset, written pitch, written duration, 1-based digit ordinal on the note in
+  document order, and digit (splitting a two-digit mark `d1d2` into its two
+  ordered digits), and each two-finger substitution on a note
+  (`d1-d2`, `d1–d2`, SMuFL `fingeringSubstitutionAbove` or
+  `fingeringSubstitutionBelow` with two digits, or `substitution="yes"` on the
+  second digit) is one element, keyed by measure, staff, onset, written pitch,
+  written duration and `"d1-d2"`.
   Elements of `Y` without a match in `T(Y)` are non-identical, and elements of
   `T(Y)` without a match are extra.
 - **Cross-staff** (`cross_staff`): a voice's staff in a measure is the staff
@@ -690,9 +721,9 @@ of its voice at that onset.
   line of `credit-words` text, after whitespace normalization, is one element.
   Credits whose `credit-type` is `title`,
   `subtitle`, `composer`, `arranger` or `lyricist` count. Credits whose
-  `credit-type` is `page number`, `rights` or `part name` do not. Credits
-  without a `credit-type` do not count until the open check on them in
-  [Evidence limits](#evidence-limits-and-open-checks) is settled. The lines of
+  `credit-type` is `page number`, `rights` or `part name` do not, and credits
+  without a `credit-type` do not count because an untyped free-text credit
+  leaves its musical/editorial role unspecified. The lines of
   a score are in reading order: by `credit` page, and on each page, when every
   counted credit of the page has `default-x` and `default-y`, by descending
   `default-y` and then ascending `default-x`, and otherwise in document order,
@@ -701,22 +732,36 @@ of its voice at that onset.
   The two sequences are matched by a longest common subsequence of texts: a
   line of `Y` outside it is non-identical, and a line of `T(Y)` outside it is
   extra.
-- **Lines** (`ornament` and `text`): musicdiff 6.0 drops the music21
-  spanners for `wavy-line` and `dashes`, though it still compares the trill
-  mark and the words text. Each `wavy-line` from `start` to `stop` on a later
-  note is one `ornament` element, keyed by the measure, staff, onset, written
-  pitch and written duration of the notes that carry its start and stop. A
-  `wavy-line` that starts and stops on one note is not counted, because the
-  format encodes only that note's trill mark. Each `dashes` from `start` to
-  `stop` is one `text` element, keyed by the measure, staff and onset of the
-  directions that carry its start and stop and by the text of the `words`
-  direction that its start follows. Matching is as for fingering.
-- **Parentheses** (`pitch` and `accidental`): each `notehead` with
-  `parentheses="yes"` is a `pitch` element and each `accidental` with
-  `parentheses="yes"` is an `accidental` element, keyed by measure, staff,
-  onset, written pitch and written duration. Matching is as for fingering. A
-  musicdiff accidental operation whose only
+- **Lines** (`ornament`, `text` and `voice`): musicdiff 6.0 drops the music21
+  spanners for `wavy-line`, `dashes` and `bracket`, though it still compares
+  the trill mark and the words text. Each `wavy-line` from `start` to `stop`
+  on a later note is one `ornament` element, keyed by the measure, staff,
+  onset, written pitch and written duration of the notes that carry its start
+  and stop. A `wavy-line` that starts and stops on one note is not counted,
+  because the format encodes only that note's trill mark. Each `dashes` from
+  `start` to `stop` is one `text` element, keyed by the measure, staff and
+  onset of the directions that carry its start and stop and by the text of the
+  `words` direction that its start follows. Each unhooked solid `bracket` from
+  `start` to `stop` is one `voice` element, keyed by the measure, staff and
+  onset of the directions that carry its start and stop. Matching is as for
+  fingering.
+- **Parentheses** (`pitch`, `accidental` and `tempo_rehearsal`): each
+  `notehead` with `parentheses="yes"` is a `pitch` element and each
+  `accidental` with `parentheses="yes"` is an `accidental` element, keyed by
+  measure, staff, onset, written pitch and written duration, and each
+  `metronome` with `parentheses="yes"` is a `tempo_rehearsal` element, keyed
+  by measure, staff, onset, beat unit, dot count and per-minute value.
+  Matching is as for fingering. A musicdiff accidental operation whose only
   difference is the parentheses is disregarded.
+- **Other-dynamics text** (`dynamic`): music21 10.5.2 imports every
+  `dynamics/other-dynamics` element as `other-dynamics` without its text.
+  After standard dynamic names in `other-dynamics` are replaced as above, each
+  `dynamics/other-dynamics` of `Y` paired with one of `T(Y)` at the same
+  measure, staff and onset is one element, matching equal trimmed texts
+  (leading and trailing whitespace stripped) first. It is identical when the
+  trimmed texts are equal. musicdiff scores
+  any count difference of `other-dynamics` at that onset, and the check adds
+  no extra elements.
 - **Tremolo strokes** (`tremolo`): musicdiff 6.0 encodes a tremolo without
   its stroke count. Each `tremolo` of `Y` with type `single` or `start` is one
   element when `T(Y)` has a `tremolo` of the same type on an event with the
@@ -760,11 +805,14 @@ of its voice at that onset.
   pitches and written durations. The check adds no extra elements.
 - **Tie ends** (`tie`): musicdiff 6.0 marks a tie only on the note that
   starts or continues it, not on the note where it ends, including a `tie-in`
-  pitch. Each `tie` of type `stop` on a note is one element, keyed by measure,
-  staff, onset, written pitch and written duration. Matching is as for
-  fingering. An unmatched stop is neither an element nor an extra element when
-  a counted musicdiff difference touches its note, or touches the note of the
-  same staff and written pitch that starts a tie and ends at its onset.
+  pitch. Each `tie` of type `stop` on a note — or, at onset 0 of a measure
+  whose left barline starts an `ending` with a number other than `1`, a
+  `notations/tied` of type `stop` on a note that has no `tie` of type `stop` —
+  is one element, keyed by measure, staff, onset, written pitch and written
+  duration. Matching is as for fingering. An unmatched stop is neither an
+  element nor an extra element when a counted musicdiff difference touches its
+  note, or touches the note of the same staff and written pitch that starts a
+  tie and ends at its onset.
 
 ### Text-space consistency check
 
@@ -813,7 +861,18 @@ with their provenance:
   voices are renumbered without a change of canonical positions (for example
   staff 2 voices 5 and 6 against 1 and 2, including a change in their numeric
   rank), a pair in which a fermata of `Y` has no `type` and that of `T(Y)`
-  is upright, and identical pairs;
+  is upright, a pair in which `dynamics/other-dynamics` of `Y` has text `pf`
+  and `T(Y)` has `<pf/>`, a pair in which `dynamics/other-dynamics` of `Y`
+  has surrounding spaces (`" sempre "`) and `T(Y)` has `"sempre"`, a pair in
+  which `Y` writes two adjacent fingering digits on one note as
+  `<fingering>5</fingering><fingering>4</fingering>` and `T(Y)` writes
+  `<fingering>54</fingering>`, pairs in
+  which `Y` writes a two-finger substitution as `5–4`, as SMuFL
+  `fingering5fingeringSubstitutionAbovefingering4`, or with
+  `substitution="yes"` on the second digit and `T(Y)` writes `5-4`, a pair in
+  which the first note of ending 2 has only `notations/tied` of type `stop` in
+  `Y` and both `tie` and `notations/tied` of type `stop` in `T(Y)`, and
+  identical pairs;
 - a pair in which a measure is inserted before later measures and the reverse
   pair in which a measure is deleted, with the expected per-ordinal
   differences fixed by the fixture; neither pair may align content across
@@ -874,8 +933,9 @@ with their provenance:
 - one pair that differs only in the end note of an extended trill, one in
   which an extended trill moves between simultaneous unison notes of different
   written durations in two voices of one staff that both carry a trill mark,
-  one that differs only in the end of a dashes line, and one in which a
-  dashes line moves between two `words` directions of one staff and onset;
+  one that differs only in the end of a dashes line, one in which a dashes
+  line moves between two `words` directions of one staff and onset, and one
+  that differs only in the end of an unhooked solid voice-leading line;
 - one pair for each pairing rule, with the rule-2 pair using raw MusicXML
   voice numbers that do not encode the canonical voice order; a second pair
   of pairing rule 1 in which the reference measure and the immediately
@@ -892,9 +952,11 @@ with their provenance:
 - a pair in which only the normal number of one tuplet group changes, for
   example from 3:2 to 3:1;
 - a pair in which two consecutive grace notes of the same pitch swap their
-  fingering digits, and a pair in which two simultaneous unison notes of
-  different written durations in two voices of one staff swap their fingering
-  digits;
+  fingering digits, a pair in which two simultaneous unison notes of different
+  written durations in two voices of one staff swap their fingering digits,
+  a pair in which a two-digit fingering on one note reverses its digit order
+  (`54` to `45`), and a pair in which a finger substitution changes its second
+  digit;
 - a pair in which the end of a slur moves to a simultaneous note of a
   different pitch and equal duration in another voice of the same staff, a
   pair in which the start of a
@@ -914,7 +976,9 @@ with their provenance:
 - a pair in which `T(Y)` drops the level 2 hook of a sixteenth rest in a beam
   group, and the reverse pair, in which `T(Y)` adds one;
 - a pair in which the parentheses of a notehead move to a simultaneous unison
-  notehead of a different written duration in another voice of the same staff;
+  notehead of a different written duration in another voice of the same staff,
+  a pair in which a metronome mark's parentheses move to another metronome
+  mark, and a pair in which an `other-dynamics` modifier text changes;
 - a pair in which `Y` reprints an unchanged key and an unchanged numeric time
   signature in a later measure and an unchanged clef at the start of a later
   system, and `T(Y)` omits them, and a pair in which `Y` reprints the trill
@@ -1065,16 +1129,22 @@ The instrument passes when it reports:
   exactly one non-identical `tuplet` element for the tuplet-ratio pair, each
   with no other difference;
 - exactly two non-identical and two extra `fingering` elements for the
-  grace-note pair and for the unison-voice pair, exactly one non-identical
-  `slur` element for each slur-endpoint pair, exactly one non-identical and one
-  extra `tie` element for the tie-end pair, exactly one non-identical `tie`
-  element for the tie-in deletion pair, exactly one extra `tie` element for the
-  tie-in insertion pair, exactly one non-identical `beam` element for the
-  rest-hook deletion pair, exactly one extra `beam` element for the rest-hook
-  insertion pair, exactly one counted musicdiff `tie` difference for the
-  ordinary-tie pair, exactly one non-identical and one extra `pitch`
-  element for the parenthesis pair, and exactly one non-identical and
-  one extra `heading` element for the heading-order pair, each with no other
+  grace-note pair, for the unison-voice pair and for the reversed two-digit
+  fingering pair, and exactly one non-identical
+  and one extra `fingering` element for the finger-substitution pair, exactly
+  one non-identical `slur` element for each slur-endpoint pair, exactly one
+  non-identical and one extra `tie` element for the tie-end pair, exactly one
+  non-identical `tie` element for the tie-in deletion pair, exactly one extra
+  `tie` element for the tie-in insertion pair, exactly one non-identical
+  `beam` element for the rest-hook deletion pair, exactly one extra `beam`
+  element for the rest-hook insertion pair, exactly one counted musicdiff
+  `tie` difference for the ordinary-tie pair, exactly one non-identical and
+  one extra `pitch` element for the parenthesis pair, exactly one
+  non-identical and one extra `tempo_rehearsal` element for the
+  metronome-parenthesis pair, exactly one non-identical and one extra `voice`
+  element for the voice-line pair, exactly one non-identical `dynamic` element
+  for the other-dynamics text pair, and exactly one non-identical and one
+  extra `heading` element for the heading-order pair, each with no other
   difference;
 - exactly one `text` and one `tempo_rehearsal` difference for each pair in
   which bold words become normal words and for the `sound`-tempo pair,
@@ -1089,8 +1159,12 @@ The instrument passes when it reports:
 - a `ProtocolDefectError` stop for each stop control;
 - no difference for the remaining no-change pairs, including the reprint
   pairs, the split-words pairs, the octave-shift encoding pairs and
-  self-comparisons, and the untyped-fermata pair; the octave-shift and
-  untyped-fermata pairs also have no difference in the layout pass.
+  self-comparisons, the untyped-fermata pair, the MusicXML 3.0
+  `other-dynamics` `pf` pair, the trimmed `other-dynamics` pair, the split
+  two-digit fingering pair, the finger-substitution encoding pairs, and the
+  second-ending `notations/tied`-only `tie-in` pair; the octave-shift,
+  untyped-fermata and `other-dynamics` `pf` pairs also have no difference in
+  the layout pass.
 
 The screen's allowlist is reviewed against the same fixtures before the
 samples are selected in Execution step 2. A failure of the instrument or of
@@ -1267,7 +1341,11 @@ difference and counts as non-identical. The heading check compares only the
 reading order of heading lines, not which system or page a heading precedes;
 a move between systems is not counted. It counts a credit that repeats an
 earlier page's line as a heading line, though the format does not encode
-running headers, so a conversion that omits one is counted. musicdiff 6.0
+running headers, so a conversion that omits one is counted; conversely,
+heading text carried in a `credit` without a `credit-type` (such as an untyped
+dedication, date/opus line, or untyped MuseScore-exported credit) is not
+counted, and escapes the text-space check when the reverse conversion omits
+untyped credits consistently. musicdiff 6.0
 compares an arpeggio across events by its type, member count and the onset of
 its highest member, not by its members, so a regrouping that keeps these is
 not counted.
@@ -1325,10 +1403,7 @@ each before results depend on it:
 - whether a console conversion modifies any of the eight MusicXML preferences,
   which the preflight checks;
 - the size of the Lieder download and the sizes of the eligible PDMX and
-  Lieder sets;
-- whether credits without a `credit-type` count as heading credits; this is
-  settled on the calibration set and the selected files, by a reviewed
-  revision of this rule, before results depend on it.
+  Lieder sets.
 
 The harness confines its own writes. MuseScore's other writes in its own data
 folders, such as logs, are not monitored beyond logging the settings-file hash
@@ -1367,9 +1442,9 @@ Source findings, with the pinned sources they rely on:
   ([lines 898 to 901](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L898-L901)),
   and drops a clef that restates the last clef of its staff in the same measure
   ([lines 906 to 917](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L906-L917)).
-  music21 10.5.0 imports `wavy-line` as `TrillExtension` and `dashes` as
-  `Line`, neither of which is collected; see `music21/musicxml/xmlToM21.py`
-  lines 3932 to 3934 and 4396 to 4404 in the
+  music21 10.5.0 imports `wavy-line` as `TrillExtension` and `dashes` and
+  `bracket` as `Line`, none of which is collected; see
+  `music21/musicxml/xmlToM21.py` lines 3932 to 3934 and 4396 to 4446 in the
   [PyPI wheel](https://pypi.org/project/music21/10.5.0/#files)
   `music21-10.5.0-py3-none-any.whl`, SHA-256
   `9924eff5fbf58490e67cbf3b78a58ba53040e77c281930d354af32a747e94606`.
@@ -1381,21 +1456,29 @@ Source findings, with the pinned sources they rely on:
   text expression, and inserts only complete spanners. A pedal mark is
   complete only at its `stop`, and a `stop` without an open pedal mark is
   skipped with a warning. Its `Fermata` has the type `inverted` unless the
-  MusicXML gives one. It trims each `words` element separately. It imports
-  each staff of a multi-staff part as a separate part with the objects that
-  the evidence limits list, and its pedal change, gap start and gap end are
-  not expressions.
-  See `music21/musicxml/xmlToM21.py` lines 5631 to 5647, 1547 to 1552, 4556
-  to 4557, 4516 to 4523, 5591 to 5598, 3880 to 3890, 5698, 1849 to 1863,
-  1893 to 1903, 2576 to 2595 and 4532 to 4555, and `music21/expressions.py`
-  lines 536 to 555, 2695 to 2700 and 380 to 415, in the
-  [PyPI wheel](https://pypi.org/project/music21/10.5.2/#files)
+  MusicXML gives one. It checks `m21DynamicText == 'other-dynamic'` rather than
+  `'other-dynamics'`, so `dynamics/other-dynamics` loses its text, while it
+  sets `mm.parentheses = True` when `metronome` has `parentheses="yes"`. It
+  trims each `words` element separately. It
+  imports each staff of a multi-staff part as a separate part with the objects
+  that the evidence limits list, and its pedal change, gap start and gap end
+  are not expressions.
+  See `music21/musicxml/xmlToM21.py` lines 5631 to 5647, 5660 to 5665, 5783 to
+  5786, 1547 to 1552, 4556 to 4557, 4516 to 4523, 5591 to 5598, 3880 to 3890,
+  5698, 1849 to 1863, 1893 to 1903, 2576 to 2595 and 4532 to 4555, and
+  `music21/expressions.py` lines 536 to 555, 2695 to 2700 and 380 to 415, in
+  the [PyPI wheel](https://pypi.org/project/music21/10.5.2/#files)
   `music21-10.5.2-py3-none-any.whl`, SHA-256
   `dba8696eafab709a244b6f18c64399edcccf4e96ddd1e0e4de7eff0a291c2dec`.
   If a run records another music21 version, these music21 findings are
   rechecked before any corpus or gold run.
   musicdiff 6.0 has no `kind` for a `RepeatExpression` in the `extra_to_kind`
-  lines cited above. It compares a metronome mark that has text and no
+  lines cited above, records a `Dynamic` of value `'other-dynamics'` only as
+  that string
+  ([m21utils.py lines 1765 to 1780](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L1765-L1780)),
+  and compares a `MetronomeMark` without parentheses
+  ([lines 1444 to 1555](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L1444-L1555)).
+  It compares a metronome mark that has text and no
   number by its text, except text of the form note = number; see
   [m21utils.py](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L1476-L1493)
   and
@@ -1412,6 +1495,22 @@ Source findings, with the pinned sources they rely on:
   ([lines 620 to 641](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L620-L641)).
 - MusicXML 4.0 defines a `fermata` without a `type` as upright; see the
   [`fermata` element](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/fermata/).
+  MusicXML added the `<pf>` dynamic element in version 3.1, and `<other-dynamics>`
+  records dynamic marks not covered by standard dynamic elements; see the
+  [MusicXML 3.1 version history](https://www.w3.org/2021/06/musicxml40/version-history/31/)
+  and the
+  [`other-dynamics` element](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/other-dynamics/).
+  MusicXML 4.0 defines `<credit>` with optional `<credit-type>` children for
+  roles such as `title`, `subtitle`, `composer`, `arranger`, `lyricist`,
+  `rights`, `page number` and `part name`, without dedicated values for
+  dedications, dates or opus lines; see the
+  [`credit` element](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/credit/),
+  the
+  [`credit-type` element](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/credit-type/),
+  and the `formal-3` selected-file runtime observation and owner disposition in
+  [#1488 comment 7031008701](https://github.com/hcoona/three/issues/1488#issuecomment-7031008701)
+  and
+  [#1488 comment 7034443356](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356).
 - music21 10.5.2 reads an `octave-shift` start as an `Ottava` whose first
   element is the next note, chord or rest that it parses, of any staff and at
   any offset, and a stop by adding the last note, chord or rest that its
