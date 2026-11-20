@@ -548,6 +548,34 @@ class Conversion:
         }
 
 
+def _resolve_executable_version(
+    executable: Path | None,
+    version_lookup: Callable[[], str | None],
+    launcher: Launcher,
+) -> tuple[Path, str]:
+    default_exe = default_executable()
+    is_override = (
+        executable is not None and executable.resolve() != default_exe.resolve()
+    )
+    resolved = default_exe if executable is None else executable
+    if not resolved.is_file():
+        message = f"MuseScore is not installed at {resolved}"
+        raise StopConditionError(message)
+    if version_lookup is not registry_version:
+        version = version_lookup()
+    elif is_override:
+        version = cli_version(resolved, launcher)
+    else:
+        version = version_lookup()
+        if version is None and launcher is run_command:
+            version = cli_version(resolved, launcher)
+    if not is_supported_version(version):
+        message = f"MuseScore version must be 4.x, got {version!r}"
+        raise StopConditionError(message)
+    assert version is not None  # noqa: S101 - checked above
+    return resolved, version
+
+
 @dataclass(slots=True)
 class MuseScore:
     """The recorded MuseScore Studio 4 installation, guarded by preferences.
@@ -592,32 +620,19 @@ class MuseScore:
 
         Raises:
             StopConditionError: If MuseScore 4 is not installed at the path,
-                its major version is not 4, or any of the eight MusicXML
-                preferences differs from the run's baseline.
+                its major version is not 4, an explicit settings override does
+                not exist, or any of the eight MusicXML preferences differs
+                from the run's baseline.
         """
-        default_exe = default_executable()
-        is_override = (
-            executable is not None
-            and executable.resolve() != default_exe.resolve()
+        executable, version = _resolve_executable_version(
+            executable, version_lookup, launcher
         )
-        executable = default_exe if executable is None else executable
-        if not executable.is_file():
-            message = f"MuseScore is not installed at {executable}"
-            raise StopConditionError(message)
-        if version_lookup is not registry_version:
-            version = version_lookup()
-        elif is_override:
-            version = cli_version(executable, launcher)
-        else:
-            version = version_lookup()
-            if version is None and launcher is run_command:
-                version = cli_version(executable, launcher)
-        if not is_supported_version(version):
-            message = f"MuseScore version must be 4.x, got {version!r}"
-            raise StopConditionError(message)
-        assert version is not None  # noqa: S101 - checked above
         executable_sha256 = sha256_file(executable)
-        settings = settings_path() if settings is None else settings
+        if settings is None:
+            settings = settings_path()
+        elif not settings.is_file():
+            message = f"MuseScore settings file does not exist at {settings}"
+            raise StopConditionError(message)
         copy = confinement.run / SETTINGS_COPY
         hash_log = confinement.run / HASH_LOG
         if not copy.exists() and not hash_log.exists() and settings.is_file():

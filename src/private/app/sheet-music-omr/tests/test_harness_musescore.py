@@ -232,22 +232,39 @@ def test_open_accepts_musescore_4_and_stops_outside_major_4(
 def test_open_tolerates_missing_or_ui_settings_and_stops_on_preference_drift(
     roots: Confinement,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Missing INI or UI state drift is allowed; MusicXML drift stops."""
+    """Fresh default INI absence or UI drift is allowed; bad override stops."""
     fresh_roots = Confinement.create(
         tmp_path / "fresh-run", tmp_path / "fresh-dl"
     )
-    fresh = _open(
+    fresh_exe = tmp_path / "fresh" / "MuseScore4.exe"
+    fresh_exe.parent.mkdir(parents=True, exist_ok=True)
+    fresh_exe.write_bytes(b"binary")
+    monkeypatch.setattr(
+        musescore,
+        "settings_path",
+        lambda: tmp_path / "fresh-appdata" / "MuseScore" / "MuseScore4.ini",
+    )
+    fresh = musescore.MuseScore.open(
         fresh_roots,
-        tmp_path / "fresh",
-        _FakeLauncher(),
-        with_settings=False,
+        executable=fresh_exe,
+        version_lookup=lambda: musescore.VERSION,
+        launcher=_FakeLauncher(),
     )
     assert fresh.baseline is None
     assert (
         fresh.preferences()["import/musicXml/importBreaks"]["source"]
         == "default"
     )
+
+    with pytest.raises(StopConditionError, match="settings file"):
+        _open(
+            fresh_roots,
+            tmp_path / "missing-override",
+            _FakeLauncher(),
+            with_settings=False,
+        )
 
     _open(roots, tmp_path, _FakeLauncher())
     (tmp_path / "MuseScore4.ini").write_text("[ui]\nx=2\n", encoding="utf-8")
@@ -383,10 +400,12 @@ def test_custom_executable_resolves_cli_version_instead_of_registry(
             return 0, banner
         return 1, ""
 
+    settings_file = tmp_path / "MuseScore4.ini"
+    settings_file.write_text("[ui]\nx=1\n", encoding="utf-8")
     opened = musescore.MuseScore.open(
         roots,
         executable=custom_exe,
-        settings=tmp_path / "MuseScore4.ini",
+        settings=settings_file,
         version_lookup=musescore.registry_version,
         launcher=_version_launcher,
     )

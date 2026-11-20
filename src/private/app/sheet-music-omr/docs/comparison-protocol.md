@@ -104,8 +104,10 @@ and `-R` options both reset the user's settings. The harness therefore:
 In the inspected MuseScore `v4.7.6` and `v4.7.7` sources, a non-portable build
 outside macOS stores its settings in INI format under organization `MuseScore`
 and application `MuseScore4`, which Qt places at
-`%APPDATA%\MuseScore\MuseScore4.ini` for the user scope on Windows (or at an
-explicit `--settings` path). Unrelated UI keys in that file may change outside
+`%APPDATA%\MuseScore\MuseScore4.ini` for the user scope on Windows (an explicit
+`--settings` override for tests or custom user scopes must name an existing
+settings file; absent-file defaults apply only at the resolved `%APPDATA%`
+location). Unrelated UI keys in that file may change outside
 the harness without invalidating a run, whereas any change to the eight
 effective MusicXML preferences stops the run. If a formal run records a
 MuseScore `4.x` release outside the source-verified series, the MuseScore
