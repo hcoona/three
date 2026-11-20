@@ -589,7 +589,7 @@ results, plus any actual applicable declared tests. Retain command termination
 and missing/failed/cancelled results. Transfer native package properties needed
 by the consumer, omitting checkout-specific physical paths.
 
-Use the coherent official packaged NuGet 7.9.0 group: Commands, Protocol,
+Use the coherent official packaged NuGet 8.0.0 group: Commands, Protocol,
 Configuration, ProjectModel, Packaging, Versioning and Frameworks. Replace their
 SDK assembly references together; retain the selected SDK's Microsoft.Build
 references separately. Resolve Newtonsoft.Json through the official package
