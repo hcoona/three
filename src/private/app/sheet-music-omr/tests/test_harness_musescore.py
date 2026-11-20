@@ -77,6 +77,13 @@ def test_read_preferences_reads_qt_sections_and_defaults() -> None:
         "value": "true",
         "source": "default",
     }
+    unverified = musescore.read_preferences(text, version="4.8.0.1")
+    assert (
+        unverified["import/musicXml/importLayout"]["source"]
+        == "assumed_v4_7_6_default"
+    )
+    assert musescore.has_source_verified_defaults("4.7.7.261109195")
+    assert not musescore.has_source_verified_defaults("4.8.0.1")
 
 
 def test_sanitize_log_removes_private_paths() -> None:
@@ -86,22 +93,89 @@ def test_sanitize_log_removes_private_paths() -> None:
         [
             *(f"line {i}" for i in range(30)),
             rf"wrote {run}\tmp\x.musicxml",
+            r"wsl \\wsl.localhost\Ubuntu\home\alice\run\x.musicxml",
+            "unc //wsl.localhost/Ubuntu/tmp/spaced path/x.musicxml",
+            "kv file=//wsl.localhost/Ubuntu/home/eve/x.musicxml",
+            r"share \\fileserver\private\score 1.mxl",
+            'quoted "D:\\Gold Scores\\Piece 1.mxl" failed',
+            "mnt /mnt/c/Users/bob/AppData/Roaming/MuseScore/MuseScore4.ini",
+            "mnt-data /mnt/d/Gold Scores/Piece 2.mxl",
+            "custom-root /c/Users/frank/score.mxl",
+            r"profile C:\Users\alice\Documents\Secret Piece.mscz",
+            "posix /home/grace/private/score.mxl",
             "user alice C:/Users/alice/file",
         ],
     )
 
-    sanitized = musescore.sanitize_log(log, (run, "alice"))
+    sanitized = musescore.sanitize_log(
+        log,
+        (run, "alice", r"C:\Users\alice", "/home/grace"),
+    )
 
-    assert "alice" not in sanitized
-    assert "runs" not in sanitized
+    for secret in (
+        "alice",
+        "bob",
+        "eve",
+        "frank",
+        "grace",
+        "wsl.localhost",
+        "fileserver",
+        "Gold Scores",
+        "Piece 1",
+        "Piece 2",
+        "Secret Piece",
+        "Documents",
+        "runs",
+    ):
+        assert secret not in sanitized
     assert "line 9" not in sanitized
-    assert sanitized.splitlines()[0] == "line 12"
+    assert sanitized.splitlines()[0] == "line 22"
+
+
+def test_settings_path_fails_closed_and_translates_windows_appdata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unresolved, corrupted or missing %APPDATA% stops; valid paths pass."""
+    for bad in (
+        {},
+        {"APPDATA": ""},
+        {"APPDATA": "%APPDATA%"},
+        {"APPDATA": "C:\\Users\\\ufffd\\AppData\\Roaming"},
+    ):
+        with pytest.raises(StopConditionError, match="%APPDATA%"):
+            musescore.settings_path(bad)
+
+    monkeypatch.setenv("APPDATA", str(tmp_path / "missing-appdata"))
+    with pytest.raises(StopConditionError, match="does not exist"):
+        musescore.settings_path()
+
+    existing = tmp_path / "Roaming"
+    existing.mkdir()
+    monkeypatch.setenv("APPDATA", str(existing))
+    assert (
+        musescore.settings_path() == existing / "MuseScore" / "MuseScore4.ini"
+    )
+
+    translated = musescore.settings_path(
+        {"APPDATA": r"C:\Users\bob\AppData\Roaming"},
+        to_posix=lambda raw: (
+            "/mnt/c/Users/bob/AppData/Roaming" if "bob" in raw else None
+        ),
+    )
+    assert translated.parts[-2:] == ("MuseScore", "MuseScore4.ini")
 
 
 class _FakeLauncher:
-    def __init__(self, *, settings: Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        settings: Path | None = None,
+        mutation: str = "[import]\nmusicXml\\importBreaks=false\n",
+    ) -> None:
         self.commands: list[list[str]] = []
         self.settings = settings
+        self.mutation = mutation
 
     def __call__(
         self,
@@ -113,7 +187,7 @@ class _FakeLauncher:
         output = command[command.index("-o") + 1]
         Path(output).write_text("<score/>", encoding="utf-8")
         if self.settings is not None:
-            self.settings.write_text("changed", encoding="utf-8")
+            self.settings.write_text(self.mutation, encoding="utf-8")
         return 0, f"converted to {output}"
 
 
@@ -122,12 +196,14 @@ def _open(
     tmp_path: Path,
     launcher: _FakeLauncher,
     *,
-    version: str = musescore.VERSION,
+    version: str = "4.7.7",
+    with_settings: bool = True,
 ) -> musescore.MuseScore:
     executable = tmp_path / "MuseScore4.exe"
-    executable.write_bytes(b"")
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    executable.write_bytes(b"binary")
     settings = tmp_path / "MuseScore4.ini"
-    if not settings.exists():
+    if with_settings and not settings.exists():
         settings.write_text("[ui]\nx=1\n", encoding="utf-8")
     return musescore.MuseScore.open(
         roots,
@@ -138,24 +214,53 @@ def _open(
     )
 
 
-def test_open_stops_on_another_version(
+def test_open_accepts_musescore_4_and_stops_outside_major_4(
     roots: Confinement,
     tmp_path: Path,
 ) -> None:
-    """Another MuseScore version is a stop condition."""
-    with pytest.raises(StopConditionError, match="version"):
-        _open(roots, tmp_path, _FakeLauncher(), version="4.6.0")
+    """Any MuseScore 4.x release is recorded with binary hash; non-4.x stops."""
+    for valid in ("4.7.6", "4.7.7.261051422"):
+        app = _open(roots, tmp_path, _FakeLauncher(), version=valid)
+        assert app.version == valid
+        assert len(app.executable_sha256) == 64  # noqa: PLR2004
+
+    for invalid in ("3.6.2", "5.0.0"):
+        with pytest.raises(StopConditionError, match="version"):
+            _open(roots, tmp_path, _FakeLauncher(), version=invalid)
 
 
-def test_open_copies_settings_once_and_stops_on_a_later_change(
+def test_open_tolerates_missing_or_ui_settings_and_stops_on_preference_drift(
     roots: Confinement,
     tmp_path: Path,
 ) -> None:
-    """The first copy is kept; a later invocation must match its hash."""
+    """Missing INI or UI state drift is allowed; MusicXML drift stops."""
+    fresh_roots = Confinement.create(
+        tmp_path / "fresh-run", tmp_path / "fresh-dl"
+    )
+    fresh = _open(
+        fresh_roots,
+        tmp_path / "fresh",
+        _FakeLauncher(),
+        with_settings=False,
+    )
+    assert fresh.baseline is None
+    assert (
+        fresh.preferences()["import/musicXml/importBreaks"]["source"]
+        == "default"
+    )
+
     _open(roots, tmp_path, _FakeLauncher())
     (tmp_path / "MuseScore4.ini").write_text("[ui]\nx=2\n", encoding="utf-8")
+    tolerated = _open(roots, tmp_path, _FakeLauncher())
+    assert tolerated.preferences()["import/musicXml/importBreaks"]["value"] == (
+        "true"
+    )
 
-    with pytest.raises(StopConditionError, match="recorded settings"):
+    (tmp_path / "MuseScore4.ini").write_text(
+        "[import]\nmusicXml\\importBreaks=false\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(StopConditionError, match="MusicXML preferences"):
         _open(roots, tmp_path, _FakeLauncher())
 
     copy = roots.run / musescore.SETTINGS_COPY
@@ -199,13 +304,110 @@ def test_convert_refuses_output_outside_roots(
     assert launcher.commands == []
 
 
-def test_convert_stops_when_settings_change(
+def test_convert_stops_when_musicxml_preferences_change(
     roots: Confinement,
     tmp_path: Path,
 ) -> None:
-    """A settings change during a conversion is a stop condition."""
-    launcher = _FakeLauncher(settings=tmp_path / "MuseScore4.ini")
-    app = _open(roots, tmp_path, launcher)
+    """UI state changes are tolerated; MusicXML preference changes stop."""
+    ui_launcher = _FakeLauncher(
+        settings=tmp_path / "MuseScore4.ini",
+        mutation="[ui]\nlastWindow=2\n",
+    )
+    app = _open(roots, tmp_path, ui_launcher)
+    source = tmp_path / "in.musicxml"
+    source.write_text("<score/>", encoding="utf-8")
+    assert app.convert(source, roots.temp / "ui.mscz").ok
 
-    with pytest.raises(StopConditionError, match="hash changed"):
-        app.convert(tmp_path / "in.musicxml", roots.temp / "out.mscz")
+    pref_launcher = _FakeLauncher(
+        settings=tmp_path / "MuseScore4.ini",
+        mutation="[import]\nmusicXml\\importBreaks=false\n",
+    )
+    app_pref = _open(roots, tmp_path, pref_launcher)
+    with pytest.raises(StopConditionError, match="MusicXML preferences"):
+        app_pref.convert(source, roots.temp / "out.mscz")
+
+
+def test_wsl_translate_command_maps_paths_for_windows_exe() -> None:
+    """WSL command translation converts -o and input paths for .exe binaries."""
+    translated = musescore.wsl_translate_command(
+        [
+            "/mnt/c/Program Files/MuseScore 4/bin/MuseScore4.exe",
+            "-o",
+            "/a/out.xml",
+            "/b/in.mscx",
+        ],
+        in_wsl=True,
+        to_windows=lambda path: rf"\\wsl.localhost\Ubuntu{path}".replace(
+            "/", "\\"
+        ),
+    )
+    assert translated == [
+        "/mnt/c/Program Files/MuseScore 4/bin/MuseScore4.exe",
+        "-o",
+        r"\\wsl.localhost\Ubuntu\a\out.xml",
+        r"\\wsl.localhost\Ubuntu\b\in.mscx",
+    ]
+    native = ["/usr/bin/mscore4", "-o", "/a/out.xml", "/b/in.mscx"]
+    assert (
+        musescore.wsl_translate_command(
+            native, in_wsl=True, to_windows=lambda p: p
+        )
+        == native
+    )
+
+
+def test_custom_executable_resolves_cli_version_instead_of_registry(
+    roots: Confinement,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit --musescore override probes the binary, not MSI registry."""
+    custom_exe = tmp_path / "custom-mscore4.exe"
+    custom_exe.write_bytes(b"portable-4.8")
+    monkeypatch.setattr(
+        musescore,
+        "registry_version",
+        lambda *_args: musescore.VERSION,
+    )
+
+    def _version_launcher(
+        command: Sequence[str],
+        timeout: float,
+    ) -> tuple[int | None, str]:
+        _ = timeout
+        if command[1] == "--long-version":
+            banner = (
+                "OpenGL 4.6 context initialized\n"
+                "MuseScore: Music Score Editor; Version 4.8.0.1; Build abc\n"
+            )
+            return 0, banner
+        return 1, ""
+
+    opened = musescore.MuseScore.open(
+        roots,
+        executable=custom_exe,
+        settings=tmp_path / "MuseScore4.ini",
+        version_lookup=musescore.registry_version,
+        launcher=_version_launcher,
+    )
+    assert opened.version == "4.8.0.1"
+    assert (
+        opened.preferences()["import/musicXml/importBreaks"]["source"]
+        == "assumed_v4_7_6_default"
+    )
+
+    for bad_output in (
+        "MuseScore 3.4.2\n",
+        "MuseScore Studio 5.4.0\n",
+        "Using Qt 6.4.3\nMuseScore 3.6.2\n",
+    ):
+        with pytest.raises(StopConditionError, match=r"4\.x"):
+            musescore.MuseScore.open(
+                roots,
+                executable=custom_exe,
+                settings=tmp_path / "MuseScore4.ini",
+                version_lookup=musescore.registry_version,
+                launcher=lambda cmd, _t, out=bad_output: (
+                    (0, out) if cmd[1] == "--version" else (1, "")
+                ),
+            )
