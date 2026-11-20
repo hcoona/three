@@ -2,8 +2,9 @@
 
 The preflight records the run record's source and tool versions, checks or
 starts the download ledger, runs one MuseScore conversion of a calibration
-fixture with the settings hash checked, and runs the calibration tests. A
-failure of any of these is a stop.
+fixture while checking the eight MusicXML preferences (recording the settings
+SHA-256 when present), and runs the calibration tests. A failure of any of
+these is a stop.
 """
 
 from __future__ import annotations
@@ -17,10 +18,19 @@ from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sheet_music_omr.harness.downloads import Ledger, LedgerError
-from sheet_music_omr.harness.musescore import sanitize_log
+from sheet_music_omr.harness.downloads import (
+    DOWNLOAD_LOCK_NAME,
+    Ledger,
+    LedgerError,
+)
+from sheet_music_omr.harness.musescore import (
+    has_source_verified_defaults,
+    sanitize_log,
+)
+from sheet_music_omr.harness.privacy import GOLD_MAPPING
 from sheet_music_omr.harness.records import (
     PROJECT_DIR,
+    load_run_record,
     now,
     run_git,
     source_state,
@@ -29,7 +39,7 @@ from sheet_music_omr.harness.records import (
 from sheet_music_omr.harness.stops import StopConditionError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from sheet_music_omr.harness.confine import Confinement
     from sheet_music_omr.harness.musescore import MuseScore
@@ -116,31 +126,116 @@ def open_ledger(
     prior_total: int | None,
     basis: str | None,
 ) -> Ledger:
-    """Load the run's download ledger, or start it with the prior total.
+    """Load the shared download ledger (mirrored to the run), or start it.
+
+    A shared ``download-ledger.json`` in ``confinement.downloads`` carries
+    cumulative W1 download totals across runs automatically and is mirrored
+    into ``confinement.run``. If an older run directory already has a local
+    ledger before the shared one exists, it seeds the shared ledger.
 
     Raises:
-        PreflightError: If it is unreadable, or absent with no prior total
-            and basis given.
+        PreflightError: If the ledger is unreadable, conflicts with an explicit
+            ``prior_total``, or is absent with no prior total and basis given.
     """
-    path = confinement.run / LEDGER_NAME
+    shared = confinement.downloads / LEDGER_NAME
+    local = confinement.run / LEDGER_NAME
     try:
-        if path.exists():
-            return Ledger.load(path)
-        if prior_total is None or not basis:
-            message = (
-                "the download ledger is absent; give the W1 prior total and "
-                "its basis"
+        with confinement.lock(confinement.downloads / DOWNLOAD_LOCK_NAME):
+            if shared.exists():
+                ledger = Ledger.load(shared, mirror=local)
+                if prior_total is not None and prior_total not in {
+                    ledger.prior_total,
+                    ledger.total,
+                }:
+                    message = (
+                        "the shared download ledger already records total "
+                        f"{ledger.total} (prior_total {ledger.prior_total}); "
+                        "omit --prior-total or pass a matching value"
+                    )
+                    raise PreflightError(message)
+                ledger.sync_mirror(confinement)
+                return ledger
+            if local.exists():
+                existing = Ledger.load(local)
+                ledger = Ledger.create(
+                    shared,
+                    prior_total=existing.prior_total,
+                    basis=existing.basis,
+                    entries=existing.entries,
+                    confinement=confinement,
+                )
+                ledger.mirror = local.resolve()
+                return ledger
+            if prior_total is None or not basis:
+                message = (
+                    "the download ledger is absent; give the W1 prior total "
+                    "and its basis"
+                )
+                raise PreflightError(message)
+            return Ledger.create(
+                shared,
+                prior_total=prior_total,
+                basis=basis,
+                confinement=confinement,
+                mirror=local,
             )
-            raise PreflightError(message)
-        return Ledger.create(
-            path,
-            prior_total=prior_total,
-            basis=basis,
-            confinement=confinement,
-        )
     except LedgerError as error:
         message = f"the download ledger is unusable: {error}"
         raise PreflightError(message) from error
+
+
+def _check_existing_preflight(
+    confinement: Confinement,
+    musescore: MuseScore,
+    current_source: Mapping[str, object],
+    current_versions: Mapping[str, str],
+) -> dict[str, object]:
+    record = load_run_record(confinement)
+    prior = record.get("preflight")
+    has_artifacts = "run" in record or any(
+        (confinement.run / sub).exists()
+        for sub in ("selection", "inputs", "files", "report", GOLD_MAPPING)
+    )
+    prior_dict = prior if isinstance(prior, dict) else {}
+    prior_ms = prior_dict.get("musescore")
+    prior_src = prior_dict.get("source")
+    prior_ver = prior_dict.get("versions")
+    if has_artifacts and not (
+        isinstance(prior_ms, dict)
+        and isinstance(prior_src, dict)
+        and isinstance(prior_ver, dict)
+    ):
+        message = (
+            "existing selection or execution artifacts lack preflight "
+            "provenance; start a fresh --run-dir"
+        )
+        raise PreflightError(message)
+    if isinstance(prior_ms, dict) and (
+        prior_ms.get("version") != musescore.version
+        or prior_ms.get("executable_sha256") != musescore.executable_sha256
+    ):
+        message = (
+            "MuseScore changed since preflight recorded this run; "
+            "start a fresh --run-dir"
+        )
+        raise PreflightError(message)
+    if isinstance(prior_src, dict) and (
+        prior_src.get("tree") != current_source.get("tree")
+        or bool(prior_src.get("dirty"))
+        or bool(current_source.get("dirty"))
+    ):
+        message = (
+            "the converter/harness code tree changed since preflight "
+            "recorded this run; start a fresh --run-dir"
+        )
+        raise PreflightError(message)
+    if isinstance(prior_ver, dict) and prior_ver != dict(current_versions):
+        message = (
+            "resolved package versions changed since preflight recorded "
+            "this run; start a fresh --run-dir"
+        )
+        raise PreflightError(message)
+    return dict(prior_dict)
 
 
 def preflight(  # noqa: PLR0913
@@ -174,6 +269,11 @@ def preflight(  # noqa: PLR0913
     Raises:
         PreflightError: If the conversion or calibration fails.
     """
+    current_source = source_state(git)
+    current_versions = tool_versions()
+    prior_preflight = _check_existing_preflight(
+        confinement, musescore, current_source, current_versions
+    )
     ledger: dict[str, object] = {"status": "skipped"}
     if require_ledger or (confinement.run / LEDGER_NAME).exists():
         opened = open_ledger(confinement, prior_total=prior_total, basis=basis)
@@ -205,17 +305,23 @@ def preflight(  # noqa: PLR0913
         }
         if status != 0:
             update_run_record(
-                confinement, "preflight", {"calibration": calibration}
+                confinement,
+                "preflight",
+                {**prior_preflight, "calibration": calibration},
             )
             message = "calibration failed"
             raise PreflightError(message)
     record: dict[str, object] = {
         "time": now(),
-        "source": source_state(git),
-        "versions": tool_versions(),
+        "source": current_source,
+        "versions": current_versions,
         "musescore": {
             "path": str(musescore.executable),
             "version": musescore.version,
+            "executable_sha256": musescore.executable_sha256,
+            "source_verified_defaults": has_source_verified_defaults(
+                musescore.version
+            ),
             "preferences": musescore.preferences(),
             "settings_sha256": settings_hash,
             "conversion": conversion.record(),

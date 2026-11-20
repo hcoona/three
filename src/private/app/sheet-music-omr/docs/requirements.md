@@ -135,9 +135,12 @@ implement the grammar and semantic rules of the format.
 
 Comparing a source score with its round trip shall follow a protocol that is
 accepted under research-evidence review before it executes. The protocol shall
-fix the tools and their versions, define an in-scope element and _identical_,
-state the denominator of every percentage and say how generated identifiers are
-treated, since an identifier difference alone is not a content difference. It
+fix the in-repository comparison dependencies and their versions, bound external
+desktop score editors by major version while recording each run's exact version
+string and executable hash as provenance, define an in-scope element and
+_identical_, state the denominator of every percentage and say how generated
+identifiers are treated, since an identifier difference alone is not a content
+difference. It
 shall assign every difference to exactly one of the 27 content categories or to
 layout. A difference that cannot be assigned is a protocol defect, never
 agreement. Missing content and extra content both count as differences.

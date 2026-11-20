@@ -25,9 +25,64 @@ GOLD_MAPPING = Path("gold") / "mapping.json"
 
 _ABSOLUTE = (
     re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/]"),
-    re.compile(r"\\\\[^\\\s]+\\"),
+    re.compile(r"\\\\[^\\\s\"'`]+\\"),
+    re.compile(r"(?<![A-Za-z0-9:/\\])//[^/\s\"'`]+/"),
     re.compile(r"(?<![\w.])/(?:home|Users|tmp|var|mnt|root)/"),
+    re.compile(r"(?<![\w.:/<])/[A-Za-z]/(?=[A-Za-z0-9_.-][^/\r\n\"'`]*/)"),
 )
+
+_SCRUB_PATHS = (
+    re.compile(r"\\\\[^\\\s\"'`]+\\[^\r\n\"'`]*"),
+    re.compile(r"(?<![A-Za-z0-9:/\\])//[^/\s\"'`]+/[^\r\n\"'`]*"),
+    re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\r\n\"'`]*"),
+    re.compile(r"(?<![\w.])/(?:home|Users|tmp|var|mnt|root)/[^\r\n\"'`]*"),
+    re.compile(
+        r"(?<![\w.:/<])/[A-Za-z]/(?=[A-Za-z0-9_.-][^/\r\n\"'`]*/)[^\r\n\"'`]*"
+    ),
+)
+
+_WSL_USER_PATH = re.compile(
+    r"^((?:/mnt)?/([A-Za-z])/Users/([^/]+))(?:/|$)",
+    re.IGNORECASE,
+)
+_WIN_USER_PATH = re.compile(
+    r"^([A-Za-z]):[\\/]Users[\\/]([^\\/]+)(?:[\\/]|$)",
+    re.IGNORECASE,
+)
+
+
+def identity_strings_from_path(raw: str) -> list[str]:
+    """Extract user profile paths and account names from a host path."""
+    cleaned = raw.strip()
+    if not cleaned:
+        return []
+    values = [cleaned]
+    wsl_match = _WSL_USER_PATH.match(cleaned.replace("\\", "/"))
+    if wsl_match is not None:
+        profile, drive, win_user = wsl_match.groups()
+        values.extend(
+            (profile, rf"{drive.upper()}:\Users\{win_user}", win_user)
+        )
+    win_match = _WIN_USER_PATH.match(cleaned)
+    if win_match is not None:
+        drive, win_user = win_match.groups()
+        values.extend(
+            (
+                rf"{drive.upper()}:\Users\{win_user}",
+                f"/mnt/{drive.lower()}/Users/{win_user}",
+                f"/{drive.lower()}/Users/{win_user}",
+                win_user,
+            )
+        )
+    return values
+
+
+def scrub_paths(text: str) -> str:
+    """Replace absolute Windows, UNC, WSL, and POSIX paths with ``<path>``."""
+    scrubbed = text
+    for pattern in _SCRUB_PATHS:
+        scrubbed = pattern.sub("<path>", scrubbed)
+    return scrubbed
 
 
 class PrivacyError(StopConditionError):
@@ -64,14 +119,27 @@ def private_strings(
     """Return every private string of a run that public text must not hold.
 
     These are the run and download directories, the home directory, the user
-    name, the gold identities in the run directory and ``extra``.
+    name (including the Windows host profile under WSL2), the gold identities
+    in the run directory and ``extra``.
     """
+    from sheet_music_omr.harness.musescore import (  # noqa: PLC0415
+        wsl_host_appdata,
+    )
+
+    userprofile = os.environ.get("USERPROFILE", "").strip()
+    appdata = os.environ.get("APPDATA", "").strip()
+    host_appdata = (
+        "" if (userprofile or appdata) else (wsl_host_appdata() or "")
+    )
     values = [
         str(confinement.run),
         str(confinement.downloads),
         str(Path.home()),
         os.environ.get("USERNAME", ""),
         os.environ.get("USER", ""),
+        *identity_strings_from_path(userprofile),
+        *identity_strings_from_path(appdata),
+        *identity_strings_from_path(host_appdata),
         *gold_private(confinement),
         *extra,
     ]

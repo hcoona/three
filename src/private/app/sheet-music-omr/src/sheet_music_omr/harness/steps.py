@@ -296,15 +296,6 @@ def assembly(x: Path) -> Data:
     }
 
 
-def baseline(rx: Path, x: Path) -> Data:
-    """Compare ``R(X)`` with ``X`` as the MuseScore-only baseline.
-
-    Returns:
-        The content and layout results with ``R(X)`` as the round trip.
-    """
-    return {"status": OK, "content": content(rx, x), "layout": layout(rx, x)}
-
-
 def parse_check(x: Path) -> Data:
     """Run the screen's musicdiff parse of a candidate in the content pass.
 
@@ -326,7 +317,8 @@ STEPS: Mapping[str, Callable[..., Data]] = {
     "layout": layout,
     "text_space": text_space,
     "assembly": assembly,
-    "baseline": baseline,
+    "baseline_content": content,
+    "baseline_layout": layout,
     "parse_check": parse_check,
 }
 """The default step table, by step name."""

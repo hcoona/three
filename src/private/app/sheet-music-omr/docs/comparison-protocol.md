@@ -25,9 +25,10 @@ and are not relied on as facts.
 ## Subject and scope
 
 The subject is the experimental forward converter (text to MusicXML) and
-reverse converter (MusicXML to text) of this project, at one recorded commit,
-together with MuseScore Studio 4.7.6 as importer and exporter. The protocol
-covers four measures:
+reverse converter (MusicXML to text) of this project, at one recorded converter
+code tree and commit, together with an installed MuseScore Studio 4 release
+recorded with the run as importer and exporter. The protocol covers four
+measures:
 
 1. the round-trip comparison of
    [OMR-REQ-009](requirements.md#omr-req-009-comparison-protocol),
@@ -47,52 +48,71 @@ those needs its own accepted protocol or record.
 
 ## Tools and environment
 
-- **Host:** the repository owner's Windows host, in the owner's interactive
-  desktop session. Runs are local. Operation without a display or in a
-  service session is not verified and is not used.
+- **Host:** the repository owner's Windows host, either directly in Windows or
+  from WSL2 on that host invoking the Windows MuseScore executable in the
+  owner's interactive desktop session. Runs are local. Operation without a
+  display or in a service session is not verified and is not used.
 - **Python:** Python 3.14 from the repository's uv workspace.
 - **musicdiff:** version `6.0` from PyPI, the distribution of GitHub tag
   `v6.0.0` at commit `0368856e8561ba655d990c00c7ae46a2408f071c`. The Wave's
   "musicdiff 6.0.0" names this release. musicdiff states only minimum versions
   for music21 and converter21 and no version for numpy. The versions that the
   repository lockfile resolves for them are the ones used.
-- **MuseScore:** MuseScore Studio 4.7.6, build `4.7.6.261022093`, already
-  installed at its default location. If it is not installed there when a run
-  starts, the run stops before any MuseScore conversion. It is GitHub tag `v4.7.6` at commit
-  `96480d58445e3b24b230a3fe7d4725d639aa2eb3`. Preflight records the
-  executable path and version string.
-- **Run record:** every run records the converter commit, the harness commit,
-  the Python version, the resolved versions of musicdiff, music21,
-  converter21 and numpy, the MuseScore executable path and version string, and
+- **MuseScore:** an installed MuseScore Studio 4 (`4.x`) executable on the
+  host, at `C:\Program Files\MuseScore 4\bin\MuseScore4.exe` on Windows,
+  `/mnt/c/Program Files/MuseScore 4/bin/MuseScore4.exe` from WSL2, or an
+  explicit `--musescore` path. If no MuseScore 4 executable is present there
+  when a run starts, or its major version is not `4`, the run stops before any
+  conversion. MuseScore 4 upgrades between runs are permitted; preflight
+  records the executable path, executable SHA-256 and installed version string
+  as provenance so behavior changes across upgrades remain diagnosable, and
+  later steps of the same run require the same version and executable SHA-256.
+- **Run record:** every run records the repository commit and the converter and
+  harness code-tree SHA-256 (`pyproject.toml`, `src` and `tests`), the Python
+  version, the resolved versions of musicdiff, music21, converter21 and numpy,
+  the MuseScore executable path, executable SHA-256 and version string, and
   the MuseScore preference values below.
 
 ### MuseScore isolation
 
-MuseScore 4.7.6 has no option that moves its configuration folder, and its
-`-F` and `-R` options both reset the user's settings. The harness therefore:
+MuseScore 4 has no option that moves its configuration folder, and its `-F`
+and `-R` options both reset the user's settings. The harness therefore:
 
 - never passes `-F` or `-R`, and does not rely on a configuration-folder
   option;
 - invokes MuseScore only for single conversions with `-o` or conversion jobs
-  with `-j`, and never passes `--force` (`-f`);
+  with `-j`, serialized across local processes by a lock file in the shared
+  download directory, and never passes `--force` (`-f`);
 - before the first conversion, copies the user settings file
-  `%APPDATA%\MuseScore\MuseScore4.ini` into the run directory so that the owner
-  can restore it, and never restores it automatically;
-- reads that file read-only and records its SHA-256 before and after each
-  batch of MuseScore conversions;
+  `%APPDATA%\MuseScore\MuseScore4.ini` into the run directory when that file
+  exists so that the owner can restore it, and never restores it automatically;
+- reads that path read-only, logs its SHA-256 (or `null` when absent on a
+  fresh installation that has not written an INI file yet) before and after
+  each batch of MuseScore conversions, and checks that the eight MusicXML
+  preference values below remain equal to the run's baseline;
 - records the MusicXML import and export preferences in effect, read
-  read-only from that file. A preference that the file does not set is
-  recorded with its 4.7.6 source default: import breaks `true`, import layout
-  `true`, export layout `true`, export compatibility with MuseScore 3 `false`,
-  export breaks `All`, export invisible elements `false`, apply default font
-  `false`, infer text type `false`.
+  read-only from that file when present. A preference that the file does not
+  set (including when the file is absent) takes the source default verified in
+  MuseScore `v4.7.6` and `v4.7.7` (recorded with source `default` on those
+  inspected release series and `assumed_v4_7_6_default` on any other `4.x`
+  release until rechecked; see [Source basis](#source-basis)):
+  import breaks `true`, import layout `true`, export layout `true`, export
+  compatibility with MuseScore 3 `false`, export breaks `All`, export
+  invisible elements `false`, apply default font `false`, infer text type
+  `false`.
 
-The path follows from the pinned source: outside macOS a non-portable build
-stores its settings in INI format under organization `MuseScore` and
-application `MuseScore4`, which Qt places at
-`%APPDATA%\MuseScore\MuseScore4.ini` for the user scope on Windows. Preflight
-checks it. If the file does not exist at that path when a run starts, the run
-stops before any MuseScore conversion.
+In the inspected MuseScore `v4.7.6` and `v4.7.7` sources, a non-portable build
+outside macOS stores its settings in INI format under organization `MuseScore`
+and application `MuseScore4`, which Qt places at
+`%APPDATA%\MuseScore\MuseScore4.ini` for the user scope on Windows (an explicit
+`--settings` override for tests or custom user scopes must name an existing
+settings file; absent-file defaults apply only at the resolved `%APPDATA%`
+location). Unrelated UI keys in that file may change outside
+the harness without invalidating a run, whereas any change to the eight
+effective MusicXML preferences stops the run. If a formal run records a
+MuseScore `4.x` release outside the source-verified series, the MuseScore
+source recheck in [Source basis](#source-basis) fires before public W1 claims
+rely on that run.
 
 Runs use the existing installation and user settings unchanged. These guards,
 with the harness's confined writes, are what this protocol means by an
@@ -151,8 +171,9 @@ run.
   `f44e962a1ff85ddcc2f6f42bed3b0c529555ee15`, version DOI
   [10.5281/zenodo.15450144](https://doi.org/10.5281/zenodo.15450144). The
   scores are CC0.
-- **Export:** MuseScore 4.7.6 exports each candidate `.mscx` file to MusicXML.
-  A candidate whose export fails is excluded with the reason "export failed".
+- **Export:** MuseScore Studio 4 exports each candidate `.mscx` file to
+  MusicXML. A candidate whose export fails is excluded with the reason "export
+  failed".
 - **Piano extraction:** before any reference is defined, a deterministic
   transform keeps the one part whose `score-part` names a piano instrument
   (its `instrument-sound` starts with `keyboard.piano`), its `score-part`
@@ -209,6 +230,9 @@ A file passes only if all of the following hold:
 - every `metronome` has one `beat-unit` of quarter, half or eighth, with a
   dot only on a quarter or half, and a `per-minute` value;
 - every beam level and every tuplet that starts in a measure stops in it;
+- every `octave-shift` starts before its stop on the same staff without
+  reusing an open `number`, and no two `octave-shift` spans on one staff
+  overlap;
 - every notation, ornament, articulation, technical mark, dynamic and
   direction type belongs to a variant that the
   [Text Score 2 format](text-format.md#category-encodings) enumerates. The
@@ -234,14 +258,14 @@ selection is corrected only by a reviewed change to this protocol.
 
 ### Downloads
 
-Downloads and their extracted files go to one download directory outside the
-repository, which is recorded with the run and reused by reruns. A download
-ledger in the run
-directory records every download made for this protocol with its byte count,
-and starts from the W1 cumulative download total so far. Before each download,
-the harness checks that the total plus the download's published or estimated
-size stays at or below 20,000,000,000 bytes. Otherwise the run stops and
-returns to the owner.
+Downloads and their extracted files go to one download directory outside all
+repository worktrees, which is recorded with the run and reused by reruns. A
+shared download ledger in the download directory, mirrored into each run
+directory, records every download made for this protocol with its byte count
+and carries forward the W1 cumulative download total across runs automatically.
+Before each download, the harness checks under a download lock that the total
+plus the download's published or estimated size stays at or below
+20,000,000,000 bytes. Otherwise the run stops and returns to the owner.
 
 ## Comparison instrument
 
@@ -1074,9 +1098,10 @@ that review is a protocol defect: this record is revised under review before
 any corpus or gold run.
 
 As a preflight in Execution step 1, one MuseScore conversion of a calibration
-fixture is run and the settings-file hash is checked before any corpus
-export. The allowlist review and this preflight belong to the screen and to
-the preflight; they are not part of the instrument's pass.
+fixture is run and the eight MusicXML preferences are checked (recording the
+settings-file SHA-256 when present) before any corpus export. The allowlist
+review and this preflight belong to the screen and to the preflight; they are
+not part of the instrument's pass.
 
 ## MuseScore import check
 
@@ -1151,30 +1176,40 @@ It is reported and never gates acceptance.
 
 ## Execution and bounds
 
-1. Preflight: record versions, check the settings file and the download
-   ledger, and run calibration.
-2. Select the PDMX and Lieder samples and post the selected list.
+1. Preflight: record versions, the repository commit and the converter code-tree
+   hash, check the MusicXML preferences and the download ledger, and run
+   calibration.
+2. Select the PDMX and Lieder samples (resuming from saved selection progress
+   if interrupted before completion, and never reselecting a finished corpus)
+   and post the selected list.
 3. Make `R(X)` for the selected public files.
 4. For each arm, run reverse, forward, the import check, both passes, the
    supplementary checks and the text-space check on every file.
-5. Compare `X` with `R(X)` for the baseline.
+5. Compare `X` with `R(X)` for the baseline (`content` and `layout` passes as
+   separate steps).
 6. Run the system-assembly test on gold.
 
-Each arm runs once per converter commit under test. Reruns after converter
-fixes are allowed under this protocol, each with its commit recorded, and every
-completed run is listed in the results carrier. The acceptance figures come
-from one run in which every arm used the same converter commit. The bounds of
-one run are 200 PDMX files, 50 Lieder extracts, the accepted gold pieces, at
-most the 1,356 Lieder scores of the pinned release for selection exports, and
+Each arm runs once per converter code tree (`pyproject.toml`, `src` and
+`tests`) under test. Unrelated monorepo commits or documentation updates that
+leave that code tree clean and unchanged do not invalidate a run's preflight or
+resumption; the commit at preflight and at run execution is recorded as
+provenance. Reruns after converter fixes are allowed under this protocol, each
+with its code tree and commit recorded, and every completed run is listed in
+the results carrier. The acceptance figures come from one run in which every
+arm used the same converter code tree and MuseScore build. The bounds of one
+run are 200 PDMX files, 50 Lieder extracts, the accepted gold pieces, at most
+the 1,356 Lieder scores of the pinned release for selection exports, and
 300 seconds per conversion or comparison step.
 
 ## Stop conditions
 
 A run stops, and returns to the owner or to review, when:
 
-- the settings-file hash changes, or the settings file is absent at start;
-- MuseScore is not installed at its default location, or its version string
-  is not 4.7.6, build `4.7.6.261022093`;
+- any of the eight recorded MusicXML preferences changes from the run's
+  baseline;
+- MuseScore Studio 4 is not installed at the configured path, its major
+  version is not `4`, or its version or executable SHA-256 differs from the
+  run's preflight;
 - a download would take the W1 cumulative total above 20,000,000,000 bytes;
 - a difference cannot be assigned, or another protocol defect appears;
 - calibration fails;
@@ -1193,8 +1228,9 @@ repository. Public carriers receive only:
 - per-category difference counts, import-check counts, text-space mismatch
   counts and failure counts by status;
 - exclusion counts by reason;
-- tool versions, the converter and harness commits and the dataset versions,
-  citing the PDMX deposit, which is licensed CC BY 4.0;
+- tool versions, the MuseScore executable SHA-256, the converter and harness
+  commits and code-tree SHA-256, and the dataset versions, citing the PDMX
+  deposit, which is licensed CC BY 4.0;
 - the complete lists of selected PDMX and Lieder files, by PDMX path or
   Lieder path, and a short list of such files where a finding needs one.
 
@@ -1208,8 +1244,9 @@ owner may delete it. Downloaded corpora stay outside the repository.
 
 ## Evidence limits and open checks
 
-Results measure these converters, MuseScore 4.7.6 and musicdiff 6.0 with its
-coupling correction and the resolved dependencies on these files. They do not
+Results measure these converters, the recorded MuseScore Studio 4 version and
+musicdiff 6.0 with its coupling correction and the resolved dependencies on
+these files. They do not
 show that the format is complete, that a model can learn it or that it is
 better than ABC or MusicXML, as OMR-REQ-011 and
 [OMR-REQ-014](requirements.md#omr-req-014-evidence-separation) state. A zero
@@ -1283,9 +1320,10 @@ each before results depend on it:
 - the `PDMX.csv` header, including the prefilter columns and the column that
   holds the compressed MusicXML path, the layout of
   `mxl.tar.gz`, and the Lieder file names at the pinned commit;
-- whether MuseScore 4.7.6 exports `instrument-sound` for Lieder piano parts;
-- whether a console conversion writes the settings file, which the preflight
-  checks;
+- whether the recorded MuseScore Studio 4 version exports `instrument-sound`
+  for Lieder piano parts;
+- whether a console conversion modifies any of the eight MusicXML preferences,
+  which the preflight checks;
 - the size of the Lieder download and the sizes of the eligible PDMX and
   Lieder sets;
 - whether credits without a `credit-type` count as heading credits; this is
@@ -1293,7 +1331,8 @@ each before results depend on it:
   revision of this rule, before results depend on it.
 
 The harness confines its own writes. MuseScore's other writes in its own data
-folders, such as logs, are not monitored beyond the settings-file hash.
+folders, such as logs, are not monitored beyond logging the settings-file hash
+when present and checking the eight MusicXML preferences.
 
 ## Source basis
 
@@ -1445,12 +1484,17 @@ Source findings, with the pinned sources they rely on:
   first voices of both lists differ; see
   [lines 1440 to 1460](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/comparison.py#L1440-L1460)
   of `comparison.py`.
-- MuseScore `v4.7.6` is commit `96480d58`, and its Windows build is
-  `4.7.6.261022093`; see the
-  [release](https://github.com/musescore/MuseScore/releases/tag/v4.7.6) and its
-  `MuseScore-Studio-4.7.6.261022093-x86_64.msi` asset. Its
-  `-F` and `-R` options both request a settings reset, which clears the
-  settings store, and it registers no configuration-folder option. See
+- MuseScore `v4.7.6` is commit `96480d58`, with Windows build
+  `4.7.6.261022093`
+  ([release](https://github.com/musescore/MuseScore/releases/tag/v4.7.6),
+  `MuseScore-Studio-4.7.6.261022093-x86_64.msi`), and MuseScore `v4.7.7` is
+  commit `b750c43e`, with Windows build `4.7.7.261109195`
+  ([release](https://github.com/musescore/MuseScore/releases/tag/v4.7.7),
+  `MuseScore-Studio-4.7.7.261109195-x86_64.msi`); the `v4.7.6...v4.7.7` diff
+  (`96480d58...b750c43e`) leaves the CLI parser, settings store, MusicXML
+  preference defaults and converter exit codes below unchanged. In both
+  inspected tags, `-F` and `-R` request a settings reset, which clears the
+  settings store, and no configuration-folder option is registered. See
   [commandlineparser.cpp](https://github.com/musescore/MuseScore/blob/96480d58445e3b24b230a3fe7d4725d639aa2eb3/src/app/internal/commandlineparser.cpp#L456-L462),
   [settings.cpp](https://github.com/musescore/MuseScore/blob/96480d58445e3b24b230a3fe7d4725d639aa2eb3/src/framework/global/settings.cpp#L95-L117)
   and the [option list](https://github.com/musescore/MuseScore/blob/96480d58445e3b24b230a3fe7d4725d639aa2eb3/src/app/internal/commandlineparser.cpp#L66-L190).
@@ -1467,6 +1511,22 @@ Source findings, with the pinned sources they rely on:
   [musicxmlconfiguration.cpp](https://github.com/musescore/MuseScore/blob/96480d58445e3b24b230a3fe7d4725d639aa2eb3/src/importexport/musicxml/internal/musicxmlconfiguration.cpp#L33-L80).
   Conversion failures return nonzero codes; see
   [convertercodes.h](https://github.com/musescore/MuseScore/blob/96480d58445e3b24b230a3fe7d4725d639aa2eb3/src/converter/convertercodes.h#L27-L45).
+  Mutable-version recheck:
+    - **Trigger:** a formal W1 preflight records `source_verified_defaults: false`
+      (any MuseScore `4.x` version outside the inspected `4.7.6` and `4.7.7`
+      series).
+    - **Evaluator:** the run operator before publishing formal W1 results, and the
+      independent `research-evidence-review` reviewer on the results or protocol
+      carrier.
+    - **Action:** inspect `commandlineparser.cpp`, `settings.cpp`, `main.cpp`,
+      `musicxmlconfiguration.cpp` and `convertercodes.h` at the recorded MuseScore
+      release tag, and update this protocol and `SOURCE_VERIFIED_SERIES` if the
+      isolation behavior, settings location, exit codes or eight MusicXML defaults
+      remain valid or changed.
+    - **Fallback and required outcome:** until that source recheck passes
+      independent `research-evidence-review`, unset preference keys remain labeled
+      `assumed_v4_7_6_default`, the public report flags the unverified defaults,
+      and no public W1 acceptance claim may rely on that run.
 - PDMX v9 has the files and sizes used above and describes the
   `no_license_conflict` and `all_valid` subsets; see the
   [deposit](https://zenodo.org/records/15571083) and its

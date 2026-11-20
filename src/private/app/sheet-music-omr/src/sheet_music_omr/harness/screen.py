@@ -53,6 +53,7 @@ REASONS: tuple[str, ...] = (
     "bracket_dashes",
     "metronome",
     "beam_tuplet_span",
+    "octave_shift_span",
     "allowlist",
     "musicdiff_parse",
 )
@@ -84,6 +85,9 @@ REASON_TEXT: Mapping[str, str] = MappingProxyType(
         "bracket_dashes": "a bracket direction, or dashes that follow no words",
         "metronome": "a metronome without one q, h or e unit and per-minute",
         "beam_tuplet_span": "a beam or tuplet that stops outside its measure",
+        "octave_shift_span": (
+            "an unpaired, cross-staff or overlapping octave-shift span"
+        ),
         "allowlist": "a notation or direction variant that the format lacks",
         "musicdiff_parse": "musicdiff 6.0 does not parse the file within 300 s",
     }
@@ -848,6 +852,147 @@ def _count(
         spans[key] -= 1
 
 
+_OCTAVE_SHIFT_ENDS = frozenset({"up", "down", "stop"})
+
+
+def _first_overlapping_span(
+    spans: list[tuple[str, Fraction, Fraction, ET.Element]],
+) -> str | None:
+    """Return the first same-staff octave-shift overlap, if any."""
+    ordered = sorted(spans, key=lambda item: (item[0], item[1], item[2]))
+    for index, (staff, start, end, _) in enumerate(ordered):
+        for other_staff, other_start, other_end, other_measure in ordered[
+            index + 1 :
+        ]:
+            if other_staff != staff or other_start >= end:
+                break
+            if start < other_end:
+                return _at(
+                    other_measure,
+                    f"overlapping octave-shift spans on staff {staff}",
+                )
+    return None
+
+
+def _check_octave_shift_span(root: ET.Element) -> str | None:
+    """Check that octave-shift spans pair in order on one staff without overlap.
+
+    An ottava line starts with ``<S(>`` and ends with ``<S)>`` not before its
+    start on the same staff without reusing an open ``number``, and ottava
+    lines on one staff shall not overlap (format L615-617, L692-699).
+    """
+    endpoints: list[tuple[Fraction, int, int, str, str, str, ET.Element]] = []
+    for index, (
+        measure_index,
+        measure,
+        onset,
+        number,
+        staff,
+        kind,
+    ) in enumerate(_octave_shift_endpoints(root)):
+        if onset is None:
+            return _at(measure, "octave-shift at undecidable onset")
+        endpoints.append(
+            (onset, measure_index, index, number, staff, kind, measure)
+        )
+
+    open_starts: dict[str, tuple[ET.Element, str, Fraction]] = {}
+    spans: list[tuple[str, Fraction, Fraction, ET.Element]] = []
+    for onset, _, _, number, staff, kind, measure in sorted(endpoints):
+        if kind == "stop":
+            started = open_starts.pop(number, None)
+            if started is None or staff != started[1]:
+                reason = (
+                    f"octave-shift stop without start (number {number})"
+                    if started is None
+                    else "octave-shift stops on another staff"
+                )
+                return _at(measure, reason)
+            if onset <= started[2]:
+                return _at(measure, "octave-shift has non-positive span")
+            spans.append((staff, started[2], onset, started[0]))
+        elif number in open_starts:
+            return _at(measure, f"overlapping octave-shift number {number}")
+        else:
+            open_starts[number] = (measure, staff, onset)
+
+    if open_starts:
+        number, (start_measure, _, _) = next(iter(open_starts.items()))
+        return _at(start_measure, f"unclosed octave-shift number {number}")
+    return _first_overlapping_span(spans)
+
+
+def _direction_octave_shifts(
+    measure_index: int,
+    measure: ET.Element,
+    direction: ET.Element,
+    onset: Fraction | None,
+) -> Iterator[tuple[int, ET.Element, Fraction | None, str, str, str]]:
+    """Yield non-continue octave-shift marks inside one ``direction``."""
+    staff = _staff(direction)
+    for direction_type in direction.findall("direction-type"):
+        for mark in direction_type:
+            kind = _attr(mark, "type")
+            if mark.tag == "octave-shift" and kind in _OCTAVE_SHIFT_ENDS:
+                yield (
+                    measure_index,
+                    measure,
+                    onset,
+                    _attr(mark, "number", "1"),
+                    staff,
+                    kind,
+                )
+
+
+def _octave_shift_endpoints(
+    root: ET.Element,
+) -> Iterator[tuple[int, ET.Element, Fraction | None, str, str, str]]:
+    """Yield non-continue octave-shift marks with score onset in quarters."""
+    divisions: Fraction | None = None
+    measure_start: Fraction | None = Fraction(0)
+    for measure_index, measure in enumerate(_measures(root)):
+        position: Fraction | None = Fraction(0)
+        measure_length: Fraction | None = Fraction(0)
+        for child in measure:
+            if (
+                child.tag == "attributes"
+                and child.find("divisions") is not None
+            ):
+                divisions = _fraction(child.findtext("divisions"))
+                if divisions is not None and divisions <= 0:
+                    divisions = None
+            elif child.tag == "direction":
+                local = _shift(position, child, divisions, "offset")
+                onset = (
+                    None
+                    if measure_start is None or local is None
+                    else measure_start + local
+                )
+                yield from _direction_octave_shifts(
+                    measure_index, measure, child, onset
+                )
+            elif (
+                child.tag in {"note", "forward"}
+                and child.find("chord") is None
+                and child.find("grace") is None
+            ):
+                position = _shift(position, child, divisions, "duration")
+                measure_length = (
+                    None
+                    if measure_length is None or position is None
+                    else max(measure_length, position)
+                )
+            elif child.tag == "backup":
+                position = _shift(position, child, divisions, "duration", -1)
+                if position is not None and position < 0:
+                    position = Fraction(0)
+        measure_start = (
+            None
+            if measure_start is None or measure_length is None
+            else measure_start + measure_length
+        )
+
+
 def _check_allowlist(root: ET.Element) -> str | None:
     """Check that every notation and direction variant is in the allowlist."""
     first = next(_allowlist_faults(root), None)
@@ -1044,6 +1189,7 @@ _CHECKS: tuple[tuple[str, Callable[[ET.Element], str | None]], ...] = (
     ("bracket_dashes", _check_bracket_dashes),
     ("metronome", _check_metronome),
     ("beam_tuplet_span", _check_beam_tuplet_span),
+    ("octave_shift_span", _check_octave_shift_span),
     ("allowlist", _check_allowlist),
 )
 """The structural checks in the order of :data:`REASONS`, without musicdiff."""

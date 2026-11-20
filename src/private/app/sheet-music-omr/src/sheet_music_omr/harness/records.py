@@ -7,6 +7,7 @@ the run's confinement.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -26,6 +27,9 @@ RUN_RECORD = "run.json"
 
 PROJECT_DIR = Path(__file__).resolve().parents[3]
 """The ``sheet-music-omr`` project directory."""
+
+CODE_PATHS: tuple[str, ...] = ("pyproject.toml", "src", "tests")
+"""Project-relative paths whose git tree defines the converter/harness code."""
 
 type Git = Callable[[Sequence[str]], str]
 
@@ -121,17 +125,43 @@ def repository_root(start: Path = PROJECT_DIR) -> Path | None:
     return None
 
 
+def worktree_roots(start: Path = PROJECT_DIR) -> tuple[Path, ...]:
+    """Return every git worktree root known for ``start``."""
+    root = repository_root(start)
+    if root is None:
+        return ()
+    roots: list[Path] = [root.resolve()]
+    try:
+        completed = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],  # noqa: S607
+            cwd=root,
+            capture_output=True,
+            check=True,
+            text=True,
+            env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
+        )
+    except OSError, subprocess.CalledProcessError:
+        return tuple(roots)
+    for line in completed.stdout.splitlines():
+        if line.startswith("worktree "):
+            candidate = Path(line.removeprefix("worktree ").strip()).resolve()
+            if candidate not in roots:
+                roots.append(candidate)
+    return tuple(roots)
+
+
 def check_outside_repository(*directories: Path) -> None:
-    """Check that the run and download directories are outside the repository.
+    """Check that the run and download directories are outside all worktrees.
 
     Raises:
-        StopConditionError: If one of them lies inside it.
+        StopConditionError: If one of them lies inside a repository worktree.
     """
-    root = repository_root()
-    if root is None:
+    roots = worktree_roots()
+    if not roots:
         return
     for directory in directories:
-        if directory.resolve().is_relative_to(root.resolve()):
+        resolved = directory.resolve()
+        if any(resolved.is_relative_to(root) for root in roots):
             message = "the run and download directories must be outside the "
             message += "repository"
             raise StopConditionError(message)
@@ -159,11 +189,14 @@ def run_git(arguments: Sequence[str]) -> str:
 
 
 def source_state(git: Git = run_git) -> dict[str, object]:
-    """Return the converter and harness commit and the project's dirty flag.
+    """Return the commit, converter/harness code-tree hash and dirty flag.
 
-    The converters and the harness are in one project, so one commit names
-    both.
+    ``commit`` records ``HEAD`` as provenance; ``tree`` hashes the tracked git
+    tree of ``pyproject.toml``, ``src`` and ``tests`` in ``PROJECT_DIR``; and
+    ``dirty`` reports uncommitted changes under those code paths.
     """
     commit = git(["rev-parse", "HEAD"]).strip()
-    status = git(["status", "--porcelain", "--", str(PROJECT_DIR)])
-    return {"commit": commit, "dirty": bool(status.strip())}
+    listing = git(["ls-tree", "HEAD", "--", *CODE_PATHS])
+    tree = hashlib.sha256(listing.encode("utf-8")).hexdigest()
+    status = git(["status", "--porcelain", "--", *CODE_PATHS])
+    return {"commit": commit, "tree": tree, "dirty": bool(status.strip())}

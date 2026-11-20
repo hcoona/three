@@ -3,11 +3,11 @@
 ## Authority and purpose
 
 Read this page before changing `src/private/app/sheet-music-omr/` or running its
-measurement harness. It owns change routing, the current W1 pause and
-external-state boundaries, and ordered resumption gates; it is not a second
-requirements record, format specification, comparison protocol, or
-work-authorization file. The [project portal](../README.md) owns purpose, user
-context, command-line usage, and top-level record routing.
+measurement harness. It owns change routing, prior formal-run and external-state
+boundaries, and ordered execution gates; it is not a second requirements record,
+format specification, comparison protocol, or work-authorization file. The
+[project portal](../README.md) owns purpose, user context, command-line usage,
+and top-level record routing.
 
 The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) is the sole
 positive work authority ([Issue #686](https://github.com/hcoona/three/issues/686)
@@ -121,10 +121,10 @@ The following pre-execution artifacts and open obligations are recorded on
   [Validation basis](requirements.md#validation-basis)) have not yet been
   protocol-reviewed or executed.
 
-## Paused formal-run state and stop boundary
+## Prior formal-run state and resumption boundary
 
 Two formal harness attempts ran on Windows x64 at clean `main` commit
-`397b306f27cf51e15f58d44f5b67c1c0626f1ade` before the repository owner paused W1:
+`397b306f27cf51e15f58d44f5b67c1c0626f1ade` before workstation transition:
 
 1. **`formal-1` (stopped in `preflight`):** runtime observation. `preflight`
    stopped with `PreflightError: calibration failed` (`No module named pytest`)
@@ -160,36 +160,45 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
    MusicXML after annotation. Excluding overlapping same-staff octave shifts in
    the screen changes the accepted sample rule and requires an owner-approved,
    independently reviewed protocol amendment with calibration coverage.
-4. **Active owner pause disposition:** in
-   [#1488 comment 6729151812](https://github.com/hcoona/three/issues/1488#issuecomment-6729151812),
-   the repository owner paused W1. While that pause holds:
+4. **Resumed execution status, preserved external runs, and protocol routing:**
+   W1 formal execution was paused in
+   [#1488 comment 6729151812](https://github.com/hcoona/three/issues/1488#issuecomment-6729151812)
+   during workstation transition and resumed by the repository owner in
+   [#1488 comment 7029347075](https://github.com/hcoona/three/issues/1488#issuecomment-7029347075).
+   When executing on the active Windows + WSL2 workstation:
     - preserve the external `formal-1` and `formal-2` run directories and their
-      partial selection and ledger files;
-    - do not manually skip the stopping PDMX candidate, execute further corpus
-      or gold conversions, or draft a protocol amendment without owner
-      resumption.
+      partial selection and ledger artifacts intact (on the prior workstation or
+      in their archived copies); never overwrite them or manually edit run
+      artifacts to skip a stopping file;
+    - follow the [comparison protocol](comparison-protocol.md) for the updated
+      [MuseScore 4.x provenance and WSL2/host isolation](comparison-protocol.md#tools-and-environment),
+      [octave-shift span screening](comparison-protocol.md#structural-scope-screen),
+      [code-tree binding, shared ledger, resumable selection, and split baseline steps](comparison-protocol.md#execution-and-bounds),
+      and [stop conditions](comparison-protocol.md#stop-conditions);
+    - run formal corpus/gold execution (`formal-3`) only from a clean
+      `origin/main` checkout after the accepted protocol and Wave baseline are
+      present on `main`; read-only local preparation of the `OMR-REQ-012`
+      toolchain-class finding set may proceed in parallel under the accepted W1
+      Wave entry.
 
 ## External state, privacy and worktree hygiene
 
 - **External run and download directories:** `harness/records.py:check_outside_repository`
-  enforces that `RUN` and `DOWNLOADS` lie outside the active repository checkout
-  root (`repository_root()`); as an operator rule, keep them outside every local
-  worktree as well. Never commit downloaded corpora, MuseScore scratch files, or
-  run outputs
+  enforces that `RUN` and `DOWNLOADS` lie outside every local git worktree, and
+  `cli.py` serializes mutating commands per run directory via `RUN/.run.lock`
+  ([Execution and bounds](comparison-protocol.md#execution-and-bounds)). Never
+  commit downloaded corpora, MuseScore scratch files, or run outputs
   ([OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance)).
-  Carry forward the cumulative byte total (`2,343,244,452` bytes as of
-  `formal-2`, plus any later downloads) via `--prior-total` and `--basis`
-  whenever initializing a new run directory.
-- **Commit and project-cleanliness preflight binding:** `harness/cli.py:_require_preflight`
-  guards `select` and `run` (`report` reads recorded run outputs without
-  re-checking `HEAD`) by verifying via `harness/records.py:source_state` that
-  repository `HEAD` (`git rev-parse HEAD`) matches the commit recorded in
-  `preflight` and `src/private/app/sheet-music-omr` has no uncommitted changes.
-  Any new commit merged to `main`—even outside `src/private/app/sheet-music-omr`—changes
-  `HEAD` and invalidates reusing an earlier run directory for `select` or `run`;
-  as an operator rule, run from a fully clean repository worktree and start
-  resumed runs in a fresh external run directory (`formal-3` or later) while
-  keeping `formal-1` and `formal-2` intact.
+  When initializing a newly created `DOWNLOADS` directory that has no shared
+  `download-ledger.json` yet, pass `--prior-total 2343244452` (plus any later W1
+  downloads) and `--basis` on the first `preflight` or `download`.
+- **Code-tree and MuseScore provenance binding:** `harness/cli.py:_require_preflight`
+  and `harness/run.py:begin_run` enforce the clean project code-tree (`CODE_PATHS`)
+  and per-run MuseScore identity invariants defined in
+  [Tools and environment](comparison-protocol.md#tools-and-environment) and
+  [Execution and bounds](comparison-protocol.md#execution-and-bounds). Start
+  resumed formal runs in a fresh external run directory (`formal-3` or later)
+  while keeping `formal-1` and `formal-2` untouched.
 - **Private gold boundary (`OMR-REQ-015`):** read private gold inputs locally
   and read-only. Keep `RUN/gold/mapping.json` (`harness/privacy.py:GOLD_MAPPING`)
   confined to the local external run directory. Never commit, log, or publish
@@ -203,25 +212,26 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   `TextScore2.csproj` normalizer prototype (superseded by the Python package in
   `#1570`–`#1609`).
 
-## Resumption gates when W1 unpauses
+## Execution gates when external artifacts are staged
 
-When the repository owner explicitly lifts the pause in
-[#1488](https://github.com/hcoona/three/issues/1488#issuecomment-6729151812),
+With out-of-repository `GOLD` (`--gold-status` and `--gold-cache`), `DOWNLOADS`
+(restored from the previous machine or initialized with `--prior-total
+2343244452`), and the `OMR-REQ-012` desk-study archive staged outside OneDrive
+and outside all repository worktrees (resumed in
+[#1488 comment 7029347075](https://github.com/hcoona/three/issues/1488#issuecomment-7029347075)),
 execute these steps in order:
 
-1. **Resolve the overlapping-ottava stop rule with the owner:** obtain the
-   owner's decision on how the protocol should treat public candidates with
-   overlapping same-staff `octave-shift` spans (for example, amending the
-   [structural scope screen](comparison-protocol.md#structural-scope-screen)
-   versus another reviewed protocol disposition). Never bypass a stop by editing
-   run artifacts or skipping files manually.
-2. **Merge any required protocol and screen/calibration PR first:** if the
-   sample or comparison rule changes, update `comparison-protocol.md`, matching
-   code, and calibration fixtures together; pass independent
-   `record-system-review`, `research-evidence-review`, code review,
-   [GOV-011](../../../../../docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)
-   triage, and CI; and merge to `origin/main` before starting formal preflight.
-3. **Run preflight in a fresh external run directory on clean `main`:**
+1. **Confirm clean code baseline on `main`:** ensure the protocol and harness
+   updates are merged to `origin/main` and `src/private/app/sheet-music-omr/`
+   has a clean code tree. Never bypass a stop by editing run artifacts or
+   skipping files manually.
+2. **Verify host MuseScore 4 availability (Windows or WSL2):** confirm Windows
+   host `MuseScore4.exe` (`4.x`) is reachable (default
+   `C:\Program Files\MuseScore 4\bin\MuseScore4.exe` or
+   `/mnt/c/Program Files/MuseScore 4/bin/MuseScore4.exe`, or pass `--musescore`
+   / `--settings`). An absent `MuseScore4.ini` on a fresh installation is
+   valid and uses the eight source defaults.
+3. **Run preflight in a fresh external run directory:**
 
     ```powershell
     uv run --package sheet-music-omr --group dev `
@@ -231,20 +241,26 @@ execute these steps in order:
       --basis "Carried forward from formal-1/formal-2 (#1488 comment 6728507174)"
     ```
 
+    (Omit `--prior-total` and `--basis` if `DOWNLOADS/download-ledger.json` is
+    already present.)
+
 4. **Complete selection and publish the manifest before conversion:** run
-   `select` and post the complete protocol-conforming selection list (up to 200
-   PDMX files and 50 Lieder extracts, or all passing candidates with the smaller
-   count reported when fewer pass;
+   `download` (reusing verified local archives at 0 network bytes when copied
+   from the prior machine) and `select` (resumable across interruptions via
+   `selection/*.progress.json`), then post the complete protocol-conforming
+   selection list (up to 200 PDMX files and 50 Lieder extracts, or all passing
+   candidates with the smaller count reported when fewer pass;
    [Selection before conversion](comparison-protocol.md#selection-before-conversion))
    to `#1488` before invoking `run`. Before relying on heading results, also
    settle any open check in
    [Evidence limits and open checks](comparison-protocol.md#evidence-limits-and-open-checks)
    (such as `credit` elements without a `credit-type` on the selected files).
-5. **Run all arms on the single preflighted commit:** execute `run` and `report`
-   across PDMX, Lieder, their MuseScore `R(X)` re-exports, the `X`/`R(X)`
-   baselines, and read-only local gold (including the gold system-assembly
-   test). Confirm the MuseScore settings SHA-256 remains unchanged and surface
-   any 300-second worker timeouts or excluded reference voices for owner review.
+5. **Run all arms on the calibrated code tree and MuseScore build:** execute
+   `run` and `report` across PDMX, Lieder, their MuseScore `R(X)` re-exports,
+   the `X`/`R(X)` baselines, and read-only local gold (including the gold
+   system-assembly test). Confirm the eight MusicXML preferences and MuseScore
+   binary hash remain unchanged and surface any 300-second worker timeouts or
+   excluded reference voices for owner review.
 6. **Triage differences, review independently, and support owner spot-check:**
    classify every counted difference and failure type under the pre-posted
    [source triage method](https://github.com/hcoona/three/issues/1488#issuecomment-6721091552)
