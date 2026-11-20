@@ -125,6 +125,47 @@ consumes the implemented group under ordinary changed-code Windows qualification
 in [PR #1054](https://github.com/hcoona/three/pull/1054). The following contract governs
 changes to this operation.
 
+### MSBuild API and Native Host Roles
+
+Compile the application and its tests against one coherent official packaged
+`Microsoft.Build`, `Microsoft.Build.Framework` and `Microsoft.Build.Utilities.Core`
+API cohort, not the active compiler SDK's `MSBuildBinPath` assemblies. CPM owns the
+selected versions. The API floor must support the application's
+`CurrentTargetFramework` and must not require a later MSBuild major/minor than the
+least native endpoint required by this operation. This separates compiler SDK
+upgrades from application runtime requirements without an SDK-version allowlist.
+
+The inspected [Microsoft.Build 18.9.6 metadata](https://api.nuget.org/v3-flatcontainer/microsoft.build/18.9.6/microsoft.build.nuspec),
+[Framework metadata](https://api.nuget.org/v3-flatcontainer/microsoft.build.framework/18.9.6/microsoft.build.framework.nuspec)
+and [Utilities metadata](https://api.nuget.org/v3-flatcontainer/microsoft.build.utilities.core/18.9.6/microsoft.build.utilities.core.nuspec)
+provide `net10.0` assets from MSBuild commit
+`b0e826c1f29e30dfe49535b4194f960cafbc3510`. This is the packaged API source basis,
+not evidence that a different endpoint SDK has been qualified.
+
+The application has two runtime roles. Its standalone controller uses official
+`CommandLineBuilder` and `ProjectCollection.Escape` APIs to construct native
+commands; it does not evaluate projects in process. Keep the required API runtime
+assets, dependency metadata and runtime configuration in its complete transferred
+output. Treating it as a pure task and excluding all MSBuild runtime assets would
+break that controller.
+[Locator guidance for hosting MSBuild](https://github.com/MicrosoftDocs/visualstudio-docs/blob/653cd6e4ffe7e1ff69ba2c4eade3c29ed49a4336/docs/msbuild/find-and-use-msbuild-versions.md#L14-L38)
+does not introduce another resolver here.
+
+When that same assembly runs as a task, the endpoint-selected native MSBuild
+owns the engine, Framework and Utilities assemblies. The inspected
+[18.9.6 task loader](https://github.com/dotnet/msbuild/blob/b0e826c1f29e30dfe49535b4194f960cafbc3510/src/Framework/Loader/MSBuildLoadContext.cs#L26-L59)
+shares those well-known assemblies with the default load context rather than
+selecting their private application copies. Preserve native loading; do not
+replace it with an application resolver or infer runtime identity from a package
+version. Keep the existing application TFMs and ordinary SDK/runtime preparation.
+
+Before an API-cohort or required-endpoint SDK change, the .NET integration reviewer
+rechecks the package TFM/API floor and native loading contract. Qualify the actual
+standalone controller, complete output transfer, basis and candidate native task
+operations, resolved assembly identities and official NBGV binding. Unavailable
+required capabilities or observed mismatches stop adoption and return to this
+contract's review; source inspection alone cannot satisfy that qualification.
+
 ### Native Process and Endpoint Facts
 
 Build the candidate private application completely before task use. Its native
@@ -590,9 +631,10 @@ and missing/failed/cancelled results. Transfer native package properties needed
 by the consumer, omitting checkout-specific physical paths.
 
 Use the coherent official packaged NuGet 8.0.0 group: Commands, Protocol,
-Configuration, ProjectModel, Packaging, Versioning and Frameworks. Replace their
-SDK assembly references together; retain the selected SDK's Microsoft.Build
-references separately. Resolve Newtonsoft.Json through the official package
+Configuration, ProjectModel, Packaging, Versioning and Frameworks. Resolve all
+seven through official package references, separately from the
+[MSBuild API and native host roles](#msbuild-api-and-native-host-roles).
+Resolve Newtonsoft.Json through the official package
 graph rather than a second NBGV task-directory copy source; retain official NBGV.
 The [publisher source basis](../research/nuget-native-publisher.md#client-distribution-selection)
 explains this selection. Verify resolved package and output assembly identities,
