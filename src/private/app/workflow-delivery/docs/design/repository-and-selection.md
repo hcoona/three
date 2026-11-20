@@ -268,8 +268,9 @@ root input of the Python caller:
   that endpoint has one.
 - **Retained-job scope** (`Repository/CiScope.cs`): fixed path lists decide which
   retained CI jobs apply and give each changed coordinate a responsibility row.
-  `AllInputs` (the CI workflow, control bootstrap script, `mise.toml` and
-  `mise.lock`) applies every retained job; `PythonInputs` (root Python
+  `AllInputs` (the CI workflow, control bootstrap and locked-tool reader,
+  root mise configuration and the repository framework profile/lock) applies
+  every retained job; `PythonInputs` (root Python
   configuration, lock and Python CI scripts) and `RubyInputs` add their
   caller and special-job responsibilities. Renovate's configuration, workflow,
   isolated npm project, shared setup and locked-tool reader select its retained

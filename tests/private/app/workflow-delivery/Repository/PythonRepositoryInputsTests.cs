@@ -199,6 +199,8 @@ public sealed class PythonRepositoryInputsTests
             endpoint.Projects, endpoint.Targets, []);
         foreach (string path in new[] { "uv.lock", "mise.toml", "pytest.ini", "uv.toml",
                      ".github/workflows/ci.yml", "eng/scripts/test-python.sh",
+                     "eng/scripts/locked_tool_versions.py",
+                     "eng/dotnet-frameworks/mise.toml", "eng/dotnet-frameworks/mise.lock",
                      "src/private/app/workflow-delivery/CI/Callers/PythonCiCaller.cs" })
             Owners(bindings, path, "pytest:src/tableless/tests", "pytest:tests/standalone.py");
         Assert.DoesNotContain("tests/other.py", bindings.Select(binding => binding.Path));
@@ -244,7 +246,6 @@ public sealed class PythonRepositoryInputsTests
         ".github/workflows/workflow-delivery-v3-npm-release.yml")]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/workflow_delivery_v3_hk.py")]
-    [DataRow("tests/eng/test_other.py", "eng/scripts/locked_tool_versions.py")]
     [DataRow("tests/eng/test_node_release_schedule.py",
         "eng/scripts/update_node_release_schedule.py")]
     [DataRow("tests/eng/test_node_release_schedule.py", "eng/node-release-schedule.json")]
