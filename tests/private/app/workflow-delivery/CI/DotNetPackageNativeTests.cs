@@ -186,7 +186,9 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                     if (!native.Succeeded)
                         throw new InvalidDataException("Native enabled dependency restore failed.");
                     return native;
-                }, context.CancellationToken));
+                }, context.CancellationToken, new(
+                    "net" + Version.Parse(fixture.Values["NETCoreSdkVersion"]).Major + ".0",
+                    $"\"{DotNetPackageConsumer.Marker}\"", DotNetPackageConsumer.Marker, false)));
         NativeCommandResult restore = Assert.ContainsSingle(observations);
         Assert.IsTrue(restore.Succeeded, "The native sensitivity restore must succeed.");
         Assert.Contains("source count", failure.Message);
@@ -244,10 +246,12 @@ public sealed class DotNetPackageNativeTests(TestContext context)
             fixture.Candidate,
             fixture.ProjectSha256,
             fixture.CandidateCommitText,
+            fixture.SnapshotInputs,
             Native = fixture.Native,
             Label = label,
             OriginalArchives = archives,
-            Scope = "Current product project bytes in an isolated clean fixture commit; " +
+            Scope = "Current product and consumed repository inputs in an isolated clean " +
+                "fixture commit, with a fixture-only narrowed traversal for graph discovery; " +
                 "no source-worktree commit."
         }));
         context.AddResultFile(binding);
@@ -256,7 +260,8 @@ public sealed class DotNetPackageNativeTests(TestContext context)
 
     private sealed class ProductFixture(string checkout, string scratch, CiPlan plan,
         Dictionary<string, string> native, string sourceRevision, string projectSha256,
-        string candidateCommitText, DotNetGraphNode? discoveredNode = null) : IDisposable
+        string candidateCommitText, Dictionary<string, string> snapshotInputs,
+        DotNetGraphNode? discoveredNode = null) : IDisposable
     {
         internal string Checkout { get; } = checkout;
         internal string Scratch { get; } = scratch;
@@ -266,6 +271,7 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         internal string Candidate => Plan.Candidate;
         internal string ProjectSha256 { get; } = projectSha256;
         internal string CandidateCommitText { get; } = candidateCommitText;
+        internal Dictionary<string, string> SnapshotInputs { get; } = snapshotInputs;
         internal DotNetGraphNode? DiscoveredNode { get; } = discoveredNode;
         private static readonly string[] GraphRestoreProperties = ["-property:Configuration=Debug",
             "-property:ContinuousIntegrationBuild=true"];
@@ -296,22 +302,25 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                 DotNetNativeFixture.RequireSuccess(checkoutResult,
                     "Fixture git " + string.Join(' ', checkoutArguments) + " in " + checkout);
                 string sourceRevision = revision.Commit;
-                byte[] projectBytes = await File.ReadAllBytesAsync(
-                    Path.Combine(source, Project), token);
-                string projectSha256 = Convert.ToHexStringLower(SHA256.HashData(projectBytes));
-                await File.WriteAllBytesAsync(Path.Combine(checkout, Project), projectBytes, token);
-                var paths = new List<string> { Project };
+                string[] paths = revision.Entries.Select(entry => entry.Path).Where(path =>
+                    DotNetInheritedInputs.Consumes(path,
+                        [DotNetRepositoryReader.Parent(Project)])).ToArray();
+                foreach (string path in paths)
+                    await File.WriteAllBytesAsync(Path.Combine(checkout, path),
+                        await File.ReadAllBytesAsync(Path.Combine(source, path), token), token);
                 if (discoverGraph)
                 {
                     await File.WriteAllTextAsync(Path.Combine(checkout, "dirs.proj"), $"""
                         <Project><ItemGroup><ProjectReference Include="{Project}" />
                         </ItemGroup></Project>
                         """, token);
-                    paths.Add("dirs.proj");
                 }
+                var snapshotInputs = new Dictionary<string, string>(StringComparer.Ordinal);
                 // Like the existing GitFixture, only this disposable clone creates fixture objects.
                 foreach (string path in paths)
                 {
+                    snapshotInputs.Add(path, Convert.ToHexStringLower(SHA256.HashData(
+                        await File.ReadAllBytesAsync(Path.Combine(checkout, path), token))));
                     string blob = (await NativeProcess.RunAsync("git", checkout,
                         ["hash-object", "--no-filters", "-w", "--", path], token)).Trim();
                     await NativeProcess.RunAsync("git", checkout,
@@ -375,8 +384,8 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                     new(checkout, projection, 60), token);
                 Dictionary<string, string> native = DotNetPackageChecks.Read(plan.Checks[0].Work,
                     checkout, unit).Values;
-                return new(checkout, scratch, plan, native, sourceRevision, projectSha256,
-                    candidateCommitText, discoverGraph ? node : null);
+                return new(checkout, scratch, plan, native, sourceRevision, snapshotInputs[Project],
+                    candidateCommitText, snapshotInputs, discoverGraph ? node : null);
             }
             catch { Cleanup(scratch); throw; }
         }
