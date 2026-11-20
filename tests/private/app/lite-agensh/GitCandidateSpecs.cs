@@ -838,7 +838,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 "worktrees",
                 "candidate-" + requestId.ToString(CultureInfo.InvariantCulture)
             );
-            processing = state.Operations.ProcessPendingAsync(cancellation.Token);
+            processing = Task.Run(() => state.Operations.ProcessPendingAsync(cancellation.Token));
             // Actual helper readiness is the ordering witness, never elapsed time or stdout
             // polling.
             OwnedChildIdentity identity = await control
@@ -1249,7 +1249,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         await state.ReviewAsync("worker2", change, token).ConfigureAwait(false);
         JsonObject queued = await state.QueueAsync(change, token).ConfigureAwait(false);
         long requestId = queued["requestId"]!.GetValue<long>();
-        Task processing = state.Operations.ProcessPendingAsync(cancellation.Token);
+        Task processing = Task.Run(() => state.Operations.ProcessPendingAsync(cancellation.Token));
         Exception? primary = null;
         bool producerJoined = false;
         ExceptionDispatchInfo? producerCleanupFailure = null;
@@ -1391,7 +1391,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         await state.ReviewAsync("worker2", change, token).ConfigureAwait(false);
         JsonObject queued = await state.QueueAsync(change, token).ConfigureAwait(false);
         long requestId = queued["requestId"]!.GetValue<long>();
-        Task processing = state.Operations.ProcessPendingAsync(cancellation.Token);
+        Task processing = Task.Run(() => state.Operations.ProcessPendingAsync(cancellation.Token));
         Exception? primary = null;
         bool producerJoined = false;
         ExceptionDispatchInfo? producerCleanupFailure = null;
