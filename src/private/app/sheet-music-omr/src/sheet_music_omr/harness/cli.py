@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -27,8 +28,8 @@ from sheet_music_omr.harness.downloads import (
 )
 from sheet_music_omr.harness.gold import load_gold
 from sheet_music_omr.harness.musescore import (
-    DEFAULT_EXECUTABLE,
     MuseScore,
+    preference_values,
     registry_version,
     run_command,
 )
@@ -114,7 +115,7 @@ class Dependencies:
     steps: Mapping[str, Callable[..., object]] = field(
         default_factory=lambda: dict(default_steps.STEPS),
     )
-    executable: Path = DEFAULT_EXECUTABLE
+    executable: Path | None = None
     settings: Path | None = None
 
 
@@ -135,17 +136,24 @@ def _parser() -> argparse.ArgumentParser:
         sub.add_argument("--prior-total", type=int, default=None)
         sub.add_argument("--basis", default=None)
 
+    def musescore_options(sub: argparse.ArgumentParser) -> None:
+        sub.add_argument("--musescore", type=Path, default=None)
+        sub.add_argument("--settings", type=Path, default=None)
+
     sub = command("preflight", "Record versions and run calibration.")
     ledger(sub)
+    musescore_options(sub)
     sub = command("download", "Download PDMX and OpenScore Lieder.")
     ledger(sub)
     sub = command("select", "Select the PDMX and Lieder samples.")
+    musescore_options(sub)
     sub.add_argument(
         "--corpus",
         choices=("pdmx", "lieder", "all"),
         default="all",
     )
     sub = command("run", "Run every arm, the baseline and assembly test.")
+    musescore_options(sub)
     sub.add_argument("--gold-status", type=Path, required=True)
     sub.add_argument("--gold-cache", type=Path, required=True)
     sub.add_argument("--jobs", type=int, default=1)
@@ -155,8 +163,7 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_argument("--arm", default=None)
     sub.add_argument("--measure", type=int, default=None)
     sub = command("pilot", "Run the whole pipeline on repository fixtures.")
-    sub.add_argument("--musescore", type=Path, default=None)
-    sub.add_argument("--settings", type=Path, default=None)
+    musescore_options(sub)
     sub.add_argument("--fixtures", type=Path, nargs="+", default=None)
     sub.add_argument("--jobs", type=int, default=1)
     sub.add_argument("--skip-calibration", action="store_true")
@@ -183,6 +190,25 @@ def main(
         print(f"stop: {error}", file=sys.stderr)  # noqa: T201
         return STOP_STATUS
     handler = _HANDLERS[arguments.command]
+    try:
+        lock_context = (
+            nullcontext()
+            if arguments.command == "view"
+            else confinement.lock(confinement.run / ".run.lock", blocking=False)
+        )
+        with lock_context:
+            return _dispatch(handler, arguments, confinement, effects)
+    except StopConditionError as error:
+        print(f"stop: {error}", file=sys.stderr)  # noqa: T201
+        return STOP_STATUS
+
+
+def _dispatch(
+    handler: Callable[[argparse.Namespace, Confinement, Dependencies], None],
+    arguments: argparse.Namespace,
+    confinement: Confinement,
+    effects: Dependencies,
+) -> int:
     try:
         handler(arguments, confinement, effects)
     except StopConditionError as error:
@@ -224,7 +250,12 @@ def _preflight(
 ) -> None:
     preflight(
         confinement,
-        _musescore(confinement, effects),
+        _musescore(
+            confinement,
+            effects,
+            executable=arguments.musescore,
+            settings=arguments.settings,
+        ),
         prior_total=arguments.prior_total,
         basis=arguments.basis,
         calibrate=effects.calibrate,
@@ -238,13 +269,17 @@ def _require_preflight(
 ) -> dict[str, object]:
     """Check that the run's preflight calibrated the instrument used now.
 
+    Unrelated commits outside the project's code paths (or docs-only commits)
+    do not invalidate a calibrated run when the project's clean code tree is
+    unchanged.
+
     Returns:
         The preflight record.
 
     Raises:
         PreflightError: If the calibration has not passed, the recorded or
-            current commit differs or is dirty, or a recorded tool version
-            differs from the current one.
+            current project code tree differs or is dirty, or a recorded tool
+            version differs from the current one.
     """
     record = load_run_record(confinement).get("preflight")
     preflight = record if isinstance(record, dict) else {}
@@ -260,10 +295,21 @@ def _require_preflight(
     if current["dirty"]:
         message = "the project source has uncommitted changes"
         raise PreflightError(message)
-    if not isinstance(recorded, dict) or recorded != current:
+    if not isinstance(recorded, dict) or recorded.get("dirty"):
         message = (
-            "the preflight's commit is not the current clean commit; run a "
-            "new preflight in a new run directory"
+            "the preflight's project code tree was not clean; run a new "
+            "preflight in a new run directory"
+        )
+        raise PreflightError(message)
+    same_code = (
+        recorded.get("tree") == current["tree"]
+        if recorded.get("tree") is not None
+        else recorded.get("commit") == current["commit"]
+    )
+    if not same_code:
+        message = (
+            "the preflight's project code tree differs from the current "
+            "clean tree; run a new preflight in a new run directory"
         )
         raise PreflightError(message)
     if preflight.get("versions") != tool_versions():
@@ -273,6 +319,7 @@ def _require_preflight(
 
 
 def _formal_musescore(
+    arguments: argparse.Namespace,
     confinement: Confinement,
     effects: Dependencies,
     preflight: Mapping[str, object],
@@ -280,17 +327,30 @@ def _formal_musescore(
     """Open MuseScore and check it against the preflight's record.
 
     Raises:
-        PreflightError: If the version or settings hash differs from the
-            preflight's.
+        PreflightError: If the version, executable hash, or 8 MusicXML
+            preferences differ from the preflight's.
     """
-    musescore = _musescore(confinement, effects)
+    musescore = _musescore(
+        confinement,
+        effects,
+        executable=arguments.musescore,
+        settings=arguments.settings,
+    )
     recorded = preflight.get("musescore")
     recorded = recorded if isinstance(recorded, dict) else {}
     if recorded.get("version") != musescore.version:
         message = "the MuseScore version differs from the preflight's"
         raise PreflightError(message)
-    if recorded.get("settings_sha256") != musescore.baseline:
-        message = "the MuseScore settings hash differs from the preflight's"
+    if recorded.get("executable_sha256") != musescore.executable_sha256:
+        message = "the MuseScore executable hash differs from the preflight's"
+        raise PreflightError(message)
+    recorded_preferences = recorded.get("preferences")
+    if not isinstance(recorded_preferences, dict) or preference_values(
+        recorded_preferences
+    ) != preference_values(musescore.preferences()):
+        message = (
+            "the MuseScore MusicXML preferences differ from the preflight's"
+        )
         raise PreflightError(message)
     return musescore
 
@@ -325,14 +385,20 @@ def _select(
     effects: Dependencies,
 ) -> None:
     musescore = _formal_musescore(
-        confinement, effects, _require_preflight(confinement, effects)
+        arguments,
+        confinement,
+        effects,
+        _require_preflight(confinement, effects),
     )
     corpora = (
         PUBLIC_CORPORA if arguments.corpus == "all" else (arguments.corpus,)
     )
     executor = effects.executor(confinement.temp, 1)
     try:
-        if "pdmx" in corpora:
+        if (
+            "pdmx" in corpora
+            and not selection_path(confinement, "pdmx").exists()
+        ):
             select_pdmx(
                 _download_path(confinement, PDMX_CSV.name),
                 _download_path(confinement, PDMX_MXL.name),
@@ -340,7 +406,10 @@ def _select(
                 executor=executor,
                 parse_check=effects.steps["parse_check"],
             )
-        if "lieder" in corpora:
+        if (
+            "lieder" in corpora
+            and not selection_path(confinement, "lieder").exists()
+        ):
             select_lieder(
                 _download_path(confinement, LIEDER_ZIP.name),
                 confinement=confinement,
@@ -429,7 +498,10 @@ def _run(
     effects: Dependencies,
 ) -> None:
     musescore = _formal_musescore(
-        confinement, effects, _require_preflight(confinement, effects)
+        arguments,
+        confinement,
+        effects,
+        _require_preflight(confinement, effects),
     )
     source = source_state(effects.git)
     if not (confinement.run / "selection" / "selection.md").exists():

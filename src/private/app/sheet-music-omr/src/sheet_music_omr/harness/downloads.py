@@ -20,6 +20,7 @@ import http.client
 import json
 import re
 import urllib.request
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final, TypeGuard
@@ -28,7 +29,7 @@ from urllib.parse import quote
 from sheet_music_omr.harness.stops import StopConditionError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator
+    from collections.abc import Callable, Generator, Iterable, Iterator
     from pathlib import Path
 
     from sheet_music_omr.harness.confine import Confinement
@@ -47,6 +48,9 @@ USER_AGENT: Final = "sheet-music-omr-harness/1 (W1 round-trip measurement)"
 
 LEDGER_FORMAT: Final = "w1-download-ledger-v1"
 """The format tag of the ledger file."""
+
+DOWNLOAD_LOCK_NAME: Final = ".downloads.lock"
+"""The lock file in the download directory serializing shared ledger updates."""
 
 _RECORD = re.compile(r"[0-9]+")
 _MD5 = re.compile(r"[0-9a-f]{32}")
@@ -169,12 +173,13 @@ class LedgerEntry:
 
 
 class Ledger:
-    """The download ledger of a run, kept as a JSON file in the run directory.
+    """The W1 download ledger, stored in confinement and optionally mirrored.
 
     Attributes:
-        path: The ledger file.
+        path: The primary ledger file (shared download dir or run dir).
         prior_total: The W1 cumulative download total before this ledger.
         basis: How the prior total was established.
+        mirror: Optional run-directory mirror updated alongside ``path``.
     """
 
     def __init__(
@@ -183,12 +188,15 @@ class Ledger:
         prior_total: int,
         basis: str,
         entries: Iterable[LedgerEntry] = (),
+        *,
+        mirror: Path | None = None,
     ) -> None:
         """Hold a ledger; use :meth:`create` or :meth:`load` to obtain one."""
         self.path = path
         self.prior_total = prior_total
         self.basis = basis
         self._entries = tuple(entries)
+        self.mirror = mirror
 
     @classmethod
     def create(
@@ -198,25 +206,18 @@ class Ledger:
         prior_total: int,
         basis: str,
         confinement: Confinement,
+        mirror: Path | None = None,
     ) -> Ledger:
-        """Start a ledger file in the run directory and return it.
-
-        Args:
-            path: The ledger file, which must lie in the run directory and
-                must not exist.
-            prior_total: The W1 cumulative download total so far, in bytes.
-            basis: A statement of how the prior total was established, such
-                as whether it is a stated allowance or an inference.
-            confinement: The run's write confinement.
+        """Start a confined ledger file (and optional mirror) and return it.
 
         Raises:
-            LedgerError: If the file exists, lies outside the run directory or
-                the prior total or basis is malformed.
+            ConfinementError: If ``path`` or ``mirror`` lies outside
+                confinement.
+            LedgerError: If ``path`` exists or ``prior_total``/``basis`` is
+                malformed.
         """
         resolved = confinement.check(path)
-        if not resolved.is_relative_to(confinement.run):
-            message = f"the ledger must lie in the run directory: {path}"
-            raise LedgerError(message)
+        resolved_mirror = None if mirror is None else confinement.check(mirror)
         if resolved.exists():
             message = f"the ledger already exists: {path}"
             raise LedgerError(message)
@@ -227,10 +228,12 @@ class Ledger:
             message = "the prior total must be non-negative, with a basis"
             raise LedgerError(message)
         _write_ledger(resolved, prior_total, basis, (), confinement)
-        return cls(resolved, prior_total, basis)
+        if resolved_mirror is not None:
+            _write_ledger(resolved_mirror, prior_total, basis, (), confinement)
+        return cls(resolved, prior_total, basis, mirror=resolved_mirror)
 
     @classmethod
-    def load(cls, path: Path) -> Ledger:
+    def load(cls, path: Path, *, mirror: Path | None = None) -> Ledger:
         """Read a ledger file.
 
         Raises:
@@ -241,7 +244,10 @@ class Ledger:
         except (OSError, ValueError) as error:
             message = f"cannot read the ledger {path}: {error}"
             raise LedgerError(message) from error
-        return _ledger_from_json(path.resolve(), data)
+        ledger = _ledger_from_json(path.resolve(), data)
+        if mirror is not None:
+            ledger.mirror = mirror.resolve()
+        return ledger
 
     @property
     def entries(self) -> tuple[LedgerEntry, ...]:
@@ -253,8 +259,26 @@ class Ledger:
         """The prior total plus the bytes received by every entry."""
         return self.prior_total + sum(entry.received for entry in self._entries)
 
+    def sync_mirror(self, confinement: Confinement) -> None:
+        """Write the current ledger state to ``mirror`` when configured."""
+        if self.mirror is not None:
+            _write_ledger(
+                self.mirror,
+                self.prior_total,
+                self.basis,
+                self._entries,
+                confinement,
+            )
+
+    def reload(self) -> None:
+        """Reload ``entries`` from ``path`` to keep writers in sync."""
+        latest = Ledger.load(self.path, mirror=self.mirror)
+        self.prior_total = latest.prior_total
+        self.basis = latest.basis
+        self._entries = latest.entries
+
     def record(self, entry: LedgerEntry, *, confinement: Confinement) -> None:
-        """Append an entry and persist the ledger atomically."""
+        """Append an entry and persist the ledger (and mirror) atomically."""
         entries = (*self._entries, entry)
         _write_ledger(
             self.path,
@@ -264,6 +288,7 @@ class Ledger:
             confinement,
         )
         self._entries = entries
+        self.sync_mirror(confinement)
 
 
 def _write_ledger(
@@ -389,6 +414,21 @@ def _is_published(path: Path, file: ZenodoFile) -> bool:
     )
 
 
+@contextmanager
+def _shared_ledger_guard(
+    ledger: Ledger,
+    confinement: Confinement,
+) -> Generator[None]:
+    if ledger.mirror is not None or ledger.path.is_relative_to(
+        confinement.downloads
+    ):
+        with confinement.lock(confinement.downloads / DOWNLOAD_LOCK_NAME):
+            ledger.reload()
+            yield
+    else:
+        yield
+
+
 def fetch_file(
     file: ZenodoFile,
     *,
@@ -420,49 +460,51 @@ def fetch_file(
         DownloadError: If the fetch fails, the body exceeds the published
             size, or the size or checksum differs. No file is left behind.
     """
-    target = confinement.check(confinement.downloads / file.name)
-    if _is_published(target, file):
+    with _shared_ledger_guard(ledger, confinement):
+        target = confinement.check(confinement.downloads / file.name)
+        if _is_published(target, file):
+            ledger.sync_mirror(confinement)
+            return target
+        if ledger.total + file.size > LIMIT:
+            message = (
+                f"downloading {file.key} ({file.size} bytes) would take the W1"
+                f" cumulative total {ledger.total} above {LIMIT} bytes"
+            )
+            raise DownloadLimitError(message)
+        partial = confinement.check(target.with_name(f"{target.name}.partial"))
+        digest = hashlib.md5(usedforsecurity=False)
+        received = 0
+        ok = False
+        chunks: Iterator[bytes] | None = None
+        try:
+            with partial.open("wb") as stream:
+                chunks = iter(fetch(file.url))
+                for chunk in chunks:
+                    received += len(chunk)
+                    digest.update(chunk)
+                    _check_received(file, received)
+                    stream.write(chunk)
+            _check_complete(file, received, digest.hexdigest())
+            partial.replace(target)
+            ok = True
+        finally:
+            # Release the connection of a stream that was abandoned early.
+            close = getattr(chunks, "close", None)
+            if callable(close):
+                close()
+            if not ok:
+                partial.unlink(missing_ok=True)
+            entry = LedgerEntry(
+                file.key,
+                file.record,
+                file.url,
+                received,
+                digest.hexdigest(),
+                ok=ok,
+                at=datetime.now(UTC).isoformat(timespec="seconds"),
+            )
+            ledger.record(entry, confinement=confinement)
         return target
-    if ledger.total + file.size > LIMIT:
-        message = (
-            f"downloading {file.key} ({file.size} bytes) would take the W1"
-            f" cumulative total {ledger.total} above {LIMIT} bytes"
-        )
-        raise DownloadLimitError(message)
-    partial = confinement.check(target.with_name(f"{target.name}.partial"))
-    digest = hashlib.md5(usedforsecurity=False)
-    received = 0
-    ok = False
-    chunks: Iterator[bytes] | None = None
-    try:
-        with partial.open("wb") as stream:
-            chunks = iter(fetch(file.url))
-            for chunk in chunks:
-                received += len(chunk)
-                digest.update(chunk)
-                _check_received(file, received)
-                stream.write(chunk)
-        _check_complete(file, received, digest.hexdigest())
-        partial.replace(target)
-        ok = True
-    finally:
-        # Release the connection of a stream that was abandoned early.
-        close = getattr(chunks, "close", None)
-        if callable(close):
-            close()
-        if not ok:
-            partial.unlink(missing_ok=True)
-        entry = LedgerEntry(
-            file.key,
-            file.record,
-            file.url,
-            received,
-            digest.hexdigest(),
-            ok=ok,
-            at=datetime.now(UTC).isoformat(timespec="seconds"),
-        )
-        ledger.record(entry, confinement=confinement)
-    return target
 
 
 def _check_received(file: ZenodoFile, received: int) -> None:

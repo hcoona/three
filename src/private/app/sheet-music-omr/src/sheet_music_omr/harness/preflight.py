@@ -17,8 +17,15 @@ from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sheet_music_omr.harness.downloads import Ledger, LedgerError
-from sheet_music_omr.harness.musescore import sanitize_log
+from sheet_music_omr.harness.downloads import (
+    DOWNLOAD_LOCK_NAME,
+    Ledger,
+    LedgerError,
+)
+from sheet_music_omr.harness.musescore import (
+    has_source_verified_defaults,
+    sanitize_log,
+)
 from sheet_music_omr.harness.records import (
     PROJECT_DIR,
     now,
@@ -116,28 +123,61 @@ def open_ledger(
     prior_total: int | None,
     basis: str | None,
 ) -> Ledger:
-    """Load the run's download ledger, or start it with the prior total.
+    """Load the shared download ledger (mirrored to the run), or start it.
+
+    A shared ``download-ledger.json`` in ``confinement.downloads`` carries
+    cumulative W1 download totals across runs automatically and is mirrored
+    into ``confinement.run``. If an older run directory already has a local
+    ledger before the shared one exists, it seeds the shared ledger.
 
     Raises:
-        PreflightError: If it is unreadable, or absent with no prior total
-            and basis given.
+        PreflightError: If the ledger is unreadable, conflicts with an explicit
+            ``prior_total``, or is absent with no prior total and basis given.
     """
-    path = confinement.run / LEDGER_NAME
+    shared = confinement.downloads / LEDGER_NAME
+    local = confinement.run / LEDGER_NAME
     try:
-        if path.exists():
-            return Ledger.load(path)
-        if prior_total is None or not basis:
-            message = (
-                "the download ledger is absent; give the W1 prior total and "
-                "its basis"
+        with confinement.lock(confinement.downloads / DOWNLOAD_LOCK_NAME):
+            if shared.exists():
+                ledger = Ledger.load(shared, mirror=local)
+                if prior_total is not None and prior_total not in {
+                    ledger.prior_total,
+                    ledger.total,
+                }:
+                    message = (
+                        "the shared download ledger already records total "
+                        f"{ledger.total} (prior_total {ledger.prior_total}); "
+                        "omit --prior-total or pass a matching value"
+                    )
+                    raise PreflightError(message)
+                ledger.sync_mirror(confinement)
+                return ledger
+            if local.exists():
+                existing = Ledger.load(local)
+                ledger = Ledger.create(
+                    shared,
+                    prior_total=existing.prior_total,
+                    basis=existing.basis,
+                    confinement=confinement,
+                )
+                for entry in existing.entries:
+                    ledger.record(entry, confinement=confinement)
+                ledger.mirror = local.resolve()
+                ledger.sync_mirror(confinement)
+                return ledger
+            if prior_total is None or not basis:
+                message = (
+                    "the download ledger is absent; give the W1 prior total "
+                    "and its basis"
+                )
+                raise PreflightError(message)
+            return Ledger.create(
+                shared,
+                prior_total=prior_total,
+                basis=basis,
+                confinement=confinement,
+                mirror=local,
             )
-            raise PreflightError(message)
-        return Ledger.create(
-            path,
-            prior_total=prior_total,
-            basis=basis,
-            confinement=confinement,
-        )
     except LedgerError as error:
         message = f"the download ledger is unusable: {error}"
         raise PreflightError(message) from error
@@ -216,6 +256,10 @@ def preflight(  # noqa: PLR0913
         "musescore": {
             "path": str(musescore.executable),
             "version": musescore.version,
+            "executable_sha256": musescore.executable_sha256,
+            "source_verified_defaults": has_source_verified_defaults(
+                musescore.version
+            ),
             "preferences": musescore.preferences(),
             "settings_sha256": settings_hash,
             "conversion": conversion.record(),

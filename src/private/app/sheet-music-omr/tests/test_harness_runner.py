@@ -29,7 +29,12 @@ from sheet_music_omr.harness.gold import (
     load_gold,
 )
 from sheet_music_omr.harness.musescore import VERSION, MuseScore
-from sheet_music_omr.harness.privacy import GOLD_MAPPING, PrivacyError, scan
+from sheet_music_omr.harness.privacy import (
+    GOLD_MAPPING,
+    PrivacyError,
+    private_strings,
+    scan,
+)
 from sheet_music_omr.harness.records import RecordError, read_object, write_json
 from sheet_music_omr.harness.report import (
     INCOMPLETE,
@@ -84,7 +89,10 @@ class CopyLauncher:
             return 1, "failed"
         shutil.copyfile(command[-1], target)
         if self.settings is not None:
-            self.settings.write_text("[changed]\n", encoding="utf-8")
+            self.settings.write_text(
+                "[import]\nmusicXml\\importBreaks=false\n",
+                encoding="utf-8",
+            )
         return 0, "converted"
 
 
@@ -158,7 +166,8 @@ def _dependencies(
 
 def _cli_arguments(tmp_path: Path, command: str, *extra: str) -> list[str]:
     executable = tmp_path / "MuseScore4.exe"
-    executable.write_bytes(b"")
+    if not executable.exists():
+        executable.write_bytes(b"")
     settings = tmp_path / "MuseScore4.ini"
     if not settings.exists():
         settings.write_text("[ui]\n", encoding="utf-8")
@@ -419,7 +428,7 @@ def test_stops_end_the_run(roots: Confinement, tmp_path: Path) -> None:
     ).exists()
 
     launcher.settings = tmp_path / "MuseScore4.ini"
-    with pytest.raises(StopConditionError, match="settings"):
+    with pytest.raises(StopConditionError, match="MusicXML preferences"):
         Runner(roots, musescore, InlineExecutor()).run(plan)
 
 
@@ -542,18 +551,19 @@ def test_parallel_stop_prevents_baseline_result_publication(
             assert release_operations.wait(timeout=10)
         original_write(confinement, path, value)
 
-    def baseline(rx: Path, x: Path) -> dict[str, object]:
-        del rx
-        if x.parent.name == "p0002":
+    def baseline_part(t: Path, y: Path) -> dict[str, object]:
+        del t
+        if y.parent.name == "p0002":
             assert operations_waiting.wait(timeout=5)
             message = "baseline protocol defect"
             raise StopConditionError(message)
-        return {
-            "content": {"status": "ok"},
-            "layout": {"status": "ok"},
-        }
+        return {"status": "ok"}
 
-    table = {**steps.STEPS, "baseline": baseline}
+    table = {
+        **steps.STEPS,
+        "baseline_content": baseline_part,
+        "baseline_layout": baseline_part,
+    }
     runner = Runner(
         roots,
         _musescore(roots, tmp_path, CopyLauncher()),
@@ -661,12 +671,34 @@ def test_gold_pieces_are_ordered_hashed_and_frozen(tmp_path: Path) -> None:
         load_gold(_gold_status(tmp_path, []), cache)
 
 
-def test_privacy_scan_refuses_private_text() -> None:
+def test_privacy_scan_refuses_private_text(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A private path, workspace name or absolute path stops a report."""
-    scan("pilot-x fidelity 100%", ["song-a", r"Q:\runs"])
-    for text in ("piece song-a failed", "see q:/runs/x", r"C:\Users\x"):
+    scan(
+        "pilot-x fidelity 100% </note> from https://zenodo.org/records/14648209",
+        ["song-a", r"Q:\runs"],
+    )
+    for text in (
+        "piece song-a failed",
+        "see q:/runs/x",
+        r"C:\Users\x",
+        "unc //wsl.localhost/Ubuntu/tmp/run",
+        "backtick `//wsl.localhost/Ubuntu/data/x`",
+        "custom `/d/Gold Scores/Piece 1.mxl`",
+        "user /c/Users/alice/score.mxl",
+        r"share \\server\share\x",
+    ):
         with pytest.raises(PrivacyError):
             scan(text, ["song-a", r"Q:\runs"])
+
+    confinement = Confinement.create(tmp_path / "run", tmp_path / "downloads")
+    monkeypatch.setenv("USERPROFILE", r"C:\Users\DistinctWinAccount")
+    collected = private_strings(confinement)
+    assert "DistinctWinAccount" in collected
+    with pytest.raises(PrivacyError):
+        scan("account DistinctWinAccount leaked", collected)
 
 
 class TimeoutExecutor(InlineExecutor):
@@ -815,14 +847,15 @@ def test_whole_score_figures_and_baseline_status_are_public(
     """The report prints symbol counts, the distance and baseline status."""
     plan = _plan(roots, ["p0001"])
 
-    def baseline(rx: Path, x: Path) -> dict[str, object]:
-        del rx, x
-        return {
-            "content": {"status": "unparsable"},
-            "layout": {"status": "unparsable"},
-        }
+    def baseline_unparsable(t: Path, y: Path) -> dict[str, object]:
+        del t, y
+        return {"status": "unparsable"}
 
-    table = {**steps.STEPS, "baseline": baseline}
+    table = {
+        **steps.STEPS,
+        "baseline_content": baseline_unparsable,
+        "baseline_layout": baseline_unparsable,
+    }
     begin_run(roots, plan, {"commit": COMMIT, "dirty": False})
     Runner(
         roots,
@@ -965,7 +998,16 @@ def test_write_report_refuses_a_gold_identity_in_public_text(
 
 def _preflight(tmp_path: Path, dependencies: Dependencies) -> None:
     arguments = _cli_arguments(
-        tmp_path, "preflight", "--prior-total", "0", "--basis", "a test"
+        tmp_path,
+        "preflight",
+        "--prior-total",
+        "0",
+        "--basis",
+        "a test",
+        "--musescore",
+        str(tmp_path / "MuseScore4.exe"),
+        "--settings",
+        str(tmp_path / "MuseScore4.ini"),
     )
     assert main(arguments, dependencies=dependencies) == 0
 
@@ -985,22 +1027,46 @@ def _stop_after(
 def test_later_commands_require_the_preflight_instrument(
     tmp_path: Path,
 ) -> None:
-    """Select and run stop on another commit, dirt, tools or settings."""
-    clean = _dependencies(CopyLauncher(), tmp_path)
+    """Unrelated HEAD moves and UI INI edits pass; code/pref drift stops."""
+    state = {"head": COMMIT, "tree": "tree-v1", "dirty": ""}
+
+    def fake_git(arguments: Sequence[str]) -> str:
+        if arguments[0] == "status":
+            return state["dirty"]
+        if arguments[0] == "ls-tree":
+            return state["tree"]
+        return state["head"]
+
+    clean = _dependencies(CopyLauncher(), tmp_path, source=fake_git)
     _preflight(tmp_path, clean)
     assert "run download first" in _stop_after(tmp_path, clean, "select")
 
-    def moved(arguments: Sequence[str]) -> str:
-        return "1" * 40 if arguments[0] == "rev-parse" else ""
+    # Unrelated HEAD commit + UI-only MuseScore4.ini change remain valid.
+    state["head"] = "1" * 40
+    (tmp_path / "MuseScore4.ini").write_text("[ui]\nx=2\n", encoding="utf-8")
+    assert "run download first" in _stop_after(tmp_path, clean, "select")
 
-    def dirty(arguments: Sequence[str]) -> str:
-        return COMMIT if arguments[0] == "rev-parse" else " M file.py\n"
+    confinement = Confinement.create(tmp_path / "run", tmp_path / "downloads")
+    plan = _plan(confinement, ["p0001"])
+    begin_run(
+        confinement,
+        plan,
+        {"commit": COMMIT, "tree": "a" * 64, "dirty": False},
+    )
+    begin_run(
+        confinement,
+        plan,
+        {"commit": "1" * 40, "tree": "a" * 64, "dirty": False},
+    )
 
     gold = ("--gold-status", str(tmp_path / "s.json"), "--gold-cache", ".")
-    other = _dependencies(CopyLauncher(), tmp_path, source=moved)
-    assert "commit" in _stop_after(tmp_path, other, "select")
-    unclean = _dependencies(CopyLauncher(), tmp_path, source=dirty)
-    assert "uncommitted" in _stop_after(tmp_path, unclean, "run", *gold)
+    state["tree"] = "tree-v2"
+    assert "code tree" in _stop_after(tmp_path, clean, "select")
+
+    state["tree"] = "tree-v1"
+    state["dirty"] = " M pyproject.toml\n"
+    assert "uncommitted" in _stop_after(tmp_path, clean, "run", *gold)
+    state["dirty"] = ""
 
     record_path = tmp_path / "run" / "run.json"
     saved = record_path.read_text(encoding="utf-8")
@@ -1010,5 +1076,28 @@ def test_later_commands_require_the_preflight_instrument(
     assert "tool version" in _stop_after(tmp_path, clean, "select")
     record_path.write_text(saved, encoding="utf-8")
 
-    (tmp_path / "MuseScore4.ini").write_text("[ui]\nx=2\n", encoding="utf-8")
-    assert "settings" in _stop_after(tmp_path, clean, "run", *gold)
+    record = json.loads(saved)
+    del record["preflight"]["musescore"]["executable_sha256"]
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+    assert "executable hash" in _stop_after(tmp_path, clean, "run", *gold)
+    record_path.write_text(saved, encoding="utf-8")
+
+    (tmp_path / "MuseScore4.exe").write_bytes(b"upgraded-mid-run")
+    assert "executable hash" in _stop_after(tmp_path, clean, "run", *gold)
+    (tmp_path / "MuseScore4.exe").write_bytes(b"")
+
+    (tmp_path / "MuseScore4.ini").write_text(
+        "[import]\nmusicXml\\importBreaks=false\n",
+        encoding="utf-8",
+    )
+    assert "MusicXML preferences" in _stop_after(tmp_path, clean, "run", *gold)
+
+    # A held run lock rejects concurrent mutating CLI commands without
+    # modifying run.json.
+    before_lock = record_path.read_text(encoding="utf-8")
+    with confinement.lock(confinement.run / ".run.lock", blocking=False):
+        assert (
+            main(_cli_arguments(tmp_path, "report"), dependencies=clean)
+            == cli.STOP_STATUS
+        )
+    assert record_path.read_text(encoding="utf-8") == before_lock

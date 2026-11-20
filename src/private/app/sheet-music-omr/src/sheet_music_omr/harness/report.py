@@ -305,6 +305,7 @@ def summarize(confinement: Confinement) -> Data:
     return {
         "source": {
             "commit": run.get("commit"),
+            "tree": run.get("tree"),
             "dirty": run.get("dirty"),
             "started": run.get("started"),
             "finished": run.get("finished"),
@@ -465,6 +466,15 @@ def public_markdown(summary: Mapping[str, object]) -> str:
     versions = _dict(preflight.get("versions"))
     musescore = _dict(preflight.get("musescore"))
     calibration = _dict(preflight.get("calibration"))
+    tree = source.get("tree")
+    tree_fragment = f"; code tree: `{tree}`" if tree else ""
+    exe_hash = musescore.get("executable_sha256")
+    exe_fragment = f" (sha256 `{exe_hash}`)" if exe_hash else ""
+    defaults_fragment = (
+        "; source defaults unverified, recheck required before public W1 claims"
+        if musescore.get("source_verified_defaults") is False
+        else ""
+    )
     lines = [
         "# W1 round-trip measurement",
         "",
@@ -473,15 +483,16 @@ def public_markdown(summary: Mapping[str, object]) -> str:
         "## Run record",
         "",
         (
-            f"- Converter and harness commit: `{source.get('commit')}`; "
+            f"- Converter and harness commit: `{source.get('commit')}`"
+            f"{tree_fragment}; "
             f"uncommitted project changes: {source.get('dirty')} {tag}."
         ),
         (
             f"- Tools: Python {versions.get('python')}, musicdiff "
             f"{versions.get('musicdiff')}, music21 {versions.get('music21')}, "
             f"converter21 {versions.get('converter21')}, numpy "
-            f"{versions.get('numpy')}, MuseScore {musescore.get('version')} "
-            f"{tag}."
+            f"{versions.get('numpy')}, MuseScore {musescore.get('version')}"
+            f"{exe_fragment}{defaults_fragment} {tag}."
         ),
         f"- Calibration: {calibration.get('status')} {tag}.",
         f"- Datasets: {PDMX_CITATION}; {LIEDER_SOURCE} ({SOURCE_FINDING}).",

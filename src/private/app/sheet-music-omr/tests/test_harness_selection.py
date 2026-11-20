@@ -27,6 +27,7 @@ from sheet_music_omr.harness.musescore import VERSION, MuseScore
 from sheet_music_omr.harness.selection import (
     SelectionError,
     load_selection,
+    progress_path,
     select_lieder,
     select_pdmx,
     write_selection_markdown,
@@ -292,3 +293,93 @@ def test_lieder_records_reasons_and_never_exceeds_the_cap(
             cap=2,
         )
     assert launcher.exports == 2  # noqa: PLR2004 - the cap
+
+
+def test_interrupted_selection_resumes_from_progress_checkpoint(
+    roots: Confinement,
+    tmp_path: Path,
+) -> None:
+    """Interrupted PDMX and Lieder selections resume without redoing prefix."""
+    table, order = _pdmx(
+        tmp_path,
+        [_mxl(SINGLE), _mxl(BASE), _mxl(BASE), _mxl(BASE)],
+    )
+    parse_calls = 0
+
+    def flaky_parse(x: Path) -> dict[str, object]:
+        nonlocal parse_calls
+        parse_calls += 1
+        if parse_calls == 2:  # noqa: PLR2004
+            message = "simulated interruption"
+            raise StopConditionError(message)
+        return parse_check(x)
+
+    with pytest.raises(StepStopError, match="simulated interruption"):
+        select_pdmx(
+            table,
+            tmp_path / "mxl.tar.gz",
+            confinement=roots,
+            executor=InlineExecutor(),
+            parse_check=flaky_parse,
+            sample=2,
+            batch=2,
+        )
+    assert progress_path(roots, "pdmx").is_file()
+    record = select_pdmx(
+        table,
+        tmp_path / "mxl.tar.gz",
+        confinement=roots,
+        executor=InlineExecutor(),
+        parse_check=flaky_parse,
+        sample=2,
+        batch=2,
+    )
+    assert not progress_path(roots, "pdmx").exists()
+    assert record["selected"] == [
+        {"id": "p0001", "key": order[1]},
+        {"id": "p0002", "key": order[2]},
+    ]
+    assert parse_calls == 3  # noqa: PLR2004 - candidate 1 not re-parsed
+
+    lieder_zip, lieder_order, musescore, launcher = _lieder(
+        roots,
+        tmp_path,
+        [BASE, PIANO, PIANO],
+    )
+    lieder_calls = 0
+
+    def flaky_lieder_parse(x: Path) -> dict[str, object]:
+        nonlocal lieder_calls
+        lieder_calls += 1
+        if lieder_calls == 2:  # noqa: PLR2004
+            message = "lieder interrupted"
+            raise StopConditionError(message)
+        return parse_check(x)
+
+    with pytest.raises(StepStopError, match="lieder interrupted"):
+        select_lieder(
+            lieder_zip,
+            confinement=roots,
+            executor=InlineExecutor(),
+            parse_check=flaky_lieder_parse,
+            musescore=musescore,
+            sample=2,
+        )
+    assert progress_path(roots, "lieder").is_file()
+    exports_before_resume = launcher.exports
+    assert exports_before_resume == 3  # noqa: PLR2004
+    resumed = select_lieder(
+        lieder_zip,
+        confinement=roots,
+        executor=InlineExecutor(),
+        parse_check=flaky_lieder_parse,
+        musescore=musescore,
+        sample=2,
+    )
+    assert not progress_path(roots, "lieder").exists()
+    assert launcher.exports == 4  # noqa: PLR2004 - only candidate 3 re-exported
+    assert resumed["exports"] == 4  # noqa: PLR2004 - counts every export run
+    assert resumed["selected"] == [
+        {"id": "l0001", "key": lieder_order[1]},
+        {"id": "l0002", "key": lieder_order[2]},
+    ]

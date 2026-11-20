@@ -8,11 +8,18 @@ its roots before anything is written.
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sheet_music_omr.harness.stops import StopConditionError
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 TEMP_NAME = "tmp"
 """The name of the temporary directory inside the run directory."""
@@ -104,3 +111,47 @@ class Confinement:
         """Create a fresh directory inside the temporary directory."""
         self.temp.mkdir(parents=True, exist_ok=True)
         return Path(tempfile.mkdtemp(prefix=prefix, dir=self.temp))
+
+    @contextmanager
+    def lock(self, target: Path, *, blocking: bool = True) -> Generator[None]:
+        """Acquire an exclusive OS file lock on ``target`` inside the roots."""
+        resolved = self.check(target)
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        with resolved.open("a+b") as stream:
+            if sys.platform == "win32":
+                import msvcrt  # noqa: PLC0415 - Windows only
+
+                stream.seek(0, os.SEEK_END)
+                if stream.tell() == 0:
+                    stream.write(b"\0")
+                    stream.flush()
+                while True:
+                    stream.seek(0)
+                    try:
+                        msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                        break
+                    except OSError as error:
+                        if not blocking:
+                            message = f"lock is already held: {resolved}"
+                            raise ConfinementError(message) from error
+                        time.sleep(0.05)
+                try:
+                    yield
+                finally:
+                    stream.seek(0)
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl  # noqa: PLC0415 - POSIX only
+
+                flags = (
+                    fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
+                )
+                try:
+                    fcntl.flock(stream.fileno(), flags)
+                except OSError as error:
+                    message = f"lock is already held: {resolved}"
+                    raise ConfinementError(message) from error
+                try:
+                    yield
+                finally:
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)

@@ -193,11 +193,17 @@ def begin_run(
 ) -> None:
     """Freeze the plan and source state in the run record, or check them.
 
-    A resumed run must have the same plan, gold hashes and converter commit.
+    A resumed run must have a clean project tree, the same plan and gold
+    hashes, and the frozen converter/harness code tree (falling back to
+    ``commit`` only for run records written before ``tree`` existed).
 
     Raises:
-        RecordError: If a resumed run differs from the frozen one.
+        RecordError: If the project tree is dirty or a resumed run differs
+            from the frozen one.
     """
+    if source.get("dirty"):
+        message = "the project source has uncommitted changes"
+        raise RecordError(message)
     record = load_run_record(confinement)
     frozen = plan.frozen()
     existing = record.get("run")
@@ -205,8 +211,17 @@ def begin_run(
         if existing.get("plan") != frozen:
             message = "the run plan or a gold hash differs from the frozen run"
             raise RecordError(message)
-        if existing.get("commit") != source.get("commit"):
-            message = "a resumed run must use the frozen converter commit"
+        same_code = (
+            existing.get("tree") == source.get("tree")
+            if existing.get("tree") is not None
+            and source.get("tree") is not None
+            else existing.get("commit") == source.get("commit")
+        )
+        if not same_code:
+            message = (
+                "a resumed run must use the frozen converter and harness "
+                "code tree"
+            )
             raise RecordError(message)
         return
     update_run_record(
@@ -215,6 +230,7 @@ def begin_run(
         {
             "plan": frozen,
             "commit": source.get("commit"),
+            "tree": source.get("tree"),
             "dirty": source.get("dirty"),
             "started": now(),
         },
@@ -727,26 +743,31 @@ class Runner:
             result["status"] = "rx-missing"
             self._publish_result(directory, result)
             return
-        outcome = self._call("baseline", item, rx=item.y, x=item.x)
-        if outcome.status == "timeout":
-            result["status"] = "timeout"
-            result["step"] = outcome.record()
-        elif not outcome.ok:
-            message = (
-                f"step baseline, file {item.id}: "
-                f"{outcome.error_type}: {outcome.message}"
-            )
-            raise StepError(message)
-        else:
+        steps: Data = {}
+        operations: Data = {}
+        timed_out = False
+        for part_name, step_name in (
+            ("content", "baseline_content"),
+            ("layout", "baseline_layout"),
+        ):
+            outcome = self._call(step_name, item, t=item.y, y=item.x)
+            steps[part_name] = outcome.record()
+            if outcome.status == "timeout":
+                result[part_name] = {"status": "timeout"}
+                timed_out = True
+                continue
+            if not outcome.ok:
+                message = (
+                    f"step {step_name}, file {item.id}: "
+                    f"{outcome.error_type}: {outcome.message}"
+                )
+                raise StepError(message)
             value = _value(outcome)
-            operations: Data = {}
-            for name in ("content", "layout"):
-                part = value.get(name)
-                if isinstance(part, dict):
-                    operations[name] = part.pop("operations", None)
-                    result[name] = part
-            result["status"] = "ok"
-            result["step"] = outcome.record()
+            operations[part_name] = value.pop("operations", None)
+            result[part_name] = value
+        result["steps"] = steps
+        result["status"] = "timeout" if timed_out else "ok"
+        if operations:
             write_json(
                 self.confinement,
                 directory / "operations.json",

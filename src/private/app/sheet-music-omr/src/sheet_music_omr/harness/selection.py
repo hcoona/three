@@ -49,6 +49,9 @@ LIEDER_EXPORTS = 1356
 PDMX_BATCH = 600
 """The candidates extracted per streaming pass over the PDMX archive."""
 
+CHECKPOINT_EVERY = 25
+"""How often selection flushes an interrupted-run progress checkpoint."""
+
 PARSE_REASON = "musicdiff_parse"
 """The screen's last reason, which selection decides by parsing."""
 
@@ -158,23 +161,129 @@ def selection_path(confinement: Confinement, corpus: str) -> Path:
     return confinement.run / "selection" / f"{corpus}.json"
 
 
+def progress_path(confinement: Confinement, corpus: str) -> Path:
+    """Return the resumable checkpoint of an in-progress selection."""
+    return confinement.run / "selection" / f"{corpus}.progress.json"
+
+
 def inputs_dir(confinement: Confinement, corpus: str) -> Path:
     """Return the directory of a corpus's selected inputs."""
     return confinement.run / "inputs" / corpus
 
 
-def _begin(confinement: Confinement, corpus: str) -> None:
-    """Refuse a finished selection; clear an interrupted one.
+def _visit_from_record(raw: object) -> Visit:
+    if not isinstance(raw, dict):
+        message = "the selection progress checkpoint has a malformed visit"
+        raise SelectionError(message)
+    key = raw.get("key")
+    order = raw.get("order")
+    reason = raw.get("reason")
+    detail = raw.get("detail", "")
+    name = raw.get("id")
+    if (
+        not isinstance(key, str)
+        or not isinstance(order, str)
+        or (reason is not None and not isinstance(reason, str))
+        or not isinstance(detail, str)
+        or (name is not None and not isinstance(name, str))
+    ):
+        message = "the selection progress checkpoint has malformed fields"
+        raise SelectionError(message)
+    return Visit(key, order, reason, detail, name)
+
+
+def _clean_unreferenced_inputs(
+    confinement: Confinement,
+    directory: Path,
+    selected_ids: set[str],
+) -> None:
+    if not directory.exists():
+        return
+    for child in list(directory.iterdir()):
+        if child.name not in selected_ids:
+            checked = confinement.check(child)
+            if checked.is_dir():
+                shutil.rmtree(checked)
+            else:
+                checked.unlink(missing_ok=True)
+
+
+def _resume(confinement: Confinement, corpus: str) -> tuple[list[Visit], int]:
+    """Refuse a finished selection; load or clean an interrupted one.
 
     Raises:
-        SelectionError: If the corpus was already selected.
+        SelectionError: If the corpus was already selected or its progress
+            checkpoint is inconsistent with its written inputs.
     """
     if selection_path(confinement, corpus).exists():
         message = f"the {corpus} sample is selected and is never reselected"
         raise SelectionError(message)
     directory = confinement.check(inputs_dir(confinement, corpus))
-    if directory.exists():
-        shutil.rmtree(directory)
+    checkpoint = confinement.check(progress_path(confinement, corpus))
+    if not checkpoint.exists():
+        if directory.exists():
+            shutil.rmtree(directory)
+        return [], 0
+    data = read_object(checkpoint)
+    raw_visits = data.get("visited")
+    exports = data.get("exports", 0)
+    if (
+        not isinstance(raw_visits, list)
+        or isinstance(exports, bool)
+        or not isinstance(exports, int)
+        or exports < 0
+    ):
+        message = f"the {corpus} selection progress checkpoint is malformed"
+        raise SelectionError(message)
+    visits = [_visit_from_record(entry) for entry in raw_visits]
+    selected_ids = {
+        v.id for v in visits if v.reason is None and v.id is not None
+    }
+    for visit in visits:
+        if visit.reason is None and (
+            visit.id is None
+            or not (directory / visit.id / "x.musicxml").is_file()
+        ):
+            message = (
+                f"the {corpus} selection checkpoint references missing "
+                f"input {visit.id!r}"
+            )
+            raise SelectionError(message)
+    _clean_unreferenced_inputs(confinement, directory, selected_ids)
+    return visits, exports
+
+
+def _save_progress(
+    confinement: Confinement,
+    sampler: _Sampler,
+    *,
+    exports: int = 0,
+) -> None:
+    write_json(
+        confinement,
+        progress_path(confinement, sampler.corpus),
+        {
+            "corpus": sampler.corpus,
+            "exports": exports,
+            "visited": [v.record() for v in sampler.visits],
+            "updated": now(),
+        },
+    )
+
+
+def _check_prefix(
+    corpus: str,
+    visits: Sequence[Visit],
+    candidates: Sequence[Candidate],
+) -> None:
+    if len(visits) > len(candidates) or [v.key for v in visits] != [
+        c.key for c in candidates[: len(visits)]
+    ]:
+        message = (
+            f"the {corpus} candidate order differs from the interrupted "
+            "selection checkpoint"
+        )
+        raise SelectionError(message)
 
 
 def _finish(
@@ -197,6 +306,9 @@ def _finish(
         **extra,
     }
     write_json(confinement, selection_path(confinement, sampler.corpus), record)
+    confinement.check(progress_path(confinement, sampler.corpus)).unlink(
+        missing_ok=True,
+    )
     return record
 
 
@@ -225,12 +337,14 @@ def select_pdmx(  # noqa: PLR0913
         SelectionError: If the corpus was selected, an archive is unreadable
             or a requested member is missing.
     """
-    _begin(confinement, "pdmx")
+    prior_visits, _ = _resume(confinement, "pdmx")
     try:
         prefilter = pdmx_candidates(csv_path)
     except CorpusError as error:
         message = f"the PDMX table cannot be read: {error}"
         raise SelectionError(message) from error
+    candidates = prefilter.candidates
+    _check_prefix("pdmx", prior_visits, candidates)
     sampler = _Sampler(
         "pdmx",
         sample,
@@ -238,45 +352,55 @@ def select_pdmx(  # noqa: PLR0913
         executor,
         parse_check,
         timeout,
+        visits=prior_visits,
     )
-    candidates = prefilter.candidates
+    remaining = candidates[len(prior_visits) :]
     destination = confinement.downloads / "pdmx-mxl"
-    for start in range(0, len(candidates), batch):
-        chunk = candidates[start : start + batch]
-        try:
-            extraction = extract_members(
-                tar_path,
-                [c.key for c in chunk],
-                destination,
-                confinement=confinement,
-            )
-        except CorpusError as error:
-            message = f"the PDMX archive cannot be extracted: {error}"
-            raise SelectionError(message) from error
-        if extraction.missing:
-            message = (
-                f"{len(extraction.missing)} PDMX candidates are missing from "
-                "the archive"
-            )
-            raise SelectionError(message)
-        for candidate in chunk:
+    finished = False
+    try:
+        for start in range(0, len(remaining), batch):
             if sampler.full:
                 break
-            _offer_pdmx(sampler, candidate, extraction)
-        if sampler.full:
-            break
-    return _finish(
-        confinement,
-        sampler,
-        len(candidates),
-        {
-            "prefilter": {
-                "rows": prefilter.rows,
-                "passed": prefilter.passed,
-                "undecidable": prefilter.undecidable,
+            chunk = remaining[start : start + batch]
+            try:
+                extraction = extract_members(
+                    tar_path,
+                    [c.key for c in chunk],
+                    destination,
+                    confinement=confinement,
+                )
+            except CorpusError as error:
+                message = f"the PDMX archive cannot be extracted: {error}"
+                raise SelectionError(message) from error
+            if extraction.missing:
+                message = (
+                    f"{len(extraction.missing)} PDMX candidates are missing "
+                    "from the archive"
+                )
+                raise SelectionError(message)
+            for candidate in chunk:
+                if sampler.full:
+                    break
+                _offer_pdmx(sampler, candidate, extraction)
+                if len(sampler.visits) % CHECKPOINT_EVERY == 0:
+                    _save_progress(confinement, sampler)
+        record = _finish(
+            confinement,
+            sampler,
+            len(candidates),
+            {
+                "prefilter": {
+                    "rows": prefilter.rows,
+                    "passed": prefilter.passed,
+                    "undecidable": prefilter.undecidable,
+                },
             },
-        },
-    )
+        )
+        finished = True
+        return record
+    finally:
+        if not finished and sampler.visits:
+            _save_progress(confinement, sampler)
 
 
 def _offer_pdmx(
@@ -294,6 +418,35 @@ def _offer_pdmx(
         sampler.exclude(candidate, "parts_staves", detail)
         return
     sampler.offer(candidate, root)
+
+
+def _lieder_candidate(  # noqa: PLR0913
+    zip_path: Path,
+    candidate: Candidate,
+    *,
+    confinement: Confinement,
+    musescore: MuseScore,
+    sampler: _Sampler,
+    timeout: float,
+) -> None:
+    try:
+        data = read_member(zip_path, candidate.key)
+    except CorpusError as error:
+        message = f"a Lieder candidate cannot be read: {error}"
+        raise SelectionError(message) from error
+    exported, detail = _export(confinement, musescore, data, timeout)
+    if exported is None:
+        sampler.exclude(candidate, "export_failed", detail)
+        return
+    try:
+        extract = extract_piano(exported)
+    except NoUniquePianoPart as error:
+        sampler.exclude(candidate, "no_unique_piano_part", str(error))
+        return
+    except CorpusError as error:
+        sampler.exclude(candidate, "export_failed", str(error))
+        return
+    sampler.offer(candidate, extract)
 
 
 def select_lieder(  # noqa: PLR0913
@@ -321,7 +474,7 @@ def select_lieder(  # noqa: PLR0913
             or not the pinned release, a member cannot be read, or the export
             cap would be exceeded.
     """
-    _begin(confinement, "lieder")
+    prior_visits, exports = _resume(confinement, "lieder")
     try:
         archive = lieder_candidates(zip_path)
     except CorpusError as error:
@@ -330,6 +483,7 @@ def select_lieder(  # noqa: PLR0913
     if archive.commit_matches is False:
         message = "the Lieder archive is not the pinned commit"
         raise SelectionError(message)
+    _check_prefix("lieder", prior_visits, archive.candidates)
     sampler = _Sampler(
         "lieder",
         sample,
@@ -337,44 +491,47 @@ def select_lieder(  # noqa: PLR0913
         executor,
         parse_check,
         timeout,
+        visits=prior_visits,
     )
-    exports = 0
-    with musescore.batch("lieder-export"):
-        for candidate in archive.candidates:
-            if sampler.full:
-                break
-            if exports >= cap:
-                message = f"the Lieder selection would exceed {cap} exports"
-                raise SelectionError(message)
-            try:
-                data = read_member(zip_path, candidate.key)
-            except CorpusError as error:
-                message = f"a Lieder candidate cannot be read: {error}"
-                raise SelectionError(message) from error
-            exports += 1
-            exported, detail = _export(confinement, musescore, data, timeout)
-            if exported is None:
-                sampler.exclude(candidate, "export_failed", detail)
-                continue
-            try:
-                extract = extract_piano(exported)
-            except NoUniquePianoPart as error:
-                sampler.exclude(candidate, "no_unique_piano_part", str(error))
-                continue
-            except CorpusError as error:
-                sampler.exclude(candidate, "export_failed", str(error))
-                continue
-            sampler.offer(candidate, extract)
-    return _finish(
-        confinement,
-        sampler,
-        len(archive.candidates),
-        {
-            "exports": exports,
-            "commit_matches": archive.commit_matches,
-            "members": archive.members,
-        },
-    )
+    remaining = archive.candidates[len(prior_visits) :]
+    finished = False
+    try:
+        if remaining and not sampler.full:
+            with musescore.batch("lieder-export"):
+                for candidate in remaining:
+                    if sampler.full:
+                        break
+                    if exports >= cap:
+                        message = (
+                            f"the Lieder selection would exceed {cap} exports"
+                        )
+                        raise SelectionError(message)
+                    exports += 1
+                    _lieder_candidate(
+                        zip_path,
+                        candidate,
+                        confinement=confinement,
+                        musescore=musescore,
+                        sampler=sampler,
+                        timeout=timeout,
+                    )
+                    if len(sampler.visits) % CHECKPOINT_EVERY == 0:
+                        _save_progress(confinement, sampler, exports=exports)
+        record = _finish(
+            confinement,
+            sampler,
+            len(archive.candidates),
+            {
+                "exports": exports,
+                "commit_matches": archive.commit_matches,
+                "members": archive.members,
+            },
+        )
+        finished = True
+        return record
+    finally:
+        if not finished and (sampler.visits or exports):
+            _save_progress(confinement, sampler, exports=exports)
 
 
 def _export(
