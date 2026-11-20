@@ -238,8 +238,10 @@ A file passes only if all of the following hold:
 - every `tie` and `notations/tied` has `type` `start` or `stop` (no
   `let-ring`), every `slur` is on a pitched note (not a rest), and every `tie`
   or `tied` mark pairs cleanly between adjacent same-pitch notes on its staff
-  except an incoming `stop` at onset 0 of a measure starting an `ending` other
-  than `1` whose pitch ends the measure before the volta group;
+  except an incoming `stop` at a valid [`tie-in`](text-format.md#relations)
+  position (onset 0 of a measure starting a later bracket of a volta group, or
+  of the unlabeled last ending immediately after a volta-group measure with a
+  backward repeat) whose pitch ends the measure before the volta group;
 - every `pedal` direction with `type` `continue` or `discontinue` has
   `line="yes"`;
 - every beam level and every tuplet that starts in a measure stops in it,
@@ -805,14 +807,17 @@ of its voice at that onset.
   pitches and written durations. The check adds no extra elements.
 - **Tie ends** (`tie`): musicdiff 6.0 marks a tie only on the note that
   starts or continues it, not on the note where it ends, including a `tie-in`
-  pitch. Each `tie` of type `stop` on a note — or, at onset 0 of a measure
-  whose left barline starts an `ending` with a number other than `1`, a
+  pitch. Each `tie` of type `stop` on a note — or, at a valid
+  [`tie-in`](text-format.md#relations) position (onset 0 of a measure starting
+  a later bracket of a volta group, or of the unlabeled last ending
+  immediately after a volta-group measure with a backward repeat), a
   `notations/tied` of type `stop` on a note that has no `tie` of type `stop` —
   is one element, keyed by measure, staff, onset, written pitch and written
   duration. Matching is as for fingering. An unmatched stop is neither an
   element nor an extra element when a counted musicdiff difference touches its
   note, or touches the note of the same staff and written pitch that starts a
-  tie and ends at its onset.
+  tie and ends at its onset (or, for a `tie-in` position, at the end of the
+  measure before the volta group).
 
 ### Text-space consistency check
 
@@ -869,10 +874,10 @@ with their provenance:
   `<fingering>54</fingering>`, pairs in
   which `Y` writes a two-finger substitution as `5–4`, as SMuFL
   `fingering5fingeringSubstitutionAbovefingering4`, or with
-  `substitution="yes"` on the second digit and `T(Y)` writes `5-4`, a pair in
-  which the first note of ending 2 has only `notations/tied` of type `stop` in
-  `Y` and both `tie` and `notations/tied` of type `stop` in `T(Y)`, and
-  identical pairs;
+  `substitution="yes"` on the second digit and `T(Y)` writes `5-4`, pairs in
+  which the first note of ending 2 or of an unlabeled last ending after a
+  backward repeat has only `notations/tied` of type `stop` in `Y` and both
+  `tie` and `notations/tied` of type `stop` in `T(Y)`, and identical pairs;
 - a pair in which a measure is inserted before later measures and the reverse
   pair in which a measure is deleted, with the expected per-ordinal
   differences fixed by the fixture; neither pair may align content across
