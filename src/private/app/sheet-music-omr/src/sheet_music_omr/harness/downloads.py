@@ -199,13 +199,14 @@ class Ledger:
         self.mirror = mirror
 
     @classmethod
-    def create(
+    def create(  # noqa: PLR0913
         cls,
         path: Path,
         *,
         prior_total: int,
         basis: str,
         confinement: Confinement,
+        entries: Iterable[LedgerEntry] = (),
         mirror: Path | None = None,
     ) -> Ledger:
         """Start a confined ledger file (and optional mirror) and return it.
@@ -227,10 +228,23 @@ class Ledger:
         if prior_total < 0 or not basis.strip():
             message = "the prior total must be non-negative, with a basis"
             raise LedgerError(message)
-        _write_ledger(resolved, prior_total, basis, (), confinement)
+        copied = tuple(entries)
+        _write_ledger(resolved, prior_total, basis, copied, confinement)
         if resolved_mirror is not None:
-            _write_ledger(resolved_mirror, prior_total, basis, (), confinement)
-        return cls(resolved, prior_total, basis, mirror=resolved_mirror)
+            _write_ledger(
+                resolved_mirror,
+                prior_total,
+                basis,
+                copied,
+                confinement,
+            )
+        return cls(
+            resolved,
+            prior_total,
+            basis,
+            copied,
+            mirror=resolved_mirror,
+        )
 
     @classmethod
     def load(cls, path: Path, *, mirror: Path | None = None) -> Ledger:

@@ -618,6 +618,73 @@ def test_cli_records_a_stop_and_exits_with_two(tmp_path: Path) -> None:
     assert not (cli.PROJECT_DIR / "run").exists()
 
 
+def test_view_errors_stay_read_only_and_preflight_pins_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """View never mutates run.json on error; preflight pins provenance."""
+    launcher = CopyLauncher()
+    dependencies = _dependencies(launcher, tmp_path)
+    pilot_args = _cli_arguments(tmp_path, "pilot", "--fixtures", str(FIXTURE))
+    assert main(pilot_args, dependencies=dependencies) == 0
+
+    run_record_path = tmp_path / "run" / "run.json"
+    before = run_record_path.read_text(encoding="utf-8")
+
+    corrupt = tmp_path / "run" / "files" / "pilot-x" / "t0001" / "result.json"
+    corrupt.write_text("{", encoding="utf-8")
+    view_args = _cli_arguments(
+        tmp_path, "view", "--id", "t0001", "--measure", "0"
+    )
+    assert main(view_args, dependencies=dependencies) == cli.STOP_STATUS
+    assert run_record_path.read_text(encoding="utf-8") == before
+
+    def interrupt_view(*_args: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setitem(cli._HANDLERS, "view", interrupt_view)  # noqa: SLF001
+    assert main(view_args, dependencies=dependencies) == 130  # noqa: PLR2004
+    assert run_record_path.read_text(encoding="utf-8") == before
+
+    preflight_args = [
+        "preflight",
+        "--run-dir",
+        str(tmp_path / "run"),
+        "--downloads",
+        str(tmp_path / "downloads"),
+        "--prior-total",
+        "0",
+        "--basis",
+        "test",
+    ]
+    failing_deps = Dependencies(
+        launcher=launcher,
+        version_lookup=lambda: VERSION,
+        calibrate=lambda _tests, _temp: (1, "failed"),
+        git=git,
+        fetch=_no_fetch,
+        executor=_inline,
+        executable=dependencies.executable,
+        settings=dependencies.settings,
+    )
+    assert main(preflight_args, dependencies=failing_deps) == cli.STOP_STATUS
+    failed_record = json.loads(run_record_path.read_text(encoding="utf-8"))
+    assert failed_record["preflight"]["calibration"]["status"] == "failed"
+    assert failed_record["preflight"]["musescore"]["executable_sha256"] == (
+        hashlib.sha256(b"").hexdigest()
+    )
+
+    before_calls = len(launcher.commands)
+    assert dependencies.executable is not None
+    dependencies.executable.write_bytes(b"upgraded-musescore-binary")
+    assert main(preflight_args, dependencies=dependencies) == cli.STOP_STATUS
+    assert len(launcher.commands) == before_calls
+    after_record = json.loads(run_record_path.read_text(encoding="utf-8"))
+    assert after_record["preflight"]["musescore"]["executable_sha256"] == (
+        hashlib.sha256(b"").hexdigest()
+    )
+
+
 def _gold_status(tmp_path: Path, records: list[dict[str, object]]) -> Path:
     path = tmp_path / "status.json"
     path.write_text(json.dumps({"batches": records}), encoding="utf-8")

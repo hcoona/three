@@ -209,19 +209,24 @@ def _dispatch(
     confinement: Confinement,
     effects: Dependencies,
 ) -> int:
+    read_only = arguments.command == "view"
     try:
         handler(arguments, confinement, effects)
     except StopConditionError as error:
-        record_stop(confinement, arguments.command, error)
+        if not read_only:
+            record_stop(confinement, arguments.command, error)
         print(f"stop: {error}", file=sys.stderr)  # noqa: T201
         return STOP_STATUS
     except DownloadError as error:
         print(f"error: {error}", file=sys.stderr)  # noqa: T201
         return 1
     except KeyboardInterrupt:
-        record_stop(
-            confinement, arguments.command, KeyboardInterrupt("interrupted")
-        )
+        if not read_only:
+            record_stop(
+                confinement,
+                arguments.command,
+                KeyboardInterrupt("interrupted"),
+            )
         print("interrupted", file=sys.stderr)  # noqa: T201
         return 130
     return 0

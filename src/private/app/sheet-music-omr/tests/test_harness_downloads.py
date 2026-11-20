@@ -216,6 +216,7 @@ def test_ledger_confinement_and_shared_carry_over_across_runs(
     tmp_path: Path,
     confinement: Confinement,
     ledger: Ledger,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Refuse unconfined ledgers, and carry shared totals across runs."""
     with pytest.raises(LedgerError, match="already exists"):
@@ -250,6 +251,33 @@ def test_ledger_confinement_and_shared_carry_over_across_runs(
     assert (run2.run / "download-ledger.json").is_file()
     with pytest.raises(PreflightError, match="shared download ledger"):
         open_ledger(run2, prior_total=500, basis=BASIS)
+
+    fresh_downloads = tmp_path / "migrated-downloads"
+    legacy = Confinement.create(tmp_path / "legacy-run", fresh_downloads)
+    legacy_ledger = Ledger.create(
+        legacy.run / "download-ledger.json",
+        prior_total=2000,
+        basis=BASIS,
+        confinement=legacy,
+    )
+    fetch_again, _ = serve(PAYLOAD)
+    fetch_file(
+        FILE, ledger=legacy_ledger, confinement=legacy, fetch=fetch_again
+    )
+    writes: list[Path] = []
+    original_write = Confinement.write_text
+
+    def tracking_write(self: Confinement, path: Path, text: str) -> Path:
+        if self is legacy:
+            writes.append(path.resolve())
+        return original_write(self, path, text)
+
+    monkeypatch.setattr(Confinement, "write_text", tracking_write)
+    migrated = open_ledger(legacy, prior_total=None, basis=None)
+    shared_path = fresh_downloads / "download-ledger.json"
+    assert writes == [shared_path.resolve()]
+    assert migrated.total == 2000 + len(PAYLOAD)
+    assert len(Ledger.load(shared_path).entries) == 1
 
 
 def test_zenodo_url_quotes_each_key_segment() -> None:
