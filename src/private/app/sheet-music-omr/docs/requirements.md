@@ -217,8 +217,8 @@ converter reports such content as OMR-REQ-006 and OMR-REQ-008 state.
   lyrics, chord symbols, figured bass and cue notes;
 - multi-measure rests, measure-repeat signs, additive and unmetered meters, and
   key or meter changes inside a measure;
-- segno and coda signs, and extension lines of words other than a dashed line
-  after expression text;
+- segno and coda signs, brackets with end hooks, and extension lines other than
+  a dashed line after expression text or an unhooked solid voice-leading line;
 - breves, microtonal pitches, percussion, tablature and historical notation;
 - barline types other than ordinary, final, double and repeat, and
   multi-number endings;
@@ -227,7 +227,7 @@ converter reports such content as OMR-REQ-006 and OMR-REQ-008 state.
 - more than four voices on a staff, mixed-staff chords and duplicate chord
   members;
 - unmeasured tremolo, and fingering other than one digit from 1 to 5 per pitch
-  or two different such digits on a pitch of a trill;
+  or two different such digits, adjacent or as a substitution, on a pitch;
 - a whole-measure rest in a split measure, and beams or tuplet groups across a
   barline or a fragment boundary;
 - heading text above a system that starts inside a measure;
