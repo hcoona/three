@@ -92,11 +92,11 @@
       },
       "NuGet.ProjectModel": {
         "type": "Direct",
-        "requested": "[7.9.0, )",
-        "resolved": "7.9.0",
-        "contentHash": "RIDWJdbA/1P+IA+QjjhG7RTAN1eEmJJFKtXMRz5dNoHX7EmIdpUURdiygmgykHHuhXX4aPAMZ49OONT3SITtOQ==",
+        "requested": "[8.0.0, )",
+        "resolved": "8.0.0",
+        "contentHash": "vXbisDF7vwRdRpeELI7/wZs3V4805v5tRNTWI7v5PqK9mZyYa6HcVdDDNlofSPGarKc61Ad7/0cKAm7d9QlDAQ==",
         "dependencies": {
-          "NuGet.DependencyResolver.Core": "7.9.0"
+          "NuGet.DependencyResolver.Core": "8.0.0"
         }
       },
       "NuGet.Versioning": {
@@ -194,29 +194,29 @@
       },
       "NuGet.Credentials": {
         "type": "Transitive",
-        "resolved": "7.9.0",
-        "contentHash": "K+etX+2rEk7nLVd3a6vA/7hjARtiDORoaGgIUYul4hj3VSXC1Icj+PSdBygjQ0c4CmUC3i+Zqoaz7F1EwD+DBw==",
+        "resolved": "8.0.0",
+        "contentHash": "m6KfiyZrojiRN1FroQXFNudZeJIpC9um3iOMtCRu8JopfYByBXrvW6Jr4l+SMWJSoS/4ZRQSAlNG7SE64gpKrQ==",
         "dependencies": {
-          "NuGet.Protocol": "7.9.0"
+          "NuGet.Protocol": "8.0.0"
         }
       },
       "NuGet.DependencyResolver.Core": {
         "type": "Transitive",
-        "resolved": "7.9.0",
-        "contentHash": "0OVtQufJaPMJGdGpjuPmsDwvYX1SdE1L0XDCGfSnIPDj/tyUKILAuVrjHINPFl7smrsdtmoIlIJkEEDYpd1LMQ==",
+        "resolved": "8.0.0",
+        "contentHash": "FTU5RooE6OPgn80+YPr6Mg0THMWcsbH6tldBV/nnFcd9K9Sh7SnQ4PcfcxIhHu8CrgbMX8FzakuOM+Wtv0eZIQ==",
         "dependencies": {
-          "NuGet.Configuration": "7.9.0",
-          "NuGet.LibraryModel": "7.9.0",
-          "NuGet.Protocol": "7.9.0"
+          "NuGet.Configuration": "8.0.0",
+          "NuGet.LibraryModel": "8.0.0",
+          "NuGet.Protocol": "8.0.0"
         }
       },
       "NuGet.LibraryModel": {
         "type": "Transitive",
-        "resolved": "7.9.0",
-        "contentHash": "96/6qeHY4CfOpMyk6XyOBbNF1QD50iFNFs2rs0ppBG3EYF5FyWZHvRHZoq3COXM2zlKmqrGt0EBCUkgdXvyGfw==",
+        "resolved": "8.0.0",
+        "contentHash": "ASQKlYscwMqKJSWO116Ash/lNyMa1n/vt+SKjvkBd6QQ1hey378IrD2AgQXPSQkFs7cxMGrHFUV86etfGq+fQQ==",
         "dependencies": {
-          "NuGet.Common": "7.9.0",
-          "NuGet.Versioning": "7.9.0"
+          "NuGet.Common": "8.0.0",
+          "NuGet.Versioning": "8.0.0"
         }
       },
       "System.Formats.Asn1": {
@@ -229,12 +229,12 @@
         "dependencies": {
           "Microsoft.Extensions.FileSystemGlobbing": "[10.0.14, )",
           "Newtonsoft.Json": "[13.0.4, )",
-          "NuGet.Commands": "[7.9.0, )",
+          "NuGet.Commands": "[8.0.0, )",
           "NuGet.Configuration": "[8.0.0, )",
           "NuGet.Frameworks": "[8.0.0, )",
           "NuGet.Packaging": "[8.0.0, )",
-          "NuGet.ProjectModel": "[7.9.0, )",
-          "NuGet.Protocol": "[7.9.0, )",
+          "NuGet.ProjectModel": "[8.0.0, )",
+          "NuGet.Protocol": "[8.0.0, )",
           "NuGet.Versioning": "[8.0.0, )",
           "System.Security.Cryptography.ProtectedData": "[10.0.14, )",
           "YamlDotNet": "[18.1.0, )"
@@ -254,13 +254,13 @@
       },
       "NuGet.Commands": {
         "type": "CentralTransitive",
-        "requested": "[7.9.0, )",
-        "resolved": "7.9.0",
-        "contentHash": "1D4425Hfb2jXCkHywnQJwZh2PxPVhbgSa8tiofsTX4yXA5hyoBLgZFbMMOmaPbWZUf87LuBKHi2nx3hZEhMqbw==",
+        "requested": "[8.0.0, )",
+        "resolved": "8.0.0",
+        "contentHash": "0+hZr4/72dkVHVSDhW9uUyqLg/yH68YFc28rKa7TaCJnmIdPIsH8VpZzyL7vfvuRfhK4rj4O0zewY++OGbAwrg==",
         "dependencies": {
           "Microsoft.Extensions.FileSystemGlobbing": "6.0.0",
-          "NuGet.Credentials": "7.9.0",
-          "NuGet.ProjectModel": "7.9.0"
+          "NuGet.Credentials": "8.0.0",
+          "NuGet.ProjectModel": "8.0.0"
         }
       },
       "NuGet.Configuration": {
@@ -275,11 +275,11 @@
       },
       "NuGet.Protocol": {
         "type": "CentralTransitive",
-        "requested": "[7.9.0, )",
-        "resolved": "7.9.0",
-        "contentHash": "Ts0qPUGJYfFHhlNSSWWrkaSG6++WqS6ry32WmQA7eNdzTc9SumyhDflITcusBYkT6pEQD5BI1UEByakciV3s0A==",
+        "requested": "[8.0.0, )",
+        "resolved": "8.0.0",
+        "contentHash": "qtjj8XVh9RxYwZWZ6TkHaOaemipLG1azASbFQLh44b3AlMoVhejbWESs1k2pUwpLoNYi5SccfujNqm/dh13zqA==",
         "dependencies": {
-          "NuGet.Packaging": "7.9.0"
+          "NuGet.Packaging": "8.0.0"
         }
       },
       "System.IO.Hashing": {
