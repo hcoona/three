@@ -150,6 +150,18 @@ def refusal(data: bytes | str) -> MusicXmlError:
             " <15mb)>[rel=ottava@r2:end:15mb] C3/4\n",
             id="tremolo-pair-and-quindicesima",
         ),
+        pytest.param(
+            "m 1\n"
+            '1.1: <^dyn-text "sempre"> <tempo "Lento" (q=72)>'
+            " C5f12/4[orn=trill(n)] D5f5-4/8 E5/8[beam1=start]\n"
+            "2.1: <line(>[rel=line@r1:start]"
+            " <ped(>[rel=pedal@r2:line-start] C3/2\n"
+            "m 2\n"
+            "1.1: F5/8[beam1=end] G5/8 A5/4\n"
+            "2.1: <line)>[rel=line@r1:end]"
+            " <ped-open)>[rel=pedal@r2:line-open] C3/2\n",
+            id="phase-1-extensions-and-cross-barline-beam",
+        ),
     ],
 )
 def test_round_trip(body: str) -> None:
@@ -645,3 +657,39 @@ def test_cli_converts_and_refuses(
     assert main(["from-musicxml", str(bad), "-o", str(missing)]) == 1
     assert not missing.exists()
     assert "lexical/xml" in capsys.readouterr().err
+
+
+def test_cross_barline_beam_across_system_break_is_refused() -> None:
+    """Refuse a beam group that crosses a printed system break."""
+    m1 = (
+        f'<measure number="1">{ATTRIBUTES}'
+        + note("C5", 2, "quarter", 1, 1)
+        + note(
+            "D5", 1, "eighth", 1, 1, after_type='<beam number="1">begin</beam>'
+        )
+        + note(
+            "E5",
+            1,
+            "eighth",
+            1,
+            1,
+            after_type='<beam number="1">continue</beam>',
+        )
+        + "<backup><duration>4</duration></backup>"
+        + note("C3", 4, "half", 5, 2)
+        + "</measure>"
+    )
+    m2 = (
+        '<measure number="2"><print new-system="yes"/>'
+        + note(
+            "F5", 1, "eighth", 1, 1, after_type='<beam number="1">end</beam>'
+        )
+        + note("r", 1, "eighth", 1, 1)
+        + note("G5", 2, "quarter", 1, 1)
+        + "<backup><duration>4</duration></backup>"
+        + note("C3", 4, "half", 5, 2)
+        + "</measure>"
+    )
+    assert refusal(score(m1 + m2)).diagnostics[0].code == (
+        "unsupported/beam_boundary"
+    )
