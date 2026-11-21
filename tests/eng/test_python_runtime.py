@@ -150,6 +150,18 @@ locked = importlib.util.module_from_spec(VERSIONS)
 VERSIONS.loader.exec_module(locked)
 
 
+def test_framework_provider_does_not_select_the_native_sdk(tmp_path):
+    """Installation capability and the native compiler use distinct inputs."""
+    (tmp_path / "global.json").write_text(
+        json.dumps({"sdk": {"version": "11.2.3"}})
+    )
+    profile = tmp_path / "eng/dotnet-frameworks"
+    profile.mkdir(parents=True)
+    (profile / "mise.lock").write_text('[[tools.dotnet]]\nversion = "10.4.5"\n')
+    assert locked.locked_version(tmp_path, "dotnet") == "11.2.3"
+    assert locked.locked_version(tmp_path, "dotnet-frameworks") == "10.4.5"
+
+
 def guarded_workflows():
     """Workflows whose tool versions committed configuration owns."""
     return sorted((ROOT / ".github/workflows").glob("*.yml"))

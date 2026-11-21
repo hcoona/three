@@ -44,6 +44,7 @@ jobs:
       artifact_id: ${{ steps.retain.outputs.artifact-id }}
       dotnet_artifact_id: ${{ steps.retain-dotnet.outputs.artifact-id }}
       dotnet_groups: ${{ steps.select.outputs.dotnet_groups }}
+      dotnet_frameworks: ${{ steps.tools.outputs.dotnet-frameworks }}
     steps:
       # Locked restores are slow in the default profile package folder on C:. The runner
       # temporary folder is outside both endpoint checkouts.
@@ -54,10 +55,14 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
+      - name: Read committed framework provider version
+        id: tools
+        run: python eng/scripts/locked_tool_versions.py dotnet-frameworks >> "$GITHUB_OUTPUT"
       - name: Setup candidate control SDK
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: ${{ steps.tools.outputs.dotnet-frameworks }}
       - name: Setup native endpoint tools
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
@@ -65,6 +70,8 @@ jobs:
           version: '2026.10.11'
           experimental: true
           install_args: dotnet node pnpm
+      - name: Prepare required frameworks in the native SDK root
+        run: mise install --monorepo --locked --jobs 1 dotnet
       - name: Prepare the complete candidate control application
         id: control
         shell: pwsh
@@ -79,11 +86,13 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: ${{ steps.materialize.outputs.candidate_directory }}/global.json
+          dotnet-version: ${{ steps.tools.outputs.dotnet-frameworks }}
       - name: Setup basis resource SDK
         if: steps.materialize.outputs.basis_separate == 'true'
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: ${{ steps.materialize.outputs.basis_directory }}/global.json
+          dotnet-version: ${{ steps.tools.outputs.dotnet-frameworks }}
       - name: Prepare locked unfiltered native endpoint facts
         id: dotnet-group
         run: |
@@ -95,6 +104,7 @@ jobs:
             endpoint=${endpoint%$'\r'}
             (
               cd "$endpoint"
+              mise install --monorepo --locked --jobs 1 dotnet
               mise install --locked dotnet node pnpm pkl
               mise exec --locked dotnet -- dotnet restore dirs.proj \
                 -property:Configuration=Debug -property:ContinuousIntegrationBuild=true \
@@ -322,6 +332,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: ${{ needs.scope.outputs.dotnet_frameworks }}
 
       - name: Set up PNPM
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
@@ -431,6 +442,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: ${{ needs.scope.outputs.dotnet_frameworks }}
 
       - name: Setup planned Python
         if: matrix.group.tools.python
@@ -525,6 +537,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: ${{ needs.scope.outputs.dotnet_frameworks }}
 
       - name: Receive exact original plan and complete control distribution
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -624,6 +637,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: ${{ needs.scope.outputs.dotnet_frameworks }}
           cache: true
           cache-dependency-path: |
             src/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Contracts/packages.lock.json
@@ -753,6 +767,8 @@ jobs:
           version: '2026.10.11'
           experimental: true
           install_args: dotnet node pnpm
+      - name: Prepare required frameworks before starting the controller
+        run: mise install --monorepo --locked --jobs 1 dotnet
       - name: Download the exact scope artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -779,6 +795,7 @@ jobs:
           for endpoint in basis candidate; do
             (
               cd "$state/$endpoint"
+              mise install --monorepo --locked --jobs 1 dotnet
               mise install --locked dotnet node pnpm
               mise exec --locked dotnet -- dotnet tool restore
               if [[ -f src/private/app/workflow-delivery/WorkflowDelivery.csproj ]]; then
@@ -890,6 +907,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: ${{ needs.scope.outputs.dotnet_frameworks }}
 
       - name: Set up PNPM
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
@@ -997,6 +1015,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: ${{ needs.scope.outputs.dotnet_frameworks }}
       - name: Prepare pinned native product dependencies
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: pwsh
@@ -1070,6 +1089,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: ${{ needs.scope.outputs.dotnet_frameworks }}
       - name: Verify the ImageOcclusionEditor recipe and clean consumers
         id: tests
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
@@ -1135,6 +1155,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: ${{ needs.scope.outputs.dotnet_frameworks }}
       - name: Receive exact scope
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -1157,11 +1178,13 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: ${{ steps.endpoints.outputs.basis_directory }}/global.json
+          dotnet-version: ${{ needs.scope.outputs.dotnet_frameworks }}
       - name: Setup candidate NBGV and control SDK
         if: steps.endpoints.outputs.basis_separate == 'true'
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: ${{ steps.endpoints.outputs.candidate_directory }}/global.json
+          dotnet-version: ${{ needs.scope.outputs.dotnet_frameworks }}
       - name: Setup native UV
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
@@ -1225,6 +1248,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: ${{ needs.scope.outputs.dotnet_frameworks }}
       - name: Receive exact scope
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -1353,6 +1377,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: ${{ needs.scope.outputs.dotnet_frameworks }}
       - name: Read committed tool versions
         id: tools
         run: python3 eng/scripts/locked_tool_versions.py ruby >> "$GITHUB_OUTPUT"
@@ -1370,6 +1395,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: ${{ steps.endpoints.outputs.basis_directory }}/global.json
+          dotnet-version: ${{ needs.scope.outputs.dotnet_frameworks }}
       - name: Prepare native query tools and select once
         id: plan
         run: |

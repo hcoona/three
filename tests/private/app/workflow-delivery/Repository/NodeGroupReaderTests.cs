@@ -50,6 +50,8 @@ public sealed class NodeGroupReaderTests
     [TestMethod]
     [DataRow("eng/scripts/Bootstrap-CiControl.ps1")]
     [DataRow(".config/dotnet-tools.json")]
+    [DataRow("eng/dotnet-frameworks/mise.toml")]
+    [DataRow("eng/dotnet-frameworks/mise.lock")]
     public async Task CallerImportsAndDependencyPreparationSelectConcreteGroupOwners(string path)
     {
         NodeRevisionInputs basis = NodeGroupReader.WithControlInputs(Inputs(NodeScenario.Basis),
