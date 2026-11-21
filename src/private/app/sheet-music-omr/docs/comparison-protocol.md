@@ -224,7 +224,9 @@ A file passes only if all of the following hold:
   backward or forward `repeat`;
 - no `chord` note has a `staff` different from the first note of its chord,
   and no chord repeats a pitch;
-- no `tremolo` has `type="unmeasured"` or a stroke count of 0;
+- no `tremolo` has `type="unmeasured"` or a stroke count of 0, and no ornament
+  has an `accidental-mark` other than one non-microtonal `accidental-mark` on a
+  `trill-mark`;
 - every note has at most one fingering of one digit from 1 to 5, two different
   such digits (as one two-digit mark or two single-digit marks), or a
   substitution of two different such digits;
@@ -237,15 +239,21 @@ A file passes only if all of the following hold:
   `parentheses`;
 - every `tie` and `notations/tied` has `type` `start` or `stop` (no
   `let-ring`), every `slur` is on a pitched note (not a rest), and every `tie`
-  or `tied` mark pairs cleanly between adjacent same-pitch notes on its staff
-  except an incoming `stop` at a valid [`tie-in`](text-format.md#relations)
-  position (onset 0 of a measure starting a later bracket of a volta group, or
-  of the unlabeled last ending immediately after a volta-group measure with a
-  backward repeat) whose pitch ends the measure before the volta group;
+  or `tied` mark pairs cleanly between adjacent same-pitch notes on its
+  displayed staff except an incoming `stop` at a valid
+  [`tie-in`](text-format.md#relations) position (onset 0 of a measure starting
+  a later bracket of a volta group, or of the unlabeled last ending immediately
+  after a volta-group measure with a backward repeat) whose pitch ends the
+  measure before the volta group;
 - every `pedal` direction with `type` `continue` or `discontinue` has
-  `line="yes"`;
-- every beam level and every tuplet that starts in a measure stops in it,
-  every note with a `tuplet` notation has `time-modification`, and every
+  `line="yes"`, `resume` is absent, and every pedal line that starts closes
+  with `stop` or `discontinue`;
+- every tuplet that starts in a measure stops in it, every beam level that
+  starts in the part stops in the same voice (continuing across a barline only
+  from an event ending at the barline to one at onset 0 of the next measure,
+  and never open at a printed system break or mixed-stem across a barline),
+  every note with a `tuplet` notation has `time-modification`, every direction
+  `offset` lands on an event boundary in `[0, measure length]`, and every
   measure's voice timelines and `forward`/`backup` steps stay within the
   measure length with durations that the format can write;
 - every `octave-shift` starts before its stop on the same staff without
@@ -407,13 +415,14 @@ score alone. An element that a check counts only when `T(Y)` has a
 counterpart counts without one, so each voice of each measure, each slur, each
 tremolo of type `single` or `start`, each `beam` with value `forward hook` or
 `backward hook` on a note that is not a rest, each note, rest or chord with a
-`time-modification`, and each `dynamics/other-dynamics` mark remaining after
-standard dynamic names are normalized is an element, as are each non-substitution
+`time-modification`, each `dynamics/other-dynamics` mark remaining after
+standard dynamic names are normalized, and each pedal line closed by `stop` or
+a terminal `discontinue` is an element, as are each non-substitution
 fingering digit and each two-finger substitution, each note or rest off its
 voice's staff, each heading line, each `wavy-line` that stops on a later note,
 each `dashes` line and each unhooked solid `bracket` line, each parenthesized
-notehead, accidental or metronome mark, each beam on a rest, and each counted
-tie stop.
+notehead, accidental or metronome mark, each beam on a rest, each note beam
+level that crosses a barline, and each counted tie stop.
 
 A gold piece whose reverse conversion reports unsupported content does not
 pass OMR-REQ-010, and the count of such pieces returns to the owner, because
@@ -501,9 +510,15 @@ kind is `tempo`.
 musicdiff 6.0 pairs extras only of the same kind, so a change between tempo
 words and other words, such as a change of only the weight of words in a
 direction without a `metronome` or a `sound` tempo, is one `tempo_rehearsal`
-and one `text` difference. When the harness cannot find the music21 object of
-a `words` element, or the metronome mark of a direction with a `metronome`,
-the run stops with `ProtocolDefectError`.
+and one `text` difference. Likewise, when a non-tempo `direction` has more
+than one `words` element, the harness joins their character data in document
+order with no separator and trims it into the first `words` element's text
+expression (keeping its offset, the direction's placement and the first
+element's style, and removing the other `words` elements' text expressions, or
+all of them when the joined trimmed text is empty), matching the converters'
+MusicXML mapping. When the harness cannot find the music21 object of a `words`
+element, or the metronome mark of a direction with a `metronome`, the run
+stops with `ProtocolDefectError`.
 
 With `Style`, the harness also reads the shape of a fermata. musicdiff 6.0
 records a fermata only by its expression name, which holds neither its shape
@@ -522,6 +537,23 @@ MusicXML added `<pf/>` in version 3.1, and MusicXML 3.0 could write `pf` as
 `other-dynamics` rather than `pf`. Before parsing, the harness replaces any
 `dynamics/other-dynamics` whose trimmed text is one of the 20 standard dynamic
 marks of the format with that empty element.
+
+music21 10.5.2 also pairs `direction` spanners in raw XML element order without
+applying negative `offset` back-steps, attaches at most one pending
+note-spanned `direction` start per note, and imports `<pedal
+type="discontinue" line="yes"/>` without `resume` as an unclosed gap that
+swallows the next pedal mark. Before music21 parses a score, the harness
+rewrites each measure's `direction` elements at their chronological `cursor +
+offset` positions (using `forward` and `backup` with `offset` cleared, and
+ordering `wedge` starts before other spanner starts at the same onset) and
+replaces any `<pedal type="discontinue" line="yes"/>` that closes an open pedal
+line without a following `resume` before the next `start` or the end of the
+part with `type="stop"`. Supplementary checks that inspect MusicXML directly
+read the unnormalized document. Consistently across the screen, converters and
+beam checks, a repeated `begin` inside an already-open beam level is read as
+`continue`, and an unclosed single-event `begin` whose lower beam level is
+active on that event is read as `backward hook` when that lower level ends on
+the event and `forward hook` otherwise.
 
 The harness also reads each octave shift as MusicXML gives it. music21 10.5.2
 starts an ottava on a later note, chord or rest of the document, whatever its
@@ -770,6 +802,14 @@ of its voice at that onset.
   same measure, staff, onset, written pitches and written duration. It is
   identical when the stroke counts are equal. musicdiff scores a tremolo that
   `T(Y)` lacks, and the check adds no extra elements.
+- **Pedal line ends** (`pedal`): because a terminal `discontinue` pedal line
+  end is normalized to `stop` before music21 parses the score, musicdiff 6.0
+  does not distinguish `<ped)>` (`stop`) from `<ped-open)>` (`discontinue`).
+  Each pedal line (`line="yes"`) of `Y` closed by `stop` or a terminal
+  `discontinue` is one `pedal` element when `T(Y)` has a pedal line with the
+  same start and end `(measure, staff, onset)` and no counted musicdiff
+  `pedal` difference touches that span. It is identical when both close with
+  the same `type`. The check adds no extra elements.
 - **Beam hooks** (`beam`): musicdiff 6.0 encodes a hook as `partial`,
   without its direction. Each `beam` of `Y` with value `forward hook` or
   `backward hook` is one element when `T(Y)` has a hook of the same beam
@@ -785,6 +825,16 @@ of its voice at that onset.
   `rhythm_rest` when they differ in duration type, as for notes, and is
   otherwise disregarded. The beam-hook check covers only hooks on notes that
   are not rests.
+- **Cross-barline beams** (`beam`): musicdiff 6.0 evaluates beams within each
+  measure separately, rewriting a measure-ending `begin` or a measure-starting
+  `end` to `partial` and `[continue, end]` at the start of a measure to
+  `[begin, end]`. Each beam level `number` on non-rest notes that crosses the
+  barline from an event ending at the end of measure `m` to an event at onset 0
+  of measure `m + 1` in the same voice is one `beam` element, keyed by `m`,
+  staff, beam `number`, and the written pitches and written durations of both
+  boundary events. Matching is as for fingering, except that an unmatched link
+  is neither an element nor an extra element when a counted musicdiff
+  difference touches either boundary event.
 - **Tuplet ratio** (`tuplet`): with `Style` off, musicdiff 6.0 records only a
   tuplet's actual number, and with `Voicing` it compares gaps between notes,
   not onsets. Each note, rest or chord of `Y` with a `time-modification` is
@@ -873,8 +923,13 @@ with their provenance:
   `<fingering>5</fingering><fingering>4</fingering>` and `T(Y)` writes
   `<fingering>54</fingering>`, pairs in
   which `Y` writes a two-finger substitution as `5–4`, as SMuFL
-  `fingering5fingeringSubstitutionAbovefingering4`, or with
-  `substitution="yes"` on the second digit and `T(Y)` writes `5-4`, pairs in
+  `fingering5fingeringSubstitutionAbovefingering4`, as three sibling
+  `<fingering>` elements (`5`, `4`, `fingeringSubstitutionAbove`), or with
+  `substitution="yes"` on the second digit and `T(Y)` writes `5-4`, a pair in
+  which `Y` places a `wedge` or `pedal` direction after a note with a negative
+  `offset` back to an earlier onset and `T(Y)` places it chronologically at
+  that onset, a pair in which `Y` writes a single-note secondary beam hook as
+  `begin` and `T(Y)` writes `forward hook` or `backward hook`, pairs in
   which the first note of ending 2 or of an unlabeled last ending after a
   backward repeat has only `notations/tied` of type `stop` in `Y` and both
   `tie` and `notations/tied` of type `stop` in `T(Y)`, and identical pairs;
@@ -979,11 +1034,14 @@ with their provenance:
   ties into the first ending, the reverse pair, in which `T(Y)` adds one, and a
   pair in which `T(Y)` drops an ordinary tie;
 - a pair in which `T(Y)` drops the level 2 hook of a sixteenth rest in a beam
-  group, and the reverse pair, in which `T(Y)` adds one;
+  group, the reverse pair, in which `T(Y)` adds one, a pair in which `T(Y)`
+  drops a two-eighth primary beam across a barline, and the reverse pair, in
+  which `T(Y)` adds one;
 - a pair in which the parentheses of a notehead move to a simultaneous unison
   notehead of a different written duration in another voice of the same staff,
   a pair in which a metronome mark's parentheses move to another metronome
-  mark, and a pair in which an `other-dynamics` modifier text changes;
+  mark, a pair in which an `other-dynamics` modifier text changes, and a pair
+  in which a pedal line's release (`stop`) becomes an open end (`discontinue`);
 - a pair in which `Y` reprints an unchanged key and an unchanged numeric time
   signature in a later measure and an unchanged clef at the start of a later
   system, and `T(Y)` omits them, and a pair in which `Y` reprints the trill
@@ -996,7 +1054,8 @@ with their provenance:
   second such pair whose direction also has dynamics, one in which a
   direction with normal words and no `metronome` loses its `sound` tempo, one
   in which bold tempo words are split after a space into two `words`
-  elements, one in which they are split inside a word, one in which `T(Y)`
+  elements, one in which they are split inside a word, one in which non-tempo
+  words are split after a space into two `words` elements, one in which `T(Y)`
   drops the words of a direction with a `metronome`, and one for each staff
   in which `T(Y)` drops words that music21 reads as a repeat instruction;
 - for the octave-shift reading, a pair in which an 8va over the last two
@@ -1141,14 +1200,17 @@ The instrument passes when it reports:
   non-identical and one extra `tie` element for the tie-end pair, exactly one
   non-identical `tie` element for the tie-in deletion pair, exactly one extra
   `tie` element for the tie-in insertion pair, exactly one non-identical
-  `beam` element for the rest-hook deletion pair, exactly one extra `beam`
-  element for the rest-hook insertion pair, exactly one counted musicdiff
+  `beam` element for the rest-hook deletion pair and for the cross-barline
+  beam deletion pair, exactly one extra `beam` element for the rest-hook
+  insertion pair and for the cross-barline beam insertion pair, exactly one
+  counted musicdiff
   `tie` difference for the ordinary-tie pair, exactly one non-identical and
   one extra `pitch` element for the parenthesis pair, exactly one
   non-identical and one extra `tempo_rehearsal` element for the
   metronome-parenthesis pair, exactly one non-identical and one extra `voice`
   element for the voice-line pair, exactly one non-identical `dynamic` element
-  for the other-dynamics text pair, and exactly one non-identical and one
+  for the other-dynamics text pair, exactly one non-identical `pedal` element
+  for the pedal-end pair, and exactly one non-identical and one
   extra `heading` element for the heading-order pair, each with no other
   difference;
 - exactly one `text` and one `tempo_rehearsal` difference for each pair in
@@ -1166,10 +1228,12 @@ The instrument passes when it reports:
   pairs, the split-words pairs, the octave-shift encoding pairs and
   self-comparisons, the untyped-fermata pair, the MusicXML 3.0
   `other-dynamics` `pf` pair, the trimmed `other-dynamics` pair, the split
-  two-digit fingering pair, the finger-substitution encoding pairs, and the
-  second-ending `notations/tied`-only `tie-in` pair; the octave-shift,
-  untyped-fermata and `other-dynamics` `pf` pairs also have no difference in
-  the layout pass.
+  two-digit fingering pair, the finger-substitution encoding pairs, the
+  negative-`offset` direction pair, the single-note `begin` beam-hook pair,
+  and the second-ending `notations/tied`-only `tie-in` pair; the octave-shift,
+  untyped-fermata, `other-dynamics` `pf`, negative-`offset` direction and
+  single-note `begin` beam-hook pairs also have no difference in the layout
+  pass.
 
 The screen's allowlist is reviewed against the same fixtures before the
 samples are selected in Execution step 2. A failure of the instrument or of
@@ -1512,17 +1576,23 @@ Source findings, with the pinned sources they rely on:
   [`credit` element](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/credit/),
   the
   [`credit-type` element](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/credit-type/),
-  and the `formal-3` selected-file runtime observation and owner disposition in
-  [#1488 comment 7031008701](https://github.com/hcoona/three/issues/1488#issuecomment-7031008701)
+  and the `formal-3` selected-file runtime observation and owner dispositions in
+  [#1488 comment 7031008701](https://github.com/hcoona/three/issues/1488#issuecomment-7031008701),
+  [#1488 comment 7034443356](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356)
   and
-  [#1488 comment 7034443356](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356).
+  [#1488 comment 7058188830](https://github.com/hcoona/three/issues/1488#issuecomment-7058188830).
 - music21 10.5.2 reads an `octave-shift` start as an `Ottava` whose first
   element is the next note, chord or rest that it parses, of any staff and at
   any offset, and a stop by adding the last note, chord or rest that its
-  measure parser has read, if any, without reading the stop's `offset`. A
+  measure parser has read, if any, without reading the stop's `offset`, while
+  `pedal` `discontinue` inserts a `PedalGapStart` without closing the open
+  `PedalMark` (`xmlToM21.py` lines 4488 to 4562) and
+  `SpannerBundle.freePendingSpannedElementAssignment` breaks after assigning at
+  most one pending `GeneralNote` spanner per note (`spanner.py` lines 1505 to
+  1530). A
   stop whose `number` matches no open start raises an import error, which is
   caught with a warning, so that start is never completed or inserted. See
-  `music21/musicxml/xmlToM21.py` lines 4449 to 4486, 5591 to 5598, 2454, 2894
+  `music21/musicxml/xmlToM21.py` lines 4270 to 4563, 5591 to 5598, 2454, 2894
   and 2916, and `music21/spanner.py` lines 1505 to 1530, in the 10.5.2 wheel
   cited above. musicdiff 6.0 transposes every note to written pitch, undoing
   ottavas, before annotation
@@ -1574,8 +1644,8 @@ Source findings, with the pinned sources they rely on:
   [lines 1056 to 1069](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/annotation.py#L1056-L1069).
   Every value from a quarter down has notehead `4`
   ([lines 220 to 228](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/annotation.py#L220-L228)),
-  and its flags are `partial` beam levels
-  ([m21utils.py](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L483-L520)).
+  and `get_enhance_beamings` normalizes each measure's beam list independently
+  ([m21utils.py](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L482-L571)).
   It discards a rest's beams
   ([lines 57 to 59](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L57-L59))
   and rebuilds them from the rest's duration and the next event's beams

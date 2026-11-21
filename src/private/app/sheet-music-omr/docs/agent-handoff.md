@@ -184,9 +184,11 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
    `executable_sha256` `89d9145261eb2bec6aedc208b5234b92c01fe6bc5485fec7e2ce28ec05819f31`)
    and stopped in `baseline_content` on `l0033`
    ([#1488 comment 7031008701](https://github.com/hcoona/three/issues/1488#issuecomment-7031008701)),
-   followed by the five-source triage and repository-owner Phase 1 dispositions
-   recorded in
-   [#1488 comment 7034443356](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356).
+   followed by the five-source triage, 23-piece gold audit, and repository-owner
+   Phase 1 dispositions recorded in
+   [#1488 comment 7034443356](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356)
+   and
+   [#1488 comment 7058188830](https://github.com/hcoona/three/issues/1488#issuecomment-7058188830).
    When executing on the active Windows + WSL2 workstation:
     - preserve the external `formal-1`, `formal-2`, and `formal-3` run
       directories and their selection and ledger artifacts intact; never
