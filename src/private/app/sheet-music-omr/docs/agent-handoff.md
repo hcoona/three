@@ -98,9 +98,8 @@ The following pre-execution artifacts and open obligations are recorded on
   acceptance evidence. Earlier pilots and local gold probes
   ([#1488 comment 6722886585](https://github.com/hcoona/three/issues/1488#issuecomment-6722886585))
   ran before `#1608` was accepted and do not count as formal protocol runs.
-- **ABC 2.1 capability mapping (completed for `be64962a`/`6bc166ac`; Phase 1
-  addendum required before converter implementation):** the earlier
-  `xml2abc`/`abc2xml` execution
+- **ABC 2.1 capability mapping (completed, including Phase 1 addendum):** the
+  earlier `xml2abc`/`abc2xml` execution
   ([#1488 comment 6614290511](https://github.com/hcoona/three/issues/1488#issuecomment-6614290511))
   is retained only as an incomplete toolchain runtime observation (`#1525`).
   After `#1547` (`eb4986a5`) clarified in
@@ -110,23 +109,23 @@ The following pre-execution artifacts and open obligations are recorded on
   ([#1488 comment 6639491389](https://github.com/hcoona/three/issues/1488#issuecomment-6639491389))
   completed independent `research-evidence-review`
   ([#1488 comment 6642511739](https://github.com/hcoona/three/issues/1488#issuecomment-6642511739)),
-  and its `#1569` (`6bc166ac`) addendum covering `heading`, review markers, and
-  heading `carry-in` also completed independent `research-evidence-review` and
+  its `#1569` (`6bc166ac`) addendum covering `heading`, review markers, and
+  heading `carry-in` completed independent `research-evidence-review` and
   GOV-011 triage
-  ([#1488 comment 6672103690](https://github.com/hcoona/three/issues/1488#issuecomment-6672103690))
-  (source findings; each mapping cell is a source-backed inference). Because
-  Phase 1 amends `requirements.md` and `text-format.md` (`voice` `<line(>` and
-  `line` carry, `fingering` `fDE` on any pitch and `fD-E` substitution,
-  `dynamic` `dyn-text`, and `tempo_rehearsal` `(q=120)`), an independently
-  `research-evidence-review`-verified ABC 2.1 capability-mapping addendum on
-  `#1488` is required after those record changes merge and before converter
-  implementation relies on them (returning to the owner if standard ABC 2.1
-  expresses every required category and invariant without ambiguity).
+  ([#1488 comment 6672103690](https://github.com/hcoona/three/issues/1488#issuecomment-6672103690)),
+  and its `#1685` (`1573289e`) Phase 1 addendum covering all eight Phase 1
+  notation extensions and invariants completed independent
+  `research-evidence-review` in
+  [#1488 comment 7058919271](https://github.com/hcoona/three/issues/1488#issuecomment-7058919271)
+  (source findings; each mapping cell is a source-backed inference).
 - **Unstarted W1 acceptance and auxiliary evidence:** no formal corpus or gold
   round-trip measurement has completed (`OMR-REQ-010`, `OMR-REQ-011`, and the
-  non-gating layout score in `OMR-REQ-013`), the Phase 1 ABC 2.1
-  capability-mapping addendum and updated allowlist review are owed before
-  `formal-4` converter/selection gates as above, the `OMR-REQ-012`
+  non-gating layout score in `OMR-REQ-013`), the updated structural-screen
+  allowlist review against the expanded Phase 1 calibration set and the
+  owner-approved `docs/delivery-wave.md` amendment for repairing `gold-01`'s
+  `3` legacy prototype `tie` `stop` tags in the local staged `gold-cache` copy
+  ([#1488 comment 7067355696](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696))
+  remain owed before `formal-4` execution, the `OMR-REQ-012`
   toolchain-class finding set is not yet frozen, and W1 tokenizer counts
   ([Delivery Wave](../../../../../docs/delivery-wave.md) `#1488`,
   [OMR-REQ-014](requirements.md#omr-req-014-evidence-separation), and
@@ -184,11 +183,13 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
    `executable_sha256` `89d9145261eb2bec6aedc208b5234b92c01fe6bc5485fec7e2ce28ec05819f31`)
    and stopped in `baseline_content` on `l0033`
    ([#1488 comment 7031008701](https://github.com/hcoona/three/issues/1488#issuecomment-7031008701)),
-   followed by the five-source triage, 23-piece gold audit, and repository-owner
-   Phase 1 dispositions recorded in
-   [#1488 comment 7034443356](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356)
+   followed by the five-source triage, 23-piece gold audit, Phase 1 ABC 2.1
+   addendum, and repository-owner Phase 1 dispositions recorded in
+   [#1488 comment 7034443356](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356),
+   [#1488 comment 7058188830](https://github.com/hcoona/three/issues/1488#issuecomment-7058188830),
+   [#1488 comment 7058919271](https://github.com/hcoona/three/issues/1488#issuecomment-7058919271)
    and
-   [#1488 comment 7058188830](https://github.com/hcoona/three/issues/1488#issuecomment-7058188830).
+   [#1488 comment 7067355696](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696).
    When executing on the active Windows + WSL2 workstation:
     - preserve the external `formal-1`, `formal-2`, and `formal-3` run
       directories and their selection and ledger artifacts intact; never
@@ -199,13 +200,14 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
       [supplementary checks](comparison-protocol.md#supplementary-checks),
       [code-tree binding, shared ledger, resumable selection, and split baseline steps](comparison-protocol.md#execution-and-bounds),
       and [stop conditions](comparison-protocol.md#stop-conditions);
-    - after the Phase 1 record/protocol updates merge to `main`, complete the
-      independently reviewed Phase 1 ABC 2.1 capability-mapping addendum on
-      `#1488` before converter implementation relies on the amended records,
-      complete the updated
-      structural-screen allowlist review against the expanded calibration
-      fixtures, and run formal corpus/gold execution (`formal-4`) only from a
-      clean `origin/main` checkout; read-only local preparation of the
+    - after the Phase 1 implementation PR and the separate `docs/delivery-wave.md`
+      amendment authorizing the 3-measure legacy `tie` `stop` repair in the local
+      staged `gold-01` copy
+      ([#1488 comment 7067355696](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696))
+      both merge to `main` (keeping `gold-cache` strictly read-only until that
+      Wave amendment merges), record the updated structural-screen allowlist
+      review on `#1488` and run formal corpus/gold execution (`formal-4`) only
+      from a clean `origin/main` checkout; read-only local preparation of the
       `OMR-REQ-012` toolchain-class finding set may proceed in parallel under
       the accepted W1 Wave entry.
 
@@ -250,11 +252,16 @@ and outside all repository worktrees (resumed in
 execute these steps in order:
 
 1. **Confirm clean code baseline and pre-selection gates on `main`:** ensure the
-   Phase 1 record/protocol updates, Phase 1 ABC 2.1 capability-mapping addendum,
-   converter/comparator/screen implementation, and updated structural-screen
-   allowlist review against the expanded calibration fixtures are complete on
-   `origin/main` and `src/private/app/sheet-music-omr/` has a clean code tree.
-   Never bypass a stop by editing run artifacts or skipping files manually.
+   Phase 1 record/protocol updates (`#1685`), Phase 1 ABC 2.1 capability-mapping
+   addendum ([#1488 comment 7058919271](https://github.com/hcoona/three/issues/1488#issuecomment-7058919271)),
+   converter/comparator/screen implementation, updated structural-screen
+   allowlist review against the expanded calibration fixtures, and the separate
+   `docs/delivery-wave.md` amendment for the local staged `gold-01` copy
+   ([#1488 comment 7067355696](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696))
+   are merged/recorded on `origin/main` (keeping `gold-cache` strictly read-only
+   until that Wave amendment merges) and `src/private/app/sheet-music-omr/` has
+   a clean code tree. Never bypass a stop by editing run artifacts or skipping
+   files manually.
 2. **Verify host MuseScore 4 availability (Windows or WSL2):** confirm Windows
    host `MuseScore4.exe` (`4.x`) is reachable (default
    `C:\Program Files\MuseScore 4\bin\MuseScore4.exe` or

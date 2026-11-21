@@ -25,6 +25,8 @@ from sheet_music_omr.model import (
     ExtendedTrillRelation,
     HairpinEnd,
     HairpinStart,
+    LineEnd,
+    LineStart,
     Note,
     Ornament,
     OrnamentKind,
@@ -57,6 +59,7 @@ TREMOLO: Final = "tremolo"
 ORNAMENT: Final = "ornament"
 ARPEGGIO: Final = "arpeggio"
 OTTAVA: Final = "ottava"
+LINE: Final = "line"
 START: Final = "start"
 END: Final = "end"
 MEMBER: Final = "member"
@@ -64,7 +67,7 @@ CHANGE: Final = "change"
 EXTENDED_TRILL: Final = "extended-trill"
 _MIN_ARPEGGIO: Final = 2
 _MAX_SLURS: Final = 2
-_LOOSE_ORDER: Final = frozenset({"hairpin", OTTAVA, "pedal", "dashes"})
+_LOOSE_ORDER: Final = frozenset({"hairpin", OTTAVA, "pedal", "dashes", LINE})
 OTTAVA_SHIFTS: Final = {
     OttavaSign.OTTAVA_ALTA: 1,
     OttavaSign.OTTAVA_BASSA: -1,
@@ -75,6 +78,7 @@ _PEDAL_ROLES = {
     PedalAction.LINE_START: START,
     PedalAction.LINE_CHANGE: CHANGE,
     PedalAction.LINE_RELEASE: END,
+    PedalAction.LINE_OPEN: END,
 }
 
 
@@ -224,6 +228,9 @@ def _direction_spec(event: object) -> tuple[int, str, str, str | None] | None:
     elif isinstance(event, (DashesStart, DashesEnd)):
         role = START if isinstance(event, DashesStart) else END
         spec = (event.label, "dashes", role, None)
+    elif isinstance(event, (LineStart, LineEnd)):
+        role = START if isinstance(event, LineStart) else END
+        spec = (event.label, LINE, role, None)
     elif isinstance(event, TrillEnd):
         spec = (event.label, ORNAMENT, END, EXTENDED_TRILL)
     return spec
@@ -486,7 +493,10 @@ def _tie_follows(start: Placed, end: Placed) -> bool:
     return (
         end.is_main_rhythmic
         and isinstance(end.event, Note)
-        and end.staff == start.staff
+        and (
+            end.staff == start.staff
+            or end.displayed_staff == start.displayed_staff
+        )
         and end.time == start.end_time
     )
 
@@ -508,7 +518,7 @@ def _check_tie(analysis: RelationAnalysis, relation: Relation) -> None:
             return
         if not (
             end.placed.is_main_rhythmic
-            and end.placed.staff == carried.start.staff
+            and isinstance(end.placed.event, Note)
             and end.placed.time == timeline.start_time
         ):
             analysis.report(
@@ -741,6 +751,14 @@ def _signature(relation: Relation) -> tuple[object, ...]:
     return (relation.kind, tuple(sorted(keys)), variant)
 
 
+def _slur_limit(relation: Relation) -> int:
+    limit = _MAX_SLURS
+    for point in (relation.start, relation.end):
+        if point is not None and isinstance(point.placed.event, Note):
+            limit = max(limit, len(point.placed.event.pitches))
+    return limit
+
+
 def _check_duplicates(analysis: RelationAnalysis) -> None:
     groups: dict[tuple[object, ...], list[Relation]] = {}
     for relation in sorted(analysis.relations.values(), key=lambda r: r.label):
@@ -750,7 +768,10 @@ def _check_duplicates(analysis: RelationAnalysis) -> None:
             continue
         if all(relation.is_open for relation in group):
             continue
-        if group[0].kind == SLUR and len(group) <= _MAX_SLURS:
+        if group[0].kind == SLUR and (
+            (group[0].carried is not None and not analysis.assembled)
+            or len(group) <= _slur_limit(group[0])
+        ):
             continue
         analysis.report(
             "relation_duplicate",

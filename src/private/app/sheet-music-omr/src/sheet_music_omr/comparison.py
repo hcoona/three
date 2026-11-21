@@ -26,6 +26,7 @@ import inspect
 import math
 import re
 import textwrap
+import xml.etree.ElementTree as ET
 from bisect import bisect_right
 from collections import Counter
 from copy import copy
@@ -51,6 +52,7 @@ from musicdiff.annotation import (
 )
 from musicdiff.comparison import Comparison
 
+from sheet_music_omr.model import DynamicMark
 from sheet_music_omr.musicxml_events import (
     DASHES,
     WAVY_LINE,
@@ -66,11 +68,12 @@ from sheet_music_omr.musicxml_events import (
     read_score,
     voice_staves,
 )
-from sheet_music_omr.musicxml_events import _written as _written_time
+from sheet_music_omr.musicxml_events import (
+    _written as _written_time,
+)
 from sheet_music_omr.musicxml_reverse import _load as _load_musicxml
 
 if TYPE_CHECKING:
-    import xml.etree.ElementTree as ET
     from collections.abc import Callable, Iterable, Iterator
 
     from musicdiff.comparison import DiffOperation
@@ -378,12 +381,15 @@ class _CrossStaffBeamGroup:
 
 @dataclass(frozen=True, slots=True)
 class _ScoreVoiceEvent:
+    measure_index: int
     onset: Fraction
+    duration: Fraction
     order: tuple[Fraction, bool, int, int]
     staff: int
     source_staff: tuple[int, int]
     note: AnnNote
     voice_id: str | None
+    primary_beam: str | None
 
 
 @dataclass(slots=True)
@@ -403,6 +409,7 @@ class _MeasureEventContext:
     measure: m21.stream.Measure
     bar: AnnMeasure
     event_onsets: dict[int, Fraction] | None
+    xml_events: dict[int, XmlEvent] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -415,10 +422,53 @@ class _StaffVoiceContext:
 
 @dataclass(slots=True)
 class _CrossStaffBeamTracker:
-    measure_index: int
     groups: list[_CrossStaffBeamGroup] = field(default_factory=list)
     active: dict[_BeamKey, _ActiveCrossStaffBeam] = field(default_factory=dict)
     aliases: dict[_BeamKey, _BeamKey] = field(default_factory=dict)
+
+    def reset_at_boundary(self) -> None:
+        self.active.clear()
+        self.aliases.clear()
+
+    def flush_barline(
+        self, m_length: Fraction, next_events: list[_ScoreVoiceEvent]
+    ) -> None:
+        for active_key, beam in list(self.active.items()):
+            last = beam.events[-1]
+            v_next = [
+                ev
+                for ev in next_events
+                if (
+                    ev.voice_id == last.voice_id
+                    if last.voice_id is not None
+                    else ev.source_staff == last.source_staff
+                )
+            ]
+            mains = [ev for ev in v_next if not ev.note.graceness]
+            lead_grace = bool(
+                mains
+                and any(
+                    ev.note.graceness
+                    and ev.onset == 0
+                    and ev.order < mains[0].order
+                    for ev in v_next
+                )
+            )
+            continues = (
+                not beam.is_grace
+                and last.onset + last.duration == m_length
+                and bool(mains)
+                and not lead_grace
+                and mains[0].onset == 0
+                and mains[0].primary_beam in {"continue", "stop"}
+            )
+            if not continues:
+                self.active.pop(active_key, None)
+                self.aliases = {
+                    alias: target
+                    for alias, target in self.aliases.items()
+                    if target != active_key
+                }
 
     def add(self, event: _ScoreVoiceEvent) -> None:
         stream_key: _BeamStreamKey = (
@@ -430,7 +480,7 @@ class _CrossStaffBeamTracker:
         event_key = (stream_key, is_grace)
         active_key = self.aliases.get(event_key, event_key)
         beam = self.active.get(active_key)
-        beam_type = _source_primary_beam_type(event.note)
+        beam_type = event.primary_beam
         if beam_type is None:
             self._reject_interruption(beam)
             return
@@ -549,7 +599,6 @@ class _CrossStaffBeamTracker:
         self.groups.extend(
             _completed_cross_staff_beam(
                 beam.events,
-                self.measure_index,
                 beam.voice_id,
                 complete=beam.complete,
             ),
@@ -946,6 +995,7 @@ def annotate(
     parsed, xml = _parse(source)
     words = _read_words(parsed, xml)
     _read_octave_shifts(parsed, xml)
+    _normalize_ending_names(parsed)
     if DetailLevel.includesStyle(detail):
         _read_fermata_shapes(parsed)
     try:
@@ -973,11 +1023,17 @@ def _parse(source: Path | str) -> tuple[m21.stream.Score, XmlScore]:
             message = "a compressed MusicXML container is not a protocol input"
             raise ProtocolDefectError(message)  # noqa: TRY301
         typed = _upright_untyped_fermatas(data)
-        if typed is None and isinstance(source, Path):
+        prepared = _prepare_for_music21(data if typed is None else typed)
+        if prepared is None and typed is None and isinstance(source, Path):
             parsed = m21.converter.parse(source, forceSource=True)
         else:
+            payload = (
+                prepared
+                if prepared is not None
+                else (data if typed is None else typed)
+            )
             parsed = m21.converter.parse(
-                data if typed is None else typed,
+                payload,
                 format="musicxml",
                 forceSource=True,
             )
@@ -992,6 +1048,465 @@ def _parse(source: Path | str) -> tuple[m21.stream.Score, XmlScore]:
         message = f"musicdiff cannot parse the score: {error}"
         raise ScoreParseError(message) from error
     return parsed, xml
+
+
+_STANDARD_DYNAMIC_NAMES = frozenset(mark.value for mark in DynamicMark)
+_SPANNER_TAGS = frozenset(
+    {"wedge", "pedal", "octave-shift", "dashes", "bracket"}
+)
+
+
+def _prepare_for_music21(data: bytes | str) -> bytes | None:
+    """Apply protocol pre-parse MusicXML normalizations for music21 10.5.2."""
+    try:
+        root = _load_musicxml(data)
+    except Exception:  # noqa: BLE001
+        return None
+    if root.tag != "score-partwise":
+        return None
+    changed = _replace_standard_other_dynamics(root)
+    changed = _normalize_preparse_beams(root) or changed
+    for part in root.findall("part"):
+        changed = _reorder_part_directions(part) or changed
+        changed = _replace_terminal_pedal_discontinue(part) or changed
+    if not changed:
+        return None
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
+def _replace_standard_other_dynamics(root: ET.Element) -> bool:
+    changed = False
+    for dynamics in root.iter("dynamics"):
+        for index, child in enumerate(list(dynamics)):
+            if child.tag != "other-dynamics":
+                continue
+            trimmed = (child.text or "").strip()
+            if trimmed in _STANDARD_DYNAMIC_NAMES:
+                replacement = ET.Element(trimmed)
+                replacement.tail = child.tail
+                dynamics[index] = replacement
+                changed = True
+    return changed
+
+
+def _normalize_preparse_beams(root: ET.Element) -> bool:
+    try:
+        reader = read_score(ET.tostring(root, encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return False
+    # Inspect whether any beam state in root differs from normalized XmlScore.
+    notes = [
+        n
+        for part in root.findall("part")
+        for m in part.findall("measure")
+        for n in m.findall("note")
+        if n.find("chord") is None
+    ]
+    if len(notes) != len(reader.events):
+        return False
+    changed = False
+    for raw_head, norm_ev in zip(notes, reader.events, strict=True):
+        norm_map = {
+            b.get("number", "1"): (b.text or "").strip()
+            for b in norm_ev.notes[0].findall("beam")
+        }
+        for b in raw_head.findall("beam"):
+            num = b.get("number", "1")
+            if num in norm_map and (b.text or "").strip() != norm_map[num]:
+                b.text = norm_map[num]
+                changed = True
+    return changed
+
+
+def _direction_priority(direction: ET.Element) -> int:
+    kinds = [k for dt in direction.findall("direction-type") for k in dt]
+    if any(
+        k.tag in _SPANNER_TAGS
+        and k.get("type") in {"stop", "change", "discontinue"}
+        for k in kinds
+    ):
+        return 0
+    if any(
+        k.tag == "wedge" and k.get("type") in {"crescendo", "diminuendo"}
+        for k in kinds
+    ):
+        return 1
+    return 2
+
+
+_SPANNER_OPEN_TYPES = frozenset(
+    {"start", "crescendo", "diminuendo", "up", "down"}
+)
+
+
+def _reorder_part_directions(part: ET.Element) -> bool:
+    open_spanners: dict[tuple[str, str], str] = {}
+    measures = part.findall("measure")
+    div = 1
+    changed = False
+    for idx, measure in enumerate(measures):
+        next_m = measures[idx + 1] if idx + 1 < len(measures) else None
+        did_change, div = _reorder_measure_directions(
+            measure, next_m, div, open_spanners
+        )
+        changed = did_change or changed
+    return changed
+
+
+type _DirEntry = tuple[Fraction, int, int, str, bool, ET.Element]
+
+
+@dataclass(slots=True)
+class _MeasureDirScan:
+    divisions: int
+    seen_divs: list[int] = field(default_factory=list)
+    cursor: Fraction = Fraction(0)
+    seg_idx: int = 0
+    lead_staff: str = "1"
+    elem_divs: list[tuple[ET.Element, int]] = field(default_factory=list)
+    anchors: list[tuple[int, Fraction, str, ET.Element]] = field(
+        default_factory=list
+    )
+    seg_ends: dict[int, tuple[ET.Element | None, Fraction]] = field(
+        default_factory=dict
+    )
+    graces: list[tuple[Fraction, int, str]] = field(default_factory=list)
+    dirs: list[_DirEntry] = field(default_factory=list)
+
+
+def _resolve_dir_staff(
+    child: ET.Element, open_spanners: dict[tuple[str, str], str]
+) -> tuple[str, bool]:
+    raw_staff = (child.findtext("staff") or "").strip()
+    eff_staff = raw_staff or "1"
+    has_span = False
+    for dt in child.findall("direction-type"):
+        for mark in dt:
+            if mark.tag not in _SPANNER_TAGS:
+                continue
+            has_span = True
+            num = (mark.get("number") or "1").strip()
+            mtype = (mark.get("type") or "").strip()
+            key = (mark.tag, num)
+            if mtype in _SPANNER_OPEN_TYPES:
+                open_spanners[key] = eff_staff
+            else:
+                eff_staff = open_spanners.get(key) or eff_staff
+                if mtype == "stop":
+                    open_spanners.pop(key, None)
+    return eff_staff, has_span
+
+
+def _scan_dir_child(
+    idx: int,
+    child: ET.Element,
+    scan: _MeasureDirScan,
+) -> bool:
+    if child.tag == "attributes" and child.find("divisions") is not None:
+        new_div = int((child.findtext("divisions") or "0").strip())
+        if new_div <= 0:
+            return False
+        scan.divisions = new_div
+        scan.seen_divs.append(new_div)
+        return True
+    if child.tag == "note":
+        scan.elem_divs.append((child, scan.divisions))
+        if child.find("chord") is not None:
+            return True
+        scan.lead_staff = (child.findtext("staff") or "1").strip()
+        if child.find("grace") is not None:
+            scan.graces.append((scan.cursor, idx, scan.lead_staff))
+        else:
+            scan.anchors.append(
+                (scan.seg_idx, scan.cursor, scan.lead_staff, child)
+            )
+            dur = int(child.findtext("duration", "0"))
+            scan.cursor += Fraction(dur, scan.divisions)
+    elif child.tag in {"backup", "forward"}:
+        scan.elem_divs.append((child, scan.divisions))
+        if child.tag == "backup":
+            scan.seg_ends[scan.seg_idx] = (child, scan.cursor)
+            scan.seg_idx += 1
+        step = Fraction(int(child.findtext("duration", "0")), scan.divisions)
+        scan.cursor = max(
+            Fraction(0),
+            scan.cursor + (-step if child.tag == "backup" else step),
+        )
+    elif child.tag == "direction":
+        off_text = child.findtext("offset")
+        off = Fraction(
+            0 if off_text is None else int(off_text.strip()), scan.divisions
+        )
+        onset = scan.cursor + off
+        if onset < 0:
+            return False
+        raw_staff = (child.findtext("staff") or "1").strip()
+        has_span = any(
+            k.tag in _SPANNER_TAGS
+            for dt in child.findall("direction-type")
+            for k in dt
+        )
+        scan.dirs.append(
+            (
+                onset,
+                _direction_priority(child),
+                idx,
+                raw_staff,
+                off != 0 or has_span,
+                child,
+            )
+        )
+    return True
+
+
+def _scan_measure_directions(
+    measure: ET.Element,
+    start_div: int,
+    open_spanners: dict[tuple[str, str], str],
+) -> _MeasureDirScan | None:
+    scan = _MeasureDirScan(divisions=start_div, seen_divs=[start_div])
+    right_bar = next(
+        (
+            c
+            for c in measure
+            if c.tag == "barline" and c.get("location", "right") == "right"
+        ),
+        None,
+    )
+    try:
+        for idx, child in enumerate(measure):
+            if not _scan_dir_child(idx, child, scan):
+                return None
+    except ValueError, ZeroDivisionError:
+        return None
+    scan.seg_ends[scan.seg_idx] = (right_bar, scan.cursor)
+    resolved: list[_DirEntry] = []
+    for onset, pri, idx, _, is_sp, child in sorted(
+        scan.dirs, key=lambda item: (item[0], item[1], item[2])
+    ):
+        eff_staff, _ = _resolve_dir_staff(child, open_spanners)
+        resolved.append((onset, pri, idx, eff_staff, is_sp, child))
+    resolved.sort(key=lambda item: item[2])
+    scan.dirs = resolved
+    return scan
+
+
+def _needs_direction_reorder(scan: _MeasureDirScan) -> bool:
+    dirs = scan.dirs
+    if not dirs:
+        return False
+    if any(d.findtext("offset") not in {None, "0"} for *_, d in dirs):
+        return True
+    if any((d.findtext("staff") or "1").strip() != st for *_, st, _, d in dirs):
+        return True
+    if any(
+        is_sp
+        and any(
+            g_on == on and g_st == st and idx < g_idx
+            for g_on, g_idx, g_st in scan.graces
+        )
+        for on, _, idx, st, is_sp, _ in dirs
+    ):
+        return True
+    by_st: dict[str, list[tuple[Fraction, int, int]]] = {}
+    for on, pri, idx, st, is_sp, _ in dirs:
+        if is_sp:
+            by_st.setdefault(st, []).append((on, pri, idx))
+    return any(keys != sorted(keys) for keys in by_st.values())
+
+
+def _has_leading_divisions(measure: ET.Element) -> bool:
+    for child in measure:
+        if child.tag == "attributes" and child.find("divisions") is not None:
+            return True
+        if child.tag in {"backup", "forward"}:
+            return False
+        if child.tag == "note" and child.find("grace") is None:
+            return False
+        if child.tag == "direction" and child.findtext("offset") not in {
+            None,
+            "0",
+        }:
+            return False
+    return False
+
+
+def _unify_measure_divisions(
+    measure: ET.Element, next_m: ET.Element | None, scan: _MeasureDirScan
+) -> int:
+    target = math.lcm(
+        *scan.seen_divs, *(on.denominator for on, *_ in scan.dirs)
+    )
+    if len(set(scan.seen_divs)) == 1 and target == scan.divisions:
+        return target
+    for elem, old_div in scan.elem_divs:
+        dur_el = elem.find("duration")
+        if dur_el is not None and dur_el.text is not None:
+            q = Fraction(int(dur_el.text.strip()), old_div)
+            dur_el.text = str(int(q * target))
+    first_attrs: ET.Element | None = None
+    for attr_el in list(measure.findall("attributes")):
+        div_el = attr_el.find("divisions")
+        if div_el is None:
+            continue
+        if first_attrs is None and list(measure).index(attr_el) == 0:
+            first_attrs = attr_el
+            div_el.text = str(target)
+        else:
+            attr_el.remove(div_el)
+            if len(attr_el) == 0:
+                measure.remove(attr_el)
+    if first_attrs is None:
+        head_attrs = ET.Element("attributes")
+        ET.SubElement(head_attrs, "divisions").text = str(target)
+        measure.insert(0, head_attrs)
+    if (
+        next_m is not None
+        and scan.divisions != target
+        and not _has_leading_divisions(next_m)
+    ):
+        nxt_attrs = ET.Element("attributes")
+        ET.SubElement(nxt_attrs, "divisions").text = str(scan.divisions)
+        next_m.insert(0, nxt_attrs)
+    return target
+
+
+def _insert_cursor_dirs(
+    measure: ET.Element,
+    before_el: ET.Element | None,
+    items: list[tuple[Fraction, ET.Element]],
+    ctx: tuple[Fraction, int, bool],
+) -> Fraction:
+    start_cur, div, restore = ctx
+    pos = len(measure) if before_el is None else list(measure).index(before_el)
+    cur = start_cur
+    for onset, direction in items:
+        delta = onset - cur
+        if delta != 0:
+            step_el = ET.Element("backup" if delta < 0 else "forward")
+            ET.SubElement(step_el, "duration").text = str(int(abs(delta) * div))
+            measure.insert(pos, step_el)
+            pos += 1
+        measure.insert(pos, direction)
+        pos += 1
+        cur = onset
+    if restore and cur != start_cur:
+        delta = start_cur - cur
+        step_el = ET.Element("backup" if delta < 0 else "forward")
+        ET.SubElement(step_el, "duration").text = str(int(abs(delta) * div))
+        measure.insert(pos, step_el)
+        cur = start_cur
+    return cur
+
+
+def _place_staff_directions(
+    measure: ET.Element,
+    staff: str,
+    staff_dirs: list[tuple[Fraction, ET.Element]],
+    scan_and_div: tuple[_MeasureDirScan, int],
+    tail_dirs: list[tuple[Fraction, ET.Element]],
+) -> None:
+    scan, div = scan_and_div
+    seg_counts: dict[int, list[Fraction]] = {}
+    for s_i, n_on, n_st, _ in scan.anchors:
+        if n_st == staff:
+            seg_counts.setdefault(s_i, []).append(n_on)
+    target_seg = (
+        None
+        if not seg_counts
+        else max(
+            seg_counts,
+            key=lambda s_i: (
+                Fraction(0) in seg_counts[s_i],
+                len(seg_counts[s_i]),
+                -s_i,
+            ),
+        )
+    )
+    if target_seg is None:
+        tail_dirs.extend(staff_dirs)
+        return
+    seg_notes = [
+        (n_on, n_el)
+        for s_i, n_on, n_st, n_el in scan.anchors
+        if s_i == target_seg and n_st == staff
+    ]
+    idx = 0
+    for n_on, note_el in seg_notes:
+        mid: list[tuple[Fraction, ET.Element]] = []
+        while idx < len(staff_dirs) and staff_dirs[idx][0] < n_on:
+            mid.append(staff_dirs[idx])
+            idx += 1
+        if mid:
+            _insert_cursor_dirs(measure, note_el, mid, (n_on, div, True))
+        while idx < len(staff_dirs) and staff_dirs[idx][0] == n_on:
+            measure.insert(list(measure).index(note_el), staff_dirs[idx][1])
+            idx += 1
+    if idx < len(staff_dirs):
+        boundary_el, end_cur = scan.seg_ends[target_seg]
+        _insert_cursor_dirs(
+            measure, boundary_el, staff_dirs[idx:], (end_cur, div, True)
+        )
+
+
+def _reorder_measure_directions(
+    measure: ET.Element,
+    next_m: ET.Element | None,
+    start_div: int,
+    open_spanners: dict[tuple[str, str], str],
+) -> tuple[bool, int]:
+    scan = _scan_measure_directions(measure, start_div, open_spanners)
+    if scan is None:
+        return False, start_div
+    end_div = scan.divisions
+    if not _needs_direction_reorder(scan):
+        return False, end_div
+    div = _unify_measure_divisions(measure, next_m, scan)
+    for *_, direction in scan.dirs:
+        measure.remove(direction)
+        for off_el in list(direction.findall("offset")):
+            direction.remove(off_el)
+    by_staff: dict[str, list[tuple[Fraction, int, int, ET.Element]]] = {}
+    for onset, pri, idx, staff, _, direction in scan.dirs:
+        by_staff.setdefault(staff, []).append((onset, pri, idx, direction))
+    tail_dirs: list[tuple[Fraction, ET.Element]] = []
+    for staff in sorted(by_staff):
+        ordered = [(on, d) for on, _, _, d in sorted(by_staff[staff])]
+        _place_staff_directions(measure, staff, ordered, (scan, div), tail_dirs)
+    if tail_dirs:
+        right_bar, end_cur = scan.seg_ends[scan.seg_idx]
+        _insert_cursor_dirs(
+            measure, right_bar, tail_dirs, (end_cur, div, right_bar is not None)
+        )
+    return True, end_div
+
+
+def _replace_terminal_pedal_discontinue(part: ET.Element) -> bool:
+    pedals = [
+        pedal
+        for m in part.findall("measure")
+        for d in m.findall("direction")
+        for pedal in d.findall("direction-type/pedal")
+        if pedal.get("line") == "yes"
+    ]
+    changed = False
+    for idx, pedal in enumerate(pedals):
+        if pedal.get("type") != "discontinue":
+            continue
+        num = pedal.get("number", "1")
+        later_kind = next(
+            (
+                other.get("type")
+                for other in pedals[idx + 1 :]
+                if other.get("number", "1") == num
+                and other.get("type") in {"resume", "start"}
+            ),
+            None,
+        )
+        if later_kind != "resume":
+            pedal.set("type", "stop")
+            changed = True
+    return changed
 
 
 def _upright_untyped_fermatas(data: bytes | str) -> bytes | str | None:
@@ -1068,6 +1583,16 @@ def _read_words(
         if text and _is_tempo(direction.element, words):
             mark = _set_tempo(measure, direction, expressions, text, claimed)
             read[direction.order] = (mark,)
+        elif len(expressions) > 1 or not text:
+            carrier, *others = expressions
+            for other in others:
+                measure.remove(other)
+            if text:
+                carrier.content = text
+                read[direction.order] = (carrier,)
+            else:
+                measure.remove(carrier)
+                read[direction.order] = ()
         else:
             read[direction.order] = tuple(expressions)
     return read
@@ -1197,6 +1722,26 @@ class _InvertedFermata(m21.expressions.Fermata):
     def name(self) -> str:
         """The name that musicdiff records for the expression."""
         return _INVERTED_FERMATA
+
+
+_SINGLE_ENDING_RE = re.compile(r"[1-9][0-9]*")
+
+
+def _normalize_ending_names(score: m21.stream.Score) -> None:
+    """Normalize standard single-number volta bracket display labels."""
+    for bracket in score.recurse().getElementsByClass(
+        m21.spanner.RepeatBracket
+    ):
+        if bracket.overrideDisplay is None:
+            continue
+        number = str(bracket.number or "").strip()
+        display = str(bracket.overrideDisplay).strip()
+        if _SINGLE_ENDING_RE.fullmatch(number) and display in {
+            "",
+            number,
+            f"{number}.",
+        }:
+            bracket.overrideDisplay = None
 
 
 def _read_fermata_shapes(score: m21.stream.Score) -> None:
@@ -1713,7 +2258,12 @@ def _heading_credit(
         message = f"heading credit has an invalid page: {page}"
         raise ProtocolDefectError(message)
     position = _credit_position(words[0])
-    lines = tuple(line for word in words for line in _credit_words_lines(word))
+    joined = "".join("".join(word.itertext()) for word in words)
+    lines = tuple(
+        normalized
+        for raw in (joined.splitlines() or [joined])
+        if (normalized := " ".join(raw.split()))
+    )
     return page, position, lines
 
 
@@ -1990,6 +2540,7 @@ def _canonical_voice_positions(
     voices: list[AnnVoice] | None = None,
     direction_overrides: dict[int, str | None] | None = None,
     event_onsets: dict[int, Fraction] | None = None,
+    xml_events: dict[int, XmlEvent] | None = None,
 ) -> dict[int, _Position]:
     voices = bar.voices_list if voices is None else voices
     _reject_double_stem_events(voices, bar)
@@ -2005,7 +2556,9 @@ def _canonical_voice_positions(
     if len(voices) > _MAX_CANONICAL_VOICES:
         message = f"measure {bar.measureNumber} has more than four voices"
         raise ProtocolDefectError(message)
-    position_context = _MeasureEventContext(measure, bar, event_onsets)
+    position_context = _MeasureEventContext(
+        measure, bar, event_onsets, xml_events
+    )
     if len(voices) == _TWO_VOICE_COUNT:
         return _two_voice_event_positions(
             voices,
@@ -2065,7 +2618,9 @@ def _two_voice_event_positions(
     direction_overrides: dict[int, str | None] | None = None,
 ) -> dict[int, _Position]:
     voice_directions = [
-        _voice_event_directions(voice, context.bar, direction_overrides)
+        _voice_event_directions(
+            voice, context.bar, direction_overrides, context.xml_events
+        )
         for voice in voices
     ]
     resolved = [
@@ -2164,7 +2719,9 @@ def _events_by_stem_direction(
     # Every voice's beams are read first, so that a hard stop in one voice
     # is not hidden by an undetermined position in another.
     voice_directions = [
-        _voice_event_directions(voice, context.bar, direction_overrides)
+        _voice_event_directions(
+            voice, context.bar, direction_overrides, context.xml_events
+        )
         for voice in voices
     ]
     reasons: list[UndeterminedReason] = []
@@ -2198,6 +2755,7 @@ def _voice_event_directions(
     voice: AnnVoice,
     bar: AnnMeasure,
     direction_overrides: dict[int, str | None] | None = None,
+    xml_events: dict[int, XmlEvent] | None = None,
 ) -> dict[int, str | None]:
     directions: dict[int, str | None] = {}
     for note in voice.annot_notes:
@@ -2210,7 +2768,9 @@ def _voice_event_directions(
             direction if direction in {"up", "down"} else None
         )
 
-    for notes, complete in _beam_groups(voice, bar, direction_overrides):
+    for notes, complete in _beam_groups(
+        voice, bar, direction_overrides, xml_events
+    ):
         beam_directions = [
             directions[id(note)]
             for note in notes
@@ -2233,6 +2793,7 @@ def _beam_groups(
     voice: AnnVoice,
     bar: AnnMeasure,
     direction_overrides: dict[int, str | None] | None = None,
+    xml_events: dict[int, XmlEvent] | None = None,
 ) -> list[tuple[list[AnnNote], bool]]:
     groups: list[tuple[list[AnnNote], bool]] = []
     active: list[AnnNote] | None = None
@@ -2242,7 +2803,7 @@ def _beam_groups(
             direction_overrides is not None and id(note) in direction_overrides
         ):
             continue
-        beam_type = _primary_beam_type(note)
+        beam_type = _primary_beam_type(note, xml_events)
         if beam_type == "start":
             if active is not None:
                 message = (
@@ -2274,10 +2835,13 @@ def _beam_groups(
     return groups
 
 
-def _primary_beam_type(note: AnnNote) -> str | None:
-    if not note.beamings:
-        return None
-    return note.beamings[0]
+_XML_BEAM_TO_M21 = {"begin": "start", "continue": "continue", "end": "stop"}
+
+
+def _primary_beam_type(
+    note: AnnNote, xml_events: dict[int, XmlEvent] | None = None
+) -> str | None:
+    return _source_primary_beam_type(note, xml_events)
 
 
 def _musicxml_part_key(part: AnnPart, staff: int) -> tuple[str, str | int]:
@@ -2350,10 +2914,17 @@ def _source_staff_indices(
     return indexes
 
 
-def _source_primary_beam_type(note: AnnNote) -> str | None:
+def _source_primary_beam_type(
+    note: AnnNote, xml_events: dict[int, XmlEvent] | None = None
+) -> str | None:
+    if xml_events is not None and (ev := xml_events.get(id(note))) is not None:
+        for beam in ev.notes[0].findall("beam"):
+            if (beam.get("number") or "1").strip() == "1":
+                return _XML_BEAM_TO_M21.get((beam.text or "").strip())
+        return None
     beams = getattr(_general_note(note), "beams", None)
     if beams is None:
-        return note.beamings[0] if note.beamings else None
+        return None
     return beams.getByNumber(1).type if 1 in beams.getNumbers() else None
 
 
@@ -2399,12 +2970,15 @@ def _score_voice_events(
                     voice_id = parent_voice_id or _source_voice_id(note)
                     events.append(
                         _ScoreVoiceEvent(
+                            measure_index,
                             onset,
+                            annotated.events[id(note)].duration,
                             _event_order(annotated.events[id(note)]),
                             staff,
                             source_staff_indexes[staff],
                             note,
                             voice_id,
+                            _source_primary_beam_type(note, annotated.events),
                         ),
                     )
     return events_by_measure
@@ -2425,27 +2999,28 @@ def _source_voice_id(note: AnnNote) -> str | None:
 def _cross_staff_beam_groups(
     annotated: AnnotatedScore,
 ) -> list[_CrossStaffBeamGroup]:
-    return [
-        group
-        for (_, measure_index), events in _score_voice_events(
-            annotated,
-        ).items()
-        for group in _cross_staff_beams_in_measure(
-            events,
-            measure_index,
-        )
-    ]
-
-
-def _cross_staff_beams_in_measure(
-    events: list[_ScoreVoiceEvent],
-    measure_index: int,
-) -> list[_CrossStaffBeamGroup]:
-    events.sort(key=lambda event: (event.onset, event.order))
-    tracker = _CrossStaffBeamTracker(measure_index)
-    for event in events:
-        tracker.add(event)
-    return tracker.groups
+    by_part: dict[tuple[str, str | int], dict[int, list[_ScoreVoiceEvent]]] = {}
+    for (part_key, m_idx), events in _score_voice_events(annotated).items():
+        by_part.setdefault(part_key, {})[m_idx] = events
+    lengths = annotated.xml.measure_lengths
+    groups: list[_CrossStaffBeamGroup] = []
+    for per_measure in by_part.values():
+        tracker = _CrossStaffBeamTracker()
+        prev_m = -2
+        for m_idx in sorted(per_measure):
+            m_events = sorted(
+                per_measure[m_idx],
+                key=lambda event: (event.onset, event.order),
+            )
+            if m_idx != prev_m + 1:
+                tracker.reset_at_boundary()
+            elif 0 <= prev_m < len(lengths):
+                tracker.flush_barline(lengths[prev_m], m_events)
+            for event in m_events:
+                tracker.add(event)
+            prev_m = m_idx
+        groups.extend(tracker.groups)
+    return groups
 
 
 def _cross_staff_voice_id(event: _ScoreVoiceEvent) -> str | tuple[str, int]:
@@ -2456,25 +3031,22 @@ def _cross_staff_voice_id(event: _ScoreVoiceEvent) -> str | tuple[str, int]:
 
 def _completed_cross_staff_beam(
     events: list[_ScoreVoiceEvent] | None,
-    measure_index: int,
     voice_id: str | tuple[str, int],
     *,
     complete: bool,
 ) -> list[_CrossStaffBeamGroup]:
     if events is None or not complete:
         return []
-    group = _make_cross_staff_beam_group(events, measure_index, voice_id)
-    return [group] if group is not None else []
+    return _make_cross_staff_beam_groups(events, voice_id)
 
 
-def _make_cross_staff_beam_group(
+def _make_cross_staff_beam_groups(
     events: list[_ScoreVoiceEvent],
-    measure_index: int,
     voice_id: str | tuple[str, int],
-) -> _CrossStaffBeamGroup | None:
+) -> list[_CrossStaffBeamGroup]:
     group_events = tuple((event.staff, event.note) for event in events)
     if len({staff for staff, _ in group_events}) <= 1:
-        return None
+        return []
     non_grace = [
         (staff, note) for staff, note in group_events if not note.graceness
     ]
@@ -2490,15 +3062,22 @@ def _make_cross_staff_beam_group(
     else:
         home_staff, home_note = group_events[0]
     direction = _stem_direction(home_note)
-    return _CrossStaffBeamGroup(
-        home_staff,
-        measure_index,
-        voice_id,
-        group_events,
-        tuple((id(event.note), event.onset) for event in events),
-        home_note,
-        direction if direction in {"up", "down"} else None,
-    )
+    home_dir = direction if direction in {"up", "down"} else None
+    by_measure: dict[int, list[_ScoreVoiceEvent]] = {}
+    for event in events:
+        by_measure.setdefault(event.measure_index, []).append(event)
+    return [
+        _CrossStaffBeamGroup(
+            home_staff,
+            m_idx,
+            voice_id,
+            tuple((ev.staff, ev.note) for ev in m_events),
+            tuple((id(ev.note), ev.onset) for ev in m_events),
+            home_note,
+            home_dir,
+        )
+        for m_idx, m_events in by_measure.items()
+    ]
 
 
 def _filtered_voice(
@@ -2591,7 +3170,9 @@ def _score_voice_positions(
                 staff,
                 measure_index,
                 groups_by_note,
-                _MeasureEventContext(measure, bar, event_onsets),
+                _MeasureEventContext(
+                    measure, bar, event_onsets, annotated.events
+                ),
             )
             voices: list[AnnVoice] = []
             direction_overrides: dict[int, str | None] = {}
@@ -2608,6 +3189,7 @@ def _score_voice_positions(
                     voices=voices,
                     direction_overrides=direction_overrides,
                     event_onsets=event_onsets,
+                    xml_events=annotated.events,
                 ),
             )
 

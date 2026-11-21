@@ -208,26 +208,36 @@ class PitchResolver:
         frame = self.timeline.frames[source_frame]
         octave = pitch.octave + self.relations.shift_at(placed)
         measure_end = frame.origin + frame.length
-        alters: set[Alter] = set()
-        for other in self.timeline.events():
-            if not (
-                other.frame.index == frame.index
-                and other.is_main_rhythmic
-                and isinstance(other.event, Note)
-                and other.staff == placed.staff
-                and other.end_time == measure_end
-            ):
-                continue
-            for member in range(1, len(other.event.pitches) + 1):
-                sounding = self.resolved.get((other.ident, member))
-                if sounding is not None and (
-                    sounding.step,
-                    sounding.octave,
-                ) == (
-                    pitch.step,
-                    octave,
+
+        def collect(*, by_displayed: bool) -> set[Alter]:
+            found: set[Alter] = set()
+            for other in self.timeline.events():
+                same_staff = (
+                    other.displayed_staff == placed.displayed_staff
+                    if by_displayed
+                    else other.staff == placed.staff
+                )
+                if not (
+                    other.frame.index == frame.index
+                    and other.is_main_rhythmic
+                    and isinstance(other.event, Note)
+                    and same_staff
+                    and other.end_time == measure_end
                 ):
-                    alters.add(sounding.alter)
+                    continue
+                for member in range(1, len(other.event.pitches) + 1):
+                    sounding = self.resolved.get((other.ident, member))
+                    if sounding is not None and (
+                        sounding.step,
+                        sounding.octave,
+                    ) == (
+                        pitch.step,
+                        octave,
+                    ):
+                        found.add(sounding.alter)
+            return found
+
+        alters = collect(by_displayed=False) or collect(by_displayed=True)
         return self._source_alter(alters, pitch)
 
     def _source_alter(self, alters: set[Alter], pitch: Pitch) -> Alter:

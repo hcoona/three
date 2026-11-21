@@ -187,7 +187,7 @@ class _RunChecker:
             return semantic("beam", message, beam.location)
         return unsupported(
             "beam_boundary",
-            f"{message}; a beam run across a barline or a fragment boundary"
+            f"{message}; a beam run across a system or fragment boundary"
             " is unsupported",
             beam.location,
         )
@@ -196,19 +196,68 @@ class _RunChecker:
         for level, location in sorted(self.open.items()):
             yield unsupported(
                 "beam_boundary",
-                f"the beam{level} run is open at the end of its line; a beam"
-                " run across a barline or a fragment boundary is unsupported",
+                f"the beam{level} run is open at the end of its run; a beam"
+                " run across a system or fragment boundary is unsupported",
                 location,
             )
 
 
-def check_beams(lines: tuple[Line, ...]) -> Iterator[Diagnostic]:
-    """Check the beam runs of every voice line."""
-    for line in lines:
-        for sequence in _sequences(line):
+def _continues_across_barline(
+    previous: tuple[Line, Placed, _RunChecker] | None,
+    line: Line,
+    main: list[Placed],
+) -> bool:
+    if previous is None or not previous[2].open or not main:
+        return False
+    prev_line, prev_last, _ = previous
+    return (
+        prev_line.frame.index + 1 == line.frame.index
+        and prev_line.frame.owns_end
+        and line.frame.owns_start
+        and line.frame.measure == prev_line.frame.measure + 1
+        and prev_last.onset + prev_last.duration == prev_line.frame.length
+        and main[0].onset == 0
+        and not any(
+            e.is_grace and e.position < main[0].position for e in line.events
+        )
+    )
+
+
+def _check_sequence(sequence: list[Placed]) -> Iterator[Diagnostic]:
+    checker = _RunChecker()
+    for placed in sequence:
+        beams = _beams(placed)
+        yield from _check_levels(placed, beams)
+        yield from checker.step(beams)
+    yield from checker.finish()
+
+
+def _check_voice_lines(voice_lines: list[Line]) -> Iterator[Diagnostic]:
+    previous: tuple[Line, Placed, _RunChecker] | None = None
+    for line in voice_lines:
+        main, *graces = _sequences(line)
+        if _continues_across_barline(previous, line, main):
+            assert previous is not None  # noqa: S101
+            checker = previous[2]
+        else:
+            if previous is not None:
+                yield from previous[2].finish()
             checker = _RunChecker()
-            for placed in sequence:
-                beams = _beams(placed)
-                yield from _check_levels(placed, beams)
-                yield from checker.step(beams)
-            yield from checker.finish()
+        for placed in main:
+            beams = _beams(placed)
+            yield from _check_levels(placed, beams)
+            yield from checker.step(beams)
+        previous = (line, main[-1], checker) if main else None
+        for grace_seq in graces:
+            yield from _check_sequence(grace_seq)
+    if previous is not None:
+        yield from previous[2].finish()
+
+
+def check_beams(lines: tuple[Line, ...]) -> Iterator[Diagnostic]:
+    """Check the beam runs of every voice line, including across barlines."""
+    by_voice: dict[tuple[int, int], list[Line]] = {}
+    for line in lines:
+        by_voice.setdefault((line.line.staff, line.line.voice), []).append(line)
+    for voice_lines in by_voice.values():
+        yield from _check_voice_lines(voice_lines)

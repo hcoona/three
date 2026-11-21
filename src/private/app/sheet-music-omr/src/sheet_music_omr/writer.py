@@ -49,6 +49,7 @@ from sheet_music_omr.model import (
     DashesEnd,
     DashesStart,
     Dynamic,
+    DynamicText,
     EndingKind,
     EndingOption,
     ExtendedTrillRelation,
@@ -60,6 +61,8 @@ from sheet_music_omr.model import (
     KeyOption,
     LeftRepeatOption,
     LenOption,
+    LineEnd,
+    LineStart,
     MeasureRest,
     Note,
     Ornament,
@@ -147,9 +150,9 @@ def _pitch(pitch: Pitch) -> str:
     name = f"{pitch.step}{accidental}{pitch.octave}"
     if pitch.parenthesized:
         name = f"({name})"
-    fingering = "".join(str(digit) for digit in pitch.fingering)
-    if fingering:
-        name += f"f{fingering}"
+    if pitch.fingering:
+        sep = "-" if pitch.fingering_substitution else ""
+        name += "f" + sep.join(str(digit) for digit in pitch.fingering)
     marks: list[str] = []
     if pitch.tie_in:
         marks.append("tie-in")
@@ -177,7 +180,14 @@ _FLAG_WRITERS: dict[type, Callable[[Any], tuple[_FlagKey, str]]] = {
     Grace: lambda f: ((4, "", 0), "grace/" if f.slashed else "grace"),
     CrossStaff: lambda f: ((5, "", 0), f"xs{f.staff}"),
     Beam: lambda f: ((6, "", f.level), f"beam{f.level}={f.state}"),
-    Ornament: lambda f: ((7, "", 0), f"orn={f.kind}"),
+    Ornament: lambda f: (
+        (7, "", 0),
+        (
+            f"orn={f.kind}({f.accidental})"
+            if f.accidental is not None
+            else f"orn={f.kind}"
+        ),
+    ),
     SingleTremolo: lambda f: ((8, "", 0), f"tremolo=single:{f.strokes}"),
     SlurRelation: lambda f: (
         (9, "slur", f.label),
@@ -219,12 +229,23 @@ def _note(note: Note) -> str:
 def _tempo(tempo: Tempo) -> str:
     metronome = ""
     if tempo.metronome is not None:
-        metronome = f" {tempo.metronome.unit}={tempo.metronome.per_minute}"
+        body = f"{tempo.metronome.unit}={tempo.metronome.per_minute}"
+        if tempo.metronome.parenthesized:
+            body = f"({body})"
+        metronome = f" {body}"
     return f"<tempo {quote_text(tempo.text)}{metronome}>"
 
 
+_PEDAL_BRACKETS = {
+    PedalAction.LINE_START: "ped(",
+    PedalAction.LINE_CHANGE: "ped(",
+    PedalAction.LINE_RELEASE: "ped)",
+    PedalAction.LINE_OPEN: "ped-open)",
+}
+
+
 def _pedal_line(pedal: PedalLine) -> str:
-    bracket = "ped)" if pedal.action is PedalAction.LINE_RELEASE else "ped("
+    bracket = _PEDAL_BRACKETS[pedal.action]
     return f"<{bracket}>[rel=pedal@r{pedal.label}:{pedal.action}]"
 
 
@@ -243,6 +264,9 @@ _EVENT_WRITERS: dict[type, Callable[[Any], str]] = {
     ),
     Tuplet: _tuplet,
     Dynamic: lambda e: f"<{'^' if e.above else ''}{e.mark}>",
+    DynamicText: lambda e: (
+        f"<{'^' if e.above else ''}dyn-text {quote_text(e.text)}>"
+    ),
     ClefChange: lambda e: f"<clef {_clef(e.clef)}>",
     Words: lambda e: f"<{quote_text(e.text)}>",
     Tempo: _tempo,
@@ -262,6 +286,8 @@ _EVENT_WRITERS: dict[type, Callable[[Any], str]] = {
         f"<{quote_text(e.text)}(>[rel=dashes@r{e.label}:start]"
     ),
     DashesEnd: lambda e: f"<dashes)>[rel=dashes@r{e.label}:end]",
+    LineStart: lambda e: f"<line(>[rel=line@r{e.label}:start]",
+    LineEnd: lambda e: f"<line)>[rel=line@r{e.label}:end]",
     TrillEnd: lambda e: f"<trill)>[rel=ornament@r{e.label}:end:extended-trill]",
 }
 

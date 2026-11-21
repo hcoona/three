@@ -40,7 +40,11 @@ from sheet_music_omr.lexical import decode_source
 from sheet_music_omr.model import AssembledScore
 from sheet_music_omr.musicxml_events import read_score
 from sheet_music_omr.musicxml_forward import to_musicxml
-from sheet_music_omr.musicxml_reverse import MusicXmlError, from_musicxml_text
+from sheet_music_omr.musicxml_reverse import (
+    MusicXmlError,
+    from_musicxml,
+    from_musicxml_text,
+)
 from sheet_music_omr.parser import parse_document
 from sheet_music_omr.supplementary import (
     CHECKS,
@@ -1451,6 +1455,14 @@ WORDS_PAIRS: dict[str, tuple[str, str, dict[str, int]]] = {
             f"          <words{_BOLD}>gro con brio</words>\n",
         ),
         _TEMPO,
+        {},
+    ),
+    "non-tempo-split-into-words": (
+        _words_at(
+            "          <words>poco a poco </words>\n"
+            "          <words>cresc.</words>\n",
+        ),
+        _words_at("          <words>poco a poco cresc.</words>\n"),
         {},
     ),
     "tempo-with-dynamics-read-as-text": (
@@ -3555,6 +3567,124 @@ def _two_note_tremolo(strokes: int) -> str:
     )
 
 
+def _voice_line_score(stop_note: str) -> str:
+    return _variant(
+        _before(
+            "m1s1n3",
+            _direction(
+                '          <bracket type="start" number="1" line-end="none"'
+                ' line-type="solid"/>\n',
+            ),
+        ),
+        _before(
+            stop_note,
+            _direction(
+                '          <bracket type="stop" number="1" line-end="none"'
+                ' line-type="solid"/>\n',
+            ),
+        ),
+    )
+
+
+def _cross_barline_beam_score(*, beamed: bool) -> str:
+    m2_beam = '        <beam number="1">begin</beam>\n' if beamed else ""
+    m3_beam = '        <beam number="1">end</beam>\n' if beamed else ""
+    m3_notes = (
+        '      <note id="m3s1n1">\n'
+        "        <pitch><step>C</step><octave>4</octave></pitch>\n"
+        "        <duration>6</duration>\n"
+        "        <voice>1</voice>\n"
+        "        <type>eighth</type>\n"
+        "        <stem>up</stem>\n"
+        "        <staff>1</staff>\n"
+        f"{m3_beam}"
+        "      </note>\n"
+        '      <note id="m3s1n1b">\n'
+        "        <pitch><step>D</step><octave>4</octave></pitch>\n"
+        "        <duration>6</duration>\n"
+        "        <voice>1</voice>\n"
+        "        <type>eighth</type>\n"
+        "        <stem>up</stem>\n"
+        "        <staff>1</staff>\n"
+        "      </note>\n"
+        '      <note id="m3s1n1c">\n'
+        "        <pitch><step>E</step><octave>4</octave></pitch>\n"
+        "        <duration>12</duration>\n"
+        "        <voice>1</voice>\n"
+        "        <type>quarter</type>\n"
+        "        <stem>up</stem>\n"
+        "        <staff>1</staff>\n"
+        "      </note>\n"
+        '      <note id="m3s1n1d">\n'
+        "        <pitch><step>F</step><octave>4</octave></pitch>\n"
+        "        <duration>24</duration>\n"
+        "        <voice>1</voice>\n"
+        "        <type>half</type>\n"
+        "        <stem>up</stem>\n"
+        "        <staff>1</staff>\n"
+        "      </note>"
+    )
+    return _variant(
+        _edit(
+            "m2s1n7",
+            "<staff>1</staff>\n",
+            f"<stem>up</stem>\n        <staff>1</staff>\n{m2_beam}",
+        ),
+        (_note("m3s1n1").rstrip("\n"), m3_notes),
+    )
+
+
+def _metronome_parentheses_score(*, on_second: bool) -> str:
+    first_attr = "" if on_second else ' parentheses="yes"'
+    second_attr = ' parentheses="yes"' if on_second else ""
+    return _variant(
+        _before(
+            "m1s1n1",
+            _direction(
+                f"          <metronome{first_attr}>\n"
+                "            <beat-unit>quarter</beat-unit>\n"
+                "            <per-minute>96</per-minute>\n"
+                "          </metronome>\n",
+            ),
+        ),
+        _before(
+            "m2s1n1",
+            _direction(
+                f"          <metronome{second_attr}>\n"
+                "            <beat-unit>quarter</beat-unit>\n"
+                "            <per-minute>120</per-minute>\n"
+                "          </metronome>\n",
+            ),
+        ),
+    )
+
+
+def _other_dynamics_score(text: str) -> str:
+    return _variant(
+        _before(
+            "m1s1n3",
+            _direction(
+                "          <dynamics>\n"
+                f"            <other-dynamics>{text}</other-dynamics>\n"
+                "          </dynamics>\n",
+            ),
+        ),
+    )
+
+
+def _pedal_end_score(end_kind: str) -> str:
+    return _variant(
+        _before(
+            "m1s2n1",
+            _direction('          <pedal type="start" line="yes"/>\n', 2),
+        ),
+        _before(
+            "m1s2n2",
+            _direction(f'          <pedal type="{end_kind}" line="yes"/>\n', 2),
+        ),
+    )
+
+
 # Each pair is ``T(Y)``, ``Y`` and the check that scores its one change.
 CHECK_PAIRS: dict[str, tuple[str, str, tuple[str, tuple[int, int]]]] = {
     "extended-trill-end": (
@@ -3576,6 +3706,11 @@ CHECK_PAIRS: dict[str, tuple[str, str, tuple[str, tuple[int, int]]]] = {
         _dashes_score("m1s1n3", on_dolce=True),
         _dashes_score("m1s1n3"),
         ("dashes", (1, 1)),
+    ),
+    "voice-line-end": (
+        _voice_line_score("m2s1n1"),
+        _voice_line_score("m1s1n4"),
+        ("voice_line", (1, 1)),
     ),
     "tremolo-single": (
         _marked(BASE, ("m1s1n3", _tremolo("single", 2))),
@@ -3682,10 +3817,45 @@ CHECK_PAIRS: dict[str, tuple[str, str, tuple[str, tuple[int, int]]]] = {
     ),
     "rest-hook-deletion": (_NO_REST_HOOK, _REST_HOOK, ("rest_beams", (1, 0))),
     "rest-hook-insertion": (_REST_HOOK, _NO_REST_HOOK, ("rest_beams", (0, 1))),
+    "cross-barline-beam-deletion": (
+        _cross_barline_beam_score(beamed=False),
+        _cross_barline_beam_score(beamed=True),
+        ("cross_barline_beams", (1, 0)),
+    ),
+    "cross-barline-beam-insertion": (
+        _cross_barline_beam_score(beamed=True),
+        _cross_barline_beam_score(beamed=False),
+        ("cross_barline_beams", (0, 1)),
+    ),
+    "fingering-two-digit-reverse": (
+        _marked(BASE, ("m1s1n2", _fingering("45"))),
+        _marked(BASE, ("m1s1n2", _fingering("54"))),
+        ("fingering", (2, 2)),
+    ),
+    "fingering-substitution-second-digit": (
+        _marked(BASE, ("m1s1n2", _fingering("5-3"))),
+        _marked(BASE, ("m1s1n2", _fingering("5-4"))),
+        ("fingering", (1, 1)),
+    ),
     "notehead-parentheses": (
         _parenthesized("m3s1n2"),
         _parenthesized("m3s1n1"),
         ("notehead_parentheses", (1, 1)),
+    ),
+    "metronome-parentheses": (
+        _metronome_parentheses_score(on_second=True),
+        _metronome_parentheses_score(on_second=False),
+        ("metronome_parentheses", (1, 1)),
+    ),
+    "other-dynamics-text": (
+        _other_dynamics_score("molto"),
+        _other_dynamics_score("sempre"),
+        ("other_dynamics", (1, 0)),
+    ),
+    "pedal-end": (
+        _pedal_end_score("discontinue"),
+        _pedal_end_score("stop"),
+        ("pedal_ends", (1, 0)),
     ),
 }
 
@@ -4868,7 +5038,7 @@ def test_fingering_digits_of_one_mark_are_separate_elements() -> None:
     _assert_file(result, fingering=(1, 0))
 
 
-@pytest.mark.parametrize("fingering", ["10", "1-2", "2,3"])
+@pytest.mark.parametrize("fingering", ["10", "1-1", "2,3"])
 def test_fingering_other_than_fingers_stops_the_comparison(
     fingering: str,
 ) -> None:
@@ -6013,12 +6183,24 @@ def _arpeggiated(number: str | None) -> str:
 
 
 def _ornamented(name: str) -> str:
+    if name.startswith("trill:"):
+        acc = name.split(":", 1)[1]
+        xml = (
+            "            <trill-mark/>\n"
+            f"            <accidental-mark>{acc}</accidental-mark>\n"
+        )
+        return _marked(BASE, ("m1s1n3", _ornaments(xml)))
     return _marked(BASE, ("m1s1n3", _ornaments(f"            <{name}/>\n")))
 
 
 def _dynamic(name: str) -> str:
+    tag = (
+        "<other-dynamics>sempre</other-dynamics>"
+        if name == "dyn-text"
+        else f"<{name}/>"
+    )
     dynamics = (
-        f"          <dynamics>\n            <{name}/>\n          </dynamics>\n"
+        f"          <dynamics>\n            {tag}\n          </dynamics>\n"
     )
     return _with_directions(("m1s1n3", 1, dynamics))
 
@@ -6129,6 +6311,10 @@ _PEDAL_LINE = _pedals(
     ("m1s2n1", _pedal("start", line=True)),
     ("m1s2n2", _pedal("stop", line=True)),
 )
+_PEDAL_OPEN = _pedals(
+    ("m1s2n1", _pedal("start", line=True)),
+    ("m1s2n2", _pedal("discontinue", line=True)),
+)
 _PEDAL_SIGNS = _pedals(
     ("m1s2n1", _pedal("start", line=False)),
     ("m1s2n2", _pedal("stop", line=False)),
@@ -6141,6 +6327,26 @@ _VOLTA = _tied(
 )
 _TIE_IN = _tied(_VOLTA, "m7s1n1", "stop")
 _TIE_END = _tied(_tied(_VOLTA, "m6s1n2", "start"), "m7s1n1", "stop")
+_UNLABELED_VOLTA_REPEAT = _variant(
+    (
+        '        <ending number="1" type="stop"/>\n',
+        (
+            "        <bar-style>light-heavy</bar-style>\n"
+            '        <ending number="1" type="stop"/>\n'
+            '        <repeat direction="backward"/>\n'
+        ),
+    ),
+    base=_endings((1, 6, 6)),
+)
+_UNLABELED_TIE_IN = _tied(
+    _tied(
+        _tied(_UNLABELED_VOLTA_REPEAT, "m5s1n2", "start"),
+        "m6s1n2",
+        "stop",
+    ),
+    "m7s1n1",
+    "stop",
+)
 
 # Each pair names the option and the value of ``Y`` that ``T(Y)`` changes.
 VALUE_PAIRS: dict[str, _ValuePair] = {
@@ -6280,6 +6486,11 @@ VALUE_PAIRS: dict[str, _ValuePair] = {
         _ornamented,
         (
             ("trill-mark", "[orn=trill]", 1),
+            ("trill:double-sharp", "[orn=trill(##)]", 1),
+            ("trill:flat-flat", "[orn=trill(bb)]", 1),
+            ("trill:sharp", "[orn=trill(#)]", 1),
+            ("trill:flat", "[orn=trill(b)]", 1),
+            ("trill:natural", "[orn=trill(n)]", 1),
             ("mordent", "[orn=mordent]", 1),
             ("inverted-mordent", "[orn=inverted-mordent]", 1),
             ("turn", "[orn=turn]", 1),
@@ -6362,30 +6573,33 @@ VALUE_PAIRS: dict[str, _ValuePair] = {
         "dynamic",
         "dynamic",
         _dynamic,
-        tuple(
-            (name, f"<{name}>", 1)
-            for name in (
-                "pppp",
-                "ppp",
-                "pp",
-                "p",
-                "mp",
-                "mf",
-                "f",
-                "ff",
-                "fff",
-                "ffff",
-                "sf",
-                "sfz",
-                "sffz",
-                "fp",
-                "rf",
-                "rfz",
-                "fz",
-                "sfp",
-                "sfpp",
-                "pf",
-            )
+        (
+            *(
+                (name, f"<{name}>", 1)
+                for name in (
+                    "pppp",
+                    "ppp",
+                    "pp",
+                    "p",
+                    "mp",
+                    "mf",
+                    "f",
+                    "ff",
+                    "fff",
+                    "ffff",
+                    "sf",
+                    "sfz",
+                    "sffz",
+                    "fp",
+                    "rf",
+                    "rfz",
+                    "fz",
+                    "sfp",
+                    "sfpp",
+                    "pf",
+                )
+            ),
+            ("dyn-text", '<dyn-text "sempre">', 1),
         ),
     ),
     "clef-G": _ValuePair(
@@ -6474,6 +6688,30 @@ VALUE_PAIRS: dict[str, _ValuePair] = {
         "pedal",
         2,
         (("<ped(>[rel=pedal@r3:line-change]", "<pedal-sign down>"),),
+    ),
+    "pedal-line-release": _ValuePair(
+        _PEDAL_OPEN,
+        _PEDAL_LINE,
+        "pedal",
+        1,
+        (
+            (
+                "<ped)>[rel=pedal@r2:line-release]",
+                "<ped-open)>[rel=pedal@r2:line-open]",
+            ),
+        ),
+    ),
+    "pedal-line-open": _ValuePair(
+        _PEDAL_LINE,
+        _PEDAL_OPEN,
+        "pedal",
+        1,
+        (
+            (
+                "<ped-open)>[rel=pedal@r2:line-open]",
+                "<ped)>[rel=pedal@r2:line-release]",
+            ),
+        ),
     ),
     "pedal-sign-down": _ValuePair(
         _pedals(
@@ -6621,6 +6859,155 @@ NO_DIFFERENCE_PAIRS: dict[str, tuple[str, str]] = {
             ),
         ),
     ),
+    "other-dynamics-pf": (
+        _dynamic("pf"),
+        _other_dynamics_score("pf"),
+    ),
+    "other-dynamics-trimmed": (
+        _other_dynamics_score("sempre"),
+        _other_dynamics_score(" sempre "),
+    ),
+    "split-two-digit-fingering": (
+        _marked(BASE, ("m1s1n2", _fingering("54"))),
+        _marked(
+            BASE,
+            (
+                "m1s1n2",
+                (
+                    "          <technical>\n"
+                    "            <fingering>5</fingering>\n"
+                    "            <fingering>4</fingering>\n"
+                    "          </technical>\n"
+                ),
+            ),
+        ),
+    ),
+    "finger-substitution-endash": (
+        _marked(BASE, ("m1s1n2", _fingering("5-4"))),
+        _marked(BASE, ("m1s1n2", _fingering("5\u20134"))),
+    ),
+    "finger-substitution-smufl": (
+        _marked(BASE, ("m1s1n2", _fingering("5-4"))),
+        _marked(
+            BASE,
+            (
+                "m1s1n2",
+                _fingering("fingering5fingeringSubstitutionAbovefingering4"),
+            ),
+        ),
+    ),
+    "finger-substitution-three-siblings": (
+        _marked(BASE, ("m1s1n2", _fingering("5-4"))),
+        _marked(
+            BASE,
+            (
+                "m1s1n2",
+                (
+                    "          <technical>\n"
+                    "            <fingering>5</fingering>\n"
+                    "            <fingering>4</fingering>\n"
+                    "            <fingering>"
+                    "fingeringSubstitutionAbove"
+                    "</fingering>\n"
+                    "          </technical>\n"
+                ),
+            ),
+        ),
+    ),
+    "finger-substitution-attribute": (
+        _marked(BASE, ("m1s1n2", _fingering("5-4"))),
+        _marked(
+            BASE,
+            (
+                "m1s1n2",
+                (
+                    "          <technical>\n"
+                    "            <fingering>5</fingering>\n"
+                    '            <fingering substitution="yes">4</fingering>\n'
+                    "          </technical>\n"
+                ),
+            ),
+        ),
+    ),
+    "negative-offset-direction": (
+        _hairpin("crescendo"),
+        _variant(
+            _before(
+                "m1s1n4",
+                "      <direction>\n"
+                "        <direction-type>\n"
+                '          <wedge type="crescendo"/>\n'
+                "        </direction-type>\n"
+                "        <offset>-12</offset>\n"
+                "        <staff>1</staff>\n"
+                "      </direction>\n"
+                "      <direction>\n"
+                "        <direction-type>\n"
+                '          <wedge type="stop"/>\n'
+                "        </direction-type>\n"
+                "        <staff>1</staff>\n"
+                "      </direction>\n",
+            ),
+        ),
+    ),
+    "single-note-begin-beam-hook": (
+        BASE,
+        _variant(
+            _edit(
+                "m2s1n2",
+                '<beam number="2">backward hook</beam>',
+                '<beam number="2">begin</beam>',
+            ),
+        ),
+    ),
+    "tie-in-notated-only": (
+        _TIE_IN,
+        _variant(
+            _edit("m7s1n1", '        <tie type="stop"/>\n', "", base=_TIE_IN),
+            base=_TIE_IN,
+        ),
+    ),
+    "tie-in-after-repeat-notated-only": (
+        _UNLABELED_TIE_IN,
+        _variant(
+            _edit(
+                "m7s1n1",
+                '        <tie type="stop"/>\n',
+                "",
+                base=_UNLABELED_TIE_IN,
+            ),
+            base=_UNLABELED_TIE_IN,
+        ),
+    ),
+    "heading-split-credit-words": (
+        _with_credits(_credit("subtitle", "from The Nutcracker, Op. 71")),
+        _with_credits(
+            '  <credit page="1">\n'
+            "    <credit-type>subtitle</credit-type>\n"
+            '    <credit-words default-x="10" default-y="100">'
+            "from </credit-words>\n"
+            '    <credit-words font-style="italic">'
+            "The Nutcracker</credit-words>\n"
+            "    <credit-words>, Op. 71</credit-words>\n"
+            "  </credit>\n"
+        ),
+    ),
+    "ending-trailing-dot": (
+        _variant(
+            (
+                '<ending number="1" type="start"/>',
+                '<ending number="1" type="start">1.</ending>',
+            ),
+            base=_ONE_BRACKET,
+        ),
+        _variant(
+            (
+                '<ending number="1" type="start"/>',
+                '<ending number="1" type="start">1</ending>',
+            ),
+            base=_ONE_BRACKET,
+        ),
+    ),
 }
 
 
@@ -6632,7 +7019,7 @@ def test_pair_without_content_change_gives_no_difference(pair: str) -> None:
     layout = compare_layout(t_text, y_text).tally
 
     _assert_file(result)
-    assert result.content.differences == ()
+    assert result.content.counted == ()
     assert result.content.pairings == ()
     assert result.tally.fidelity == 1.0
     assert layout == ElementTally(layout.elements, layout.elements, 0)
@@ -6737,6 +7124,11 @@ def test_failure_count_includes_the_elements_of_every_check() -> None:
         ),
         _marked(BASE, ("m1s1n3", _fingering("3"))),
         _marked(BASE, ("m1s1n3", _tremolo("single", 3))),
+        _voice_line_score("m1s1n4"),
+        _metronome_parentheses_score(on_second=False),
+        _other_dynamics_score("sempre"),
+        _PEDAL_LINE,
+        _cross_barline_beam_score(beamed=True),
     ]
     counted: set[str] = set()
     for score in scores:
@@ -7046,3 +7438,259 @@ def test_grace_event_between_beam_start_and_stop_preserves_identity() -> None:
     assert voice_order.elements > 0
     assert voice_order.identical == voice_order.elements
     assert voice_order.extras == 0
+
+
+def _two_measure_piano(m1_body: str, m2_body: str | None = None) -> str:
+    m2 = (
+        ""
+        if m2_body is None
+        else f'    <measure number="2">\n{m2_body}    </measure>\n'
+    )
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<score-partwise version="4.0">\n'
+        "  <part-list>\n"
+        '    <score-part id="P1"><part-name>Piano</part-name></score-part>\n'
+        "  </part-list>\n"
+        '  <part id="P1">\n'
+        '    <measure number="1">\n'
+        "      <attributes>\n"
+        "        <divisions>24</divisions>\n"
+        "        <key><fifths>0</fifths></key>\n"
+        "        <time><beats>2</beats><beat-type>4</beat-type></time>\n"
+        "        <staves>2</staves>\n"
+        '        <clef number="1"><sign>G</sign><line>2</line></clef>\n'
+        '        <clef number="2"><sign>F</sign><line>4</line></clef>\n'
+        "      </attributes>\n"
+        f"{m1_body}"
+        "    </measure>\n"
+        f"{m2}"
+        "  </part>\n"
+        "</score-partwise>\n"
+    )
+
+
+def test_multi_level_cross_barline_beam_preserves_link() -> None:
+    """Keep a secondary beam starting on measure 1's last note linked."""
+    m1_beamed = (
+        "      <note><pitch><step>C</step><octave>5</octave></pitch>"
+        "<duration>24</duration><voice>1</voice><type>quarter</type>"
+        "<staff>1</staff></note>\n"
+        "      <note><pitch><step>D</step><octave>5</octave></pitch>"
+        "<duration>18</duration><voice>1</voice><type>eighth</type><dot/>"
+        '<stem>up</stem><staff>1</staff><beam number="1">begin</beam></note>\n'
+        "      <note><pitch><step>E</step><octave>5</octave></pitch>"
+        "<duration>6</duration><voice>1</voice><type>16th</type>"
+        '<stem>up</stem><staff>1</staff><beam number="1">continue</beam>'
+        '<beam number="2">begin</beam></note>\n'
+        "      <backup><duration>48</duration></backup>\n"
+        "      <note><rest/><duration>48</duration><voice>5</voice>"
+        "<type>half</type><staff>2</staff></note>\n"
+    )
+    m2_beamed = (
+        "      <note><pitch><step>F</step><octave>5</octave></pitch>"
+        "<duration>6</duration><voice>1</voice><type>16th</type>"
+        '<stem>up</stem><staff>1</staff><beam number="1">end</beam>'
+        '<beam number="2">end</beam></note>\n'
+        "      <note><rest/><duration>42</duration><voice>1</voice>"
+        "<type>quarter</type><dot/><dot/><staff>1</staff></note>\n"
+        "      <backup><duration>48</duration></backup>\n"
+        "      <note><rest/><duration>48</duration><voice>5</voice>"
+        "<type>half</type><staff>2</staff></note>\n"
+    )
+    y_score = _two_measure_piano(m1_beamed, m2_beamed)
+    t_score = to_musicxml(from_musicxml(y_score)).decode("utf-8")
+    result = compare_file(t_score, y_score)
+
+    assert result.checks["cross_barline_beams"] == ElementTally(2, 2, 0)
+    assert result.checks["beam_hooks"] == ElementTally(0, 0, 0)
+    assert result.tally.fidelity == 1.0
+
+
+def test_unbeamed_rest_before_cross_staff_beam_and_barline_crossing() -> None:
+    """Ignore unbeamed rests before cross-staff beams and cross barlines."""
+    m1 = (
+        "      <note><pitch><step>G</step><octave>5</octave></pitch>"
+        "<duration>48</duration><voice>1</voice><type>half</type>"
+        "<stem>up</stem><staff>1</staff></note>\n"
+        "      <backup><duration>48</duration></backup>\n"
+        "      <note><rest/><duration>6</duration><voice>5</voice>"
+        "<type>16th</type><staff>2</staff></note>\n"
+        "      <note><rest/><duration>6</duration><voice>5</voice>"
+        "<type>16th</type><staff>2</staff></note>\n"
+        "      <note><pitch><step>G</step><octave>3</octave></pitch>"
+        "<duration>12</duration><voice>5</voice><type>eighth</type>"
+        '<stem>up</stem><staff>2</staff><beam number="1">begin</beam></note>\n'
+        "      <note><pitch><step>C</step><octave>4</octave></pitch>"
+        "<duration>12</duration><voice>5</voice><type>eighth</type>"
+        '<stem>up</stem><staff>1</staff><beam number="1">end</beam></note>\n'
+        "      <note><pitch><step>A</step><octave>3</octave></pitch>"
+        "<duration>12</duration><voice>5</voice><type>eighth</type>"
+        '<stem>up</stem><staff>2</staff><beam number="1">begin</beam></note>\n'
+    )
+    m2 = (
+        "      <note><pitch><step>F</step><octave>5</octave></pitch>"
+        "<duration>48</duration><voice>1</voice><type>half</type>"
+        "<stem>up</stem><staff>1</staff></note>\n"
+        "      <backup><duration>48</duration></backup>\n"
+        "      <note><pitch><step>D</step><octave>4</octave></pitch>"
+        "<duration>12</duration><voice>5</voice><type>eighth</type>"
+        '<stem>up</stem><staff>1</staff><beam number="1">end</beam></note>\n'
+        "      <note><rest/><duration>36</duration><voice>5</voice>"
+        "<type>quarter</type><dot/><staff>2</staff></note>\n"
+    )
+    y_score = _two_measure_piano(m1, m2)
+    t_score = to_musicxml(from_musicxml(y_score)).decode("utf-8")
+    result = compare_file(t_score, y_score)
+
+    assert result.tally.fidelity == 1.0
+    assert result.checks["cross_staff"] == ElementTally(2, 2, 0)
+    assert result.checks["cross_barline_beams"] == ElementTally(1, 1, 0)
+    broken_m1 = m1.replace(
+        "<step>A</step><octave>3</octave></pitch>"
+        "<duration>12</duration><voice>5</voice><type>eighth</type>"
+        '<stem>up</stem><staff>2</staff><beam number="1">begin</beam>',
+        "<step>A</step><octave>3</octave></pitch>"
+        "<duration>12</duration><voice>5</voice><type>eighth</type>"
+        "<stem>up</stem><staff>2</staff>",
+    )
+    broken_m2 = m2.replace('<beam number="1">end</beam>', "")
+    broken_t = _two_measure_piano(broken_m1, broken_m2)
+    assert compare_file(broken_t, y_score).checks[
+        "cross_barline_beams"
+    ] == ElementTally(1, 0, 0)
+
+
+def test_two_staff_backup_negative_offset_pedal_preserves_spanner() -> None:
+    """Keep staff-2 negative-offset pedal stop after staff-2 pedal start."""
+    m1 = (
+        "      <note><pitch><step>C</step><octave>5</octave></pitch>"
+        "<duration>24</duration><voice>1</voice><type>quarter</type>"
+        "<staff>1</staff></note>\n"
+        "      <note><pitch><step>D</step><octave>5</octave></pitch>"
+        "<duration>24</duration><voice>1</voice><type>quarter</type>"
+        "<staff>1</staff></note>\n"
+        "      <backup><duration>48</duration></backup>\n"
+        '      <direction placement="below"><direction-type>'
+        '<pedal type="start" line="yes"/></direction-type>'
+        "<staff>2</staff></direction>\n"
+        "      <note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>48</duration><voice>5</voice><type>half</type>"
+        "<staff>2</staff></note>\n"
+        '      <direction placement="below"><direction-type>'
+        '<pedal type="stop" line="yes"/></direction-type>'
+        "<offset>-24</offset><staff>2</staff></direction>\n"
+    )
+    y_score = _two_measure_piano(m1)
+    t_score = to_musicxml(from_musicxml(y_score)).decode("utf-8")
+    result = compare_file(t_score, y_score)
+
+    assert result.tally.fidelity == 1.0
+    assert result.checks["pedal_ends"] == ElementTally(1, 1, 0)
+
+    mid_div = (
+        "      <note><pitch><step>C</step><octave>5</octave></pitch>"
+        "<duration>24</duration><voice>1</voice><type>quarter</type>"
+        "<staff>1</staff></note>\n"
+        "      <attributes><divisions>12</divisions></attributes>\n"
+        "      <note><pitch><step>D</step><octave>5</octave></pitch>"
+        "<duration>12</duration><voice>1</voice><type>quarter</type>"
+        "<staff>1</staff></note>\n"
+        '      <direction placement="below"><direction-type>'
+        '<wedge type="crescendo"/></direction-type>'
+        "<offset>-24</offset><staff>1</staff></direction>\n"
+        '      <direction placement="below"><direction-type>'
+        '<wedge type="stop"/></direction-type>'
+        "<offset>-12</offset><staff>1</staff></direction>\n"
+        "      <backup><duration>24</duration></backup>\n"
+        "      <note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>24</duration><voice>5</voice><type>half</type>"
+        "<staff>2</staff></note>\n"
+    )
+    res_div = compare_file(
+        _two_measure_piano(mid_div), _two_measure_piano(mid_div)
+    )
+    assert res_div.tally.fidelity == 1.0
+
+    m2_mid_div = (
+        "      <note><pitch><step>E</step><octave>5</octave></pitch>"
+        "<duration>12</duration><voice>1</voice><type>quarter</type>"
+        "<staff>1</staff></note>\n"
+        "      <attributes><divisions>6</divisions></attributes>\n"
+        "      <note><pitch><step>F</step><octave>5</octave></pitch>"
+        "<duration>6</duration><voice>1</voice><type>quarter</type>"
+        "<staff>1</staff></note>\n"
+        "      <backup><duration>12</duration></backup>\n"
+        "      <note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>12</duration><voice>5</voice><type>half</type>"
+        "<staff>2</staff></note>\n"
+    )
+    two_m_div = _two_measure_piano(mid_div, m2_mid_div)
+    assert compare_file(two_m_div, two_m_div).tally.fidelity == 1.0
+
+
+def test_pedal_ends_same_onset_order_and_delayed_touch_exemption() -> None:
+    """Order same-onset pedal stop before start and exempt touched spans."""
+    m1_two_spans = (
+        "      <note><pitch><step>C</step><octave>5</octave></pitch>"
+        "<duration>48</duration><voice>1</voice><type>half</type>"
+        "<staff>1</staff></note>\n"
+        "      <backup><duration>48</duration></backup>\n"
+        '      <direction placement="below"><direction-type>'
+        '<pedal type="start" line="yes" number="1"/></direction-type>'
+        "<staff>2</staff></direction>\n"
+        "      <note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>24</duration><voice>5</voice><type>quarter</type>"
+        "<staff>2</staff></note>\n"
+        '      <direction placement="below"><direction-type>'
+        '<pedal type="start" line="yes" number="1"/></direction-type>'
+        "<staff>2</staff></direction>\n"
+        "      <note><pitch><step>G</step><octave>3</octave></pitch>"
+        "<duration>24</duration><voice>5</voice><type>quarter</type>"
+        "<staff>2</staff></note>\n"
+        '      <direction placement="below"><direction-type>'
+        '<pedal type="stop" line="yes" number="1"/></direction-type>'
+        "<offset>-24</offset><staff>2</staff></direction>\n"
+        '      <direction placement="below"><direction-type>'
+        '<pedal type="stop" line="yes" number="1"/></direction-type>'
+        "<staff>2</staff></direction>\n"
+    )
+    y_two = _two_measure_piano(m1_two_spans)
+    t_two = to_musicxml(from_musicxml(y_two)).decode("utf-8")
+    res_two = compare_file(t_two, y_two)
+
+    assert res_two.checks["pedal_ends"] == ElementTally(2, 2, 0)
+    assert res_two.tally.fidelity == 1.0
+
+    m1_delayed = (
+        "      <note><pitch><step>C</step><octave>5</octave></pitch>"
+        "<duration>48</duration><voice>1</voice><type>half</type>"
+        "<staff>1</staff></note>\n"
+        "      <backup><duration>48</duration></backup>\n"
+        '      <direction placement="below"><direction-type>'
+        '<pedal type="start" line="yes"/></direction-type>'
+        "<staff>2</staff></direction>\n"
+        "      <note><rest/><duration>24</duration><voice>5</voice>"
+        "<type>quarter</type><staff>2</staff></note>\n"
+        "      <note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>24</duration><voice>5</voice><type>quarter</type>"
+        "<staff>2</staff></note>\n"
+        '      <direction placement="below"><direction-type>'
+        '<pedal type="stop" line="yes"/></direction-type>'
+        "<staff>2</staff></direction>\n"
+    )
+    m1_no_pedal = (
+        "      <note><pitch><step>C</step><octave>5</octave></pitch>"
+        "<duration>48</duration><voice>1</voice><type>half</type>"
+        "<staff>1</staff></note>\n"
+        "      <backup><duration>48</duration></backup>\n"
+        "      <note><rest/><duration>24</duration><voice>5</voice>"
+        "<type>quarter</type><staff>2</staff></note>\n"
+        "      <note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>24</duration><voice>5</voice><type>quarter</type>"
+        "<staff>2</staff></note>\n"
+    )
+    res_delayed = compare_file(
+        _two_measure_piano(m1_no_pedal), _two_measure_piano(m1_delayed)
+    )
+    assert res_delayed.checks["pedal_ends"] == ElementTally(0, 0, 0)

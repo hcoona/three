@@ -142,6 +142,22 @@ VALID = {
         "m 1\n1.1: C5/8.[beam1=start] D5/16[beam1=continue,beam2=hook-backward]"
         " r/8[beam1=continue] E5/8[beam1=end]",
     ),
+    "cross-barline beam within one document": system(
+        "m 1\n1.1: C5/4 D5/8 E5/8[beam1=start]\n"
+        "m 2\n1.1: F5/8[beam1=end] G5/8 A5/4",
+    ),
+    "phase 1 extensions": system(
+        "m 1\n"
+        '1.1: <dyn-text "sempre"> <tempo "" (q=120)> C4f12/4[orn=trill(n)]'
+        " D4f5-4/4\n"
+        "2.1: <ped(>[rel=pedal@r1:line-start] <line(>[rel=line@r2:start] C3/4"
+        " <line)>[rel=line@r2:end] <ped-open)>[rel=pedal@r1:line-open] D3/4",
+    ),
+    "three voice-leading slurs on three-note chord": system(
+        "m 1\n"
+        "1.1: C4+E4+G4/4[rel=slur@r1:start,rel=slur@r2:start,rel=slur@r3:start]"
+        " D4+F4+A4/4[rel=slur@r1:end,rel=slur@r2:end,rel=slur@r3:end]",
+    ),
     "grace notes beam apart": system(
         "m 1\n1.1: D5/16[grace,beam1=start,beam2=start]"
         " E5/16[grace,beam1=end,beam2=end] C5/2",
@@ -205,7 +221,9 @@ INVALID = [
     ("m 1\n1.1: C4/2[xs1]", INITIAL, "semantic/cross_staff@10:11"),
     ("m 1\n1.1: E4+C4/2", INITIAL, "semantic/chord_order@10:9"),
     ("m 1\n1.1: C4+C4/2", INITIAL, "unsupported/duplicate_chord_member@10:9"),
-    ("m 1\n1.1: C4f12/2", INITIAL, "unsupported/fingering@10:6"),
+    ("m 1\n1.1: C4f11/2", INITIAL, "unsupported/fingering@10:6"),
+    ("m 1\n1.1: C4f2-2/2", INITIAL, "unsupported/fingering@10:6"),
+    ('m 1\n1.1: <dyn-text "pf"> C4/2', INITIAL, "semantic/dynamic_text@10:6"),
     ("m 1\n1.1: (C(#)4)/2", INITIAL, "semantic/parenthesized_accidental@10:8"),
     (
         "m 1\n1.1: <15ma(>[rel=ottava@r1:start:15ma] C9/2",
