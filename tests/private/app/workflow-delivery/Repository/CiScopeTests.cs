@@ -204,6 +204,8 @@ public sealed class CiScopeTests
     [TestMethod]
     [DataRow("docs/README.md", false, false, false)]
     [DataRow("mise.toml", true, true, true)]
+    [DataRow("eng/dotnet-frameworks/mise.toml", true, true, true)]
+    [DataRow("eng/dotnet-frameworks/mise.lock", true, true, true)]
     [DataRow("src/mise.toml", true, false, false)]
     [DataRow("eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1", false, true,
         false)]
@@ -233,6 +235,8 @@ public sealed class CiScopeTests
     [DataRow("renovate.json", true)]
     [DataRow("eng/scripts/locked_tool_versions.py", true)]
     [DataRow("mise.lock", true)]
+    [DataRow("eng/dotnet-frameworks/mise.toml", true)]
+    [DataRow("eng/dotnet-frameworks/mise.lock", true)]
     [DataRow(".github/workflows/ci.yml", true)]
     [DataRow("docs/README.md", false)]
     public void RenovateCompatibilityFollowsItsInputs(string path, bool expected)
@@ -283,6 +287,8 @@ public sealed class CiScopeTests
     [DataRow("src/public/app/PhiFailureDetector.Console/Program.cs", false)]
     [DataRow("src/public/lib/nbgv-python/nbgv.py", false)]
     [DataRow("global.json", true)]
+    [DataRow("eng/dotnet-frameworks/mise.toml", true)]
+    [DataRow("eng/dotnet-frameworks/mise.lock", true)]
     [DataRow("stylecop.json", true)]
     [DataRow(".github/workflows/ci.yml", true)]
     [DataRow(CiScope.SkippedTestSummary, true)]

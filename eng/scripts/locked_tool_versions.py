@@ -1,8 +1,8 @@
 """Print committed tool versions as GitHub Actions output lines.
 
 Root mise.lock selects every tool except the .NET SDK, which global.json
-selects. Workflows read versions once through this script instead of
-repeating them as literals.
+selects. The repository framework profile selects an installation-only SDK
+provider. Workflows read versions once instead of repeating them as literals.
 """
 
 from __future__ import annotations
@@ -23,9 +23,16 @@ def locked_version(root: Path, tool: str) -> str:
         sdk = json.loads((root / "global.json").read_text(encoding="utf-8"))
         versions = {sdk.get("sdk", {}).get("version")}
     else:
-        source = f"mise.lock [[tools.{tool}]]"
-        lock = tomllib.loads((root / "mise.lock").read_text(encoding="utf-8"))
-        entries = lock.get("tools", {}).get(tool, [])
+        profile = tool == "dotnet-frameworks"
+        path = (
+            Path("eng/dotnet-frameworks/mise.lock")
+            if profile
+            else Path("mise.lock")
+        )
+        key = "dotnet" if profile else tool
+        source = f"{path} [[tools.{key}]]"
+        lock = tomllib.loads((root / path).read_text(encoding="utf-8"))
+        entries = lock.get("tools", {}).get(key, [])
         versions = {entry.get("version") for entry in entries}
     if len(versions) != 1:
         message = f"{tool}: {source} must select exactly one version"

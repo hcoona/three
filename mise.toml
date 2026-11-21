@@ -9,6 +9,7 @@ idiomatic_version_file_enable_tools = ["dotnet"]
 
 [monorepo]
 config_roots = [
+  "eng/dotnet-frameworks",
   "src/private/app/factorio-cycle-calculator",
   "src/public/lib/hexo-renderer-asciidoc",
 ]
@@ -109,7 +110,12 @@ run = "pnpm -r rebuild --pending"
 
 [tasks."bootstrap:dotnet-tools"]
 description = "Bootstrap the .NET tools"
+depends = ["bootstrap:dotnet-frameworks"]
 run = "dotnet tool restore"
+
+[tasks."bootstrap:dotnet-frameworks"]
+description = "Install required .NET frameworks without changing the selected SDK"
+run = "mise install --monorepo --locked --jobs 1 dotnet"
 
 
 #

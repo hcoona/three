@@ -159,6 +159,26 @@ selecting their private application copies. Preserve native loading; do not
 replace it with an application resolver or infer runtime identity from a package
 version. Keep the existing application TFMs and ordinary SDK/runtime preparation.
 
+Actions and the locked repository
+[framework profile](../../../../../../eng/dotnet-frameworks/mise.toml) provide
+the existing `net10.0` controller runtime and consumer targeting packs in the
+same `DOTNET_ROOT` as the native SDK. Root `global.json` remains the only native
+compiler selection; the additional SDK supplies frameworks, not another check
+variant. The ordinary
+[setup guidance](../../../../../../docs/engineering/workspaces.md#net) owns
+local preparation. Windows execution groups use `actions/setup-dotnet` with
+both committed selections, without adding mise tool installation to those groups.
+
+The inspected
+[official SDK 10.0.404 Windows archive](https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/dotnet-sdk-10.0.404-win-x64.zip)
+contains `Microsoft.NETCore.App.Ref`, `Microsoft.AspNetCore.App.Ref` and
+`Microsoft.WindowsDesktop.App.Ref` 10.0.15 and their runtime roots. This
+source-only inspection establishes packaged capability, not Windows execution,
+native task identity or qualification of an SDK update. Changes to required
+frameworks or the provider retain actual controller, native endpoint and clean
+consumer qualification; changing feeds or rolling the controller forward is
+not preparation.
+
 Before an API-cohort or required-endpoint SDK change, the .NET integration reviewer
 rechecks the package TFM/API floor and native loading contract. Qualify the actual
 standalone controller, complete output transfer, basis and candidate native task

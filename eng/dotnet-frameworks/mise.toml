@@ -1,0 +1,3 @@
+# Installation-only framework provider; root global.json selects the native SDK.
+[tools]
+dotnet = "10.0.404"

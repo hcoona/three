@@ -913,6 +913,44 @@ def _scope_endpoint_step(workflow: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def test_framework_provider_reaches_every_native_sdk_root(workflow):
+    """Prepare existing frameworks without replacing native SDK selection."""
+    scope = workflow["jobs"]["scope"]
+    versions = _committed_versions(scope)
+    provider = versions["dotnet-frameworks"]
+    assert scope["outputs"]["dotnet_frameworks"] == (
+        "${{ steps.tools.outputs.dotnet-frameworks }}"
+    )
+    for key, job in workflow["jobs"].items():
+        for step in job["steps"]:
+            if step.get("uses", "").startswith("actions/setup-dotnet@"):
+                bindings = {
+                    "steps.tools.outputs.dotnet-frameworks": provider,
+                    "needs.scope.outputs.dotnet_frameworks": provider,
+                }
+                assert (
+                    resolve(step["with"]["dotnet-version"], bindings)
+                    == provider
+                )
+                assert "global-json-file" in step["with"]
+        if key not in {"scope", "node-group"}:
+            continue
+        prepare = next(
+            step
+            for step in job["steps"]
+            if step["name"].startswith("Prepare required frameworks")
+        )
+        control = next(
+            step
+            for step in job["steps"]
+            if step.get("id") == ("control" if key == "scope" else "execute")
+        )
+        assert job["steps"].index(prepare) < job["steps"].index(control)
+        assert prepare["run"] == (
+            "mise install --monorepo --locked --jobs 1 dotnet"
+        )
+
+
 @pytest.mark.parametrize("line_ending", ["\n", "\r\n"], ids=["lf", "crlf"])
 def test_scope_prepares_exact_native_endpoints_from_native_line_records(
     workflow: dict[str, Any], tmp_path: Path, line_ending: str
@@ -941,6 +979,15 @@ def test_scope_prepares_exact_native_endpoints_from_native_line_records(
         assert commands[0] == [
             "mise",
             "install",
+            "--monorepo",
+            "--locked",
+            "--jobs",
+            "1",
+            "dotnet",
+        ]
+        assert commands[1] == [
+            "mise",
+            "install",
             "--locked",
             "dotnet",
             "node",
@@ -950,7 +997,7 @@ def test_scope_prepares_exact_native_endpoints_from_native_line_records(
         assert ["dotnet", "tool", "restore"] not in [
             command[-3:] for command in commands
         ]
-        assert commands[1][:8] == [
+        assert commands[2][:8] == [
             "mise",
             "exec",
             "--locked",
@@ -960,7 +1007,7 @@ def test_scope_prepares_exact_native_endpoints_from_native_line_records(
             "restore",
             "dirs.proj",
         ]
-        assert "-property:RestoreLockedMode=true" in commands[1]
+        assert "-property:RestoreLockedMode=true" in commands[2]
     assert observations[-1]["command"][2:5] == [
         "ci",
         "caller-dotnet",
@@ -1092,7 +1139,8 @@ def test_dotnet_check_receives_original_plan_and_complete_control(
     assert job["permissions"] == {"contents": "read", "actions": "read"}
     assert "needs.scope.outputs.dotnet }}" not in json.dumps(job)
     assert _action(job, "actions/setup-dotnet")["with"] == {
-        "global-json-file": "global.json"
+        "global-json-file": "global.json",
+        "dotnet-version": "${{ needs.scope.outputs.dotnet_frameworks }}",
     }
     checkout = _action(job, "actions/checkout")
     assert checkout["with"]["ref"] == "${{ github.sha }}"
@@ -1707,9 +1755,16 @@ def test_scope_selection_runs_once_in_the_control_application(
         for step in job["steps"]
     )
     assert "PYTHONUTF8" not in job.get("env", {})
+    metadata = next(step for step in job["steps"] if step.get("id") == "tools")
+    assert metadata["run"] == (
+        "python eng/scripts/locked_tool_versions.py dotnet-frameworks "
+        '>> "$GITHUB_OUTPUT"'
+    )
+    _required_step(metadata)
     assert not any(
         "python" in step.get("run", "") or "uv " in step.get("run", "")
         for step in job["steps"]
+        if step is not metadata
     )
     select = next(step for step in job["steps"] if step.get("id") == "select")
     env = _commands(tmp_path)
@@ -1739,6 +1794,37 @@ def test_scope_selection_runs_once_in_the_control_application(
     )
     assert result.returncode == (CHILD_FAILURE if failure else 0), result.stderr
     assert [item["command"] for item in _observations(env)] == [selector]
+
+
+@pytest.mark.parametrize("defect", ["missing", "malformed"])
+def test_scope_framework_metadata_cannot_fall_back_to_native_sdk(
+    workflow, tmp_path, defect
+):
+    """Reject missing provider metadata before dependent setup can run."""
+    script = tmp_path / "eng/scripts/locked_tool_versions.py"
+    script.parent.mkdir(parents=True)
+    shutil.copyfile(REPO_ROOT / "eng/scripts/locked_tool_versions.py", script)
+    (tmp_path / "global.json").write_text(
+        json.dumps({"sdk": {"version": "11.2.3"}})
+    )
+    if defect == "malformed":
+        profile = tmp_path / "eng/dotnet-frameworks/mise.lock"
+        profile.parent.mkdir(parents=True)
+        profile.write_text("version =\n")
+    output = tmp_path / "outputs"
+    metadata = next(
+        step
+        for step in workflow["jobs"]["scope"]["steps"]
+        if step.get("id") == "tools"
+    )
+    result = run_step(
+        metadata,
+        cwd=tmp_path,
+        env={"GITHUB_OUTPUT": str(output)},
+        bindings={},
+    )
+    assert result.returncode != 0
+    assert output.read_text() == ""
 
 
 @pytest.mark.parametrize(

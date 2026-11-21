@@ -192,6 +192,8 @@ public sealed class DotNetGroupReaderTests(TestContext context)
     [DataRow(".config/dotnet-tools.json")]
     [DataRow("mise.toml")]
     [DataRow("mise.lock")]
+    [DataRow("eng/dotnet-frameworks/mise.toml")]
+    [DataRow("eng/dotnet-frameworks/mise.lock")]
     [DataRow(".github/workflows/ci.yml")]
     [DataRow(CiScope.SkippedTestSummary)]
     public async Task ControlInputsReachAllActualDotNetConsumers(string caller)

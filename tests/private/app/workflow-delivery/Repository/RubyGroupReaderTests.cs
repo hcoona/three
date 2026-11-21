@@ -128,6 +128,8 @@ public sealed class RubyGroupReaderTests(TestContext context)
     [DataRow("src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs")]
     [DataRow("mise.toml")]
     [DataRow("mise.lock")]
+    [DataRow("eng/dotnet-frameworks/mise.toml")]
+    [DataRow("eng/dotnet-frameworks/mise.lock")]
     public async Task ActualCallerInputsSelectAdoptedChecksAcrossBothEndpoints(string path)
     {
         using var fixture = await Fixture.SharedAsync(SharedCallers[path], true,
