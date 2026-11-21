@@ -81,6 +81,29 @@ change requires a fresh sequence with matching receipts. Initialization,
 preflight, calibration, controlled tests and financial-only recovery do not
 count as successful collaboration journeys.
 
+### Owned helper deadline allocation
+
+Keep the existing owner observation limits: directly launched children have
+separate five-second connection and READY waits; producer-aware observation
+uses the caller's bounded case-entry token while awaiting connection and a
+five-second READY stage after observing connection. Terminal producers remain
+visible. Cancel and join the producer and underlying observation I/O before
+disposing owned state.
+
+The built helper retains its five-second connection guard. After connection,
+READY preparation, READY writing and release reading share one non-resetting
+interaction fuse: the existing 120 seconds for ordinary/held helpers or 180
+seconds for controlled hosts. Start that fuse before READY preparation; do not
+charge READY against the earlier connection guard or restart the interaction
+fuse after writing READY. Preserve descendant cleanup bounds, helper roles and
+frames, physical PID/birth/lease assertions and real command deadline and caller
+cancellation evidence.
+
+This allocation stays within credential-free managed scenarios and their
+existing total lifetime and cleanup bounds. It does not enlarge the owner's
+readiness allowance, explain a historical Windows READY failure, establish
+another platform or authorize a native acceptance execution.
+
 ## Required scenarios
 
 | Scenario                             | Requirements                       | Required result and least useful evidence                                                                                                                                                                                                                                                                                                                                                |
