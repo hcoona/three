@@ -21,7 +21,8 @@ internal static class RubyRepositoryReader
         "src/private/app/workflow-delivery/CI/Callers/CiCallerCli.cs",
         "src/private/app/workflow-delivery/CI/Callers/CiCallerTransfer.cs",
         "src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs",
-        "mise.toml", "mise.lock"];
+        "mise.toml", "mise.lock", "eng/scripts/locked_tool_versions.py",
+        "eng/dotnet-frameworks/mise.toml", "eng/dotnet-frameworks/mise.lock"];
 
     // A release unit keeps the quality obligations of its registered recipe. Only the
     // candidate is held to the current registration; a basis keeps its own adoption.

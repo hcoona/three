@@ -91,6 +91,21 @@ pytest's session directory follow their own lifecycle.
 The [compatibility rationale](dotnet-compatibility.md) explains retained local
 exceptions; the referenced build files own their values.
 
+The repository's [framework profile](../../eng/dotnet-frameworks/mise.toml)
+and lock install the existing controller and consumer frameworks alongside the
+native SDK, in the same `DOTNET_ROOT`. The provider SDK is installation-only:
+root `global.json` still selects the compiler and native MSBuild. Prepare these
+frameworks before local .NET checks or tool restoration:
+
+```bash
+mise run bootstrap:dotnet-frameworks
+```
+
+CI provisions this capability before the transferred controller starts.
+Existing .NET execution groups use the official setup action, reading the
+profile's committed lock; Scope and Node retain their locked mise preparation.
+This does not add a compiler variant, change target frameworks or widen feeds.
+
 ## Repository toolchain
 
 Install the tool versions recorded in `mise.lock` from the repository root:
@@ -100,12 +115,13 @@ mise install --locked
 ```
 
 The repository validates Linux x64 and Windows x64 lock entries. When tool
-versions change, refresh both mise configuration roots instead of running an
+versions change, refresh the affected configuration roots instead of running an
 unlocked platform-specific install:
 
 ```bash
 mise lock --platform linux-x64,windows-x64
 mise -C src/public/lib/hexo-renderer-asciidoc lock --platform linux-x64,windows-x64
+mise -C eng/dotnet-frameworks lock --platform linux-x64,windows-x64 dotnet
 ```
 
 Run these refresh commands on Linux; WSL is sufficient. On Windows, mise

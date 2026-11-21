@@ -10,7 +10,8 @@ internal static class PythonRepositoryInputs
         "src/private/app/workflow-delivery/CI/Callers/PythonCiCaller.cs",
         "src/private/app/workflow-delivery/CI/Callers/CiCallerCli.cs",
         "src/private/app/workflow-delivery/CI/Callers/CiCallerTransfer.cs",
-        "mise.toml", "mise.lock"];
+        "mise.toml", "mise.lock", "eng/scripts/locked_tool_versions.py",
+        "eng/dotnet-frameworks/mise.toml", "eng/dotnet-frameworks/mise.lock"];
     private static readonly string[] Preparation = [
         "pyproject.toml", "uv.lock", "uv.toml", ".python-version", ".config/uv/uv.toml",
         "eng/scripts/sync_python_version.py"];
@@ -148,7 +149,7 @@ internal static class PythonRepositoryInputs
             path == ".github/workflows/workflow-delivery-v3-browser-store-release.yml") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
             path is "eng/scripts/sync_python_version.py" or
-                "eng/scripts/workflow_delivery_v3_hk.py" or "eng/scripts/locked_tool_versions.py" or
+                "eng/scripts/workflow_delivery_v3_hk.py" or
                 "eng/scripts/hk_scope_drift.py" or
                 "eng/scripts/update_node_release_schedule.py" or
                 // Retired guard script; a comparison deleting it still needs an owner.

@@ -42,7 +42,9 @@ internal static partial class CiScope
     private const string GithubReleaseProduct = "src/public/app/ImageOcclusionEditor";
     // Inputs of every retained job: the workflow itself and its locked tools.
     private static readonly string[] AllInputs = [".github/workflows/ci.yml",
-        "eng/scripts/Bootstrap-CiControl.ps1", "mise.toml", "mise.lock"];
+        "eng/scripts/Bootstrap-CiControl.ps1", "eng/scripts/locked_tool_versions.py",
+        "mise.toml", "mise.lock", "eng/dotnet-frameworks/mise.toml",
+        "eng/dotnet-frameworks/mise.lock"];
     private static readonly string[] PythonInputs = ["pyproject.toml", "uv.lock", "uv.toml",
         ".python-version", ".config/uv/uv.toml", "conftest.py", "pytest.ini",
         "eng/scripts/sync_python_version.py", "eng/scripts/test-python.sh"];
