@@ -14,8 +14,12 @@ commands, reported credits, independent reviews and repository acceptance gates.
 These results do not establish another operating system or native backend.
 The [configured-check evidence allocation](docs/validation.md#configured-check-and-process-evidence)
 separates controlled Git/check business scenarios from focused actual-process
-coverage. Its internal invocation boundary is not yet implemented; current
-Git/check scenarios still execute physical checks.
+coverage. The application retains `ProcessRunner` in production and provides
+one internal typed configured-check invocation. Held-candidate mutation,
+reported timeout and cancellation/failure scenarios use controlled invocation
+with real Git and SQLite; logs automatically identify that evidence. Focused
+actual-process and actual-check integration remain separate. Controlled success
+does not close historical READY failures or establish native timing.
 The accepted shared-credit design is specified in the
 [credit contract](docs/implementation-contracts.md#shared-spending-windows).
 The application implements opt-in shared allocation with controlled accounting

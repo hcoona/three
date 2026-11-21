@@ -8,7 +8,7 @@ internal sealed class OwnedProcessState : IDisposable
 {
     private readonly ScratchDirectory scratch = new();
 
-    internal OwnedProcessState()
+    internal OwnedProcessState(TimeProvider? commandTimeProvider = null)
     {
         Directory.CreateDirectory(scratch.PathFor("unused-checkout"));
         RunConfiguration configuration = new()
@@ -19,7 +19,7 @@ internal sealed class OwnedProcessState : IDisposable
             Goal = "Settle only the application's positively owned command identities.",
         };
         Database = new(configuration.StatePath, configuration);
-        Runner = new(Database);
+        Runner = new(Database, commandTimeProvider ?? TimeProvider.System);
     }
 
     internal RunDatabase Database { get; }
