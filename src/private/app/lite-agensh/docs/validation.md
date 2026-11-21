@@ -37,6 +37,30 @@ Rely on documented SQLite, Git and host contracts within their scope rather
 than re-proving their internals. Test the application's use of those contracts
 and assumptions that could invalidate its design.
 
+### Configured-check and process evidence
+
+Exercise ordinary candidate admission, held-candidate mutation, reported timeout
+and caller cancellation/failure with real Git and SQLite plus the internal
+[configured-check invocation](architecture.md#configured-check-invocation).
+Use entered/release barriers and controlled exit/output/timeout outcomes.
+Keep candidate/ref/review mutations, exact identities, retained check evidence,
+worker work and delivery/refusal assertions real. Do not substitute the whole
+candidate gate or preinsert successful check rows.
+
+A reported timeout scenario establishes consumption of `TimedOut`, not expiry
+of a real command timer. Cancellation must remain distinct and join the owned
+controlled operation; it does not establish physical-child settlement.
+Evidence must identify the controlled invocation without fabricated native
+process identities or attribution.
+
+Separately retain focused real `ProcessRunner` coverage for executable/argv/cwd,
+stdout/stderr, controlled-clock deadline transitions, caller cancellation and
+owned-child settlement or unresolved ownership. Retain a real Git to actual
+configured check to persisted result journey for exact-candidate integration.
+Do not repeat the whole business mutation matrix at the physical-process layer
+or remove its required real evidence. Controlled results do not close an
+unresolved readiness failure or establish another platform/native backend.
+
 For [bounded deadline drain](implementation-contracts.md#bounded-deadline-drain),
 exercise the public coordinator journey with a controlled clock, real SQLite
 and the existing native-worker seam: ordinary pre-deadline completion, an
@@ -71,7 +95,7 @@ count as successful collaboration journeys.
 | Tool-result notices                  | LA-REQ-008, LA-REQ-009             | Snapshots/leases/shown ledger/cursors reconcile without ordinary duplicate presentation; no claim of arbitrary command interruption; MCP contract scenario and native tool call                                                                                                                                                                                                          |
 | Truthful capability surface          | LA-REQ-005, LA-REQ-009             | All 29 source tools have a treatment; exposed names/descriptions implement only their local scope, with bound actor/run and explicit failures; allowlist/map inspection plus contract tests                                                                                                                                                                                              |
 | Preserve original repository         | LA-REQ-010                         | Initial checkout/index/untracked files/global config and tracked instructions remain unchanged through the run; real disposable Git scenario with dirty initial state                                                                                                                                                                                                                    |
-| Check and review exact candidate     | LA-REQ-011, LA-REQ-012             | Two valid submissions integrate serially; conflicts/stale heads/reviews/checks cannot bypass merged-candidate validation; real Git/check scenario                                                                                                                                                                                                                                        |
+| Check and review exact candidate     | LA-REQ-011, LA-REQ-012             | Two valid submissions integrate serially; conflicts/stale heads/reviews/checks cannot bypass merged-candidate validation; real Git/storage scenarios with controlled checks plus focused actual-check integration as allocated above                                                                                                                                                     |
 | Broken integration and final failure | LA-REQ-012, LA-REQ-015             | Health policy follows source timing, including its 60-minute lift, without changing failed check truth; final failure remains failed delivery; controlled clock and command outcomes                                                                                                                                                                                                     |
 | Cancellation and ownership           | LA-REQ-003, LA-REQ-013, LA-REQ-014 | Stop dispatch, cancel and settle owned processes; silence/timeout cannot cause duplicate writers or broad cleanup; process substitute/local child scenario plus native cancellation                                                                                                                                                                                                      |
 | Reconnect versus explicit resume     | LA-REQ-003, LA-REQ-013             | Exact SDK session resume verifies identity/remaining cap/usage with pending work disabled; fresh-summary recovery remains labeled and budget-gated; explicit resume uses fresh sessions; scripted contracts plus native observation                                                                                                                                                      |
