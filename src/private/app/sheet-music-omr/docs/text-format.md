@@ -281,8 +281,9 @@ placement = "^" | "_"
 fermata = "ferm" | "ferm_"
 beam = "beam", "1".."5", "=", beam_state
 beam_state = "start" | "continue" | "end" | "hook-forward" | "hook-backward"
-ornament = "trill" | "mordent" | "inverted-mordent" | "turn"
-    | "inverted-turn"
+ornament = "trill", ["(", orn_accidental, ")"]
+    | "mordent" | "inverted-mordent" | "turn" | "inverted-turn"
+orn_accidental = "##" | "bb" | "#" | "b" | "n"
 stroke = "1".."8"
 event_relation = "rel=slur@", label, ":", ("start" | "end")
     | "rel=tremolo@", label, ":", ("two-start" | "two-end"), ":", stroke
@@ -300,6 +301,7 @@ direction = "<", plain_body, ">"
     | "<ped(>[rel=pedal@", label, ":line-start]"
     | "<ped(>[rel=pedal@", label, ":line-change]"
     | "<ped)>[rel=pedal@", label, ":line-release]"
+    | "<ped-open)>[rel=pedal@", label, ":line-open]"
     | "<", nonempty_quoted, "(>[rel=dashes@", label, ":start]"
     | "<dashes)>[rel=dashes@", label, ":end]"
     | "<line(>[rel=line@", label, ":start]"
@@ -493,8 +495,9 @@ takes only fermata and beam flags, and a spacer takes only beam flags.
 - `grace` is a grace note and `grace/` a slashed grace note.
 - `xs1` and `xs2` place the whole event on another staff, as described under
   pitch.
-- `orn=` takes `trill`, `mordent`, `inverted-mordent`, `turn` or
-  `inverted-turn`.
+- `orn=` takes `trill` (optionally with an auxiliary accidental `(##)`, `(bb)`,
+  `(#)`, `(b)` or `(n)`, as in `orn=trill(n)`), `mordent`, `inverted-mordent`,
+  `turn` or `inverted-turn`.
 - `tremolo=single:S` is a single-note tremolo with `S` strokes, `1` to `8`.
 - `beamN=state` and `rel=...` are described under beams and relations.
 
@@ -561,9 +564,13 @@ Further pitch rules:
 
 ### Beams
 
-- A beam run lies within one measure block. Directions between events are
-  ignored, grace notes and other notes cannot mix in a run, and a run across a
-  barline or a fragment boundary is unsupported.
+- A beam run lies over consecutive rhythmic events of one voice line `S.V`
+  within one document, including across a barline when the run's last event in
+  measure `N` ends at `N`'s effective length and its next event is the first
+  rhythmic event of `S.V` in measure `N + 1` at onset `0`, and closes before
+  the end of the document. Directions between events are ignored, grace notes
+  and other notes cannot mix in a run, and a run across a system or fragment
+  boundary is unsupported.
 - Level 1 states form `start continue* end` over consecutive events.
 - A level `N` of 2 or more requires level `N-1` on the same event. Its states
   form `start continue* end` runs over consecutive events of the level `N-1`
@@ -586,9 +593,10 @@ label `rN`.
   that both ends and starts a tie writes the end first:
   `{tie@r1:end,tie@r2:start}`. The end pitch lies in the next non-grace
   rhythmic event of the same voice line, or in a non-grace rhythmic event of
-  another voice line of the same staff that starts when the start event ends,
-  across barlines. It has the same sounding step, octave and alteration, and
-  assembly checks the alteration when that of the start is deferred.
+  another voice line that starts when the start event ends, across barlines,
+  with the same displayed staff as the start event. It has the same sounding
+  step, octave and alteration, and assembly checks the alteration when that of
+  the start is deferred.
 - `{tie-in}` marks a pitch that a tie enters at the start of a later volta
   bracket, as in a tie into a second ending. A _volta group_ is a run of
   adjacent measures that each carry an `ending` option, and its _source
@@ -599,7 +607,8 @@ label `rN`.
   measure is an unlabeled last ending, and a tie-in pitch may also lie in the
   first non-grace rhythmic event of a voice line there. The _source_ of a tie-in
   pitch is a pitch with the same sounding step and octave in a non-grace
-  rhythmic event of the same staff that ends at the end of the source measure.
+  rhythmic event of the same displayed staff that ends at the end of the source
+  measure.
   At least one source shall exist, all sources shall have the same alteration,
   and the tie-in pitch shall resolve to that alteration, whether it inherits it
   or prints an accidental. A tie-in is not a relation and has no label, and its
@@ -623,13 +632,16 @@ label `rN`.
   the kind of the end, writing a slur start on the event of its pitch, so an
   assembled score has no arc.
 - A slur uses `rel=slur@rN:start` and `rel=slur@rN:end` on two different notes,
-  the start before the end.
+  the start before the end (at a barline, an event that ends at measure `N`'s
+  effective length precedes every event at onset `0` of measure `N + 1`,
+  including grace notes).
 - A two-note tremolo uses `rel=tremolo@rN:two-start:S` and
   `rel=tremolo@rN:two-end:S` on consecutive non-grace rhythmic events of one
   voice line, with equal written durations and the same `S`. Directions may lie
   between them.
 - An extended trill uses `rel=ornament@rN:start:extended-trill` on a note that
-  carries `orn=trill`, and `rel=ornament@rN:end:extended-trill` on a later note.
+  carries `orn=trill` (with or without an auxiliary accidental), and
+  `rel=ornament@rN:end:extended-trill` on a later note.
   A trill that `carry-in` lists as open may instead end on the direction
   `<trill)>[rel=ornament@rN:end:extended-trill]`, which records a wavy line
   that stops before any note that can end it. An assembled score has no such
@@ -665,8 +677,9 @@ Rules for all relations:
   null.
 - Two relations that are identical in kind, endpoints and variant are invalid,
   unless both are still open at the end of the document or both are slurs. At
-  most two slurs share both endpoints, as when one slur is printed above and
-  one below the same two chords.
+  most `max(2, M)` slurs share both endpoints, where `M` is the larger pitch
+  count of the two endpoint events, as when one slur is printed above and one
+  below two notes or each chord member carries its own slur.
 
 ### Directions
 
@@ -708,8 +721,9 @@ an event boundary in its line.
   exclusive. The end direction shall be on that staff, and ottava lines on one
   staff shall not overlap.
 - A pedal line has one `<ped(>[rel=pedal@rN:line-start]`, any number of
-  `<ped(>[rel=pedal@rN:line-change]` and one
-  `<ped)>[rel=pedal@rN:line-release]`.
+  `<ped(>[rel=pedal@rN:line-change]` and one closing endpoint:
+  `<ped)>[rel=pedal@rN:line-release]` when the line ends with an upward release
+  hook, or `<ped-open)>[rel=pedal@rN:line-open]` when it ends without a hook.
 - A dashes line is the dashed extension of expression text, such as "dim."
   followed by dashes. It starts with `<"dim."(>[rel=dashes@rN:start]`, which
   also records the text, and ends with `<dashes)>[rel=dashes@rN:end]`.
@@ -960,7 +974,7 @@ tie-break, to them.
   at or to the left of the right end of its wavy line, counting notes that a tie
   continues. A wavy line that ends within the system of its trilled note before
   any note after that one starts is not encoded, and the trilled note carries
-  `orn=trill` alone. A wavy line that continues a trill that `carry-in` lists
+  its `orn=trill` without an extended-trill relation. A wavy line that continues a trill that `carry-in` lists
   as open, and that ends before any note of its voice line in the system
   starts, ends the trill on `<trill)>`.
 - Heading text is the words printed above the top staff of a system that name
@@ -980,7 +994,9 @@ tie-break, to them.
   is one dashes line. Its start records the syllables joined without the dashes
   and the spaces between them, as in `<"crescendo"(>`. The line starts at the
   left edge of the first syllable and ends at the right end of the last one.
-- A `Ped.` glyph that begins a pedal line is the start of that line.
+- A `Ped.` glyph that begins a pedal line is the start of that line; a line
+  ending with an upward release hook ends on `<ped)>`, and one ending open
+  without a hook ends on `<ped-open)>`.
   `<pedal-sign down>` and `<pedal-sign up>` record only glyphs that are not
   joined to a line.
 - An unhooked solid line printed between noteheads to show voice movement is a
@@ -1126,7 +1142,8 @@ category.
 - `grace`: `grace` and `grace/`. Witness: `D5/16[grace/] C5/4`.
 - `articulation_fermata`: articulations and fermatas. Witnesses:
   `C4/4[stacc^,ferm]`; `C4/4[ten,ferm_]`.
-- `ornament`: `orn=` and the extended-trill relation. Witnesses:
+- `ornament`: `orn=` (including trill auxiliary accidentals) and the
+  extended-trill relation. Witnesses:
   `C5/4[orn=trill]`;
   `C5/2[orn=trill,rel=ornament@r1:start:extended-trill]`;
   `D5/2[rel=ornament@r1:end:extended-trill]`;
@@ -1142,7 +1159,8 @@ category.
   `<cresc(>[rel=hairpin@r1:start:cresc]`; `<hairpin)>[rel=hairpin@r1:end]`.
 - `ottava`: ottava directions. Witnesses:
   `<8va(>[rel=ottava@r1:start:8va]`; `<8va)>[rel=ottava@r1:end:8va]`.
-- `pedal`: pedal lines and pedal signs. Witnesses:
+- `pedal`: pedal lines (closing with `<ped)>` or `<ped-open)>`) and pedal
+  signs. Witnesses:
   `<ped(>[rel=pedal@r1:line-start]`; `<ped)>[rel=pedal@r1:line-release]`;
   `<pedal-sign down>`.
 - `arpeggio`: the `arp` flag and the arpeggio relation. Witnesses:

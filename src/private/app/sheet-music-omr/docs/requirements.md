@@ -226,10 +226,12 @@ converter reports such content as OMR-REQ-006 and OMR-REQ-008 state.
   octave up or down;
 - more than four voices on a staff, mixed-staff chords and duplicate chord
   members;
-- unmeasured tremolo, and fingering other than one digit from 1 to 5 per pitch
-  or two different such digits, adjacent or as a substitution, on a pitch;
-- a whole-measure rest in a split measure, and beams or tuplet groups across a
-  barline or a fragment boundary;
+- unmeasured tremolo, ornament accidental marks other than one non-microtonal
+  accidental mark on a trill, and fingering other than one digit from 1 to 5
+  per pitch or two different such digits, adjacent or as a substitution, on a
+  pitch;
+- a whole-measure rest in a split measure, beams across a system or fragment
+  boundary, and tuplet groups across a barline or a fragment boundary;
 - heading text above a system that starts inside a measure;
 - metronome units other than quarter, half, eighth, dotted quarter and dotted
   half.

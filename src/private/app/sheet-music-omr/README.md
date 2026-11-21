@@ -22,8 +22,9 @@ on `main` (`6f3c38f2`) and stopped on `l0033` in `baseline_content`
 ([Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7031008701)).
 The [requirements](docs/requirements.md), [Text Score 2 format](docs/text-format.md)
 and [comparison protocol](docs/comparison-protocol.md) incorporate the Phase 1
-owner dispositions from `formal-3` triage
-([Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356))
+owner dispositions from `formal-3` triage and the 23-piece gold audit
+([Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356),
+[addendum](https://github.com/hcoona/three/issues/1488#issuecomment-7058188830))
 ahead of the converter, comparator and screen implementation for `formal-4`
 (see [Agent handoff](docs/agent-handoff.md)).
 No acceptance measure has completed, and there is no recognizer, model,
