@@ -326,7 +326,7 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
             {
                 _ = state.Start();
                 Phase7Sessions.Turn first = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 JsonObject initial = Events(first.Text);
                 Assert.AreEqual(
@@ -514,7 +514,7 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                 );
                 _ = state.Start();
                 Phase7Sessions.Turn turn = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 long batch = state.SendingBatch("worker1");
                 Assert.IsNull(
@@ -582,7 +582,7 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
             {
                 _ = state.Start();
                 Phase7Sessions.Turn turn = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 long batch = state.SendingBatch("worker1");
                 if (cancel)
@@ -678,7 +678,7 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                 );
                 _ = state.Start();
                 Phase7Sessions.Turn turn = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 long batch = state.SendingBatch("worker1");
                 turn.Complete();

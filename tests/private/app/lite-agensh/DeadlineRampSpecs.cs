@@ -54,8 +54,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         await release.Task.WaitAsync(business).ConfigureAwait(false);
                     };
                     _ = state.Start();
-                    (Phase7Sessions.Session session, CancellationToken business) = await entered
-                        .Task.WaitAsync(token)
+                    (Phase7Sessions.Session session, CancellationToken business) = await state
+                        .FixedAsync(next => entered.Task.WaitAsync(next), token)
                         .ConfigureAwait(false);
                     Assert.IsTrue(business.CanBeCanceled);
                     Assert.IsFalse(business.IsCancellationRequested);
@@ -580,8 +580,11 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     Phase7Sessions.Session waiting = await state
                         .FixedAsync(next => entered.Task.WaitAsync(next), token)
                         .ConfigureAwait(false);
-                    await state.Clock
-                        .WaitForPollAsync(token, state.WorkDeadline)
+                    await state
+                        .FixedAsync(
+                            next => state.Clock.WaitForPollAsync(next, state.WorkDeadline),
+                            token
+                        )
                         .ConfigureAwait(false);
                     Assert.AreEqual(boundary == "prepare", waiting.HasSession);
                     Assert.AreEqual(0, waiting.CompletedTurns);
@@ -638,7 +641,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
             {
                 _ = state.Start();
                 Phase7Sessions.Turn turn = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 long batch = state.SendingBatch("worker1");
                 long? pendingEvent = null;
@@ -671,7 +674,12 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     ));
                 }
                 Assert.AreEqual(TimeSpan.FromSeconds(10), turn.Timeout);
-                await state.Clock.WaitForPollAsync(token, state.WorkDeadline).ConfigureAwait(false);
+                await state
+                    .FixedAsync(
+                        next => state.Clock.WaitForPollAsync(next, state.WorkDeadline),
+                        token
+                    )
+                    .ConfigureAwait(false);
                 state.Clock.Advance(TimeSpan.FromSeconds(duringGrace ? 10 : 9));
                 if (duringGrace)
                 {
@@ -684,7 +692,10 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         .ConfigureAwait(false);
                     Assert.IsFalse(turn.Token.IsCancellationRequested);
                     await state
-                        .Clock.WaitForPollAsync(token, state.DrainDeadline)
+                        .FixedAsync(
+                            next => state.Clock.WaitForPollAsync(next, state.DrainDeadline),
+                            token
+                        )
                         .ConfigureAwait(false);
                     state.Clock.Advance(TimeSpan.FromSeconds(5));
                 }
@@ -764,10 +775,13 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
         await state.RunBodyAsync(async () =>
         {
             _ = state.Start();
-            Phase7Sessions.Turn turn = await state.Sessions.NextTurnAsync("worker1", token)
+            Phase7Sessions.Turn turn = await state
+                .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                 .ConfigureAwait(false);
             long batch = state.SendingBatch("worker1");
-            await state.Clock.WaitForPollAsync(token, state.WorkDeadline).ConfigureAwait(false);
+            await state
+                .FixedAsync(next => state.Clock.WaitForPollAsync(next, state.WorkDeadline), token)
+                .ConfigureAwait(false);
             state.Clock.Advance(state.WorkDeadline - state.Clock.GetUtcNow());
             await state.UntilAsync(
                 () => state.Database.ReadMetadata("lifecycle") == "draining",
@@ -857,10 +871,15 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
             {
                 _ = state.Start();
                 Phase7Sessions.Turn turn = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 long batch = state.SendingBatch("worker1");
-                await state.Clock.WaitForPollAsync(token, state.WorkDeadline).ConfigureAwait(false);
+                await state
+                    .FixedAsync(
+                        next => state.Clock.WaitForPollAsync(next, state.WorkDeadline),
+                        token
+                    )
+                    .ConfigureAwait(false);
                 state.Clock.Advance(TimeSpan.FromSeconds(10));
                 await state
                     .UntilAsync(
@@ -871,7 +890,10 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     .ConfigureAwait(false);
                 Assert.IsFalse(turn.Token.IsCancellationRequested);
                 await state
-                    .Clock.WaitForPollAsync(token, state.DrainDeadline)
+                    .FixedAsync(
+                        next => state.Clock.WaitForPollAsync(next, state.DrainDeadline),
+                        token
+                    )
                     .ConfigureAwait(false);
                 state.Clock.Advance(
                     state.Clock.WorkDeadline!.Value.AddSeconds(30) - state.Clock.GetUtcNow()
@@ -926,10 +948,10 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 };
                 _ = state.Start();
                 Phase7Sessions.Turn idle = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 Phase7Sessions.Turn healthy = await state
-                    .Sessions.NextTurnAsync("worker2", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 Task[] actualLoops = await state
                     .FixedAsync(next => loopTasks.Task.WaitAsync(next), token)
@@ -940,7 +962,12 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 await state
                     .WaitAckAsync(idleBatch, state.WorkDeadline, token)
                     .ConfigureAwait(false);
-                await state.Clock.WaitForPollAsync(token, state.WorkDeadline).ConfigureAwait(false);
+                await state
+                    .FixedAsync(
+                        next => state.Clock.WaitForPollAsync(next, state.WorkDeadline),
+                        token
+                    )
+                    .ConfigureAwait(false);
                 state.Clock.Advance(state.Clock.WorkDeadline!.Value - state.Clock.GetUtcNow());
                 await state
                     .UntilAsync(
@@ -950,8 +977,11 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     )
                     .ConfigureAwait(false);
                 await state.FixedAsync(actualLoops[0], token).ConfigureAwait(false);
-                await state.Clock
-                    .WaitForPollAsync(token, state.DrainDeadline)
+                await state
+                    .FixedAsync(
+                        next => state.Clock.WaitForPollAsync(next, state.DrainDeadline),
+                        token
+                    )
                     .ConfigureAwait(false);
                 DateTimeOffset drainAt = state.Clock.GetUtcNow();
                 Assert.IsFalse(healthy.Token.IsCancellationRequested);
@@ -1218,10 +1248,10 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 DateTimeOffset began = state.Clock.GetUtcNow();
                 _ = state.Start();
                 Phase7Sessions.Turn one = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 Phase7Sessions.Turn two = await state
-                    .Sessions.NextTurnAsync("worker2", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 Assert.AreEqual(began, state.Clock.GetUtcNow());
                 Assert.AreNotEqual(one.Session.SessionId, two.Session.SessionId);
