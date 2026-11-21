@@ -201,7 +201,8 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
       and [stop conditions](comparison-protocol.md#stop-conditions);
     - after the Phase 1 record/protocol updates merge to `main`, complete the
       independently reviewed Phase 1 ABC 2.1 capability-mapping addendum on
-      `#1488` before merging converter implementation, complete the updated
+      `#1488` before converter implementation relies on the amended records,
+      complete the updated
       structural-screen allowlist review against the expanded calibration
       fixtures, and run formal corpus/gold execution (`formal-4`) only from a
       clean `origin/main` checkout; read-only local preparation of the
