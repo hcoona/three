@@ -13,6 +13,9 @@
     <PackageVersion Include="HtmlAgilityPack" Version="1.13.1" />
     <PackageVersion Include="IO.Github.Hcoona.Pngcs" Version="1.3.1" />
     <PackageVersion Include="Markdig" Version="1.6.0" />
+    <PackageVersion Include="Microsoft.Build" Version="18.9.6" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
+    <PackageVersion Include="Microsoft.Build.Framework" Version="18.9.6" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
+    <PackageVersion Include="Microsoft.Build.Utilities.Core" Version="18.9.6" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0" Condition="'$(MSBuildProjectName)' == 'LiteAgensh' or '$(MSBuildProjectName)' == 'LiteAgensh.Tests' or '$(MSBuildProjectName)' == 'LiteAgensh.OfflineOwner'" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.14" />
@@ -41,12 +44,12 @@
     <PackageVersion Include="ModelContextProtocol" Version="2.4.0" Condition="'$(MSBuildProjectName)' == 'LiteAgensh' or '$(MSBuildProjectName)' == 'LiteAgensh.Tests' or '$(MSBuildProjectName)' == 'LiteAgensh.OfflineOwner'" />
     <PackageVersion Include="Nito.Guids" Version="1.1.1" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
-    <PackageVersion Include="NuGet.Commands" Version="7.9.0" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
+    <PackageVersion Include="NuGet.Commands" Version="8.0.0" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
     <PackageVersion Include="NuGet.Configuration" Version="8.0.0" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
     <PackageVersion Include="NuGet.Frameworks" Version="8.0.0" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
     <PackageVersion Include="NuGet.Packaging" Version="8.0.0" />
-    <PackageVersion Include="NuGet.ProjectModel" Version="7.9.0" />
-    <PackageVersion Include="NuGet.Protocol" Version="7.9.0" />
+    <PackageVersion Include="NuGet.ProjectModel" Version="8.0.0" />
+    <PackageVersion Include="NuGet.Protocol" Version="8.0.0" />
     <PackageVersion Include="NuGet.Versioning" Version="8.0.0" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
     <PackageVersion Include="RocksDB" Version="11.12.0.7641" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />

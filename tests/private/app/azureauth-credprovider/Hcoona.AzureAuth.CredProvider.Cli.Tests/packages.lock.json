@@ -284,7 +284,7 @@
         "type": "Project",
         "dependencies": {
           "Hcoona.AzureAuth.CredProvider.Contracts": "[1.0.0, )",
-          "NuGet.Protocol": "[7.9.0, )"
+          "NuGet.Protocol": "[8.0.0, )"
         }
       },
       "NuGet.Packaging": {
@@ -301,11 +301,11 @@
       },
       "NuGet.Protocol": {
         "type": "CentralTransitive",
-        "requested": "[7.9.0, )",
-        "resolved": "7.9.0",
-        "contentHash": "Ts0qPUGJYfFHhlNSSWWrkaSG6++WqS6ry32WmQA7eNdzTc9SumyhDflITcusBYkT6pEQD5BI1UEByakciV3s0A==",
+        "requested": "[8.0.0, )",
+        "resolved": "8.0.0",
+        "contentHash": "qtjj8XVh9RxYwZWZ6TkHaOaemipLG1azASbFQLh44b3AlMoVhejbWESs1k2pUwpLoNYi5SccfujNqm/dh13zqA==",
         "dependencies": {
-          "NuGet.Packaging": "7.9.0"
+          "NuGet.Packaging": "8.0.0"
         }
       },
       "System.IO.Hashing": {
