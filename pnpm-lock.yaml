@@ -81,8 +81,8 @@ importers:
   src/public/lib/hexo-renderer-asciidoc:
     dependencies:
       '@asciidoctor/core':
-        specifier: 4.2.1
-        version: 4.2.1(highlight.js@11.12.0)
+        specifier: 4.3.0
+        version: 4.3.0(highlight.js@11.12.0)
       cheerio:
         specifier: ^1.2.0
         version: 1.2.0
@@ -175,8 +175,8 @@ packages:
   '@aklinker1/zero-zip@1.0.1':
     resolution: {integrity: sha512-07a596Bd1QO0bi3tIyt2xruq6vKk7hCUt9enHBwggvipB0iiycoJ9/CqzN6UFawaKbOi6NBfMlUxUXzIOZ7Dsg==}
 
-  '@asciidoctor/core@4.2.1':
-    resolution: {integrity: sha512-c/LvM4nnkeLhHryAQOI41AL7UlOowmydMhNaVoH4zecKo2HkyalaNodeVqueR2RVU0/MOg4HPikYtFMHdVXa4A==}
+  '@asciidoctor/core@4.3.0':
+    resolution: {integrity: sha512-GjUCNKhhMp7Sbp70biHN7dNS9DvnOqdO1Z4XflgQX7NZ9+GtpFglTaZ8R+VlrL9XqzuJ9KJDcq8FlMD8CSzXDw==}
     engines: {node: '>=20'}
     peerDependencies:
       highlight.js: ^11.0.0
@@ -2938,7 +2938,7 @@ snapshots:
 
   '@aklinker1/zero-zip@1.0.1': {}
 
-  '@asciidoctor/core@4.2.1(highlight.js@11.12.0)':
+  '@asciidoctor/core@4.3.0(highlight.js@11.12.0)':
     optionalDependencies:
       highlight.js: 11.12.0
 
