@@ -865,9 +865,10 @@ of its voice at that onset.
   is one element, keyed by measure, staff, onset, written pitch and written
   duration. Matching is as for fingering. An unmatched stop is neither an
   element nor an extra element when a counted musicdiff difference touches its
-  note, or touches the note of the same staff and written pitch that starts a
-  tie and ends at its onset (or, for a `tie-in` position, at the end of the
-  measure before the volta group).
+  note, or touches a note of the same written pitch on the same staff or
+  owning voice staff that starts a tie and ends at its onset (or, for a
+  `tie-in` position, a source note at the end of the measure before the volta
+  group).
 
 ### Text-space consistency check
 
