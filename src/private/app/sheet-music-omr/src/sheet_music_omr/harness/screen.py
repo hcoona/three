@@ -27,6 +27,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from decimal import Decimal
 from fractions import Fraction
 from types import MappingProxyType
@@ -52,6 +53,8 @@ REASONS: tuple[str, ...] = (
     "fingering",
     "bracket_dashes",
     "metronome",
+    "tie_slur",
+    "pedal",
     "beam_tuplet_span",
     "octave_shift_span",
     "allowlist",
@@ -71,20 +74,35 @@ REASON_TEXT: Mapping[str, str] = MappingProxyType(
         "voices": "a staff has notes of more than four voices in one measure",
         "lyric_harmony_cue": "lyrics, harmony, figured bass or cue notes",
         "unsupported_element": (
-            "multiple rest, measure repeat, segno, coda, breve, long, maxima,"
-            " unpitched note, fret or string"
+            "multiple rest, measure repeat/style, segno, coda, out-of-range"
+            " type, unpitched or hidden pitched note, non-normal notehead,"
+            " fret or string"
         ),
         "ending_number": "an ending without a single number",
         "signature_position": "a key or time after a timed note or forward",
         "time_signature": "a time without one beats/beat-type, whole beats",
-        "alter_accidental": "a fractional alter or a microtonal accidental",
+        "alter_accidental": (
+            "a fractional alter, unsupported accidental or editorial display"
+        ),
         "barline": "a barline other than ordinary, final, double or repeat",
         "chord": "a chord note on another staff, or a repeated chord pitch",
-        "tremolo": "an unmeasured tremolo or a tremolo with no strokes",
-        "fingering": "a fingering other than one digit 1-5 (two on a trill)",
-        "bracket_dashes": "a bracket direction, or dashes that follow no words",
+        "tremolo": (
+            "an unmeasured/zero-stroke tremolo or unsupported ornament"
+            " accidental-mark"
+        ),
+        "fingering": (
+            "a fingering other than 1-5, two different digits or substitution"
+        ),
+        "bracket_dashes": (
+            "an unsupported or unpaired bracket, or dashes without words"
+        ),
         "metronome": "a metronome without one q, h or e unit and per-minute",
-        "beam_tuplet_span": "a beam or tuplet that stops outside its measure",
+        "tie_slur": "an unsupported/unpaired tie or a slur on a rest",
+        "pedal": "a line-less pedal continue/discontinue, resume or open line",
+        "beam_tuplet_span": (
+            "an invalid beam/tuplet span, missing time-modification, or"
+            " out-of-bounds voice/offset timeline"
+        ),
         "octave_shift_span": (
             "an unpaired, cross-staff or overlapping octave-shift span"
         ),
@@ -173,14 +191,15 @@ ALLOWLIST: Mapping[str, frozenset[str]] = MappingProxyType(
         ),
         "ornaments": frozenset(
             {
-                "trill-mark",  # `orn=trill` (L491).
-                "mordent",  # `orn=mordent` (L491).
-                "inverted-mordent",  # `orn=inverted-mordent` (L491).
-                "turn",  # `orn=turn` (L492).
-                "inverted-turn",  # `orn=inverted-turn` (L492).
-                # Extended trill relation (L625); marks and words (L944).
+                "trill-mark",  # `orn=trill` (L498).
+                "accidental-mark",  # `orn=trill(acc)` (L284, L498).
+                "mordent",  # `orn=mordent` (L499).
+                "inverted-mordent",  # `orn=inverted-mordent` (L499).
+                "turn",  # `orn=turn` (L500).
+                "inverted-turn",  # `orn=inverted-turn` (L500).
+                # Extended trill relation (L642); marks and words (L973).
                 "wavy-line",
-                # `tremolo=single:S` (L493); two-note tremolo (L621).
+                # `tremolo=single:S` (L501); two-note tremolo (L639).
                 "tremolo",
             }
         ),
@@ -200,15 +219,16 @@ ALLOWLIST: Mapping[str, frozenset[str]] = MappingProxyType(
         "barline": frozenset({"bar-style", "repeat", "ending"}),
         "direction-type": frozenset(
             {
-                # Expression text `<"text">` (L678), tempo text (L680).
+                # Expression text `<"text">` (L705), tempo text (L707).
                 "words",
-                "dynamics",  # Dynamic directions (L671).
-                "wedge",  # Hairpins (L689).
-                "octave-shift",  # Ottava lines (L692).
-                "pedal",  # Pedal signs (L685) and pedal lines (L700).
-                "dashes",  # Dashes lines (L703).
-                "metronome",  # Tempo `q=120` (L680).
-                "rehearsal",  # Rehearsal marks (L684).
+                "dynamics",  # Dynamic and dyn-text directions (L690).
+                "wedge",  # Hairpins (L716).
+                "octave-shift",  # Ottava lines (L719).
+                "pedal",  # Pedal signs (L712) and pedal lines (L723).
+                "dashes",  # Dashes lines (L727).
+                "bracket",  # Unhooked solid voice-leading lines (L730).
+                "metronome",  # Tempo `q=120` / `(q=120)` (L707).
+                "rehearsal",  # Rehearsal marks (L711).
             }
         ),
     }
@@ -434,8 +454,15 @@ def _check_voices(root: ET.Element) -> str | None:
     """Check that no staff has notes of more than four voices in a measure."""
     for measure in _measures(root):
         voices: dict[str, set[str]] = {}
+        lead_staff, lead_voice = "1", "1"
         for note in measure.findall("note"):
-            voices.setdefault(_staff(note), set()).add(_voice(note))
+            if note.find("chord") is None:
+                lead_staff, lead_voice = _staff(note), _voice(note)
+                staff, voice = lead_staff, lead_voice
+            else:
+                staff = _text(note, "staff") or lead_staff
+                voice = _text(note, "voice") or lead_voice
+            voices.setdefault(staff, set()).add(voice)
         for staff, values in voices.items():
             if len(values) > _MAX_VOICES:
                 return _at(measure, f"{len(values)} voices on staff {staff}")
@@ -456,6 +483,7 @@ _UNSUPPORTED_TAGS = frozenset(
     {
         "multiple-rest",
         "measure-repeat",
+        "measure-style",
         "segno",
         "coda",
         "unpitched",
@@ -463,17 +491,27 @@ _UNSUPPORTED_TAGS = frozenset(
         "string",
     }
 )
-_LONG_TYPES = frozenset({"breve", "long", "maxima"})
+_OUT_OF_RANGE_TYPES = frozenset(
+    {"breve", "long", "maxima", "256th", "512th", "1024th"}
+)
 
 
 def _check_unsupported_element(root: ET.Element) -> str | None:
-    """Check for the unsupported elements and note types that the list names."""
+    """Check for unsupported elements, note types, hidden notes, noteheads."""
     for where, element in _located(root):
         if element.tag in _UNSUPPORTED_TAGS:
             return f"{where}: {element.tag}"
-        note_type = (element.text or "").strip()
-        if element.tag == "type" and note_type in _LONG_TYPES:
-            return f"{where}: type {note_type}"
+        text = (element.text or "").strip()
+        if element.tag == "type" and text in _OUT_OF_RANGE_TYPES:
+            return f"{where}: type {text}"
+        if (
+            element.tag == "note"
+            and element.find("pitch") is not None
+            and _attr(element, "print-object") == "no"
+        ):
+            return f"{where}: hidden pitched note"
+        if element.tag == "notehead" and text != "normal":
+            return f"{where}: notehead {text}"
     return None
 
 
@@ -563,14 +601,38 @@ _ACCIDENTAL_TAGS = frozenset(
 )
 
 
+_FORMAT_ACCIDENTALS = frozenset(
+    {"sharp", "natural", "flat", "double-sharp", "flat-flat"}
+)
+
+
+def _accidental_element_fault(where: str, element: ET.Element) -> str | None:
+    text = (element.text or "").strip()
+    if text not in _PLAIN_ACCIDENTALS:
+        return f"{where}: accidental {text}"
+    if (
+        _attr(element, "bracket") == "yes"
+        or _attr(element, "editorial") == "yes"
+    ):
+        return f"{where}: bracketed or editorial accidental"
+    paren = _attr(element, "parentheses")
+    if paren not in {"", "yes", "no"}:
+        return f"{where}: accidental parentheses {paren}"
+    return None
+
+
 def _check_alter_accidental(root: ET.Element) -> str | None:
-    """Check whole-number alters and accidentals that are not microtonal."""
+    """Check whole-number alters and supported accidentals."""
     for where, element in _located(root):
         text = (element.text or "").strip()
         if element.tag == "alter":
             value = _decimal(text)
             if value is None or value != value.to_integral_value():
                 return f"{where}: alter {text}"
+        elif element.tag == "accidental":
+            fault = _accidental_element_fault(where, element)
+            if fault is not None:
+                return fault
         elif element.tag in _ACCIDENTAL_TAGS and text not in _PLAIN_ACCIDENTALS:
             return f"{where}: {element.tag} {text}"
     return None
@@ -619,7 +681,7 @@ def _check_chord(root: ET.Element) -> str | None:
                 head, pitches = note, {pitch}
             elif head is None or pitch is None or None in pitches:
                 return _at(measure, "a chord note without pitched chord head")
-            elif _staff(note) != _staff(head):
+            elif (_text(note, "staff") or _staff(head)) != _staff(head):
                 return _at(measure, f"chord note on staff {_staff(note)}")
             elif pitch in pitches:
                 return _at(measure, f"chord repeats {pitch[0]}{pitch[2]}")
@@ -629,22 +691,38 @@ def _check_chord(root: ET.Element) -> str | None:
 
 
 def _check_tremolo(root: ET.Element) -> str | None:
-    """Check for unmeasured tremolos and tremolos without strokes."""
+    """Check tremolos and ornament accidental-mark bounds."""
     for measure in _measures(root):
         for tremolo in measure.iter("tremolo"):
             strokes = _integer(tremolo.text)
             if _attr(tremolo, "type") == "unmeasured" or not strokes:
                 kind = _attr(tremolo, "type")
                 return _at(measure, f"tremolo type {kind} strokes {strokes}")
+        for ornaments in measure.iter("ornaments"):
+            marks = ornaments.findall("accidental-mark")
+            if not marks:
+                continue
+            if (
+                ornaments.find("trill-mark") is None
+                or len(marks) > 1
+                or (marks[0].text or "").strip() not in _PLAIN_ACCIDENTALS
+            ):
+                return _at(measure, "unsupported ornament accidental-mark")
     return None
 
 
 _FINGER = re.compile(r"[1-5]")
-_TRILL_FINGERINGS = 2
+_DASH_SUB_FINGER = re.compile(r"([1-5])[-\u2013]([1-5])")
+_SMUFL_SUB_FINGER = re.compile(
+    r"fingering([1-5])fingeringSubstitution(?:Above|Below)fingering([1-5])"
+)
+_SMUFL_SUB_GLYPHS = frozenset(
+    {"fingeringSubstitutionAbove", "fingeringSubstitutionBelow"}
+)
 
 
 def _check_fingering(root: ET.Element) -> str | None:
-    """Check one digit 1-5 per note, or two different digits on a trill."""
+    """Check one digit 1-5, two different digits, or two-finger substitution."""
     for measure in _measures(root):
         for note in measure.findall("note"):
             fault = _fingering_fault(note)
@@ -653,101 +731,190 @@ def _check_fingering(root: ET.Element) -> str | None:
     return None
 
 
+def _single_fingering_valid(text: str) -> bool:
+    if _FINGER.fullmatch(text):
+        return True
+    if (
+        len(text) == 2  # noqa: PLR2004
+        and _FINGER.fullmatch(text[0])
+        and _FINGER.fullmatch(text[1])
+        and text[0] != text[1]
+    ):
+        return True
+    matched = _DASH_SUB_FINGER.fullmatch(text) or _SMUFL_SUB_FINGER.fullmatch(
+        text
+    )
+    return bool(matched and matched.group(1) != matched.group(2))
+
+
 def _fingering_fault(note: ET.Element) -> str | None:
     fingerings = note.findall("notations/technical/fingering")
-    for fingering in fingerings:
-        if "yes" in {
-            _attr(fingering, "substitution"),
-            _attr(fingering, "alternate"),
-        }:
-            return "substitution or alternate fingering"
-        if not _FINGER.fullmatch(fingering.text or ""):
-            return f"fingering {fingering.text!r}"
-    if len(fingerings) <= 1:
+    if not fingerings:
         return None
-    if (
-        len(fingerings) == _TRILL_FINGERINGS
-        and fingerings[0].text != fingerings[1].text
-        and note.find("notations/ornaments/trill-mark") is not None
+    if any(_attr(f, "alternate") == "yes" for f in fingerings):
+        return "alternate fingering"
+    texts = ["".join((f.text or "").split()) for f in fingerings]
+    subs = [_attr(f, "substitution") == "yes" for f in fingerings]
+    valid = False
+    if len(fingerings) == 1 and not subs[0]:
+        if _single_fingering_valid(texts[0]):
+            return None
+        return f"fingering {fingerings[0].text!r}"
+    if len(fingerings) == 2 and not subs[0]:  # noqa: PLR2004
+        valid = (
+            bool(_FINGER.fullmatch(texts[0]))
+            and bool(_FINGER.fullmatch(texts[1]))
+            and texts[0] != texts[1]
+        )
+    elif len(fingerings) == 3 and not any(subs):  # noqa: PLR2004
+        valid = (
+            bool(_FINGER.fullmatch(texts[0]))
+            and bool(_FINGER.fullmatch(texts[1]))
+            and texts[0] != texts[1]
+            and texts[2] in _SMUFL_SUB_GLYPHS
+        )
+    return None if valid else f"fingering {texts!r}"
+
+
+def _pair_bracket_endpoints(
+    bracket_ends: list[tuple[Fraction, int, int, str, str, ET.Element]],
+) -> str | None:
+    open_brackets: dict[str, tuple[Fraction, ET.Element]] = {}
+    for score_on, _, _, number, kind, m_el in sorted(
+        bracket_ends,
+        key=lambda item: (item[0], 0 if item[4] == "stop" else 1, item[2]),
     ):
-        return None
-    return f"{len(fingerings)} fingerings"
-
-
-def _check_bracket_dashes(root: ET.Element) -> str | None:
-    """Check for brackets, and that every dashes start follows words.
-
-    A dashes line is the dashed extension of expression text, and its start
-    records that text (format L703-705). The words are earlier in the start's
-    own direction, or in a preceding direction of the same measure, staff and
-    onset.
-    """
-    worded: set[tuple[str, Fraction]] = set()
-    current: ET.Element | None = None
-    for measure, direction, onset in _directions(root):
-        if measure is not current:
-            current = measure
-            worded.clear()
-        preceded = onset is not None and (_staff(direction), onset) in worded
-        fault, has_words = _dashes_fault(direction, preceded=preceded)
-        if fault is not None:
-            return _at(measure, fault)
-        if has_words and onset is not None:
-            worded.add((_staff(direction), onset))
+        if kind == "start":
+            if number in open_brackets:
+                return _at(m_el, f"overlapping bracket number {number}")
+            open_brackets[number] = (score_on, m_el)
+        else:
+            started = open_brackets.pop(number, None)
+            if started is None or score_on < started[0]:
+                return _at(
+                    m_el, f"bracket stop without start (number {number})"
+                )
+    if open_brackets:
+        num, (_, start_m) = next(iter(open_brackets.items()))
+        return _at(start_m, f"unclosed bracket number {num}")
     return None
 
 
-def _dashes_fault(
+@dataclass(slots=True)
+class _BracketScan:
+    divisions: Fraction | None = None
+    measure_start: Fraction | None = Fraction(0)
+    order: int = 0
+    worded: set[tuple[str, Fraction]] = dataclass_field(default_factory=set)
+    ends: list[tuple[Fraction, int, int, str, str, ET.Element]] = (
+        dataclass_field(default_factory=list)
+    )
+
+
+def _record_bracket_direction(
+    measure: ET.Element,
+    child: ET.Element,
+    m_index: int,
+    onset: Fraction | None,
+    scan: _BracketScan,
+) -> str | None:
+    preceded = onset is not None and (_staff(child), onset) in scan.worded
+    fault, has_words, brackets = _dashes_and_brackets(child, preceded=preceded)
+    if fault is not None:
+        return _at(measure, fault)
+    if has_words and onset is not None:
+        scan.worded.add((_staff(child), onset))
+    for number, kind in brackets:
+        if onset is None or scan.measure_start is None:
+            return _at(measure, "bracket at undecidable onset")
+        scan.order += 1
+        scan.ends.append(
+            (
+                scan.measure_start + onset,
+                m_index,
+                scan.order,
+                number,
+                kind,
+                measure,
+            )
+        )
+    return None
+
+
+def _scan_bracket_measure(
+    measure: ET.Element, m_index: int, scan: _BracketScan
+) -> str | None:
+    scan.worded.clear()
+    position: Fraction | None = Fraction(0)
+    m_len: Fraction | None = Fraction(0)
+    for child in measure:
+        if child.tag == "attributes" and child.find("divisions") is not None:
+            scan.divisions = _fraction(child.findtext("divisions"))
+            if scan.divisions is not None and scan.divisions <= 0:
+                scan.divisions = None
+        elif child.tag == "direction":
+            onset = _shift(position, child, scan.divisions, "offset")
+            fault = _record_bracket_direction(
+                measure, child, m_index, onset, scan
+            )
+            if fault is not None:
+                return fault
+        elif (
+            child.tag in {"note", "forward"}
+            and child.find("chord") is None
+            and child.find("grace") is None
+        ):
+            position = _shift(position, child, scan.divisions, "duration")
+            m_len = (
+                None
+                if m_len is None or position is None
+                else max(m_len, position)
+            )
+        elif child.tag == "backup":
+            position = _shift(position, child, scan.divisions, "duration", -1)
+    scan.measure_start = (
+        None
+        if scan.measure_start is None or m_len is None
+        else scan.measure_start + m_len
+    )
+    return None
+
+
+def _check_bracket_dashes(root: ET.Element) -> str | None:
+    """Check unhooked solid brackets and that dashes starts follow words."""
+    scan = _BracketScan()
+    for m_index, measure in enumerate(_measures(root)):
+        fault = _scan_bracket_measure(measure, m_index, scan)
+        if fault is not None:
+            return fault
+    return _pair_bracket_endpoints(scan.ends)
+
+
+def _dashes_and_brackets(
     direction: ET.Element, *, preceded: bool
-) -> tuple[str | None, bool]:
-    """Return a direction's bracket or dashes fault and whether it has words."""
+) -> tuple[str | None, bool, list[tuple[str, str]]]:
     has_words = False
+    brackets: list[tuple[str, str]] = []
     for direction_type in direction.findall("direction-type"):
         for mark in direction_type:
             if mark.tag == "bracket":
-                return "bracket", has_words
+                kind = _attr(mark, "type")
+                if (
+                    kind not in {"start", "stop"}
+                    or _attr(mark, "line-end") != "none"
+                    or _attr(mark, "line-type") not in {"", "solid"}
+                ):
+                    return "unsupported bracket", has_words, brackets
+                brackets.append((_attr(mark, "number", "1"), kind))
             if (
                 mark.tag == "dashes"
                 and _attr(mark, "type") == "start"
                 and not (has_words or preceded)
             ):
-                return "dashes start without words", has_words
+                return "dashes start without words", has_words, brackets
             if mark.tag == "words" and (mark.text or "").strip():
                 has_words = True
-    return None, has_words
-
-
-def _directions(
-    root: ET.Element,
-) -> Iterator[tuple[ET.Element, ET.Element, Fraction | None]]:
-    """Yield each direction with its measure and onset, None if undecidable.
-
-    The onset is in quarter notes from the start of the measure, with the
-    direction's offset, following the measure's notes, backups and forwards.
-    """
-    divisions: Fraction | None = None
-    for measure in _measures(root):
-        position: Fraction | None = Fraction(0)
-        for child in measure:
-            if (
-                child.tag == "attributes"
-                and child.find("divisions") is not None
-            ):
-                divisions = _fraction(child.findtext("divisions"))
-                if divisions is not None and divisions <= 0:
-                    divisions = None
-            elif child.tag == "direction":
-                yield (
-                    measure,
-                    child,
-                    _shift(position, child, divisions, "offset"),
-                )
-            elif (
-                child.tag in {"note", "forward"} and child.find("chord") is None
-            ):
-                position = _shift(position, child, divisions, "duration")
-            elif child.tag == "backup":
-                position = _shift(position, child, divisions, "duration", -1)
+    return None, has_words, brackets
 
 
 def _shift(
@@ -805,38 +972,1069 @@ def _metronome_fault(metronome: ET.Element) -> str | None:
     return None
 
 
-def _check_beam_tuplet_span(root: ET.Element) -> str | None:
-    """Check that every beam level and tuplet that starts stops in its measure.
-
-    Beams are matched by voice, grace and level, and tuplets by voice and
-    number. A cross-staff beam changes staff, so staff is not a key. A chord
-    has one beam, so the beams of its other notes are not counted again.
-    """
-    for measure in _measures(root):
-        spans: dict[tuple[str, ...], int] = {}
-        for note in measure.findall("note"):
-            voice = _voice(note)
-            grace = "grace" if note.find("grace") is not None else ""
-            beams = (
-                [] if note.find("chord") is not None else note.findall("beam")
+def _volta_measure_flags(measure: ET.Element) -> tuple[bool, bool, bool]:
+    left_start = right_close = repeat = False
+    for bar in measure.findall("barline"):
+        loc = _attr(bar, "location", "right")
+        if loc == "left":
+            left_start = left_start or any(
+                _attr(e, "type") == "start" for e in bar.findall("ending")
             )
-            for beam in beams:
-                level = _attr(beam, "number", "1")
-                state = (beam.text or "").strip()
-                _count(
-                    spans, ("beam", voice, grace, level), state, "begin", "end"
+        elif loc == "right":
+            right_close = right_close or any(
+                _attr(e, "type") in {"stop", "discontinue"}
+                for e in bar.findall("ending")
+            )
+            repeat = repeat or any(
+                _attr(r, "direction") == "backward"
+                for r in bar.findall("repeat")
+            )
+    return left_start, right_close, repeat
+
+
+def _volta_tie_in_map(measures: list[ET.Element]) -> dict[int, int]:
+    """Return 0-based ``tie-in`` measure ordinals mapped to source measures."""
+    flags = [_volta_measure_flags(m) for m in measures]
+    in_bracket: list[bool] = []
+    active = False
+    for left_start, right_close, _ in flags:
+        active = active or left_start
+        in_bracket.append(active)
+        if right_close:
+            active = False
+    sources: dict[int, int] = {}
+    idx = 0
+    total = len(measures)
+    while idx < total:
+        if not in_bracket[idx]:
+            idx += 1
+            continue
+        g_start = idx
+        while idx + 1 < total and in_bracket[idx + 1]:
+            idx += 1
+        src = g_start - 1
+        if src >= 0:
+            for m_idx in range(g_start + 1, idx + 1):
+                if flags[m_idx][0]:
+                    sources[m_idx] = src
+            if flags[idx][2] and idx + 1 < total and not in_bracket[idx + 1]:
+                sources[idx + 1] = src
+        idx += 1
+    return sources
+
+
+@dataclass(slots=True)
+class _TieNote:
+    m_idx: int
+    measure: ET.Element
+    voice: str
+    own: str
+    shown: str
+    onset: Fraction
+    start_q: Fraction
+    end_q: Fraction
+    pitch: tuple[str, Decimal, int]
+    starts: bool
+    stops: bool
+    order: int = 0
+    is_grace: bool = False
+
+
+def _tie_note_fault(child: ET.Element) -> str | None:
+    if child.find("rest") is not None and (
+        child.find("notations/slur") is not None
+        or child.find("tie") is not None
+        or child.find("notations/tied") is not None
+    ):
+        return "slur or tie on a rest"
+    t_marks = [*child.findall("tie"), *child.findall("notations/tied")]
+    for mark in t_marks:
+        if _attr(mark, "type") not in {"start", "stop"}:
+            return f"tie type {_attr(mark, 'type')}"
+    if child.find("grace") is not None and any(
+        _attr(m, "type") == "stop" for m in t_marks
+    ):
+        return "tie stop on a grace note"
+    return None
+
+
+@dataclass(slots=True)
+class _TieMeasureCursor:
+    measure: ET.Element
+    m_idx: int
+    divisions: Fraction | None
+    score_time: Fraction
+    pos: Fraction | None = Fraction(0)
+    last_on: Fraction | None = Fraction(0)
+    m_len: Fraction = Fraction(0)
+    order: int = 0
+    lead_shown: str = "1"
+    lead_voice: str = "1"
+    voice_spans: dict[str, list[tuple[str, Fraction, Fraction]]] = (
+        dataclass_field(default_factory=dict)
+    )
+    notes: list[_TieNote] = dataclass_field(default_factory=list)
+
+
+def _record_grace_tie_note(
+    child: ET.Element, cur: _TieMeasureCursor, *, chord: bool
+) -> str | None:
+    if not chord:
+        cur.last_on = cur.pos
+        cur.order += 1
+    t_marks = [*child.findall("tie"), *child.findall("notations/tied")]
+    if not any(_attr(m, "type") == "start" for m in t_marks):
+        return None
+    pitch = _pitch(child)
+    onset = cur.last_on if chord else cur.pos
+    if pitch is None or onset is None or cur.divisions is None:
+        return _at(cur.measure, "tie at undecidable time")
+    shown = (
+        (_text(child, "staff") or cur.lead_shown) if chord else cur.lead_shown
+    )
+    voice = (
+        (_text(child, "voice") or cur.lead_voice) if chord else cur.lead_voice
+    )
+    cur.notes.append(
+        _TieNote(
+            m_idx=cur.m_idx,
+            measure=cur.measure,
+            voice=voice,
+            own=shown,
+            shown=shown,
+            onset=onset,
+            start_q=cur.score_time + onset,
+            end_q=cur.score_time + onset,
+            pitch=pitch,
+            starts=True,
+            stops=False,
+            order=cur.order,
+            is_grace=True,
+        )
+    )
+    return None
+
+
+def _handle_tie_note_el(
+    child: ET.Element, cur: _TieMeasureCursor
+) -> str | None:
+    fault = _tie_note_fault(child)
+    if fault is not None:
+        return _at(cur.measure, fault)
+    chord = child.find("chord") is not None
+    if not chord:
+        cur.lead_shown = _staff(child)
+        cur.lead_voice = _voice(child)
+    if child.find("grace") is not None:
+        return _record_grace_tie_note(child, cur, chord=chord)
+    onset = cur.last_on if chord else cur.pos
+    if not chord:
+        cur.order += 1
+        cur.last_on = cur.pos
+        cur.pos = _shift(cur.pos, child, cur.divisions, "duration")
+        if cur.pos is not None:
+            cur.m_len = max(cur.m_len, cur.pos)
+            if onset is not None:
+                cur.voice_spans.setdefault(cur.lead_voice, []).append(
+                    (cur.lead_shown, onset, cur.pos)
                 )
-            for tuplet in note.findall("notations/tuplet"):
-                number = _attr(tuplet, "number", "1")
-                state = _attr(tuplet, "type")
-                _count(spans, ("tuplet", voice, number), state, "start", "stop")
-        unclosed = [key for key, count in spans.items() if count > 0]
-        if unclosed:
-            kind, voice, *_, number = unclosed[0]
+    pitch = _pitch(child)
+    if pitch is None:
+        return None
+    dur = _fraction(child.findtext("duration"))
+    if onset is None or cur.pos is None or cur.divisions is None or dur is None:
+        return _at(cur.measure, "tie at undecidable time")
+    shown = (
+        (_text(child, "staff") or cur.lead_shown) if chord else cur.lead_shown
+    )
+    voice = (
+        (_text(child, "voice") or cur.lead_voice) if chord else cur.lead_voice
+    )
+    t_marks = [*child.findall("tie"), *child.findall("notations/tied")]
+    cur.notes.append(
+        _TieNote(
+            m_idx=cur.m_idx,
+            measure=cur.measure,
+            voice=voice,
+            own=shown,
+            shown=shown,
+            onset=onset,
+            start_q=cur.score_time + onset,
+            end_q=cur.score_time + onset + dur / cur.divisions,
+            pitch=pitch,
+            starts=any(_attr(m, "type") == "start" for m in t_marks),
+            stops=any(_attr(m, "type") == "stop" for m in t_marks),
+            order=cur.order,
+        )
+    )
+    return None
+
+
+def _assign_tie_measure_voices(cur: _TieMeasureCursor) -> None:
+    split_voices: set[str] = set()
+    homes: dict[str, str] = {}
+    for voice, spans in cur.voice_spans.items():
+        if any(
+            s1 != s2 and a0 < b1 and b0 < a1
+            for idx, (s1, a0, a1) in enumerate(spans)
+            for s2, b0, b1 in spans[idx + 1 :]
+        ):
+            split_voices.add(voice)
+        else:
+            c1 = sum(1 for st, *_ in spans if st == "1")
+            c2 = sum(1 for st, *_ in spans if st == "2")
+            homes[voice] = "2" if c2 > c1 else "1"
+    for note in cur.notes:
+        if note.voice in split_voices:
+            note.own = note.shown
+            note.voice = f"{note.voice}#{note.shown}"
+        else:
+            note.own = homes.get(note.voice, note.shown)
+
+
+def _scan_tie_measure(
+    measure: ET.Element,
+    m_idx: int,
+    divisions: Fraction | None,
+    score_time: Fraction,
+) -> tuple[str | None, Fraction | None, Fraction, list[_TieNote]]:
+    cur = _TieMeasureCursor(measure, m_idx, divisions, score_time)
+    for child in measure:
+        if child.tag == "attributes" and child.find("divisions") is not None:
+            cur.divisions = _fraction(child.findtext("divisions"))
+            if cur.divisions is not None and cur.divisions <= 0:
+                cur.divisions = None
+        elif child.tag in {"forward", "backup"}:
+            sign = -1 if child.tag == "backup" else 1
+            cur.pos = _shift(cur.pos, child, cur.divisions, "duration", sign)
+            if cur.pos is not None and sign > 0:
+                cur.m_len = max(cur.m_len, cur.pos)
+        elif child.tag == "note":
+            err = _handle_tie_note_el(child, cur)
+            if err is not None:
+                return err, cur.divisions, cur.m_len, cur.notes
+    _assign_tie_measure_voices(cur)
+    return None, cur.divisions, cur.m_len, cur.notes
+
+
+def _tie_stop_matches(row: _TieNote, stop: _TieNote) -> bool:
+    if stop.is_grace or stop.start_q != row.end_q or stop.pitch != row.pitch:
+        return False
+    if row.is_grace and stop.m_idx == row.m_idx:
+        return stop.voice == row.voice and row.order < stop.order
+    return stop.own == row.own or stop.shown == row.shown
+
+
+def _is_valid_tie_in_stop(
+    stop_row: _TieNote,
+    pitched_notes: list[_TieNote],
+    first_voice_onset: dict[tuple[int, str], Fraction],
+    tie_in_sources: dict[int, int],
+    measure_bounds: list[tuple[Fraction, Fraction]],
+) -> bool:
+    src_m = tie_in_sources.get(stop_row.m_idx)
+    if (
+        src_m is None
+        or stop_row.onset != 0
+        or first_voice_onset.get((stop_row.m_idx, stop_row.voice)) != 0
+    ):
+        return False
+    src_end = measure_bounds[src_m][1]
+    return any(
+        not r.is_grace
+        and r.m_idx == src_m
+        and r.end_q == src_end
+        and r.pitch == stop_row.pitch
+        and (r.own == stop_row.own or r.shown == stop_row.shown)
+        for r in pitched_notes
+    )
+
+
+def _augment_bipartite(
+    node: int,
+    adj: dict[int, list[int]],
+    partner: dict[int, int],
+    seen: set[int],
+) -> bool:
+    for nxt in adj.get(node, ()):
+        if nxt in seen:
+            continue
+        seen.add(nxt)
+        prev = partner.get(nxt)
+        if prev is None or _augment_bipartite(prev, adj, partner, seen):
+            partner[nxt] = node
+            return True
+    return False
+
+
+def _build_tie_edges(
+    pitched_notes: list[_TieNote],
+) -> tuple[list[int], list[int], dict[int, list[int]], dict[int, list[int]]]:
+    starts = [idx for idx, row in enumerate(pitched_notes) if row.starts]
+    stops = [
+        idx
+        for idx, row in enumerate(pitched_notes)
+        if row.stops and not row.is_grace
+    ]
+    start_adj: dict[int, list[int]] = {}
+    stop_adj: dict[int, list[int]] = {}
+    for u_idx in starts:
+        u_row = pitched_notes[u_idx]
+        cands = [
+            s_idx
+            for s_idx in stops
+            if _tie_stop_matches(u_row, pitched_notes[s_idx])
+        ]
+        cands.sort(key=lambda s_idx: pitched_notes[s_idx].voice != u_row.voice)
+        start_adj[u_idx] = cands
+        for s_idx in cands:
+            stop_adj.setdefault(s_idx, []).append(u_idx)
+    return starts, stops, start_adj, stop_adj
+
+
+def _verify_tie_pairing(
+    pitched_notes: list[_TieNote],
+    tie_in_sources: dict[int, int],
+    measure_bounds: list[tuple[Fraction, Fraction]],
+) -> str | None:
+    first_voice_onset: dict[tuple[int, str], Fraction] = {}
+    for row in pitched_notes:
+        if row.is_grace:
+            continue
+        key = (row.m_idx, row.voice)
+        if key not in first_voice_onset or row.onset < first_voice_onset[key]:
+            first_voice_onset[key] = row.onset
+    starts, stops, start_adj, stop_adj = _build_tie_edges(pitched_notes)
+    start_partner_of_start: dict[int, int] = {}
+    for s_idx in stops:
+        if _is_valid_tie_in_stop(
+            pitched_notes[s_idx],
+            pitched_notes,
+            first_voice_onset,
+            tie_in_sources,
+            measure_bounds,
+        ):
+            continue
+        if not _augment_bipartite(
+            s_idx, stop_adj, start_partner_of_start, set()
+        ):
             return _at(
-                measure, f"{kind} {number} of voice {voice} does not stop"
+                pitched_notes[s_idx].measure, "tie stop without matching start"
+            )
+    matched_start_of_stop = {
+        s_idx: u_idx for u_idx, s_idx in start_partner_of_start.items()
+    }
+    for u_idx in starts:
+        if u_idx not in start_partner_of_start and not _augment_bipartite(
+            u_idx, start_adj, matched_start_of_stop, set()
+        ):
+            return _at(
+                pitched_notes[u_idx].measure,
+                "tie start reaches no matching stop",
             )
     return None
+
+
+def _check_tie_slur(root: ET.Element) -> str | None:
+    """Check tie/tied types and pairing, and reject slurs on rests."""
+    measures = _measures(root)
+    tie_in_sources = _volta_tie_in_map(measures)
+    divisions: Fraction | None = None
+    score_time = Fraction(0)
+    measure_bounds: list[tuple[Fraction, Fraction]] = []
+    pitched_notes: list[_TieNote] = []
+    for m_idx, measure in enumerate(measures):
+        fault, divisions, m_len, m_notes = _scan_tie_measure(
+            measure, m_idx, divisions, score_time
+        )
+        if fault is not None:
+            return fault
+        pitched_notes.extend(m_notes)
+        measure_bounds.append((score_time, score_time + m_len))
+        score_time += m_len
+    return _verify_tie_pairing(pitched_notes, tie_in_sources, measure_bounds)
+
+
+type _PedalEndpoint = tuple[Fraction, int, int, str, str, ET.Element]
+
+
+@dataclass(slots=True)
+class _PedalScan:
+    divisions: Fraction | None = None
+    measure_start: Fraction | None = Fraction(0)
+    order: int = 0
+    ends: list[_PedalEndpoint] = dataclass_field(default_factory=list)
+
+
+def _record_pedal_dir(
+    measure: ET.Element,
+    direction: ET.Element,
+    onset: Fraction | None,
+    scan: _PedalScan,
+) -> str | None:
+    for pedal in direction.findall("direction-type/pedal"):
+        kind = _attr(pedal, "type")
+        line = _attr(pedal, "line") == "yes"
+        if kind == "resume":
+            return _at(measure, "pedal resume")
+        if kind in {"continue", "discontinue"} and not line:
+            return _at(measure, f"pedal {kind} without line=yes")
+        if not line:
+            continue
+        if onset is None or scan.measure_start is None:
+            return _at(measure, "pedal at undecidable onset")
+        pri = (
+            0
+            if kind in {"stop", "discontinue"}
+            else (1 if kind == "change" else 2)
+        )
+        scan.order += 1
+        scan.ends.append(
+            (
+                scan.measure_start + onset,
+                pri,
+                scan.order,
+                _attr(pedal, "number", "1"),
+                kind,
+                measure,
+            )
+        )
+    return None
+
+
+def _scan_pedal_measure(measure: ET.Element, scan: _PedalScan) -> str | None:
+    position: Fraction | None = Fraction(0)
+    m_len: Fraction | None = Fraction(0)
+    for child in measure:
+        if child.tag == "attributes" and child.find("divisions") is not None:
+            scan.divisions = _fraction(child.findtext("divisions"))
+            if scan.divisions is not None and scan.divisions <= 0:
+                scan.divisions = None
+        elif child.tag == "direction":
+            onset = _shift(position, child, scan.divisions, "offset")
+            fault = _record_pedal_dir(measure, child, onset, scan)
+            if fault is not None:
+                return fault
+        elif (
+            child.tag in {"note", "forward"}
+            and child.find("chord") is None
+            and child.find("grace") is None
+        ):
+            position = _shift(position, child, scan.divisions, "duration")
+            m_len = (
+                None
+                if m_len is None or position is None
+                else max(m_len, position)
+            )
+        elif child.tag == "backup":
+            position = _shift(position, child, scan.divisions, "duration", -1)
+    scan.measure_start = (
+        None
+        if scan.measure_start is None or m_len is None
+        else scan.measure_start + m_len
+    )
+    return None
+
+
+def _pair_pedal_endpoints(ends: list[_PedalEndpoint]) -> str | None:
+    opened: dict[str, tuple[Fraction, ET.Element]] = {}
+    for score_on, _, _, num, kind, m_el in sorted(
+        ends, key=lambda it: (it[0], it[1], it[2])
+    ):
+        if kind == "start":
+            if num in opened:
+                return _at(m_el, f"overlapping pedal line {num}")
+            opened[num] = (score_on, m_el)
+        elif kind in {"stop", "discontinue"}:
+            started = opened.pop(num, None)
+            if started is None or score_on < started[0]:
+                return _at(m_el, f"pedal {kind} without start")
+        elif kind == "change":
+            started = opened.get(num)
+            if started is None or score_on < started[0]:
+                return _at(m_el, "pedal change without start")
+    if opened:
+        num, (_, start_m) = next(iter(opened.items()))
+        return _at(start_m, f"unclosed pedal line {num}")
+    return None
+
+
+def _check_pedal(root: ET.Element) -> str | None:
+    """Check pedal line attributes, absence of resume, and closed lines."""
+    scan = _PedalScan()
+    for measure in _measures(root):
+        fault = _scan_pedal_measure(measure, scan)
+        if fault is not None:
+            return fault
+    return _pair_pedal_endpoints(scan.ends)
+
+
+_FORMAT_TYPE_QUARTERS: Mapping[str, Fraction] = MappingProxyType(
+    {
+        "whole": Fraction(4),
+        "half": Fraction(2),
+        "quarter": Fraction(1),
+        "eighth": Fraction(1, 2),
+        "16th": Fraction(1, 4),
+        "32nd": Fraction(1, 8),
+        "64th": Fraction(1, 16),
+        "128th": Fraction(1, 32),
+    }
+)
+
+
+def _spacer_writable(quarters: Fraction) -> bool:
+    return quarters >= 0 and (quarters * 32).denominator == 1
+
+
+def _note_tuplet_scale(child: ET.Element) -> Fraction | None:
+    tm = child.find("time-modification")
+    if tm is None:
+        return Fraction(1)
+    actual = _integer(tm.findtext("actual-notes"))
+    normal = _integer(tm.findtext("normal-notes"))
+    if not actual or not normal or actual <= 0 or normal <= 0:
+        return None
+    return Fraction(normal, actual)
+
+
+def _written_duration_ok(
+    child: ET.Element, step: Fraction
+) -> tuple[bool, Fraction]:
+    scale = _note_tuplet_scale(child)
+    if scale is None:
+        return False, Fraction(1)
+    rest_el = child.find("rest")
+    if rest_el is not None:
+        if (
+            _attr(rest_el, "measure") == "yes"
+            and _attr(child, "print-object") != "no"
+        ):
+            return step > 0, scale
+        if _attr(child, "print-object") == "no" and child.find("type") is None:
+            return _spacer_writable(step / scale), scale
+    base = _FORMAT_TYPE_QUARTERS.get(_text(child, "type") or "")
+    if base is None:
+        return False, scale
+    dots = len(child.findall("dot"))
+    written = base * Fraction((1 << (dots + 1)) - 1, 1 << dots) * scale
+    if any(
+        _attr(t, "type") in {"start", "stop"}
+        for t in child.findall("notations/ornaments/tremolo")
+    ):
+        if child.find("time-modification") is None:
+            written /= 2
+        else:
+            scale *= 2
+    return written == step, scale
+
+
+_BEAM_STATES = frozenset(
+    {"begin", "continue", "end", "forward hook", "backward hook"}
+)
+type _VoiceMeasureRecord = tuple[
+    int,
+    ET.Element,
+    bool,
+    bool,
+    Fraction,
+    list[tuple[Fraction, Fraction, str, dict[int, str]]],
+]
+
+
+@dataclass(slots=True)
+class _SpanLeadEvent:
+    staff: str
+    is_grace: bool
+    onset: Fraction
+    end_on: Fraction
+    stem: str
+    beams: dict[int, str]
+    note_type: str
+    dots: int
+    scale: Fraction = Fraction(1)
+    tuplets: list[tuple[str, str]] = dataclass_field(default_factory=list)
+
+
+def _extract_note_beams(child: ET.Element) -> tuple[dict[int, str] | None, str]:
+    beams_map: dict[int, str] = {}
+    for beam in child.findall("beam"):
+        lvl = _integer(beam.get("number", "1"))
+        st = (beam.text or "").strip()
+        if lvl is None or not 1 <= lvl <= 5 or st not in _BEAM_STATES:  # noqa: PLR2004
+            return None, f"invalid beam {st!r}"
+        beams_map[lvl] = st
+    return beams_map, ""
+
+
+def _add_note_tuplets(child: ET.Element, target: list[tuple[str, str]]) -> None:
+    for tuplet in child.findall("notations/tuplet"):
+        pair = (_attr(tuplet, "number", "1"), _attr(tuplet, "type"))
+        if pair not in target:
+            target.append(pair)
+
+
+@dataclass(slots=True)
+class _SpanMeasureState:
+    measure: ET.Element
+    divisions: Fraction | None
+    pos: Fraction | None = Fraction(0)
+    m_len: Fraction = Fraction(0)
+    cur_lead: _SpanLeadEvent | None = None
+    dirs_in_m: list[Fraction | None] = dataclass_field(default_factory=list)
+    voice_events: dict[str, list[_SpanLeadEvent]] = dataclass_field(
+        default_factory=dict
+    )
+
+
+def _record_main_span_note(
+    child: ET.Element,
+    voice: str,
+    staff: str,
+    beams_map: dict[int, str],
+    st: _SpanMeasureState,
+) -> str | None:
+    onset = st.pos
+    step = _shift(Fraction(0), child, st.divisions, "duration")
+    st.pos = _shift(st.pos, child, st.divisions, "duration")
+    if onset is None or step is None or st.pos is None:
+        return "note at undecidable time"
+    st.m_len = max(st.m_len, st.pos)
+    ok, scale = _written_duration_ok(child, step)
+    if not ok:
+        return "unwritable note or rest duration"
+    stem_txt = (_text(child, "stem") or "").strip()
+    stem = stem_txt if stem_txt in {"up", "down"} else ""
+    ev = _SpanLeadEvent(
+        staff=staff,
+        is_grace=False,
+        onset=onset,
+        end_on=onset + step,
+        stem=stem,
+        beams=beams_map,
+        note_type=_text(child, "type") or "",
+        dots=len(child.findall("dot")),
+        scale=scale,
+    )
+    _add_note_tuplets(child, ev.tuplets)
+    st.cur_lead = ev
+    st.voice_events.setdefault(voice, []).append(ev)
+    return None
+
+
+def _record_grace_span_note(
+    child: ET.Element,
+    voice: str,
+    staff: str,
+    beams_map: dict[int, str],
+    st: _SpanMeasureState,
+) -> str | None:
+    ntype = _text(child, "type") or ""
+    if (
+        st.pos is None
+        or child.find("rest") is not None
+        or ntype not in _FORMAT_TYPE_QUARTERS
+        or child.find("time-modification") is not None
+    ):
+        return "invalid grace note type or duration"
+    ev = _SpanLeadEvent(
+        staff=staff,
+        is_grace=True,
+        onset=st.pos,
+        end_on=st.pos,
+        stem="",
+        beams=beams_map,
+        note_type=ntype,
+        dots=len(child.findall("dot")),
+    )
+    _add_note_tuplets(child, ev.tuplets)
+    st.cur_lead = ev
+    st.voice_events.setdefault(voice, []).append(ev)
+    return None
+
+
+def _check_chord_span_member(
+    child: ET.Element, st: _SpanMeasureState
+) -> str | None:
+    lead = st.cur_lead
+    if lead is None or (child.find("grace") is not None) != lead.is_grace:
+        return "chord member without matching lead"
+    if (_text(child, "type") or "") != lead.note_type or len(
+        child.findall("dot")
+    ) != lead.dots:
+        return "chord member type or dots differ from lead"
+    if not lead.is_grace:
+        step = _shift(Fraction(0), child, st.divisions, "duration")
+        if step != lead.end_on - lead.onset:
+            return "chord member duration differs from lead"
+    _add_note_tuplets(child, lead.tuplets)
+    return None
+
+
+def _handle_span_note(child: ET.Element, st: _SpanMeasureState) -> str | None:
+    if (
+        child.findall("notations/tuplet")
+        and child.find("time-modification") is None
+    ):
+        return "tuplet without time-modification"
+    if child.find("chord") is not None:
+        return _check_chord_span_member(child, st)
+    voice, staff = _voice(child), _staff(child)
+    beams_map, err = _extract_note_beams(child)
+    if beams_map is None:
+        return err
+    if child.find("grace") is not None:
+        return _record_grace_span_note(child, voice, staff, beams_map, st)
+    return _record_main_span_note(child, voice, staff, beams_map, st)
+
+
+def _step_span_cursor(child: ET.Element, st: _SpanMeasureState) -> str | None:
+    st.cur_lead = None
+    if child.tag == "backup":
+        st.pos = _shift(st.pos, child, st.divisions, "duration", -1)
+        if st.pos is None or st.pos < 0:
+            return "backup moves before measure start"
+    elif child.tag == "forward":
+        step = _shift(Fraction(0), child, st.divisions, "duration")
+        st.pos = _shift(st.pos, child, st.divisions, "duration")
+        if step is None or st.pos is None or step < 0:
+            return "invalid forward duration"
+        st.m_len = max(st.m_len, st.pos)
+    return None
+
+
+def _scan_span_measure(
+    measure: ET.Element, divisions: Fraction | None
+) -> tuple[str | None, _SpanMeasureState]:
+    st = _SpanMeasureState(measure=measure, divisions=divisions)
+    for child in measure:
+        if child.tag == "attributes" and child.find("divisions") is not None:
+            st.divisions = _fraction(child.findtext("divisions"))
+            if st.divisions is not None and st.divisions <= 0:
+                st.divisions = None
+        elif child.tag == "direction":
+            st.dirs_in_m.append(_shift(st.pos, child, st.divisions, "offset"))
+        elif child.tag in {"backup", "forward"}:
+            fault = _step_span_cursor(child, st)
+            if fault is not None:
+                return _at(measure, fault), st
+        elif child.tag == "note":
+            fault = _handle_span_note(child, st)
+            if fault is not None:
+                return _at(measure, fault), st
+    return None, st
+
+
+def _split_screen_voice(
+    events: list[_SpanLeadEvent],
+) -> list[tuple[str | None, str, list[_SpanLeadEvent]]]:
+    mains = [ev for ev in events if not ev.is_grace]
+    overlaps = any(
+        a.staff != b.staff and a.onset < b.end_on and b.onset < a.end_on
+        for idx, a in enumerate(mains)
+        for b in mains[idx + 1 :]
+    )
+    if overlaps:
+        by_st: dict[str, list[_SpanLeadEvent]] = {}
+        for ev in events:
+            by_st.setdefault(ev.staff, []).append(ev)
+        return [(st, st, by_st[st]) for st in sorted(by_st)]
+    c1 = sum(1 for ev in mains if ev.staff == "1")
+    c2 = sum(1 for ev in mains if ev.staff == "2")
+    home = "2" if c2 > c1 else "1"
+    return [(None, home, events)]
+
+
+def _check_slice_graces_and_tuplets(
+    voice: str, events: list[_SpanLeadEvent]
+) -> tuple[str | None, bool, list[_SpanLeadEvent]]:
+    grace_run: list[dict[int, str]] = []
+    mains: list[_SpanLeadEvent] = []
+    leading_grace = False
+    tuplet_spans: dict[tuple[str, ...], int] = {}
+    for ev in events:
+        for num, kind in ev.tuplets:
+            _count(tuplet_spans, (voice, num), kind, "start", "stop")
+        if ev.is_grace:
+            grace_run.append(dict(ev.beams))
+            if not mains and ev.onset == 0:
+                leading_grace = True
+        else:
+            if grace_run and _beam_seq_fault(grace_run) is not None:
+                return "invalid grace beam span", False, []
+            grace_run = []
+            mains.append(ev)
+    if grace_run and _beam_seq_fault(grace_run) is not None:
+        return "invalid grace beam span", False, []
+    unclosed = [k for k, c in tuplet_spans.items() if c > 0]
+    if unclosed:
+        return (
+            f"tuplet {unclosed[0][1]} of voice {voice} does not stop",
+            False,
+            [],
+        )
+    return None, leading_grace, mains
+
+
+def _verify_voice_timeline(
+    voice: str,
+    mains: list[_SpanLeadEvent],
+    m_len: Fraction,
+    boundaries: set[Fraction],
+) -> tuple[str | None, list[tuple[Fraction, Fraction, str, dict[int, str]]]]:
+    ordered = sorted(mains, key=lambda ev: ev.onset)
+    cur_v = Fraction(0)
+    scales: list[Fraction] = []
+    for ev in ordered:
+        if ev.onset < cur_v:
+            return f"overlapping events in voice {voice}", []
+        cur_scale = scales[-1] if scales else Fraction(1)
+        if ev.onset > cur_v and not _spacer_writable(
+            (ev.onset - cur_v) / cur_scale
+        ):
+            return f"unwritable gap in voice {voice}", []
+        for _, kind in ev.tuplets:
+            if kind == "start":
+                scales.append(ev.scale)
+            elif kind == "stop" and scales:
+                scales.pop()
+        boundaries.update((ev.onset, ev.end_on))
+        cur_v = ev.end_on
+    if cur_v < m_len and not _spacer_writable(m_len - cur_v):
+        return f"unwritable trailing gap in voice {voice}", []
+    return None, [(ev.onset, ev.end_on, ev.stem, ev.beams) for ev in ordered]
+
+
+type _MeasureSliceMap = dict[
+    str, dict[int, list[tuple[str | None, str, _VoiceMeasureRecord]]]
+]
+
+
+def _finalize_span_measure(
+    m_idx: int, st: _SpanMeasureState, voice_slices: _MeasureSliceMap
+) -> str | None:
+    measure = st.measure
+    if not st.voice_events and not _spacer_writable(st.m_len):
+        return _at(measure, "unwritable forward duration")
+    has_break = m_idx > 0 and any(
+        _attr(p, "new-system") == "yes" or _attr(p, "new-page") == "yes"
+        for p in measure.findall("print")
+    )
+    boundaries: set[Fraction] = {Fraction(0), st.m_len}
+    for voice, events in st.voice_events.items():
+        for split_st, home, slice_evs in _split_screen_voice(events):
+            g_fault, lead_grace, mains = _check_slice_graces_and_tuplets(
+                voice, slice_evs
+            )
+            if g_fault is not None:
+                return _at(measure, g_fault)
+            if not mains:
+                continue
+            v_fault, cleaned = _verify_voice_timeline(
+                voice, mains, st.m_len, boundaries
+            )
+            if v_fault is not None:
+                return _at(measure, v_fault)
+            rec: _VoiceMeasureRecord = (
+                m_idx,
+                measure,
+                has_break,
+                lead_grace,
+                st.m_len,
+                cleaned,
+            )
+            voice_slices.setdefault(voice, {}).setdefault(m_idx, []).append(
+                (split_st, home, rec)
+            )
+    for d_on in st.dirs_in_m:
+        if (
+            d_on is None
+            or not (0 <= d_on <= st.m_len)
+            or d_on not in boundaries
+        ):
+            return _at(measure, f"direction offset {d_on} off boundary")
+    return None
+
+
+def _link_screen_slices(
+    per_m: dict[int, list[tuple[str | None, str, _VoiceMeasureRecord]]],
+) -> list[list[_VoiceMeasureRecord]]:
+    chains: list[list[_VoiceMeasureRecord]] = []
+    active: list[tuple[str | None, str, list[_VoiceMeasureRecord]]] = []
+    prev_m = -2
+    for m_idx in sorted(per_m):
+        slices = per_m[m_idx]
+        if m_idx != prev_m + 1:
+            active = []
+        unsplit = (
+            len(active) == 1
+            and len(slices) == 1
+            and active[0][0] is None
+            and slices[0][0] is None
+        )
+        next_active: list[
+            tuple[str | None, str, list[_VoiceMeasureRecord]]
+        ] = []
+        for split_st, home, rec in slices:
+            matched = (
+                active[0]
+                if unsplit
+                else next((a for a in active if a[1] == home), None)
+            )
+            if matched is not None:
+                active.remove(matched)
+                matched[2].append(rec)
+                next_active.append((split_st, home, matched[2]))
+            else:
+                chain = [rec]
+                chains.append(chain)
+                next_active.append((split_st, home, chain))
+        active = next_active
+        prev_m = m_idx
+    return chains
+
+
+def _check_beam_tuplet_span(root: ET.Element) -> str | None:
+    """Check tuplets, cross-barline beams, direction offsets and timelines."""
+    divisions: Fraction | None = None
+    voice_slices: _MeasureSliceMap = {}
+    for m_idx, measure in enumerate(_measures(root)):
+        fault, st = _scan_span_measure(measure, divisions)
+        if fault is not None:
+            return fault
+        divisions = st.divisions
+        fin_fault = _finalize_span_measure(m_idx, st, voice_slices)
+        if fin_fault is not None:
+            return fin_fault
+    for voice, per_m in voice_slices.items():
+        for chain in _link_screen_slices(per_m):
+            v_fault = _check_voice_beams(voice, chain)
+            if v_fault is not None:
+                return v_fault
+    return None
+
+
+def _check_mixed_stem_cross_barline(
+    run: list[tuple[ET.Element, int, str, dict[int, str]]],
+) -> str | None:
+    g_measures: set[int] = set()
+    g_stems: set[str] = set()
+    for measure, m_idx, stem, bm in run:
+        b1 = bm.get(1)
+        if b1 == "begin":
+            g_measures = {m_idx}
+            g_stems = {stem} if stem else set()
+        elif b1 in {"continue", "end"}:
+            g_measures.add(m_idx)
+            if stem:
+                g_stems.add(stem)
+            if b1 == "end":
+                if len(g_measures) > 1 and len(g_stems) > 1:
+                    return _at(measure, "cross-barline mixed-stem beam")
+                g_measures, g_stems = set(), set()
+    return None
+
+
+def _check_voice_beams(
+    voice: str, entries: list[_VoiceMeasureRecord]
+) -> str | None:
+    runs: list[list[tuple[ET.Element, int, str, dict[int, str]]]] = []
+    prev_m = -2
+    prev_end = Fraction(-1)
+    prev_len = Fraction(0)
+    for m_idx, measure, has_break, lead_grace, m_len, notes in entries:
+        if not notes:
+            prev_m = -2
+            continue
+        tagged = [(measure, m_idx, st, dict(bm)) for _, _, st, bm in notes]
+        if (
+            runs
+            and prev_m + 1 == m_idx
+            and not has_break
+            and not lead_grace
+            and prev_end == prev_len
+            and notes[0][0] == 0
+        ):
+            runs[-1].extend(tagged)
+        else:
+            runs.append(tagged)
+        prev_m, prev_end, prev_len = m_idx, notes[-1][1], m_len
+    for run in runs:
+        fault_idx = _beam_seq_fault([bm for *_, bm in run])
+        if fault_idx is not None:
+            return _at(
+                run[fault_idx][0],
+                f"beam of voice {voice} does not pair cleanly",
+            )
+        mixed_fault = _check_mixed_stem_cross_barline(run)
+        if mixed_fault is not None:
+            return mixed_fault
+    return None
+
+
+def _normalize_screen_beam(
+    level: int,
+    state: str,
+    beams: dict[int, str],
+    opened: set[int],
+    nxt: dict[int, str],
+) -> str:
+    if state != "begin":
+        return state
+    if level in opened and level in nxt:
+        return "continue"
+    if level not in opened and level > 1 and level not in nxt:
+        lower = beams.get(level - 1)
+        if lower in {"begin", "continue", "end"}:
+            return "backward hook" if lower == "end" else "forward hook"
+    return state
+
+
+def _step_screen_beam(
+    level: int, state: str, beams: dict[int, str], opened: set[int]
+) -> bool:
+    if level > 1 and level - 1 not in beams:
+        return False
+    if state in {"forward hook", "backward hook"}:
+        need = (
+            {"begin", "continue"}
+            if state == "forward hook"
+            else {"continue", "end"}
+        )
+        return (
+            level > 1 and level not in opened and beams.get(level - 1) in need
+        )
+    if state == "begin":
+        if level in opened:
+            return False
+        opened.add(level)
+    elif state in {"continue", "end"}:
+        if level not in opened:
+            return False
+        if state == "end":
+            opened.discard(level)
+    return not (
+        level > 1
+        and state in {"begin", "continue"}
+        and beams.get(level - 1) not in {"begin", "continue"}
+    )
+
+
+def _beam_seq_fault(seq: list[dict[int, str]]) -> int | None:
+    """Normalize MuseScore 4 beam quirks in place and return first bad index."""
+    opened: set[int] = set()
+    for idx, beams in enumerate(seq):
+        nxt = seq[idx + 1] if idx + 1 < len(seq) else {}
+        if not opened.issubset(beams):
+            return idx
+        for level in sorted(beams):
+            state = _normalize_screen_beam(
+                level, beams[level], beams, opened, nxt
+            )
+            beams[level] = state
+            if not _step_screen_beam(level, state, beams, opened):
+                return idx
+    return (len(seq) - 1) if opened else None
 
 
 def _count(
@@ -1050,28 +2248,41 @@ def _octave_shift(mark: ET.Element, _note: ET.Element | None) -> str | None:
 
 
 def _pedal(mark: ET.Element, _note: ET.Element | None) -> str | None:
-    # A pedal line has a start, changes and a release (L700-702); a `Ped.`
-    # glyph that begins a line is its start (marks and words). Without a line,
-    # `<pedal-sign down>` and `<pedal-sign up>` are the glyphs, and the two at
-    # one onset are a pedal change (L685-688).
-    if _attr(mark, "line") != "yes" and _attr(mark, "sign") == "no":
+    line = _attr(mark, "line") == "yes"
+    if not line and _attr(mark, "sign") == "no":
         return "pedal@sign=no"
-    return _one_of(mark, "type", frozenset({"start", "change", "stop"}))
+    allowed = (
+        frozenset({"start", "change", "continue", "stop", "discontinue"})
+        if line
+        else frozenset({"start", "change", "stop"})
+    )
+    return _one_of(mark, "type", allowed)
 
 
 def _wedge(mark: ET.Element, _note: ET.Element | None) -> str | None:
-    # Hairpins start as cresc or dim and end (L689-691, L295-297); the format
-    # has no niente hairpin.
     if _attr(mark, "niente") == "yes":
         return "wedge@niente=yes"
     return _one_of(mark, "type", frozenset({"crescendo", "diminuendo", "stop"}))
 
 
 def _metronome(mark: ET.Element, _note: ET.Element | None) -> str | None:
-    # Tempo is `<tempo "text" q=120>` (L680-683, L313-314), with no
-    # parenthesised form.
-    if _attr(mark, "parentheses") == "yes":
-        return "metronome@parentheses=yes"
+    return _one_of(mark, "parentheses", frozenset({"", "yes", "no"}))
+
+
+def _bracket(mark: ET.Element, _note: ET.Element | None) -> str | None:
+    return (
+        _one_of(mark, "type", frozenset({"start", "stop"}))
+        or _one_of(mark, "line-end", frozenset({"none"}))
+        or _one_of(mark, "line-type", frozenset({"", "solid"}))
+    )
+
+
+def _accidental_mark(mark: ET.Element, note: ET.Element | None) -> str | None:
+    text = (mark.text or "").strip()
+    if text not in _FORMAT_ACCIDENTALS:
+        return f"accidental-mark {text}"
+    if note is None or note.find("notations/ornaments/trill-mark") is None:
+        return "accidental-mark without trill-mark"
     return None
 
 
@@ -1136,29 +2347,29 @@ def _arpeggiate(mark: ET.Element, _note: ET.Element | None) -> str | None:
 
 
 def _dynamics(mark: ET.Element, _note: ET.Element | None) -> str | None:
-    # A dynamic direction is one of the enumerated marks (L671).
-    return None if len(mark) == 1 else f"dynamics with {len(mark)} marks"
+    return None if len(mark) >= 1 else "dynamics with 0 marks"
 
 
 def _other_dynamics(mark: ET.Element, _note: ET.Element | None) -> str | None:
-    # Only the exact printed text of an enumerated dynamic (L671-673).
-    text = mark.text or ""
-    return None if text in _DYNAMIC_MARKS else f"other-dynamics {text!r}"
+    text = (mark.text or "").strip()
+    return None if text else "other-dynamics ''"
 
 
 _VARIANT_RULES: Mapping[
     str, Callable[[ET.Element, ET.Element | None], str | None]
 ] = MappingProxyType(
     {
-        "tied": _typed("start", "stop"),  # Tie start and end (L579).
-        "slur": _typed("start", "stop"),  # Slur start and end (L619).
+        "tied": _typed("start", "stop"),
+        "slur": _typed("start", "stop"),
         "wedge": _wedge,
-        "dashes": _typed("start", "stop"),  # Dashes lines (L703).
+        "dashes": _typed("start", "stop"),
+        "bracket": _bracket,
         "metronome": _metronome,
         "octave-shift": _octave_shift,
         "pedal": _pedal,
         "fermata": _fermata,
         "tremolo": _tremolo,
+        "accidental-mark": _accidental_mark,
         "wavy-line": _wavy_line,
         "mordent": _mordent,
         "inverted-mordent": _mordent,
@@ -1188,6 +2399,8 @@ _CHECKS: tuple[tuple[str, Callable[[ET.Element], str | None]], ...] = (
     ("fingering", _check_fingering),
     ("bracket_dashes", _check_bracket_dashes),
     ("metronome", _check_metronome),
+    ("tie_slur", _check_tie_slur),
+    ("pedal", _check_pedal),
     ("beam_tuplet_span", _check_beam_tuplet_span),
     ("octave_shift_span", _check_octave_shift_span),
     ("allowlist", _check_allowlist),

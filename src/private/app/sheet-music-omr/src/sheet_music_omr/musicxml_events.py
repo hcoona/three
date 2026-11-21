@@ -38,6 +38,7 @@ type VoiceKey = tuple[int, int, str, int | None]
 SLUR = "slur"
 WAVY_LINE = "wavy-line"
 DASHES = "dashes"
+BRACKET = "bracket"
 
 _OTTAVA = "MusicXML octave shift"
 _YES = "yes"
@@ -273,6 +274,8 @@ class XmlScore:
     ottavas: tuple[XmlOttava, ...]
     system_starts: frozenset[int]
     measure_starts: tuple[Fraction, ...]
+    measure_lengths: tuple[Fraction, ...] = ()
+    tie_in_sources: dict[int, int] = field(default_factory=dict)
 
 
 def read_score(source: Path | str) -> XmlScore:
@@ -445,12 +448,16 @@ class _ScoreReader:
     directions: list[XmlDirection] = field(default_factory=list)
     system_starts: set[int] = field(default_factory=lambda: {0})
     lengths: list[Fraction] = field(default_factory=list)
+    tie_in_sources: dict[int, int] = field(default_factory=dict)
     order: int = 0
     divisions: int = 1
 
     def read_part(self, part_index: int, part: ET.Element) -> None:
         self.divisions = 1
-        for measure_index, measure in enumerate(part.findall("measure")):
+        measures = part.findall("measure")
+        if part_index == 0:
+            self.tie_in_sources = _volta_tie_in_sources(measures)
+        for measure_index, measure in enumerate(measures):
             state = _MeasureState()
             for child in measure:
                 self._read(child, (part_index, measure_index), state)
@@ -571,6 +578,7 @@ class _ScoreReader:
         for leaf in (*self.events, *self.directions):
             leaf.start = starts[leaf.measure] + leaf.onset
         _number_graces(self.events)
+        _normalize_event_beams(self.events, self.lengths)
         ottavas = _apply_ottavas(self.events, self.directions)
         return XmlScore(
             tuple(self.events),
@@ -579,7 +587,222 @@ class _ScoreReader:
             ottavas,
             frozenset(self.system_starts),
             tuple(starts),
+            tuple(self.lengths),
+            dict(self.tie_in_sources),
         )
+
+
+def _measure_volta_flags(measure: ET.Element) -> tuple[bool, bool, bool]:
+    left_start = right_close = repeat = False
+    for bar in measure.findall("barline"):
+        loc = bar.get("location", "right")
+        if loc == "left":
+            left_start = left_start or any(
+                e.get("type") == _START for e in bar.findall("ending")
+            )
+        elif loc == "right":
+            right_close = right_close or any(
+                e.get("type") in {_STOP, "discontinue"}
+                for e in bar.findall("ending")
+            )
+            repeat = repeat or any(
+                r.get("direction") == "backward" for r in bar.findall("repeat")
+            )
+    return left_start, right_close, repeat
+
+
+def _volta_tie_in_sources(measures: list[ET.Element]) -> dict[int, int]:
+    """Return 0-based ``tie-in`` measure ordinals mapped to source measures."""
+    flags = [_measure_volta_flags(m) for m in measures]
+    in_bracket: list[bool] = []
+    active = False
+    for left_start, right_close, _ in flags:
+        active = active or left_start
+        in_bracket.append(active)
+        if right_close:
+            active = False
+    sources: dict[int, int] = {}
+    idx = 0
+    total = len(measures)
+    while idx < total:
+        if not in_bracket[idx]:
+            idx += 1
+            continue
+        group_start = idx
+        while idx + 1 < total and in_bracket[idx + 1]:
+            idx += 1
+        source = group_start - 1
+        if source >= 0:
+            for m in range(group_start + 1, idx + 1):
+                if flags[m][0]:
+                    sources[m] = source
+            if flags[idx][2] and idx + 1 < total and not in_bracket[idx + 1]:
+                sources[idx + 1] = source
+        idx += 1
+    return sources
+
+
+def _split_measure_events(
+    events: list[XmlEvent],
+) -> tuple[list[XmlEvent], bool]:
+    ordered = sorted(
+        events, key=lambda item: (item.onset, not item.grace, item.order)
+    )
+    grace_run: list[XmlEvent] = []
+    mains: list[XmlEvent] = []
+    leading_grace = False
+    for ev in ordered:
+        if ev.grace:
+            grace_run.append(ev)
+            leading_grace = leading_grace or (not mains and ev.onset == 0)
+        else:
+            if grace_run:
+                _rewrite_xml_beams(grace_run)
+                grace_run = []
+            mains.append(ev)
+    if grace_run:
+        _rewrite_xml_beams(grace_run)
+    return mains, leading_grace
+
+
+def _link_cross_barline_slices(
+    events: list[XmlEvent],
+) -> list[list[tuple[int, list[XmlEvent]]]]:
+    """Chain per-measure voice slices across barlines."""
+    voices = voice_staves(events)
+    by_pv: dict[
+        tuple[int, str], dict[int, list[tuple[int | None, int, list[XmlEvent]]]]
+    ] = {}
+    slice_map: dict[VoiceKey, tuple[int, list[XmlEvent]]] = {}
+    for event in events:
+        v_key, home = voices[id(event)]
+        entry = slice_map.get(v_key)
+        if entry is None:
+            entry = (home, [])
+            slice_map[v_key] = entry
+        entry[1].append(event)
+    for (v_part, m_idx, v_id, split_st), (home, m_events) in slice_map.items():
+        by_pv.setdefault((v_part, v_id), {}).setdefault(m_idx, []).append(
+            (split_st, home, m_events)
+        )
+    chains: list[list[tuple[int, list[XmlEvent]]]] = []
+    for per_m in by_pv.values():
+        active: list[
+            tuple[int | None, int, list[tuple[int, list[XmlEvent]]]]
+        ] = []
+        prev_m = -2
+        for m_idx in sorted(per_m):
+            slices = sorted(
+                per_m[m_idx], key=lambda s: (s[0] is not None, s[1])
+            )
+            if m_idx != prev_m + 1:
+                active = []
+            next_active: list[
+                tuple[int | None, int, list[tuple[int, list[XmlEvent]]]]
+            ] = []
+            unsplit_join = (
+                len(active) == 1
+                and len(slices) == 1
+                and active[0][0] is None
+                and slices[0][0] is None
+            )
+            for split_st, home, m_events in slices:
+                matched = (
+                    active[0]
+                    if unsplit_join
+                    else next(
+                        (a for a in active if a[1] == home),
+                        None,
+                    )
+                )
+                if matched is not None:
+                    active.remove(matched)
+                    matched[2].append((m_idx, m_events))
+                    next_active.append((split_st, home, matched[2]))
+                else:
+                    chain = [(m_idx, m_events)]
+                    chains.append(chain)
+                    next_active.append((split_st, home, chain))
+            active = next_active
+            prev_m = m_idx
+    return chains
+
+
+def _normalize_event_beams(
+    events: list[XmlEvent],
+    lengths: list[Fraction],
+) -> None:
+    """Normalize MuseScore 4 repeated and single-event ``begin`` beam tags."""
+    for chain in _link_cross_barline_slices(events):
+        main_runs: list[list[XmlEvent]] = []
+        for m_idx, m_events in chain:
+            mains, leading_grace = _split_measure_events(m_events)
+            if not mains:
+                main_runs.append([])
+                continue
+            prev = main_runs[-1] if main_runs else []
+            if (
+                prev
+                and prev[-1].measure + 1 == m_idx
+                and prev[-1].onset + prev[-1].duration
+                == lengths[prev[-1].measure]
+                and mains[0].onset == 0
+                and not leading_grace
+            ):
+                prev.extend(mains)
+            else:
+                main_runs.append(mains)
+        for run in main_runs:
+            if run:
+                _rewrite_xml_beams(run)
+
+
+def _resolve_xml_beam_state(
+    level: int,
+    state: str,
+    beams: dict[int, str],
+    opened: set[int],
+    nxt: dict[int, str],
+) -> str:
+    if state != "begin":
+        return state
+    if level in opened and level in nxt:
+        return "continue"
+    if level not in opened and level > 1 and level not in nxt:
+        lower = beams.get(level - 1)
+        if lower in {"begin", "continue", "end"}:
+            return "backward hook" if lower == "end" else "forward hook"
+    return state
+
+
+def _rewrite_xml_beams(seq: list[XmlEvent]) -> None:
+    maps = [
+        {
+            int(b.get("number", "1")): (b.text or "").strip()
+            for b in ev.notes[0].findall("beam")
+            if (b.get("number", "1")).strip().isdigit()
+        }
+        for ev in seq
+    ]
+    opened: set[int] = set()
+    for idx, beams in enumerate(maps):
+        nxt = maps[idx + 1] if idx + 1 < len(maps) else {}
+        opened.intersection_update(beams)
+        for level in sorted(beams):
+            state = _resolve_xml_beam_state(
+                level, beams[level], beams, opened, nxt
+            )
+            beams[level] = state
+            if state in {"begin", "continue"}:
+                opened.add(level)
+            elif state == "end":
+                opened.discard(level)
+    for ev, beams in zip(seq, maps, strict=True):
+        for note in ev.notes:
+            for b in note.findall("beam"):
+                num = (b.get("number") or "1").strip()
+                if num.isdigit() and int(num) in beams:
+                    b.text = beams[int(num)]
 
 
 def _number_graces(events: list[XmlEvent]) -> None:
@@ -884,6 +1107,15 @@ def _endpoints(leaf: Leaf) -> list[_Endpoint]:
             if role in {_START, _STOP}:
                 number = dashes.get("number", "1")
                 endpoints.append((DASHES, role, number, None))
+        for bracket in leaf.element.findall("direction-type/bracket"):
+            role = bracket.get("type")
+            if (
+                role in {_START, _STOP}
+                and bracket.get("line-end") == "none"
+                and bracket.get("line-type") in {None, "solid"}
+            ):
+                number = bracket.get("number", "1")
+                endpoints.append((BRACKET, role, number, None))
         return endpoints
     for note in leaf.notes:
         marks = [(SLUR, mark) for mark in note.findall("notations/slur")] + [
