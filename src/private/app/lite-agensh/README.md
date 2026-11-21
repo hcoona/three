@@ -12,6 +12,10 @@ cancellation, fresh-summary resume and exact-session crash reconnect.
 [PR #1530](https://github.com/hcoona/three/pull/1530) retains exact builds,
 commands, reported credits, independent reviews and repository acceptance gates.
 These results do not establish another operating system or native backend.
+The [configured-check evidence allocation](docs/validation.md#configured-check-and-process-evidence)
+separates controlled Git/check business scenarios from focused actual-process
+coverage. Its internal invocation boundary is not yet implemented; current
+Git/check scenarios still execute physical checks.
 The accepted shared-credit design is specified in the
 [credit contract](docs/implementation-contracts.md#shared-spending-windows).
 The application implements opt-in shared allocation with controlled accounting

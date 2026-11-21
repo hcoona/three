@@ -360,6 +360,21 @@ HealthGate's source-defined 15/60-minute transitions remain scheduling policy.
 The restriction lift does not change candidate or final-check results.
 Finalization reports a local branch and evidence, not an automatic remote push.
 
+### Configured-check invocation
+
+Keep one internal configured-check invocation inside Git/check orchestration.
+A typed delegate using the existing process-result contract is sufficient;
+do not introduce a public runner interface, backend selector or plugin registry.
+Production uses the existing `ProcessRunner`; Git operations retain their real
+Git execution. Candidate construction, pre/post-check identity verification,
+classification, persistence and integration admission remain above this boundary.
+
+Controlled Git/check scenarios may substitute only the configured invocation,
+not the candidate gate or persisted check rows. This separates business journeys
+from physical-process prerequisites without changing production execution.
+The [validation basis](validation.md#configured-check-and-process-evidence)
+owns the distinct scenario and actual-process evidence obligations.
+
 ## Lifecycle, ownership and recovery
 
 Use a lifetime-held local exclusive ownership handle and durable process/session

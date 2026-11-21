@@ -453,6 +453,19 @@ Persist conflicts/failures and logs without losing worker commits. Peer
 review and protected-path owner approval are candidate-bound. HealthGate's
 15/60-minute source policy does not bypass candidate/final checks.
 
+The internal [configured-check invocation](architecture.md#configured-check-invocation)
+accepts the resolved executable, argument list, exact candidate cwd, configured
+timeout and caller cancellation token. It returns the existing exit/output/timeout
+result; cancellation remains cancellation. A controlled invocation must settle
+its owned operation before returning or throwing.
+
+Persisted check evidence automatically distinguishes production `ProcessRunner`
+execution from controlled execution. A substitute must not create or borrow
+physical PID/birth/lease evidence, inherit a native process-settlement claim or
+present controlled cancellation as observed native cancellation. Production
+retains actual command execution and its existing ownership/evidence contract;
+this internal test boundary is not a selectable native-agent backend.
+
 The CLI supports `init`, `run`, `status`, `pause`, `resume`, `reconnect`,
 `finalize`, `cleanup`, local operator tool invocation and an internal `mcp`
 mode. Configuration uses the [explicit input contract](#configuration-input);
