@@ -57,7 +57,7 @@ jobs:
       - name: Prepare selected native tools
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
-          version: '2026.10.11'
+          version: '2026.11.10'
           experimental: true
           install_args: dotnet node pnpm
       - name: Build control before product execution
