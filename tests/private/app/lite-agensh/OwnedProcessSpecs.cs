@@ -125,6 +125,7 @@ public sealed class OwnedProcessSpecs(TestContext context)
             TimeSpan.FromSeconds(120),
             cancellation.Token
         );
+        Exception? primaryFailure = null;
         try
         {
             ProcessResult result = await running.ConfigureAwait(false);
@@ -146,9 +147,14 @@ public sealed class OwnedProcessSpecs(TestContext context)
             Assert.AreEqual("command", retired.Kind);
             Assert.AreEqual("exited", retired.State);
         }
+        catch (Exception error)
+        {
+            primaryFailure = error;
+            throw;
+        }
         finally
         {
-            await CancelAndDrainAsync(cancellation, running).ConfigureAwait(false);
+            await CancelAndDrainAsync(cancellation, running, primaryFailure).ConfigureAwait(false);
         }
     }
 
@@ -168,6 +174,7 @@ public sealed class OwnedProcessSpecs(TestContext context)
             TimeSpan.FromSeconds(120),
             cancellation.Token
         );
+        Exception? primaryFailure = null;
         try
         {
             OwnedChildIdentity ready = await control
@@ -213,9 +220,14 @@ public sealed class OwnedProcessSpecs(TestContext context)
                 evidence["stderr"]!["text"]!.GetValue<string>()
             );
         }
+        catch (Exception error)
+        {
+            primaryFailure = error;
+            throw;
+        }
         finally
         {
-            await CancelAndDrainAsync(cancellation, running).ConfigureAwait(false);
+            await CancelAndDrainAsync(cancellation, running, primaryFailure).ConfigureAwait(false);
         }
     }
 
@@ -242,6 +254,7 @@ public sealed class OwnedProcessSpecs(TestContext context)
             TimeSpan.FromSeconds(120),
             cancellation.Token
         );
+        Exception? primaryFailure = null;
         try
         {
             OwnedChildIdentity rootReady = await rootControl
@@ -294,9 +307,14 @@ public sealed class OwnedProcessSpecs(TestContext context)
             await RequireExitAsync(sentinel).ConfigureAwait(false);
             Assert.AreEqual(0, sentinel.ExitCode);
         }
+        catch (Exception error)
+        {
+            primaryFailure = error;
+            throw;
+        }
         finally
         {
-            await CancelAndDrainAsync(cancellation, running).ConfigureAwait(false);
+            await CancelAndDrainAsync(cancellation, running, primaryFailure).ConfigureAwait(false);
         }
     }
 
@@ -552,12 +570,14 @@ public sealed class OwnedProcessSpecs(TestContext context)
 
     private static async Task CancelAndDrainAsync(
         CancellationTokenSource cancellation,
-        Task<ProcessResult> running
+        Task<ProcessResult> running,
+        Exception? primaryFailure
     )
     {
-        await cancellation.CancelAsync().ConfigureAwait(false);
+        bool cancellationRequestedOnEntry = cancellation.IsCancellationRequested;
         try
         {
+            await cancellation.CancelAsync().ConfigureAwait(false);
             ProcessResult result = await running.ConfigureAwait(false);
             Console.WriteLine(
                 "OWNED_COMMAND_TERMINAL "
@@ -570,6 +590,27 @@ public sealed class OwnedProcessSpecs(TestContext context)
                     }.ToJsonString()
             );
         }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (OperationCanceledException error) when (cancellation.IsCancellationRequested)
+        {
+            if (primaryFailure is not null)
+            {
+                string? evidence = (string?)error.Data[ProcessRunner.CancellationEvidenceKey];
+                primaryFailure.Data["OwnedCommandCleanupCancellation"] = evidence;
+                Console.Error.WriteLine(
+                    "OWNED_COMMAND_CLEANUP_CANCELLED "
+                        + new JsonObject
+                        {
+                            ["cancellationRequestedOnEntry"] = cancellationRequestedOnEntry,
+                            ["cancellationEvidence"] = evidence,
+                        }.ToJsonString()
+                );
+            }
+        }
+        catch (Exception secondary) when (primaryFailure is not null)
+        {
+            string details = Json.ExceptionDetails(secondary).ToJsonString();
+            primaryFailure.Data["OwnedCommandCleanupFailure"] = details;
+            Console.Error.WriteLine("OWNED_COMMAND_CLEANUP_SECONDARY " + details);
+        }
     }
 }

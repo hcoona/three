@@ -9,6 +9,7 @@ idiomatic_version_file_enable_tools = ["dotnet"]
 
 [monorepo]
 config_roots = [
+  "eng/dotnet-frameworks",
   "src/private/app/factorio-cycle-calculator",
   "src/public/lib/hexo-renderer-asciidoc",
 ]
@@ -25,10 +26,10 @@ ruby = "4.0.9"
 
 # Package Managers
 pnpm = "12.21.0"
-uv = "0.13.8"
+uv = "0.13.9"
 
 # Git Commit Hook Manager
-"aqua:jdx/hk" = "2.12.0"
+"aqua:jdx/hk" = "2.13.0"
 
 #
 # Linters and Formatters
@@ -66,7 +67,7 @@ gopass = "1.17.4"
 ripgrep = "latest"
 github-cli = "latest"
 "github:microsoft/apm" = "v0.35.1"
-"github:alibaba/open-code-review" = { version = "v1.13.10", bin = "ocr" }
+"github:alibaba/open-code-review" = { version = "v1.13.11", bin = "ocr" }
 
 #
 # Environment Variables
@@ -109,7 +110,12 @@ run = "pnpm -r rebuild --pending"
 
 [tasks."bootstrap:dotnet-tools"]
 description = "Bootstrap the .NET tools"
+depends = ["bootstrap:dotnet-frameworks"]
 run = "dotnet tool restore"
+
+[tasks."bootstrap:dotnet-frameworks"]
+description = "Install required .NET frameworks without changing the selected SDK"
+run = "mise install --monorepo --locked --jobs 1 dotnet"
 
 
 #

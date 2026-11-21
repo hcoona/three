@@ -19,7 +19,9 @@ internal static class NodeGroupReader
         "src/private/app/workflow-delivery/CI/Callers/NodeCiCaller.cs",
         "src/private/app/workflow-delivery/CI/Callers/CiCallerCli.cs",
         "src/private/app/workflow-delivery/CI/Callers/CiCallerTransfer.cs",
-        "eng/scripts/Bootstrap-CiControl.ps1", ".config/dotnet-tools.json"];
+        "eng/scripts/Bootstrap-CiControl.ps1", ".config/dotnet-tools.json",
+        "eng/scripts/locked_tool_versions.py", "eng/dotnet-frameworks/mise.toml",
+        "eng/dotnet-frameworks/mise.lock"];
 
     internal static async Task<NodeGroupReadback> ReadAsync(NodeGroupRequest request,
         CancellationToken token)
