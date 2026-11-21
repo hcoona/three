@@ -593,10 +593,13 @@ label `rN`.
   that both ends and starts a tie writes the end first:
   `{tie@r1:end,tie@r2:start}`. The end pitch lies in the next non-grace
   rhythmic event of the same voice line, or in a non-grace rhythmic event of
-  another voice line that starts when the start event ends, across barlines,
-  with the same displayed staff as the start event. It has the same sounding
-  step, octave and alteration, and assembly checks the alteration when that of
-  the start is deferred.
+  another voice line of the same staff or displayed staff that starts when the
+  start event ends, across barlines. When the start is carried in, its
+  displayed staff is not in `carry-in`, so any non-grace rhythmic event at the
+  start of the document satisfies the staff condition locally and assembly
+  checks same staff or displayed staff across the joined score. It has the same
+  sounding step, octave and alteration, and assembly checks the alteration when
+  that of the start is deferred.
 - `{tie-in}` marks a pitch that a tie enters at the start of a later volta
   bracket, as in a tie into a second ending. A _volta group_ is a run of
   adjacent measures that each carry an `ending` option, and its _source
@@ -607,8 +610,8 @@ label `rN`.
   measure is an unlabeled last ending, and a tie-in pitch may also lie in the
   first non-grace rhythmic event of a voice line there. The _source_ of a tie-in
   pitch is a pitch with the same sounding step and octave in a non-grace
-  rhythmic event of the same displayed staff that ends at the end of the source
-  measure.
+  rhythmic event of the same staff (or, when none exists on the same staff, of
+  the same displayed staff) that ends at the end of the source measure.
   At least one source shall exist, all sources shall have the same alteration,
   and the tie-in pitch shall resolve to that alteration, whether it inherits it
   or prints an accidental. A tie-in is not a relation and has no label, and its
@@ -679,7 +682,8 @@ Rules for all relations:
   unless both are still open at the end of the document or both are slurs. At
   most `max(2, M)` slurs share both endpoints, where `M` is the larger pitch
   count of the two endpoint events, as when one slur is printed above and one
-  below two notes or each chord member carries its own slur.
+  below two notes or each chord member carries its own slur; when the start is
+  carried in, assembly checks this bound across the resolved slurs.
 
 ### Directions
 
@@ -836,9 +840,10 @@ Assembly orders system documents by `page` and `system` and then:
    measure of a document carries `ending=N:start` or `ending=continue` and the
    next measure carries no `ending` option, the option becomes `ending=N:single`
    or `ending=end`;
-7. checks volta adjacency and every tie-in across the whole score, resolves
-   and checks every deferred alteration, gives every arc the kind of its end,
-   and renames relation labels globally;
+7. gives every arc the kind of its end, checks volta adjacency, every tie-in,
+   carried-tie staff matching and the shared-endpoint slur bound across the
+   whole score, resolves and checks every deferred alteration, and renames
+   relation labels globally;
 8. reports every extended trill that ends on `<trill)>`, with the locations of
    its start and end, and every review marker, with its location and
    candidates, for a person to resolve, and does not report success.
@@ -949,9 +954,9 @@ tie-break, to them.
   one notehead, are unsupported fingering.
 - An arc that joins a notehead to one of the same pitch in the next non-grace
   rhythmic event of its voice line, or in an event of another voice line of the
-  same staff that starts when the first event ends, is a tie of those two
-  pitches, unless the later event carries an articulation, in which case it is
-  a slur. Every other arc between two notes is a slur. Between two chords, an
+  same staff or displayed staff that starts when the first event ends, is a tie
+  of those two pitches, unless the later event carries an articulation, in
+  which case it is a slur. Every other arc between two notes is a slur. Between two chords, an
   arc joins the noteheads nearest to its ends, so two arcs printed above and
   below two equal two-note chords are two ties. An arc that carries a tuplet
   number and spans exactly the events of a tuplet group is the bracket of that
@@ -1029,8 +1034,10 @@ tie-break, to them.
   An arc that leaves a note and reaches the right edge of the system stays
   open. It is a slur when it passes over a later event of its voice line, and
   otherwise an `arc` from the pitch that it leaves. A carried arc is a tie when
-  it ends on a notehead that the rule for ties above joins to its pitch, and
-  otherwise a slur. A relation that `carry-in` lists as open and that shows no
+  it ends on a notehead of the carried pitch in a non-grace rhythmic event at
+  the start of the document (displayed on the staff where the continuation
+  lies, or on the carried start's staff) without an articulation on that event,
+  and otherwise a slur. A relation that `carry-in` lists as open and that shows no
   continuation in the system ends at the first event of the system that can
   hold its end. An arc whose left end the rule for arc ends gives to the start
   of the system is a continuation. A continuation printed at the start of

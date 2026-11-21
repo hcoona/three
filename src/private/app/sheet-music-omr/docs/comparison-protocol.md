@@ -239,8 +239,8 @@ A file passes only if all of the following hold:
   `parentheses`;
 - every `tie` and `notations/tied` has `type` `start` or `stop` (no
   `let-ring`), every `slur` is on a pitched note (not a rest), and every `tie`
-  or `tied` mark pairs cleanly between adjacent same-pitch notes on its
-  displayed staff except an incoming `stop` at a valid
+  or `tied` mark pairs cleanly between adjacent same-pitch notes on its staff
+  or displayed staff except an incoming `stop` at a valid
   [`tie-in`](text-format.md#relations) position (onset 0 of a measure starting
   a later bracket of a volta group, or of the unlabeled last ending immediately
   after a volta-group measure with a backward repeat) whose pitch ends the
