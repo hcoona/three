@@ -37,25 +37,32 @@ internal static class Program
         Process? descendant = null;
         double? connectReturnedAtMilliseconds = null;
         double? readyWriteEnteredAtMilliseconds = null;
-        bool? startupCancelledAtReadyEntry = null;
+        bool? activeGuardCancellationRequestedAtReadyEntry = null;
         string attemptedOperation = "connect";
-        string activeGuard = "startup";
+        string activeGuard = "connection";
         CancellationToken activeGuardToken = default;
         long startupStarted = Stopwatch.GetTimestamp();
         try
         {
-            using CancellationTokenSource guard = new(TimeSpan.FromSeconds(5));
-            activeGuardToken = guard.Token;
             using NamedPipeClientStream pipe = new(
                 ".",
                 arguments[1],
                 PipeDirection.InOut,
                 PipeOptions.Asynchronous
             );
-            await pipe.ConnectAsync(activeGuardToken).ConfigureAwait(false);
+            using (CancellationTokenSource connectionGuard = new(TimeSpan.FromSeconds(5)))
+            {
+                activeGuardToken = connectionGuard.Token;
+                await pipe.ConnectAsync(activeGuardToken).ConfigureAwait(false);
+            }
             connectReturnedAtMilliseconds = Stopwatch
                 .GetElapsedTime(startupStarted)
                 .TotalMilliseconds;
+            using CancellationTokenSource interaction = new(
+                TimeSpan.FromSeconds(controlledHost ? 180 : 120)
+            );
+            activeGuard = "interaction";
+            activeGuardToken = interaction.Token;
             using StreamReader reader = new(pipe, Encoding.UTF8, false, 1024, leaveOpen: true);
             using StreamWriter writer = new(pipe, new UTF8Encoding(false), 1024, leaveOpen: true)
             {
@@ -100,16 +107,10 @@ internal static class Program
             readyWriteEnteredAtMilliseconds = Stopwatch
                 .GetElapsedTime(startupStarted)
                 .TotalMilliseconds;
-            startupCancelledAtReadyEntry = activeGuardToken.IsCancellationRequested;
+            activeGuardCancellationRequestedAtReadyEntry =
+                activeGuardToken.IsCancellationRequested;
             await writer.WriteLineAsync(ready.AsMemory(), activeGuardToken).ConfigureAwait(false);
-            // Connection and READY retain the five-second guard. Holding an owned
-            // witness uses its case120 bound; hosts also retain stop/teardown time.
-            using CancellationTokenSource postReadyHold = new(
-                TimeSpan.FromSeconds(controlledHost ? 180 : 120)
-            );
             attemptedOperation = "release-read";
-            activeGuard = "hold";
-            activeGuardToken = postReadyHold.Token;
             string? release = await reader
                 .ReadLineAsync(activeGuardToken)
                 .ConfigureAwait(false);
@@ -131,7 +132,8 @@ internal static class Program
                         ["activeGuard"] = activeGuard,
                         ["connectReturnedAtMilliseconds"] = connectReturnedAtMilliseconds,
                         ["readyWriteEnteredAtMilliseconds"] = readyWriteEnteredAtMilliseconds,
-                        ["startupCancelledAtReadyEntry"] = startupCancelledAtReadyEntry,
+                        ["activeGuardCancellationRequestedAtReadyEntry"] =
+                            activeGuardCancellationRequestedAtReadyEntry,
                         ["activeGuardCancellationRequestedAtCatch"] =
                             activeGuardToken.IsCancellationRequested,
                         ["exceptionTokenMatchesActiveGuard"] =
