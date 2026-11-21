@@ -798,7 +798,8 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 deadline.Token
             );
         CancellationToken token = cancellation.Token;
-        OwnedChildControl control = new();
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         GitScenarioState? ownedState = null;
         Task? processing = null;
         long? ownedRequest = null, ownedChange = null;
@@ -809,11 +810,19 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         {
             CheckCommand held = new()
             {
-                Executable = OwnedChildControl.ExecutablePath,
-                Arguments = control.Arguments(role: OwnedChildControl.HeldCandidateCheckRole),
+                Executable = "controlled-candidate-check",
             };
             GitScenarioState state = await GitScenarioState
-                .CreateAsync(token, [held])
+                .CreateAsync(
+                    token,
+                    [held],
+                    configuredCheck: async (_, _, _, _, checkToken) =>
+                    {
+                        entered.SetResult();
+                        await release.Task.WaitAsync(checkToken).ConfigureAwait(false);
+                        return new(0, "controlled check exit 0", "", false);
+                    }
+                )
                 .ConfigureAwait(false);
             ownedState = state;
             await state.Operations.InitializeAsync(token).ConfigureAwait(false);
@@ -839,11 +848,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 "candidate-" + requestId.ToString(CultureInfo.InvariantCulture)
             );
             processing = Task.Run(() => state.Operations.ProcessPendingAsync(cancellation.Token));
-            // Actual helper readiness is the ordering witness, never elapsed time or stdout
-            // polling.
-            OwnedChildIdentity identity = await control
-                .ReadReadyAsync(processing, token)
-                .ConfigureAwait(false);
+            await AwaitCheckEntryAsync(entered.Task, processing, token).ConfigureAwait(false);
             string candidate = state.Text(
                 "SELECT candidate_commit FROM integration_requests WHERE id=$id;",
                 ("$id", requestId)
@@ -857,7 +862,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             {
                 File.WriteAllText(
                     Path.Combine(path, "shared.txt"),
-                    "changed during actual check\n"
+                    "changed during controlled check\n"
                 );
                 if (mutation == "index")
                 {
@@ -894,7 +899,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             string preservedIntegrationTree = await state
                 .ResolveAsync(preservedIntegration + "^{tree}", token)
                 .ConfigureAwait(false);
-            await control.ReleaseAsync(token).ConfigureAwait(false);
+            release.SetResult();
             await processing.ConfigureAwait(false);
             JsonObject read = await state.ReadAsync(change, token).ConfigureAwait(false);
             JsonObject request = Assert
@@ -953,7 +958,8 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 check["status"]!.GetValue<string>()
             );
             string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
-            Assert.Contains("owned check exit 0", log);
+            Assert.Contains("Configured check execution: controlled.", log);
+            Assert.Contains("controlled check exit 0", log);
             if (mutation != "integration-head")
             {
                 Assert.Contains("Candidate identity failure:", log);
@@ -965,14 +971,6 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 state.Number(
                     "SELECT ready FROM integration_requests WHERE id=$id;",
                     ("$id", requestId)
-                )
-            );
-            Assert.AreEqual(
-                "exited",
-                state.Text(
-                    "SELECT state FROM process_leases WHERE pid=$pid AND start_ticks=$birth;",
-                    ("$pid", identity.Pid),
-                    ("$birth", identity.BirthTicks)
                 )
             );
         }
@@ -992,7 +990,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             {
                 failures.Add(error);
             }
-            // Cancel AND join the real producer before disposing its pipe or SQLite/Git state.
+            // Join orchestration before disposing its owned SQLite/Git state.
             if (processing is not null)
             {
                 try
@@ -1019,14 +1017,6 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                     ownedState, ownedRequest, ownedChange, processing, producerJoined, began,
                     primary, testContext.CancellationToken
                 );
-            }
-            try
-            {
-                await control.DisposeAsync().ConfigureAwait(false);
-            }
-            catch (Exception error)
-            {
-                failures.Add(error);
             }
             try
             {
@@ -1353,7 +1343,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     [TestMethod]
     [TestCategory("SerialExactCandidateIntegration")]
     [Timeout(120_000, CooperativeCancellation = true)]
-    public async Task ConfiguredCheckDeadlineRetainsTimedOutEvidenceWithoutAuthorizingDelivery()
+    public async Task ReportedCheckTimeoutRetainsEvidenceWithoutAuthorizingDelivery()
     {
         long began = Stopwatch.GetTimestamp();
         using CancellationTokenSource deadline = new(120_000);
@@ -1363,16 +1353,24 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 deadline.Token
             );
         CancellationToken token = lifetime.Token;
-        await using OwnedChildControl control = new();
-        ManualScenarioClock commandClock = new();
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         CheckCommand held = new()
         {
-            Executable = OwnedChildControl.ExecutablePath,
-            Arguments = control.Arguments(role: OwnedChildControl.HeldCandidateCheckRole),
+            Executable = "controlled-candidate-check",
             TimeoutSeconds = 1,
         };
         using GitScenarioState state = await GitScenarioState
-            .CreateAsync(token, [held], commandTimeProvider: commandClock)
+            .CreateAsync(
+                token,
+                [held],
+                configuredCheck: async (_, _, _, _, checkToken) =>
+                {
+                    entered.SetResult();
+                    await release.Task.WaitAsync(checkToken).ConfigureAwait(false);
+                    return new(124, "controlled reported timeout", "", true);
+                }
+            )
             .ConfigureAwait(false);
         using CancellationTokenSource cancellation =
             CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -1397,10 +1395,8 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         ExceptionDispatchInfo? producerCleanupFailure = null;
         try
         {
-            OwnedChildIdentity ready = await control
-                .ReadReadyAsync(processing, token)
-                .ConfigureAwait(false);
-            commandClock.Advance(TimeSpan.FromSeconds(1));
+            await AwaitCheckEntryAsync(entered.Task, processing, token).ConfigureAwait(false);
+            release.SetResult();
             await processing.ConfigureAwait(false);
             JsonObject read = await state.ReadAsync(change, token).ConfigureAwait(false);
             JsonObject request = Assert
@@ -1409,6 +1405,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             AssertRefusal(read, request, "check_failed", "Candidate checks failed");
             JsonObject check = Assert.ContainsSingle(read["checks"]!.AsArray())!.AsObject();
             Assert.AreEqual("timed-out", check["status"]!.GetValue<string>());
+            Assert.AreEqual(124, check["exitCode"]!.GetValue<int>());
             Assert.AreEqual(1, check["command"]!["timeoutSeconds"]!.GetValue<int>());
             Assert.AreEqual("candidate", check["kind"]!.GetValue<string>());
             string candidate = check["commit"]!.GetValue<string>();
@@ -1435,16 +1432,9 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                     .ConfigureAwait(false)
             );
             string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
-            Assert.DoesNotContain("owned check exit 0", log);
-            Assert.DoesNotContain("protocol failure bound", log);
-            Assert.AreEqual(
-                "exited",
-                state.Text(
-                    "SELECT state FROM process_leases WHERE pid=$pid AND start_ticks=$birth;",
-                    ("$pid", ready.Pid),
-                    ("$birth", ready.BirthTicks)
-                )
-            );
+            Assert.Contains("Configured check execution: controlled.", log);
+            Assert.Contains("controlled reported timeout", log);
+            Assert.DoesNotContain("Command cancellation evidence:", log);
         }
         catch (Exception error)
         {
@@ -1489,6 +1479,167 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             }
         }
         producerCleanupFailure?.Throw();
+    }
+
+    [TestMethod]
+    [DataRow("cancelled")]
+    [DataRow("failed")]
+    [TestCategory("SerialExactCandidateIntegration")]
+    [Timeout(120_000, CooperativeCancellation = true)]
+    public async Task ControlledCheckInterruptionPreservesCandidateAndTruthfulEvidence(
+        string outcome
+    )
+    {
+        using CancellationTokenSource deadline = new(120_000);
+        using CancellationTokenSource lifetime =
+            CancellationTokenSource.CreateLinkedTokenSource(
+                testContext.CancellationToken,
+                deadline.Token
+            );
+        CancellationToken token = lifetime.Token;
+        using CancellationTokenSource cancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(token);
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource settled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using GitScenarioState state = await GitScenarioState
+            .CreateAsync(
+                token,
+                [new() { Executable = "controlled-candidate-check" }],
+                configuredCheck: async (_, _, _, _, checkToken) =>
+                {
+                    entered.SetResult();
+                    try
+                    {
+                        await release.Task.WaitAsync(checkToken).ConfigureAwait(false);
+                        throw new IOException("Controlled configured invocation failed.");
+                    }
+                    finally
+                    {
+                        settled.SetResult();
+                    }
+                }
+            )
+            .ConfigureAwait(false);
+        await state.Operations.InitializeAsync(token).ConfigureAwait(false);
+        string submitted = await state
+            .CommitAsync(
+                state.Operations.GetWorkerPath("worker1"),
+                "interrupted.txt",
+                "worker work survives failed validation\n",
+                token
+            )
+            .ConfigureAwait(false);
+        JsonObject change = await state
+            .SubmitAsync("worker1", "Interrupted validation is not authorization", token)
+            .ConfigureAwait(false);
+        await state.ReviewAsync("worker2", change, token).ConfigureAwait(false);
+        JsonObject queued = await state.QueueAsync(change, token).ConfigureAwait(false);
+        long requestId = queued["requestId"]!.GetValue<long>();
+        Task processing = Task.Run(() => state.Operations.ProcessPendingAsync(cancellation.Token));
+        Exception? primary = null;
+        try
+        {
+            await AwaitCheckEntryAsync(entered.Task, processing, token).ConfigureAwait(false);
+            if (outcome == "cancelled")
+            {
+                await cancellation.CancelAsync().ConfigureAwait(false);
+                await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+                    await processing.ConfigureAwait(false)
+                ).ConfigureAwait(false);
+            }
+            else
+            {
+                release.SetResult();
+                await processing.ConfigureAwait(false);
+            }
+
+            Assert.IsTrue(settled.Task.IsCompletedSuccessfully);
+            JsonObject read = await state.ReadAsync(change, token).ConfigureAwait(false);
+            JsonObject request = Assert.ContainsSingle(read["integrationRequests"]!.AsArray())!
+                .AsObject();
+            AssertRefusal(
+                read,
+                request,
+                outcome == "cancelled" ? "unavailable" : "check_failed",
+                outcome == "cancelled" ? "Integration cancelled" : "Candidate checks failed"
+            );
+            JsonObject check = Assert.ContainsSingle(read["checks"]!.AsArray())!.AsObject();
+            Assert.AreEqual(outcome, check["status"]!.GetValue<string>());
+            Assert.IsNull(check["exitCode"]);
+            string candidate = check["commit"]!.GetValue<string>();
+            Assert.AreEqual(
+                state.BaseCommit,
+                await state.ResolveAsync(candidate + "^1", token).ConfigureAwait(false)
+            );
+            Assert.AreEqual(
+                submitted,
+                await state.ResolveAsync(candidate + "^2", token).ConfigureAwait(false)
+            );
+            Assert.AreEqual(
+                await state.ResolveAsync(candidate + "^{tree}", token).ConfigureAwait(false),
+                check["tree"]!.GetValue<string>()
+            );
+            Assert.AreEqual(
+                state.BaseCommit,
+                await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
+            );
+            Assert.AreEqual(
+                submitted,
+                await state.ResolveAsync(read["branch"]!.GetValue<string>(), token)
+                    .ConfigureAwait(false)
+            );
+            string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
+            Assert.Contains("Configured check execution: controlled.", log);
+            Assert.Contains(
+                outcome == "cancelled"
+                    ? "the controlled invocation joined its owned operation"
+                    : "Controlled configured invocation failed.",
+                log
+            );
+            Assert.DoesNotContain("ProcessRunner settled owned execution", log);
+            Assert.DoesNotContain("Command cancellation evidence:", log);
+            Assert.DoesNotContain("\"leaseId\"", log);
+        }
+        catch (Exception error)
+        {
+            primary = error;
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                await cancellation.CancelAsync().ConfigureAwait(false);
+                try
+                {
+                    await processing.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+                {
+                }
+            }
+            catch (Exception secondary) when (primary is not null)
+            {
+                primary.Data["CandidateProducerCleanupError"] = Json.ExceptionDetails(secondary);
+            }
+        }
+    }
+
+    private static async Task AwaitCheckEntryAsync(
+        Task entered,
+        Task producer,
+        CancellationToken token
+    )
+    {
+        Task completed = await Task.WhenAny(entered, producer).WaitAsync(token)
+            .ConfigureAwait(false);
+        if (ReferenceEquals(completed, producer))
+        {
+            await producer.ConfigureAwait(false);
+            Assert.Fail("Candidate processing ended before the configured check was entered.");
+        }
+        await entered.WaitAsync(token).ConfigureAwait(false);
     }
 
     private static void AssertRefusal(
@@ -1673,7 +1824,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         );
         string log = File.ReadAllText(check["logPath"]!.GetValue<string>())
             .ReplaceLineEndings("\n");
-        const string outputStart = "stdout:\n";
+        const string outputStart = "Configured check execution: ProcessRunner.\nstdout:\n";
         const string outputEnd = "\nstderr:\n";
         Assert.StartsWith(outputStart, log);
         int end = log.IndexOf(outputEnd, outputStart.Length, StringComparison.Ordinal);

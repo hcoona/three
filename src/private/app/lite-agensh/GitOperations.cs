@@ -7,11 +7,20 @@ using Microsoft.Data.Sqlite;
 
 namespace LiteAgensh;
 
+internal delegate Task<ProcessResult> ConfiguredCheckInvocation(
+    string executable,
+    IReadOnlyList<string> arguments,
+    string workingDirectory,
+    TimeSpan timeout,
+    CancellationToken cancellationToken
+);
+
 public sealed class GitOperations
 {
     private readonly RunDatabase database;
     private readonly CollaborationOperations collaboration;
     private readonly ProcessRunner processes;
+    private readonly ConfiguredCheckInvocation? configuredCheck;
     private string Repository => database.Configuration.RepositoryPath;
     private string IntegrationBranch => $"refs/heads/lite-agensh/{database.RunId}/integration";
     private string DeliveryBranch => $"refs/heads/lite-agensh/{database.RunId}/delivery";
@@ -19,17 +28,18 @@ public sealed class GitOperations
     private string Stamp => database.Now.ToString("O", CultureInfo.InvariantCulture);
 
     public GitOperations(RunDatabase database, CollaborationOperations collaboration)
-        : this(database, collaboration, TimeProvider.System) { }
+        : this(database, collaboration, null) { }
 
     internal GitOperations(
         RunDatabase database,
         CollaborationOperations collaboration,
-        TimeProvider commandTimeProvider
+        ConfiguredCheckInvocation? configuredCheck
     )
     {
         this.database = database;
         this.collaboration = collaboration;
-        processes = new ProcessRunner(database, commandTimeProvider);
+        processes = new ProcessRunner(database);
+        this.configuredCheck = configuredCheck;
         using SqliteConnection connection = database.Open();
         using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         Sql.Execute(
@@ -1667,8 +1677,7 @@ public sealed class GitOperations
             ProcessResult? completedCommand = null;
             try
             {
-                completedCommand = await processes
-                    .RunAsync(
+                completedCommand = await (configuredCheck ?? processes.RunAsync)(
                         command.Executable,
                         command.Arguments,
                         path,
@@ -1698,8 +1707,11 @@ public sealed class GitOperations
                 status = "cancelled";
                 exit = null;
                 log = completedCommand is null
-                    ? "Caller cancelled the check; ProcessRunner settled owned execution "
-                        + "before returning."
+                    ? configuredCheck is null
+                        ? "Caller cancelled the check; ProcessRunner settled owned execution "
+                            + "before returning."
+                        : "Caller cancelled the check; the controlled invocation joined "
+                            + "its owned operation before returning."
                     : "Caller cancelled the check; post-command verification did not complete.";
                 if (completedCommand is not null)
                 {
@@ -1716,7 +1728,10 @@ public sealed class GitOperations
                             ),
                         }.ToJsonString();
                 }
-                if (exception.Data[ProcessRunner.CancellationEvidenceKey] is string evidence)
+                if (
+                    (configuredCheck is null || completedCommand is not null)
+                    && exception.Data[ProcessRunner.CancellationEvidenceKey] is string evidence
+                )
                 {
                     log += completedCommand is null
                         ? "\nCommand cancellation evidence:\n"
@@ -1737,6 +1752,8 @@ public sealed class GitOperations
                 log = exception.ToString();
             }
 
+            log = $"Configured check execution: "
+                + $"{(configuredCheck is null ? "ProcessRunner" : "controlled")}.\n{log}";
             Directory.CreateDirectory(Path.Combine(database.StatePath, "logs", "checks"));
             string logPath = Path.Combine(
                 database.StatePath,

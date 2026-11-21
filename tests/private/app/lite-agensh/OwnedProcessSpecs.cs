@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using LiteAgensh.Tests.Support;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LiteAgensh.Tests;
@@ -146,6 +147,57 @@ public sealed class OwnedProcessSpecs(TestContext context)
             Assert.IsGreaterThan(0L, retired.BirthTicks);
             Assert.AreEqual("command", retired.Kind);
             Assert.AreEqual("exited", retired.State);
+        }
+        catch (Exception error)
+        {
+            primaryFailure = error;
+            throw;
+        }
+        finally
+        {
+            await CancelAndDrainAsync(cancellation, running, primaryFailure).ConfigureAwait(false);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(120_000, CooperativeCancellation = true)]
+    [TestCategory("CancelSettleOnlyOwnedChildren")]
+    public async Task CommandDeadlineRetainsDiagnosticsAndSettlesItsActualOwnedChild()
+    {
+        FakeTimeProvider clock = new();
+        using OwnedProcessState state = new(clock);
+        await using OwnedChildControl control = new();
+        using CancellationTokenSource cancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+        Task<ProcessResult> running = state.Runner.RunAsync(
+            OwnedChildControl.ExecutablePath,
+            control.Arguments(role: OwnedChildControl.HeldCandidateCheckRole),
+            state.WorkingDirectory,
+            TimeSpan.FromSeconds(1),
+            cancellation.Token
+        );
+        Exception? primaryFailure = null;
+        try
+        {
+            OwnedChildIdentity ready = await control
+                .ReadReadyAsync(running, context.CancellationToken)
+                .ConfigureAwait(false);
+            OwnedLease live = state.Lease(pid: ready.Pid);
+            using Process child = OpenObservedOwnedChild(ready.Pid, ready.BirthTicks);
+            Assert.AreEqual(ready.BirthTicks, live.BirthTicks);
+            Assert.AreEqual("running", live.State);
+            Assert.IsFalse(child.HasExited);
+
+            clock.Advance(TimeSpan.FromSeconds(1));
+            ProcessResult result = await running.ConfigureAwait(false);
+
+            Assert.IsTrue(result.TimedOut);
+            Assert.IsFalse(cancellation.IsCancellationRequested);
+            Assert.AreEqual("exited", state.Lease(id: live.Id).State);
+            Assert.IsTrue(child.HasExited);
+            Assert.Contains("owned check diagnostic stdout before READY", result.StandardOutput);
+            Assert.Contains("owned check diagnostic stderr before READY", result.StandardError);
+            Assert.DoesNotContain("owned check exit 0", result.StandardOutput);
         }
         catch (Exception error)
         {

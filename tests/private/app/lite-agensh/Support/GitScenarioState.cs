@@ -16,8 +16,8 @@ internal sealed class GitScenarioState : IDisposable
         CheckCommand[]? candidateChecks,
         CheckCommand[]? integrationChecks,
         CheckCommand[]? finalChecks,
-        TimeProvider? commandTimeProvider,
-        string[]? protectedPaths
+        string[]? protectedPaths,
+        ConfiguredCheckInvocation? configuredCheck
     )
     {
         try
@@ -38,7 +38,7 @@ internal sealed class GitScenarioState : IDisposable
             };
             Database = new(configuration.StatePath, configuration, Clock);
             Collaboration = new(Database);
-            Operations = new(Database, Collaboration, commandTimeProvider ?? TimeProvider.System);
+            Operations = new(Database, Collaboration, configuredCheck);
             processes = new(Database);
         }
         catch
@@ -84,12 +84,12 @@ internal sealed class GitScenarioState : IDisposable
         CheckCommand[]? candidateChecks = null,
         CheckCommand[]? integrationChecks = null,
         CheckCommand[]? finalChecks = null,
-        TimeProvider? commandTimeProvider = null,
-        string[]? protectedPaths = null
+        string[]? protectedPaths = null,
+        ConfiguredCheckInvocation? configuredCheck = null
     )
     {
         GitScenarioState state = new(
-            candidateChecks, integrationChecks, finalChecks, commandTimeProvider, protectedPaths
+            candidateChecks, integrationChecks, finalChecks, protectedPaths, configuredCheck
         );
         try
         {
