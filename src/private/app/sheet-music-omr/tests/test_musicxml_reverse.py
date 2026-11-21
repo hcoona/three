@@ -693,3 +693,25 @@ def test_cross_barline_beam_across_system_break_is_refused() -> None:
     assert refusal(score(m1 + m2)).diagnostics[0].code == (
         "unsupported/beam_boundary"
     )
+
+
+def test_competing_cross_staff_unison_ties_pair_via_bipartite_matching() -> (
+    None
+):
+    """Pair competing unison ties globally without greedy stop exhaustion."""
+    m1 = (
+        f'<measure number="1">{ATTRIBUTES}'
+        + note("C4", 2, "quarter", 1, 2, tie="start")
+        + note("C4", 2, "quarter", 1, 1, tie="stop")
+        + "<backup><duration>4</duration></backup>"
+        + note("C4", 2, "quarter", 2, 1, tie="start")
+        + note("E4", 2, "quarter", 2, 1)
+        + "<backup><duration>4</duration></backup>"
+        + note("r", 2, "quarter", 5, 2)
+        + note("C4", 2, "quarter", 5, 2, tie="stop")
+        + "</measure>"
+    )
+    text = from_musicxml_text(score(m1))
+    assert "C4{tie@r1:start}/4[xs2] C4{tie@r2:end}/4" in text
+    assert "C4{tie@r2:start}/4 E4/4" in text
+    assert "r/4 C4{tie@r1:end}/4" in text

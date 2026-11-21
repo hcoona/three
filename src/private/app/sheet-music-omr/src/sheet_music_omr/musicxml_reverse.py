@@ -2114,6 +2114,55 @@ def _check_duration(leaf: _Leaf) -> None:
 # Relations.
 
 
+def _augment_tie_match(
+    node: int,
+    adj: dict[int, list[int]],
+    partner: dict[int, int],
+    seen: set[int],
+) -> bool:
+    for nxt in adj.get(node, ()):
+        if nxt in seen:
+            continue
+        seen.add(nxt)
+        prev = partner.get(nxt)
+        if prev is None or _augment_tie_match(prev, adj, partner, seen):
+            partner[nxt] = node
+            return True
+    return False
+
+
+def _tie_in_measures(measures: list[_Measure]) -> set[int]:
+    allowed: set[int] = set()
+    in_group = False
+    for idx, m in enumerate(measures):
+        has_end = any(isinstance(opt, EndingOption) for opt in m.options)
+        starts_b = any(
+            isinstance(opt, EndingOption)
+            and opt.kind in {EndingKind.START, EndingKind.SINGLE}
+            for opt in m.options
+        )
+        closes_b = any(
+            isinstance(opt, EndingOption)
+            and opt.kind in {EndingKind.END, EndingKind.SINGLE}
+            for opt in m.options
+        )
+        has_rep = any(
+            isinstance(opt, RightOption) and opt.barline is Barline.REPEAT
+            for opt in m.options
+        )
+        if in_group and starts_b:
+            allowed.add(idx)
+        in_group = (in_group or has_end) and not closes_b
+        if has_end and has_rep and idx + 1 < len(measures):
+            nxt_has_end = any(
+                isinstance(opt, EndingOption)
+                for opt in measures[idx + 1].options
+            )
+            if not nxt_has_end:
+                allowed.add(idx + 1)
+    return allowed
+
+
 class _Matcher:
     """Pairs relation endpoints and gives each relation a temporary label."""
 
@@ -2432,7 +2481,66 @@ class _Matcher:
             ),
         )
 
+    def _tie_matches(
+        self,
+        leaf: _Leaf,
+        member: _Member,
+        other: _Leaf,
+        target: _Member,
+    ) -> bool:
+        if (
+            other.grace is not None
+            or self.time(other) != self.time(leaf) + leaf.duration
+            or target.sounding != member.sounding
+        ):
+            return False
+        if (
+            member.start_number is not None
+            and target.stop_number is not None
+            and target.stop_number != member.start_number
+        ):
+            return False
+        if leaf.grace is not None and other.measure == leaf.measure:
+            return (other.staff, other.voice) == (
+                leaf.staff,
+                leaf.voice,
+            ) and leaf.order < other.order
+        return other.staff == leaf.staff or other.shown == leaf.shown
+
+    def _build_tie_graph(
+        self,
+        starts: list[tuple[_Leaf, _Member]],
+        stops: list[tuple[_Leaf, _Member]],
+    ) -> tuple[dict[int, list[int]], dict[int, list[int]]]:
+        start_adj: dict[int, list[int]] = {}
+        stop_adj: dict[int, list[int]] = {}
+        for u_idx, (leaf, member) in enumerate(starts):
+            cands = [
+                s_idx
+                for s_idx, (other, target) in enumerate(stops)
+                if self._tie_matches(leaf, member, other, target)
+            ]
+            cands.sort(
+                key=lambda s_idx: (
+                    stops[s_idx][1].stop_number != member.start_number,
+                    (stops[s_idx][0].staff, stops[s_idx][0].voice)
+                    != (leaf.staff, leaf.voice),
+                    stops[s_idx][0].order,
+                ),
+            )
+            start_adj[u_idx] = cands
+            for s_idx in cands:
+                stop_adj.setdefault(s_idx, []).append(u_idx)
+        return start_adj, stop_adj
+
     def _ties(self) -> None:
+        starts = [
+            (leaf, member)
+            for leaf in self.leaves
+            if leaf.kind == _NOTE
+            for member in leaf.members
+            if member.tie_start
+        ]
         stops = [
             (leaf, member)
             for leaf in self.leaves
@@ -2440,49 +2548,32 @@ class _Matcher:
             for member in leaf.members
             if member.tie_stop
         ]
-        for leaf in self.leaves:
-            if leaf.kind != _NOTE:
+        start_adj, stop_adj = self._build_tie_graph(starts, stops)
+        tie_in_ms = _tie_in_measures(self.measures)
+        stop_of_start: dict[int, int] = {}
+        for s_idx, (s_leaf, _) in enumerate(stops):
+            if (
+                s_leaf.grace is None
+                and s_leaf.onset == 0
+                and s_leaf.measure in tie_in_ms
+            ):
                 continue
-            for member in leaf.members:
-                if member.tie_start:
-                    self._tie(leaf, member, stops)
-        for _, member in stops:
-            member.tie_in = True
-
-    def _tie(
-        self,
-        leaf: _Leaf,
-        member: _Member,
-        stops: list[tuple[_Leaf, _Member]],
-    ) -> None:
-        end = self.time(leaf) + leaf.duration
-        candidates = [
-            (other, target)
-            for other, target in stops
-            if other.grace is None
-            and (other.staff == leaf.staff or other.shown == leaf.shown)
-            and self.time(other) == end
-            and target.sounding == member.sounding
-            and (
-                None in {member.start_number, target.stop_number}
-                or target.stop_number == member.start_number
-            )
-        ]
-        if not candidates:
-            msg = "a tie that reaches no note of the same pitch"
-            _unsupported("tie", msg, member.at)
-        candidates.sort(
-            key=lambda item: (
-                item[1].stop_number != member.start_number,
-                (item[0].staff, item[0].voice) != (leaf.staff, leaf.voice),
-                item[0].order,
-            ),
-        )
-        other, target = candidates[0]
-        stops.remove((other, target))
-        label = self.label()
-        member.start_label = label
-        target.end_label = label
+            _augment_tie_match(s_idx, stop_adj, stop_of_start, set())
+        start_of_stop = {s_idx: u_idx for u_idx, s_idx in stop_of_start.items()}
+        for u_idx, (_, member) in enumerate(starts):
+            if u_idx not in stop_of_start and not _augment_tie_match(
+                u_idx, start_adj, start_of_stop, set()
+            ):
+                msg = "a tie that reaches no note of the same pitch"
+                _unsupported("tie", msg, member.at)
+        for s_idx, (_, target) in enumerate(stops):
+            u_idx = start_of_stop.get(s_idx)
+            if u_idx is None:
+                target.tie_in = True
+            else:
+                label = self.label()
+                starts[u_idx][1].start_label = label
+                target.end_label = label
 
     def _tremolos(self) -> None:
         pending: dict[tuple[int, int], _Leaf] = {}
