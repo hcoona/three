@@ -35,6 +35,7 @@ Before work, read the accepted target-branch
 themselves or weaken their accepted review obligations. For an ordinary change,
 sections that decide authorization and review include
 [work authorization](docs/governance/record-system.md#work-authorization-and-concurrency),
+[enforcement](docs/governance/record-system.md#enforcement),
 [GOV-011](docs/governance/governance-system.md#gov-011-separate-findings-from-disposition),
 [GOV-010](docs/governance/governance-system.md#gov-010-gates-require-evidence),
 [conflict resolution](docs/governance/governance-system.md#conflict-resolution),
@@ -52,12 +53,25 @@ security/recovery or test/evidence strategy decisions, invoke
 [shared engineering guidance](.github/skills/engineering-guidance/SKILL.md)
 and follow its project routing.
 
-For record-system changes, invoke
-[record-system review](.github/skills/record-system-review/SKILL.md) directly.
-For research/evidence changes and every merged Wave change, invoke
+For structural record changes, `repository`-namespace record edits,
+portal-routing, generated-interface, or governance-catalog changes,
+project-record edits altering authority ownership, established requirement
+identifiers, or consumer contracts, and Issue/PR-template, Agent Skill, `hk`,
+or control-governed workflow changes, invoke
+[record-system review](.github/skills/record-system-review/SKILL.md) directly;
+ordinary source, test, non-control workflow, runtime-data, status-comment, and
+routine in-place project documentation updates preserving existing ownership,
+portal routing, requirement identifiers, and consumers do not trigger it.
+For research/evidence changes, experiment protocols, mutable-source rechecks,
+or platform-support claims, and every merged Wave change, invoke
 [research-evidence review](.github/skills/research-evidence-review/SKILL.md)
-directly, retaining applicable domain reviews. Authors and implementers cannot
-satisfy their own independent review or solely adjudicate material findings.
+directly, retaining applicable domain reviews. Routine development and governed
+CI validation, faithful check/status reporting, and recording a completed
+review (`No material findings.`) do not trigger another review round
+([workflows](docs/governance/record-system.md#workflows),
+[enforcement](docs/governance/record-system.md#enforcement)). Authors and
+implementers cannot satisfy their own independent review or solely adjudicate
+material findings.
 These canonical paths are the invocation interface; no implicit skill discovery
 is assumed. Do not edit generated `.agents/skills/` or `.github/agents/` outputs
 by hand. For delegated execution, follow

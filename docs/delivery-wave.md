@@ -460,134 +460,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
   model-hosting or storage services; no change to the private transcription
   repository; no publication, credential or access change.
 
-### Define the sheet-music text representation (W1)
-
-- **Work carrier:** [Issue #1488](https://github.com/hcoona/three/issues/1488),
-  a sub-issue of #686, and its linked pull requests. The repository owner
-  requested authorization of all W1 work.
-- **Accepted inputs:** those of the sheet-music design and planning entry and
-  the project records accepted under either entry. Findings in #1488 are
-  unreviewed research inputs.
-- **Owner decisions:**
-    - W1 code consists of experiments under `src/private/app/sheet-music-omr/`
-      in any language the repository currently supports. It does not select
-      the product's language, packaging or release.
-    - Converters are written anew in this repository; the private v1 converter
-      source is not imported.
-    - The owner's development agents may read the private transcription
-      repository, including its drafts, review records and accepted gold, and
-      the owner's local desk-study archive, locally and read-only. Their model
-      services process what they read; the owner accepts this. For `gold-01`,
-      the owner authorizes repairing the three legacy v1 converter mid-note
-      cross-voice `tie`/`tied` `stop` endpoints in a local staged build
-      directory and staged status-file copy, recording the prior and repaired
-      MusicXML SHA-256 digests locally rather than relaxing W1 tie semantics;
-      the original private transcription repository and all other staged gold
-      files remain read-only. That content,
-      anything derived from it and piece identities are never committed,
-      otherwise uploaded or quoted; public carriers report only aggregate
-      results and anonymized batch numbers.
-    - Acceptance uses two measures: a hard criterion of zero in-scope content
-      differences on the accepted private gold pieces, and a reported
-      layout-fidelity score, where higher is better, that does not gate
-      acceptance. On public MuseScore re-exports (`R(X)`), raw arm scores keep
-      every failed file's reference elements counted as non-identical in the
-      denominator without converter workarounds; when `X` passes the scope
-      screen and converts cleanly and `R(X)` fails whole-file conversion or
-      `musicdiff` parsing solely because of one of the three minimal-reproduced,
-      upstream-reported MuseScore 4 MusicXML export defects
-      ([musescore/MuseScore#22974](https://github.com/musescore/MuseScore/issues/22974),
-      [musescore/MuseScore#35740](https://github.com/musescore/MuseScore/issues/35740),
-      [musescore/MuseScore#35741](https://github.com/musescore/MuseScore/issues/35741)),
-      the report lists those files, their element counts and their upstream
-      issues separately while keeping them in the reported raw `R(X)` score,
-      and the 99% re-export acceptance threshold is evaluated across the
-      remaining `R(X)` files not corrupted by those three upstream export
-      defects.
-    - Following the return-to-owner check against the 34-finding desk-study
-      estimate, the owner selects freezing the complete 327-locus (356-entry)
-      union toolchain-class set covering all 34 desk-study baseline entries and
-      all confirmed toolchain-class findings across the full 1,591-file review
-      archive of the 23 accepted private gold pieces, subject to
-      research-evidence review of the validation-basis record.
-    - Tokenizer comparisons may use the tokenizer files of any candidate base
-      model; no base model is selected.
-    - The project integrates into the existing monorepo workspaces, checks and
-      CI rather than a separate toolchain.
-    - The owner approved the local installations and downloads listed under
-      Effects. Numeric limits there are accident fuses, not bounds on normal
-      development.
-- **Advancement and outcome:**
-    - Accept W1 requirements covering the required notation categories, the
-      as-printed and canonical invariants, system-level carry-in and
-      carry-out state, both acceptance measures, explicit unsupported cases
-      and the validation basis. The validation basis freezes, from the
-      recorded review findings and under research-evidence review, the set of
-      toolchain-class findings that the text and converters must eliminate.
-    - Accept the text-format specification as the project's contract, with a
-      normative grammar and, subject to record admission, the recognition
-      sidecar interface. Record the ABC comparison evidence available inside
-      W1: tokenizer counts and a capability mapping of each accepted
-      required notation category and invariant to standard ABC 2.1 syntax,
-      citing the specification and using hand-written, self-authored
-      examples where it is unclear. The completed xml2abc/abc2xml round trip
-      confounds format, converter and evaluator; it is retained only as a
-      toolchain observation, not as format-capability evidence.
-    - Implement experimental forward (text to MusicXML) and reverse (MusicXML
-      to text, for MuseScore, PDMX and OpenScore exports) converters, a grammar
-      validator, a round-trip harness using MuseScore import/re-export and
-      musicdiff scoring, the system-assembly test and the replay of the frozen
-      toolchain-class findings.
-- **Ordering and gates:** merge this entry before any W1 work. Accept the
-  requirements and specification before converter implementation relies on
-  them. Accept each experiment or runtime-observation protocol, including
-  tokenizer counts and MuseScore import checks, under research-evidence
-  review before it executes. Perform the ABC capability mapping after the
-  requirements are accepted. If it finds every required category and
-  invariant expressible in standard ABC without ambiguity, the format choice
-  remains open pending model evidence outside W1; return to the owner before
-  implementing converters. Integration changes to shared root or CI
-  configuration are ordered with other entries changing the same files. Each
-  pull request retains the applicable record-system, research-evidence and
-  engineering reviews, with independent classification of material findings.
-  New feasibility, product or scope tradeoffs return to the owner.
-- **Acceptance:** the accepted W1 requirements and validation basis are met,
-  including the hard criterion and a zero-difference system-assembly test on
-  every accepted private gold piece, at least 99% of in-scope elements
-  identical on the public corpus files and on their MuseScore re-exports under
-  the owner decision above (after accepting the corresponding requirements and
-  comparison-protocol updates before relying on them), and
-  every finding in the owner-approved 327-locus frozen toolchain-class set
-  reproduced correctly from the text without score-file edits (any further
-  material change to that frozen set returns to the owner). The layout-fidelity
-  score and ABC comparison result are recorded.
-  Delete this entry when accepted or when the owner stops W1.
-- **Effects:** permit the design and planning entry's inspection and
-  documentation effects; local read-only use of the private inputs above, plus
-  the bounded local staged `gold-01` tie-endpoint repair authorized under Owner
-  decisions;
-  local installation of musicdiff 6.0.0, xml2abc/abc2xml and, when missing or
-  updated on the host, a MuseScore 4.x command line recorded by exact version
-  and executable SHA-256 per run; download of public scores from OpenScore
-  Lieder (CC0) and PDMX, including PDMX's whole-dataset archives, using only
-  license-compatible files, and of candidate tokenizer files without model
-  weights, all kept outside the repository, stopping to return to the owner
-  before cumulative downloads exceed 20 GB; experimental source and tests;
-  root workspace membership, lockfile, central package version, check
-  configuration and CI test selection and preparation changes needed to
-  integrate the project into the existing monorepo tooling; isolated local
-  runs and credential-free tests; and ordinary pull-request/check operations
-  and their normal CI.
-- **Exclusions:** no model weights, including rokot-omr-2b, and no GPU
-  inference, training or paid compute; no other workstream's implementation,
-  synthetic training data or format A/B training; no committed fixture other
-  than self-authored, public-domain or CC0 material with its provenance; no
-  other upload of score material to external recognition, model-hosting or
-  storage services; no change to the private transcription repository or its
-  workflow; no change to existing repository tool or runtime versions, other
-  projects' behavior or required checks, and no new CI workflow; no
-  publication, release, credential or access change.
-
 ### Align .NET tests that launch external tools with the engineering principles
 
 - **Work carrier:** [Issue #1501](https://github.com/hcoona/three/issues/1501),
@@ -972,55 +844,83 @@ ends a grant. Git and the proposing PR retain the reason and history.
       `docs/engineering/engineering-principles.md` unchanged.
     - Classify development and CI/PR validation versus empirical experiments by
       operation purpose and external effects rather than invocation channel.
-      Credential-free local restore/build/lint/test runs and governed CI/PR
-      validation of declared contracts, including defect fixes and ordinary
-      reruns of failed workflow jobs, require no separate experiment protocol
-      or attempt quota while retaining chronological run/failure identities and
-      existing recovery rules. Credential-bearing or non-public dependency sources require an explicit
-      Wave risk decision (a comment cannot grant them). Unmodeled external or
-      platform probes, credential-bearing or non-public dependency sources,
-      account/credential mutations, host mutations outside the
-      checkout/worktree, build outputs, temporary roots, and local package or
-      tool caches (plus any Wave-named tool state), destructive fault
-      injection, and paid or non-recoverable campaign dispatches remain outside
-      credential-free validation and under accepted experiment protocols and
-      cumulative bounds (when authorized by the Wave) even inside a test or
-      workflow step. Do not invent disposable-VM or OS-user prerequisites where the
-      accepted Wave and protocol bound an existing host.
+      Credential-free local restore/build/lint/test runs using standard
+      package-manager default public registries (when not cleared, restricted,
+      or excluded by accepted repository configuration or the Wave), public
+      dependency sources and toolchains declared in accepted repository
+      configuration, or local/temporary synthetic fixture sources, and governed CI/PR validation
+      of declared contracts (including standard ephemeral runner-issued job
+      plumbing such as checkout, cache, artifact, and public-release rate-limit
+      tokens/state in accepted workflows, defect fixes, and ordinary reruns of
+      failed workflow jobs) require no separate experiment protocol or attempt
+      quota while retaining relevant chronological CI/workflow run and attempt
+      identities when reporting gate results and existing recovery rules.
+      Unmodeled external or platform probes, credential-bearing, non-public, or
+      unaccepted external dependency sources (neither a comment nor an unmerged
+      branch commit can grant them), user/Environment secrets, OIDC/package
+      publication, interactive login/consent, account/tenant/permission
+      enrollment or switching, accessing, creating, rotating, or mutating real, persistent, external, or
+      ambient user/host accounts, brokers, keyrings, credentials, or secrets,
+      mutating ambient auth/host configuration (outside that standard ephemeral
+      runner-issued CI job plumbing), mutating persistent host or shared state outside normal repository Git state (including
+      linked-worktree metadata), accepted locked-toolchain/SDK install and
+      state roots, build and validation-report outputs, owned
+      temporary/synthetic-test state, local package or tool caches, ephemeral
+      CI-runner job/cache/artifact state, and any Wave-named tool state, destructive fault injection, and paid or
+      non-recoverable campaign dispatches remain outside routine validation and
+      require explicit Wave authorization/risk disposition and accepted
+      experiment protocols with cumulative bounds even inside a test or
+      workflow step. Do not invent disposable-VM or OS-user prerequisites where
+      the accepted Wave and protocol bound an existing host.
     - Align `controls.yaml` (`independent-finding-triage`) and
       `checker-contract.md` with [GOV-011](governance/governance-system.md#gov-011-separate-findings-from-disposition)
       so an Issue may serve as the governing review carrier when no PR governs,
       while keeping `record-system-gate` on `pull-request-merge` and keeping
       the GitHub PR body (`## Validation and Review`) valid as the default
-      single authoritative PR ledger without importing external character-limit
-      thread-splitting mandates. Concise routing summaries may link to that
-      authoritative ledger without repeating secondary caveats when making no
-      broader claim; companion Issue/PR updates reviewed together as one
-      ordered batch are checked against the batch rather than failing solely
-      because companion writes have not executed yet.
+      single authoritative PR ledger (which may index/link existing review or
+      triage comments and CI runs without re-copying them, and without
+      importing external character-limit thread-splitting mandates). Concise
+      routing summaries may link to that authoritative ledger without repeating
+      secondary caveats when making no broader claim; companion Issue/PR
+      updates reviewed together as one ordered batch are checked against the
+      batch rather than failing solely because companion writes have not
+      executed yet.
     - Allow direct author repair and mechanical verification, without
       third-party `GOV-011` classification or permanent triage rows, only for
       purely deterministic carrier defects (formatting/lint, Markdown
-      delimiters/syntax, commitlint/length rules, or container-pointer typos
-      whose cited fragment, content, and provenance are unchanged) that do not
-      alter authority, source/commit/run/build/artifact provenance, evidence
-      classification, claim scope, security/privacy, contract/test coverage, or
-      owner decisions. Wrong commit, workflow-run, build, or artifact
-      identifiers remain material provenance findings under `GOV-011`. Bound
-      re-reviews to the remediation delta and affected conclusions; faithful
-      check/status reporting and recording a completed review
+      delimiters/syntax, commitlint/length rules, container-pointer typos whose
+      cited fragment, content, and provenance are unchanged, or display-text
+      typos whose link target and underlying commit/run/artifact identity are
+      unchanged and unambiguous) that do not alter authority,
+      source/commit/run/build/artifact provenance, evidence classification,
+      claim scope, security/privacy, contract/test coverage, or owner
+      decisions. Misattributed or ambiguous commit, workflow-run, build, or
+      artifact identifiers remain material provenance findings under `GOV-011`.
+      Bound re-reviews to the remediation delta and affected conclusions;
+      faithful check/status reporting and recording a completed review
       (`No material findings.`) do not trigger another review round.
-    - Ordinary code, test, workflow-implementation, runtime-data, and
-      status-comment changes that do not alter maintained records, portals,
-      generated agent/skill interfaces, or governance catalogs do not trigger
-      record-lifecycle review; they also skip `records:check` unless they add
-      or rename tracked candidate-suffix files (`.md`, `.rst`, `.adoc`,
-      `.asciidoc`, `.yaml`, `.yml`, `.json`, `.jsonl`, `.csv`), edit
-      `apm.lock.yaml` provenance, or move/delete paths referenced by
-      maintained records or catalogs. In-place edits and structural changes to
-      maintained records trigger both. Preserve Three's zero-diagnostic
-      `records:check` baseline expectation rather than normalizing pre-existing
-      baseline failures.
+    - Decouple independent `record-system-review` from lightweight local
+      `records:check`: `record-system-review` covers structural record changes
+      (additions, moves, splits, deletions/retirements, or rebindings), edits
+      to `repository`-namespace records in `record-families.yaml` (such as
+      `README.md`, `docs/README.md`, `docs/governance/**`,
+      `docs/engineering/**`, `docs/delivery-wave.md`, `AGENTS.md`,
+      `docs/AGENTS.md`, `CONTRIBUTING.md`, and `schemas/governance/**`),
+      changes to portal routing, generated agent/skill interfaces, governance
+      catalogs, Issue/PR templates, Agent Skills, `hk`, or control-governed
+      workflows, and project-record edits altering authority ownership, established
+      requirement identifiers, or consumer/immutability/license contracts,
+      whereas ordinary source, test, non-control workflow, runtime-data,
+      status-comment, and routine in-place project documentation updates
+      preserving existing ownership, portal routing, requirement identifiers,
+      and consumers do not trigger it. Run `records:check` when editing or
+      deleting maintained records, portals, generated interfaces,
+      `apm.lock.yaml`, or governance catalogs, adding or renaming
+      [discovered record candidates](governance/checker-contract.md#independent-discovery-and-classification),
+      or moving or deleting paths referenced by maintained records,
+      `apm.lock.yaml`, or catalogs, preserving Three's zero-diagnostic `main`
+      baseline without hardcoding file-extension inventories into policy or
+      review Skills.
     - Add the uncertain-external-effects recovery rule in
       `docs/engineering/agent-execution.md`: inspect authoritative destination
       state before repeating an uncertain push, Issue/PR write, release, or

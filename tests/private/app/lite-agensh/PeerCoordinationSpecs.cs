@@ -15,7 +15,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     public async Task PeersSelectWorkCommunicateAndIntegrateIndependentlyReviewedChanges()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(token).ConfigureAwait(false);
+        Phase7Run state = await Phase7Run.CreateAsync(testContext, token).ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
@@ -251,7 +251,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7Run state = await Phase7Run
-            .CreateAsync(token, planning: 10, interval: interval, allocation: "shared")
+            .CreateAsync(testContext, token, planning: 10, interval: interval, allocation: "shared")
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -666,7 +666,9 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     )
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(token, workers: 1).ConfigureAwait(false);
+        Phase7Run state = await Phase7Run
+            .CreateAsync(testContext, token, workers: 1)
+            .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
@@ -893,7 +895,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     public async Task PeerTaskClosureDoesNotClosePeerWorkOrTheRun()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(token, ownedHosts: false)
+        Phase7Run state = await Phase7Run.CreateAsync(testContext, token, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -1047,7 +1049,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7OwnedCreator creator = await Phase7OwnedCreator
-            .OpenAsync(minimumBacking, token)
+            .OpenAsync(testContext, minimumBacking, token)
             .ConfigureAwait(false);
         await creator
             .RunOwnedAsync(async () =>
@@ -1239,7 +1241,9 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     public async Task ExplicitResumeCreatesNewSessionSegmentAndDurableBootstrap()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(token, workers: 1).ConfigureAwait(false);
+        Phase7Run state = await Phase7Run
+            .CreateAsync(testContext, token, workers: 1)
+            .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {

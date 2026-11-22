@@ -18,6 +18,14 @@ internal static class Phase7CreatorProgram
         {
             return 2;
         }
+        using Phase7Evidence evidence = new(
+            args[1], "original-creator",
+            Environment.GetEnvironmentVariable("ThreeTestResultsDirectory")
+        );
+        using Activity evidenceScope = evidence.BeginScope();
+        (string Resource, string Directory)[] diagnostics = [];
+        string phase = "pipe-connect";
+        evidence.Phase(phase, "started");
         using CancellationTokenSource protocol = new(TimeSpan.FromSeconds(120));
         CancellationToken token = protocol.Token;
         Phase7Sessions? sessions = null;
@@ -37,12 +45,15 @@ internal static class Phase7CreatorProgram
             await pipe.ConnectAsync(token)
                 .WaitAsync(TimeSpan.FromSeconds(5), token)
                 .ConfigureAwait(false);
+            evidence.Phase(phase, "completed");
             using StreamReader reader = new(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
             using StreamWriter writer = new(pipe, new UTF8Encoding(false), 4096, leaveOpen: true)
             {
                 AutoFlush = true,
             };
             using Process self = Process.GetCurrentProcess();
+            phase = "hello";
+            evidence.Phase(phase, "prepared");
             await SendAsync(
                     "HELLO",
                     new()
@@ -55,6 +66,8 @@ internal static class Phase7CreatorProgram
                     }
                 )
                 .ConfigureAwait(false);
+            phase = "start-command";
+            evidence.Phase(phase, "started");
             string? line = await reader
                 .ReadLineAsync(token)
                 .AsTask()
@@ -69,6 +82,9 @@ internal static class Phase7CreatorProgram
                     && command["stage"]?.GetValue<string>() == "START",
                 "Invalid creator START."
             );
+            evidence.Phase(phase, "completed");
+            phase = "configuration";
+            evidence.Phase(phase, "started");
             string configurationPath = Path.GetFullPath(args[2]);
             RunConfiguration configuration = JsonSerializer.Deserialize<RunConfiguration>(
                 File.ReadAllText(configurationPath),
@@ -83,6 +99,14 @@ internal static class Phase7CreatorProgram
                     ),
                 "Creator paths must belong to its supplied root."
             );
+            diagnostics =
+            [
+                ("run", Path.Combine(configuration.StatePath, "run.sqlite.diagnostics")),
+                ("campaign", configuration.CampaignLedgerPath + ".diagnostics"),
+            ];
+            evidence.Phase(phase, "completed");
+            phase = "fixture-state";
+            evidence.Phase(phase, "started");
             Phase7Clock clock = new(DateTimeOffset.UtcNow);
             RunDatabase database = new(configuration.StatePath, configuration, clock);
             CreditLedger ledger = new(
@@ -93,7 +117,8 @@ internal static class Phase7CreatorProgram
             Phase7Sessions control = new(
                 database,
                 OwnedChildControl.ControlledNativeHostRole,
-                journal
+                journal,
+                evidence: evidence
             );
             sessions = control;
             CollaborationOperations collaboration = new(database);
@@ -124,8 +149,15 @@ internal static class Phase7CreatorProgram
                                     // and booked usage. Normal wrapper cleanup is separate and
                                     // real.
                                     await control.DisposeAsync().ConfigureAwait(false);
+                                    evidence.Phase(
+                                        "native-common-settlement", "completed", clock.GetUtcNow()
+                                    );
                                     if (pauseFinalReturn)
                                     {
+                                        evidence.Phase(
+                                            "public-return-gate", "held", clock.GetUtcNow()
+                                        );
+                                        evidence.Flush();
                                         settled.TrySetResult();
                                         await returnGate
                                             .Task.WaitAsync(token)
@@ -141,21 +173,37 @@ internal static class Phase7CreatorProgram
                         return factory;
                     }
                 );
+            evidence.Phase(phase, "completed", clock.GetUtcNow());
+            phase = "initialize";
+            evidence.Phase(phase, "started", clock.GetUtcNow());
             RequireSuccess(
                 await NewCoordinator("initialize").InitializeAsync(token).ConfigureAwait(false)
             );
+            evidence.Phase(phase, "completed", clock.GetUtcNow());
+            evidence.BindRun(database.RunId, clock.GetUtcNow());
+            phase = "preflight";
+            evidence.Phase(phase, "started", clock.GetUtcNow());
             RequireSuccess(
                 await NewCoordinator("preflight").PreflightAsync(token).ConfigureAwait(false)
             );
+            evidence.Phase(phase, "completed", clock.GetUtcNow());
+            phase = "calibration";
+            evidence.Phase(phase, "started", clock.GetUtcNow());
             RequireSuccess(
                 await NewCoordinator("calibration").CalibrateAsync(token).ConfigureAwait(false)
             );
+            evidence.Phase(phase, "completed", clock.GetUtcNow());
             using IDisposable observation = clock.BeginObservation();
             DateTimeOffset workDeadline = clock
                 .GetUtcNow()
                 .AddSeconds(configuration.DurationSeconds);
             clock.WorkDeadline = workDeadline;
+            phase = "run-start";
+            evidence.Phase(phase, "started", clock.GetUtcNow());
             active = NewCoordinator("run").RunAsync("run", caller.Token);
+            evidence.Phase(phase, "invoked", clock.GetUtcNow());
+            phase = "first-send";
+            evidence.Phase(phase, "started", clock.GetUtcNow());
             using CancellationTokenSource read = CancellationTokenSource.CreateLinkedTokenSource(
                 token
             );
@@ -165,6 +213,7 @@ internal static class Phase7CreatorProgram
             {
                 await WaitFixedAsync(entered).ConfigureAwait(false);
                 first = await entered.ConfigureAwait(false);
+                evidence.Phase(phase, "entered", clock.GetUtcNow());
             }
             finally
             {
@@ -183,8 +232,11 @@ internal static class Phase7CreatorProgram
                 database.ReadMetadata("native:bootstrap:" + sessionId) is null,
                 "Bootstrap was confirmed before the original Send completed."
             );
+            evidence.Phase("controlled-response", "requested", clock.GetUtcNow());
             first.Complete();
             Require(clock.GetUtcNow() < workDeadline, "Original ACK observation reached deadline.");
+            phase = "acknowledgement";
+            evidence.Phase(phase, "started", clock.GetUtcNow());
             using (CancellationTokenSource ackRead =
                 CancellationTokenSource.CreateLinkedTokenSource(token))
             {
@@ -215,7 +267,10 @@ internal static class Phase7CreatorProgram
                     }
                 }
             }
+            evidence.Phase(phase, "completed", clock.GetUtcNow());
             Require(clock.GetUtcNow() < workDeadline, "Original ACK observation reached deadline.");
+            phase = "bootstrap-confirmation";
+            evidence.Phase(phase, "started", clock.GetUtcNow());
             string confirmation =
                 database.ReadMetadata("native:bootstrap:" + sessionId)
                 ?? throw new InvalidOperationException(
@@ -225,10 +280,14 @@ internal static class Phase7CreatorProgram
                 first.Response.IsCompletedSuccessfully,
                 "Original Send did not actually complete."
             );
+            evidence.Phase(phase, "completed", clock.GetUtcNow());
             pauseFinalReturn = true;
+            phase = "shared-runtime-settlement";
+            evidence.Phase(phase, "started", clock.GetUtcNow());
             caller.Cancel();
             await WaitFixedAsync(settled.Task).ConfigureAwait(false);
             await settled.Task.ConfigureAwait(false);
+            evidence.Phase(phase, "completed", clock.GetUtcNow());
 
             async Task WaitFixedAsync(Task goal)
             {
@@ -258,6 +317,8 @@ internal static class Phase7CreatorProgram
                 }
                 next.ThrowIfCancellationRequested();
             }
+            phase = "checkpoint-state";
+            evidence.Phase(phase, "started", clock.GetUtcNow());
             CreditReservation target = ledger
                 .Reservations(database.RunId)
                 .Single(row => row.Worker == "worker1");
@@ -275,6 +336,8 @@ internal static class Phase7CreatorProgram
                 originalFactory!.SettlementFailures.Count == 0,
                 "Original native settlement failed."
             );
+            phase = "ownership-probe";
+            evidence.Phase(phase, "started", clock.GetUtcNow());
             JsonObject ownership = await NewCoordinator("probe")
                 .RunAsync("reconnect", token)
                 .ConfigureAwait(false);
@@ -282,12 +345,17 @@ internal static class Phase7CreatorProgram
                 ownership["code"]?.GetValue<string>() == "conflict",
                 "Checkpoint does not retain real exclusive coordinator ownership."
             );
+            evidence.Phase(phase, "completed", clock.GetUtcNow());
             Phase7Sessions.Host host = control.Hosts.Single(item => item.Operation == "run");
             JsonObject history = journal.Snapshot(sessionId);
             Require(
                 !history["pending"]!.GetValue<bool>() && history["requests"]!.GetValue<long>() == 1,
                 "Original controlled work is not terminal."
             );
+            phase = "checkpoint";
+            evidence.Phase(phase, "prepared", clock.GetUtcNow());
+            evidence.CaptureSqlite(diagnostics);
+            evidence.Flush();
             await SendAsync(
                     "CHECKPOINT",
                     new()
@@ -347,12 +415,15 @@ internal static class Phase7CreatorProgram
         catch (Exception error)
         {
             primary = error;
+            evidence.Phase(phase, "failed", error: error);
             Console.Error.WriteLine(
                 "PHASE7_CREATOR_PRIMARY " + LiteAgensh.Json.ExceptionDetails(error)
             );
         }
         finally
         {
+            bool cleanupFailed = false;
+            evidence.Phase("creator-cleanup", "started");
             caller.Cancel();
             if (active is not null)
             {
@@ -365,6 +436,8 @@ internal static class Phase7CreatorProgram
                 }
                 catch (Exception error)
                 {
+                    cleanupFailed = true;
+                    evidence.Phase("creator-join", "failed", error: error);
                     Console.Error.WriteLine(
                         "PHASE7_CREATOR_JOIN_SECONDARY " + LiteAgensh.Json.ExceptionDetails(error)
                     );
@@ -378,12 +451,17 @@ internal static class Phase7CreatorProgram
                 }
                 catch (Exception error)
                 {
+                    cleanupFailed = true;
+                    evidence.Phase("creator-session-cleanup", "failed", error: error);
                     Console.Error.WriteLine(
                         "PHASE7_CREATOR_CLEANUP_SECONDARY "
                             + LiteAgensh.Json.ExceptionDetails(error)
                     );
                 }
             }
+            evidence.CaptureSqlite(diagnostics);
+            evidence.Phase("creator-cleanup", cleanupFailed ? "failed" : "completed");
+            evidence.Flush();
         }
         return primary is null ? 0 : 1;
     }

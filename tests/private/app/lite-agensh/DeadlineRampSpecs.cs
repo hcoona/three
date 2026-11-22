@@ -20,7 +20,9 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7Run state = await Phase7Run
-            .CreateAsync(token, workers: 1, hostRole: OwnedChildControl.ControlledNativeHostRole)
+            .CreateAsync(
+                testContext, token, workers: 1, hostRole: OwnedChildControl.ControlledNativeHostRole
+            )
             .ConfigureAwait(false);
         CancellationTokenRegistration registration = default;
         Exception? primary = null;
@@ -537,7 +539,9 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
         CancellationToken token = testContext.CancellationToken;
         ManualScenarioClock settlementClock = new();
         Phase7Run state = await Phase7Run
-            .CreateAsync(token, workers: 1, interval: 1, duration: 10, allocation: "shared")
+            .CreateAsync(
+                testContext, token, workers: 1, interval: 1, duration: 10, allocation: "shared"
+            )
             .ConfigureAwait(false);
         state.SettlementTimeProvider = settlementClock;
         await state
@@ -634,7 +638,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7Run state = await Phase7Run
-            .CreateAsync(token, workers: 1, duration: 10, ownedHosts: false)
+            .CreateAsync(testContext, token, workers: 1, duration: 10, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -770,7 +774,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7Run state = await Phase7Run.CreateAsync(
-            token, workers: 1, duration: 10, ownedHosts: false
+            testContext, token, workers: 1, duration: 10, ownedHosts: false
         ).ConfigureAwait(false);
         await state.RunBodyAsync(async () =>
         {
@@ -864,7 +868,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7Run state = await Phase7Run
-            .CreateAsync(token, workers: 1, duration: 10)
+            .CreateAsync(testContext, token, workers: 1, duration: 10)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -932,7 +936,9 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     public async Task IdlePeerCannotCancelAnotherPeersHealthyDispatchedDrain()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(token, duration: 10).ConfigureAwait(false);
+        Phase7Run state = await Phase7Run
+            .CreateAsync(testContext, token, duration: 10)
+            .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
@@ -1030,7 +1036,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7Run state = await Phase7Run
-            .CreateAsync(token, interval: 10, allocation: "shared")
+            .CreateAsync(testContext, token, interval: 10, allocation: "shared")
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -1241,7 +1247,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     public async Task ZeroIntervalLegacyPeersAreEligibleWithoutAdvancingManualTime()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(token).ConfigureAwait(false);
+        Phase7Run state = await Phase7Run.CreateAsync(testContext, token).ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
@@ -1283,6 +1289,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
         CancellationToken token = testContext.CancellationToken;
         Phase7Run state = await Phase7Run
             .CreateAsync(
+                testContext,
                 token,
                 duration: 60,
                 allocation: "shared",
@@ -1550,7 +1557,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7Run state = await Phase7Run
-            .CreateAsync(token, workers: 1, duration: 10, allocation: "shared")
+            .CreateAsync(testContext, token, workers: 1, duration: 10, allocation: "shared")
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -1645,7 +1652,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7Run state = await Phase7Run
-            .CreateAsync(token, interval: 30, duration: 10, allocation: "shared")
+            .CreateAsync(testContext, token, interval: 30, duration: 10, allocation: "shared")
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -1705,7 +1712,9 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     public async Task SettledFreshResumeStartsNewCadenceWithoutInheritingPriorEligibility()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(token, interval: 20).ConfigureAwait(false);
+        Phase7Run state = await Phase7Run
+            .CreateAsync(testContext, token, interval: 20)
+            .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
@@ -1866,7 +1875,10 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7Run state = await Phase7Run
-            .CreateAsync(token, workers: 3, interval: 10, allocation: "shared", allowance: 307.25m)
+            .CreateAsync(
+                testContext, token, workers: 3, interval: 10,
+                allocation: "shared", allowance: 307.25m
+            )
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
