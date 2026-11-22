@@ -17,9 +17,11 @@ MusicXML text as a ``str``; a ``str`` is never read as a path.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass
 from fractions import Fraction
+from itertools import pairwise
 from typing import TYPE_CHECKING
 
 import music21 as m21
@@ -40,7 +42,9 @@ from sheet_music_omr.comparison import (
     voice_element_count,
     voice_order_result,
 )
+from sheet_music_omr.model import DynamicMark
 from sheet_music_omr.musicxml_events import (
+    BRACKET,
     DASHES,
     SLUR,
     WAVY_LINE,
@@ -48,6 +52,7 @@ from sheet_music_omr.musicxml_events import (
     XmlDirection,
     XmlEvent,
     XmlSpan,
+    _link_cross_barline_slices,
     dashes_text,
     voice_staves,
 )
@@ -65,11 +70,16 @@ CHECKS: dict[str, str] = {
     "heading": "heading",
     "wavy_line": "ornament",
     "dashes": "text",
+    "voice_line": "voice",
     "notehead_parentheses": "pitch",
     "accidental_parentheses": "accidental",
+    "metronome_parentheses": "tempo_rehearsal",
+    "other_dynamics": "dynamic",
+    "pedal_ends": "pedal",
     "tremolo_strokes": "tremolo",
     "beam_hooks": "beam",
     "rest_beams": "beam",
+    "cross_barline_beams": "beam",
     "tuplet_ratio": "tuplet",
     "slur_endpoints": "slur",
     "tie_ends": "tie",
@@ -222,6 +232,10 @@ def compare_file(t_source: Path | str, y_source: Path | str) -> FileComparison:
         "heading": heading_tally(t_source, y_source),
         **_line_checks(y_side, t_side),
         **_mark_checks(y_side, t_side),
+        "pedal_ends": _paired_values(
+            _pedal_ends(y_side, _pedal_touches(content)),
+            _pedal_ends(t_side, frozenset()),
+        ),
         "tuplet_ratio": _paired_values(
             _ratios(y_side, _touched(content, _TUPLET)[0]),
             _ratios(t_side, frozenset()),
@@ -262,11 +276,16 @@ def failure_element_count(source: Path | str) -> int:
         "cross_staff": _cross_staff_events(score),
         "wavy_line": _wavy_lines(side),
         "dashes": _dashes_lines(side),
+        "voice_line": _voice_lines(side),
         "notehead_parentheses": _parentheses(side, "notehead"),
         "accidental_parentheses": _parentheses(side, "accidental"),
+        "metronome_parentheses": _metronome_parentheses(side),
+        "other_dynamics": _other_dynamics(side),
+        "pedal_ends": _pedal_ends(side, frozenset()),
         "tremolo_strokes": _tremolos(side),
         "beam_hooks": _hooks(side),
         "rest_beams": _rest_beams(side),
+        "cross_barline_beams": _cross_barline_beams(side),
         "tuplet_ratio": _ratios(side, frozenset()),
         "slur_endpoints": _slurs(side),
         "tie_ends": _tie_stops(side),
@@ -410,26 +429,104 @@ def _values(
     return values
 
 
+_SMUFL_SUB = re.compile(
+    r"fingering([1-5])fingeringSubstitution(?:Above|Below)fingering([1-5])"
+)
+_DASH_SUB = re.compile(r"([1-5])[-\u2013]([1-5])")
+_SMUFL_SUB_MARKS = frozenset(
+    {"fingeringSubstitutionAbove", "fingeringSubstitutionBelow"}
+)
+_STANDARD_DYNAMICS = frozenset(mark.value for mark in DynamicMark)
+
+
 def _fingerings(side: _Side) -> Iterator[_Key]:
+    """Yield fingering elements of one score, falling back to raw tokens."""
     for event in side.score.xml.events:
         for note in event.notes:
-            for mark in note.findall("notations/technical/fingering"):
-                for digit in "".join((mark.text or "").split()):
-                    yield (*side.note_key(event, note), digit)
+            marks = note.findall("notations/technical/fingering")
+            if not marks:
+                continue
+            base_key = side.note_key(event, note)
+            parsed = _try_note_fingerings(base_key, marks)
+            if parsed is not None:
+                yield from parsed
+            else:
+                for mark in marks:
+                    for ch in "".join((mark.text or "").split()):
+                        yield (*base_key, 1, ch)
 
 
 def _compared_fingerings(side: _Side) -> Iterator[_Key]:
-    """Yield the fingering digits of one side of a comparison.
+    """Yield the fingering elements of one side of a comparison.
 
     Raises:
-        ProtocolDefectError: If a fingering writes anything but digits from
-            1 to 5, which the protocol does not read.
+        ProtocolDefectError: If a fingering writes an unsupported form.
     """
-    for key in _fingerings(side):
-        if key[-1] not in _FINGERS:
-            message = f"a fingering writes {key[-1]!r}, not a finger"
-            raise ProtocolDefectError(message)
-        yield key
+    for event in side.score.xml.events:
+        for note in event.notes:
+            marks = note.findall("notations/technical/fingering")
+            if not marks:
+                continue
+            base_key = side.note_key(event, note)
+            parsed = _try_note_fingerings(base_key, marks)
+            if parsed is None:
+                texts = ["".join((m.text or "").split()) for m in marks]
+                message = f"a fingering writes {texts!r}, not a finger"
+                raise ProtocolDefectError(message)
+            yield from parsed
+
+
+def _single_mark_fingering(
+    base_key: _Key, text: str
+) -> tuple[_Key, ...] | None:
+    if len(text) == 1 and text in _FINGERS:
+        return ((*base_key, 1, text),)
+    if (
+        len(text) == 2  # noqa: PLR2004
+        and text[0] in _FINGERS
+        and text[1] in _FINGERS
+        and text[0] != text[1]
+    ):
+        return ((*base_key, 1, text[0]), (*base_key, 2, text[1]))
+    matched = _DASH_SUB.fullmatch(text) or _SMUFL_SUB.fullmatch(text)
+    if matched and matched.group(1) != matched.group(2):
+        return ((*base_key, "sub", matched.group(1), matched.group(2)),)
+    return None
+
+
+def _try_note_fingerings(
+    base_key: _Key, marks: list[ET.Element]
+) -> tuple[_Key, ...] | None:
+    if any(mark.get("alternate") == "yes" for mark in marks):
+        return None
+    texts = ["".join((mark.text or "").split()) for mark in marks]
+    subs = [mark.get("substitution") == "yes" for mark in marks]
+    result: tuple[_Key, ...] | None = None
+    if len(marks) == 1 and not subs[0]:
+        result = _single_mark_fingering(base_key, texts[0])
+    elif (
+        len(marks) == 2  # noqa: PLR2004
+        and not subs[0]
+        and all(len(t) == 1 and t in _FINGERS for t in texts)
+        and texts[0] != texts[1]
+    ):
+        result = (
+            ((*base_key, "sub", texts[0], texts[1]),)
+            if subs[1]
+            else ((*base_key, 1, texts[0]), (*base_key, 2, texts[1]))
+        )
+    elif (
+        len(marks) == 3  # noqa: PLR2004
+        and not any(subs)
+        and len(texts[0]) == 1
+        and len(texts[1]) == 1
+        and texts[0] in _FINGERS
+        and texts[1] in _FINGERS
+        and texts[0] != texts[1]
+        and texts[2] in _SMUFL_SUB_MARKS
+    ):
+        result = ((*base_key, "sub", texts[0], texts[1]),)
+    return result
 
 
 def _cross_staff_events(score: AnnotatedScore) -> list[XmlEvent]:
@@ -450,6 +547,7 @@ def _line_checks(y_side: _Side, t_side: _Side) -> dict[str, ElementTally]:
     return {
         "wavy_line": _multiset(_wavy_lines(y_side), _wavy_lines(t_side)),
         "dashes": _multiset(_dashes_lines(y_side), _dashes_lines(t_side)),
+        "voice_line": _multiset(_voice_lines(y_side), _voice_lines(t_side)),
     }
 
 
@@ -497,6 +595,23 @@ def _dashes_lines(side: _Side) -> Iterator[_Key]:
         )
 
 
+def _voice_lines(side: _Side) -> Iterator[_Key]:
+    for span in side.score.xml.spans:
+        if span.family != BRACKET:
+            continue
+        start, stop = span.start, span.stop
+        if not isinstance(start, XmlDirection) or not isinstance(
+            stop,
+            XmlDirection,
+        ):
+            message = "a bracket span does not join two directions"
+            raise ProtocolDefectError(message)
+        yield (
+            (start.measure, start.place, start.onset),
+            (stop.measure, stop.place, stop.onset),
+        )
+
+
 def _mark_checks(y_side: _Side, t_side: _Side) -> dict[str, ElementTally]:
     return {
         "notehead_parentheses": _multiset(
@@ -507,6 +622,14 @@ def _mark_checks(y_side: _Side, t_side: _Side) -> dict[str, ElementTally]:
             _parentheses(y_side, "accidental"),
             _parentheses(t_side, "accidental"),
         ),
+        "metronome_parentheses": _multiset(
+            _metronome_parentheses(y_side),
+            _metronome_parentheses(t_side),
+        ),
+        "other_dynamics": _paired_values(
+            _other_dynamics(y_side),
+            _other_dynamics(t_side),
+        ),
         "tremolo_strokes": _paired_values(
             _tremolos(y_side),
             _tremolos(t_side),
@@ -516,7 +639,204 @@ def _mark_checks(y_side: _Side, t_side: _Side) -> dict[str, ElementTally]:
             _rest_beams(y_side),
             _rest_beams(t_side),
         ),
+        "cross_barline_beams": _exempt_multiset(
+            _cross_barline_beams(y_side),
+            _cross_barline_beams(t_side),
+        ),
     }
+
+
+def _metronome_parentheses(side: _Side) -> Iterator[_Key]:
+    for direction in side.score.xml.directions:
+        for metronome in direction.element.findall("direction-type/metronome"):
+            if metronome.get("parentheses") == "yes":
+                yield (
+                    direction.measure,
+                    direction.place,
+                    direction.onset,
+                    (metronome.findtext("beat-unit") or "").strip(),
+                    len(metronome.findall("beat-unit-dot")),
+                    (metronome.findtext("per-minute") or "").strip(),
+                )
+
+
+def _other_dynamics(side: _Side) -> Iterator[tuple[_Key, Hashable]]:
+    for direction in side.score.xml.directions:
+        for other in direction.element.findall(
+            "direction-type/dynamics/other-dynamics"
+        ):
+            trimmed = (other.text or "").strip()
+            if trimmed and trimmed not in _STANDARD_DYNAMICS:
+                yield (
+                    (direction.measure, direction.place, direction.onset),
+                    trimmed,
+                )
+
+
+type _PedalTouch = tuple[int, Fraction, Fraction]
+
+
+def _extra_pedal_interval(
+    obj: object,
+    score: AnnotatedScore,
+    sites: dict[int, _Site],
+) -> _PedalTouch | None:
+    if not isinstance(obj, AnnExtra) or id(obj) not in sites:
+        return None
+    (part_idx, _), m_idx, onset = sites[id(obj)]
+    if m_idx >= len(score.xml.measure_starts):
+        return None
+    m_start = score.xml.measure_starts[m_idx]
+    if onset is None:
+        m_end = m_start + score.xml.measure_lengths[m_idx]
+        return (part_idx, m_start, m_end)
+    start_q = m_start + onset
+    dur_q = Fraction(0) if obj.duration is None else Fraction(str(obj.duration))
+    return (part_idx, start_q, start_q + max(Fraction(0), dur_q))
+
+
+def _pedal_touches(content: ContentResult) -> tuple[_PedalTouch, ...]:
+    y_sites = extra_sites(content.y_score)
+    t_sites = extra_sites(content.t_score)
+    touches: set[_PedalTouch] = set()
+    for diff in content.counted:
+        if "pedal" not in diff.categories:
+            continue
+        for obj, score, sites in (
+            (diff.y_object, content.y_score, y_sites),
+            (diff.t_object, content.t_score, t_sites),
+        ):
+            interval = _extra_pedal_interval(obj, score, sites)
+            if interval is not None:
+                touches.add(interval)
+    return tuple(touches)
+
+
+def _is_terminal_discontinue(
+    items: list[tuple[XmlDirection, ET.Element]], idx: int, num: str
+) -> bool:
+    later = next(
+        (
+            other.get("type")
+            for _, other in items[idx + 1 :]
+            if (other.get("number") or "1") == num
+            and other.get("type") in {"resume", _START}
+        ),
+        None,
+    )
+    return later != "resume"
+
+
+def _pedal_span_key(start_dir: XmlDirection, end_dir: XmlDirection) -> _Key:
+    return (
+        (start_dir.measure, start_dir.part, start_dir.onset),
+        (end_dir.measure, end_dir.part, end_dir.onset),
+    )
+
+
+def _pedal_item_rank(
+    item: tuple[XmlDirection, ET.Element],
+) -> tuple[Fraction, int, int]:
+    direction, pedal = item
+    closing = (pedal.get("type") or "") in {_STOP, "change", "discontinue"}
+    return (direction.start, 0 if closing else 1, direction.order)
+
+
+def _pedal_ends(
+    side: _Side,
+    touched_intervals: Iterable[_PedalTouch],
+) -> Iterator[tuple[_Key, Hashable]]:
+    touches = tuple(touched_intervals)
+    by_part: dict[int, list[tuple[XmlDirection, ET.Element]]] = {}
+    for direction in side.score.xml.directions:
+        for pedal in direction.element.findall("direction-type/pedal"):
+            if pedal.get("line") == "yes":
+                by_part.setdefault(direction.part, []).append(
+                    (direction, pedal)
+                )
+    for part_idx, raw_items in by_part.items():
+        items = sorted(raw_items, key=_pedal_item_rank)
+        opened: dict[str, XmlDirection] = {}
+        for idx, (direction, pedal) in enumerate(items):
+            kind = pedal.get("type") or ""
+            num = pedal.get("number") or "1"
+            if kind == _START:
+                opened[num] = direction
+                continue
+            closes = kind == _STOP or (
+                kind == "discontinue"
+                and _is_terminal_discontinue(items, idx, num)
+            )
+            if not closes:
+                continue
+            start_dir = opened.pop(num, None)
+            if start_dir is None:
+                continue
+            overlaps_touch = any(
+                t_part == part_idx
+                and t0 <= direction.start
+                and start_dir.start <= t1
+                for t_part, t0, t1 in touches
+            )
+            if not overlaps_touch:
+                yield (_pedal_span_key(start_dir, direction), kind)
+
+
+def _cross_barline_beams(side: _Side) -> Iterator[tuple[_Key, bool]]:
+    lengths = side.score.xml.measure_lengths
+    for chain in _link_cross_barline_slices(list(side.score.xml.events)):
+        for (m_idx, events_m), (next_idx, events_next) in pairwise(chain):
+            if next_idx != m_idx + 1 or m_idx >= len(lengths):
+                continue
+            mains_m = sorted(
+                (ev for ev in events_m if not ev.grace),
+                key=lambda item: (item.onset, item.order),
+            )
+            ordered_next = sorted(
+                events_next,
+                key=lambda item: (item.onset, not item.grace, item.order),
+            )
+            mains_next = [ev for ev in ordered_next if not ev.grace]
+            if not mains_m or not mains_next:
+                continue
+            last_m = mains_m[-1]
+            first_next = mains_next[0]
+            has_leading_grace = any(
+                ev.grace and ev.onset == 0 and ev.order < first_next.order
+                for ev in ordered_next
+            )
+            if (
+                last_m.rest
+                or first_next.rest
+                or last_m.onset + last_m.duration != lengths[m_idx]
+                or first_next.onset != 0
+                or has_leading_grace
+            ):
+                continue
+            next_beams: dict[str, str] = {
+                (b.get("number") or "1"): (b.text or "").strip()
+                for b in first_next.notes[0].findall("beam")
+            }
+            for beam in last_m.notes[0].findall("beam"):
+                num = beam.get("number") or "1"
+                if (beam.text or "").strip() in {
+                    "begin",
+                    "continue",
+                } and next_beams.get(num) in {"continue", "end"}:
+                    yield (
+                        (
+                            m_idx,
+                            side.place(last_m),
+                            side.place(first_next),
+                            num,
+                            last_m.pitches,
+                            last_m.written,
+                            first_next.pitches,
+                            first_next.written,
+                        ),
+                        id(last_m) in side.touched
+                        or id(first_next) in side.touched,
+                    )
 
 
 def _parentheses(side: _Side, tag: str) -> Iterator[_Key]:
@@ -794,28 +1114,102 @@ def _stop_onset(slur: _Slur) -> tuple[int, Fraction, int]:
 
 def _tie_stops(side: _Side) -> Iterator[tuple[_Key, bool]]:
     """Yield each tie stop, exempt when musicdiff scores its tie."""
+    xml = side.score.xml
+    staves = voice_staves(xml.events)
+    first_in_voice: set[int] = set()
+    seen_voices: set[tuple[int, int, str, int | None]] = set()
+    for event in sorted(
+        xml.events, key=lambda item: (item.measure, item.onset, item.order)
+    ):
+        if event.grace:
+            continue
+        vkey = staves[id(event)][0]
+        if vkey not in seen_voices:
+            seen_voices.add(vkey)
+            if event.onset == 0:
+                first_in_voice.add(id(event))
+
     touched_starts = {
-        (side.place(event), event.end, event.written_pitch(note))
-        for event in side.score.xml.events
+        (
+            side.place(event),
+            (event.part, staves[id(event)][1]),
+            event.end,
+            event.written_pitch(note),
+        )
+        for event in xml.events
         if id(event) in side.touched
         for note in event.notes
         if _tied(note, _START)
     }
-    for event in side.score.xml.events:
+
+    for event in xml.events:
+        tie_in_src = (
+            xml.tie_in_sources.get(event.measure)
+            if id(event) in first_in_voice
+            else None
+        )
         for note in event.notes:
-            if not _tied(note, _STOP):
+            has_playback = _tied(note, _STOP)
+            has_notated = tie_in_src is not None and _notated_tied(note, _STOP)
+            if not (has_playback or has_notated):
                 continue
             pitch = event.written_pitch(note)
-            yield (
-                side.note_key(event, note),
-                id(event) in side.touched
-                or (side.place(event), event.start, pitch) in touched_starts,
+            own = (event.part, staves[id(event)][1])
+            shown = side.place(event)
+            exempt = id(event) in side.touched or any(
+                end == event.start
+                and p == pitch
+                and (s_shown == shown or s_own == own)
+                for s_shown, s_own, end, p in touched_starts
             )
+            if not exempt and tie_in_src is not None:
+                exempt = _tie_in_source_touched(
+                    side, staves, tie_in_src, (own, shown, pitch)
+                )
+            yield (side.note_key(event, note), exempt)
+
+
+def _tie_in_source_touched(
+    side: _Side,
+    staves: dict[int, tuple[tuple[int, int, str, int | None], int]],
+    source_measure: int,
+    target: tuple[_Place, _Place, object],
+) -> bool:
+    own, shown, pitch = target
+    xml = side.score.xml
+    if source_measure >= len(xml.measure_starts):
+        return False
+    source_end = (
+        xml.measure_starts[source_measure] + xml.measure_lengths[source_measure]
+    )
+    own_sources = [
+        ev
+        for ev in xml.events
+        if ev.measure == source_measure
+        and not ev.grace
+        and ev.end == source_end
+        and (ev.part, staves[id(ev)][1]) == own
+        and any(ev.written_pitch(n) == pitch for n in ev.notes)
+    ]
+    candidates = own_sources or [
+        ev
+        for ev in xml.events
+        if ev.measure == source_measure
+        and not ev.grace
+        and ev.end == source_end
+        and side.place(ev) == shown
+        and any(ev.written_pitch(n) == pitch for n in ev.notes)
+    ]
+    return any(id(ev) in side.touched for ev in candidates)
 
 
 def _tied(note: ET.Element, kind: str) -> bool:
-    """Whether a member has a ``tie`` of one type.
-
-    A ``notations/tied`` only displays a tie; music21 reads ties from ``tie``.
-    """
+    """Whether a member has a ``tie`` of one type."""
     return any(mark.get("type") == kind for mark in note.findall("tie"))
+
+
+def _notated_tied(note: ET.Element, kind: str) -> bool:
+    """Whether a member has a ``notations/tied`` of one type."""
+    return any(
+        mark.get("type") == kind for mark in note.findall("notations/tied")
+    )

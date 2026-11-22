@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import io
 import lzma
+import math
 import re
 import xml.etree.ElementTree as ET
 import zipfile
@@ -53,6 +54,7 @@ from sheet_music_omr.model import (
     Duration,
     Dynamic,
     DynamicMark,
+    DynamicText,
     EndingKind,
     EndingOption,
     EndpointRole,
@@ -67,6 +69,8 @@ from sheet_music_omr.model import (
     KeyOption,
     LeftRepeatOption,
     LenOption,
+    LineEnd,
+    LineStart,
     MeasureBlock,
     MeasureRest,
     Meter,
@@ -190,6 +194,7 @@ _PEDAL_LINES: Final = {
     "start": PedalAction.LINE_START,
     "change": PedalAction.LINE_CHANGE,
     "stop": PedalAction.LINE_RELEASE,
+    "discontinue": PedalAction.LINE_OPEN,
 }
 _PEDAL_SIGNS: Final = {
     "start": (PedalSignKind.DOWN,),
@@ -534,6 +539,7 @@ class _Member:
     parenthesized: bool
     at: _At
     fingering: list[int] = field(default_factory=list)
+    fingering_substitution: bool = False
     tie_start: bool = False
     tie_stop: bool = False
     start_number: str | None = None
@@ -574,6 +580,7 @@ class _Leaf:
     members: list[_Member] = field(default_factory=list)
     flags: list[NoteFlag] = field(default_factory=list)
     modification: Fraction = Fraction(1)
+    raw_modification: tuple[int, int] | None = None
     starts: list[tuple[str, int | None, int | None]] = field(
         default_factory=list
     )
@@ -607,6 +614,7 @@ class _Measure:
     lines: dict[tuple[int, int], list[_Leaf]] = field(default_factory=dict)
     length: Fraction = Fraction(0)
     start: Fraction = Fraction(0)
+    new_system: bool = False
 
     def at(self, staff: int | None = None) -> _At:
         return _At(self.number, staff)
@@ -743,6 +751,9 @@ class _Reader:
             self._attributes(child, measure, cursor, at)
         elif child.tag == "direction":
             _DirectionReader(self, measure, cursor, at).read(child)
+        elif child.tag == "print":
+            if _YES in {child.get("new-system"), child.get("new-page")}:
+                measure.new_system = True
         elif child.tag not in _IGNORED_MEASURE:
             msg = f"<{child.tag}> is not supported"
             _unsupported(child.tag, msg, at)
@@ -1108,10 +1119,8 @@ def _headings(root: ET.Element) -> list[str]:
     for position, credit in enumerate(root.findall("credit"), 1):
         at = _At(element=f"credit[{position}]")
         types = {(t.text or "").strip() for t in credit.findall("credit-type")}
-        if not types:
-            msg = "a credit has no credit-type, so its role is unknown"
-            _unsupported("credit_type", msg, at)
-        if types <= _IGNORED_CREDITS:
+        types.discard("")
+        if not types or types <= _IGNORED_CREDITS:
             continue
         if not types <= _HEADING_CREDITS:
             msg = f"credit types {sorted(types)} are not supported"
@@ -1211,7 +1220,9 @@ class _NoteReader:
             return
         self.cursor.last = leaf
         leaf.written = self._written(element, required=True)
-        leaf.modification = _modification(element, self.at)
+        leaf.modification, leaf.raw_modification = _modification(
+            element, self.at
+        )
         self._stem(element, leaf)
         self._beams(element, leaf)
         leaf.members.append(self._member(element, leaf))
@@ -1251,7 +1262,9 @@ class _NoteReader:
             _unsupported("cross_staff_rest", msg, self.at)
         hidden = element.get("print-object") == "no"
         written = self._written(element, required=False)
-        leaf.modification = _modification(element, self.at)
+        leaf.modification, leaf.raw_modification = _modification(
+            element, self.at
+        )
         if hidden and written is None:
             if (
                 element.find("notations") is not None
@@ -1348,7 +1361,11 @@ class _NoteReader:
         if accidental is None:
             return None
         kind = _ACCIDENTALS.get((accidental.text or "").strip())
-        if kind is None or accidental.get("bracket") == _YES:
+        if (
+            kind is None
+            or accidental.get("bracket") == _YES
+            or accidental.get("editorial") == _YES
+        ):
             msg = f"the accidental {accidental.text!r} is not supported"
             _unsupported("accidental", msg, self.at)
         return Accidental(kind, accidental.get("parentheses") == _YES)
@@ -1363,22 +1380,31 @@ class _NoteReader:
         return notehead.get("parentheses") == _YES
 
 
-def _modification(element: ET.Element, at: _At) -> Fraction:
+def _modification(
+    element: ET.Element, at: _At
+) -> tuple[Fraction, tuple[int, int] | None]:
     modification = element.find("time-modification")
     if modification is None:
-        return Fraction(1)
+        return Fraction(1), None
     actual = _int(modification.findtext("actual-notes"), "tuplet", "", at)
     normal = _int(modification.findtext("normal-notes"), "tuplet", "", at)
     if actual <= 0 or normal <= 0:
         _malformed("tuplet", "a time modification is not positive", at)
-    return Fraction(actual, normal)
+    return Fraction(actual, normal), (actual, normal)
+
+
+def _has_trill(leaf: _Leaf) -> bool:
+    return any(
+        isinstance(flag, Ornament) and flag.kind is OrnamentKind.TRILL
+        for flag in leaf.flags
+    )
 
 
 def _single_wavy(leaf: _Leaf, family: str, number: str) -> bool:
     """Tell whether a wavy line starts and stops on this one note."""
     if family != "wavy-line" or (_START, number) not in leaf.wavy:
         return False
-    if Ornament(OrnamentKind.TRILL) not in leaf.flags:
+    if not _has_trill(leaf):
         msg = "a wavy line that no trill sign starts"
         _unsupported("wavy_line", msg, leaf.at)
     return True
@@ -1398,6 +1424,71 @@ def _add[T](items: list[T], item: T) -> None:
         items.append(item)
 
 
+_SMUFL_SUBSTITUTION: Final = re.compile(
+    r"fingering([1-5])fingeringSubstitution(?:Above|Below)fingering([1-5])"
+)
+_DASH_SUBSTITUTION: Final = re.compile(r"([1-5])[-\u2013]([1-5])")
+_SMUFL_SUB_MARKS: Final = frozenset(
+    {"fingeringSubstitutionAbove", "fingeringSubstitutionBelow"}
+)
+_PAIR_LEN: Final = 2
+_TRIPLE_LEN: Final = 3
+
+
+def _single_fingering_text(text: str) -> tuple[list[int], bool] | None:
+    if len(text) == 1 and text in "12345":
+        return [int(text)], False
+    if (
+        len(text) == _PAIR_LEN
+        and all(d in "12345" for d in text)
+        and text[0] != text[1]
+    ):
+        return [int(text[0]), int(text[1])], False
+    matched = _DASH_SUBSTITUTION.fullmatch(
+        text
+    ) or _SMUFL_SUBSTITUTION.fullmatch(text)
+    if matched and matched.group(1) != matched.group(2):
+        return [int(matched.group(1)), int(matched.group(2))], True
+    return None
+
+
+def _parse_fingerings(
+    marks: list[ET.Element], at: _At
+) -> tuple[list[int], bool]:
+    """Parse the ``<fingering>`` elements of one note into digits and mode."""
+    if not marks:
+        return [], False
+    if any(mark.get("alternate") == _YES for mark in marks):
+        _unsupported("fingering", "an alternate fingering", at)
+    texts = ["".join((mark.text or "").split()) for mark in marks]
+    subs = [mark.get("substitution") == _YES for mark in marks]
+    parsed: tuple[list[int], bool] | None = None
+    if len(marks) == 1 and not subs[0]:
+        parsed = _single_fingering_text(texts[0])
+    elif (
+        len(marks) == _PAIR_LEN
+        and not subs[0]
+        and all(len(t) == 1 and t in "12345" for t in texts)
+        and texts[0] != texts[1]
+    ):
+        parsed = [int(texts[0]), int(texts[1])], subs[1]
+    elif (
+        len(marks) == _TRIPLE_LEN
+        and not any(subs)
+        and len(texts[0]) == 1
+        and len(texts[1]) == 1
+        and texts[0] in "12345"
+        and texts[1] in "12345"
+        and texts[0] != texts[1]
+        and texts[2] in _SMUFL_SUB_MARKS
+    ):
+        parsed = [int(texts[0]), int(texts[1])], True
+    if parsed is not None:
+        return parsed
+    msg = f"the fingering {texts!r} is not supported"
+    _unsupported("fingering", msg, at)
+
+
 class _Notations:
     """Reads the ``notations`` of one note or rest into its leaf."""
 
@@ -1412,6 +1503,7 @@ class _Notations:
         self.member = member
         self.at = at
         self.allowed = allowed
+        self.fingerings: list[ET.Element] = []
 
     def read(self, element: ET.Element) -> None:
         for notations in element.findall("notations"):
@@ -1426,6 +1518,11 @@ class _Notations:
                     msg = f"the notation <{child.tag}> is not supported"
                     _unsupported(child.tag, msg, self.at)
                 handler(self, child)
+        if self.fingerings:
+            assert self.member is not None  # noqa: S101
+            digits, is_sub = _parse_fingerings(self.fingerings, self.at)
+            self.member.fingering = digits
+            self.member.fingering_substitution = is_sub
 
     def tied(self, element: ET.Element) -> None:
         assert self.member is not None  # noqa: S101
@@ -1461,24 +1558,54 @@ class _Notations:
             _malformed("tuplet", "a tuplet number is not positive", self.at)
         self.leaf.starts.append((number, *ratio))
 
-    def ornaments(self, element: ET.Element) -> None:
-        for child in element:
-            kind = _ORNAMENTS.get(child.tag)
-            if kind is not None:
-                if child.get("long") == _YES or child.get("slash") == _YES:
-                    msg = f"a long or slashed <{child.tag}> is not supported"
-                    _unsupported(child.tag, msg, self.at)
-                _add(self.leaf.flags, Ornament(kind))
-            elif child.tag == "wavy-line":
-                kind_text = child.get("type")
-                if kind_text in {_START, _STOP}:
-                    number = child.get("number", "1")
-                    _add(self.leaf.wavy, (kind_text, number))
-            elif child.tag == "tremolo":
-                self._tremolo(child)
-            else:
-                msg = f"the ornament <{child.tag}> is not supported"
+    def _ornament_child(
+        self,
+        child: ET.Element,
+        accidental_marks: list[AccidentalKind],
+    ) -> bool:
+        kind = _ORNAMENTS.get(child.tag)
+        if kind is not None:
+            if child.get("long") == _YES or child.get("slash") == _YES:
+                msg = f"a long or slashed <{child.tag}> is not supported"
                 _unsupported(child.tag, msg, self.at)
+            if kind is OrnamentKind.TRILL:
+                return True
+            _add(self.leaf.flags, Ornament(kind))
+            return False
+        if child.tag == "accidental-mark":
+            acc_kind = _ACCIDENTALS.get((child.text or "").strip())
+            if acc_kind is None:
+                msg = f"the ornament accidental {child.text!r} is not supported"
+                _unsupported("accidental-mark", msg, self.at)
+            accidental_marks.append(acc_kind)
+        elif child.tag == "wavy-line":
+            kind_text = child.get("type")
+            if kind_text in {_START, _STOP}:
+                _add(self.leaf.wavy, (kind_text, child.get("number", "1")))
+        elif child.tag == "tremolo":
+            self._tremolo(child)
+        else:
+            msg = f"the ornament <{child.tag}> is not supported"
+            _unsupported(child.tag, msg, self.at)
+        return False
+
+    def ornaments(self, element: ET.Element) -> None:
+        accidental_marks: list[AccidentalKind] = []
+        trill_seen = False
+        for child in element:
+            if child.tag not in {"footnote", "level"}:
+                trill_seen = (
+                    self._ornament_child(child, accidental_marks) or trill_seen
+                )
+        if accidental_marks and (not trill_seen or len(accidental_marks) > 1):
+            msg = (
+                "an ornament accidental-mark is supported only once on a"
+                " trill-mark"
+            )
+            _unsupported("accidental-mark", msg, self.at)
+        if trill_seen:
+            acc = accidental_marks[0] if accidental_marks else None
+            _add(self.leaf.flags, Ornament(OrnamentKind.TRILL, acc))
 
     def _tremolo(self, element: ET.Element) -> None:
         kind = element.get("type", "single")
@@ -1497,19 +1624,12 @@ class _Notations:
 
     def technical(self, element: ET.Element) -> None:
         for child in element:
-            if (
-                child.tag != "fingering"
-                or child.get("substitution") == _YES
-                or child.get("alternate") == _YES
-            ):
+            if child.tag in {"footnote", "level"}:
+                continue
+            if child.tag != "fingering":
                 msg = f"the technical mark <{child.tag}> is not supported"
                 _unsupported(child.tag, msg, self.at)
-            text = (child.text or "").strip()
-            if not text or any(digit not in "12345" for digit in text):
-                msg = f"the fingering {child.text!r} is not supported"
-                _unsupported("fingering", msg, self.at)
-            assert self.member is not None  # noqa: S101
-            self.member.fingering.extend(int(digit) for digit in text)
+            self.fingerings.append(child)
 
     def articulations(self, element: ET.Element) -> None:
         for child in element:
@@ -1562,11 +1682,16 @@ class _DirectionReader:
         self.measure = measure
         self.cursor = cursor
         self.at = at
+        self.onset_ticks = cursor.position
 
     def read(self, element: ET.Element) -> None:
         offset = element.findtext("offset")
-        if offset is not None and _int(offset, "offset", "offset", self.at):
-            msg = "a direction with an offset from its position"
+        offset_ticks = (
+            0 if offset is None else _int(offset, "offset", "offset", self.at)
+        )
+        self.onset_ticks = self.cursor.position + offset_ticks
+        if self.onset_ticks < 0:
+            msg = "a direction offset moves before the measure"
             _unsupported("direction_offset", msg, self.at)
         staff = _staff_of(element, self.at)
         self.at = replace(self.at, staff=staff)
@@ -1610,7 +1735,7 @@ class _DirectionReader:
         *,
         own_staff: bool = False,
     ) -> None:
-        onset = self.reader.tick_value(self.cursor.position, self.at)
+        onset = self.reader.tick_value(self.onset_ticks, self.at)
         self.measure.directions.append(
             _Leaf(
                 _DIRECTION,
@@ -1630,12 +1755,12 @@ class _DirectionReader:
 
     def _metronome(self, element: ET.Element) -> Metronome:
         if (
-            element.get("parentheses") == _YES
-            or element.find("metronome-relation") is not None
+            element.find("metronome-relation") is not None
             or len(element.findall("beat-unit")) != 1
         ):
             msg = "a metronome mark other than unit = number"
             _unsupported("metronome", msg, self.at)
+        parenthesized = element.get("parentheses") == _YES
         unit = (element.findtext("beat-unit") or "").strip()
         dotted = len(element.findall("beat-unit-dot"))
         kind = _BEAT_UNITS.get((unit, bool(dotted)))
@@ -1643,7 +1768,7 @@ class _DirectionReader:
         if kind is None or dotted > 1 or not per_minute.isdigit():
             msg = "the metronome unit or value is not supported"
             _unsupported("metronome", msg, self.at)
-        return Metronome(kind, int(per_minute))
+        return Metronome(kind, int(per_minute), parenthesized=parenthesized)
 
     def _dashes(self, staff: int, element: ET.Element, text: str) -> None:
         kind = element.get("type")
@@ -1657,18 +1782,39 @@ class _DirectionReader:
         elif kind != _CONTINUE or text:
             _unsupported("dashes", "a dashes mark is not supported", self.at)
 
+    def _dynamics(
+        self, staff: int, element: ET.Element, placement: str | None
+    ) -> None:
+        marks = [m for m in element if m.tag not in {"footnote", "level"}]
+        if not marks:
+            _unsupported("dynamics", "an empty dynamics element", self.at)
+        values = {mark.value for mark in DynamicMark}
+        above = (element.get("placement") or placement) == "above"
+        for mark in marks:
+            if mark.tag in values:
+                self._add(staff, Dynamic(DynamicMark(mark.tag), above=above))
+            elif mark.tag == "other-dynamics":
+                dtext = (mark.text or "").strip()
+                if not dtext:
+                    _unsupported(
+                        "dynamics", "an empty other-dynamics mark", self.at
+                    )
+                event = (
+                    Dynamic(DynamicMark(dtext), above=above)
+                    if dtext in values
+                    else DynamicText(dtext, above=above)
+                )
+                self._add(staff, event)
+            else:
+                msg = f"the dynamic mark <{mark.tag}> is not supported"
+                _unsupported("dynamics", msg, self.at)
+
     def _other(
         self, staff: int, element: ET.Element, placement: str | None
     ) -> None:
         tag = element.tag
         if tag == "dynamics":
-            marks = list(element)
-            values = {mark.value for mark in DynamicMark}
-            if len(marks) != 1 or marks[0].tag not in values:
-                msg = "the dynamic mark is not supported"
-                _unsupported("dynamics", msg, self.at)
-            above = (element.get("placement") or placement) == "above"
-            self._add(staff, Dynamic(DynamicMark(marks[0].tag), above=above))
+            self._dynamics(staff, element, placement)
         elif tag == "rehearsal":
             text = element.text or ""
             if not text.strip():
@@ -1680,19 +1826,38 @@ class _DirectionReader:
             self._wedge(staff, element)
         elif tag == "octave-shift":
             self._octave_shift(staff, element)
+        elif tag == "bracket":
+            self._bracket(staff, element)
         else:
             msg = f"the direction <{tag}> is not supported"
             _unsupported(tag, msg, self.at)
+
+    def _bracket(self, staff: int, element: ET.Element) -> None:
+        kind = element.get("type")
+        if kind == _CONTINUE:
+            return
+        if element.get("line-end") != "none" or element.get(
+            "line-type"
+        ) not in {None, "solid"}:
+            msg = "only an unhooked solid bracket is supported"
+            _unsupported("bracket", msg, self.at)
+        number = element.get("number", "1")
+        if kind == _START:
+            self._add(staff, LineStart(0), ("bracket", _START, number))
+        elif kind == _STOP:
+            self._add(staff, LineEnd(0), ("bracket", _STOP, number))
+        else:
+            _unsupported("bracket", f"a bracket of type {kind!r}", self.at)
 
     def _pedal(self, staff: int, element: ET.Element) -> None:
         kind = element.get("type", "")
         line = element.get("line") == _YES
         sign = element.get("sign", "no" if line else _YES) == _YES
-        if kind == _CONTINUE:
+        if kind == _CONTINUE and line:
             return
         if line and kind in _PEDAL_LINES:
             number = element.get("number", "1")
-            role = _STOP if kind == _STOP else kind
+            role = _STOP if kind in {_STOP, "discontinue"} else kind
             self._add(
                 staff,
                 PedalLine(0, _PEDAL_LINES[kind]),
@@ -1919,6 +2084,17 @@ def _derive_ratios(leaf: _Leaf) -> None:
     if ratio == 1:
         msg = "a tuplet group without a time modification"
         _malformed("tuplet", msg, leaf.at)
+    if leaf.raw_modification is not None:
+        raw_actual, raw_normal = leaf.raw_modification
+        known = [g for g in leaf.path if g.actual is not None]
+        num_factor = (2 if leaf.pair else 1) * math.prod(
+            g.actual for g in known if g.actual is not None
+        )
+        den_factor = math.prod(g.normal for g in known if g.normal is not None)
+        if raw_actual % num_factor == 0 and raw_normal % den_factor == 0:
+            unknown[0].actual = raw_actual // num_factor
+            unknown[0].normal = raw_normal // den_factor
+            return
     unknown[0].actual, unknown[0].normal = ratio.numerator, ratio.denominator
 
 
@@ -1936,6 +2112,55 @@ def _check_duration(leaf: _Leaf) -> None:
 
 
 # Relations.
+
+
+def _augment_tie_match(
+    node: int,
+    adj: dict[int, list[int]],
+    partner: dict[int, int],
+    seen: set[int],
+) -> bool:
+    for nxt in adj.get(node, ()):
+        if nxt in seen:
+            continue
+        seen.add(nxt)
+        prev = partner.get(nxt)
+        if prev is None or _augment_tie_match(prev, adj, partner, seen):
+            partner[nxt] = node
+            return True
+    return False
+
+
+def _tie_in_measures(measures: list[_Measure]) -> set[int]:
+    allowed: set[int] = set()
+    in_group = False
+    for idx, m in enumerate(measures):
+        has_end = any(isinstance(opt, EndingOption) for opt in m.options)
+        starts_b = any(
+            isinstance(opt, EndingOption)
+            and opt.kind in {EndingKind.START, EndingKind.SINGLE}
+            for opt in m.options
+        )
+        closes_b = any(
+            isinstance(opt, EndingOption)
+            and opt.kind in {EndingKind.END, EndingKind.SINGLE}
+            for opt in m.options
+        )
+        has_rep = any(
+            isinstance(opt, RightOption) and opt.barline is Barline.REPEAT
+            for opt in m.options
+        )
+        if in_group and starts_b:
+            allowed.add(idx)
+        in_group = (in_group or has_end) and not closes_b
+        if has_end and has_rep and idx + 1 < len(measures):
+            nxt_has_end = any(
+                isinstance(opt, EndingOption)
+                for opt in measures[idx + 1].options
+            )
+            if not nxt_has_end:
+                allowed.add(idx + 1)
+    return allowed
 
 
 class _Matcher:
@@ -1971,58 +2196,245 @@ class _Matcher:
         self._tremolos()
         self._arpeggios()
 
-    def _endpoints(self) -> list[tuple[int, int, _Leaf, str, str, str]]:
-        endpoints: list[tuple[int, int, _Leaf, str, str, str]] = []
-        for position, leaf in enumerate(self.leaves):
-            marks = [("slur", kind, number) for kind, number in leaf.slurs]
-            marks.extend(
-                ("wavy-line", kind, number) for kind, number in leaf.wavy
-            )
-            if leaf.endpoint is not None:
-                marks.append(leaf.endpoint)
-            for family, role, number in marks:
-                endpoints.append(
-                    (
-                        position,
-                        1 if role == _START else 0,
-                        leaf,
-                        family,
-                        role,
-                        number,
-                    )
-                )
-        endpoints.sort(key=lambda item: (item[0], item[1]))
-        return endpoints
-
     def _numbered(self) -> None:
-        open_starts: dict[tuple[str, str], tuple[_Leaf, int]] = {}
-        # A wavy line over its own trilled note alone adds nothing.
-        single: set[tuple[int, str, str]] = set()
-        for position, _, leaf, family, role, number in self._endpoints():
-            key = (family, number)
+        self._numbered_pedals()
+        self._numbered_spans()
+
+    def _numbered_pedals(self) -> None:
+        open_starts: dict[str, tuple[_Leaf, int]] = {}
+        pedal_leaves = sorted(
+            (
+                (idx, leaf)
+                for idx, leaf in enumerate(self.leaves)
+                if leaf.endpoint is not None and leaf.endpoint[0] == "pedal"
+            ),
+            key=lambda item: (
+                self.time(item[1]),
+                0 if item[1].endpoint[1] != _START else 1,  # type: ignore[index]
+                item[0],
+            ),
+        )
+        for _, leaf in pedal_leaves:
+            assert leaf.endpoint is not None  # noqa: S101
+            family, role, number = leaf.endpoint
             if role == _START:
-                if (position, family, number) in single:
-                    continue
-                if key in open_starts:
-                    msg = f"two {family} spanners share number {number}"
+                if number in open_starts:
+                    msg = f"two pedal spanners share number {number}"
                     _unsupported("spanner_number", msg, leaf.at)
                 label = self.label()
-                open_starts[key] = (leaf, label)
+                open_starts[number] = (leaf, label)
                 self._start(leaf, family, label)
                 continue
-            if key not in open_starts and _single_wavy(leaf, family, number):
-                single.add((position, family, number))
-                continue
-            if key not in open_starts:
-                msg = f"a {family} {role} has no start"
+            if number not in open_starts:
+                msg = f"a pedal {role} has no start"
                 _unsupported(family, msg, leaf.at)
-            start, label = open_starts[key]
+            start, label = open_starts[number]
+            if self.time(leaf) < self.time(start):
+                msg = f"a pedal {role} precedes its start"
+                _unsupported(family, msg, leaf.at)
             if role != _CHANGE:
-                del open_starts[key]
+                del open_starts[number]
             self._end(start, leaf, family, label)
-        for (family, _), (leaf, _) in open_starts.items():
-            msg = f"a {family} spanner never stops"
+        for leaf, _ in open_starts.values():
+            _unsupported("pedal", "a pedal spanner never stops", leaf.at)
+
+    def _span_marks(self, leaf: _Leaf) -> list[tuple[str, str, str]]:
+        marks = [("slur", kind, number) for kind, number in leaf.slurs]
+        marks.extend(("wavy-line", kind, number) for kind, number in leaf.wavy)
+        if leaf.endpoint is not None and leaf.endpoint[0] != "pedal":
+            marks.append(leaf.endpoint)
+        return marks
+
+    def _valid_span_order(self, family: str, start: _Leaf, stop: _Leaf) -> bool:
+        if start is stop:
+            return False
+        if family in {"slur", "wavy-line"}:
+            return self.key(start) < self.key(stop)
+        return self.time(start) <= self.time(stop)
+
+    def _pair_run_by_time(
+        self,
+        family: str,
+        number: str,
+        ends: list[tuple[str, _Leaf]],
+    ) -> list[tuple[_Leaf, _Leaf]]:
+        rank = {id(leaf): pos for pos, leaf in enumerate(self.leaves)}
+        ordered = sorted(
+            ends,
+            key=lambda item: (rank[id(item[1])], 1 if item[0] == _START else 0),
+        )
+        active: _Leaf | None = None
+        pairs: list[tuple[_Leaf, _Leaf]] = []
+        for role, leaf in ordered:
+            if role == _START:
+                if active is not None:
+                    msg = f"two {family} spanners share number {number}"
+                    _unsupported("spanner_number", msg, leaf.at)
+                active = leaf
+            else:
+                if active is None or not self._valid_span_order(
+                    family, active, leaf
+                ):
+                    msg = f"a {family} stop has no start"
+                    _unsupported(family, msg, leaf.at)
+                pairs.append((active, leaf))
+                active = None
+        if active is not None:
+            _unsupported(family, f"a {family} spanner never stops", active.at)
+        return pairs
+
+    def _leaf_ordered_marks(
+        self,
+        leaf: _Leaf,
+        open_runs: dict[tuple[str, str], tuple[int, list[tuple[str, _Leaf]]]],
+    ) -> list[tuple[str, str, str]]:
+        raw = self._span_marks(leaf)
+        mark_set = set(raw)
+        filtered: list[tuple[str, str, str]] = []
+        for family, role, number in raw:
+            if (
+                family == "wavy-line"
+                and (family, number) not in open_runs
+                and ("wavy-line", _START, number) in mark_set
+                and ("wavy-line", _STOP, number) in mark_set
+            ):
+                if role == _STOP:
+                    _single_wavy(leaf, family, number)
+                continue
+            filtered.append((family, role, number))
+
+        def _first(mark: tuple[str, str, str]) -> int:
+            state = open_runs.get((mark[0], mark[2]))
+            target = _START if state is not None and state[0] < 0 else _STOP
+            return 0 if mark[1] == target else 1
+
+        return sorted(filtered, key=_first)
+
+    def _close_span_run(
+        self,
+        family: str,
+        number: str,
+        ends: list[tuple[str, _Leaf]],
+    ) -> list[tuple[str, _Leaf, _Leaf]]:
+        if len(ends) == _PAIR_LEN:
+            (first_role, first_leaf), (_, second_leaf) = ends
+            start_leaf, stop_leaf = (
+                (first_leaf, second_leaf)
+                if first_role == _START
+                else (second_leaf, first_leaf)
+            )
+            if self._valid_span_order(family, start_leaf, stop_leaf):
+                return [(family, start_leaf, stop_leaf)]
+        return [
+            (family, s_lf, e_lf)
+            for s_lf, e_lf in self._pair_run_by_time(family, number, ends)
+        ]
+
+    def _numbered_spans(self) -> None:
+        by_order = sorted(self.leaves, key=lambda leaf: leaf.order)
+        open_runs: dict[
+            tuple[str, str], tuple[int, list[tuple[str, _Leaf]]]
+        ] = {}
+        spans: list[tuple[str, _Leaf, _Leaf]] = []
+        for leaf in by_order:
+            for family, role, number in self._leaf_ordered_marks(
+                leaf, open_runs
+            ):
+                key = (family, number)
+                balance, ends = open_runs.get(key, (0, []))
+                balance += 1 if role == _START else -1
+                ends.append((role, leaf))
+                if balance != 0:
+                    open_runs[key] = (balance, ends)
+                else:
+                    open_runs.pop(key, None)
+                    spans.extend(self._close_span_run(family, number, ends))
+        self._fail_open_runs(open_runs)
+        rank = {id(leaf): pos for pos, leaf in enumerate(self.leaves)}
+        spans.sort(key=lambda item: (rank[id(item[1])], rank[id(item[2])]))
+        wavy_spans: list[tuple[_Leaf, _Leaf]] = []
+        for family, start_leaf, stop_leaf in spans:
+            label = self.label()
+            self._start(start_leaf, family, label)
+            self._end(start_leaf, stop_leaf, family, label)
+            if family == "wavy-line":
+                wavy_spans.append((start_leaf, stop_leaf))
+        self._drop_trill_reprints(wavy_spans)
+
+    def _fail_open_runs(
+        self,
+        open_runs: dict[tuple[str, str], tuple[int, list[tuple[str, _Leaf]]]],
+    ) -> None:
+        for (family, number), (balance, ends) in open_runs.items():
+            leaf = ends[0][1]
+            roles = {r for r, _ in ends}
+            if _START in roles and _STOP in roles:
+                msg = f"two {family} spanners share number {number}"
+                _unsupported("spanner_number", msg, leaf.at)
+            msg = (
+                f"a {family} spanner never stops"
+                if balance > 0
+                else f"a {family} stop has no start"
+            )
             _unsupported(family, msg, leaf.at)
+
+    def _system_first_leaves(
+        self, sys_starts: list[int]
+    ) -> dict[tuple[int, int], list[_Leaf]]:
+        by_sys: dict[tuple[int, int], list[_Leaf]] = {}
+        for leaf in self.leaves:
+            if leaf.kind == _DIRECTION:
+                continue
+            pos = next(
+                (i for i, st in enumerate(sys_starts) if st > leaf.measure),
+                len(sys_starts),
+            )
+            s_idx = sys_starts[max(0, pos - 1)]
+            by_sys.setdefault((leaf.shown, s_idx), []).append(leaf)
+        firsts: dict[tuple[int, int], list[_Leaf]] = {}
+        for key_pair, leaves in by_sys.items():
+            earliest = min(self.key(lf)[:3] for lf in leaves)
+            firsts[key_pair] = [
+                lf for lf in leaves if self.key(lf)[:3] == earliest
+            ]
+        return firsts
+
+    def _drop_trill_reprints(
+        self, wavy_spans: list[tuple[_Leaf, _Leaf]]
+    ) -> None:
+        if not wavy_spans:
+            return
+        sys_starts = [
+            idx
+            for idx, m in enumerate(self.measures)
+            if idx == 0 or m.new_system
+        ]
+        firsts = self._system_first_leaves(sys_starts)
+        for start_leaf, stop_leaf in wavy_spans:
+            trill = next(
+                (
+                    f
+                    for f in start_leaf.flags
+                    if isinstance(f, Ornament) and f.kind is OrnamentKind.TRILL
+                ),
+                None,
+            )
+            if trill is None:
+                continue
+            for sys_m in sys_starts:
+                if not (start_leaf.measure < sys_m <= stop_leaf.measure):
+                    continue
+                for ev in firsts.get((start_leaf.shown, sys_m), ()):
+                    starts_new = any(
+                        isinstance(r, ExtendedTrillRelation)
+                        and r.role is EndpointRole.START
+                        for r in ev.relations
+                    )
+                    if (
+                        self.key(ev)[:3] <= self.key(stop_leaf)[:3]
+                        and not starts_new
+                    ):
+                        ev.flags = [f for f in ev.flags if f != trill]
 
     def _start(self, leaf: _Leaf, family: str, label: int) -> None:
         if family == "slur":
@@ -2030,7 +2442,7 @@ class _Matcher:
                 _unsupported("slur", "a slur on a rest", leaf.at)
             leaf.relations.append(SlurRelation(label, EndpointRole.START))
         elif family == "wavy-line":
-            if Ornament(OrnamentKind.TRILL) not in leaf.flags:
+            if not _has_trill(leaf):
                 msg = "a wavy line that no trill sign starts"
                 _unsupported("wavy_line", msg, leaf.at)
             leaf.relations.append(
@@ -2069,7 +2481,66 @@ class _Matcher:
             ),
         )
 
+    def _tie_matches(
+        self,
+        leaf: _Leaf,
+        member: _Member,
+        other: _Leaf,
+        target: _Member,
+    ) -> bool:
+        if (
+            other.grace is not None
+            or self.time(other) != self.time(leaf) + leaf.duration
+            or target.sounding != member.sounding
+        ):
+            return False
+        if (
+            member.start_number is not None
+            and target.stop_number is not None
+            and target.stop_number != member.start_number
+        ):
+            return False
+        if leaf.grace is not None and other.measure == leaf.measure:
+            return (other.staff, other.voice) == (
+                leaf.staff,
+                leaf.voice,
+            ) and leaf.order < other.order
+        return other.staff == leaf.staff or other.shown == leaf.shown
+
+    def _build_tie_graph(
+        self,
+        starts: list[tuple[_Leaf, _Member]],
+        stops: list[tuple[_Leaf, _Member]],
+    ) -> tuple[dict[int, list[int]], dict[int, list[int]]]:
+        start_adj: dict[int, list[int]] = {}
+        stop_adj: dict[int, list[int]] = {}
+        for u_idx, (leaf, member) in enumerate(starts):
+            cands = [
+                s_idx
+                for s_idx, (other, target) in enumerate(stops)
+                if self._tie_matches(leaf, member, other, target)
+            ]
+            cands.sort(
+                key=lambda s_idx: (
+                    stops[s_idx][1].stop_number != member.start_number,
+                    (stops[s_idx][0].staff, stops[s_idx][0].voice)
+                    != (leaf.staff, leaf.voice),
+                    stops[s_idx][0].order,
+                ),
+            )
+            start_adj[u_idx] = cands
+            for s_idx in cands:
+                stop_adj.setdefault(s_idx, []).append(u_idx)
+        return start_adj, stop_adj
+
     def _ties(self) -> None:
+        starts = [
+            (leaf, member)
+            for leaf in self.leaves
+            if leaf.kind == _NOTE
+            for member in leaf.members
+            if member.tie_start
+        ]
         stops = [
             (leaf, member)
             for leaf in self.leaves
@@ -2077,49 +2548,32 @@ class _Matcher:
             for member in leaf.members
             if member.tie_stop
         ]
-        for leaf in self.leaves:
-            if leaf.kind != _NOTE:
+        start_adj, stop_adj = self._build_tie_graph(starts, stops)
+        tie_in_ms = _tie_in_measures(self.measures)
+        stop_of_start: dict[int, int] = {}
+        for s_idx, (s_leaf, _) in enumerate(stops):
+            if (
+                s_leaf.grace is None
+                and s_leaf.onset == 0
+                and s_leaf.measure in tie_in_ms
+            ):
                 continue
-            for member in leaf.members:
-                if member.tie_start:
-                    self._tie(leaf, member, stops)
-        for _, member in stops:
-            member.tie_in = True
-
-    def _tie(
-        self,
-        leaf: _Leaf,
-        member: _Member,
-        stops: list[tuple[_Leaf, _Member]],
-    ) -> None:
-        end = self.time(leaf) + leaf.duration
-        candidates = [
-            (other, target)
-            for other, target in stops
-            if other.grace is None
-            and other.staff == leaf.staff
-            and self.time(other) == end
-            and target.sounding == member.sounding
-            and (
-                None in {member.start_number, target.stop_number}
-                or target.stop_number == member.start_number
-            )
-        ]
-        if not candidates:
-            msg = "a tie that reaches no note of the same pitch"
-            _unsupported("tie", msg, member.at)
-        candidates.sort(
-            key=lambda item: (
-                item[1].stop_number != member.start_number,
-                (item[0].staff, item[0].voice) != (leaf.staff, leaf.voice),
-                item[0].order,
-            ),
-        )
-        other, target = candidates[0]
-        stops.remove((other, target))
-        label = self.label()
-        member.start_label = label
-        target.end_label = label
+            _augment_tie_match(s_idx, stop_adj, stop_of_start, set())
+        start_of_stop = {s_idx: u_idx for u_idx, s_idx in stop_of_start.items()}
+        for u_idx, (_, member) in enumerate(starts):
+            if u_idx not in stop_of_start and not _augment_tie_match(
+                u_idx, start_adj, start_of_stop, set()
+            ):
+                msg = "a tie that reaches no note of the same pitch"
+                _unsupported("tie", msg, member.at)
+        for s_idx, (_, target) in enumerate(stops):
+            u_idx = start_of_stop.get(s_idx)
+            if u_idx is None:
+                target.tie_in = True
+            else:
+                label = self.label()
+                starts[u_idx][1].start_label = label
+                target.end_label = label
 
     def _tremolos(self) -> None:
         pending: dict[tuple[int, int], _Leaf] = {}
@@ -2214,6 +2668,147 @@ class _Open:
         )
 
 
+def _split_measure_leaf_beams(
+    leaves: list[_Leaf],
+) -> tuple[list[_Leaf], bool]:
+    ordered = sorted(
+        leaves, key=lambda item: (item.onset, item.is_main, item.order)
+    )
+    grace_run: list[_Leaf] = []
+    mains: list[_Leaf] = []
+    leading_grace = False
+    for leaf in ordered:
+        if leaf.kind == _DIRECTION:
+            continue
+        if leaf.grace is not None:
+            grace_run.append(leaf)
+            leading_grace = leading_grace or (not mains and leaf.onset == 0)
+        else:
+            if grace_run:
+                _normalize_beam_sequence(grace_run)
+                grace_run = []
+            mains.append(leaf)
+    if grace_run:
+        _normalize_beam_sequence(grace_run)
+    return mains, leading_grace
+
+
+def _check_system_break_beam(
+    prev_run: list[_Leaf], mains: list[_Leaf], measures: list[_Measure]
+) -> None:
+    if not prev_run:
+        return
+    last = prev_run[-1]
+    if last.onset + last.duration != measures[last.measure].length:
+        return
+    prev_open = {
+        flag.level
+        for flag in last.flags
+        if isinstance(flag, Beam)
+        and flag.state in {BeamState.START, BeamState.CONTINUE}
+    }
+    next_cont = (
+        {
+            flag.level
+            for flag in mains[0].flags
+            if isinstance(flag, Beam)
+            and flag.state in {BeamState.CONTINUE, BeamState.END}
+        }
+        if mains[0].onset == 0
+        else set()
+    )
+    if prev_open & next_cont:
+        _unsupported(
+            "beam_boundary",
+            "a beam crosses a printed system break",
+            mains[0].at,
+        )
+
+
+def _normalize_leaf_beams(measures: list[_Measure]) -> None:
+    """Normalize MuseScore 4 repeated and single-event ``begin`` beam states."""
+    voices = {key for measure in measures for key in measure.lines}
+    for key in sorted(voices):
+        main_runs: list[list[_Leaf]] = []
+        for measure in measures:
+            mains, has_leading_grace = _split_measure_leaf_beams(
+                measure.lines.get(key, [])
+            )
+            if not mains:
+                main_runs.append([])
+                continue
+            prev_run = main_runs[-1] if main_runs else []
+            adj = prev_run and prev_run[-1].measure + 1 == measure.index
+            if adj and measure.index > 0 and measure.new_system:
+                _check_system_break_beam(prev_run, mains, measures)
+            if (
+                adj
+                and not (measure.index > 0 and measure.new_system)
+                and prev_run[-1].onset + prev_run[-1].duration
+                == measures[prev_run[-1].measure].length
+                and mains[0].onset == 0
+                and not has_leading_grace
+            ):
+                prev_run.extend(mains)
+            else:
+                main_runs.append(mains)
+        for run in main_runs:
+            if run:
+                _normalize_beam_sequence(run)
+
+
+def _resolve_leaf_beam_state(
+    level: int,
+    state: BeamState,
+    beams: dict[int, BeamState],
+    opened: set[int],
+    nxt: dict[int, BeamState],
+) -> BeamState:
+    if state is not BeamState.START:
+        return state
+    if level in opened and level in nxt:
+        return BeamState.CONTINUE
+    if level not in opened and level > 1 and level not in nxt:
+        lower = beams.get(level - 1)
+        if lower in {BeamState.START, BeamState.CONTINUE, BeamState.END}:
+            return (
+                BeamState.HOOK_BACKWARD
+                if lower is BeamState.END
+                else BeamState.HOOK_FORWARD
+            )
+    return state
+
+
+def _normalize_beam_sequence(seq: list[_Leaf]) -> None:
+    maps = [
+        {
+            flag.level: flag.state
+            for flag in leaf.flags
+            if isinstance(flag, Beam)
+        }
+        for leaf in seq
+    ]
+    opened: set[int] = set()
+    for idx, beams in enumerate(maps):
+        nxt = maps[idx + 1] if idx + 1 < len(maps) else {}
+        opened.intersection_update(beams)
+        for level in sorted(beams):
+            state = _resolve_leaf_beam_state(
+                level, beams[level], beams, opened, nxt
+            )
+            beams[level] = state
+            if state in {BeamState.START, BeamState.CONTINUE}:
+                opened.add(level)
+            elif state is BeamState.END:
+                opened.discard(level)
+    for leaf, beams in zip(seq, maps, strict=True):
+        others = [flag for flag in leaf.flags if not isinstance(flag, Beam)]
+        leaf.flags = [
+            *others,
+            *(Beam(level, beams[level]) for level in sorted(beams)),
+        ]
+
+
 @dataclass(eq=False, slots=True)
 class _Score:
     """The read document, ready to become an assembled score."""
@@ -2228,6 +2823,7 @@ class _Score:
     matcher: _Matcher | None = None
 
     def convert(self) -> AssembledScore:
+        _normalize_leaf_beams(self.measures)
         self.matcher = _Matcher(self.measures)
         self.matcher.match()
         failure: tuple[MusicXmlDiagnostic, ...] | None = None
@@ -2388,6 +2984,7 @@ class _Score:
                 member.octave - shift,
                 member.parenthesized,
                 tuple(member.fingering),
+                member.fingering_substitution,
                 member.tie_in,
                 None if member.end_label is None else labels[member.end_label],
                 None
@@ -2435,9 +3032,13 @@ def _slot(leaf: _Leaf, event: Event) -> tuple[Fraction, int, str, int]:
     """Order a line: grace notes, then directions, then the main event."""
     if leaf.kind != _DIRECTION:
         return (leaf.onset, 0 if leaf.grace is not None else 2, "", leaf.order)
+    if isinstance(event, Tempo):
+        return (leaf.onset, 1, "<tempo>", leaf.order)
+    if isinstance(event, Words):
+        return (leaf.onset, 1, '<"', leaf.order)
     label = getattr(event, "label", 0)
     spelling = write_event(_relabeled(event, {label: 0}))
-    return (leaf.onset, 1, spelling, label)
+    return (leaf.onset, 1, spelling, leaf.order)
 
 
 def _label_order(document: AssembledScore) -> dict[int, int]:

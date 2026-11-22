@@ -477,14 +477,39 @@ ends a grant. Git and the proposing PR retain the reason and history.
     - The owner's development agents may read the private transcription
       repository, including its drafts, review records and accepted gold, and
       the owner's local desk-study archive, locally and read-only. Their model
-      services process what they read; the owner accepts this. That content,
+      services process what they read; the owner accepts this. For `gold-01`,
+      the owner authorizes repairing the three legacy v1 converter mid-note
+      cross-voice `tie`/`tied` `stop` endpoints in a local staged build
+      directory and staged status-file copy, recording the prior and repaired
+      MusicXML SHA-256 digests locally rather than relaxing W1 tie semantics;
+      the original private transcription repository and all other staged gold
+      files remain read-only. That content,
       anything derived from it and piece identities are never committed,
       otherwise uploaded or quoted; public carriers report only aggregate
       results and anonymized batch numbers.
     - Acceptance uses two measures: a hard criterion of zero in-scope content
       differences on the accepted private gold pieces, and a reported
       layout-fidelity score, where higher is better, that does not gate
-      acceptance.
+      acceptance. On public MuseScore re-exports (`R(X)`), raw arm scores keep
+      every failed file's reference elements counted as non-identical in the
+      denominator without converter workarounds; when `X` passes the scope
+      screen and converts cleanly and `R(X)` fails whole-file conversion or
+      `musicdiff` parsing solely because of one of the three minimal-reproduced,
+      upstream-reported MuseScore 4 MusicXML export defects
+      ([musescore/MuseScore#22974](https://github.com/musescore/MuseScore/issues/22974),
+      [musescore/MuseScore#35740](https://github.com/musescore/MuseScore/issues/35740),
+      [musescore/MuseScore#35741](https://github.com/musescore/MuseScore/issues/35741)),
+      the report lists those files, their element counts and their upstream
+      issues separately while keeping them in the reported raw `R(X)` score,
+      and the 99% re-export acceptance threshold is evaluated across the
+      remaining `R(X)` files not corrupted by those three upstream export
+      defects.
+    - Following the return-to-owner check against the 34-finding desk-study
+      estimate, the owner selects freezing the complete 327-locus (356-entry)
+      union toolchain-class set covering all 34 desk-study baseline entries and
+      all confirmed toolchain-class findings across the full 1,591-file review
+      archive of the 23 accepted private gold pieces, subject to
+      research-evidence review of the validation-basis record.
     - Tokenizer comparisons may use the tokenizer files of any candidate base
       model; no base model is selected.
     - The project integrates into the existing monorepo workspaces, checks and
@@ -529,14 +554,18 @@ ends a grant. Git and the proposing PR retain the reason and history.
 - **Acceptance:** the accepted W1 requirements and validation basis are met,
   including the hard criterion and a zero-difference system-assembly test on
   every accepted private gold piece, at least 99% of in-scope elements
-  identical on the public corpus files and their MuseScore re-exports, and
-  every finding in the frozen toolchain-class set reproduced correctly from
-  the text without score-file edits. The desk study counted 34 such findings,
-  an unreviewed estimate; if the frozen set materially differs, return to the
-  owner. The layout-fidelity score and ABC comparison result are recorded.
+  identical on the public corpus files and on their MuseScore re-exports under
+  the owner decision above (after accepting the corresponding requirements and
+  comparison-protocol updates before relying on them), and
+  every finding in the owner-approved 327-locus frozen toolchain-class set
+  reproduced correctly from the text without score-file edits (any further
+  material change to that frozen set returns to the owner). The layout-fidelity
+  score and ABC comparison result are recorded.
   Delete this entry when accepted or when the owner stops W1.
 - **Effects:** permit the design and planning entry's inspection and
-  documentation effects; local read-only use of the private inputs above;
+  documentation effects; local read-only use of the private inputs above, plus
+  the bounded local staged `gold-01` tie-endpoint repair authorized under Owner
+  decisions;
   local installation of musicdiff 6.0.0, xml2abc/abc2xml and, when missing or
   updated on the host, a MuseScore 4.x command line recorded by exact version
   and executable SHA-256 per run; download of public scores from OpenScore
