@@ -275,6 +275,35 @@ Architecture uses a global overview and scoped views. Designs are created only f
 coherent implementation boundaries that need independent review. Research is organized
 by question and baseline; experiments are organized by reproducible protocol.
 
+Classify validation versus empirical experiments by operation purpose and external
+effects rather than invocation channel. Credential-free local restore, build, lint, and
+test runs using standard package-manager default public registries (when not cleared,
+restricted, or excluded by accepted repository configuration or the Wave), public
+dependency sources and toolchains declared in accepted repository configuration, or owned
+local/temporary synthetic fixture sources, and governed CI/PR checks of declared
+contracts (including standard ephemeral runner-issued job plumbing such as checkout,
+cache, artifact, and public-release rate-limit tokens/state in accepted workflows, defect
+fixes, and ordinary reruns of failed workflow jobs) are development and delivery
+validation rather than experiments: the underlying work still requires Delivery Wave
+authorization, retains relevant chronological CI/workflow run and attempt identities when
+reporting gate results and applicable recovery checks, supports claims only about the
+tested source and environment, and needs no separate experiment protocol, disposable
+host, or attempt quota. Unmodeled external or platform probes, credential-bearing,
+non-public, or unaccepted external dependency sources (neither a comment nor an unmerged
+branch commit can grant them), user/Environment secrets, OIDC/package publication,
+interactive login or consent, account/tenant/permission enrollment or switching,
+accessing, creating, rotating, or mutating real, persistent, external, or ambient
+user/host accounts, brokers, keyrings, credentials, or secrets, mutating ambient
+auth/host configuration (outside that standard ephemeral runner-issued CI job plumbing),
+mutating persistent host or shared state outside normal repository Git state (including linked-worktree metadata),
+accepted locked-toolchain/SDK install and state roots, build and validation-report
+outputs, owned temporary/synthetic-test state, local package or tool caches, ephemeral
+CI-runner job/cache/artifact state, and any Wave-named tool state, destructive fault injection, and paid or non-recoverable campaign
+dispatches remain outside routine validation and require explicit Delivery Wave
+authorization/risk disposition and an accepted experiment protocol with cumulative bounds
+even inside a test command or CI workflow step. Where an accepted Wave entry and protocol
+bound an existing host, reviewers must not invent disposable-VM or OS-user prerequisites.
+
 Requirement identifiers are permanent once merged into the accepted target branch.
 Preserve each project's existing identifier syntax, meaning, and retirement
 references. An established identifier remains defined exactly once in its owning
@@ -305,12 +334,74 @@ The [checker contract](checker-contract.md) defines bounded validation inputs,
 commands and review interfaces. The repository's record checker supplies
 repeatable mechanical validation and an explicit inventory/report for reviewers.
 Run it against an explicit accepted base and candidate snapshot and retain its
-report in the work carrier. Reviewers resolve unprepared ownership and inspect
+report in the governing review carrier (the proposing pull request, or the
+governing Issue when no pull request governs). Reviewers resolve unprepared ownership and inspect
 semantic admission, requirement meaning, evidence and domain gates; a clean
 mechanical report does not decide those concerns. The checker is advisory and
 does not install an automatic CI or blocking hook gate. Blocking activation
 requires demonstrated snapshot semantics, deterministic remediation and an
 explicitly accepted control change.
+
+Keep independent `record-system-review` decoupled from lightweight local
+`records:check`. Structural record changes (additions, moves, splits,
+retirements/deletions, and rebindings), edits to `repository`-namespace records
+in [`record-families.yaml`](record-families.yaml) (such as `README.md`,
+`docs/README.md`, `docs/governance/**`, `docs/engineering/**`,
+`docs/delivery-wave.md`, `AGENTS.md`, `docs/AGENTS.md`, `CONTRIBUTING.md`, and
+`schemas/governance/**`), changes to portal routing, generated agent/skill
+interfaces, `record-families.yaml`, `controls.yaml`, Issue/PR templates, Agent
+Skills, `hk`, or control-governed workflows, and project-record edits that alter
+authority ownership, established requirement identifiers, or
+consumer/immutability/license contracts trigger `record-system-review`. Ordinary source, test, non-control
+workflow, runtime-data, status-comment, and routine in-place project
+documentation updates preserving existing record ownership, portal routing,
+requirement identifiers, and consumers do not trigger `record-system-review`
+merely because they are durable. Run `records:check` when editing or deleting
+maintained records, portals, generated interfaces, `apm.lock.yaml`, or
+governance catalogs, adding or renaming
+[discovered record candidates](checker-contract.md#independent-discovery-and-classification),
+or moving or deleting paths referenced by maintained records, `apm.lock.yaml`,
+or catalogs; pure in-place code, test, non-control workflow, runtime-data, and
+status-comment edits (and deletions of unreferenced non-record assets) skip it.
+Preserve a zero-diagnostic `records:check` baseline on `main` rather than
+normalizing pre-existing baseline failures; if an unrelated baseline diagnostic
+ever exists on `main`, evaluate the `base -> candidate` delta and any
+changed-scope coverage gap while reporting honestly that the global run exited
+nonzero.
+
+Under [GOV-002](governance-system.md#gov-002-one-canonical-authority) and
+[GOV-011](governance-system.md#gov-011-separate-findings-from-disposition),
+retain detailed check caveats, snapshot/command metadata, coverage gaps, and
+independent material-finding classifications in one authoritative ledger in the
+governing pull request (by default the PR body's `## Validation and Review`
+section, or a dedicated PR review comment when needed)—or in the governing
+Issue when no pull request governs—which may index and link existing review or
+triage comments, CI runs, and bulky raw JSON or test reports rather than
+re-copying them, while keeping `record-system-gate` on the proposing pull
+request's merge. Concise routing summaries (such as Issue progress notes or
+overview sections) may link to that authoritative ledger without repeating
+secondary check caveats so long as they make no broader claim. Companion Issue
+and pull-request updates reviewed together before publication as one declared
+ordered batch are evaluated against the batch rather than failing solely
+because later writes in the batch have not executed yet, then applied and read
+back in order.
+
+Purely deterministic carrier defects—formatting or lint fixes, Markdown
+delimiter or syntax typos, commitlint or length adjustments, container-pointer
+typos whose cited comment/fragment identifier, content, and provenance are
+unchanged, and display-text typos whose link target and underlying
+commit/run/artifact identity are unchanged and unambiguous—may be repaired
+directly by the author and verified mechanically without third-party `GOV-011`
+classification or permanent triage rows, provided the fix does not alter
+authority ownership, source/commit/run/build/artifact provenance, evidence
+classification, claim scope, security or privacy boundaries, contract or test
+coverage, or an owner decision. Misattributed or ambiguous commit,
+workflow-run, build, or evidence-artifact identifiers remain material
+provenance findings requiring independent `GOV-011` classification. Re-reviews
+evaluate the remediation delta and affected conclusions or consumers rather
+than re-opening unchanged closed triage prose. Faithful check or status
+reporting and recording a completed review (`No material findings.`) do not
+trigger another review round.
 
 Candidate discovery must be independent of the mutable family catalog and
 include root interfaces, repository and project document roots, hidden legacy
@@ -359,11 +450,16 @@ and explicit validation and control activation boundaries.
 The User Story role, admission and requirement/validation routing additionally
 derive from the [upstream story record][story-source] and
 [record-family entry][story-family-source] at
-`f2e36bbccbda134ed8aa21f783cd76a9cdbeaf64`. They use Three's existing project
-namespaces and record-admission rules. This supplement imports neither
-authentication-product stories nor unrelated upstream governance changes;
-other parts of this policy retain the original source baseline above.
+`f2e36bbccbda134ed8aa21f783cd76a9cdbeaf64`. Validation-versus-experiment
+boundaries incorporate the public
+[`hcoona/microsoft-authentication-cli#523`][mac-523] (`G9`) distinction at
+Three scope, alongside local Three rules for review-carrier routing,
+mechanical-versus-material triage, and checker trigger scope. They use Three's
+existing project namespaces and record-admission rules without importing
+authentication-product policy; other parts of this policy retain the original
+source baseline above.
 
 [source]: https://github.com/hcoona/microsoft-authentication-cli/blob/1a02498589769c38bc16eefc2efc5f9eca6e6994/docs/governance/record-system.md
 [story-source]: https://github.com/hcoona/microsoft-authentication-cli/blob/f2e36bbccbda134ed8aa21f783cd76a9cdbeaf64/docs/product/user-stories.md
 [story-family-source]: https://github.com/hcoona/microsoft-authentication-cli/blob/f2e36bbccbda134ed8aa21f783cd76a9cdbeaf64/docs/governance/record-families.yaml
+[mac-523]: https://github.com/hcoona/microsoft-authentication-cli/issues/523

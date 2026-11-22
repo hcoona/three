@@ -49,15 +49,24 @@ unstaged content. Record the snapshot and scope actually checked.
 CI compares its base with the actual tested checkout;
 local pre-commit uses HK's configured stashing. Do not claim staged/worktree
 equivalence without evidence. Existing profile and path exclusions still apply.
-For record changes, run `mise run records:check -- --base <accepted-commit>
---worktree --output ../three-record-review.json` and retain its report with the reviewed
-snapshot. Use `--candidate <commit>` instead of `--worktree` for an immutable
-candidate. The [checker contract](docs/governance/checker-contract.md) defines
-the advisory tool's scope, limitations and separate contextual review. Run
+When editing or deleting maintained records, portals, generated interfaces,
+`apm.lock.yaml`, or governance catalogs—or adding or renaming
+[discovered record candidates](docs/governance/checker-contract.md#independent-discovery-and-classification),
+or moving or deleting paths referenced by maintained records, `apm.lock.yaml`,
+or catalogs ([enforcement](docs/governance/record-system.md#enforcement))—run
+`mise run records:check -- --base <accepted-commit> --worktree --output ../three-record-review.json`
+and retain its report in the governing PR (or governing Issue when no PR
+governs) with the reviewed snapshot. Pure in-place source, test, non-control
+workflow, runtime-data, and status-comment edits (and deletions of unreferenced
+non-record assets) skip `records:check`. Use
+`--candidate <commit>` instead of `--worktree` for an immutable candidate, and
+preserve Three's zero-diagnostic `main` baseline. The
+[checker contract](docs/governance/checker-contract.md) defines the advisory
+tool's scope, limitations and separate contextual review. Run
 `mise run records:test` when changing that implementation. Preserve the report
-bytes or a retrievable artifact, not only a temporary path or digest.
-Write the report outside the worktree so it does not become an input to the
-next validation run.
+bytes or a retrievable artifact, not only a temporary path or digest. Write the
+report outside the worktree so it does not become an input to the next
+validation run.
 
 HK checks source/configuration conformance. Run affected project tests
 explicitly before independent implementation review. With the pinned SDK and
@@ -104,9 +113,18 @@ and review triggers. Invoke the canonical procedures directly by path:
 
 Retain required
 domain reviews. Identify the independent reviewer, material findings, independent
-triage, and required owner dispositions in the governing carrier. Author checks
-cannot satisfy independent review. A review that finds no change necessary does
-not require a separate repository report.
+triage, and required owner dispositions in one authoritative ledger in the
+governing carrier (by default the PR's `## Validation and Review` section, or
+the governing Issue when no PR governs); concise routing summaries may link to
+that ledger without repeating secondary caveats when making no broader claim.
+Purely deterministic non-provenance carrier defects follow
+[mechanical verification](docs/governance/record-system.md#enforcement), whereas
+misattributed or ambiguous commit, workflow-run, build, or artifact identifiers
+remain material provenance findings under `GOV-011`. Author checks cannot
+satisfy independent review.
+Routine development/CI validation runs, faithful check/status reporting, and
+recording a completed review (`No material findings.`) do not trigger another
+review round or require a separate repository report.
 
 Do not create an Issue, decision record, design, or new metadata solely to fill
 a template. The record admission rules and actual consumers determine the need.

@@ -73,10 +73,12 @@ controls:
       - Record authors and repository owner at record-system review
     governing_rules:
       - docs/governance/governance-system.md#changing-rules
+      - docs/governance/record-system.md#enforcement
       - docs/governance/record-system.md#record-system-gate
-    invariant:
-      Changed records receive independent review of authority, actual consumers, lifecycle, routing and policy-control
-      agreement.
+    invariant: Structural record changes, repository-namespace record edits, portal-routing, generated-interface, or
+      governance-catalog changes, project-record authority/identifier/consumer-contract changes, and Issue/PR-template,
+      Agent Skill, hk, or control-governed workflow changes receive independent review of authority, actual consumers,
+      lifecycle, routing and policy-control agreement.
     runner: agent-skill
     implementation:
       kind: repository-path
@@ -94,15 +96,20 @@ controls:
       - Change author and owner disposing of material findings
     governing_rules:
       - docs/governance/governance-system.md#gov-011-separate-findings-from-disposition
+      - docs/governance/record-system.md#enforcement
     invariant: Each material finding receives evidenced true-positive, false-positive, or unresolved classification
-      independently before remediation or dismissal.
+      independently before remediation or dismissal, while purely deterministic non-provenance carrier defects use
+      mechanical verification.
     runner: agent-skill
     implementation:
       kind: review-procedure
-      value: Apply GOV-011 and the canonical review procedure; record independent classifications and owner dispositions
-        in the governing PR.
+      value: Apply GOV-011 and the canonical review procedure to material findings; record independent classifications
+        and owner dispositions in the governing PR, or in the governing Issue when no PR governs.
     execution_points:
+      - local-validation
       - pull-request-review
+      - recheck-trigger
+      - release
     failure_mode: Self-confirming review creates false assurance or unnecessary changes.
   - id: record-system-gate
     state: current
@@ -135,10 +142,12 @@ controls:
       - Research authors and repository owner during research, recheck and evidence review, including every merged Wave
         change
     governing_rules:
-      - docs/governance/record-system.md
+      - docs/governance/record-system.md#workflows
+      - docs/governance/record-system.md#enforcement
       - docs/governance/governance-system.md
-    invariant: Research preserves source boundaries, accepted effects and protocols, evidence labels, reproducibility,
-      and claim limits; review applicable mutable-source triggers at every Wave change.
+    invariant: Research and empirical operations preserve source boundaries, accepted effects and protocols, evidence
+      labels, reproducibility, and claim limits without treating routine development or governed CI validation as
+      experiments; review applicable mutable-source triggers at every Wave change.
     runner: agent-skill
     implementation:
       kind: repository-path
