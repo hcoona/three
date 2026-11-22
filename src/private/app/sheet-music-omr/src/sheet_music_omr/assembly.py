@@ -57,6 +57,8 @@ from sheet_music_omr.model import (
     HairpinStart,
     HeadedBlock,
     LenOption,
+    LineEnd,
+    LineStart,
     MeasureBlock,
     Note,
     OttavaEnd,
@@ -111,6 +113,8 @@ _LABELLED: Final = (
     PedalLine,
     DashesStart,
     DashesEnd,
+    LineStart,
+    LineEnd,
     TrillEnd,
 )
 

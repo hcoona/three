@@ -23,12 +23,15 @@ from sheet_music_omr.model import (
     DashesEnd,
     DashesStart,
     Dynamic,
+    DynamicText,
     FromOption,
     Grace,
     HairpinEnd,
     HairpinStart,
     KeyOption,
     LenOption,
+    LineEnd,
+    LineStart,
     MeasureRest,
     Note,
     OttavaEnd,
@@ -66,6 +69,7 @@ if TYPE_CHECKING:
 
 DIRECTION_TYPES = (
     Dynamic,
+    DynamicText,
     ClefChange,
     Words,
     Tempo,
@@ -79,6 +83,8 @@ DIRECTION_TYPES = (
     PedalLine,
     DashesStart,
     DashesEnd,
+    LineStart,
+    LineEnd,
     TrillEnd,
 )
 
@@ -224,10 +230,12 @@ class Placed:
     def precedes(self, other: Placed) -> bool:
         """Return whether the event lies strictly before another one.
 
-        Events at the same time are ordered only within one line.
+        Events at the same time are ordered across barlines and within one line.
         """
         if self.time != other.time:
             return self.time < other.time
+        if self.frame.index != other.frame.index:
+            return self.frame.index < other.frame.index
         return self.same_line(other) and self.position < other.position
 
 

@@ -1151,7 +1151,7 @@ category.
   `C4/4[stacc^,ferm]`; `C4/4[ten,ferm_]`.
 - `ornament`: `orn=` (including trill auxiliary accidentals) and the
   extended-trill relation. Witnesses:
-  `C5/4[orn=trill]`;
+  `C5/4[orn=trill]`; `C5/4[orn=trill(n)]`;
   `C5/2[orn=trill,rel=ornament@r1:start:extended-trill]`;
   `D5/2[rel=ornament@r1:end:extended-trill]`;
   `<trill)>[rel=ornament@r1:end:extended-trill]`.
@@ -1160,8 +1160,9 @@ category.
   `E4/2[rel=tremolo@r1:two-end:3]`.
 - `fingering`: the pitch suffix `f1` to `f5`, two different digits `fDE`, or a
   finger substitution `fD-E`. Witnesses: `C4f1/8 D4f2/8`;
-  `A4f13/4[orn=trill]`; `C4f54/2`.
-- `dynamic`: dynamic and dynamic-text directions. Witnesses: `<mf>`; `<^f>`.
+  `A4f13/4[orn=trill]`; `C4f54/2`; `C4f5-4/2`.
+- `dynamic`: dynamic and dynamic-text directions. Witnesses: `<mf>`; `<^f>`;
+  `<dyn-text "sempre">`.
 - `hairpin`: hairpin directions. Witnesses:
   `<cresc(>[rel=hairpin@r1:start:cresc]`; `<hairpin)>[rel=hairpin@r1:end]`.
 - `ottava`: ottava directions. Witnesses:
@@ -1169,7 +1170,7 @@ category.
 - `pedal`: pedal lines (closing with `<ped)>` or `<ped-open)>`) and pedal
   signs. Witnesses:
   `<ped(>[rel=pedal@r1:line-start]`; `<ped)>[rel=pedal@r1:line-release]`;
-  `<pedal-sign down>`.
+  `<ped-open)>[rel=pedal@r1:line-open]`; `<pedal-sign down>`.
 - `arpeggio`: the `arp` flag and the arpeggio relation. Witnesses:
   `C4+E4+G4/2[arp]`; `E4+G4/2[rel=arpeggio@r1:member]`.
 - `repeat_ending`: repeat barlines and volta brackets. Witnesses:
@@ -1179,7 +1180,8 @@ category.
   `<"dolce">`; `<"dim."(>[rel=dashes@r1:start]`;
   `<dashes)>[rel=dashes@r1:end]`.
 - `tempo_rehearsal`: tempo and rehearsal directions, including parenthesized
-  metronome marks. Witnesses: `<tempo "Allegro" q=120>`; `<rehearsal "A">`.
+  metronome marks. Witnesses: `<tempo "Allegro" q=120>`;
+  `<tempo "Allegro" (q=120)>`; `<rehearsal "A">`.
 - `heading`: heading lines. Witness: `heading: "First Waltz"`.
 
 ## Layout, unsupported content and open points

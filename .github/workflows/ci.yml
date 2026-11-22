@@ -69,7 +69,7 @@ jobs:
           # Preserve the existing Java vendor semantics at both endpoints.
           version: '2026.11.10'
           experimental: true
-          install_args: dotnet node pnpm
+          install_args: --jobs 1 dotnet node pnpm
       - name: Prepare required frameworks in the native SDK root
         run: mise install --monorepo --locked --jobs 1 dotnet
       - name: Prepare the complete candidate control application
@@ -766,7 +766,7 @@ jobs:
         with:
           version: '2026.11.10'
           experimental: true
-          install_args: dotnet node pnpm
+          install_args: --jobs 1 dotnet node pnpm
       - name: Prepare required frameworks before starting the controller
         run: mise install --monorepo --locked --jobs 1 dotnet
       - name: Download the exact scope artifact
@@ -1273,7 +1273,7 @@ jobs:
           version: '2026.11.10'
           experimental: true
           install_args: >-
-            dotnet
+            --jobs 1 dotnet
             ${{ steps.plan.outputs.python == 'true' && 'python uv' || '' }}
             ${{ steps.plan.outputs.ruby == 'true' && 'ruby' || '' }}
             ${{ (steps.plan.outputs.node == 'true' || steps.plan.outputs.browser == 'true') && 'node pnpm' || '' }}

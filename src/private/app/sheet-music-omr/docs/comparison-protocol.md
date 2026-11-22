@@ -543,17 +543,22 @@ applying negative `offset` back-steps, attaches at most one pending
 note-spanned `direction` start per note, and imports `<pedal
 type="discontinue" line="yes"/>` without `resume` as an unclosed gap that
 swallows the next pedal mark. Before music21 parses a score, the harness
-rewrites each measure's `direction` elements at their chronological `cursor +
-offset` positions (using `forward` and `backup` with `offset` cleared, and
-ordering `wedge` starts before other spanner starts at the same onset) and
-replaces any `<pedal type="discontinue" line="yes"/>` that closes an open pedal
-line without a following `resume` before the next `start` or the end of the
-part with `type="stop"`. Supplementary checks that inspect MusicXML directly
-read the unnormalized document. Consistently across the screen, converters and
-beam checks, a repeated `begin` inside an already-open beam level is read as
+rewrites each measure's `direction` elements on their staff in chronological
+`cursor + offset` order (using `forward` and `backup` with `offset` cleared,
+and ordering closing/continuing spanners before `wedge` starts and `wedge`
+starts before other spanner starts at the same onset) and replaces any `<pedal
+type="discontinue" line="yes"/>` that closes an open pedal line without a
+following `resume` before the next `start` or the end of the part with
+`type="stop"`. Supplementary checks that inspect MusicXML directly read the
+unnormalized document. Consistently across the screen, converters and beam
+checks, a repeated `begin` inside an already-open beam level is read as
 `continue`, and an unclosed single-event `begin` whose lower beam level is
 active on that event is read as `backward hook` when that lower level ends on
-the event and `forward hook` otherwise.
+the event and `forward hook` otherwise. After music21 parses a score and before
+musicdiff annotates it, the harness also clears `RepeatBracket.overrideDisplay`
+to `None` when a single-number volta bracket (`number` a positive integer `N`)
+has `overrideDisplay` equal to `""`, `"N"` or `"N."`, while preserving any
+other custom display label.
 
 The harness also reads each octave shift as MusicXML gives it. music21 10.5.2
 starts an ottava on a later note, chord or rest of the document, whatever its
@@ -751,21 +756,23 @@ of its voice at that onset.
 - **Heading** (`heading`): in the instrument, credits are the only carrier of
   heading text, and a `words` direction is `text` or, by the words reading,
   `tempo_rehearsal`, never `heading`.
-  Whether the converters agree with that is what the round trip tests. Each
-  line of `credit-words` text, after whitespace normalization, is one element.
+  Whether the converters agree with that is what the round trip tests. Within
+  one `credit`, the texts of its `credit-words` children are concatenated in
+  document order before splitting on line breaks; each resulting non-empty line,
+  after whitespace normalization, is one element.
   Credits whose `credit-type` is `title`,
   `subtitle`, `composer`, `arranger` or `lyricist` count. Credits whose
   `credit-type` is `page number`, `rights` or `part name` do not, and credits
   without a `credit-type` do not count because an untyped free-text credit
   leaves its musical/editorial role unspecified. The lines of
   a score are in reading order: by `credit` page, and on each page, when every
-  counted credit of the page has `default-x` and `default-y`, by descending
-  `default-y` and then ascending `default-x`, and otherwise in document order,
-  with the lines of one `credit-words` in written order. The page orders the
-  lines but is not compared, because an assembled score does not encode pages.
-  The two sequences are matched by a longest common subsequence of texts: a
-  line of `Y` outside it is non-identical, and a line of `T(Y)` outside it is
-  extra.
+  counted credit of the page has `default-x` and `default-y` on its first
+  `credit-words`, by descending `default-y` and then ascending `default-x`, and
+  otherwise in document order, with the lines of one `credit` in written order.
+  The page orders the lines but is not compared, because an assembled score
+  does not encode pages. The two sequences are matched by a longest common
+  subsequence of texts: a line of `Y` outside it is non-identical, and a line
+  of `T(Y)` outside it is extra.
 - **Lines** (`ornament`, `text` and `voice`): musicdiff 6.0 drops the music21
   spanners for `wavy-line`, `dashes` and `bracket`, though it still compares
   the trill mark and the words text. Each `wavy-line` from `start` to `stop`
@@ -806,8 +813,8 @@ of its voice at that onset.
   end is normalized to `stop` before music21 parses the score, musicdiff 6.0
   does not distinguish `<ped)>` (`stop`) from `<ped-open)>` (`discontinue`).
   Each pedal line (`line="yes"`) of `Y` closed by `stop` or a terminal
-  `discontinue` is one `pedal` element when `T(Y)` has a pedal line with the
-  same start and end `(measure, staff, onset)` and no counted musicdiff
+  `discontinue` is one `pedal` element when `T(Y)` has a pedal line in that
+  part with the same start and end `(measure, onset)` and no counted musicdiff
   `pedal` difference touches that span. It is identical when both close with
   the same `type`. The check adds no extra elements.
 - **Beam hooks** (`beam`): musicdiff 6.0 encodes a hook as `partial`,
@@ -922,7 +929,10 @@ with their provenance:
   has surrounding spaces (`" sempre "`) and `T(Y)` has `"sempre"`, a pair in
   which `Y` writes two adjacent fingering digits on one note as
   `<fingering>5</fingering><fingering>4</fingering>` and `T(Y)` writes
-  `<fingering>54</fingering>`, pairs in
+  `<fingering>54</fingering>`, a pair in which a counted `credit` of `Y` splits
+  one heading line across sibling `credit-words` runs and `T(Y)` writes one
+  `credit-words`, a pair in which a standard single-number `ending` of `Y` has
+  text `"1"` and `T(Y)` has `"1."`, pairs in
   which `Y` writes a two-finger substitution as `5–4`, as SMuFL
   `fingering5fingeringSubstitutionAbovefingering4`, as three sibling
   `<fingering>` elements (`5`, `4`, `fingeringSubstitutionAbove`), or with
@@ -1229,12 +1239,14 @@ The instrument passes when it reports:
   pairs, the split-words pairs, the octave-shift encoding pairs and
   self-comparisons, the untyped-fermata pair, the MusicXML 3.0
   `other-dynamics` `pf` pair, the trimmed `other-dynamics` pair, the split
-  two-digit fingering pair, the finger-substitution encoding pairs, the
+  two-digit fingering pair, the split `credit-words` heading pair, the standard
+  numeric `ending` punctuation pair, the finger-substitution encoding pairs, the
   negative-`offset` direction pair, the single-note `begin` beam-hook pair,
-  and the second-ending `notations/tied`-only `tie-in` pair; the octave-shift,
-  untyped-fermata, `other-dynamics` `pf`, negative-`offset` direction and
-  single-note `begin` beam-hook pairs also have no difference in the layout
-  pass.
+  and the second-ending and unlabeled-last-ending `notations/tied`-only
+  `tie-in` pairs; the octave-shift,
+  untyped-fermata, `other-dynamics` `pf`, standard numeric `ending`
+  punctuation, negative-`offset` direction and single-note `begin` beam-hook
+  pairs also have no difference in the layout pass.
 
 The screen's allowlist is reviewed against the same fixtures before the
 samples are selected in Execution step 2. A failure of the instrument or of
@@ -1415,7 +1427,10 @@ running headers, so a conversion that omits one is counted; conversely,
 heading text carried in a `credit` without a `credit-type` (such as an untyped
 dedication, date/opus line, or untyped MuseScore-exported credit) is not
 counted, and escapes the text-space check when the reverse conversion omits
-untyped credits consistently. musicdiff 6.0
+untyped credits consistently, while style boundaries between sibling
+`credit-words` runs inside one counted `credit` and trailing-period differences
+(`"N"` versus `"N."`) on single-number volta `ending` labels are normalized
+away by design. musicdiff 6.0
 compares an arpeggio across events by its type, member count and the onset of
 its highest member, not by its members, so a regrouping that keeps these is
 not counted.
@@ -1572,16 +1587,27 @@ Source findings, with the pinned sources they rely on:
   [`other-dynamics` element](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/other-dynamics/).
   MusicXML 4.0 defines `<credit>` with optional `<credit-type>` children for
   roles such as `title`, `subtitle`, `composer`, `arranger`, `lyricist`,
-  `rights`, `page number` and `part name`, without dedicated values for
-  dedications, dates or opus lines; see the
+  `rights`, `page number` and `part name` and multiple sibling `<credit-words>`
+  children for sequential styled runs within one credit (`music21/musicxml/xmlToM21.py`
+  lines 968 to 980 instead joins sibling `credit-words` with `'\n'` while
+  reading position from the first `credit-words`), without dedicated
+  `<credit-type>` values for dedications, dates or opus lines; music21 10.5.2
+  stores `<ending>` element text in `RepeatBracket.overrideDisplay`
+  (`xmlToM21.py` lines 5198 to 5208) and musicdiff 6.0 formats `RepeatBracket`
+  labels from `overrideDisplay` when non-empty
+  ([m21utils.py lines 2284 to 2294](https://github.com/gregchapman-dev/musicdiff/blob/0368856e8561ba655d990c00c7ae46a2408f071c/musicdiff/m21utils.py#L2284-L2294));
+  see the
   [`credit` element](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/credit/),
+  the
+  [`credit-words` element](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/credit-words/),
   the
   [`credit-type` element](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/credit-type/),
   and the `formal-3` selected-file runtime observation and owner dispositions in
   [#1488 comment 7031008701](https://github.com/hcoona/three/issues/1488#issuecomment-7031008701),
-  [#1488 comment 7034443356](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356)
+  [#1488 comment 7034443356](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356),
+  [#1488 comment 7058188830](https://github.com/hcoona/three/issues/1488#issuecomment-7058188830)
   and
-  [#1488 comment 7058188830](https://github.com/hcoona/three/issues/1488#issuecomment-7058188830).
+  [#1488 comment 7067355696](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696).
 - music21 10.5.2 reads an `octave-shift` start as an `Ottava` whose first
   element is the next note, chord or rest that it parses, of any staff and at
   any offset, and a stop by adding the last note, chord or rest that its

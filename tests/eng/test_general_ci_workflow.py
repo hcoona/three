@@ -426,7 +426,7 @@ def test_required_general_ci_checks_remain_eligible(
     group = jobs["node-group"]
     assert group["env"]["MISE_EXEC_AUTO_INSTALL"] == "0"
     assert set(
-        _action(group, "jdx/mise-action")["with"]["install_args"].split()
+        _action(group, "jdx/mise-action")["with"]["install_args"].split()[2:]
     ) == {"dotnet", "node", "pnpm"}
     entry = next(
         step["run"] for step in group["steps"] if step.get("id") == "execute"
@@ -933,6 +933,23 @@ def test_framework_provider_reaches_every_native_sdk_root(workflow):
                     == provider
                 )
                 assert "global-json-file" in step["with"]
+        if key in {"scope", "node-group", "native-preparation-tests"}:
+            install_args = _action(job, "jdx/mise-action")["with"][
+                "install_args"
+            ].split()
+            assert install_args[:3] == ["--jobs", "1", "dotnet"]
+            if key == "scope":
+                assert set(install_args[2:]) == {"dotnet", "node", "pnpm"}
+            elif key == "native-preparation-tests":
+                assert " ".join(install_args[3:]) == (
+                    "${{ steps.plan.outputs.python == 'true' "
+                    "&& 'python uv' || '' }} "
+                    "${{ steps.plan.outputs.ruby == 'true' "
+                    "&& 'ruby' || '' }} "
+                    "${{ (steps.plan.outputs.node == 'true' || "
+                    "steps.plan.outputs.browser == 'true') "
+                    "&& 'node pnpm' || '' }}"
+                )
         if key not in {"scope", "node-group"}:
             continue
         prepare = next(

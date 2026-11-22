@@ -477,7 +477,13 @@ ends a grant. Git and the proposing PR retain the reason and history.
     - The owner's development agents may read the private transcription
       repository, including its drafts, review records and accepted gold, and
       the owner's local desk-study archive, locally and read-only. Their model
-      services process what they read; the owner accepts this. That content,
+      services process what they read; the owner accepts this. For `gold-01`,
+      the owner authorizes repairing the three legacy v1 converter mid-note
+      cross-voice `tie`/`tied` `stop` endpoints in a local staged build
+      directory and staged status-file copy, recording the prior and repaired
+      MusicXML SHA-256 digests locally rather than relaxing W1 tie semantics;
+      the original private transcription repository and all other staged gold
+      files remain read-only. That content,
       anything derived from it and piece identities are never committed,
       otherwise uploaded or quoted; public carriers report only aggregate
       results and anonymized batch numbers.
@@ -536,7 +542,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
   owner. The layout-fidelity score and ABC comparison result are recorded.
   Delete this entry when accepted or when the owner stops W1.
 - **Effects:** permit the design and planning entry's inspection and
-  documentation effects; local read-only use of the private inputs above;
+  documentation effects; local read-only use of the private inputs above, plus
+  the bounded local staged `gold-01` tie-endpoint repair authorized under Owner
+  decisions;
   local installation of musicdiff 6.0.0, xml2abc/abc2xml and, when missing or
   updated on the host, a MuseScore 4.x command line recorded by exact version
   and executable SHA-256 per run; download of public scores from OpenScore

@@ -20,13 +20,15 @@ completed selection (`200` PDMX + `50` Lieder;
 [Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7030522396))
 on `main` (`6f3c38f2`) and stopped on `l0033` in `baseline_content`
 ([Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7031008701)).
-The [requirements](docs/requirements.md), [Text Score 2 format](docs/text-format.md)
-and [comparison protocol](docs/comparison-protocol.md) incorporate the Phase 1
-owner dispositions from `formal-3` triage and the 23-piece gold audit
+The [requirements](docs/requirements.md), [Text Score 2 format](docs/text-format.md),
+[comparison protocol](docs/comparison-protocol.md), converters, comparator and
+structural scope screen incorporate the Phase 1 owner dispositions from
+`formal-3` triage and the 23-piece gold audit
 ([Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356),
-[addendum](https://github.com/hcoona/three/issues/1488#issuecomment-7058188830))
-ahead of the converter, comparator and screen implementation for `formal-4`
-(see [Agent handoff](docs/agent-handoff.md)).
+[notation addendum](https://github.com/hcoona/three/issues/1488#issuecomment-7058188830),
+[ABC 2.1 addendum](https://github.com/hcoona/three/issues/1488#issuecomment-7058919271),
+[implementation addendum](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696))
+ahead of `formal-4` execution (see [Agent handoff](docs/agent-handoff.md)).
 No acceptance measure has completed, and there is no recognizer, model,
 packaging or release yet.
 

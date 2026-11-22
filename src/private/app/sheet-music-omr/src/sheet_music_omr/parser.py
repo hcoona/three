@@ -55,6 +55,7 @@ from sheet_music_omr.model import (
     Duration,
     Dynamic,
     DynamicMark,
+    DynamicText,
     EndingKind,
     EndingOption,
     Endpoint,
@@ -72,6 +73,8 @@ from sheet_music_omr.model import (
     KeyOption,
     LeftRepeatOption,
     LenOption,
+    LineEnd,
+    LineStart,
     MeasureBlock,
     MeasureRest,
     Meter,
@@ -457,10 +460,14 @@ def _pitch(c: _Cursor) -> Pitch:
     if parenthesized:
         c.expect(")", "pitch")
     fingering: tuple[int, ...] = ()
+    fingering_substitution = False
     if c.take("f"):
         first = c.digit("12345", "fingering")
         fingering = (first,)
-        if c.peek() and c.peek() in "12345":
+        if c.take("-"):
+            fingering = (first, c.digit("12345", "fingering"))
+            fingering_substitution = True
+        elif c.peek() and c.peek() in "12345":
             fingering = (first, c.digit("12345", "fingering"))
     marks = _tie_marks(c) if c.peek() == "{" else []
 
@@ -473,6 +480,7 @@ def _pitch(c: _Cursor) -> Pitch:
         octave,
         parenthesized=parenthesized,
         fingering=fingering,
+        fingering_substitution=fingering_substitution,
         tie_in=any(kind == "tie-in" for kind, _ in marks),
         tie_end=next(iter(labels("tie_end")), None),
         tie_start=next(iter(labels("tie_start")), None),
@@ -545,9 +553,14 @@ _NOTE_FLAGS: tuple[tuple[re.Pattern[str], _FlagBuilder], ...] = (
     ),
     (
         re.compile(
-            "orn=(trill|mordent|inverted-mordent|turn|inverted-turn)",
+            r"orn=(?:(trill)(?:\((##|bb|#|b|n)\))?|"
+            r"(mordent|inverted-mordent|turn|inverted-turn))",
         ),
-        lambda m, loc: Ornament(OrnamentKind(m.group(1)), location=loc),
+        lambda m, loc: Ornament(
+            OrnamentKind.TRILL if m.group(1) else OrnamentKind(m.group(3)),
+            AccidentalKind(m.group(2)) if m.group(2) else None,
+            location=loc,
+        ),
     ),
     (
         re.compile("tremolo=single:([1-8])"),
@@ -741,9 +754,28 @@ def _pedal_release(c: _Cursor, location: Location) -> Direction:
     return PedalLine(label, PedalAction.LINE_RELEASE, location=location)
 
 
+def _pedal_line_open(c: _Cursor, location: Location) -> Direction:
+    label = _relation_suffix(c, "[rel=pedal@", ":line-open]")
+    return PedalLine(label, PedalAction.LINE_OPEN, location=location)
+
+
 def _dashes_end(c: _Cursor, location: Location) -> Direction:
     return DashesEnd(
         _relation_suffix(c, "[rel=dashes@", ":end]"),
+        location=location,
+    )
+
+
+def _line_start(c: _Cursor, location: Location) -> Direction:
+    return LineStart(
+        _relation_suffix(c, "[rel=line@", ":start]"),
+        location=location,
+    )
+
+
+def _line_end(c: _Cursor, location: Location) -> Direction:
+    return LineEnd(
+        _relation_suffix(c, "[rel=line@", ":end]"),
         location=location,
     )
 
@@ -772,13 +804,21 @@ def _clef_change(c: _Cursor, location: Location) -> Direction:
 
 def _metronome(c: _Cursor) -> Metronome:
     location = c.loc()
+    parenthesized = c.take("(")
     unit = c.expect_one_of(
         tuple(u.value for u in MetronomeUnit),
         "metronome",
     )
     c.expect("=", "metronome")
     value = c.pos_int("metronome")
-    return Metronome(MetronomeUnit(unit), value, location=location)
+    if parenthesized:
+        c.expect(")", "metronome")
+    return Metronome(
+        MetronomeUnit(unit),
+        value,
+        parenthesized=parenthesized,
+        location=location,
+    )
 
 
 def _tempo(c: _Cursor, location: Location) -> Direction:
@@ -823,6 +863,15 @@ def _dynamic(c: _Cursor, location: Location) -> Direction:
     return Dynamic(DynamicMark(name), above, location=location)
 
 
+def _dyn_text(*, above: bool) -> _DirectionBuilder:
+    def build(c: _Cursor, location: Location) -> Direction:
+        text = c.quoted("direction", nonempty=True)
+        c.expect(">", "direction")
+        return DynamicText(text, above=above, location=location)
+
+    return build
+
+
 type _DirectionBuilder = Callable[[_Cursor, Location], Direction]
 
 _DIRECTIONS: tuple[tuple[str, _DirectionBuilder], ...] = (
@@ -834,13 +883,18 @@ _DIRECTIONS: tuple[tuple[str, _DirectionBuilder], ...] = (
     *((f"<{s})>", _ottava(s, start=False)) for s in OttavaSign),
     ("<ped(>", _pedal_open),
     ("<ped)>", _pedal_release),
+    ("<ped-open)>", _pedal_line_open),
     ("<dashes)>", _dashes_end),
+    ("<line(>", _line_start),
+    ("<line)>", _line_end),
     ("<trill)>", _trill_end),
     ('<"', _text_direction),
     ("<clef ", _clef_change),
     ("<tempo ", _tempo),
     ("<rehearsal ", _rehearsal),
     ("<pedal-sign ", _pedal_sign),
+    ("<dyn-text ", _dyn_text(above=False)),
+    ("<^dyn-text ", _dyn_text(above=True)),
     ("<", _dynamic),
 )
 
