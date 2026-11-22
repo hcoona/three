@@ -643,7 +643,15 @@ class Runner:
         """
         if path in state.counts:
             return state.counts[path]
-        outcome = self._call("count", state.item, y=path)
+        step_name = (
+            "count_rx"
+            if state.item.kind == "rx"
+            and path == state.item.y
+            and "count_rx" in self.steps
+            and self.steps.get("count") is default_steps.count
+            else "count"
+        )
+        outcome = self._call(step_name, state.item, y=path)
         if not outcome.ok:
             message = (
                 f"step count, arm {state.item.arm}, file {state.item.id}: "

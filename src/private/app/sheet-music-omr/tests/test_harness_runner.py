@@ -16,11 +16,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ParamSpec, TypeVar
 
 import pytest
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
+from tokenizers.pre_tokenizers import ByteLevel
 
 from sheet_music_omr.harness import cli, steps
 from sheet_music_omr.harness import run as runner_module
 from sheet_music_omr.harness.cli import Dependencies, main
 from sheet_music_omr.harness.confine import Confinement
+from sheet_music_omr.harness.downloads import (
+    HuggingFaceFile,
+    Ledger,
+    git_blob_oid_file,
+)
 from sheet_music_omr.harness.gold import (
     GoldError,
     GoldPiece,
@@ -42,6 +50,10 @@ from sheet_music_omr.harness.report import (
     summarize,
     write_report,
 )
+from sheet_music_omr.harness.req012 import (
+    Req012ReplayStopError,
+    replay_req012,
+)
 from sheet_music_omr.harness.run import (
     GOLD_ARM,
     PublicFile,
@@ -50,8 +62,10 @@ from sheet_music_omr.harness.run import (
     arms,
     begin_run,
     failed_tally,
+    finish_run,
 )
 from sheet_music_omr.harness.stops import StopConditionError
+from sheet_music_omr.harness.tokenizer_counts import run_tokenizer_counts
 from sheet_music_omr.harness.worker import (
     InlineExecutor,
     Outcome,
@@ -1168,3 +1182,223 @@ def test_later_commands_require_the_preflight_instrument(
             == cli.STOP_STATUS
         )
     assert record_path.read_text(encoding="utf-8") == before_lock
+
+
+def _corrupted_rx_dashes_xml() -> bytes:
+    return (
+        b'<?xml version="1.0" encoding="utf-8"?>\n'
+        b'<score-partwise version="4.0">\n'
+        b'  <part-list><score-part id="P1"><part-name>Piano</part-name>'
+        b"</score-part></part-list>\n"
+        b'  <part id="P1">\n'
+        b'    <measure number="1">\n'
+        b"      <attributes><divisions>1</divisions>"
+        b"<key><fifths>0</fifths></key>"
+        b"<time><beats>4</beats><beat-type>4</beat-type></time>"
+        b"<staves>2</staves>"
+        b'<clef number="1"><sign>G</sign><line>2</line></clef>'
+        b'<clef number="2"><sign>F</sign><line>4</line></clef></attributes>\n'
+        b'      <direction placement="above"><direction-type>'
+        b"<words>rall.</words></direction-type><direction-type>"
+        b'<dashes type="start" number="1"/></direction-type>'
+        b"<staff>1</staff></direction>\n"
+        b'      <direction placement="below"><direction-type>'
+        b"<words>smorz.</words></direction-type><direction-type>"
+        b'<dashes type="start" number="1"/></direction-type>'
+        b"<staff>1</staff></direction>\n"
+        b"      <note><pitch><step>C</step><octave>5</octave></pitch>"
+        b"<duration>4</duration><voice>1</voice><type>whole</type>"
+        b"<staff>1</staff></note>\n"
+        b"      <backup><duration>4</duration></backup>\n"
+        b"      <note><pitch><step>C</step><octave>3</octave></pitch>"
+        b"<duration>4</duration><voice>5</voice><type>whole</type>"
+        b"<staff>2</staff></note>\n"
+        b"    </measure>\n"
+        b'    <measure number="2">\n'
+        b'      <direction placement="above"><direction-type>'
+        b'<dashes type="stop" number="1"/></direction-type>'
+        b"<staff>1</staff></direction>\n"
+        b'      <direction placement="below"><direction-type>'
+        b'<dashes type="stop" number="1"/></direction-type>'
+        b"<staff>1</staff></direction>\n"
+        b"      <note><pitch><step>D</step><octave>5</octave></pitch>"
+        b"<duration>4</duration><voice>1</voice><type>whole</type>"
+        b"<staff>1</staff></note>\n"
+        b"      <backup><duration>4</duration></backup>\n"
+        b"      <note><pitch><step>G</step><octave>2</octave></pitch>"
+        b"<duration>4</duration><voice>5</voice><type>whole</type>"
+        b"<staff>2</staff></note>\n"
+        b"    </measure>\n"
+        b"  </part>\n"
+        b"</score-partwise>\n"
+    )
+
+
+def test_rx_overlapping_dashes_defect_counts_from_x_and_is_attributed(
+    roots: Confinement,
+    tmp_path: Path,
+) -> None:
+    """Overlapping R(X) dashes fail the file using X's count and log #35740."""
+
+    class CorruptingRxLauncher(CopyLauncher):
+        def __call__(
+            self,
+            command: Sequence[str],
+            timeout: float,
+        ) -> tuple[int | None, str]:
+            out = Path(command[-2])
+            if out.name == "rx.musicxml" and "p0002" in out.parts:
+                out.write_bytes(_corrupted_rx_dashes_xml())
+                return 0, ""
+            return super().__call__(command, timeout)
+
+    plan = _plan(roots, ["p0001", "p0002"])
+    begin_run(roots, plan, {"commit": COMMIT, "dirty": False})
+    Runner(
+        roots,
+        _musescore(roots, tmp_path, CorruptingRxLauncher()),
+        InlineExecutor(),
+    ).run(plan)
+
+    rx2 = _result(tmp_path, "pdmx-rx", "p0002")
+    assert rx2["failed"] is True
+    assert rx2["count_source"] == "x"
+    assert rx2["failures"] == ["unsupported", "rx-unparsable"]
+    raw_summary = summarize(roots)
+    summary = json.loads(json.dumps(raw_summary))
+    defects = summary["arms"]["pdmx-rx"]["upstream_export_defects"]
+    assert isinstance(defects, dict)
+    files = defects["files"]
+    assert isinstance(files, list)
+    assert len(files) == 1
+    assert files[0]["id"] == "p0002"
+    assert "35740" in str(files[0]["issue"])
+    rem = defects["remaining_content"]
+    assert isinstance(rem, dict)
+    assert summary["arms"]["pdmx-rx"]["content"]["fidelity"] < 0.5  # noqa: PLR2004
+    assert rem["fidelity"] == summary["arms"]["pdmx-x"]["content"]["fidelity"]
+    md = public_markdown(raw_summary)
+    assert "Attributed upstream MuseScore 4 export defects" in md
+    assert "issues/35740" in md
+
+
+def test_replay_req012_and_tokenizer_counts_end_to_end(
+    roots: Confinement,
+    tmp_path: Path,
+) -> None:
+    """Verify OMR-REQ-012 replay and tokenizer-counts CLI scenarios."""
+    gold = _gold_piece(tmp_path, 1)
+    plan_base = _plan(roots, ["p0001"])
+    iso_xml = (
+        plan_base.public[0]
+        .x.read_text(encoding="utf-8")
+        .replace('encoding="UTF-8"', 'encoding="ISO-8859-1"')
+        .replace('encoding="utf-8"', 'encoding="ISO-8859-1"')
+        .replace("Piano", "Pianofort\u00e9")
+        .encode("iso-8859-1")
+    )
+    roots.write_bytes(plan_base.public[0].x, iso_xml)
+    plan = RunPlan(
+        ("pdmx",),
+        plan_base.public,
+        (gold,),
+        ((gold.id, gold.path),),
+    )
+    begin_run(roots, plan, {"commit": COMMIT, "tree": "b" * 64, "dirty": False})
+    Runner(
+        roots,
+        _musescore(roots, tmp_path, CopyLauncher()),
+        InlineExecutor(),
+    ).run(plan)
+    finish_run(roots)
+    write_json(
+        roots,
+        roots.run / GOLD_MAPPING,
+        {
+            "pieces": [
+                {
+                    "id": gold.id,
+                    "workspace": gold.workspace,
+                    "path": str(gold.path),
+                    "sha256": gold.sha256,
+                }
+            ]
+        },
+    )
+
+    manifest_path = tmp_path / "req012-manifest.json"
+    manifest_data = {
+        "input_provenance": {
+            "gold_scores": {"gold-01": {"score_musicxml_sha256": gold.sha256}}
+        },
+        "union_set_a_all_34_and_set_b": {
+            "raw_count": 2,
+            "deduplicated_locus_count": 1,
+            "loci": [
+                {
+                    "gold_id": "gold-01",
+                    "measure": 1,
+                    "w1_category": "beam",
+                    "in_set_a": True,
+                    "in_post_t01": False,
+                    "replay_target": {
+                        "gold_score_sha256": gold.sha256,
+                        "measure_ordinal": 1,
+                        "target_measure_ordinals": [1],
+                        "expected_zero_diff_category": "beam",
+                    },
+                }
+            ],
+        },
+    }
+    manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+    expected_manifest_sha = hashlib.sha256(
+        manifest_path.read_bytes()
+    ).hexdigest()
+    replay_summary = replay_req012(
+        roots, manifest_path, expected_sha256=expected_manifest_sha
+    )
+    assert replay_summary["all_passed"] is True
+    assert replay_summary["passed_loci"] == 1
+    assert (roots.run / "report" / "req012-replay.md").is_file()
+
+    with pytest.raises(Req012ReplayStopError, match="SHA-256"):
+        replay_req012(roots, manifest_path, expected_sha256="0" * 64)
+
+    vocab = {ch: idx for idx, ch in enumerate(ByteLevel.alphabet())}
+    tok = Tokenizer(BPE(vocab=vocab, merges=[]))
+    tok.pre_tokenizer = ByteLevel(add_prefix_space=False)
+    tok_src = tmp_path / "tiny-tokenizer.json"
+    tok.save(str(tok_src))
+    tok_bytes = tok_src.read_bytes()
+    spec = HuggingFaceFile(
+        repo="test/tiny-tok",
+        revision="a" * 40,
+        filename="tokenizer.json",
+        local_name="tiny-tokenizer.json",
+        size=len(tok_bytes),
+        git_blob_oid=git_blob_oid_file(tok_src),
+    )
+    ledger = Ledger.create(
+        roots.downloads / "download-ledger.json",
+        prior_total=0,
+        basis="unit-test",
+        confinement=roots,
+        mirror=roots.run / "download-ledger.json",
+    )
+    tok_summary = json.loads(
+        json.dumps(
+            run_tokenizer_counts(
+                roots,
+                ledger,
+                tokenizer_spec=spec,
+                fetch=lambda _url: [tok_bytes],
+            )
+        )
+    )
+    cohorts = tok_summary["cohorts"]
+    assert cohorts["gold"]["evaluated_pieces"] == 1
+    assert cohorts["gold"]["v2_per_system_tokens"]["count"] >= 1
+    assert cohorts["pdmx"]["evaluated_pieces"] == 1
+    assert ledger.total == len(tok_bytes)
+    assert (roots.run / "report" / "tokenizer-counts.md").is_file()

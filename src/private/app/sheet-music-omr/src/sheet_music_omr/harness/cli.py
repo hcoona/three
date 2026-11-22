@@ -52,6 +52,7 @@ from sheet_music_omr.harness.records import (
     write_json,
 )
 from sheet_music_omr.harness.report import write_report
+from sheet_music_omr.harness.req012 import replay_req012
 from sheet_music_omr.harness.run import (
     PublicFile,
     Runner,
@@ -69,6 +70,10 @@ from sheet_music_omr.harness.selection import (
     write_selection_markdown,
 )
 from sheet_music_omr.harness.stops import StopConditionError
+from sheet_music_omr.harness.tokenizer_counts import (
+    run_tokenizer_counts,
+    verify_tokenizer_run_inputs,
+)
 from sheet_music_omr.harness.view import view_file
 from sheet_music_omr.harness.worker import WorkerPool
 
@@ -158,6 +163,16 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_argument("--gold-cache", type=Path, required=True)
     sub.add_argument("--jobs", type=int, default=1)
     command("report", "Write the public and local reports.")
+    sub = command(
+        "replay-req012",
+        "Verify the frozen OMR-REQ-012 toolchain-class set on a completed run.",
+    )
+    sub.add_argument("--manifest", type=Path, required=True)
+    sub = command(
+        "tokenizer-counts",
+        "Run the W1 tokenizer-counts protocol on a completed run.",
+    )
+    ledger(sub)
     sub = command("view", "Show one file's measure differences.")
     sub.add_argument("--id", required=True)
     sub.add_argument("--arm", default=None)
@@ -617,6 +632,30 @@ def _pilot(
     confinement.temp.mkdir(parents=True, exist_ok=True)
 
 
+def _replay_req012(
+    arguments: argparse.Namespace,
+    confinement: Confinement,
+    effects: Dependencies,
+) -> None:
+    _require_preflight(confinement, effects)
+    replay_req012(confinement, arguments.manifest)
+
+
+def _tokenizer_counts(
+    arguments: argparse.Namespace,
+    confinement: Confinement,
+    effects: Dependencies,
+) -> None:
+    _require_preflight(confinement, effects)
+    verify_tokenizer_run_inputs(confinement)
+    ledger = open_ledger(
+        confinement,
+        prior_total=arguments.prior_total,
+        basis=arguments.basis,
+    )
+    run_tokenizer_counts(confinement, ledger, fetch=effects.fetch)
+
+
 _HANDLERS: Mapping[
     str,
     Callable[[argparse.Namespace, Confinement, Dependencies], None],
@@ -626,6 +665,8 @@ _HANDLERS: Mapping[
     "select": _select,
     "run": _run,
     "report": _report,
+    "replay-req012": _replay_req012,
+    "tokenizer-counts": _tokenizer_counts,
     "view": _view,
     "pilot": _pilot,
 }
