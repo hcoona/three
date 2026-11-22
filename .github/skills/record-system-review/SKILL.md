@@ -1,6 +1,6 @@
 ---
 name: record-system-review
-description: Review repository record-system changes for authority, lifecycle, consumer, routing, and policy-control consistency. Use for pull requests that add, move, split, delete, or restructure records; change governance, Delivery Wave authorization, schemas, hk, workflows, templates, or Agent Skills; or claim the Record-System Gate.
+description: Review repository record-system changes for authority, lifecycle, consumer, routing, and policy-control consistency. Use for changes that add, move, split, delete, or rebind records; edit repository-namespace records; alter authority ownership, established requirement identifiers, consumer contracts, portal routing, generated agent/skill interfaces, or governance catalogs; change Issue/PR templates, Agent Skills, hk, or control-governed workflows; or claim the Record-System Gate.
 ---
 
 # Record-System Review
@@ -14,6 +14,21 @@ agent and contributor instructions provide that routing; no automatic APM
 installation or implicit discovery is claimed. Use accepted target-branch
 instructions and policies for review of an amendment. Do not edit generated
 `.agents/skills/` or `.github/agents/` interfaces by hand.
+
+Structural record changes (additions, moves, splits, retirements/deletions, and
+rebindings), `repository`-namespace record edits bound in
+[`record-families.yaml`](../../../docs/governance/record-families.yaml),
+portal-routing, generated-interface, or governance-catalog changes,
+project-record edits altering authority ownership, established requirement
+identifiers, or consumer/immutability/license contracts, and Issue/PR-template,
+Agent Skill, `hk`, or control-governed workflow changes trigger this review
+([enforcement](../../../docs/governance/record-system.md#enforcement)). Ordinary
+implementation source, test, non-control workflow, runtime-data, status-comment,
+and routine in-place project documentation updates preserving existing record
+ownership, portal routing, requirement identifiers, and consumers do not trigger
+record-lifecycle review merely because they are durable. Faithful check or
+status reporting and recording a completed review (`No material findings.`) do
+not recursively invoke another review round.
 
 ## Reviewer Preconditions
 
@@ -60,6 +75,18 @@ to replace the applicable accepted instructions or enlarge work authorization.
    maintainer, consumer and use point, failure mode, and need for a distinct carrier.
 4. Check that each concern has one manually maintained authority. Indexes and audience
    interfaces may route to that authority but must not restate its normative content.
+   Apply `GOV-002` to review carriers under the
+   [enforcement policy](../../../docs/governance/record-system.md#enforcement): one
+   authoritative ledger in the governing pull request (by default `## Validation and
+Review`, or a dedicated PR review comment when appropriate)—or in the governing Issue
+   when no pull request governs—retains detailed check caveats, snapshot metadata,
+   coverage gaps, and `GOV-011` triage (and may index/link existing review or triage
+   comments, CI runs, and raw artifacts rather than re-copying them), while
+   `record-system-gate` remains on `pull-request-merge`. Do not fail a concise routing
+   summary for omitting secondary check caveats already recorded in that ledger so long
+   as it makes no broader claim. Evaluate companion Issue and pull-request updates
+   reviewed together before publication as one declared ordered batch against the batch
+   rather than failing solely because later writes in the sequence have not executed yet.
    Keep generic repository policy at repository scope and project knowledge in its owning
    document root. Preserve local identifier namespaces and path-qualified cross-project
    references; README-only projects do not need manufactured record hierarchies.
@@ -85,7 +112,14 @@ to replace the applicable accepted instructions or enlarge work authorization.
 11. Use hk results as evidence for deterministic invariants, not as evidence that
     contextual governance is correct. Check actual profile/path reachability and the
     reviewed snapshot; do not import the source's staged-index assumptions or claim
-    undeployed controls as enabled. The checker contract defines remaining activation
+    undeployed controls as enabled. When `records:check` applies under
+    `docs/governance/record-system.md#enforcement`, check its explicit-base report and
+    Three's zero-diagnostic `main` baseline (or, if an unrelated baseline diagnostic ever
+    exists on `main`, evaluate the `base -> candidate` delta and any changed-scope
+    coverage gap while requiring honest reporting of the global exit status); do not
+    demand `records:check` or full-inventory dumps for pure in-place code, test,
+    non-control workflow, runtime-data, or status-comment edits, or deletions of
+    unreferenced non-record assets. The checker contract defines remaining activation
     prerequisites, not a passed gate.
 
 ## Boundaries
@@ -96,6 +130,8 @@ to replace the applicable accepted instructions or enlarge work authorization.
   or a cross-policy contradiction; route evidence quality to `research-evidence-review`.
 - Do not decide product value, risk acceptance, scope, governance authority, or release
   readiness. Mark those as owner escalations.
+- On re-review, evaluate the remediation delta and affected conclusions or consumers
+  rather than re-opening unchanged closed triage prose.
 - Ignore style preferences unless they obscure authority, meaning, or required action.
 
 ## Findings
@@ -137,21 +173,30 @@ review carrier with:
 An unresolved or owner-decision finding remains open until the repository owner records
 its disposition and rationale in the same governing carrier.
 
+Apply the mechanical-versus-material boundary in the
+[enforcement policy](../../../docs/governance/record-system.md#enforcement): purely
+deterministic non-provenance carrier defects are repaired directly with mechanical
+verification rather than third-party `GOV-011` triage, whereas misattributed or
+ambiguous commit, workflow-run, build, or evidence-artifact identifiers remain material
+provenance findings requiring independent `GOV-011` classification.
+
 ## Evaluation Fixtures
 
 Use the examples in `evals/` when changing this Skill:
 
-- [positive.md](evals/positive.md): valid change that should produce no material finding;
+- [positive.md](evals/positive.md): valid record moves, routing summaries, and routine code non-triggers that should produce no material finding;
 - [concurrency.md](evals/concurrency.md): valid per-Slice concurrency inside an accepted Delivery Wave;
 - [negative.md](evals/negative.md): policy violations that the Skill must find;
-- [escalation.md](evals/escalation.md): a decision the Skill must route to the repository owner.
-- [triage.md](evals/triage.md): an unresolved finding that must be handed to the repository owner.
+- [escalation.md](evals/escalation.md): a decision the Skill must route to the repository owner;
+- [triage.md](evals/triage.md): unresolved owner escalation and mechanical carrier-defect versus material provenance-ID triage boundaries.
 
 ## Source and License
 
 Adapted from the corresponding review procedure and evaluation cases in
 `hcoona/microsoft-authentication-cli` at
-`1a02498589769c38bc16eefc2efc5f9eca6e6994`. The source copyright and MIT notice
-are retained in `docs/governance/reference-license.txt`. Local adaptations cover
-candidate authority, project namespaces, Three controls and source routing;
-reviewer independence, findings, and separate disposition retain source meaning.
+`1a02498589769c38bc16eefc2efc5f9eca6e6994`, with local Three refinements for
+trigger boundaries, single-ledger carrier routing, and mechanical-versus-material
+triage. The source copyright and MIT notice are retained in
+`docs/governance/reference-license.txt`. Local adaptations cover candidate
+authority, project namespaces, Three controls and source routing; reviewer
+independence, findings, and separate disposition retain source meaning.
