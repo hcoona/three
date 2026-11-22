@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
 using System.Text.Json;
@@ -81,7 +82,25 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
         return path;
     }
 
-    public void Dispose() => Directory.Delete(Root, true);
+    public void Dispose()
+    {
+        var elapsed = Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            {
+                Directory.Delete(Root, true);
+                return;
+            }
+            catch (IOException exception) when (OperatingSystem.IsWindows() &&
+                (exception.HResult == unchecked((int)0x80070020) ||
+                    exception.HResult == unchecked((int)0x80070021)) &&
+                elapsed.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                Thread.Sleep(50);
+            }
+        }
+    }
 
     internal sealed class UploadTransport(HttpStatusCode status) : HttpMessageHandler
     {
