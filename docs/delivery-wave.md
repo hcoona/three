@@ -1019,55 +1019,83 @@ ends a grant. Git and the proposing PR retain the reason and history.
       `docs/engineering/engineering-principles.md` unchanged.
     - Classify development and CI/PR validation versus empirical experiments by
       operation purpose and external effects rather than invocation channel.
-      Credential-free local restore/build/lint/test runs and governed CI/PR
-      validation of declared contracts, including defect fixes and ordinary
-      reruns of failed workflow jobs, require no separate experiment protocol
-      or attempt quota while retaining chronological run/failure identities and
-      existing recovery rules. Credential-bearing or non-public dependency sources require an explicit
-      Wave risk decision (a comment cannot grant them). Unmodeled external or
-      platform probes, credential-bearing or non-public dependency sources,
-      account/credential mutations, host mutations outside the
-      checkout/worktree, build outputs, temporary roots, and local package or
-      tool caches (plus any Wave-named tool state), destructive fault
-      injection, and paid or non-recoverable campaign dispatches remain outside
-      credential-free validation and under accepted experiment protocols and
-      cumulative bounds (when authorized by the Wave) even inside a test or
-      workflow step. Do not invent disposable-VM or OS-user prerequisites where the
-      accepted Wave and protocol bound an existing host.
+      Credential-free local restore/build/lint/test runs using standard
+      package-manager default public registries (when not cleared, restricted,
+      or excluded by accepted repository configuration or the Wave), public
+      dependency sources and toolchains declared in accepted repository
+      configuration, or local/temporary synthetic fixture sources, and governed CI/PR validation
+      of declared contracts (including standard ephemeral runner-issued job
+      plumbing such as checkout, cache, artifact, and public-release rate-limit
+      tokens/state in accepted workflows, defect fixes, and ordinary reruns of
+      failed workflow jobs) require no separate experiment protocol or attempt
+      quota while retaining relevant chronological CI/workflow run and attempt
+      identities when reporting gate results and existing recovery rules.
+      Unmodeled external or platform probes, credential-bearing, non-public, or
+      unaccepted external dependency sources (neither a comment nor an unmerged
+      branch commit can grant them), user/Environment secrets, OIDC/package
+      publication, interactive login/consent, account/tenant/permission
+      enrollment or switching, accessing, creating, rotating, or mutating real, persistent, external, or
+      ambient user/host accounts, brokers, keyrings, credentials, or secrets,
+      mutating ambient auth/host configuration (outside that standard ephemeral
+      runner-issued CI job plumbing), mutating persistent host or shared state outside normal repository Git state (including
+      linked-worktree metadata), accepted locked-toolchain/SDK install and
+      state roots, build and validation-report outputs, owned
+      temporary/synthetic-test state, local package or tool caches, ephemeral
+      CI-runner job/cache/artifact state, and any Wave-named tool state, destructive fault injection, and paid or
+      non-recoverable campaign dispatches remain outside routine validation and
+      require explicit Wave authorization/risk disposition and accepted
+      experiment protocols with cumulative bounds even inside a test or
+      workflow step. Do not invent disposable-VM or OS-user prerequisites where
+      the accepted Wave and protocol bound an existing host.
     - Align `controls.yaml` (`independent-finding-triage`) and
       `checker-contract.md` with [GOV-011](governance/governance-system.md#gov-011-separate-findings-from-disposition)
       so an Issue may serve as the governing review carrier when no PR governs,
       while keeping `record-system-gate` on `pull-request-merge` and keeping
       the GitHub PR body (`## Validation and Review`) valid as the default
-      single authoritative PR ledger without importing external character-limit
-      thread-splitting mandates. Concise routing summaries may link to that
-      authoritative ledger without repeating secondary caveats when making no
-      broader claim; companion Issue/PR updates reviewed together as one
-      ordered batch are checked against the batch rather than failing solely
-      because companion writes have not executed yet.
+      single authoritative PR ledger (which may index/link existing review or
+      triage comments and CI runs without re-copying them, and without
+      importing external character-limit thread-splitting mandates). Concise
+      routing summaries may link to that authoritative ledger without repeating
+      secondary caveats when making no broader claim; companion Issue/PR
+      updates reviewed together as one ordered batch are checked against the
+      batch rather than failing solely because companion writes have not
+      executed yet.
     - Allow direct author repair and mechanical verification, without
       third-party `GOV-011` classification or permanent triage rows, only for
       purely deterministic carrier defects (formatting/lint, Markdown
-      delimiters/syntax, commitlint/length rules, or container-pointer typos
-      whose cited fragment, content, and provenance are unchanged) that do not
-      alter authority, source/commit/run/build/artifact provenance, evidence
-      classification, claim scope, security/privacy, contract/test coverage, or
-      owner decisions. Wrong commit, workflow-run, build, or artifact
-      identifiers remain material provenance findings under `GOV-011`. Bound
-      re-reviews to the remediation delta and affected conclusions; faithful
-      check/status reporting and recording a completed review
+      delimiters/syntax, commitlint/length rules, container-pointer typos whose
+      cited fragment, content, and provenance are unchanged, or display-text
+      typos whose link target and underlying commit/run/artifact identity are
+      unchanged and unambiguous) that do not alter authority,
+      source/commit/run/build/artifact provenance, evidence classification,
+      claim scope, security/privacy, contract/test coverage, or owner
+      decisions. Misattributed or ambiguous commit, workflow-run, build, or
+      artifact identifiers remain material provenance findings under `GOV-011`.
+      Bound re-reviews to the remediation delta and affected conclusions;
+      faithful check/status reporting and recording a completed review
       (`No material findings.`) do not trigger another review round.
-    - Ordinary code, test, workflow-implementation, runtime-data, and
-      status-comment changes that do not alter maintained records, portals,
-      generated agent/skill interfaces, or governance catalogs do not trigger
-      record-lifecycle review; they also skip `records:check` unless they add
-      or rename tracked candidate-suffix files (`.md`, `.rst`, `.adoc`,
-      `.asciidoc`, `.yaml`, `.yml`, `.json`, `.jsonl`, `.csv`), edit
-      `apm.lock.yaml` provenance, or move/delete paths referenced by
-      maintained records or catalogs. In-place edits and structural changes to
-      maintained records trigger both. Preserve Three's zero-diagnostic
-      `records:check` baseline expectation rather than normalizing pre-existing
-      baseline failures.
+    - Decouple independent `record-system-review` from lightweight local
+      `records:check`: `record-system-review` covers structural record changes
+      (additions, moves, splits, deletions/retirements, or rebindings), edits
+      to `repository`-namespace records in `record-families.yaml` (such as
+      `README.md`, `docs/README.md`, `docs/governance/**`,
+      `docs/engineering/**`, `docs/delivery-wave.md`, `AGENTS.md`,
+      `docs/AGENTS.md`, `CONTRIBUTING.md`, and `schemas/governance/**`),
+      changes to portal routing, generated agent/skill interfaces, governance
+      catalogs, Issue/PR templates, Agent Skills, `hk`, or control-governed
+      workflows, and project-record edits altering authority ownership, established
+      requirement identifiers, or consumer/immutability/license contracts,
+      whereas ordinary source, test, non-control workflow, runtime-data,
+      status-comment, and routine in-place project documentation updates
+      preserving existing ownership, portal routing, requirement identifiers,
+      and consumers do not trigger it. Run `records:check` when editing or
+      deleting maintained records, portals, generated interfaces,
+      `apm.lock.yaml`, or governance catalogs, adding or renaming
+      [discovered record candidates](governance/checker-contract.md#independent-discovery-and-classification),
+      or moving or deleting paths referenced by maintained records,
+      `apm.lock.yaml`, or catalogs, preserving Three's zero-diagnostic `main`
+      baseline without hardcoding file-extension inventories into policy or
+      review Skills.
     - Add the uncertain-external-effects recovery rule in
       `docs/engineering/agent-execution.md`: inspect authoritative destination
       state before repeating an uncertain push, Issue/PR write, release, or

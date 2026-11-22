@@ -25,6 +25,20 @@ replacement sessions recover from Git and work carriers. A failed or stopped
 worker neither establishes completion nor permits an unverified external effect
 to be repeated. Never put session IDs, retries or results into the Wave.
 
+After a timed-out, interrupted, or otherwise uncertain external operation—such
+as `git push`, Issue or pull-request creation/update, workflow dispatch,
+release or tag publication, or a permission/access change—inspect the
+authoritative destination state (for example remote branch refs, live
+Issue/PR/comment state, workflow runs, or target configuration) before retrying
+or issuing a compensating write. Reconcile from what actually took effect
+rather than assuming failure; retry within remaining Wave/protocol bounds when
+authoritative destination state confirms the prior attempt had no effect or the
+operation is known-idempotent without duplicate-creation, dispatch,
+publication, or spend side effects (and no conflicting destination or ownership
+change occurred). If a non-idempotent effect remains indeterminate or repeating would
+exceed accepted bounds, stop and escalate to the repository owner rather than
+repeating the side effect.
+
 Keep agent worktrees and large local state on persistent storage outside tmpfs.
 Remove finished worktrees with `git worktree remove` and delete their retained
 local state.

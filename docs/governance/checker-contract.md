@@ -27,21 +27,25 @@ mise run records:test
 Write generated reports outside the worktree, as in the examples above. A report
 inside the worktree becomes an untracked candidate on the next run and requires
 classification like any other input. Attach the report or a retrievable artifact to the
-PR, together with the command and tool revision. A local filename and a digest
-alone do not provide the bytes needed for another reviewer to repeat the check.
+governing PR (or the governing Issue when no PR governs), together with the command and
+tool revision. A local filename and a digest alone do not provide the bytes needed for
+another reviewer to repeat the check. The [enforcement policy](record-system.md#enforcement)
+defines when `records:check` runs while preserving Three's zero-diagnostic `main`
+baseline.
 
 ## Inputs and Results
 
 A validation run identifies the repository, explicit accepted base commit,
 candidate commit or worktree/index snapshot, scope, tool versions, and commands
-in its PR or local review evidence. It must not silently substitute the current
+in its governing PR or Issue review carrier (or local review evidence before
+publication). It must not silently substitute the current
 branch for an unavailable accepted base. Refresh evidence when a relied-on
 authority or candidate changes. Do not store run status in the catalogs.
 
 Keep schema validity, record coverage, and contextual acceptance separate.
 A bounded check reports uncovered paths and unresolved ownership, unavailable
 checks, and domain-review dependencies. Passing selected checks cannot produce
-a repository-wide completeness claim. Compare the discovered scope with the catalog and record any gap in the PR;
+a repository-wide completeness claim. Compare the discovered scope with the catalog and record any gap in the governing review carrier;
 a catalog entry alone does not establish coverage.
 
 The report carries the discovered paths and their classifications, snapshot
