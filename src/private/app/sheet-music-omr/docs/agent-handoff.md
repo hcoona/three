@@ -11,10 +11,15 @@ and top-level record routing.
 
 The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) is the sole
 positive work authority ([Issue #686](https://github.com/hcoona/three/issues/686)
-for sheet-music recognition planning and
-[Issue #1488](https://github.com/hcoona/three/issues/1488) for W1 text
-representation). A pull request, local run record, or issue comment cannot
-enlarge that authorization or waive an accepted gate. Chronological progress,
+for sheet-music recognition design and planning; the W1 text-representation
+grant for [Issue #1488](https://github.com/hcoona/three/issues/1488) was
+retired after owner acceptance of `formal-5` in
+[#1488 comment 7083509900](https://github.com/hcoona/three/issues/1488#issuecomment-7083509900)).
+Any implementation, experiment, runtime execution, tool installation, or dataset
+download beyond `#686`'s documentation and planning scope requires its own
+accepted Delivery Wave entry; evidence acceptance does not retain or revive W1's
+spent execution grant. A pull request, local run record, or issue comment cannot
+enlarge authorization or waive an accepted gate. Chronological progress,
 reviews, and findings remain in those Issues and their linked pull requests.
 
 ## Change routing
@@ -40,22 +45,26 @@ harness components are merged on `main` (source findings from repository
 history):
 
 - **Authorization and normative records:** Delivery Wave entries (`#1504`,
-  amended in `#1525` to replace the ABC round-trip gate with ABC capability
-  mapping), [requirements](requirements.md) and
+  amended in `#1525`, `#1678`, `#1705`, and `#1711`, and retired on W1
+  acceptance), [requirements](requirements.md) and
   [Text Score 2 format](text-format.md) (`#1537`, `#1547`, `#1559`, `#1564`,
-  `#1569`), and the [comparison protocol](comparison-protocol.md) with its
-  accepted calibration, voice-position, and octave-shift amendments (`#1571`,
-  `#1591`, `#1598`, `#1605`, `#1608`).
+  `#1569`, `#1685`, `#1716`), and the
+  [comparison protocol](comparison-protocol.md) with its accepted calibration,
+  voice-position, octave-shift, Phase 1, and re-export attribution amendments
+  (`#1571`, `#1591`, `#1598`, `#1605`, `#1608`, `#1678`, `#1685`, `#1716`).
 - **Core Python package (`sheet_music_omr`):** parser and canonical writer
   (`#1570`), semantic validator and carry-out derivation (`#1572`), system
   assembler (`#1577`), forward MusicXML 4.0 converter (`#1578`), reverse
-  MusicXML converter (`#1579`), and calibrated round-trip comparator (`#1607`).
+  MusicXML converter (`#1579`), and calibrated round-trip comparator (`#1607`),
+  together with the Phase 1 and post-`formal-4` converter and comparator updates
+  (`#1704`, `#1716`, merged at `9171f870684a37e0ca5a526387ea69d92e740882`).
 - **Measurement run harness (`sheet_music_omr.harness`):** preflight,
   byte-bounded download ledger, structural scope screen, deterministic PDMX and
   OpenScore Lieder selection, isolated MuseScore invocation, bounded worker pool,
-  read-only private-gold execution, reporting, measure-level `view`, and
-  repository-fixture `pilot` (`#1609`, merged at
-  `397b306f27cf51e15f58d44f5b67c1c0626f1ade`).
+  read-only private-gold execution, attributed-`R(X)` reporting, frozen
+  `OMR-REQ-012` replay (`replay-req012`), `Qwen3-VL-2B-Instruct` tokenizer
+  counting (`tokenizer-counts`), measure-level `view`, and repository-fixture
+  `pilot` (`#1609`, `#1678`, `#1704`, `#1716`).
 
 Run local package checks from the repository root:
 
@@ -71,10 +80,10 @@ uv run pyrefly check src/private/app/sheet-music-omr
 `--group dev` in `uv run` when invoking the harness so `pytest` is present in
 the active environment.
 
-## Pre-run baselines and open W1 evidence items
+## Completed W1 evidence baselines
 
-The following pre-execution artifacts and open obligations are recorded on
-[Issue #1488](https://github.com/hcoona/three/issues/1488):
+The following W1 pre-execution baselines and acceptance artifacts are recorded
+on [Issue #1488](https://github.com/hcoona/three/issues/1488):
 
 - **Source triage method (ready):** fixed before formal execution in
   [#1488 comment 6721091552](https://github.com/hcoona/three/issues/1488#issuecomment-6721091552)
@@ -117,21 +126,44 @@ The following pre-execution artifacts and open obligations are recorded on
   `research-evidence-review` in
   [#1488 comment 7058919271](https://github.com/hcoona/three/issues/1488#issuecomment-7058919271)
   (source findings; each mapping cell is a source-backed inference).
-- **Remaining W1 execution items:** `formal-4` ran on `5956790d` after `#1704`
-  and `#1705` merged, completed `pdmx-x` (`200 / 200`), and stopped on
-  `p0098/rx`
-  ([#1488 comment 7071662321](https://github.com/hcoona/three/issues/1488#issuecomment-7071662321)).
-  Following the owner dispositions in
-  [#1488 comment 7071944465](https://github.com/hcoona/three/issues/1488#issuecomment-7071944465)
-  and [PR #1711](https://github.com/hcoona/three/pull/1711), the `327`-locus
-  `OMR-REQ-012` frozen set and replay protocol and the W1 tokenizer-counts
-  protocol are defined in
-  [Validation basis](requirements.md#validation-basis). Executing a clean
-  end-to-end formal run (`formal-5`) together with `replay-req012` and
-  `tokenizer-counts` on `origin/main` after this PR merges remains owed for W1
-  acceptance.
+- **Completed W1 acceptance run (`formal-5`) and owner acceptance:** after
+  `formal-4` stopped on `p0098/rx` on `5956790d`
+  ([#1488 comment 7071662321](https://github.com/hcoona/three/issues/1488#issuecomment-7071662321))
+  and the post-`formal-4` owner dispositions and implementations landed in
+  [#1488 comment 7071944465](https://github.com/hcoona/three/issues/1488#issuecomment-7071944465),
+  [PR #1711](https://github.com/hcoona/three/pull/1711), and
+  [PR #1716](https://github.com/hcoona/three/pull/1716), `formal-5` ran to 100%
+  completion on clean `main` commit `9171f870684a37e0ca5a526387ea69d92e740882`
+  with `MuseScore Studio 4.7.7.261109195` (`executable_sha256`
+  `89d9145261eb2bec6aedc208b5234b92c01fe6bc5485fec7e2ce28ec05819f31`;
+  pre-conversion selection manifest in
+  [#1488 comment 7075296838](https://github.com/hcoona/three/issues/1488#issuecomment-7075296838),
+  independently reviewed results report in
+  [#1488 comment 7083248609](https://github.com/hcoona/three/issues/1488#issuecomment-7083248609),
+  and owner acceptance disposition in
+  [#1488 comment 7083509900](https://github.com/hcoona/three/issues/1488#issuecomment-7083509900);
+  source findings over runtime observations): `gold-x` `100.0000%`
+  (`30,716 / 30,716`, `0` differences, `23 / 23` import checks passed, `23 / 23`
+  text-space consistent, `87.8583%` layout fidelity, `6` `excluded_voices`;
+  `gold-01` evaluated on the one-time owner-authorized staged tie-endpoint
+  repair of [PR #1705](https://github.com/hcoona/three/pull/1705) /
+  [#1488 comment 7067355696](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696)
+  item 4, recording prior and repaired SHA-256 digests locally while keeping the
+  original private transcription repository and the other `22` gold pieces
+  read-only),
+  system assembly `23 / 23` `equal` (`493` systems, `0` `excluded_voices`),
+  `pdmx-x` `99.6360%` (`94,696 / 95,042`), `pdmx-rx` `93.8568%` raw
+  (`89,255 / 95,097`) and `99.6995%` (`89,255 / 89,524`) across the `197` files
+  not solely corrupted by upstream MuseScore 4.7.7 export defects
+  ([musescore/MuseScore#22974](https://github.com/musescore/MuseScore/issues/22974),
+  [#35740](https://github.com/musescore/MuseScore/issues/35740),
+  [#35741](https://github.com/musescore/MuseScore/issues/35741)), `lieder-x`
+  `99.8140%` (`41,323 / 41,400`), `lieder-rx` `99.8435%` (`41,463 / 41,528`),
+  `OMR-REQ-012` frozen replay `327 / 327` deduplicated loci (`356` raw entries,
+  `0` failed), and `Qwen3-VL-2B-Instruct` tokenizer counts recorded (`2,350,276,855`
+  cumulative ledger bytes against the `20,000,000,000`-byte W1 cap).
 
-## Prior formal-run state and resumption boundary
+## Formal-run history and closed-grant boundary
 
 Two formal harness attempts ran on Windows x64 at clean `main` commit
 `397b306f27cf51e15f58d44f5b67c1c0626f1ade` before workstation transition:
@@ -189,11 +221,23 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
    [#1488 comment 7058919271](https://github.com/hcoona/three/issues/1488#issuecomment-7058919271)
    and
    [#1488 comment 7067355696](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696).
-   When executing on the active Windows + WSL2 workstation:
-    - preserve the external `formal-1`, `formal-2`, `formal-3`, and `formal-4`
-      run directories and their selection and ledger artifacts intact; never
-      overwrite them or manually edit run artifacts to skip a stopping file;
-    - follow the [comparison protocol](comparison-protocol.md) for the updated
+5. **`formal-4` stop and `formal-5` completion:** `formal-4` (`5956790d`)
+   completed `pdmx-x` (`200 / 200`) and stopped on `p0098/rx`
+   ([#1488 comment 7071662321](https://github.com/hcoona/three/issues/1488#issuecomment-7071662321)).
+   After `#1711` and `#1716` (`9171f870`), `formal-5` completed all arms,
+   `replay-req012`, and `tokenizer-counts` with zero stops and was accepted by
+   the repository owner
+   ([#1488 comment 7083248609](https://github.com/hcoona/three/issues/1488#issuecomment-7083248609),
+   [#1488 comment 7083509900](https://github.com/hcoona/three/issues/1488#issuecomment-7083509900)).
+   No further W1 execution is authorized without a new accepted
+   [Delivery Wave](../../../../../docs/delivery-wave.md) entry. If a future
+   Delivery Wave entry authorizes follow-on formal runs on a Windows or Windows +
+   WSL2 workstation:
+    - preserve external `formal-1` through `formal-5` run directories and their
+      selection and ledger artifacts until the repository owner deletes them
+      after results/closure merge; never overwrite prior run directories or
+      manually edit run artifacts to skip a stopping file;
+    - follow the [comparison protocol](comparison-protocol.md) for
       [MuseScore 4.x provenance and WSL2/host isolation](comparison-protocol.md#tools-and-environment),
       [structural scope screening](comparison-protocol.md#structural-scope-screen),
       [failures and attributed upstream MuseScore re-export breakdown](comparison-protocol.md#failures),
@@ -202,8 +246,8 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
       and [stop conditions](comparison-protocol.md#stop-conditions), and
       follow [Validation basis](requirements.md#validation-basis) for
       `replay-req012` and `tokenizer-counts`;
-    - run formal corpus/gold execution (`formal-5`), `replay-req012`, and
-      `tokenizer-counts` only from a clean `origin/main` checkout after all
+    - run formal corpus/gold execution, `replay-req012`, and `tokenizer-counts`
+      only from a clean `origin/main` checkout after any newly authorized
       protocol and converter changes are merged.
 
 ## External state, privacy and worktree hygiene
@@ -214,21 +258,27 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   ([Execution and bounds](comparison-protocol.md#execution-and-bounds)). Never
   commit downloaded corpora, MuseScore scratch files, or run outputs
   ([OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance)).
-  When initializing a newly created `DOWNLOADS` directory that has no shared
-  `download-ledger.json` yet, pass `--prior-total 2343244452` (plus any later W1
-  downloads) and `--basis` on the first `preflight` or `download`.
+  W1's `20,000,000,000`-byte download allowance ended when `#1488` was retired
+  at a completed cumulative total of `2,350,276,855` bytes; any new download
+  requires explicit bounds in a future Delivery Wave entry, and initializing a
+  fresh authorized `DOWNLOADS` directory without `download-ledger.json` must
+  pass `--prior-total 2350276855` and `--basis` on the first `preflight` or
+  `download`.
 - **Code-tree and MuseScore provenance binding:** `harness/cli.py:_require_preflight`
   and `harness/run.py:begin_run` enforce the clean project code-tree (`CODE_PATHS`)
   and per-run MuseScore identity invariants defined in
   [Tools and environment](comparison-protocol.md#tools-and-environment) and
   [Execution and bounds](comparison-protocol.md#execution-and-bounds). Start
-  resumed formal runs in a fresh external run directory (`formal-5` or later)
-  while keeping `formal-1`, `formal-2`, `formal-3`, and `formal-4` untouched.
+  any newly authorized formal run in a fresh external run directory while
+  keeping prior `formal-1` through `formal-5` directories untouched.
 - **Private gold boundary (`OMR-REQ-015`):** read private gold inputs locally
-  and read-only. Keep `RUN/gold/mapping.json` (`harness/privacy.py:GOLD_MAPPING`)
-  confined to the local external run directory. Never commit, log, or publish
-  private file paths, filenames, piece identities, or score content; public
-  records may report only aggregate counts and anonymized batch numbers.
+  and read-only (`PR #1705`'s one-time staged `gold-01` tie-endpoint repair
+  grant from [#1488 comment 7067355696](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696)
+  item 4 is spent and permits no further gold-file edits). Keep
+  `RUN/gold/mapping.json` (`harness/privacy.py:GOLD_MAPPING`) confined to the
+  local external run directory. Never commit, log, or publish private file
+  paths, filenames, piece identities, or score content; public records may
+  report only aggregate counts and anonymized batch numbers.
 - **Worktree hygiene:** create new branches from a freshly fetched, clean
   `origin/main` worktree. Do not stage or revive superseded local prototypes
   left in historical developer worktrees—specifically any early
@@ -237,53 +287,54 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   `TextScore2.csproj` normalizer prototype (superseded by the Python package in
   `#1570`–`#1609`).
 
-## Execution gates when external artifacts are staged
+## Execution gates for future authorized harness runs
 
-With out-of-repository `GOLD` (`--gold-status` and `--gold-cache`), `DOWNLOADS`
-(restored from the previous machine or initialized with `--prior-total
-2343244452`), and the `OMR-REQ-012` desk-study archive staged outside OneDrive
-and outside all repository worktrees (resumed in
-[#1488 comment 7029347075](https://github.com/hcoona/three/issues/1488#issuecomment-7029347075)),
-execute these steps in order:
+Every `python -m sheet_music_omr.harness` subcommand (`preflight`, `download`,
+`select`, `run`, `report`, `replay-req012`, `tokenizer-counts`, `view`, and
+`pilot`) creates or locks external `RUN`/`DOWNLOADS` state or invokes host
+`MuseScore 4`, network, or private-gold effects; invoke any harness subcommand
+only when a new accepted [Delivery Wave](../../../../../docs/delivery-wave.md)
+entry explicitly authorizes those effects (`#1488`'s W1 grant is closed; only
+locked in-workspace checks—`pytest`, `ruff`, and `pyrefly`—remain ordinary local
+package checks when modifying authorized code). With out-of-repository `GOLD` (`--gold-status` and `--gold-cache`), `DOWNLOADS`
+(carrying `download-ledger.json`, or initialized with `--prior-total
+2350276855`), and the `OMR-REQ-012` desk-study archive staged outside OneDrive
+and outside all repository worktrees, execute these steps in order:
 
-1. **Confirm clean code baseline and pre-selection gates on `main`:** ensure the
-   Phase 1 record/protocol updates (`#1685`), Phase 1 ABC 2.1 capability-mapping
-   addendum ([#1488 comment 7058919271](https://github.com/hcoona/three/issues/1488#issuecomment-7058919271)),
-   Phase 1 implementation (`#1704`) and allowlist review
-   ([#1488 comment 7069648364](https://github.com/hcoona/three/issues/1488#issuecomment-7069648364)),
-   Delivery Wave amendments (`#1705`, `#1711`), and the post-`formal-4`
-   converter, comparator, attributed-`R(X)` reporting, `OMR-REQ-012` frozen
-   validation-basis, and tokenizer-counts protocol PR are merged on `origin/main`
-   and `src/private/app/sheet-music-omr/` has a clean code tree. Never bypass a
-   stop by editing run artifacts or skipping files manually.
+1. **Confirm clean code baseline and pre-selection gates on `main`:** ensure any
+   newly authorized record, protocol, converter, or comparator updates are
+   accepted and merged on `origin/main` and `src/private/app/sheet-music-omr/`
+   has a clean code tree. Never bypass a stop by editing run artifacts or
+   skipping files manually.
 2. **Verify host MuseScore 4 availability (Windows or WSL2):** confirm Windows
    host `MuseScore4.exe` (`4.x`) is reachable (default
    `C:\Program Files\MuseScore 4\bin\MuseScore4.exe` or
    `/mnt/c/Program Files/MuseScore 4/bin/MuseScore4.exe`, or pass `--musescore`
    / `--settings`). An absent `MuseScore4.ini` on a fresh installation is
-   valid and uses the eight source defaults.
+   valid and uses the eight source defaults (rechecking source defaults per
+   [Source basis](comparison-protocol.md#source-basis) if `MuseScore4.exe` is
+   outside `4.7.6`/`4.7.7`).
 3. **Run preflight in a fresh external run directory:**
 
     ```powershell
     uv run --package sheet-music-omr --group dev `
       python -m sheet_music_omr.harness preflight `
-      --run-dir RUN_FORMAL_5 --downloads DOWNLOADS `
-      --prior-total 2343244452 `
-      --basis "Carried forward from formal-1/formal-2 (#1488 comment 6728507174)"
+      --run-dir RUN_DIR --downloads DOWNLOADS `
+      --prior-total 2350276855 `
+      --basis "Carried forward from completed W1 formal-5 (#1488 comment 7083248609)"
     ```
 
     (Omit `--prior-total` and `--basis` if `DOWNLOADS/download-ledger.json` is
     already present.)
 
 4. **Complete selection and publish the manifest before conversion:** run
-   `download` (reusing verified local archives at 0 network bytes when copied
-   from the prior machine) and `select` (resumable across interruptions via
+   `download` and `select` (resumable across interruptions via
    `selection/*.progress.json`), then post the complete protocol-conforming
    selection list (up to 200 PDMX files and 50 Lieder extracts, or all passing
    candidates with the smaller count reported when fewer pass;
    [Selection before conversion](comparison-protocol.md#selection-before-conversion))
-   to `#1488` before invoking `run`. Before relying on results, also settle
-   any remaining open check in
+   to the governing Issue before invoking `run`. Before relying on results, also
+   settle any remaining open check in
    [Evidence limits and open checks](comparison-protocol.md#evidence-limits-and-open-checks).
 5. **Run all arms on the calibrated code tree and MuseScore build:** execute
    `run` and `report` across PDMX, Lieder, their MuseScore `R(X)` re-exports,
@@ -296,12 +347,11 @@ execute these steps in order:
    [source triage method](https://github.com/hcoona/three/issues/1488#issuecomment-6721091552)
    with explicit evidence labels, complete independent `research-evidence-review`
    and GOV-011 triage, use local `harness view` for the owner's spot-check, and
-   post sanitized results to `#1488`.
-7. **Complete remaining W1 exit gates:** execute `replay-req012 --manifest` and
-   `tokenizer-counts` on the completed formal run per
-   [Validation basis](requirements.md#validation-basis)
-   ([Delivery Wave](../../../../../docs/delivery-wave.md) `#1488`,
-   [OMR-REQ-012](requirements.md#omr-req-012-toolchain-class-findings), and
+   post sanitized results to the governing Issue.
+7. **Complete auxiliary validation-basis protocols when required:** execute
+   `replay-req012 --manifest` and `tokenizer-counts` on the completed formal run
+   per [Validation basis](requirements.md#validation-basis)
+   ([OMR-REQ-012](requirements.md#omr-req-012-toolchain-class-findings) and
    [OMR-REQ-014](requirements.md#omr-req-014-evidence-separation)), post the
-   sanitized reports to `#1488`, and obtain owner W1 acceptance before retiring
-   the `#1488` Delivery Wave entry.
+   sanitized reports, and obtain owner acceptance before retiring the governing
+   Delivery Wave entry.
