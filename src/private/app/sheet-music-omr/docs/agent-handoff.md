@@ -82,15 +82,14 @@ The following pre-execution artifacts and open obligations are recorded on
   attributed to one of five sources: converter defect, format gap or ambiguity,
   MuseScore export or import, comparator/screen/harness defect, or unsupported
   content in gold.
-- **Structural-screen allowlist review (passed for `#1609`; Phase 1 update
-  required before `formal-4` `select`):** independent Round 2 review passed
-  across all eight calibration pair tables (`322` texts, `71` screen tests)
-  before `#1609` merged, recorded in
-  [#1488 comment 6721238428](https://github.com/hcoona/three/issues/1488#issuecomment-6721238428)
-  (source finding). Because Phase 1 expands the structural scope screen and
-  calibration fixtures, an updated independent allowlist review against the
-  expanded calibration set is required before `formal-4` sample selection
-  ([Calibration](comparison-protocol.md#calibration)).
+- **Structural-screen allowlist review (completed for Phase 1 in `#1704`):**
+  independent Round 2 review passed before `#1609` merged
+  ([#1488 comment 6721238428](https://github.com/hcoona/three/issues/1488#issuecomment-6721238428)),
+  and the updated independent allowlist review across all eight expanded Phase 1
+  calibration tables (`191` pairs, `382` texts, `0` violations) passed and is
+  recorded in
+  [#1488 comment 7069648364](https://github.com/hcoona/three/issues/1488#issuecomment-7069648364)
+  (source findings; no `screen.py` changes have been made since `#1704`).
 - **Pilot and probe limits:** the final single-fixture harness pilot on the
   rebased `#1609` branch
   ([#1488 comment 6728291229](https://github.com/hcoona/three/issues/1488#issuecomment-6728291229))
@@ -118,19 +117,19 @@ The following pre-execution artifacts and open obligations are recorded on
   `research-evidence-review` in
   [#1488 comment 7058919271](https://github.com/hcoona/three/issues/1488#issuecomment-7058919271)
   (source findings; each mapping cell is a source-backed inference).
-- **Unstarted W1 acceptance and auxiliary evidence:** no formal corpus or gold
-  round-trip measurement has completed (`OMR-REQ-010`, `OMR-REQ-011`, and the
-  non-gating layout score in `OMR-REQ-013`), the updated structural-screen
-  allowlist review against the expanded Phase 1 calibration set and the
-  owner-approved `docs/delivery-wave.md` amendment for repairing `gold-01`'s
-  `3` legacy prototype `tie` `stop` tags in the local staged `gold-cache` copy
-  ([#1488 comment 7067355696](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696))
-  remain owed before `formal-4` execution, the `OMR-REQ-012`
-  toolchain-class finding set is not yet frozen, and W1 tokenizer counts
-  ([Delivery Wave](../../../../../docs/delivery-wave.md) `#1488`,
-  [OMR-REQ-014](requirements.md#omr-req-014-evidence-separation), and
-  [Validation basis](requirements.md#validation-basis)) have not yet been
-  protocol-reviewed or executed.
+- **Remaining W1 execution items:** `formal-4` ran on `5956790d` after `#1704`
+  and `#1705` merged, completed `pdmx-x` (`200 / 200`), and stopped on
+  `p0098/rx`
+  ([#1488 comment 7071662321](https://github.com/hcoona/three/issues/1488#issuecomment-7071662321)).
+  Following the owner dispositions in
+  [#1488 comment 7071944465](https://github.com/hcoona/three/issues/1488#issuecomment-7071944465)
+  and [PR #1711](https://github.com/hcoona/three/pull/1711), the `327`-locus
+  `OMR-REQ-012` frozen set and replay protocol and the W1 tokenizer-counts
+  protocol are defined in
+  [Validation basis](requirements.md#validation-basis). Executing a clean
+  end-to-end formal run (`formal-5`) together with `replay-req012` and
+  `tokenizer-counts` on `origin/main` after this PR merges remains owed for W1
+  acceptance.
 
 ## Prior formal-run state and resumption boundary
 
@@ -191,25 +190,21 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
    and
    [#1488 comment 7067355696](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696).
    When executing on the active Windows + WSL2 workstation:
-    - preserve the external `formal-1`, `formal-2`, and `formal-3` run
-      directories and their selection and ledger artifacts intact; never
+    - preserve the external `formal-1`, `formal-2`, `formal-3`, and `formal-4`
+      run directories and their selection and ledger artifacts intact; never
       overwrite them or manually edit run artifacts to skip a stopping file;
     - follow the [comparison protocol](comparison-protocol.md) for the updated
       [MuseScore 4.x provenance and WSL2/host isolation](comparison-protocol.md#tools-and-environment),
       [structural scope screening](comparison-protocol.md#structural-scope-screen),
+      [failures and attributed upstream MuseScore re-export breakdown](comparison-protocol.md#failures),
       [supplementary checks](comparison-protocol.md#supplementary-checks),
       [code-tree binding, shared ledger, resumable selection, and split baseline steps](comparison-protocol.md#execution-and-bounds),
-      and [stop conditions](comparison-protocol.md#stop-conditions);
-    - after the Phase 1 implementation PR and the separate `docs/delivery-wave.md`
-      amendment authorizing the 3-measure legacy `tie` `stop` repair in the local
-      staged `gold-01` copy
-      ([#1488 comment 7067355696](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696))
-      both merge to `main` (keeping `gold-cache` strictly read-only until that
-      Wave amendment merges), record the updated structural-screen allowlist
-      review on `#1488` and run formal corpus/gold execution (`formal-4`) only
-      from a clean `origin/main` checkout; read-only local preparation of the
-      `OMR-REQ-012` toolchain-class finding set may proceed in parallel under
-      the accepted W1 Wave entry.
+      and [stop conditions](comparison-protocol.md#stop-conditions), and
+      follow [Validation basis](requirements.md#validation-basis) for
+      `replay-req012` and `tokenizer-counts`;
+    - run formal corpus/gold execution (`formal-5`), `replay-req012`, and
+      `tokenizer-counts` only from a clean `origin/main` checkout after all
+      protocol and converter changes are merged.
 
 ## External state, privacy and worktree hygiene
 
@@ -227,8 +222,8 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   and per-run MuseScore identity invariants defined in
   [Tools and environment](comparison-protocol.md#tools-and-environment) and
   [Execution and bounds](comparison-protocol.md#execution-and-bounds). Start
-  resumed formal runs in a fresh external run directory (`formal-4` or later)
-  while keeping `formal-1`, `formal-2`, and `formal-3` untouched.
+  resumed formal runs in a fresh external run directory (`formal-5` or later)
+  while keeping `formal-1`, `formal-2`, `formal-3`, and `formal-4` untouched.
 - **Private gold boundary (`OMR-REQ-015`):** read private gold inputs locally
   and read-only. Keep `RUN/gold/mapping.json` (`harness/privacy.py:GOLD_MAPPING`)
   confined to the local external run directory. Never commit, log, or publish
@@ -254,14 +249,13 @@ execute these steps in order:
 1. **Confirm clean code baseline and pre-selection gates on `main`:** ensure the
    Phase 1 record/protocol updates (`#1685`), Phase 1 ABC 2.1 capability-mapping
    addendum ([#1488 comment 7058919271](https://github.com/hcoona/three/issues/1488#issuecomment-7058919271)),
-   converter/comparator/screen implementation, updated structural-screen
-   allowlist review against the expanded calibration fixtures, and the separate
-   `docs/delivery-wave.md` amendment for the local staged `gold-01` copy
-   ([#1488 comment 7067355696](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696))
-   are merged/recorded on `origin/main` (keeping `gold-cache` strictly read-only
-   until that Wave amendment merges) and `src/private/app/sheet-music-omr/` has
-   a clean code tree. Never bypass a stop by editing run artifacts or skipping
-   files manually.
+   Phase 1 implementation (`#1704`) and allowlist review
+   ([#1488 comment 7069648364](https://github.com/hcoona/three/issues/1488#issuecomment-7069648364)),
+   Delivery Wave amendments (`#1705`, `#1711`), and the post-`formal-4`
+   converter, comparator, attributed-`R(X)` reporting, `OMR-REQ-012` frozen
+   validation-basis, and tokenizer-counts protocol PR are merged on `origin/main`
+   and `src/private/app/sheet-music-omr/` has a clean code tree. Never bypass a
+   stop by editing run artifacts or skipping files manually.
 2. **Verify host MuseScore 4 availability (Windows or WSL2):** confirm Windows
    host `MuseScore4.exe` (`4.x`) is reachable (default
    `C:\Program Files\MuseScore 4\bin\MuseScore4.exe` or
@@ -273,7 +267,7 @@ execute these steps in order:
     ```powershell
     uv run --package sheet-music-omr --group dev `
       python -m sheet_music_omr.harness preflight `
-      --run-dir RUN_FORMAL_4 --downloads DOWNLOADS `
+      --run-dir RUN_FORMAL_5 --downloads DOWNLOADS `
       --prior-total 2343244452 `
       --basis "Carried forward from formal-1/formal-2 (#1488 comment 6728507174)"
     ```
@@ -303,11 +297,11 @@ execute these steps in order:
    with explicit evidence labels, complete independent `research-evidence-review`
    and GOV-011 triage, use local `harness view` for the owner's spot-check, and
    post sanitized results to `#1488`.
-7. **Complete remaining W1 exit gates:** iterate reviewed converter or format
-   changes until one converter commit satisfies `OMR-REQ-010` and `OMR-REQ-011`
-   (reporting the non-gating `OMR-REQ-013` layout score alongside them), freeze
-   and replay the `OMR-REQ-012` toolchain-class set, complete protocol-reviewed
-   tokenizer counts ([Delivery Wave](../../../../../docs/delivery-wave.md)
-   `#1488`, [OMR-REQ-014](requirements.md#omr-req-014-evidence-separation), and
-   [Validation basis](requirements.md#validation-basis)), and obtain owner W1
-   acceptance before retiring the `#1488` Delivery Wave entry.
+7. **Complete remaining W1 exit gates:** execute `replay-req012 --manifest` and
+   `tokenizer-counts` on the completed formal run per
+   [Validation basis](requirements.md#validation-basis)
+   ([Delivery Wave](../../../../../docs/delivery-wave.md) `#1488`,
+   [OMR-REQ-012](requirements.md#omr-req-012-toolchain-class-findings), and
+   [OMR-REQ-014](requirements.md#omr-req-014-evidence-separation)), post the
+   sanitized reports to `#1488`, and obtain owner W1 acceptance before retiring
+   the `#1488` Delivery Wave entry.

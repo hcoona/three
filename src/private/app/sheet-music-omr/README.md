@@ -6,8 +6,8 @@ into text, and deterministic tools validate, assemble and convert that text to
 MusicXML. The records here define the text representation and the evidence its
 tools must meet.
 
-**Current state:** experimental; W1 formal measurement is iterating after
-`formal-3` stopped at baseline check (`#1488`). A Python package parses
+**Current state:** experimental; W1 formal measurement is preparing `formal-5`
+after `formal-4` stopped on `p0098/rx` (`#1488`). A Python package parses
 Text Score 2 documents, validates their grammar and semantics, reports each
 error with its rule class and location, lists review markers, writes canonical
 text, derives the carry-out state of a system document and assembles system
@@ -15,22 +15,23 @@ documents into one score. A forward converter turns a valid assembled score
 without review markers into MusicXML 4.0, and a reverse converter turns a
 MusicXML piano part on two staves back into a valid assembled score. A
 round-trip comparison instrument and execution harness run the
-[comparison protocol](docs/comparison-protocol.md). Formal attempt `formal-3`
-completed selection (`200` PDMX + `50` Lieder;
-[Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7030522396))
-on `main` (`6f3c38f2`) and stopped on `l0033` in `baseline_content`
-([Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7031008701)).
+[comparison protocol](docs/comparison-protocol.md) and the auxiliary protocols
+in the [validation basis](docs/requirements.md#validation-basis). Formal
+attempt `formal-4` completed `preflight`, `select` (`200` PDMX + `50` Lieder;
+[Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7070335207))
+and `pdmx-x` (`200 / 200` files) on `main` (`5956790d`) before stopping on
+`p0098/rx` (`_NumberConflictError`;
+[Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7071662321)).
 The [requirements](docs/requirements.md), [Text Score 2 format](docs/text-format.md),
 [comparison protocol](docs/comparison-protocol.md), converters, comparator and
-structural scope screen incorporate the Phase 1 owner dispositions from
-`formal-3` triage and the 23-piece gold audit
-([Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356),
-[notation addendum](https://github.com/hcoona/three/issues/1488#issuecomment-7058188830),
-[ABC 2.1 addendum](https://github.com/hcoona/three/issues/1488#issuecomment-7058919271),
-[implementation addendum](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696))
-ahead of `formal-4` execution (see [Agent handoff](docs/agent-handoff.md)).
-No acceptance measure has completed, and there is no recognizer, model,
-packaging or release yet.
+harness incorporate the Phase 1 and post-`formal-4` owner dispositions
+([Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7071944465),
+[PR #1704](https://github.com/hcoona/three/pull/1704),
+[PR #1705](https://github.com/hcoona/three/pull/1705),
+[PR #1711](https://github.com/hcoona/three/pull/1711)) ahead of `formal-5`
+execution (see [Agent handoff](docs/agent-handoff.md)).
+No formal acceptance run has completed end to end yet, and there is no
+recognizer, model, packaging or release.
 
 ## Usage
 
@@ -75,8 +76,10 @@ uv run --package sheet-music-omr --group dev `
 `--group dev` when running the harness.
 The commands, in order, are `preflight` (with `--prior-total` and `--basis`
 when initializing a fresh shared `DOWNLOADS/download-ledger.json`), `download`,
-`select`, `run` (with `--gold-status`, `--gold-cache` and `--jobs`) and
-`report`. `preflight`, `select`, `run` and `pilot` accept optional
+`select`, `run` (with `--gold-status`, `--gold-cache` and `--jobs`), `report`,
+`replay-req012` (with `--manifest` for the frozen `OMR-REQ-012` replay) and
+`tokenizer-counts` (for the W1 tokenizer-counts protocol). `preflight`,
+`select`, `run` and `pilot` accept optional
 `--musescore` and `--settings` path overrides. `view --id ID [--measure N]`
 shows one file's differences by measure, and `pilot [--fixtures FILE...]` runs
 every phase on repository fixtures. A stop condition is recorded in

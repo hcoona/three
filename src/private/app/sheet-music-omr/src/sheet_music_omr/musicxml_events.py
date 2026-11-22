@@ -889,6 +889,10 @@ class _NumberConflictError(ProtocolDefectError):
         self.key = key
 
 
+SpannerNumberConflictError = _NumberConflictError
+"""Raised when overlapping MusicXML spanners share one ``number``."""
+
+
 @dataclass(slots=True, eq=False)
 class _Run:
     """The endpoints of one number from one empty pending state to the next.
