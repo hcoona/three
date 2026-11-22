@@ -715,3 +715,37 @@ def test_competing_cross_staff_unison_ties_pair_via_bipartite_matching() -> (
     assert "C4{tie@r1:start}/4[xs2] C4{tie@r2:end}/4" in text
     assert "C4{tie@r2:start}/4 E4/4" in text
     assert "r/4 C4{tie@r1:end}/4" in text
+
+
+def test_measure1_onset0_after_barline_clef_after_backup_updates_header() -> (
+    None
+):
+    """Allow one onset-0 after-barline clef override; refuse collisions."""
+    m1 = (
+        f'<measure number="1">{ATTRIBUTES}'
+        + note("C5", 4, "half", 1, 1)
+        + "<backup><duration>4</duration></backup>"
+        + '<attributes><clef number="2" after-barline="yes">'
+        + "<sign>G</sign><line>2</line></clef></attributes>"
+        + note("A4", 4, "half", 5, 2)
+        + "</measure>"
+    )
+    text = from_musicxml_text(score(m1))
+    assert "clefs: G2 G2" in text
+    assert "clef G2" not in text
+
+    no_attr = m1.replace(' after-barline="yes"', "")
+    assert refusal(score(no_attr)).diagnostics[0].code == "unsupported/clef"
+
+    with_grace = (
+        f'<measure number="1">{ATTRIBUTES}'
+        + note("C5", 4, "half", 1, 1)
+        + "<backup><duration>4</duration></backup>"
+        + "<note><grace/><pitch><step>C</step><octave>3</octave></pitch>"
+        + "<voice>5</voice><type>16th</type><staff>2</staff></note>"
+        + '<attributes><clef number="2" after-barline="yes">'
+        + "<sign>G</sign><line>2</line></clef></attributes>"
+        + note("A4", 4, "half", 5, 2)
+        + "</measure>"
+    )
+    assert refusal(score(with_grace)).diagnostics[0].code == "unsupported/clef"

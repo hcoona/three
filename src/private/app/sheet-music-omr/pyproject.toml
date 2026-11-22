@@ -13,6 +13,9 @@ license = "GPL-3.0-or-later"
 classifiers = ["Private :: Do Not Upload"]
 dependencies = ["musicdiff==6.0"]
 
+[dependency-groups]
+dev = ["tokenizers==0.23.3"]
+
 [project.scripts]
 sheet-music-omr = "sheet_music_omr.cli:main"
 
