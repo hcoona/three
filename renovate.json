@@ -501,7 +501,7 @@
       "description": "Group MSBuild and repository build tooling.",
       "matchManagers": ["nuget"],
       "matchPackageNames": [
-        "/^Microsoft\\.Build\\./",
+        "/^Microsoft\\.Build(?:\\.|$)/",
         "DotNet.ReproducibleBuilds",
         "DotNet.ReproducibleBuilds.Isolated",
         "Microsoft.SourceLink.GitHub",

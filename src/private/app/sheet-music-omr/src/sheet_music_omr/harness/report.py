@@ -20,6 +20,7 @@ from sheet_music_omr.harness.records import (
     read_object,
 )
 from sheet_music_omr.harness.run import GOLD_ARM
+from sheet_music_omr.harness.rx_attribution import collect_rx_attribution
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -302,6 +303,27 @@ def summarize(confinement: Confinement) -> Data:
         path = confinement.run / "selection" / f"{corpus}.json"
         if path.exists():
             selections.append(read_object(path))
+    arms_summary: dict[str, Data] = {}
+    for arm, results in arm_results.items():
+        summary_arm = _arm_summary(results, planned[arm])
+        if arm.endswith("-rx"):
+            corpus = arm.removesuffix("-rx")
+            attributed, remaining = collect_rx_attribution(
+                confinement,
+                corpus,
+                keys,
+                arm_results.get(f"{corpus}-x", ()),
+                results,
+            )
+            summary_arm["upstream_export_defects"] = {
+                "files": attributed,
+                "remaining_files": len(remaining),
+                "remaining_content": _pool(
+                    (r.get("content") for r in remaining),
+                    incomplete=bool(summary_arm.get("incomplete")),
+                ),
+            }
+        arms_summary[arm] = summary_arm
     return {
         "source": {
             "commit": run.get("commit"),
@@ -312,10 +334,7 @@ def summarize(confinement: Confinement) -> Data:
         },
         "preflight": _dict(record.get("preflight")),
         "stops": record.get("stops", []),
-        "arms": {
-            arm: _arm_summary(results, planned[arm])
-            for arm, results in arm_results.items()
-        },
+        "arms": arms_summary,
         "baseline": {
             corpus: _baseline_summary(
                 [
@@ -454,6 +473,23 @@ def _arm_lines(arm: str, data: Mapping[str, object], tag: str) -> list[str]:
             f"- Gold pieces whose count returns to the owner: "
             f"{data.get('returns_to_owner')} {tag}.",
         )
+    upstream = _dict(data.get("upstream_export_defects"))
+    if upstream:
+        defect_files = _list(upstream.get("files"))
+        rem_pool = _dict(upstream.get("remaining_content"))
+        lines.append(
+            "- Attributed upstream MuseScore 4 export defects (kept in raw "
+            f"arm score above): {len(defect_files)} file(s); fidelity across "
+            f"remaining {upstream.get('remaining_files')} file(s): "
+            f"{_ratio(rem_pool)} {tag}.",
+        )
+        for item in defect_files:
+            entry = _dict(item)
+            lines.append(
+                f"  - `{entry.get('key')}` (`{entry.get('id')}`, "
+                f"{entry.get('elements')} elements, `{entry.get('failure')}`): "
+                f"{entry.get('issue')} ({SOURCE_FINDING} + {OBSERVATION}).",
+            )
     lines.append("")
     return lines
 

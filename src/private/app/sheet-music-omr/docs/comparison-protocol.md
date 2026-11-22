@@ -43,8 +43,11 @@ measures:
 
 It does not cover tokenizer counts, the ABC capability mapping or the replay of
 the toolchain-class findings of
-[OMR-REQ-012](requirements.md#omr-req-012-toolchain-class-findings). Each of
-those needs its own accepted protocol or record.
+[OMR-REQ-012](requirements.md#omr-req-012-toolchain-class-findings). The
+[Validation basis](requirements.md#validation-basis) defines the frozen
+toolchain-class replay protocol and the tokenizer-counts protocol, and the
+source-based ABC 2.1 capability mapping is recorded in
+[Issue #1488](https://github.com/hcoona/three/issues/1488).
 
 ## Tools and environment
 
@@ -376,9 +379,11 @@ Neither these diagnostics nor the measure below is reported as one.
 Missing and extra content both count, as OMR-REQ-009 requires: a round trip
 that drops or invents a mark on a reference note, rest or chord makes it
 non-identical, and one that invents a note, rest, chord or extra adds an extra
-element. OMR-REQ-011 is met when each of the four public arms reaches at least
-99%. OMR-REQ-010 is met when every gold piece completes every step with no
-failure status and the gold arm has no counted difference.
+element. OMR-REQ-011 is met when both public `X` arms reach at least 99% and
+each public `R(X)` arm reaches at least 99% across the remaining `R(X)` files
+not attributed to the three upstream MuseScore 4 export defects under
+[Failures](#failures). OMR-REQ-010 is met when every gold piece completes every
+step with no failure status and the gold arm has no counted difference.
 
 ### Identifiers and other data that are not compared
 
@@ -409,7 +414,12 @@ fails, its reverse conversion fails, reports unsupported content or a review
 marker, or its forward conversion fails, or musicdiff cannot parse `R(X)` or
 `T(Y)`, or a step exceeds the 300-second timeout. Such a file is never dropped
 from the denominator. Its element count is that of `Y` alone, or of `X` when
-`R(X)` is missing or cannot be parsed: the in-scope elements of its content
+`R(X)` is missing or cannot be parsed (including when `R(X)` exports
+overlapping MusicXML 4.0 spanners that share one `number` so the supplementary
+reader cannot pair its spans; `X` and `T(Y)` still stop the run on
+`ProtocolDefectError`, whereas the non-gating `X` against `R(X)` baseline
+passes record `unparsable` for such an `R(X)`): the in-scope elements of
+its content
 pass plus every element that a supplementary check defines, counted on that
 score alone. An element that a check counts only when `T(Y)` has a
 counterpart counts without one, so each voice of each measure, each slur, each
@@ -423,6 +433,41 @@ voice's staff, each heading line, each `wavy-line` that stops on a later note,
 each `dashes` line and each unhooked solid `bracket` line, each parenthesized
 notehead, accidental or metronome mark, each beam on a rest, each note beam
 level that crosses a barline, and each counted tie stop.
+
+In accordance with [OMR-REQ-011](requirements.md#omr-req-011-public-corpus-fidelity),
+for each public `R(X)` arm the report also deterministically identifies failed
+`R(X)` files whose corresponding `X` converted without failure and whose `R(X)`
+failed solely because of one of the three minimal-reproduced, upstream-reported
+MuseScore 4 MusicXML export defects:
+
+1. [`musescore/MuseScore#22974`](https://github.com/musescore/MuseScore/issues/22974):
+   `R(X)` records no failure other than `unsupported` (with reverse diagnostic
+   codes limited to `unsupported/metronome`) and `rx-unparsable`, `<metronome>`
+   in `R(X)` has an empty `<beat-unit/>` while `X` has non-empty `<beat-unit>`
+   values, and repairing only those empty `<metronome>` elements in memory lets
+   `R(X)` pass reverse conversion without review markers, forward conversion,
+   and `musicdiff` content-pass annotation on both repaired `R(X)` and its
+   forward output;
+2. [`musescore/MuseScore#35740`](https://github.com/musescore/MuseScore/issues/35740):
+   `R(X)` records no failure other than `unsupported` and `rx-unparsable` with
+   reverse diagnostic code `unsupported/spanner_number` on `<dashes>`, `R(X)`
+   exports concurrent open `<dashes>` elements sharing one `number` while `X`
+   does not, and renumbering only those concurrent `<dashes>` spans in memory
+   lets `R(X)` pass reverse conversion without review markers, forward
+   conversion, and `musicdiff` content-pass annotation on both scores;
+3. [`musescore/MuseScore#35741`](https://github.com/musescore/MuseScore/issues/35741):
+   `R(X)` records `failures == ["unsupported"]` with reverse diagnostic code
+   `unsupported/pitch_alteration`, a measure following a backward-repeat
+   barline in `X` changes the active `<key><fifths>` value while `R(X)` omits
+   `<attributes><key>` in that measure, and restoring only that omitted `<key>`
+   element from `X` in memory lets `R(X)` pass reverse conversion without
+   review markers, forward conversion, and `musicdiff` content-pass annotation
+   on both scores.
+
+Those files remain counted as non-identical in the reported raw `R(X)` arm
+score, while the report lists each matched file's corpus key, element count,
+failure status and upstream issue URL alongside the pooled fidelity across the
+remaining `R(X)` files for OMR-REQ-011 evaluation.
 
 A gold piece whose reverse conversion reports unsupported content does not
 pass OMR-REQ-010, and the count of such pieces returns to the owner, because
@@ -465,23 +510,23 @@ agreement.
 
 The `kind` of an extra assigns it as follows:
 
-| `kind`                                                     | Assignment        |
-| ---------------------------------------------------------- | ----------------- |
-| `clef`                                                     | `clef`            |
-| `keysig`                                                   | `key_signature`   |
-| `timesig`                                                  | `time_signature`  |
-| `ottava`                                                   | `ottava`          |
-| `slur`                                                     | `slur`            |
-| `arpeggio`                                                 | `arpeggio`        |
-| `tremolo`                                                  | `tremolo`         |
-| `dynamic`                                                  | `dynamic`         |
-| `crescendo`, `diminuendo`                                  | `hairpin`         |
-| `pedalmark`, `pedalbounce`, `pedalgapstart`, `pedalgapend` | `pedal`           |
-| `barline`, `repeat`, `ending`                              | `repeat_ending`   |
-| `direction`                                                | `text`            |
-| `tempo`, `rehearsalmark`                                   | `tempo_rehearsal` |
-| `staffinfo`, `systembreak`, `pagebreak`                    | `layout`          |
-| `chordsym`, or a kind not listed                           | protocol defect   |
+| `kind`                                                     | Assignment                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `clef`                                                     | `clef`                                                                                                                                                                                                                                                                                                                |
+| `keysig`                                                   | `key_signature`                                                                                                                                                                                                                                                                                                       |
+| `timesig`                                                  | `time_signature`                                                                                                                                                                                                                                                                                                      |
+| `ottava`                                                   | `ottava`                                                                                                                                                                                                                                                                                                              |
+| `slur`                                                     | `slur`                                                                                                                                                                                                                                                                                                                |
+| `arpeggio`                                                 | `arpeggio`                                                                                                                                                                                                                                                                                                            |
+| `tremolo`                                                  | `tremolo`                                                                                                                                                                                                                                                                                                             |
+| `dynamic`                                                  | `dynamic`                                                                                                                                                                                                                                                                                                             |
+| `crescendo`, `diminuendo`                                  | `hairpin`                                                                                                                                                                                                                                                                                                             |
+| `pedalmark`, `pedalbounce`, `pedalgapstart`, `pedalgapend` | `pedal`                                                                                                                                                                                                                                                                                                               |
+| `barline`, `repeat`, `ending`                              | `repeat_ending`                                                                                                                                                                                                                                                                                                       |
+| `direction`                                                | `text`                                                                                                                                                                                                                                                                                                                |
+| `tempo`, `rehearsalmark`                                   | `tempo_rehearsal`                                                                                                                                                                                                                                                                                                     |
+| `staffinfo`, `systembreak`, `pagebreak`, `superseded_clef` | `layout` (`superseded_clef` is the harness's annotated `kind` for an initial `clef` at onset 0 of measure 1 immediately followed on its staff at onset 0 before any note, rest or voiced `forward` by a different `after-barline="yes"` `clef`, so musicdiff never pairs that layout-only clef with a content `clef`) |
+| `chordsym`, or a kind not listed                           | protocol defect                                                                                                                                                                                                                                                                                                       |
 
 Before annotation, the harness reads the `words` of both scores by the rule
 below, which the converters' MusicXML mapping also uses and which music21 and
@@ -544,7 +589,10 @@ note-spanned `direction` start per note, and imports `<pedal
 type="discontinue" line="yes"/>` without `resume` as an unclosed gap that
 swallows the next pedal mark. Before music21 parses a score, the harness
 rewrites each measure's `direction` elements on their staff in chronological
-`cursor + offset` order (using `forward` and `backup` with `offset` cleared,
+`cursor + offset` order (anchoring non-`octave-shift` directions before a
+same-onset note on their staff or, when their staff has none, on the other
+staff so long as same-measure spanner starts still precede their stops in XML
+order, otherwise using `forward` and `backup` with `offset` cleared,
 and ordering closing/continuing spanners before `wedge` starts and `wedge`
 starts before other spanner starts at the same onset) and replaces any `<pedal
 type="discontinue" line="yes"/>` that closes an open pedal line without a
@@ -1307,8 +1355,8 @@ property whose difference the operation table assigns to `layout`, such as a
 non-empty style, a stem direction other than `unspecified`, a rest staff
 position other than the default, a notehead other than `normal` or a set
 notehead fill, a placement, an inverted fermata, or a tuplet's printed
-number or bracket; or that is a system or page break, staff details or a
-staff group. It is identical when no `layout` difference touches it. A
+number or bracket; or that is a system or page break, staff details, a
+staff group or a `superseded_clef`. It is identical when no `layout` difference touches it. A
 `layout` difference is one whose only category is `layout`, so the
 difference of an inserted or deleted note, rest, chord or extra that also
 has a symbol of a content category is not one. An articulation,
@@ -1418,8 +1466,8 @@ same holds for an articulation, expression or tuplet group of a note that
 its placement, fermata shape or printed number or bracket is touched by no
 `layout` difference and counts as identical, while one that `T(Y)` adds
 counts as extra. A
-deleted system or page break, staff details or staff group is a `layout`
-difference and counts as non-identical. The heading check compares only the
+deleted system or page break, staff details, staff group or `superseded_clef`
+is a `layout` difference and counts as non-identical. The heading check compares only the
 reading order of heading lines, not which system or page a heading precedes;
 a move between systems is not counted. It counts a credit that repeats an
 earlier page's line as a heading line, though the format does not encode

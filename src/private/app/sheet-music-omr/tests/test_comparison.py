@@ -7694,3 +7694,135 @@ def test_pedal_ends_same_onset_order_and_delayed_touch_exemption() -> None:
         _two_measure_piano(m1_no_pedal), _two_measure_piano(m1_delayed)
     )
     assert res_delayed.checks["pedal_ends"] == ElementTally(0, 0, 0)
+
+
+def test_midnote_staff1_hairpin_anchors_to_other_staff_onset_note() -> None:
+    """Anchor mid-note hairpins (<offset> or <backup>) and keep start->stop."""
+    m1 = (
+        "      <note><pitch><step>C</step><octave>5</octave></pitch>"
+        "<duration>48</duration><voice>1</voice><type>half</type>"
+        "<staff>1</staff></note>\n"
+        '      <direction placement="below"><direction-type>'
+        '<wedge type="diminuendo" number="1"/></direction-type>'
+        "<offset>-24</offset><staff>1</staff></direction>\n"
+        '      <direction placement="below"><direction-type>'
+        '<wedge type="stop" number="1"/></direction-type>'
+        "<staff>1</staff></direction>\n"
+        "      <backup><duration>48</duration></backup>\n"
+        "      <note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>24</duration><voice>5</voice><type>quarter</type>"
+        "<staff>2</staff></note>\n"
+        "      <note><pitch><step>G</step><octave>3</octave></pitch>"
+        "<duration>24</duration><voice>5</voice><type>quarter</type>"
+        "<staff>2</staff></note>\n"
+    )
+    y_score = _two_measure_piano(m1)
+    t_score = to_musicxml(from_musicxml(y_score)).decode("utf-8")
+    result = compare_file(t_score, y_score)
+    assert result.tally.fidelity == 1.0
+    assert result.category_counts() == {}
+
+    # Cover <backup>/<forward> mid-note spanner without <offset> (start at
+    # onset 24 where Staff 1 has D5, stop at barline 48), plus a comparator
+    # self-comparison with a deferred start (onset 12) stopping at onset 24.
+    m1_backup_no_offset = (
+        "      <note><pitch><step>C</step><octave>5</octave></pitch>"
+        "<duration>24</duration><voice>1</voice><type>quarter</type>"
+        "<staff>1</staff></note>\n"
+        "      <note><pitch><step>D</step><octave>5</octave></pitch>"
+        "<duration>24</duration><voice>1</voice><type>quarter</type>"
+        "<staff>1</staff></note>\n"
+        "      <backup><duration>48</duration></backup>\n"
+        "      <note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>48</duration><voice>5</voice><type>half</type>"
+        "<staff>2</staff></note>\n"
+        "      <backup><duration>24</duration></backup>\n"
+        '      <direction placement="below"><direction-type>'
+        '<wedge type="crescendo" number="1"/></direction-type>'
+        "<staff>2</staff></direction>\n"
+        "      <forward><duration>24</duration></forward>\n"
+        '      <direction placement="below"><direction-type>'
+        '<wedge type="stop" number="1"/></direction-type>'
+        "<staff>2</staff></direction>\n"
+    )
+    y_bk = _two_measure_piano(m1_backup_no_offset)
+    t_bk = to_musicxml(from_musicxml(y_bk)).decode("utf-8")
+    assert compare_file(t_bk, y_bk).category_counts() == {}
+
+    m1_deferred = m1_backup_no_offset.replace(
+        "<backup><duration>24</duration></backup>",
+        "<backup><duration>36</duration></backup>",
+    ).replace(
+        "<forward><duration>24</duration></forward>",
+        "<forward><duration>12</duration></forward>",
+    )
+    y_def = _two_measure_piano(m1_deferred)
+    prepared = comparison._prepare_for_music21(y_def)  # noqa: SLF001
+    assert prepared is not None
+    prep_txt = prepared.decode("utf-8")
+    assert prep_txt.index('type="crescendo"') < prep_txt.index('type="stop"')
+    assert compare_file(y_def, y_def).category_counts() == {}
+
+    # Cross-staff reuse of wedge number="1" (Staff 2 on 0..24, Staff 1 on
+    # 24..48) must stay start/stop/start/stop across the measure.
+    m1_cross_staff_reuse = (
+        "      <note><pitch><step>C</step><octave>5</octave></pitch>"
+        "<duration>48</duration><voice>1</voice><type>half</type>"
+        "<staff>1</staff></note>\n"
+        '      <direction placement="above"><direction-type>'
+        '<wedge type="diminuendo" number="1"/></direction-type>'
+        "<offset>-24</offset><staff>1</staff></direction>\n"
+        '      <direction placement="above"><direction-type>'
+        '<wedge type="stop" number="1"/></direction-type>'
+        "<staff>1</staff></direction>\n"
+        "      <backup><duration>48</duration></backup>\n"
+        '      <direction placement="below"><direction-type>'
+        '<wedge type="crescendo" number="1"/></direction-type>'
+        "<staff>2</staff></direction>\n"
+        "      <note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>24</duration><voice>5</voice><type>quarter</type>"
+        "<staff>2</staff></note>\n"
+        '      <direction placement="below"><direction-type>'
+        '<wedge type="stop" number="1"/></direction-type>'
+        "<staff>2</staff></direction>\n"
+        "      <note><pitch><step>G</step><octave>3</octave></pitch>"
+        "<duration>24</duration><voice>5</voice><type>quarter</type>"
+        "<staff>2</staff></note>\n"
+    )
+    y_reuse = _two_measure_piano(m1_cross_staff_reuse)
+    t_reuse = to_musicxml(from_musicxml(y_reuse)).decode("utf-8")
+    assert compare_file(t_reuse, y_reuse).category_counts() == {}
+
+
+def test_measure1_superseded_initial_clef_counts_only_as_layout() -> None:
+    """Count a superseded initial Measure-1 clef as layout, not content."""
+    m1 = (
+        "      <note><pitch><step>C</step><octave>5</octave></pitch>"
+        "<duration>48</duration><voice>1</voice><type>half</type>"
+        "<staff>1</staff></note>\n"
+        "      <backup><duration>48</duration></backup>\n"
+        '      <attributes><clef number="2" after-barline="yes">'
+        "<sign>G</sign><line>2</line></clef></attributes>\n"
+        "      <note><pitch><step>A</step><octave>4</octave></pitch>"
+        "<duration>48</duration><voice>5</voice><type>half</type>"
+        "<staff>2</staff></note>\n"
+    )
+    y_score = _two_measure_piano(m1)
+    t_score = to_musicxml(from_musicxml(y_score)).decode("utf-8")
+    content_res = compare_file(t_score, y_score)
+    layout_res = compare_layout(t_score, y_score)
+
+    assert content_res.tally.fidelity == 1.0
+    assert content_res.category_counts() == {}
+    assert layout_res.tally.identical == layout_res.tally.elements - 1
+
+    # Symmetric comparison (Y vs T) and changed effective clef (C3 vs G2) must
+    # not cross-pair the superseded layout clef with a content clef.
+    sym_res = compare_file(y_score, t_score)
+    assert sym_res.category_counts() == {}
+    assert compare_layout(y_score, t_score).tally.extras == 1
+    wrong_t = t_score.replace(
+        '<clef number="2">\n          <sign>G</sign>\n          <line>2</line>',
+        '<clef number="2">\n          <sign>C</sign>\n          <line>3</line>',
+    )
+    assert compare_file(wrong_t, y_score).category_counts() == {"clef": 1}
