@@ -1461,11 +1461,59 @@ def _try_anchor_note(
     return True
 
 
+type _OrderedDir = tuple[Fraction, int, int, ET.Element]
 type _DeferredDir = tuple[
     Fraction,
+    int,
+    int,
     ET.Element,
     list[tuple[str, str]],
 ]
+type _StaffMaps = tuple[
+    int | None,
+    list[tuple[Fraction, ET.Element]],
+    dict[Fraction, ET.Element],
+    dict[Fraction, ET.Element],
+]
+
+
+def _staff_anchor_maps(scan: _MeasureDirScan, staff: str) -> _StaffMaps:
+    seg_counts: dict[int, list[Fraction]] = {}
+    for s_i, n_on, n_st, _ in scan.anchors:
+        if n_st == staff:
+            seg_counts.setdefault(s_i, []).append(n_on)
+    target_seg = (
+        None
+        if not seg_counts
+        else max(
+            seg_counts,
+            key=lambda s_i: (
+                Fraction(0) in seg_counts[s_i],
+                len(seg_counts[s_i]),
+                -s_i,
+            ),
+        )
+    )
+    seg_notes = (
+        []
+        if target_seg is None
+        else [
+            (n_on, n_el)
+            for s_i, n_on, n_st, n_el in scan.anchors
+            if s_i == target_seg and n_st == staff
+        ]
+    )
+    same_by_onset: dict[Fraction, ET.Element] = {}
+    for n_on, n_el in seg_notes:
+        same_by_onset.setdefault(n_on, n_el)
+    for _, n_on, n_st, n_el in scan.anchors:
+        if n_st == staff:
+            same_by_onset.setdefault(n_on, n_el)
+    other_by_onset: dict[Fraction, ET.Element] = {}
+    for _, n_on, n_st, n_el in scan.anchors:
+        if n_st != staff:
+            other_by_onset.setdefault(n_on, n_el)
+    return target_seg, seg_notes, same_by_onset, other_by_onset
 
 
 def _partition_deferred_before_pos(
@@ -1473,12 +1521,12 @@ def _partition_deferred_before_pos(
     pos: int,
     items: list[_DeferredDir],
     placed_last: dict[tuple[str, str], ET.Element],
-    tail_state: tuple[set[tuple[str, str]], list[tuple[Fraction, ET.Element]]],
+    tail_state: tuple[set[tuple[str, str]], list[_OrderedDir]],
 ) -> list[tuple[Fraction, ET.Element]]:
     children = list(measure)
-    tail_keys, tail_dirs = tail_state
+    tail_keys, tail_items = tail_state
     ready: list[tuple[Fraction, ET.Element]] = []
-    for on, d, all_keys in items:
+    for on, pri, idx, d, all_keys in items:
         if tail_keys.isdisjoint(all_keys) and pos >= _min_after_pos(
             children, all_keys, placed_last
         ):
@@ -1487,7 +1535,7 @@ def _partition_deferred_before_pos(
                 placed_last[key] = d
         else:
             tail_keys.update(all_keys)
-            tail_dirs.append((on, d))
+            tail_items.append((on, pri, idx, d))
     return ready
 
 
@@ -1496,18 +1544,18 @@ def _flush_deferred_staff_dirs(
     seg_info: tuple[int | None, list[tuple[Fraction, ET.Element]]],
     deferred: list[_DeferredDir],
     ctx: tuple[_MeasureDirScan, int, dict[tuple[str, str], ET.Element]],
-    tail_dirs: list[tuple[Fraction, ET.Element]],
+    tail_state: tuple[set[tuple[str, str]], list[_OrderedDir]],
 ) -> None:
     target_seg, seg_notes = seg_info
     if not deferred:
         return
     if target_seg is None:
-        tail_dirs.extend((on, d) for on, d, _ in deferred)
+        tail_keys, tail_items = tail_state
+        for on, pri, idx, d, all_keys in deferred:
+            tail_keys.update(all_keys)
+            tail_items.append((on, pri, idx, d))
         return
     scan, div, placed_last = ctx
-    tail_state: tuple[
-        set[tuple[str, str]], list[tuple[Fraction, ET.Element]]
-    ] = (set(), tail_dirs)
     idx = 0
     for n_on, note_el in seg_notes:
         chunk: list[_DeferredDir] = []
@@ -1537,51 +1585,23 @@ def _flush_deferred_staff_dirs(
             _insert_cursor_dirs(measure, boundary_el, rem, (end_cur, div, True))
 
 
-def _place_staff_directions(
+def _place_measure_directions(
     measure: ET.Element,
-    staff: str,
-    staff_dirs: list[tuple[Fraction, ET.Element]],
-    scan_and_div: tuple[_MeasureDirScan, int],
-    tail_dirs: list[tuple[Fraction, ET.Element]],
-) -> None:
-    scan, div = scan_and_div
-    seg_counts: dict[int, list[Fraction]] = {}
-    for s_i, n_on, n_st, _ in scan.anchors:
-        if n_st == staff:
-            seg_counts.setdefault(s_i, []).append(n_on)
-    target_seg = (
-        None
-        if not seg_counts
-        else max(
-            seg_counts,
-            key=lambda s_i: (
-                Fraction(0) in seg_counts[s_i],
-                len(seg_counts[s_i]),
-                -s_i,
-            ),
-        )
-    )
-    seg_notes = (
-        []
-        if target_seg is None
-        else [
-            (n_on, n_el)
-            for s_i, n_on, n_st, n_el in scan.anchors
-            if s_i == target_seg and n_st == staff
-        ]
-    )
-    same_by_onset: dict[Fraction, ET.Element] = {}
-    for n_on, n_el in seg_notes:
-        same_by_onset.setdefault(n_on, n_el)
-    other_by_onset: dict[Fraction, ET.Element] = {}
-    for _, n_on, n_st, n_el in scan.anchors:
-        if n_st != staff:
-            other_by_onset.setdefault(n_on, n_el)
+    scan: _MeasureDirScan,
+    div: int,
+) -> list[_OrderedDir]:
+    maps = {
+        st: _staff_anchor_maps(scan, st)
+        for st in sorted({st for *_, st, _, _ in scan.dirs})
+    }
     placed_last: dict[tuple[str, str], ET.Element] = {}
     deferred_keys: set[tuple[str, str]] = set()
     state = (placed_last, deferred_keys)
-    deferred: list[_DeferredDir] = []
-    for onset, direction in staff_dirs:
+    deferred_by_staff: dict[str, list[_DeferredDir]] = {}
+    for onset, pri, idx, staff, _, direction in sorted(
+        scan.dirs, key=lambda item: (item[0], item[1], item[2])
+    ):
+        _, _, same_by_onset, other_by_onset = maps[staff]
         keys = _spanner_keys(direction)
         if _try_anchor_note(
             measure, direction, same_by_onset.get(onset), keys, state
@@ -1596,14 +1616,28 @@ def _place_staff_directions(
             continue
         all_keys = [*keys[0], *keys[1]]
         deferred_keys.update(all_keys)
-        deferred.append((onset, direction, all_keys))
-    _flush_deferred_staff_dirs(
-        measure,
-        (target_seg, seg_notes),
-        deferred,
-        (scan, div, placed_last),
-        tail_dirs,
+        deferred_by_staff.setdefault(staff, []).append(
+            (onset, pri, idx, direction, all_keys)
+        )
+    tail_state: tuple[set[tuple[str, str]], list[_OrderedDir]] = (set(), [])
+    ordered_staves = sorted(
+        deferred_by_staff,
+        key=lambda st: (
+            maps[st][0] is None,
+            0 if maps[st][0] is None else maps[st][0],
+            st,
+        ),
     )
+    for staff in ordered_staves:
+        target_seg, seg_notes, _, _ = maps[staff]
+        _flush_deferred_staff_dirs(
+            measure,
+            (target_seg, seg_notes),
+            deferred_by_staff[staff],
+            (scan, div, placed_last),
+            tail_state,
+        )
+    return tail_state[1]
 
 
 def _reorder_measure_directions(
@@ -1623,15 +1657,10 @@ def _reorder_measure_directions(
         measure.remove(direction)
         for off_el in list(direction.findall("offset")):
             direction.remove(off_el)
-    by_staff: dict[str, list[tuple[Fraction, int, int, ET.Element]]] = {}
-    for onset, pri, idx, staff, _, direction in scan.dirs:
-        by_staff.setdefault(staff, []).append((onset, pri, idx, direction))
-    tail_dirs: list[tuple[Fraction, ET.Element]] = []
-    for staff in sorted(by_staff):
-        ordered = [(on, d) for on, _, _, d in sorted(by_staff[staff])]
-        _place_staff_directions(measure, staff, ordered, (scan, div), tail_dirs)
-    if tail_dirs:
+    tail_items = _place_measure_directions(measure, scan, div)
+    if tail_items:
         right_bar, end_cur = scan.seg_ends[scan.seg_idx]
+        tail_dirs = [(on, d) for on, _, _, d in sorted(tail_items)]
         _insert_cursor_dirs(
             measure, right_bar, tail_dirs, (end_cur, div, right_bar is not None)
         )

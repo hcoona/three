@@ -7763,6 +7763,36 @@ def test_midnote_staff1_hairpin_anchors_to_other_staff_onset_note() -> None:
     assert prep_txt.index('type="crescendo"') < prep_txt.index('type="stop"')
     assert compare_file(y_def, y_def).category_counts() == {}
 
+    # Cross-staff reuse of wedge number="1" (Staff 2 on 0..24, Staff 1 on
+    # 24..48) must stay start/stop/start/stop across the measure.
+    m1_cross_staff_reuse = (
+        "      <note><pitch><step>C</step><octave>5</octave></pitch>"
+        "<duration>48</duration><voice>1</voice><type>half</type>"
+        "<staff>1</staff></note>\n"
+        '      <direction placement="above"><direction-type>'
+        '<wedge type="diminuendo" number="1"/></direction-type>'
+        "<offset>-24</offset><staff>1</staff></direction>\n"
+        '      <direction placement="above"><direction-type>'
+        '<wedge type="stop" number="1"/></direction-type>'
+        "<staff>1</staff></direction>\n"
+        "      <backup><duration>48</duration></backup>\n"
+        '      <direction placement="below"><direction-type>'
+        '<wedge type="crescendo" number="1"/></direction-type>'
+        "<staff>2</staff></direction>\n"
+        "      <note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>24</duration><voice>5</voice><type>quarter</type>"
+        "<staff>2</staff></note>\n"
+        '      <direction placement="below"><direction-type>'
+        '<wedge type="stop" number="1"/></direction-type>'
+        "<staff>2</staff></direction>\n"
+        "      <note><pitch><step>G</step><octave>3</octave></pitch>"
+        "<duration>24</duration><voice>5</voice><type>quarter</type>"
+        "<staff>2</staff></note>\n"
+    )
+    y_reuse = _two_measure_piano(m1_cross_staff_reuse)
+    t_reuse = to_musicxml(from_musicxml(y_reuse)).decode("utf-8")
+    assert compare_file(t_reuse, y_reuse).category_counts() == {}
+
 
 def test_measure1_superseded_initial_clef_counts_only_as_layout() -> None:
     """Count a superseded initial Measure-1 clef as layout, not content."""
