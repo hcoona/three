@@ -102,6 +102,7 @@ internal static class Phase7CreatorProgram
                 TaskCreationOptions.RunContinuationsAsynchronously
             );
             Factory? originalFactory = null;
+            bool pauseFinalReturn = false;
             Coordinator NewCoordinator(string operation) =>
                 new(
                     database,
@@ -123,8 +124,13 @@ internal static class Phase7CreatorProgram
                                     // and booked usage. Normal wrapper cleanup is separate and
                                     // real.
                                     await control.DisposeAsync().ConfigureAwait(false);
-                                    settled.TrySetResult();
-                                    await returnGate.Task.WaitAsync(token).ConfigureAwait(false);
+                                    if (pauseFinalReturn)
+                                    {
+                                        settled.TrySetResult();
+                                        await returnGate
+                                            .Task.WaitAsync(token)
+                                            .ConfigureAwait(false);
+                                    }
                                 }
                         : null
                         );
@@ -219,6 +225,7 @@ internal static class Phase7CreatorProgram
                 first.Response.IsCompletedSuccessfully,
                 "Original Send did not actually complete."
             );
+            pauseFinalReturn = true;
             caller.Cancel();
             await WaitFixedAsync(settled.Task).ConfigureAwait(false);
             await settled.Task.ConfigureAwait(false);
