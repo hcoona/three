@@ -138,6 +138,14 @@ jobs:
           path: ${{ steps.control.outputs.transfer }}/
           if-no-files-found: error
           retention-days: 7
+      - name: Retain actual native MSBuild host identities
+        if: ${{ always() && steps.dotnet-group.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dotnet-native-host-identities
+          path: ${{ runner.temp }}/dotnet-group/planning/*-graph.json.host.log
+          if-no-files-found: error
+          retention-days: 7
 
   validation:
     name: Validate
