@@ -115,7 +115,7 @@ def test_project_version_policy_inherits_repository_defaults_and_filters(
     }
 
     _, project_root = _create_version_repository(tmp_path)
-    version_data = _get_version(project_root)
+    version_data = _get_version(project_root, use_repository_ref=True)
     version_options = version_data["VersionOptions"]
 
     assert version_data["VersionFileFound"] is True
@@ -146,6 +146,31 @@ def test_project_version_policy_inherits_repository_defaults_and_filters(
         ("src/private/app/Directory.Build.props", True, False),
         ("eng/scripts/azureauth-credprovider", True, False),
     ]
+
+
+@pytest.mark.parametrize(
+    "github_ref",
+    ["refs/heads/enclosing-build", "refs/tags/unrelated/v9"],
+    ids=["branch", "tag"],
+)
+def test_synthetic_repository_owns_version_ref_in_ci(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    github_ref: str,
+) -> None:
+    """Synthetic policy evaluation uses its branch, not the enclosing build."""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_REF", github_ref)
+    monkeypatch.delenv("IGNORE_GITHUB_REF", raising=False)
+    _, project_root = _create_version_repository(tmp_path)
+
+    version_data = _get_version(project_root, use_repository_ref=True)
+
+    assert version_data["VersionHeight"] == 1
+    assert version_data["PublicRelease"] is True
+    assert _wheel_version(version_data["SemVer2"]) == "1.0.0b1"
+    assert os.environ["GITHUB_REF"] == github_ref
+    assert "IGNORE_GITHUB_REF" not in os.environ
 
 
 @pytest.mark.parametrize(
@@ -226,10 +251,10 @@ def test_azureauth_product_changes_advance_public_wheel_identity(
 ) -> None:
     """Approved product inputs advance height and public wheel identity."""
     repository, project_root = _create_version_repository(tmp_path)
-    baseline = _get_version(project_root)
+    baseline = _get_version(project_root, use_repository_ref=True)
 
     _commit_path(repository, changed_relative_path)
-    changed = _get_version(project_root)
+    changed = _get_version(project_root, use_repository_ref=True)
 
     assert baseline["VersionHeight"] == 1
     assert changed["VersionHeight"] == baseline["VersionHeight"] + 1
@@ -272,10 +297,10 @@ def test_non_product_changes_preserve_public_wheel_identity(
 ) -> None:
     """Unrelated, test-only, and CI-only changes do not advance the product."""
     repository, project_root = _create_version_repository(tmp_path)
-    baseline = _get_version(project_root)
+    baseline = _get_version(project_root, use_repository_ref=True)
 
     _commit_path(repository, changed_relative_path)
-    changed = _get_version(project_root)
+    changed = _get_version(project_root, use_repository_ref=True)
 
     assert baseline["VersionHeight"] == 1
     assert changed["VersionHeight"] == 1
@@ -486,6 +511,8 @@ def _commit_path(repository: Path, relative_path: str) -> None:
 def _get_version(
     project_root: Path,
     command_root: Path = WORKSPACE_ROOT,
+    *,
+    use_repository_ref: bool = False,
 ) -> dict[str, Any]:
     completed = subprocess.run(  # noqa: S603
         [
@@ -503,6 +530,9 @@ def _get_version(
         capture_output=True,
         check=False,
         encoding="utf-8",
+        env={**os.environ, "IGNORE_GITHUB_REF": "true"}
+        if use_repository_ref
+        else None,
         text=True,
     )
     assert completed.returncode == 0, completed.stderr
