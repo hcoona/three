@@ -21,10 +21,10 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
             {
                 _ = state.Start();
                 Phase7Sessions.Turn first = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 Phase7Sessions.Turn second = await state
-                    .Sessions.NextTurnAsync("worker2", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 JsonObject task1 = state.Invoke(
                     "worker1",
@@ -206,10 +206,10 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 first.Complete();
                 second.Complete();
                 Phase7Sessions.Turn context1 = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 Phase7Sessions.Turn context2 = await state
-                    .Sessions.NextTurnAsync("worker2", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 Assert.Contains(direct["body"]!.GetValue<string>(), context1.Text);
                 Assert.Contains(fact["content"]!.GetValue<string>(), context1.Text);
@@ -699,7 +699,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 byte[] system = File.ReadAllBytes(state.Git.SystemConfig);
                 _ = state.Start();
                 Phase7Sessions.Turn turn = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 Assert.Contains("Never overwrite AGENTS.md", turn.Text);
                 Assert.Contains(
@@ -900,11 +900,11 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
             {
                 _ = state.Start();
                 Phase7Sessions.Turn one = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 long ownBatch = state.SendingBatch("worker1");
                 Phase7Sessions.Turn two = await state
-                    .Sessions.NextTurnAsync("worker2", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 JsonObject own = state.Invoke(
                     "worker1",
@@ -1245,7 +1245,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
             {
                 _ = state.Start();
                 Phase7Sessions.Turn original = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 long originalBatch = state.SendingBatch("worker1");
                 Phase7Clock.ObservedPoll originalOwnerPoll = await state
@@ -1272,7 +1272,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 );
                 _ = state.Start("resume");
                 Phase7Sessions.Turn resumed = await state
-                    .Sessions.NextTurnAsync("worker1", token)
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 Assert.AreNotEqual(original.Session.SessionId, resumed.Session.SessionId);
                 Assert.AreEqual(

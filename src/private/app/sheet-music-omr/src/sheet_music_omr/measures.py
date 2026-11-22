@@ -17,6 +17,8 @@ from sheet_music_omr.model import (
     Beam,
     ClefChange,
     CrossStaff,
+    DynamicMark,
+    DynamicText,
     EndingKind,
     EndingOption,
     Fermata,
@@ -28,7 +30,6 @@ from sheet_music_omr.model import (
     MeasureRest,
     Note,
     Ornament,
-    OrnamentKind,
     Rest,
     RightOption,
     SingleTremolo,
@@ -495,13 +496,12 @@ def _check_chord(note: Note) -> Findings:
         seen.add(identity)
 
 
-def _check_pitch(pitch: Pitch, *, trill: bool) -> Findings:
+def _check_pitch(pitch: Pitch) -> Findings:
     digits = pitch.fingering
-    if len(digits) == _TRILL_DIGITS and not (trill and digits[0] != digits[1]):
+    if len(digits) == _TRILL_DIGITS and digits[0] == digits[1]:
         yield unsupported(
             "fingering",
-            "two fingering digits are valid only as two different digits on"
-            " a pitch of a trill",
+            "two fingering digits on one pitch shall differ",
             pitch.location,
         )
     if (
@@ -538,12 +538,8 @@ def _check_note(placed: Placed, note: Note) -> Findings:
                 flag.location,
             )
     yield from _check_chord(note)
-    trill = any(
-        isinstance(flag, Ornament) and flag.kind is OrnamentKind.TRILL
-        for flag in note.flags
-    )
     for pitch in note.pitches:
-        yield from _check_pitch(pitch, trill=trill)
+        yield from _check_pitch(pitch)
 
 
 def _check_candidates(
@@ -568,6 +564,21 @@ def check_events(timeline: Timeline) -> Findings:
             yield from _check_note(placed, event)
         elif isinstance(event, (TimedReview, UntimedReview)):
             yield from _check_candidates(event.candidates, event.location)
+        elif isinstance(event, DynamicText):
+            trimmed = event.text.strip()
+            if event.text != trimmed or not trimmed:
+                yield semantic(
+                    "dynamic_text",
+                    "dyn-text shall be non-empty and trimmed",
+                    event.location,
+                )
+            elif trimmed in DynamicMark._value2member_map_:
+                yield semantic(
+                    "dynamic_text",
+                    f"dyn-text {trimmed!r} shall be written as a dynamic"
+                    " direction, not dyn-text",
+                    event.location,
+                )
         elif isinstance(event, ClefChange):
             key = (placed.staff, placed.time)
             if key in clefs:

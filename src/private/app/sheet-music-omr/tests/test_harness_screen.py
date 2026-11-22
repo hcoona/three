@@ -53,11 +53,12 @@ def _before(note_id: str, xml: str) -> tuple[str, str]:
     return anchor, f"{xml}\n      {anchor}"
 
 
-def _direction(*types: str, staff: int = 1) -> str:
+def _direction(*types: str, staff: int = 1, offset: int | None = None) -> str:
     kinds = "".join(
         f"<direction-type>{kind}</direction-type>" for kind in types
     )
-    return f"<direction>{kinds}<staff>{staff}</staff></direction>"
+    off = "" if offset is None else f"<offset>{offset}</offset>"
+    return f"<direction>{kinds}{off}<staff>{staff}</staff></direction>"
 
 
 def _attributes(xml: str) -> str:
@@ -318,8 +319,8 @@ FAILING_CASES = [
     ),
     pytest.param(
         "fingering",
-        (_inside("m1s1n3", _fingers("1", "3")),),
-        id="two-without-trill",
+        (_inside("m1s1n3", _fingers("2", "2")),),
+        id="same-two-digits",
     ),
     pytest.param(
         "fingering",
@@ -335,6 +336,32 @@ FAILING_CASES = [
         "fingering",
         (_inside("m1s1n3", _fingers("2", attributes=' substitution="yes"')),),
         id="substitution",
+    ),
+    pytest.param(
+        "unsupported_element",
+        (_before("m1s1n1", _attributes("<measure-style/>")),),
+        id="measure-style",
+    ),
+    pytest.param(
+        "unsupported_element",
+        (
+            _edit(
+                "m1s1n3",
+                '<note id="m1s1n3">',
+                '<note id="m1s1n3" print-object="no">',
+            ),
+        ),
+        id="hidden-pitched-note",
+    ),
+    pytest.param(
+        "tie_slur",
+        (_inside("m2s1n6", '<notations><slur type="start"/></notations>'),),
+        id="slur-on-rest",
+    ),
+    pytest.param(
+        "pedal",
+        (_before("m1s1n1", _direction('<pedal type="discontinue"/>')),),
+        id="pedal-discontinue-without-line",
     ),
     pytest.param(
         "bracket_dashes",
@@ -572,20 +599,6 @@ FAILING_CASES = [
         (
             _before(
                 "m1s1n1",
-                _direction(
-                    '<metronome parentheses="yes">'
-                    "<beat-unit>quarter</beat-unit>"
-                    "<per-minute>120</per-minute></metronome>"
-                ),
-            ),
-        ),
-        id="metronome-parentheses",
-    ),
-    pytest.param(
-        "allowlist",
-        (
-            _before(
-                "m1s1n1",
                 _direction('<wedge type="crescendo" niente="yes"/>'),
             ),
         ),
@@ -726,6 +739,16 @@ def test_single_staff_fixture_fails_staves_inside_the_allowlist() -> None:
         pytest.param(
             (
                 _before(
+                    "m1s2n2",
+                    "<note><chord/><pitch><step>E</step><octave>3</octave></pitch>"
+                    "<duration>24</duration><type>half</type></note>",
+                ),
+            ),
+            id="staff-2-chord-inherits-staff-and-voice",
+        ),
+        pytest.param(
+            (
+                _before(
                     "m1s1n1",
                     _direction(
                         '<octave-shift type="down" size="8" number="1"/>'
@@ -851,12 +874,12 @@ def test_allowlist_reports_note_variants(
             id="ottava-22",
         ),
         pytest.param(
-            "<dynamics><other-dynamics>sfffz</other-dynamics></dynamics>",
-            "other-dynamics 'sfffz'",
-            id="other-dynamics",
+            "<dynamics><other-dynamics>   </other-dynamics></dynamics>",
+            "other-dynamics ''",
+            id="empty-other-dynamics",
         ),
         pytest.param(
-            "<dynamics><p/><f/></dynamics>", "dynamics with 2 marks", id="pf"
+            "<dynamics/>", "dynamics with 0 marks", id="empty-dynamics"
         ),
         pytest.param(
             '<dashes type="continue"/>', "dashes@type=continue", id="dashes"
@@ -952,3 +975,88 @@ def test_beams_repeated_on_chord_notes_count_once() -> None:
     assert "<chord/>" in member
     assert '<beam number="1">begin</beam>' in member
     assert screen(arpeggio) == ScreenResult(None, "")
+
+
+def test_renumbered_staff_voices_and_negative_offset_pedal_screen_cleanly() -> (
+    None
+):
+    """Split reused staff voices and pair negative-offset pedals by onset."""
+    texts = _calibration_texts()
+    assert screen(texts["NO_DIFFERENCE_PAIRS renumbered-voices 0"]) == (
+        ScreenResult(None, "")
+    )
+    neg_pedal = _variant(
+        _before(
+            "m1s2n1",
+            _direction('<pedal type="start" line="yes"/>', staff=2),
+        ),
+        _before(
+            "m1s2n2",
+            _direction('<pedal type="start" line="yes"/>', staff=2)
+            + _direction(
+                '<pedal type="stop" line="yes"/>', staff=2, offset=-12
+            ),
+        ),
+        _before(
+            "m2s2n1",
+            _direction('<pedal type="stop" line="yes"/>', staff=2),
+        ),
+    )
+    assert screen(neg_pedal) == ScreenResult(None, "")
+    bad_type_dur = _variant(
+        _edit("m1s1n1", "<type>quarter</type>", "<type>half</type>")
+    )
+    assert screen(bad_type_dur).reason == "beam_tuplet_span"
+    assert screen(texts["CHECK_PAIRS tremolo-two-note 0"]) == ScreenResult(
+        None, ""
+    )
+    grace_tie = _variant(
+        _before(
+            "m1s1n1",
+            '<note><grace slash="yes"/><pitch><step>C</step>'
+            "<octave>5</octave></pitch>"
+            '<tie type="start"/><voice>1</voice><type>eighth</type>'
+            '<staff>1</staff><notations><tied type="start"/>'
+            "</notations></note>",
+        ),
+        _edit(
+            "m1s1n1", "<voice>1</voice>", '<tie type="stop"/><voice>1</voice>'
+        ),
+    )
+    assert screen(grace_tie) == ScreenResult(None, "")
+    bipartite_ties = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<score-partwise version="4.0">'
+        '<part-list><score-part id="P1"><part-name>Piano</part-name>'
+        '</score-part></part-list><part id="P1"><measure number="1">'
+        "<attributes><divisions>12</divisions><key><fifths>0</fifths></key>"
+        "<time><beats>2</beats><beat-type>4</beat-type></time>"
+        "<staves>2</staves>"
+        '<clef number="1"><sign>G</sign><line>2</line></clef>'
+        '<clef number="2"><sign>F</sign><line>4</line></clef></attributes>'
+        "<note><pitch><step>C</step><octave>4</octave></pitch>"
+        '<duration>12</duration><tie type="start"/><voice>1</voice>'
+        "<type>quarter</type><staff>2</staff>"
+        '<notations><tied type="start"/></notations></note>'
+        "<note><pitch><step>C</step><octave>4</octave></pitch>"
+        '<duration>12</duration><tie type="stop"/><voice>1</voice>'
+        "<type>quarter</type><staff>1</staff>"
+        '<notations><tied type="stop"/></notations></note>'
+        "<backup><duration>24</duration></backup>"
+        "<note><pitch><step>C</step><octave>4</octave></pitch>"
+        '<duration>12</duration><tie type="start"/><voice>2</voice>'
+        "<type>quarter</type><staff>1</staff>"
+        '<notations><tied type="start"/></notations></note>'
+        "<note><pitch><step>E</step><octave>4</octave></pitch>"
+        "<duration>12</duration><voice>2</voice>"
+        "<type>quarter</type><staff>1</staff></note>"
+        "<backup><duration>24</duration></backup>"
+        "<note><rest/><duration>12</duration><voice>5</voice>"
+        "<type>quarter</type><staff>2</staff></note>"
+        "<note><pitch><step>C</step><octave>4</octave></pitch>"
+        '<duration>12</duration><tie type="stop"/><voice>5</voice>'
+        "<type>quarter</type><staff>2</staff>"
+        '<notations><tied type="stop"/></notations></note>'
+        "</measure></part></score-partwise>"
+    )
+    assert screen(bipartite_ties) == ScreenResult(None, "")

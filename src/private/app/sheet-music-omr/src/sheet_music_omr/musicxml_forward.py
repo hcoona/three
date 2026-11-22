@@ -35,6 +35,7 @@ from sheet_music_omr.model import (
     DashesEnd,
     DashesStart,
     Dynamic,
+    DynamicText,
     EndingKind,
     EndingOption,
     EndpointRole,
@@ -45,6 +46,8 @@ from sheet_music_omr.model import (
     HairpinKind,
     HairpinStart,
     LeftRepeatOption,
+    LineEnd,
+    LineStart,
     MeasureRest,
     MetronomeUnit,
     Note,
@@ -164,11 +167,13 @@ _PEDAL_TYPES: Final = {
     PedalAction.LINE_START: "start",
     PedalAction.LINE_CHANGE: "change",
     PedalAction.LINE_RELEASE: "stop",
+    PedalAction.LINE_OPEN: "discontinue",
 }
 _LINE_RANK: Final = {
     PedalAction.LINE_START: 0,
     PedalAction.LINE_CHANGE: 1,
     PedalAction.LINE_RELEASE: 2,
+    PedalAction.LINE_OPEN: 2,
 }
 _BEAT_UNITS: Final = {
     MetronomeUnit.QUARTER: ("quarter", False, Fraction(1)),
@@ -187,6 +192,7 @@ _FAMILIES: Final = {
     "ottava": "octave-shift",
     "pedal": "pedal",
     "dashes": "dashes",
+    "line": "bracket",
     "arpeggio": "arpeggiate",
 }
 _UNNUMBERED: Final = frozenset({"tremolo"})
@@ -908,8 +914,14 @@ class _Converter:
                 )
         if pitch.fingering:
             technical = Element("technical")
-            for digit in pitch.fingering:
-                technical.add("fingering", str(digit))
+            if pitch.fingering_substitution:
+                technical.add(
+                    "fingering",
+                    f"{pitch.fingering[0]}-{pitch.fingering[1]}",
+                )
+            else:
+                for digit in pitch.fingering:
+                    technical.add("fingering", str(digit))
             notations.append(technical)
         return notations
 
@@ -942,6 +954,10 @@ class _Converter:
         ornaments = Element("ornaments")
         for ornament in _flags(event, Ornament):
             ornaments.add(_ORNAMENTS[ornament.kind])
+            if ornament.accidental is not None:
+                ornaments.add(
+                    "accidental-mark", _ACCIDENTALS[ornament.accidental]
+                )
         for trill in _flags(event, ExtendedTrillRelation):
             kind = "start" if trill.role is EndpointRole.START else "stop"
             number = str(self.numbers[trill.label])
@@ -1108,6 +1124,15 @@ def _dynamic(converter: _Converter, placed: Placed) -> Element:
     return converter.direction(placed, [dynamics], placement=placement)
 
 
+def _dynamic_text(converter: _Converter, placed: Placed) -> Element:
+    event = placed.event
+    assert isinstance(event, DynamicText)  # noqa: S101
+    dynamics = Element("dynamics")
+    dynamics.add("other-dynamics", event.text)
+    placement = "above" if event.above else "below"
+    return converter.direction(placed, [dynamics], placement=placement)
+
+
 def _clef_change(_converter: _Converter, placed: Placed) -> Element:
     event = placed.event
     assert isinstance(event, ClefChange)  # noqa: S101
@@ -1131,7 +1156,10 @@ def _tempo(converter: _Converter, placed: Placed) -> Element:
     sound = None
     if event.metronome is not None:
         unit, dotted, _ = _BEAT_UNITS[event.metronome.unit]
-        metronome = Element("metronome")
+        attributes = (
+            {"parentheses": "yes"} if event.metronome.parenthesized else {}
+        )
+        metronome = Element("metronome", attributes)
         metronome.add("beat-unit", unit)
         if dotted:
             metronome.add("beat-unit-dot")
@@ -1223,8 +1251,25 @@ def _dashes_end(converter: _Converter, placed: Placed) -> Element:
     return converter.direction(placed, [dashes])
 
 
+def _line_span(converter: _Converter, placed: Placed) -> Element:
+    event = placed.event
+    assert isinstance(event, (LineStart, LineEnd))  # noqa: S101
+    kind = "start" if isinstance(event, LineStart) else "stop"
+    bracket = Element(
+        "bracket",
+        {
+            "type": kind,
+            "number": converter.number(event.label),
+            "line-end": "none",
+            "line-type": "solid",
+        },
+    )
+    return converter.direction(placed, [bracket])
+
+
 _DIRECTIONS: Final[dict[type, Callable[[_Converter, Placed], Element]]] = {
     Dynamic: _dynamic,
+    DynamicText: _dynamic_text,
     ClefChange: _clef_change,
     Words: _words,
     Tempo: _tempo,
@@ -1237,4 +1282,6 @@ _DIRECTIONS: Final[dict[type, Callable[[_Converter, Placed], Element]]] = {
     OttavaEnd: _ottava,
     DashesStart: _dashes_start,
     DashesEnd: _dashes_end,
+    LineStart: _line_span,
+    LineEnd: _line_span,
 }

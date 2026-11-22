@@ -199,6 +199,7 @@ class PedalAction(StrEnum):
     LINE_START = "line-start"
     LINE_CHANGE = "line-change"
     LINE_RELEASE = "line-release"
+    LINE_OPEN = "line-open"
 
 
 class PedalSignKind(StrEnum):
@@ -224,6 +225,7 @@ class RelationKind(StrEnum):
     ARC = "arc"
     DASHES = "dashes"
     HAIRPIN = "hairpin"
+    LINE = "line"
     ORNAMENT = "ornament"
     OTTAVA = "ottava"
     PEDAL = "pedal"
@@ -312,6 +314,7 @@ class Pitch:
     octave: int
     parenthesized: bool = False
     fingering: tuple[int, ...] = ()
+    fingering_substitution: bool = False
     tie_in: bool = False
     tie_end: int | None = None
     tie_start: int | None = None
@@ -391,9 +394,10 @@ class Beam:
 
 @dataclass(frozen=True, slots=True)
 class Ornament:
-    """An ornament flag."""
+    """An ornament flag, with an optional auxiliary accidental on a trill."""
 
     kind: OrnamentKind
+    accidental: AccidentalKind | None = None
     location: Location | None = field(default=None, compare=False, kw_only=True)
 
 
@@ -520,6 +524,15 @@ class Dynamic:
 
 
 @dataclass(frozen=True, slots=True)
+class DynamicText:
+    """Dynamic modifier text ``<dyn-text "text">`` or ``<^dyn-text "text">``."""
+
+    text: str
+    above: bool = False
+    location: Location | None = field(default=None, compare=False, kw_only=True)
+
+
+@dataclass(frozen=True, slots=True)
 class ClefChange:
     """A ``<clef X>`` direction."""
 
@@ -537,10 +550,11 @@ class Words:
 
 @dataclass(frozen=True, slots=True)
 class Metronome:
-    """A metronome mark such as ``q=120``."""
+    """A metronome mark such as ``q=120`` or ``(q=120)``."""
 
     unit: MetronomeUnit
     per_minute: int
+    parenthesized: bool = False
     location: Location | None = field(default=None, compare=False, kw_only=True)
 
 
@@ -641,6 +655,22 @@ class DashesEnd:
 
 
 @dataclass(frozen=True, slots=True)
+class LineStart:
+    """``<line(>[rel=line@rN:start]``, the start of a voice-leading line."""
+
+    label: int
+    location: Location | None = field(default=None, compare=False, kw_only=True)
+
+
+@dataclass(frozen=True, slots=True)
+class LineEnd:
+    """``<line)>[rel=line@rN:end]``, the end of a voice-leading line."""
+
+    label: int
+    location: Location | None = field(default=None, compare=False, kw_only=True)
+
+
+@dataclass(frozen=True, slots=True)
 class TrillEnd:
     """``<trill)>``, which ends a carried extended trill without a note."""
 
@@ -650,6 +680,7 @@ class TrillEnd:
 
 type Direction = (
     Dynamic
+    | DynamicText
     | ClefChange
     | Words
     | Tempo
@@ -663,6 +694,8 @@ type Direction = (
     | PedalLine
     | DashesStart
     | DashesEnd
+    | LineStart
+    | LineEnd
     | TrillEnd
 )
 

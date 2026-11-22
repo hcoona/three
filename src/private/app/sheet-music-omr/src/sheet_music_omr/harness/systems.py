@@ -69,6 +69,8 @@ from sheet_music_omr.model import (
     ExtendedTrillRelation,
     HairpinEnd,
     HairpinStart,
+    LineEnd,
+    LineStart,
     OttavaEnd,
     OttavaStart,
     PedalLine,
@@ -123,6 +125,8 @@ _LABELLED: Final = (
     PedalLine,
     DashesStart,
     DashesEnd,
+    LineStart,
+    LineEnd,
     TrillEnd,
 )
 
