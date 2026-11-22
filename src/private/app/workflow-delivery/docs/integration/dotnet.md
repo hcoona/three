@@ -186,6 +186,15 @@ operations, resolved assembly identities and official NBGV binding. Unavailable
 required capabilities or observed mismatches stop adoption and return to this
 contract's review; source inspection alone cannot satisfy that qualification.
 
+The existing native graph task writes a non-semantic `.host.log` sidecar next to
+its response. It records the actual response revision, root and entry, followed
+by the resolved engine, Framework and Utilities assembly names, assembly
+versions, file versions when present and locations. Ordinary CI retains these
+owned records in `dotnet-native-host-identities`; they do not become portable
+graph facts or version-admission rules. Qualification requires complete records
+bound to each actual endpoint/source/run and successful native operations.
+A partial or failure-uploaded sidecar is diagnostic evidence, not a passed gate.
+
 ### Native Process and Endpoint Facts
 
 Build the candidate private application completely before task use. Its native
