@@ -19,7 +19,7 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         Phase7OwnedCreator creator = await Phase7OwnedCreator
-            .OpenAsync(false, token)
+            .OpenAsync(testContext, false, token)
             .ConfigureAwait(false);
         await creator
             .RunOwnedAsync(async () =>
@@ -319,7 +319,8 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
     public async Task ConfirmedSessionUsesIncrementalEventsWithFullBacklogDirectNoticeAndClaim()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(token, workers: 1, ownedHosts: false)
+        Phase7Run state = await Phase7Run
+            .CreateAsync(testContext, token, workers: 1, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -492,7 +493,8 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
     public async Task CompletedSendConfirmationAlreadyExistsAtActualAckStorageBoundary()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(token, workers: 1, ownedHosts: false)
+        Phase7Run state = await Phase7Run
+            .CreateAsync(testContext, token, workers: 1, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -575,7 +577,8 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
     public async Task FailedOrCancelledSendCannotConfirmBootstrapOrAcknowledgeNotices(bool cancel)
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(token, workers: 1, ownedHosts: false)
+        Phase7Run state = await Phase7Run
+            .CreateAsync(testContext, token, workers: 1, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -664,7 +667,8 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
     public async Task AckFailureRetainsCompletedSendConfirmationWithoutClaimingAcknowledgement()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(token, workers: 1, ownedHosts: false)
+        Phase7Run state = await Phase7Run
+            .CreateAsync(testContext, token, workers: 1, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
