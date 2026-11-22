@@ -12,6 +12,193 @@ namespace LiteAgensh.Tests;
 public sealed class TelemetrySpecs(TestContext context)
 {
     [TestMethod]
+    [Timeout(10_000, CooperativeCancellation = true)]
+    public void OwnedFixtureEvidenceRetainsRealContentionWithoutUnrelatedOrPrivateActivity()
+    {
+        context.CancellationToken.ThrowIfCancellationRequested();
+        using ScratchDirectory results = new();
+        using Phase7Evidence evidence = new(
+            Guid.NewGuid().ToString("N"), "test-owner", results.PathFor("results"),
+            report: message => context.WriteLine(message)
+        );
+        using Activity scope = evidence.BeginScope();
+        evidence.Phase("storage-setup", "started");
+        using SqliteScenarioState state = new();
+        List<Activity> externallySampled = [];
+        using ActivityListener external = Listen(externallySampled);
+        const string secret = "private-goal-parameter-and-event";
+        string unrelatedTrace;
+        using (
+            Activity unrelated = new Activity("unrelated")
+                .SetParentId(
+                    ActivityTraceId.CreateRandom(), ActivitySpanId.CreateRandom(),
+                    ActivityTraceFlags.Recorded
+                ).Start()
+        )
+        {
+            unrelatedTrace = unrelated.TraceId.ToString();
+            using Activity? sampled = ApplicationTelemetry.Source.StartActivity("coordinator.run");
+            Assert.IsNotNull(sampled);
+            sampled.SetTag("private.payload", secret);
+        }
+        using (Activity? owned = ApplicationTelemetry.Source.StartActivity("coordinator.run"))
+        {
+            Assert.IsNotNull(owned);
+            owned.SetTag("private.payload", secret);
+            owned.AddEvent(new ActivityEvent(secret));
+        }
+        using SqliteConnection holder = state.Open();
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(
+            holder, deferred: false, operation: "HeldWrite"
+        );
+        Sql.Execute(holder, "INSERT INTO entries VALUES('held',$value);", transaction,
+            ("$value", secret));
+        using SqliteConnection contender = state.Open("worker1");
+        contender.DefaultTimeout = 1;
+
+        SqliteException primary = Assert.ThrowsExactly<SqliteException>(
+            () => Sql.BeginTransaction(contender, deferred: false, operation: "AcquireWriter")
+        );
+        string incidentPath = Assert.IsInstanceOfType<string>(
+            primary.Data["LiteAgensh.SqliteIncident"]
+        );
+        JsonNode incident = JsonNode.Parse(File.ReadAllText(incidentPath))!;
+        incident["privatePayload"] = secret;
+        incident["warning"] = secret;
+        File.WriteAllText(incidentPath, incident.ToJsonString());
+        evidence.Phase("storage-setup", "failed", error: primary);
+        evidence.CaptureSqlite([("run", state.DiagnosticsPath)]);
+        evidence.Flush();
+
+        string retained = ReadEvidence(evidence.FilePath);
+        JsonNode[] records = retained.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => JsonNode.Parse(line)!).ToArray();
+        JsonNode capture = Assert.ContainsSingle(records.Where(record =>
+            record["kind"]!.GetValue<string>() == "sqlite-source"
+            && record["detail"]!["kind"]!.GetValue<string>() == "incident"
+        ))["detail"]!;
+        Assert.AreEqual(5, primary.SqliteErrorCode);
+        Assert.AreEqual(5, capture["data"]!["failure"]!["primaryCode"]!.GetValue<int>());
+        Assert.AreEqual(
+            incident["database"]!.GetValue<string>(),
+            capture["data"]!["database"]!.GetValue<string>()
+        );
+        Assert.IsTrue(capture["warningPresent"]!.GetValue<bool>());
+        Assert.IsTrue(capture["data"]!["sources"]!.AsArray().Any(source =>
+            source?["snapshot"]?["active"]?.AsArray().Any(activity =>
+                activity?["writeAcquisitionObserved"]?.GetValue<bool>() == true
+            ) == true
+        ));
+        Assert.IsTrue(records.Any(record =>
+            record["kind"]!.GetValue<string>() == "activity"
+            && record["detail"]!["operation"]!.GetValue<string>() == "sqlite.acquisition"
+            && record["detail"]!["state"]!.GetValue<string>() == "started"
+        ));
+        Assert.Contains(scope.TraceId.ToString(), retained);
+        Assert.DoesNotContain(unrelatedTrace, retained);
+        Assert.DoesNotContain(secret, retained);
+        Assert.DoesNotContain("INSERT INTO", retained);
+        Assert.DoesNotContain(state.DiagnosticsPath, retained);
+    }
+
+    [TestMethod]
+    public void ExportFailurePreservesTheOriginalPreCheckpointStorageError()
+    {
+        using ScratchDirectory results = new();
+        string blocked = results.PathFor("not-a-directory");
+        File.WriteAllText(blocked, "owned export obstruction");
+        List<string> warnings = [];
+        using Phase7Evidence evidence = new(
+            Guid.NewGuid().ToString("N"), "test-owner", blocked, report: warnings.Add
+        );
+        using Activity scope = evidence.BeginScope();
+        using SqliteScenarioState state = new();
+        using SqliteConnection connection = state.Open();
+        const string secret = "private-storage-error-message";
+        SqliteException original = new(secret, 10, 522);
+        evidence.Phase("storage-setup", "started");
+
+        SqliteException observed = Assert.ThrowsExactly<SqliteException>(() =>
+            SqliteDiagnostics.Observe<int>(
+                connection, "PrepareState", "statement", () => throw original
+            )
+        );
+        evidence.Phase("storage-setup", "failed", error: observed);
+        evidence.Flush();
+
+        Assert.AreSame(original, observed);
+        Assert.AreEqual(10, observed.SqliteErrorCode);
+        Assert.IsTrue(warnings.Any(line => line.StartsWith(
+            "PHASE7_EVIDENCE_UNAVAILABLE", StringComparison.Ordinal
+        )));
+        Assert.DoesNotContain(secret, string.Join("\n", warnings));
+        Assert.IsTrue(File.Exists(Assert.IsInstanceOfType<string>(
+            observed.Data["LiteAgensh.SqliteIncident"]
+        )));
+    }
+
+    [TestMethod]
+    [OSCondition(OperatingSystems.Windows)]
+    [Timeout(120_000, CooperativeCancellation = true)]
+    public async Task CreatorEvidenceSurvivesDeliberateInterruptionBeforeOwnershipScopeEnds()
+    {
+        Phase7OwnedCreator creator = await Phase7OwnedCreator.OpenAsync(
+            context, false, context.CancellationToken
+        );
+        await creator.RunOwnedAsync(async () =>
+        {
+            Phase7Run state = Phase7Run.Attach(creator, context.CancellationToken);
+            await state.RunBodyAsync(async () =>
+            {
+                await creator.CrashAsync(context.CancellationToken);
+                string childFile = Path.Combine(
+                    creator.Evidence.DirectoryPath,
+                    $"original-creator-{creator.Hello["pid"]!.GetValue<int>()}-"
+                    + $"{creator.Hello["birthTicks"]!.GetValue<long>()}.jsonl"
+                );
+                JsonNode[] records = ReadEvidence(childFile)
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(line => JsonNode.Parse(line)!).ToArray();
+                Assert.IsTrue(records.Any(record =>
+                    record["kind"]!.GetValue<string>() == "phase"
+                    && record["detail"]!["phase"]!.GetValue<string>() == "checkpoint"
+                    && record["detail"]!["outcome"]!.GetValue<string>() == "prepared"
+                ));
+                Assert.IsTrue(records.Any(record =>
+                    record["kind"]!.GetValue<string>() == "activity"
+                    && record["detail"]!["operation"]!.GetValue<string>() == "coordinator.ownership"
+                    && record["detail"]!["state"]!.GetValue<string>() == "live-snapshot"
+                    && record["detail"]!["tags"]!["liteagensh.ownership.acquired"]?.GetValue<bool>()
+                        == true
+                ));
+                Assert.IsFalse(records.Any(record =>
+                    record["kind"]!.GetValue<string>() == "activity"
+                    && record["detail"]!["operation"]!.GetValue<string>() == "coordinator.ownership"
+                    && record["detail"]!["state"]!.GetValue<string>() == "stopped"
+                    && record["detail"]!["tags"]!["liteagensh.ownership.acquired"]?.GetValue<bool>()
+                        == true
+                ));
+                JsonNode[] parent = ReadEvidence(creator.Evidence.FilePath)
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(line => JsonNode.Parse(line)!).ToArray();
+                JsonNode joined = Assert.ContainsSingle(parent.Where(record =>
+                    record["kind"]!.GetValue<string>() == "owned-process"
+                    && record["detail"]!["phase"]!.GetValue<string>() == "creator-crash"
+                    && record["detail"]!["outcome"]!.GetValue<string>() == "joined"
+                ))["detail"]!;
+                Assert.AreEqual(
+                    creator.Hello["pid"]!.GetValue<int>(), joined["pid"]!.GetValue<int>()
+                );
+                Assert.AreEqual(
+                    creator.Hello["birthTicks"]!.GetValue<long>(),
+                    joined["birthTicks"]!.GetValue<long>()
+                );
+                Assert.AreNotEqual(0, joined["exitCode"]!.GetValue<int>());
+            });
+        });
+    }
+
+    [TestMethod]
     public void StorageFailureCorrelatesWithItsCallerWithoutExportingPrivateContent()
     {
         using SqliteScenarioState state = new();
@@ -163,6 +350,15 @@ public sealed class TelemetrySpecs(TestContext context)
         Assert.IsInstanceOfType<int>(tags["liteagensh.ownership.hresult"]);
         Assert.DoesNotContain("private-lock-path", exported);
         Assert.DoesNotContain(configuration.StatePath, exported);
+    }
+
+    private static string ReadEvidence(string path)
+    {
+        using FileStream input = new(
+            path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite
+        );
+        using StreamReader reader = new(input);
+        return reader.ReadToEnd();
     }
 
     private static ActivityListener Listen(List<Activity> activities)

@@ -11,7 +11,8 @@ internal sealed class Phase7Sessions(
     RunDatabase database,
     string? hostRole,
     Phase7Journal? journal = null,
-    bool ownedHosts = true
+    bool ownedHosts = true,
+    Phase7Evidence? evidence = null
 ) : IAsyncDisposable
 {
     private readonly Dictionary<string, Channel<Turn>> turns = new(StringComparer.Ordinal);
@@ -20,6 +21,7 @@ internal sealed class Phase7Sessions(
     internal Func<Session, CancellationToken, Task>? BeforeOpen { get; set; }
     internal Func<Session, CancellationToken, Task>? BeforeRead { get; set; }
     internal Phase7Journal? Journal { get; } = journal;
+    internal Phase7Evidence? Evidence { get; } = evidence;
 
     private static void Require(bool condition, string message)
     {
@@ -33,6 +35,7 @@ internal sealed class Phase7Sessions(
     {
         Host host = new(this, database, operation, hostRole, ownedHosts);
         Hosts.Add(host);
+        Evidence?.Host("runtime-create", "prepared", host.Id, null, null, !ownedHosts);
         return host;
     }
 
@@ -108,6 +111,7 @@ internal sealed class Phase7Sessions(
         bool owned
     ) : INativeSdkHost
     {
+        private readonly Phase7Evidence? evidence = control.Evidence;
         private readonly OwnedChildControl? child = owned ? new() : null;
         private readonly SemaphoreSlim startup = new(1, 1);
         private Process? process;
@@ -151,6 +155,7 @@ internal sealed class Phase7Sessions(
         internal async Task EnsureReadyAsync(CancellationToken token)
         {
             await startup.WaitAsync(token).ConfigureAwait(false);
+            string phase = "runtime-ready";
             try
             {
                 if (Ready is not null || managedReady)
@@ -159,13 +164,24 @@ internal sealed class Phase7Sessions(
                 }
                 if (child is null)
                 {
+                    evidence?.Host("runtime-ready", "started", Id, null, null, true);
                     managedReady = true;
                     Record("ready");
+                    evidence?.Host("runtime-ready", "completed", Id, null, null, true);
                     return;
                 }
+                phase = "runtime-launch";
+                evidence?.Host(phase, "started", Id, null, null, false);
                 helperStarted = Stopwatch.GetTimestamp();
                 process = child.StartDirect(role: role);
+                evidence?.Process("runtime-launch", "completed", process.Id, null);
+                evidence?.Host(phase, "completed", Id, null, null, false);
+                phase = "runtime-registration";
+                evidence?.Host(phase, "started", Id, null, null, false);
                 LeaseId = new ProcessRunner(database).Register(process, $"native:runtime:{Id}");
+                evidence?.Host(phase, "completed", Id, LeaseId, null, false);
+                phase = "runtime-ready";
+                evidence?.Host("runtime-ready", "started", Id, LeaseId, null, false);
                 Ready = await child.ReadReadyAsync(token).ConfigureAwait(false);
                 Require(process.Id == Ready.Pid, "READY PID differs from the owned process.");
                 Require(
@@ -173,6 +189,14 @@ internal sealed class Phase7Sessions(
                     "READY birth differs from the owned process."
                 );
                 Record("ready");
+                evidence?.Host("runtime-ready", "completed", Id, LeaseId, Ready, false);
+            }
+            catch (Exception error)
+            {
+                evidence?.Host(
+                    phase, "failed", Id, LeaseId, Ready, child is null, error: error
+                );
+                throw;
             }
             finally
             {
@@ -200,9 +224,11 @@ internal sealed class Phase7Sessions(
             {
                 if (!managedSettled)
                 {
+                    evidence?.Host("shared-host-settlement", "started", Id, null, null, true);
                     managedSettled = true;
                     Record("settled");
                     Console.WriteLine("PHASE7_MANAGED_HOST_SETTLED " + Witness.ToJsonString());
+                    evidence?.Host("shared-host-settlement", "completed", Id, null, null, true);
                 }
                 return;
             }
@@ -210,6 +236,7 @@ internal sealed class Phase7Sessions(
             {
                 return;
             }
+            evidence?.Host("shared-host-settlement", "started", Id, LeaseId, Ready, false);
             await child.ReleaseAsync(CancellationToken.None).ConfigureAwait(false);
             await process
                 .WaitForExitAsync(CancellationToken.None)
@@ -220,6 +247,9 @@ internal sealed class Phase7Sessions(
             new ProcessRunner(database).Complete(LeaseId);
             normalExit = true;
             Record("settled");
+            evidence?.Host(
+                "shared-host-settlement", "joined", Id, LeaseId, Ready, false, observedExitCode
+            );
             foreach (Session session in Sessions.Where(session => session.HasSession))
             {
                 control.Journal?.NormalHostExit(session.SessionId, Id, Witness, database.Now);
@@ -229,6 +259,7 @@ internal sealed class Phase7Sessions(
 
         internal async Task CleanupAsync()
         {
+            evidence?.Phase("host-wrapper-cleanup", "started");
             List<Exception> failures = [];
             bool childCleaned = child is null,
                 startupDisposed = false;
@@ -286,6 +317,17 @@ internal sealed class Phase7Sessions(
             receipt["startupDisposed"] = startupDisposed;
             receipt["failureCount"] = failures.Count;
             Console.WriteLine("PHASE7_HOST_CLEANUP " + receipt.ToJsonString());
+            foreach (Exception error in failures)
+            {
+                evidence?.Host(
+                    "host-wrapper-cleanup", "failed", Id, LeaseId, Ready, child is null,
+                    observedExitCode, error
+                );
+            }
+            if (failures.Count == 0)
+            {
+                evidence?.Phase("host-wrapper-cleanup", "completed");
+            }
             if (failures.Count != 0)
             {
                 throw new AggregateException("Phase7 host cleanup failed.", failures);
@@ -300,6 +342,7 @@ internal sealed class Phase7Sessions(
         string cwd
     ) : INativeSdkSession
     {
+        private readonly Phase7Evidence? evidence = control.Evidence;
         private readonly NativeUsageFence fence = new();
         private NativeUsage? usage;
         private decimal cap;
@@ -324,46 +367,62 @@ internal sealed class Phase7Sessions(
         {
             Worker = worker;
             SessionId = sessionId;
-            cap = limit ?? throw new InvalidOperationException("Phase7 requires finite backing.");
-            await host.EnsureReadyAsync(token).ConfigureAwait(false);
-            if (host.Operation is "run" or "resume" or "reconnect")
+            evidence?.Session("session-open", "started", host.Id, sessionId, worker, database.Now);
+            try
             {
-                if (control.BeforeOpen is { } before)
+                cap = limit ?? throw new InvalidOperationException(
+                    "Phase7 requires finite backing."
+                );
+                await host.EnsureReadyAsync(token).ConfigureAwait(false);
+                if (host.Operation is "run" or "resume" or "reconnect")
                 {
-                    await before(this, token).ConfigureAwait(false);
+                    if (control.BeforeOpen is { } before)
+                    {
+                        await before(this, token).ConfigureAwait(false);
+                    }
                 }
-            }
-            token.ThrowIfCancellationRequested();
-            if (exactSession is not null && control.Journal is null)
-            {
-                // No synthetic persistent transcript or exact-load history here.
-                throw new InvalidOperationException(
-                    "Exact-load history is not supplied by this fresh-session control."
+                token.ThrowIfCancellationRequested();
+                if (exactSession is not null && control.Journal is null)
+                {
+                    // No synthetic persistent transcript or exact-load history here.
+                    throw new InvalidOperationException(
+                        "Exact-load history is not supplied by this fresh-session control."
+                    );
+                }
+                Metadata = new()
+                {
+                    ["sessionId"] = sessionId,
+                    ["workingDirectory"] = cwd,
+                    ["selectedModel"] = database.Configuration.NativeModel,
+                    ["alreadyInUse"] = false,
+                    ["isRemote"] = false,
+                    ["appliedLimit"] = NativeSdkSession.NativeLimit(cap),
+                    ["runtimeId"] = host.Id,
+                    ["runtimeLeaseId"] = host.LeaseId,
+                    ["runtimeVersion"] = Phase6NativeControl.RuntimeVersion,
+                    ["sdkVersion"] = NativeSdkSession.SdkVersion,
+                };
+                if (host.Ready is { } ready)
+                {
+                    Metadata["pid"] = ready.Pid;
+                    Metadata["birthTicks"] = ready.BirthTicks;
+                }
+                (double nano, long requests) =
+                    control.Journal?.Open(Metadata, worker, exactSession, database.Now) ?? (0d, 0L);
+                usage = new(sessionId, nano, requests == 0 ? null : "complete", requests);
+                CompletedTurns = checked((int)requests);
+                HasSession = true;
+                evidence?.Session(
+                    "session-open", "completed", host.Id, sessionId, worker, database.Now
                 );
             }
-            Metadata = new()
+            catch (Exception error)
             {
-                ["sessionId"] = sessionId,
-                ["workingDirectory"] = cwd,
-                ["selectedModel"] = database.Configuration.NativeModel,
-                ["alreadyInUse"] = false,
-                ["isRemote"] = false,
-                ["appliedLimit"] = NativeSdkSession.NativeLimit(cap),
-                ["runtimeId"] = host.Id,
-                ["runtimeLeaseId"] = host.LeaseId,
-                ["runtimeVersion"] = Phase6NativeControl.RuntimeVersion,
-                ["sdkVersion"] = NativeSdkSession.SdkVersion,
-            };
-            if (host.Ready is { } ready)
-            {
-                Metadata["pid"] = ready.Pid;
-                Metadata["birthTicks"] = ready.BirthTicks;
+                evidence?.Session(
+                    "session-open", "failed", host.Id, sessionId, worker, database.Now, error
+                );
+                throw;
             }
-            (double nano, long requests) =
-                control.Journal?.Open(Metadata, worker, exactSession, database.Now) ?? (0d, 0L);
-            usage = new(sessionId, nano, requests == 0 ? null : "complete", requests);
-            CompletedTurns = checked((int)requests);
-            HasSession = true;
         }
 
         public async Task<NativeUsage> ReadAsync(
@@ -373,18 +432,33 @@ internal sealed class Phase7Sessions(
             bool validateEvents = true
         )
         {
-            if (
-                host.Operation is "run" or "resume" or "reconnect"
-                && control.BeforeRead is { } before
-            )
+            evidence?.Session("usage-read", "started", host.Id, SessionId, Worker, database.Now);
+            try
             {
-                await before(this, token).ConfigureAwait(false);
+                if (
+                    host.Operation is "run" or "resume" or "reconnect"
+                    && control.BeforeRead is { } before
+                )
+                {
+                    await before(this, token).ConfigureAwait(false);
+                }
+                token.ThrowIfCancellationRequested();
+                Require(expectedSession == SessionId, "Observed session identity differs.");
+                Require(expectedLimit == cap, "Observed native cap differs.");
+                NativeUsage current = usage
+                    ?? throw new OperationException("native_probe_failed", "Session did not open.");
+                evidence?.Session(
+                    "usage-read", "completed", host.Id, SessionId, Worker, database.Now
+                );
+                return current;
             }
-            token.ThrowIfCancellationRequested();
-            Require(expectedSession == SessionId, "Observed session identity differs.");
-            Require(expectedLimit == cap, "Observed native cap differs.");
-            return usage
-                ?? throw new OperationException("native_probe_failed", "Session did not open.");
+            catch (Exception error)
+            {
+                evidence?.Session(
+                    "usage-read", "failed", host.Id, SessionId, Worker, database.Now, error
+                );
+                throw;
+            }
         }
 
         public Task<NativeUsage> ReadSettledAsync(
@@ -407,10 +481,26 @@ internal sealed class Phase7Sessions(
             CancellationToken token
         )
         {
-            token.ThrowIfCancellationRequested();
-            cap = limit;
-            Metadata!["appliedLimit"] = NativeSdkSession.NativeLimit(cap);
-            return await ReadAsync(expectedSession, limit, token).ConfigureAwait(false);
+            evidence?.Session("session-limit", "started", host.Id, SessionId, Worker, database.Now);
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                cap = limit;
+                Metadata!["appliedLimit"] = NativeSdkSession.NativeLimit(cap);
+                NativeUsage current = await ReadAsync(expectedSession, limit, token)
+                    .ConfigureAwait(false);
+                evidence?.Session(
+                    "session-limit", "completed", host.Id, SessionId, Worker, database.Now
+                );
+                return current;
+            }
+            catch (Exception error)
+            {
+                evidence?.Session(
+                    "session-limit", "failed", host.Id, SessionId, Worker, database.Now, error
+                );
+                throw;
+            }
         }
 
         public void MarkDispatchPending() => fence.SetTurnPending(true);
@@ -423,38 +513,56 @@ internal sealed class Phase7Sessions(
             WorkAdmission? admission = null
         )
         {
-            token.ThrowIfCancellationRequested();
-            admission?.ThrowIfClosed();
-            control.Journal?.Dispatch(SessionId, host.Id, text, database.Now);
-            JsonObject response;
-            if (Worker == "calibration")
+            evidence?.Session("session-send", "started", host.Id, SessionId, Worker, database.Now);
+            try
             {
-                response = new() { ["text"] = "READY", ["stopReason"] = "end_turn" };
-            }
-            else
-            {
-                Turn turn = new(this, text, timeout, token);
-                using CancellationTokenRegistration cancellation = token.Register(() =>
-                    turn.CancelPending(token)
+                token.ThrowIfCancellationRequested();
+                admission?.ThrowIfClosed();
+                control.Journal?.Dispatch(SessionId, host.Id, text, database.Now);
+                JsonObject response;
+                if (Worker == "calibration")
+                {
+                    response = new() { ["text"] = "READY", ["stopReason"] = "end_turn" };
+                }
+                else
+                {
+                    Turn turn = new(this, text, timeout, token);
+                    using CancellationTokenRegistration cancellation = token.Register(() =>
+                        turn.CancelPending(token)
+                    );
+                    await control.Queue(Worker).Writer.WriteAsync(turn, token)
+                        .ConfigureAwait(false);
+                    response = await turn.Response.WaitAsync(token).ConfigureAwait(false);
+                }
+                CompletedTurns++;
+                usage = new(
+                    SessionId,
+                    Worker == "calibration" ? 7_250_000_000d : CompletedTurns * 10_000_000_000d,
+                    "complete",
+                    CompletedTurns
                 );
-                await control.Queue(Worker).Writer.WriteAsync(turn, token).ConfigureAwait(false);
-                response = await turn.Response.WaitAsync(token).ConfigureAwait(false);
+                control.Journal?.Complete(SessionId, host.Id, usage, response, database.Now);
+                fence.SetTurnPending(false);
+                evidence?.Session(
+                    "session-send", "response-prepared", host.Id, SessionId, Worker, database.Now
+                );
+                return response;
             }
-            CompletedTurns++;
-            usage = new(
-                SessionId,
-                Worker == "calibration" ? 7_250_000_000d : CompletedTurns * 10_000_000_000d,
-                "complete",
-                CompletedTurns
-            );
-            control.Journal?.Complete(SessionId, host.Id, usage, response, database.Now);
-            fence.SetTurnPending(false);
-            return response;
+            catch (Exception error)
+            {
+                evidence?.Session(
+                    "session-send", "failed", host.Id, SessionId, Worker, database.Now, error
+                );
+                throw;
+            }
         }
 
         public Task AbortAsync(CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
+            evidence?.Session(
+                "session-abort", "requested", host.Id, SessionId, Worker, database.Now
+            );
             // An abort request alone is deliberately not terminal/usage proof.
             return Task.CompletedTask;
         }
@@ -466,6 +574,9 @@ internal sealed class Phase7Sessions(
         public ValueTask DisposeAsync()
         {
             disposed = true;
+            evidence?.Session(
+                "session-stop", "completed", host.Id, SessionId, Worker, database.Now
+            );
             return ValueTask.CompletedTask;
         }
 

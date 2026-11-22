@@ -26,6 +26,7 @@ from sheet_music_omr.comparison import (
 from sheet_music_omr.diagnostics import RuleClass, TextScoreError
 from sheet_music_omr.harness.systems import assembly_test
 from sheet_music_omr.model import AssembledScore
+from sheet_music_omr.musicxml_events import SpannerNumberConflictError
 from sheet_music_omr.musicxml_forward import ReviewRequiredError, to_musicxml
 from sheet_music_omr.musicxml_reverse import (
     MusicXmlError,
@@ -138,6 +139,14 @@ def count(y: Path) -> Data:
     except ScoreParseError as error:
         return {"status": UNPARSABLE, "detail": _detail(error)}
     return {"status": OK, "content": content, "layout": layout}
+
+
+def count_rx(y: Path) -> Data:
+    """Count a failed ``R(X)`` file's elements, catching spanner conflicts."""
+    try:
+        return count(y)
+    except SpannerNumberConflictError as error:
+        return {"status": UNPARSABLE, "detail": _detail(error)}
 
 
 def reverse(y: Path) -> Data:
@@ -309,16 +318,39 @@ def parse_check(x: Path) -> Data:
     return {"status": OK}
 
 
+def baseline_content(t: Path, y: Path) -> Data:
+    """Run the non-gating baseline content pass of ``R(X)`` against ``X``.
+
+    Returns:
+        ``ok`` as :func:`content` does, or ``unparsable`` when ``R(X)``
+        cannot be parsed because of invalid MusicXML or overlapping
+        same-number spanners.
+    """
+    try:
+        return content(t, y)
+    except SpannerNumberConflictError as error:
+        return {"status": UNPARSABLE, "detail": _detail(error)}
+
+
+def baseline_layout(t: Path, y: Path) -> Data:
+    """Run the non-gating baseline layout pass of ``R(X)`` against ``X``."""
+    try:
+        return layout(t, y)
+    except SpannerNumberConflictError as error:
+        return {"status": UNPARSABLE, "detail": _detail(error)}
+
+
 STEPS: Mapping[str, Callable[..., Data]] = {
     "count": count,
+    "count_rx": count_rx,
     "reverse": reverse,
     "forward": forward,
     "content": content,
     "layout": layout,
     "text_space": text_space,
     "assembly": assembly,
-    "baseline_content": content,
-    "baseline_layout": layout,
+    "baseline_content": baseline_content,
+    "baseline_layout": baseline_layout,
     "parse_check": parse_check,
 }
 """The default step table, by step name."""

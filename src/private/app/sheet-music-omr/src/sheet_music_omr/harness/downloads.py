@@ -147,6 +147,64 @@ LIEDER_ZIP: Final = ZenodoFile(
 )
 """The OpenScore Lieder ``v3.0.0`` repository archive."""
 
+_SHA1_HEX = re.compile(r"[0-9a-f]{40}")
+
+
+@dataclass(frozen=True, slots=True)
+class HuggingFaceFile:
+    """A pinned non-weight file of a Hugging Face repository.
+
+    Attributes:
+        repo: The ``owner/name`` repository identifier.
+        revision: The immutable 40-hex commit SHA.
+        filename: The repository-relative file path.
+        local_name: The file name under the local downloads directory.
+        size: The published size in bytes.
+        git_blob_oid: The 40-hex Git blob SHA-1 OID published by Hugging Face.
+    """
+
+    repo: str
+    revision: str
+    filename: str
+    local_name: str
+    size: int
+    git_blob_oid: str
+
+    def __post_init__(self) -> None:
+        """Refuse malformed identifiers, sizes or Git blob OIDs."""
+        if not _SHA1_HEX.fullmatch(self.revision) or not _SHA1_HEX.fullmatch(
+            self.git_blob_oid
+        ):
+            message = "revision and git_blob_oid must be 40-hex SHA-1 strings"
+            raise ValueError(message)
+        if isinstance(self.size, bool) or self.size <= 0:
+            message = f"malformed published size: {self.size!r}"
+            raise ValueError(message)
+        if not _UNSAFE_NAME_CHARACTERS.isdisjoint(self.local_name):
+            message = f"unsafe local name: {self.local_name!r}"
+            raise ValueError(message)
+
+    @property
+    def url(self) -> str:
+        """The pinned HTTPS resolve URL."""
+        path = "/".join(
+            quote(part, safe="") for part in self.filename.split("/")
+        )
+        return (
+            f"https://huggingface.co/{self.repo}/resolve/{self.revision}/{path}"
+        )
+
+
+QWEN3_VL_TOKENIZER: Final = HuggingFaceFile(
+    repo="Qwen/Qwen3-VL-2B-Instruct",
+    revision="89644892e4d85e24eaac8bacfd4f463576704203",
+    filename="tokenizer.json",
+    local_name="Qwen3-VL-2B-Instruct-tokenizer.json",
+    size=7_032_403,
+    git_blob_oid="c6cc1014128b19d1fc46b1d30a23e3b1d35db421",
+)
+"""The pinned Qwen3-VL-2B-Instruct ``tokenizer.json`` (no model weights)."""
+
 
 @dataclass(frozen=True, slots=True)
 class LedgerEntry:
@@ -539,3 +597,97 @@ def _check_complete(file: ZenodoFile, received: int, md5: str) -> None:
     if md5 != file.md5:
         message = f"{file.key}: MD5 {md5} is not the published {file.md5}"
         raise DownloadError(message)
+
+
+def git_blob_oid_file(path: Path) -> str:
+    """Return the 40-hex Git blob SHA-1 OID of a file."""
+    size = path.stat().st_size
+    digest = hashlib.sha1(usedforsecurity=False)
+    digest.update(f"blob {size}\x00".encode())
+    with path.open("rb") as stream:
+        while chunk := stream.read(CHUNK_BYTES):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _is_published_hf(path: Path, file: HuggingFaceFile) -> bool:
+    return (
+        path.is_file()
+        and path.stat().st_size == file.size
+        and git_blob_oid_file(path) == file.git_blob_oid
+    )
+
+
+def fetch_hf_file(
+    file: HuggingFaceFile,
+    *,
+    ledger: Ledger,
+    confinement: Confinement,
+    fetch: Callable[[str], Iterable[bytes]] = urllib_fetch,
+) -> Path:
+    """Download or reuse a pinned Hugging Face file under ``LIMIT``."""
+    with _shared_ledger_guard(ledger, confinement):
+        target = confinement.check(confinement.downloads / file.local_name)
+        if _is_published_hf(target, file):
+            ledger.sync_mirror(confinement)
+            return target
+        if ledger.total + file.size > LIMIT:
+            message = (
+                f"downloading {file.repo}/{file.filename} ({file.size} bytes) "
+                f"would take the W1 cumulative total {ledger.total} above "
+                f"{LIMIT} bytes"
+            )
+            raise DownloadLimitError(message)
+        partial = confinement.check(target.with_name(f"{target.name}.partial"))
+        md5_digest = hashlib.md5(usedforsecurity=False)
+        blob_digest = hashlib.sha1(usedforsecurity=False)
+        blob_digest.update(f"blob {file.size}\x00".encode())
+        received = 0
+        ok = False
+        chunks: Iterator[bytes] | None = None
+        try:
+            with partial.open("wb") as stream:
+                chunks = iter(fetch(file.url))
+                for chunk in chunks:
+                    received += len(chunk)
+                    md5_digest.update(chunk)
+                    blob_digest.update(chunk)
+                    if received > file.size:
+                        msg = (
+                            f"{file.filename}: received more than "
+                            f"{file.size} bytes"
+                        )
+                        raise DownloadError(msg)
+                    stream.write(chunk)
+            if received != file.size:
+                msg = (
+                    f"{file.filename}: received {received} bytes, not "
+                    f"{file.size}"
+                )
+                raise DownloadError(msg)
+            actual_oid = blob_digest.hexdigest()
+            if actual_oid != file.git_blob_oid:
+                msg = (
+                    f"{file.filename}: Git blob OID {actual_oid} is not "
+                    f"{file.git_blob_oid}"
+                )
+                raise DownloadError(msg)
+            partial.replace(target)
+            ok = True
+        finally:
+            close = getattr(chunks, "close", None)
+            if callable(close):
+                close()
+            if not ok:
+                partial.unlink(missing_ok=True)
+            entry = LedgerEntry(
+                f"{file.repo}/{file.filename}",
+                file.revision,
+                file.url,
+                received,
+                md5_digest.hexdigest(),
+                ok=ok,
+                at=datetime.now(UTC).isoformat(timespec="seconds"),
+            )
+            ledger.record(entry, confinement=confinement)
+        return target

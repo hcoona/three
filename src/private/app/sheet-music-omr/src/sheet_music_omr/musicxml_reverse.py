@@ -649,6 +649,7 @@ class _Reader:
         self.current_key = 0
         self.current_meter = Meter(4, 4)
         self.clefs: dict[int, Clef] = {}
+        self.superseded_initial_clefs: set[int] = set()
         self.staves = 1
         self.ending: int | None = None
         self.order = 0
@@ -872,12 +873,41 @@ class _Reader:
         staff = _int(element.get("number", "1"), "staff", "a clef number", at)
         if staff not in {1, 2}:
             _malformed("staff", f"clef number {staff} is not 1 or 2", at)
-        clef = _clef_of(element, replace(at, staff=staff))
-        first = measure.index == 0 and cursor.position == 0
+        staff_at = replace(at, staff=staff)
+        clef = _clef_of(element, staff_at)
+        first = (
+            measure.index == 0
+            and cursor.position == 0
+            and not any(
+                staff in {leaf.staff, leaf.shown} for leaf in measure.leaves
+            )
+        )
         if first and staff not in self.clefs:
             self.clefs[staff] = clef
             return
+        if (
+            first
+            and element.get("after-barline") == "yes"
+            and staff not in self.superseded_initial_clefs
+            and clef != self.clefs[staff]
+        ):
+            self.clefs[staff] = clef
+            self.superseded_initial_clefs.add(staff)
+            return
+        if measure.index == 0 and cursor.position == 0:
+            _unsupported(
+                "clef", "two clefs on one staff share onset 0", staff_at
+            )
         onset = self.tick_value(cursor.position, at)
+        if any(
+            d.staff == staff
+            and d.onset == onset
+            and isinstance(d.event, ClefChange)
+            for d in measure.directions
+        ):
+            _unsupported(
+                "clef", "two clefs on one staff share one onset", staff_at
+            )
         measure.directions.append(
             _Leaf(
                 _DIRECTION,
@@ -888,7 +918,7 @@ class _Reader:
                 onset,
                 Fraction(0),
                 self.next_order(),
-                replace(at, staff=staff),
+                staff_at,
                 event=ClefChange(clef),
                 own_staff=True,
             ),

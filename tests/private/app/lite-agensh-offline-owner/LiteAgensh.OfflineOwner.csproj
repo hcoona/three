@@ -23,5 +23,6 @@
     <Compile Include="..\lite-agensh\Support\ManualScenarioClock.cs" Link="Support\ManualScenarioClock.cs" />
     <Compile Include="..\lite-agensh\Support\Phase7Sessions.cs" Link="Support\Phase7Sessions.cs" />
     <Compile Include="..\lite-agensh\Support\Phase7Journal.cs" Link="Support\Phase7Journal.cs" />
+    <Compile Include="..\lite-agensh\Support\Phase7Evidence.cs" Link="Support\Phase7Evidence.cs" />
   </ItemGroup>
 </Project>

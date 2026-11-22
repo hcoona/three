@@ -224,6 +224,7 @@ _EXTRA_KINDS: dict[str, str] = {
     "staffinfo": LAYOUT,
     "systembreak": LAYOUT,
     "pagebreak": LAYOUT,
+    "superseded_clef": LAYOUT,
 }
 
 _ORNAMENT_NAMES = frozenset(
@@ -1006,6 +1007,7 @@ def annotate(
     except Exception as error:
         message = f"musicdiff cannot parse the score: {error}"
         raise ScoreParseError(message) from error
+    _mark_superseded_initial_clefs(annotated, source)
     _remove_reprints(annotated, parsed)
     events, notes = _bridge(annotated, xml)
     _check_octave_shifts(annotated, parsed, xml, events)
@@ -1162,6 +1164,7 @@ class _MeasureDirScan:
     seen_divs: list[int] = field(default_factory=list)
     cursor: Fraction = Fraction(0)
     seg_idx: int = 0
+    has_step: bool = False
     lead_staff: str = "1"
     elem_divs: list[tuple[ET.Element, int]] = field(default_factory=list)
     anchors: list[tuple[int, Fraction, str, ET.Element]] = field(
@@ -1223,6 +1226,7 @@ def _scan_dir_child(
             dur = int(child.findtext("duration", "0"))
             scan.cursor += Fraction(dur, scan.divisions)
     elif child.tag in {"backup", "forward"}:
+        scan.has_step = True
         scan.elem_divs.append((child, scan.divisions))
         if child.tag == "backup":
             scan.seg_ends[scan.seg_idx] = (child, scan.cursor)
@@ -1312,6 +1316,8 @@ def _needs_direction_reorder(scan: _MeasureDirScan) -> bool:
     for on, pri, idx, st, is_sp, _ in dirs:
         if is_sp:
             by_st.setdefault(st, []).append((on, pri, idx))
+    if by_st and scan.has_step:
+        return True
     return any(keys != sorted(keys) for keys in by_st.values())
 
 
@@ -1399,14 +1405,79 @@ def _insert_cursor_dirs(
     return cur
 
 
-def _place_staff_directions(
+def _spanner_keys(
+    direction: ET.Element,
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    opens: list[tuple[str, str]] = []
+    closes: list[tuple[str, str]] = []
+    for dt in direction.findall("direction-type"):
+        for mark in dt:
+            if mark.tag not in _SPANNER_TAGS:
+                continue
+            key = (mark.tag, (mark.get("number") or "1").strip())
+            mtype = (mark.get("type") or "").strip()
+            if mtype in _SPANNER_OPEN_TYPES:
+                opens.append(key)
+            elif mtype in {"stop", "change", "discontinue"}:
+                closes.append(key)
+    return opens, closes
+
+
+def _min_after_pos(
+    children: list[ET.Element],
+    closes: list[tuple[str, str]],
+    placed_starts: dict[tuple[str, str], ET.Element],
+) -> int:
+    return max(
+        (
+            children.index(placed_starts[key]) + 1
+            for key in closes
+            if key in placed_starts and placed_starts[key] in children
+        ),
+        default=0,
+    )
+
+
+def _try_anchor_note(
     measure: ET.Element,
-    staff: str,
-    staff_dirs: list[tuple[Fraction, ET.Element]],
-    scan_and_div: tuple[_MeasureDirScan, int],
-    tail_dirs: list[tuple[Fraction, ET.Element]],
-) -> None:
-    scan, div = scan_and_div
+    direction: ET.Element,
+    note_el: ET.Element | None,
+    keys: tuple[list[tuple[str, str]], list[tuple[str, str]]],
+    state: tuple[dict[tuple[str, str], ET.Element], set[tuple[str, str]]],
+) -> bool:
+    if note_el is None:
+        return False
+    all_keys = [*keys[0], *keys[1]]
+    placed_last, deferred_keys = state
+    if deferred_keys.intersection(all_keys):
+        return False
+    children = list(measure)
+    pos = children.index(note_el)
+    if pos < _min_after_pos(children, all_keys, placed_last):
+        return False
+    measure.insert(pos, direction)
+    for key in all_keys:
+        placed_last[key] = direction
+    return True
+
+
+type _OrderedDir = tuple[Fraction, int, int, ET.Element]
+type _DeferredDir = tuple[
+    Fraction,
+    int,
+    int,
+    ET.Element,
+    list[tuple[str, str]],
+]
+type _StaffMaps = tuple[
+    int | None,
+    list[tuple[Fraction, ET.Element]],
+    dict[Fraction, ET.Element],
+    dict[Fraction, ET.Element],
+]
+
+
+def _staff_anchor_maps(scan: _MeasureDirScan, staff: str) -> _StaffMaps:
     seg_counts: dict[int, list[Fraction]] = {}
     for s_i, n_on, n_st, _ in scan.anchors:
         if n_st == staff:
@@ -1423,30 +1494,150 @@ def _place_staff_directions(
             ),
         )
     )
-    if target_seg is None:
-        tail_dirs.extend(staff_dirs)
+    seg_notes = (
+        []
+        if target_seg is None
+        else [
+            (n_on, n_el)
+            for s_i, n_on, n_st, n_el in scan.anchors
+            if s_i == target_seg and n_st == staff
+        ]
+    )
+    same_by_onset: dict[Fraction, ET.Element] = {}
+    for n_on, n_el in seg_notes:
+        same_by_onset.setdefault(n_on, n_el)
+    for _, n_on, n_st, n_el in scan.anchors:
+        if n_st == staff:
+            same_by_onset.setdefault(n_on, n_el)
+    other_by_onset: dict[Fraction, ET.Element] = {}
+    for _, n_on, n_st, n_el in scan.anchors:
+        if n_st != staff:
+            other_by_onset.setdefault(n_on, n_el)
+    return target_seg, seg_notes, same_by_onset, other_by_onset
+
+
+def _partition_deferred_before_pos(
+    measure: ET.Element,
+    pos: int,
+    items: list[_DeferredDir],
+    placed_last: dict[tuple[str, str], ET.Element],
+    tail_state: tuple[set[tuple[str, str]], list[_OrderedDir]],
+) -> list[tuple[Fraction, ET.Element]]:
+    children = list(measure)
+    tail_keys, tail_items = tail_state
+    ready: list[tuple[Fraction, ET.Element]] = []
+    for on, pri, idx, d, all_keys in items:
+        if tail_keys.isdisjoint(all_keys) and pos >= _min_after_pos(
+            children, all_keys, placed_last
+        ):
+            ready.append((on, d))
+            for key in all_keys:
+                placed_last[key] = d
+        else:
+            tail_keys.update(all_keys)
+            tail_items.append((on, pri, idx, d))
+    return ready
+
+
+def _flush_deferred_staff_dirs(
+    measure: ET.Element,
+    seg_info: tuple[int | None, list[tuple[Fraction, ET.Element]]],
+    deferred: list[_DeferredDir],
+    ctx: tuple[_MeasureDirScan, int, dict[tuple[str, str], ET.Element]],
+    tail_state: tuple[set[tuple[str, str]], list[_OrderedDir]],
+) -> None:
+    target_seg, seg_notes = seg_info
+    if not deferred:
         return
-    seg_notes = [
-        (n_on, n_el)
-        for s_i, n_on, n_st, n_el in scan.anchors
-        if s_i == target_seg and n_st == staff
-    ]
+    if target_seg is None:
+        tail_keys, tail_items = tail_state
+        for on, pri, idx, d, all_keys in deferred:
+            tail_keys.update(all_keys)
+            tail_items.append((on, pri, idx, d))
+        return
+    scan, div, placed_last = ctx
     idx = 0
     for n_on, note_el in seg_notes:
-        mid: list[tuple[Fraction, ET.Element]] = []
-        while idx < len(staff_dirs) and staff_dirs[idx][0] < n_on:
-            mid.append(staff_dirs[idx])
+        chunk: list[_DeferredDir] = []
+        while idx < len(deferred) and deferred[idx][0] < n_on:
+            chunk.append(deferred[idx])
             idx += 1
+        mid = _partition_deferred_before_pos(
+            measure,
+            list(measure).index(note_el),
+            chunk,
+            placed_last,
+            tail_state,
+        )
         if mid:
             _insert_cursor_dirs(measure, note_el, mid, (n_on, div, True))
-        while idx < len(staff_dirs) and staff_dirs[idx][0] == n_on:
-            measure.insert(list(measure).index(note_el), staff_dirs[idx][1])
-            idx += 1
-    if idx < len(staff_dirs):
+    if idx < len(deferred):
         boundary_el, end_cur = scan.seg_ends[target_seg]
-        _insert_cursor_dirs(
-            measure, boundary_el, staff_dirs[idx:], (end_cur, div, True)
+        b_pos = (
+            len(measure)
+            if boundary_el is None
+            else list(measure).index(boundary_el)
         )
+        rem = _partition_deferred_before_pos(
+            measure, b_pos, deferred[idx:], placed_last, tail_state
+        )
+        if rem:
+            _insert_cursor_dirs(measure, boundary_el, rem, (end_cur, div, True))
+
+
+def _place_measure_directions(
+    measure: ET.Element,
+    scan: _MeasureDirScan,
+    div: int,
+) -> list[_OrderedDir]:
+    maps = {
+        st: _staff_anchor_maps(scan, st)
+        for st in sorted({st for *_, st, _, _ in scan.dirs})
+    }
+    placed_last: dict[tuple[str, str], ET.Element] = {}
+    deferred_keys: set[tuple[str, str]] = set()
+    state = (placed_last, deferred_keys)
+    deferred_by_staff: dict[str, list[_DeferredDir]] = {}
+    for onset, pri, idx, staff, _, direction in sorted(
+        scan.dirs, key=lambda item: (item[0], item[1], item[2])
+    ):
+        _, _, same_by_onset, other_by_onset = maps[staff]
+        keys = _spanner_keys(direction)
+        if _try_anchor_note(
+            measure, direction, same_by_onset.get(onset), keys, state
+        ):
+            continue
+        other = (
+            None
+            if direction.find("direction-type/octave-shift") is not None
+            else other_by_onset.get(onset)
+        )
+        if _try_anchor_note(measure, direction, other, keys, state):
+            continue
+        all_keys = [*keys[0], *keys[1]]
+        deferred_keys.update(all_keys)
+        deferred_by_staff.setdefault(staff, []).append(
+            (onset, pri, idx, direction, all_keys)
+        )
+    tail_state: tuple[set[tuple[str, str]], list[_OrderedDir]] = (set(), [])
+    ordered_staves = sorted(
+        deferred_by_staff,
+        key=lambda st: (
+            maps[st][0] is None,
+            0 if maps[st][0] is None else maps[st][0],
+            st,
+        ),
+    )
+    for staff in ordered_staves:
+        target_seg, seg_notes, _, _ = maps[staff]
+        _flush_deferred_staff_dirs(
+            measure,
+            (target_seg, seg_notes),
+            deferred_by_staff[staff],
+            (scan, div, placed_last),
+            tail_state,
+        )
+    return tail_state[1]
 
 
 def _reorder_measure_directions(
@@ -1466,15 +1657,10 @@ def _reorder_measure_directions(
         measure.remove(direction)
         for off_el in list(direction.findall("offset")):
             direction.remove(off_el)
-    by_staff: dict[str, list[tuple[Fraction, int, int, ET.Element]]] = {}
-    for onset, pri, idx, staff, _, direction in scan.dirs:
-        by_staff.setdefault(staff, []).append((onset, pri, idx, direction))
-    tail_dirs: list[tuple[Fraction, ET.Element]] = []
-    for staff in sorted(by_staff):
-        ordered = [(on, d) for on, _, _, d in sorted(by_staff[staff])]
-        _place_staff_directions(measure, staff, ordered, (scan, div), tail_dirs)
-    if tail_dirs:
+    tail_items = _place_measure_directions(measure, scan, div)
+    if tail_items:
         right_bar, end_cur = scan.seg_ends[scan.seg_idx]
+        tail_dirs = [(on, d) for on, _, _, d in sorted(tail_items)]
         _insert_cursor_dirs(
             measure, right_bar, tail_dirs, (end_cur, div, right_bar is not None)
         )
@@ -3567,6 +3753,110 @@ def _locate(annotated: AnnotatedScore) -> dict[int, Location]:
                     part_index=part_index,
                 )
     return locations
+
+
+def _clef_key(element: ET.Element) -> tuple[str, str, str]:
+    return (
+        (element.findtext("sign") or "").strip(),
+        (element.findtext("line") or "").strip(),
+        (element.findtext("clef-octave-change") or "0").strip(),
+    )
+
+
+def _record_m1_clefs(
+    attrs: ET.Element,
+    cursor: Fraction,
+    locked: set[int],
+    initial: dict[int, tuple[str, str, str]],
+    superseded: set[int],
+) -> None:
+    for clef_el in attrs.findall("clef"):
+        st = int((clef_el.get("number") or "1").strip()) - 1
+        if cursor != 0 or st in locked:
+            continue
+        ckey = _clef_key(clef_el)
+        if st not in initial:
+            initial[st] = ckey
+            continue
+        locked.add(st)
+        if clef_el.get("after-barline") == "yes" and ckey != initial[st]:
+            superseded.add(st)
+
+
+def _measure1_superseded_clef_staves(m1: ET.Element) -> set[int]:
+    div = 1
+    cursor = Fraction(0)
+    locked: set[int] = set()
+    initial: dict[int, tuple[str, str, str]] = {}
+    superseded: set[int] = set()
+    for child in m1:
+        if child.tag == "note" and child.find("chord") is None:
+            st = int((child.findtext("staff") or "1").strip()) - 1
+            locked.add(st)
+            if child.find("grace") is None:
+                cursor += Fraction(int(child.findtext("duration", "0")), div)
+        elif child.tag in {"backup", "forward"}:
+            step = Fraction(int(child.findtext("duration", "0")), div)
+            cursor = max(
+                Fraction(0),
+                cursor + (-step if child.tag == "backup" else step),
+            )
+            if child.tag == "forward" and child.findtext("voice") is not None:
+                locked.add(int((child.findtext("staff") or "1").strip()) - 1)
+        elif child.tag == "attributes":
+            if child.find("divisions") is not None:
+                div = max(1, int((child.findtext("divisions") or "1").strip()))
+            _record_m1_clefs(child, cursor, locked, initial, superseded)
+    return superseded
+
+
+def _collect_superseded_targets(source: Path | str) -> set[tuple[int, int]]:
+    try:
+        data = source.read_bytes() if isinstance(source, Path) else source
+        root = _load_musicxml(data)
+    except Exception:  # noqa: BLE001
+        return set()
+    return {
+        (p_idx, st)
+        for p_idx, part_el in enumerate(root.findall("part"))
+        if (m1 := part_el.find("measure")) is not None
+        for st in _measure1_superseded_clef_staves(m1)
+    }
+
+
+def _mark_superseded_initial_clefs(
+    annotated: AnnScore,
+    source: Path | str,
+) -> None:
+    targets = _collect_superseded_targets(source)
+    if not targets:
+        return
+    staff_keys = _musicxml_part_staff_indices(annotated)
+    changed = False
+    for idx, part in enumerate(annotated.part_list):
+        if idx >= len(staff_keys) or staff_keys[idx] not in targets:
+            continue
+        indexes = _measure_indexes(part.get_object())
+        bar0 = next(
+            (b for b in part.bar_list if indexes.get(id(b.get_object())) == 0),
+            None,
+        )
+        if bar0 is None:
+            continue
+        clefs = [
+            e for e in bar0.extras_list if e.kind == "clef" and e.offset == 0
+        ]
+        if len(clefs) >= 2:  # noqa: PLR2004
+            clefs[0].kind = "superseded_clef"
+            clefs[0].precomputed_str = str(clefs[0])
+            bar0.precomputed_str = hash(str(bar0))
+            bar0.precomputed_repr = hash(repr(bar0))
+            _reset_size(bar0)
+            part.precomputed_str = hash(str(part))
+            _reset_size(part)
+            changed = True
+    if changed:
+        _reset_size(annotated)
 
 
 def _elements(score: AnnScore) -> Iterator[AnnNote | AnnExtra]:

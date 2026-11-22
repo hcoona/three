@@ -6,31 +6,41 @@ into text, and deterministic tools validate, assemble and convert that text to
 MusicXML. The records here define the text representation and the evidence its
 tools must meet.
 
-**Current state:** experimental; W1 formal measurement is iterating after
-`formal-3` stopped at baseline check (`#1488`). A Python package parses
-Text Score 2 documents, validates their grammar and semantics, reports each
-error with its rule class and location, lists review markers, writes canonical
-text, derives the carry-out state of a system document and assembles system
-documents into one score. A forward converter turns a valid assembled score
-without review markers into MusicXML 4.0, and a reverse converter turns a
-MusicXML piano part on two staves back into a valid assembled score. A
-round-trip comparison instrument and execution harness run the
-[comparison protocol](docs/comparison-protocol.md). Formal attempt `formal-3`
-completed selection (`200` PDMX + `50` Lieder;
-[Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7030522396))
-on `main` (`6f3c38f2`) and stopped on `l0033` in `baseline_content`
-([Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7031008701)).
-The [requirements](docs/requirements.md), [Text Score 2 format](docs/text-format.md),
-[comparison protocol](docs/comparison-protocol.md), converters, comparator and
-structural scope screen incorporate the Phase 1 owner dispositions from
-`formal-3` triage and the 23-piece gold audit
-([Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7034443356),
-[notation addendum](https://github.com/hcoona/three/issues/1488#issuecomment-7058188830),
-[ABC 2.1 addendum](https://github.com/hcoona/three/issues/1488#issuecomment-7058919271),
-[implementation addendum](https://github.com/hcoona/three/issues/1488#issuecomment-7067355696))
-ahead of `formal-4` execution (see [Agent handoff](docs/agent-handoff.md)).
-No acceptance measure has completed, and there is no recognizer, model,
-packaging or release yet.
+**Current state:** experimental; W1 text representation
+([Issue #1488](https://github.com/hcoona/three/issues/1488)) is accepted and
+closed on `formal-5` (`main` commit `9171f870684a37e0ca5a526387ea69d92e740882`;
+results in
+[#1488 comment 7083248609](https://github.com/hcoona/three/issues/1488#issuecomment-7083248609),
+owner acceptance disposition in
+[#1488 comment 7083509900](https://github.com/hcoona/three/issues/1488#issuecomment-7083509900)).
+A Python package parses Text Score 2 documents, validates their grammar and
+semantics, reports each error with its rule class and location, lists review
+markers, writes canonical text, derives the carry-out state of a system
+document and assembles system documents into one score. A forward converter
+turns a valid assembled score without review markers into MusicXML 4.0, and a
+reverse converter turns a MusicXML piano part on two staves back into a valid
+assembled score. A round-trip comparison instrument and execution harness run
+the [comparison protocol](docs/comparison-protocol.md) and the auxiliary
+protocols in the [validation basis](docs/requirements.md#validation-basis).
+On `formal-5` (`MuseScore Studio 4.7.7.261109195`), the accepted private gold
+cohort (with `gold-01` evaluated on the one-time owner-authorized staged
+tie-endpoint repair of [PR #1705](https://github.com/hcoona/three/pull/1705)
+and the original private repository and remaining `22` gold pieces kept
+read-only; see [Agent handoff](docs/agent-handoff.md)) met `OMR-REQ-010` at
+`100.0000%` (`30,716 / 30,716`, `0` counted differences, `23 / 23` import
+checks passed, `23 / 23` text-space consistent, `87.8583%` layout fidelity) and
+`23 / 23` equal system-assembly pieces (`493` systems), all four public corpus
+gating pools met `OMR-REQ-011` (`pdmx-x` `99.6360%`, `pdmx-rx` `93.8568%` raw
+and `99.6995%` across the `197` files not solely corrupted by upstream
+MuseScore 4.7.7 export defects, `lieder-x` `99.8140%`, `lieder-rx` `99.8435%`),
+the frozen `OMR-REQ-012` replay reproduced `327 / 327` deduplicated loci (`356`
+raw entries, `0` failed), and `Qwen3-VL-2B-Instruct` tokenizer counts were
+recorded alongside the completed ABC 2.1 capability mapping. With W1's
+[Delivery Wave](../../../../docs/delivery-wave.md) entry retired on acceptance,
+only design and planning under [Issue #686](https://github.com/hcoona/three/issues/686)
+remains authorized until a later workstream receives its own Delivery Wave
+entry (see [Agent handoff](docs/agent-handoff.md)). There is no recognizer,
+model, packaging or release.
 
 ## Usage
 
@@ -75,8 +85,10 @@ uv run --package sheet-music-omr --group dev `
 `--group dev` when running the harness.
 The commands, in order, are `preflight` (with `--prior-total` and `--basis`
 when initializing a fresh shared `DOWNLOADS/download-ledger.json`), `download`,
-`select`, `run` (with `--gold-status`, `--gold-cache` and `--jobs`) and
-`report`. `preflight`, `select`, `run` and `pilot` accept optional
+`select`, `run` (with `--gold-status`, `--gold-cache` and `--jobs`), `report`,
+`replay-req012` (with `--manifest` for the frozen `OMR-REQ-012` replay) and
+`tokenizer-counts` (for the W1 tokenizer-counts protocol). `preflight`,
+`select`, `run` and `pilot` accept optional
 `--musescore` and `--settings` path overrides. `view --id ID [--measure N]`
 shows one file's differences by measure, and `pilot [--fixtures FILE...]` runs
 every phase on repository fixtures. A stop condition is recorded in

@@ -189,6 +189,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         fixture.Write("shared/nbgv-aux.targets", """
             <Project><Target Name="UnsupportedNbgvAuxiliaryProducer" /></Project>
             """);
+        await fixture.PrepareAsync(context.CancellationToken);
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
         foreach (string expected in new[] { "RepositoryTarget", "UnsupportedNbgvAuxiliaryProducer",

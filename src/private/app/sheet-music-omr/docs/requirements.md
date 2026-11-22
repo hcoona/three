@@ -161,10 +161,19 @@ in-scope content differences.
 
 On public corpus files whose licenses permit the use, and on their MuseScore
 re-exports, at least 99% of in-scope elements shall be identical after the
-round trip. The comparison protocol fixes the files, the selection rule and the
-denominator before execution. This result measures the converters and the
-importer on those files. It does not show that the format is complete or that
-any model can learn it.
+round trip. Raw MuseScore re-export (`R(X)`) arm scores shall keep every failed
+file's reference elements counted as non-identical in the denominator without
+converter workarounds; when `X` passes the structural scope screen and converts
+without failure and `R(X)` fails whole-file conversion or `musicdiff` parsing
+solely because of one of the three minimal-reproduced, upstream-reported
+MuseScore 4 MusicXML export defects recorded in the comparison protocol, the
+report shall list those files, their element counts and their upstream issues
+separately alongside the raw `R(X)` score, and the 99% re-export acceptance
+threshold shall be evaluated across the remaining `R(X)` files not corrupted by
+those three upstream export defects. The comparison protocol fixes the files,
+the selection rule and the denominator before execution. This result measures
+the converters and the importer on those files. It does not show that the
+format is complete or that any model can learn it.
 
 ### OMR-REQ-012: Toolchain-class findings
 
@@ -242,7 +251,7 @@ content nor unsupported content. A reverse converter ignores them.
 
 ## Validation basis
 
-No acceptance measure has been run yet. The evidence has three parts:
+The evidence has three parts:
 
 - Protocols. Every experiment or runtime observation (including the comparison
   protocol, tokenizer counts, MuseScore import checks and any capability
@@ -256,16 +265,132 @@ No acceptance measure has been run yet. The evidence has three parts:
   its exact subject, environment, isolation, expected observations, evidence
   limits, bounds and cleanup.
 - Inputs. Accepted private gold pieces stay private and are counted only in
-  aggregate. Public corpus inputs and committed fixtures need a license that
-  permits the use and a recorded provenance.
-- The frozen toolchain-class set. The set of OMR-REQ-012 is not frozen yet.
-  Freezing it needs private read-only inspection, public output limited as
-  OMR-REQ-015 allows and an independent attestation of how the set was derived.
-  A later reviewed change records it before the replay and before acceptance.
+  aggregate and by anonymized batch numbers. Public corpus inputs and committed
+  fixtures need a license that permits the use and a recorded provenance.
+- The frozen toolchain-class set. The set of OMR-REQ-012 is frozen below from
+  read-only inspection of the private review archive, with public output
+  limited as OMR-REQ-015 allows, independent attestation of its derivation and
+  explicit owner approval of the full-archive union scope.
 
 Evidence statements are classified as source finding, runtime observation,
 inference or hypothesis, and no conclusion exceeds the environment, files and
 tools that were actually tested.
+
+### Frozen toolchain-class set and replay protocol
+
+- **Derivation provenance (local read-only runtime observations over the
+  private archive):**
+  deterministic derivation (`derive_req012_set.py`, SHA-256
+  `3f7653709ead11f270e8c2d2ab8960be1ae72d2d006d5838ad8578a01e40d5d5`) over all
+  `1,591` historical `findings.json` review files across the `23` accepted
+  private gold pieces (`gold-01` through `gold-23`; review-archive
+  `findings.json` tree SHA-256
+  `de7a5e56a8618b150646a9443db71c854c3267f6e84e837a87667a4d8d1c6fa4`),
+  producing the local read-only private manifest `req012-private-manifest.json`
+  (SHA-256 `968fcdac6c0ecf5c1f8d720f954a29bbf52ca88cf548d812b4f8b01f7c4b8f55`),
+  verified by an independent attestation pass (exact hash reproducibility,
+  keyword negative-class audit over non-`B` records, resolution of every locus
+  to valid measure ordinals in the `23` gold scores, and
+  OMR-REQ-015 privacy check; sanitized summary recorded in
+  [Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7071662321)).
+- **Relation to the 34-entry desk-study estimate (local read-only runtime
+  observation + owner decision):** at the desk-study (`T01`) snapshot (`96` of
+  `1,591` `findings.json` files, when `14` of the `23` accepted gold pieces had
+  zero review files; `T01-findings-classified.json` SHA-256
+  `5bea8318d14f5380a110cc8b49c0ae5903e6f7dbedefd5c3b9180dfce1bb480d` with `29`
+  Class-`B` rows and `T01-findings-addendum.json` SHA-256
+  `456d206af33dbb2f0a739aca2a91652d285134494de2a84bdd136099fbc09531` with `5`
+  Class-`B` rows), `34` raw entries (`29` deduplicated `(gold_id, measure,
+w1_category, mechanism)` loci: `28` confirmed toolchain-class `B` plus `1`
+  `gold-03` duplicate-slur draft entry reclassified to Class `A` on draft
+  inspection) were recorded (`Set A`). The `1,495` post-`T01` review files added `322` raw
+  confirmed toolchain-class (`B`) entries (`298` net-new deduplicated loci;
+  full-archive `Set B` = `355` raw / `326` deduplicated loci). Following the
+  Delivery Wave return-to-owner check (source findings:
+  [Issue #1488](https://github.com/hcoona/three/issues/1488#issuecomment-7071944465),
+  [PR #1711](https://github.com/hcoona/three/pull/1711)), the frozen set is the
+  complete union **`Set A union Set B`: `327` deduplicated loci (`356` raw
+  entries)** across `13` anonymized gold batches (`gold-02`: 14, `gold-03`: 13,
+  `gold-07`: 4, `gold-09`: 51, `gold-10`: 46, `gold-11`: 7, `gold-13`: 26,
+  `gold-14`: 35, `gold-15`: 25, `gold-17`: 29, `gold-18`: 7, `gold-22`: 54,
+  `gold-23`: 16; `10` gold batches have `0` loci) and `13` W1 categories
+  (`beam`: 233, `pedal`: 29, `repeat_ending`: 17, `rhythm_rest`: 16,
+  `ornament`: 15, `fingering`: 4, `tuplet`: 4, `time_signature`: 3,
+  `arpeggio`: 2, `grace`: 1, `ottava`: 1, `slur`: 1, `tremolo`: 1).
+- **Replay subject, environment and isolation:** `sheet_music_omr.harness
+replay-req012` evaluates the `327` frozen loci on a completed formal run of
+  the [comparison protocol](comparison-protocol.md) in the same preflight-pinned
+  Python 3.14 / `musicdiff 6.0` / MuseScore Studio 4 environment, clean project
+  code tree and external confinement (`RUN` and `DOWNLOADS` outside every git
+  worktree). It reads the local private manifest, `RUN/gold/mapping.json`, on-disk
+  gold score files and completed `files/gold/` artifacts read-only and writes
+  `report/req012-replay.json` and `report/req012-replay.md` only after passing
+  the harness's OMR-REQ-015 privacy scan.
+- **Expected observations, evidence limits, bounds, stops and cleanup:** a
+  frozen locus passes if and only if its gold piece completes `reverse(X)` to
+  canonical Text Score 2 text and `forward` back to `T(X)` with zero score-file
+  edits, passes the MuseScore 4 import check and text-space consistency check,
+  and has zero counted in-scope differences in `compare_file(T(X), X)` at its
+  target measure ordinals and category (with any file-level supplementary-check
+  difference or unlocated global difference in a category failing every locus of
+  that category in that piece; `327 / 327` required for OMR-REQ-012).
+  The replay measures deterministic format and converter fidelity on gold
+  scores only, not recognizer accuracy (OMR-REQ-014). Execution is bounded to
+  one read-only verification pass per completed formal run (zero network bytes);
+  it stops immediately with exit status 2 if preflight/code-tree/version checks
+  fail, if the formal run is unfinished, if `RUN/gold/mapping.json` is absent,
+  if the manifest SHA-256 differs from
+  `968fcdac6c0ecf5c1f8d720f954a29bbf52ca88cf548d812b4f8b01f7c4b8f55`, if any
+  mapped gold score SHA-256 on disk differs from the frozen run plan or
+  manifest, or if any output fails the privacy scan, and creates no files
+  outside `RUN/report/`.
+
+### Tokenizer-counts protocol
+
+- **Subject:** subword token counts produced by the Hugging Face
+  `Qwen/Qwen3-VL-2B-Instruct` tokenizer (`Apache-2.0`, immutable revision
+  `89644892e4d85e24eaac8bacfd4f463576704203`, file `tokenizer.json`, published
+  size `7,032,403` bytes, Git blob SHA-1 OID
+  `c6cc1014128b19d1fc46b1d30a23e3b1d35db421`; source finding from Hugging Face
+  repository metadata), evaluated via `tokenizers` `0.23.3`
+  (`Tokenizer.from_file`, `add_special_tokens=False`) with no model weights
+  downloaded and no base model selected, across matched representations on a
+  completed formal run's three input cohorts (`23` accepted private gold
+  pieces, selected PDMX `X` files, and selected OpenScore Lieder `X` extracts):
+  canonical Text Score 2 (`v2`, whole-piece `reverse.txt`, plus per-system
+  documents split via `split_score` on every gold piece including single-system
+  pieces), ABC produced deterministically by `converter21` `4.0.2`'s bundled
+  `xml2abc.vertaal` (`u=0, b=0, n=0, c=0, v=0, d=0, m=0, x=0, t=False`), source
+  MusicXML (`X`), and forward MusicXML (`T(X)`).
+- **Environment and isolation:** runs locally via `sheet_music_omr.harness
+tokenizer-counts` in the repository's preflight-verified Python 3.14 `uv`
+  workspace (`converter21 4.0.2`, `tokenizers 0.23.3`), verifying run
+  completion, `RUN/gold/mapping.json`, presence of all planned `result.json`
+  files and on-disk gold score SHA-256 digests before opening the ledger or
+  downloading any bytes, storing `Qwen3-VL-2B-Instruct-tokenizer.json` in the
+  external `--downloads` directory under the shared `download-ledger.json`, and
+  writing `report/tokenizer-counts.json` and `report/tokenizer-counts.md` only
+  after passing the OMR-REQ-015 privacy scan.
+- **Expected observations and evidence limits:** reports resolved Python,
+  `converter21` and `tokenizers` versions, the exact SHA-256 of the fetched
+  `tokenizer.json`, explicit per-reason skip counts (such as round-trip failure
+  on `X` or `xml2abc` failure), and aggregate and summary-distribution counts
+  (`count`, `total`, `mean`, `median`, `p90`, `min`, `max`, pooled tokens per
+  measure, per-system gold `v2` statistics, and `v2 / ABC` and `MusicXML / v2`
+  length ratios). Because `xml2abc` omits notation categories outside its
+  coverage, `abc_xml2abc` counts reflect that lossy projection rather than
+  lossless semantic equivalence; per OMR-REQ-014, token counts make no claim
+  about model accuracy, learnability, review-effort savings or base-model
+  choice.
+- **Bounds, stop conditions and cleanup:** bounded to one HTTPS fetch of
+  `tokenizer.json` (`7,032,403` bytes, checked before fetch against the
+  `20,000,000,000`-byte W1 cumulative download limit and verified by byte size
+  and Git blob OID before acceptance, with no retry) and single-process CPU
+  counting; stops immediately with exit status 2 if preflight/code-tree/version
+  checks fail, if the formal run is unfinished or missing planned results, if
+  any gold hash on disk differs from the frozen run plan, if the download would
+  exceed the 20 GB cap, or if any report output fails the OMR-REQ-015 privacy
+  scan, leaving no partial or temporary files behind.
 
 ## Relation to the existing category vocabulary
 

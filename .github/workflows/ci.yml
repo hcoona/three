@@ -64,7 +64,7 @@ jobs:
           global-json-file: global.json
           dotnet-version: ${{ steps.tools.outputs.dotnet-frameworks }}
       - name: Setup native endpoint tools
-        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           # Preserve the existing Java vendor semantics at both endpoints.
           version: '2026.11.10'
@@ -136,6 +136,14 @@ jobs:
         with:
           name: ci-dotnet-plan
           path: ${{ steps.control.outputs.transfer }}/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain actual native MSBuild host identities
+        if: ${{ always() && steps.dotnet-group.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dotnet-native-host-identities
+          path: ${{ runner.temp }}/dotnet-group/planning/*-graph.json.host.log
           if-no-files-found: error
           retention-days: 7
 
@@ -232,7 +240,7 @@ jobs:
 
       - name: Set up mise
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: '2026.11.10'
           experimental: true
@@ -356,14 +364,14 @@ jobs:
 
       - name: Set up Ruby
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: ruby/setup-ruby@20eb24b0d509e2b9ed9b6d42ddfeb992915e0564 # v1.341.0
+        uses: ruby/setup-ruby@f9c4492e86def3e644ab32a0ef185eda5b0c20d0 # v1.342.0
         with:
           ruby-version: ${{ steps.tools.outputs.ruby }}
           bundler-cache: true
 
       - name: Mise Install Tools
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: '2026.11.10'
           experimental: true
@@ -762,7 +770,7 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Setup native tools
-        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: '2026.11.10'
           experimental: true
@@ -1268,7 +1276,7 @@ jobs:
             "$RUNNER_TEMP/native-scope/ci-scope.json" "$RUNNER_TEMP/native-preparation"
       - name: Setup selected native tools
         if: steps.plan.outputs.python == 'true' || steps.plan.outputs.ruby == 'true' || steps.plan.outputs.node == 'true' || steps.plan.outputs.browser == 'true'
-        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: '2026.11.10'
           experimental: true
@@ -1382,7 +1390,7 @@ jobs:
         id: tools
         run: python3 eng/scripts/locked_tool_versions.py ruby >> "$GITHUB_OUTPUT"
       - name: Setup native Ruby
-        uses: ruby/setup-ruby@20eb24b0d509e2b9ed9b6d42ddfeb992915e0564 # v1.341.0
+        uses: ruby/setup-ruby@f9c4492e86def3e644ab32a0ef185eda5b0c20d0 # v1.342.0
         with:
           ruby-version: ${{ steps.tools.outputs.ruby }}
       - name: Materialize exact committed endpoints
@@ -1487,7 +1495,7 @@ jobs:
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Set up mise
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: '2026.11.10'
           experimental: true
