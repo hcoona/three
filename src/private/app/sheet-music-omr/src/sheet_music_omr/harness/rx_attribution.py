@@ -28,7 +28,11 @@ from sheet_music_omr.comparison import (
 )
 from sheet_music_omr.diagnostics import TextScoreError
 from sheet_music_omr.harness.selection import inputs_dir
-from sheet_music_omr.musicxml_events import ProtocolDefectError
+from sheet_music_omr.musicxml_events import (
+    ProtocolDefectError,
+    SpannerNumberConflictError,
+    read_score,
+)
 from sheet_music_omr.musicxml_forward import ReviewRequiredError, to_musicxml
 from sheet_music_omr.musicxml_reverse import MusicXmlError, from_musicxml
 from sheet_music_omr.musicxml_reverse import _load as _load_musicxml
@@ -75,17 +79,18 @@ def _has_empty_beat_unit(root: ET.Element) -> bool:
     return False
 
 
-def _has_overlapping_dashes_number(root: ET.Element) -> bool:
-    open_numbers: set[str] = set()
-    for dashes in root.findall(".//direction/direction-type/dashes"):
-        dtype = (dashes.get("type") or "").strip()
-        num = (dashes.get("number") or "1").strip()
-        if dtype == "start":
-            if num in open_numbers:
-                return True
-            open_numbers.add(num)
-        elif dtype == "stop":
-            open_numbers.discard(num)
+def _has_nonempty_beat_units(root: ET.Element) -> bool:
+    units = root.findall(".//metronome/beat-unit")
+    return bool(units) and all(bool((u.text or "").strip()) for u in units)
+
+
+def _has_dashes_conflict(path: Path) -> bool:
+    try:
+        read_score(path)
+    except SpannerNumberConflictError as error:
+        return error.key[1] == "dashes"
+    except ProtocolDefectError, MusicXmlError, OSError:
+        return False
     return False
 
 
@@ -212,18 +217,20 @@ def _reverse_info(rx_result: Mapping[str, object]) -> tuple[set[str], str]:
 
 
 def _match_defect_rule(
-    x_root: ET.Element,
-    rx_root: ET.Element,
+    paths: tuple[Path, Path],
+    roots: tuple[ET.Element, ET.Element],
     failures: set[str],
     codes: set[str],
     detail: str,
 ) -> str | None:
+    x_path, rx_path = paths
+    x_root, rx_root = roots
     if (
         "rx-unparsable" in failures
         and failures <= {"unsupported", "rx-unparsable"}
         and codes <= {"unsupported/metronome"}
         and _has_empty_beat_unit(rx_root)
-        and not _has_empty_beat_unit(x_root)
+        and _has_nonempty_beat_units(x_root)
         and _counterfactual_passes(_repair_empty_beat_units(rx_root))
     ):
         return ISSUE_EMPTY_BEAT_UNIT
@@ -231,8 +238,8 @@ def _match_defect_rule(
         failures <= {"unsupported", "rx-unparsable"}
         and codes == {"unsupported/spanner_number"}
         and "dashes" in detail
-        and _has_overlapping_dashes_number(rx_root)
-        and not _has_overlapping_dashes_number(x_root)
+        and _has_dashes_conflict(rx_path)
+        and not _has_dashes_conflict(x_path)
         and (repaired_dashes := _repair_overlapping_dashes(rx_root)) is not None
         and _counterfactual_passes(repaired_dashes)
     ):
@@ -272,7 +279,9 @@ def match_upstream_export_defect(
     if x_root is None or rx_root is None or not failures:
         return None
     codes, detail = _reverse_info(rx_result)
-    return _match_defect_rule(x_root, rx_root, failures, codes, detail)
+    return _match_defect_rule(
+        (x_path, rx_path), (x_root, rx_root), failures, codes, detail
+    )
 
 
 def collect_rx_attribution(
