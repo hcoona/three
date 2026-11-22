@@ -943,3 +943,127 @@ ends a grant. Git and the proposing PR retain the reason and history.
       PR validation.
     - No release, proving or campaign dispatch, publication, Environment,
       account, publisher or upstream feature request.
+
+### Refine governance validation, carrier routing, and review-trigger boundaries
+
+- **Work carrier:** [Issue #1709](https://github.com/hcoona/three/issues/1709)
+  and [Issue #1302](https://github.com/hcoona/three/issues/1302) (under
+  [Issue #1260](https://github.com/hcoona/three/issues/1260)), plus their
+  linked authorization and governance pull requests. The repository owner
+  selected one combined Wave grant with the GitHub/Three boundary contractions
+  below before substantive governance edits.
+- **Accepted inputs:** the [governance policy](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [checker contract](governance/checker-contract.md),
+  [control catalog](governance/controls.yaml),
+  [engineering principles](engineering/engineering-principles.md),
+  [agent execution and recovery](engineering/agent-execution.md), root
+  [`AGENTS.md`](../AGENTS.md), [`CONTRIBUTING.md`](../CONTRIBUTING.md),
+  [`.github/pull_request_template.md`](../.github/pull_request_template.md),
+  and [record-system review](../.github/skills/record-system-review/SKILL.md)
+  and [research-evidence review](../.github/skills/research-evidence-review/SKILL.md)
+  with their `evals/` fixtures. Public upstream
+  [`hcoona/microsoft-authentication-cli#523`](https://github.com/hcoona/microsoft-authentication-cli/issues/523)
+  (`G9`) and its `main-v2` research-policy refinements are reference context,
+  not automatically imported authority.
+- **Owner decisions and boundaries:**
+    - Keep `GOV-001` through `GOV-011` in
+      `docs/governance/governance-system.md` and
+      `docs/engineering/engineering-principles.md` unchanged.
+    - Classify development and CI/PR validation versus empirical experiments by
+      operation purpose and external effects rather than invocation channel.
+      Credential-free local restore/build/lint/test runs and governed CI/PR
+      validation of declared contracts, including defect fixes and ordinary
+      reruns of failed workflow jobs, require no separate experiment protocol
+      or attempt quota while retaining chronological run/failure identities and
+      existing recovery rules. Credential-bearing or non-public dependency sources require an explicit
+      Wave risk decision (a comment cannot grant them). Unmodeled external or
+      platform probes, credential-bearing or non-public dependency sources,
+      account/credential mutations, host mutations outside the
+      checkout/worktree, build outputs, temporary roots, and local package or
+      tool caches (plus any Wave-named tool state), destructive fault
+      injection, and paid or non-recoverable campaign dispatches remain outside
+      credential-free validation and under accepted experiment protocols and
+      cumulative bounds (when authorized by the Wave) even inside a test or
+      workflow step. Do not invent disposable-VM or OS-user prerequisites where the
+      accepted Wave and protocol bound an existing host.
+    - Align `controls.yaml` (`independent-finding-triage`) and
+      `checker-contract.md` with [GOV-011](governance/governance-system.md#gov-011-separate-findings-from-disposition)
+      so an Issue may serve as the governing review carrier when no PR governs,
+      while keeping `record-system-gate` on `pull-request-merge` and keeping
+      the GitHub PR body (`## Validation and Review`) valid as the default
+      single authoritative PR ledger without importing external character-limit
+      thread-splitting mandates. Concise routing summaries may link to that
+      authoritative ledger without repeating secondary caveats when making no
+      broader claim; companion Issue/PR updates reviewed together as one
+      ordered batch are checked against the batch rather than failing solely
+      because companion writes have not executed yet.
+    - Allow direct author repair and mechanical verification, without
+      third-party `GOV-011` classification or permanent triage rows, only for
+      purely deterministic carrier defects (formatting/lint, Markdown
+      delimiters/syntax, commitlint/length rules, or container-pointer typos
+      whose cited fragment, content, and provenance are unchanged) that do not
+      alter authority, source/commit/run/build/artifact provenance, evidence
+      classification, claim scope, security/privacy, contract/test coverage, or
+      owner decisions. Wrong commit, workflow-run, build, or artifact
+      identifiers remain material provenance findings under `GOV-011`. Bound
+      re-reviews to the remediation delta and affected conclusions; faithful
+      check/status reporting and recording a completed review
+      (`No material findings.`) do not trigger another review round.
+    - Ordinary code, test, workflow-implementation, runtime-data, and
+      status-comment changes that do not alter maintained records, portals,
+      generated agent/skill interfaces, or governance catalogs do not trigger
+      record-lifecycle review; they also skip `records:check` unless they add
+      or rename tracked candidate-suffix files (`.md`, `.rst`, `.adoc`,
+      `.asciidoc`, `.yaml`, `.yml`, `.json`, `.jsonl`, `.csv`), edit
+      `apm.lock.yaml` provenance, or move/delete paths referenced by
+      maintained records or catalogs. In-place edits and structural changes to
+      maintained records trigger both. Preserve Three's zero-diagnostic
+      `records:check` baseline expectation rather than normalizing pre-existing
+      baseline failures.
+    - Add the uncertain-external-effects recovery rule in
+      `docs/engineering/agent-execution.md`: inspect authoritative destination
+      state before repeating an uncertain push, Issue/PR write, release, or
+      access operation.
+- **Advancement and outcome:** atomically update
+  `docs/governance/record-system.md`, `docs/governance/checker-contract.md`,
+  `docs/governance/controls.yaml`, `docs/engineering/agent-execution.md`,
+  `AGENTS.md`, `CONTRIBUTING.md`, and
+  `.github/skills/{record-system-review,research-evidence-review}/` (including
+  targeted `evals/` fixtures) for this repository without copying external
+  text verbatim.
+- **Ordering and gates:** merge this authorization before substantive
+  governance edits. Review the subsequent governance PR against the accepted
+  target-branch policies, catalogs, and review Skills under
+  [changing rules](governance/governance-system.md#changing-rules); proposed
+  amendments cannot waive accepted obligations during their own review. Retain
+  atomic policy-control-interface alignment
+  ([GOV-006](governance/governance-system.md#gov-006-atomic-governance-changes)),
+  staged CI-profile HK checks, explicit-base `records:check` with a retained
+  report outside the worktree, independent `record-system-review` and
+  `research-evidence-review`, independent `GOV-011` classification of material
+  findings, ordinary CI (`Validate`), and explicit repository-owner disposition
+  (`record-system-gate`). Check concurrent Wave entries before editing shared
+  governance files.
+- **Acceptance and closure:** the affected governance records, control catalog,
+  contributor/agent interfaces, recovery guidance, and review Skills/evals
+  agree atomically, pass applicable HK and clean `records:check` validation,
+  clear independent review and owner disposition, and close #1709 and #1302.
+  Delete this entry when accepted or stopped by the owner.
+- **Effects:** permit repository and read-only GitHub/public-source inspection,
+  edits to the named governance, recovery, interface, and review-Skill files,
+  locked lint/check execution, explicit-base `records:check` runs writing
+  reports outside the worktree, independent delegated review and `GOV-011`
+  classification, and ordinary Issue/PR/check operations and their normal CI.
+- **Exclusions:**
+    - No edits to `GOV-001` through `GOV-011` or
+      `docs/engineering/engineering-principles.md`.
+    - No `eng/scripts/check_repository_records.py` or `tests/eng/` changes
+      ([Issue #1303](https://github.com/hcoona/three/issues/1303) remains
+      separate).
+    - No manual edits to generated `.agents/skills/` or `.github/agents/`
+      outputs, and no product-code, workflow, ruleset, dependency, or lockfile
+      changes.
+    - No closed-campaign reopening, LiteAgensh audit-ledger modification, paid
+      native execution, publication, dispatch, credential, authentication, or
+      access change.
