@@ -1189,7 +1189,9 @@ category.
 Layout hints are encoded and never count as content differences: the `up` and
 `down` stem flags, the `^` and `_` placement suffixes, `ferm_` against `ferm`,
 and the `^` on a dynamic or dynamic-text direction. Some printed layout has no encoding at all: curve
-shape, spacing, fonts, cautionary key-signature glyphs, a reprinted unchanged
+shape, spacing, fonts, cautionary key-signature glyphs, an initial clef at
+onset 0 of measure 1 immediately superseded on its staff at onset 0 before any
+note, rest or spacer by a different after-barline clef, a reprinted unchanged
 key or numeric time signature, the printed number and bracket of a tuplet, and
 the closing hook of a volta bracket.
 
