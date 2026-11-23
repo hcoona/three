@@ -307,11 +307,12 @@ The [NuGet Release](../integration/dotnet.md#concrete-nuget-release-integration)
 [Ruby Release](../integration/ruby.md#concrete-ruby-release-integration),
 [GitHub Release](../integration/github-release.md#concrete-github-release-integration)
 and [browser store](../integration/browser-store.md) integrations share one review
-core: review affected changes with independent engineering/OCR and
-record/research review before implementation, run complete affected suites, HK
-and record checks, and qualify the final caller subject in ordinary CI before
-delivery. These checks do not prove a new publication. Each section states its
-own controlled-fixture test cases, runner, additional checks and non-claims.
+core: review affected design and implementation changes with independent
+engineering/OCR and applicable record/research review before merge, run
+complete affected suites, HK and applicable record checks, and qualify the
+final caller subject in ordinary CI before delivery. These checks do not prove
+a new publication. Each section states its own controlled-fixture test cases,
+runner, additional checks and non-claims.
 
 ## Validation Scenarios
 

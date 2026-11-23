@@ -21,23 +21,10 @@ starts, and preserve partial work before recovery.
 
 Use the exact known session ID when resuming. Do not select a global latest
 session by convenience. Persist actual events, outputs and validated patches;
-replacement sessions recover from Git and work carriers. A failed or stopped
-worker neither establishes completion nor permits an unverified external effect
-to be repeated. Never put session IDs, retries or results into the Wave.
-
-After a timed-out, interrupted, or otherwise uncertain external operation—such
-as `git push`, Issue or pull-request creation/update, workflow dispatch,
-release or tag publication, or a permission/access change—inspect the
-authoritative destination state (for example remote branch refs, live
-Issue/PR/comment state, workflow runs, or target configuration) before retrying
-or issuing a compensating write. Reconcile from what actually took effect
-rather than assuming failure; retry within remaining Wave/protocol bounds when
-authoritative destination state confirms the prior attempt had no effect or the
-operation is known-idempotent without duplicate-creation, dispatch,
-publication, or spend side effects (and no conflicting destination or ownership
-change occurred). If a non-idempotent effect remains indeterminate or repeating would
-exceed accepted bounds, stop and escalate to the repository owner rather than
-repeating the side effect.
+replacement sessions recover from Git and work carriers. A failed, timed-out,
+or stopped operation neither establishes completion nor permits an uncertain
+external write or effect to be repeated before checking destination state. Never
+put session IDs, retries or results into the Wave.
 
 Keep agent worktrees and large local state on persistent storage outside tmpfs.
 Remove finished worktrees with `git worktree remove` and delete their retained
@@ -47,10 +34,11 @@ local state.
 
 Before an implementation or execution grant relies on Codex CLI, app-server or
 SDK interfaces, its author rechecks the applicable official page and installed
-version; an independent reviewer evaluates that evidence. Every merged Wave
-change is the fallback review event. If an interface changed, update the affected
-invocation and validation before relying on it; uncertainty pauses only dependent
-work. Record the retrieval, exact version and conclusion in the governing PR.
+version; an independent reviewer evaluates that evidence. Review of the next PR
+or Wave entry selecting dependent Codex work is the fallback applicability
+review. If an interface changed, update the affected invocation and validation
+before relying on it; uncertainty pauses only dependent work. Record the
+retrieval, exact version and conclusion in the governing PR.
 
 - [Non-interactive CLI](https://learn.chatgpt.com/docs/non-interactive-mode):
   JSONL events, persistence and explicit session resume.

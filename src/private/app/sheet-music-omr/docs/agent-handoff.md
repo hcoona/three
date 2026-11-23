@@ -9,18 +9,27 @@ format specification, comparison protocol, or work-authorization file. The
 [project portal](../README.md) owns purpose, user context, command-line usage,
 and top-level record routing.
 
-The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) is the sole
-positive work authority ([Issue #686](https://github.com/hcoona/three/issues/686)
-for sheet-music recognition design and planning; the W1 text-representation
-grant for [Issue #1488](https://github.com/hcoona/three/issues/1488) was
-retired after owner acceptance of `formal-5` in
-[#1488 comment 7083509900](https://github.com/hcoona/three/issues/1488#issuecomment-7083509900)).
-Any implementation, experiment, runtime execution, tool installation, or dataset
-download beyond `#686`'s documentation and planning scope requires its own
-accepted Delivery Wave entry; evidence acceptance does not retain or revive W1's
-spent execution grant. A pull request, local run record, or issue comment cannot
-enlarge authorization or waive an accepted gate. Chronological progress,
-reviews, and findings remain in those Issues and their linked pull requests.
+The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) governs
+feature/capability advancements, architectural or public-contract changes, and
+external/privacy effects ([Issue #686](https://github.com/hcoona/three/issues/686)
+for sheet-music recognition design and planning, and
+[Issue #1489](https://github.com/hcoona/three/issues/1489) /
+[Issue #1490](https://github.com/hcoona/three/issues/1490) for W2 evaluation
+baselines and W3 real-data splits authorized in
+[PR #1734](https://github.com/hcoona/three/pull/1734); the W1
+text-representation grant for [Issue #1488](https://github.com/hcoona/three/issues/1488)
+was retired after owner acceptance of `formal-5` in
+[#1488 comment 7083509900](https://github.com/hcoona/three/issues/1488#issuecomment-7083509900)),
+while contract-preserving routine maintenance without new external, paid, or
+privacy effects follows the
+[record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency).
+Any new workstream/feature implementation, empirical experiment, external or
+host tool installation outside locked repository toolchains, dataset download,
+or private-gold execution beyond `#686` requires its own accepted Delivery Wave
+entry; evidence acceptance does not retain or revive W1's spent execution grant. A pull request, local run record, or issue
+comment cannot enlarge authorization or waive an accepted gate. Chronological
+progress, reviews, and findings remain in those Issues and their linked pull
+requests.
 
 ## Change routing
 
@@ -28,15 +37,17 @@ Read the rows that match the task; when several rows apply, read their union.
 Before architecture, abstraction, security/recovery, or test-strategy decisions,
 also apply [shared engineering guidance](../../../../../.github/skills/engineering-guidance/SKILL.md).
 
-| Change                                                         | Read                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Text Score 2 lexical rules, grammar, or canonical form         | [Text Score 2 format](text-format.md) ([Lexical rules](text-format.md#lexical-rules-and-preprocessing), [Grammar](text-format.md#grammar), [Canonical form](text-format.md#canonical-form)); [OMR-REQ-005](requirements.md#omr-req-005-canonical-form); `lexical.py`, `parser.py`, `writer.py`, `tests/test_documents.py`, `tests/test_lexical.py`                                                                                                                                                                                                |
-| Semantic validation, carry state, or system assembly           | [Text Score 2 format](text-format.md) ([Semantics](text-format.md#semantics), [Carry state and assembly](text-format.md#carry-state-and-assembly)); [OMR-REQ-004 through OMR-REQ-007](requirements.md#representation-invariants); `semantics.py`, `carry.py`, `assembly.py`, `relations.py`, `timeline.py`, `review.py`                                                                                                                                                                                                                           |
-| Forward or reverse MusicXML conversion                         | [Text Score 2 format](text-format.md) ([Transcription rules](text-format.md#transcription-rules), [Category encodings](text-format.md#category-encodings), [Layout, unsupported content and open points](text-format.md#layout-unsupported-content-and-open-points)); [OMR-REQ-008](requirements.md#omr-req-008-forward-and-reverse-conversion), [Unsupported content](requirements.md#unsupported-content); `musicxml_forward.py`, `musicxml_reverse.py`, `musicxml_tree.py`, `musicxml_events.py`, `beams.py`, `pitches.py`, `measures.py`      |
-| Round-trip comparator, pairing rules, or supplementary checks  | [Comparison protocol](comparison-protocol.md) ([Comparison instrument](comparison-protocol.md#comparison-instrument), [Category assignment](comparison-protocol.md#category-assignment), [Calibration](comparison-protocol.md#calibration), [Layout-fidelity score](comparison-protocol.md#layout-fidelity-score)); [OMR-REQ-009](requirements.md#omr-req-009-comparison-protocol); `comparison.py`, `supplementary.py`, `tests/test_comparison.py`                                                                                               |
-| Corpus screening, MuseScore isolation, runner, or reporting    | [Comparison protocol](comparison-protocol.md) ([Tools and environment](comparison-protocol.md#tools-and-environment), [Inputs and score identities](comparison-protocol.md#inputs-and-score-identities), [Execution and bounds](comparison-protocol.md#execution-and-bounds), [Stop conditions](comparison-protocol.md#stop-conditions), [Evidence, publication and cleanup](comparison-protocol.md#evidence-publication-and-cleanup)); [OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance); `src/sheet_music_omr/harness/` |
-| Acceptance claims, ABC capability mapping, or tokenizer counts | [Acceptance](requirements.md#acceptance), [Evidence and boundaries](requirements.md#evidence-and-boundaries), [Validation basis](requirements.md#validation-basis); [research-evidence review](../../../../../.github/skills/research-evidence-review/SKILL.md)                                                                                                                                                                                                                                                                                   |
-| Project records or navigation only                             | [Project portal](../README.md), [record policy](../../../../../docs/governance/record-system.md), [family catalog](../../../../../docs/governance/record-families.yaml), [record-system review](../../../../../.github/skills/record-system-review/SKILL.md)                                                                                                                                                                                                                                                                                      |
+| Change                                                         | Read                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Text Score 2 lexical rules, grammar, or canonical form         | [Text Score 2 format](text-format.md) ([Lexical rules](text-format.md#lexical-rules-and-preprocessing), [Grammar](text-format.md#grammar), [Canonical form](text-format.md#canonical-form)); [OMR-REQ-005](requirements.md#omr-req-005-canonical-form); `lexical.py`, `parser.py`, `writer.py`, `tests/test_documents.py`, `tests/test_lexical.py`                                                                                                                                                                                                                    |
+| Semantic validation, carry state, or system assembly           | [Text Score 2 format](text-format.md) ([Semantics](text-format.md#semantics), [Carry state and assembly](text-format.md#carry-state-and-assembly)); [OMR-REQ-004 through OMR-REQ-007](requirements.md#representation-invariants); `semantics.py`, `carry.py`, `assembly.py`, `relations.py`, `timeline.py`, `review.py`                                                                                                                                                                                                                                               |
+| Forward or reverse MusicXML conversion                         | [Text Score 2 format](text-format.md) ([Transcription rules](text-format.md#transcription-rules), [Category encodings](text-format.md#category-encodings), [Layout, unsupported content and open points](text-format.md#layout-unsupported-content-and-open-points)); [OMR-REQ-008](requirements.md#omr-req-008-forward-and-reverse-conversion), [Unsupported content](requirements.md#unsupported-content); `musicxml_forward.py`, `musicxml_reverse.py`, `musicxml_tree.py`, `musicxml_events.py`, `beams.py`, `pitches.py`, `measures.py`                          |
+| Round-trip comparator, pairing rules, or supplementary checks  | [Comparison protocol](comparison-protocol.md) ([Comparison instrument](comparison-protocol.md#comparison-instrument), [Category assignment](comparison-protocol.md#category-assignment), [Calibration](comparison-protocol.md#calibration), [Layout-fidelity score](comparison-protocol.md#layout-fidelity-score)); [OMR-REQ-009](requirements.md#omr-req-009-comparison-protocol); `comparison.py`, `supplementary.py`, `tests/test_comparison.py`                                                                                                                   |
+| Corpus screening, MuseScore isolation, runner, or reporting    | [Comparison protocol](comparison-protocol.md) ([Tools and environment](comparison-protocol.md#tools-and-environment), [Inputs and score identities](comparison-protocol.md#inputs-and-score-identities), [Execution and bounds](comparison-protocol.md#execution-and-bounds), [Stop conditions](comparison-protocol.md#stop-conditions), [Evidence, publication and cleanup](comparison-protocol.md#evidence-publication-and-cleanup)); [OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance); `src/sheet_music_omr/harness/`                     |
+| Acceptance claims, ABC capability mapping, or tokenizer counts | [Acceptance](requirements.md#acceptance), [Evidence and boundaries](requirements.md#evidence-and-boundaries), [Validation basis](requirements.md#validation-basis); [research-evidence review](../../../../../.github/skills/research-evidence-review/SKILL.md)                                                                                                                                                                                                                                                                                                       |
+| Real-data alignment, overlay QA, system crops, or split rules  | [OMR-REQ-016 and OMR-REQ-017](requirements.md#real-data-splits-and-recognizer-evaluation), [Evaluation and real-data alignment protocol](evaluation-protocol.md) ([Real-data alignment, overlay QA and system crops](evaluation-protocol.md#real-data-alignment-overlay-qa-and-system-crops)); [OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance)                                                                                                                                                                                              |
+| Recognizer scorer, Stage S0 baselines, touch log, or `copista` | [OMR-REQ-018 through OMR-REQ-020](requirements.md#real-data-splits-and-recognizer-evaluation), [Evaluation and real-data alignment protocol](evaluation-protocol.md) ([Recognizer comparison and B-normalization](evaluation-protocol.md#recognizer-comparison-and-b-normalization), [Stage S0 baselines and isolated copista-28m execution](evaluation-protocol.md#stage-s0-baselines-and-isolated-copista-28m-execution), [Discrepancy and round-logging schema](evaluation-protocol.md#discrepancy-and-round-logging-schema)); `comparison.py`, `supplementary.py` |
+| Project records or navigation only                             | [Project portal](../README.md), [record policy](../../../../../docs/governance/record-system.md), [family catalog](../../../../../docs/governance/record-families.yaml), [record-system review](../../../../../.github/skills/record-system-review/SKILL.md)                                                                                                                                                                                                                                                                                                          |
 
 ## Accepted W1 baseline on main
 
@@ -246,9 +257,10 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
       and [stop conditions](comparison-protocol.md#stop-conditions), and
       follow [Validation basis](requirements.md#validation-basis) for
       `replay-req012` and `tokenizer-counts`;
-    - run formal corpus/gold execution, `replay-req012`, and `tokenizer-counts`
-      only from a clean `origin/main` checkout after any newly authorized
-      protocol and converter changes are merged.
+    - for formal acceptance evidence, run corpus/gold execution,
+      `replay-req012`, and `tokenizer-counts` from a clean `origin/main`
+      checkout after any newly authorized protocol and converter changes are
+      merged.
 
 ## External state, privacy and worktree hygiene
 
@@ -266,7 +278,9 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   `download`.
 - **Code-tree and MuseScore provenance binding:** `harness/cli.py:_require_preflight`
   and `harness/run.py:begin_run` enforce the clean project code-tree (`CODE_PATHS`)
-  and per-run MuseScore identity invariants defined in
+  on formal runs (`pilot` permits uncommitted edits in a fresh `--run-dir`,
+  recording `dirty: true` provenance) and per-run MuseScore identity invariants
+  defined in
   [Tools and environment](comparison-protocol.md#tools-and-environment) and
   [Execution and bounds](comparison-protocol.md#execution-and-bounds). Start
   any newly authorized formal run in a fresh external run directory while
@@ -287,25 +301,33 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   `TextScore2.csproj` normalizer prototype (superseded by the Python package in
   `#1570`–`#1609`).
 
-## Execution gates for future authorized harness runs
+## Formal acceptance gates for future authorized harness runs
 
-Every `python -m sheet_music_omr.harness` subcommand (`preflight`, `download`,
-`select`, `run`, `report`, `replay-req012`, `tokenizer-counts`, `view`, and
-`pilot`) creates or locks external `RUN`/`DOWNLOADS` state or invokes host
-`MuseScore 4`, network, or private-gold effects; invoke any harness subcommand
-only when a new accepted [Delivery Wave](../../../../../docs/delivery-wave.md)
-entry explicitly authorizes those effects (`#1488`'s W1 grant is closed; only
-locked in-workspace checks—`pytest`, `ruff`, and `pyrefly`—remain ordinary local
-package checks when modifying authorized code). With out-of-repository `GOLD` (`--gold-status` and `--gold-cache`), `DOWNLOADS`
+`#1488`'s W1 grant is closed; `#686` authorizes design and planning, while
+contract-preserving routine maintenance without new external, paid, or privacy
+effects follows the
+[record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency).
+Within authorized `sheet-music-omr` code work, local harmless debugging on
+working branches—including `pytest`, `ruff`, `pyrefly`, `harness view` on
+scratch runs, and `harness pilot` on repository/synthetic fixtures in an
+out-of-worktree temporary directory without network downloads or private-gold
+access—runs freely without `origin/main`-merge preconditions or attempt quotas
+([project namespaces](../../../../../docs/governance/record-system.md#project-namespaces)).
+Dataset downloads, private-gold access
+([OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance)), and
+formal acceptance runs (`preflight`, `download`, `select`, `run`, `report`,
+`replay-req012`, and `tokenizer-counts` reported as acceptance evidence)
+require explicit Wave authorization for those external/privacy effects. With
+out-of-repository `GOLD` (`--gold-status` and `--gold-cache`), `DOWNLOADS`
 (carrying `download-ledger.json`, or initialized with `--prior-total
 2350276855`), and the `OMR-REQ-012` desk-study archive staged outside OneDrive
-and outside all repository worktrees, execute these steps in order:
+and outside all repository worktrees, execute formal acceptance runs in order:
 
-1. **Confirm clean code baseline and pre-selection gates on `main`:** ensure any
-   newly authorized record, protocol, converter, or comparator updates are
-   accepted and merged on `origin/main` and `src/private/app/sheet-music-omr/`
-   has a clean code tree. Never bypass a stop by editing run artifacts or
-   skipping files manually.
+1. **Confirm clean code baseline on `main` for formal acceptance:** ensure the
+   authorized record, protocol, converter, and comparator updates being
+   evaluated for formal acceptance are merged on `origin/main` and
+   `src/private/app/sheet-music-omr/` has a clean code tree. Never bypass a
+   stop by editing run artifacts or skipping files manually.
 2. **Verify host MuseScore 4 availability (Windows or WSL2):** confirm Windows
    host `MuseScore4.exe` (`4.x`) is reachable (default
    `C:\Program Files\MuseScore 4\bin\MuseScore4.exe` or
@@ -355,3 +377,35 @@ and outside all repository worktrees, execute these steps in order:
    [OMR-REQ-014](requirements.md#omr-req-014-evidence-separation)), post the
    sanitized reports, and obtain owner acceptance before retiring the governing
    Delivery Wave entry.
+
+## Formal baseline gates for W2 and W3 runs
+
+Under the accepted W2 and W3 [Delivery Wave](../../../../../docs/delivery-wave.md)
+entry (`#1489`, `#1490`), local unit tests and synthetic-fixture debugging
+without external package installation, network downloads or private-gold access
+run freely on working branches; execute external and private-gold W2/W3 steps
+in order:
+
+1. **Accept protocol on `main` before external or private-input effects:**
+   ensure [OMR-REQ-016 through OMR-REQ-020](requirements.md#real-data-splits-and-recognizer-evaluation)
+   and the [evaluation and real-data alignment protocol](evaluation-protocol.md)
+   are accepted on `origin/main` before installing external reader packages
+   (`kobimusic/copisteria`, `w2-copista-venv`), downloading `copista-28m`
+   weights, generating real-page overlays or crops from private inputs, or
+   running formal Stage S0 baseline measurements.
+2. **Keep external installations and ledgers out of worktrees:** install
+   `kobimusic/copisteria` and CPU PyTorch wheels only into
+   `DOWNLOADS/w2-copista-venv`, track W2/W3 network bytes in
+   `DOWNLOADS/w2-download-ledger.json` against the `10,000,000,000`-byte cap
+   (separate from W1's closed `2,350,276,855`-byte ledger), and verify pinned
+   commits and `SHA-256` digests before running inference.
+3. **Complete W3 alignment, `92`-page overlay QA, and `0`-diff slice
+   verification before S0 scoring:** approve all `92 / 92` page overlays in
+   `overlay-qa.json`, verify `0` content differences on re-assembled
+   printed-system `Text Score 2` slices across all `23` pieces, and write
+   `RUN/splits/test-exclusion.json`.
+4. **Log `TEST` touches and privacy-scan outputs:** append to
+   `DOWNLOADS/w2-touch-log.jsonl` before scoring `TEST`, perform zero tuning on
+   `TEST`, validate `omr-discrepancy-log-v1` records, and pass the
+   `OMR-REQ-015` privacy scan and applicable `research-evidence-review` before
+   posting S0 results to `#1489` and `#1490`.

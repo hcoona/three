@@ -223,10 +223,10 @@ do not establish a hard aggregate prepaid ceiling.
 The helper is bound at launch to its run and worker; tool arguments do not
 choose an arbitrary actor/run. It exposes the
 [local capability vocabulary](upstream-migration.md#collaboration-mcp-map).
-Before implementing an operation, its slice must accept the relevant input,
-result, failure and candidate/cursor identity contract. The inventory is a
-complete semantic map, not a frozen JSON schema or an upstream compatibility
-promise.
+Each implemented operation and its owning input, result, failure and
+candidate/cursor identity contract must stay self-consistent at each merge into
+`main`. The inventory is a complete semantic map, not a frozen JSON schema or
+an upstream compatibility promise.
 
 Compose upstream cooperation/focus/lifecycle instructions with local tool
 descriptions for a new native session's bootstrap. After confirmed bootstrap,

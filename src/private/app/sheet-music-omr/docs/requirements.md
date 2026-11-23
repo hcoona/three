@@ -1,10 +1,12 @@
 # Sheet Music Recognition Requirements
 
 These are required behaviors for the text representation of printed piano
-music, its converters and its acceptance evidence, not claims about an existing
+music, its converters, its real-data splits and recognizer evaluation tools,
+and their acceptance and baseline evidence, not claims about an existing
 implementation. The [README](../README.md) supplies context and routing. The
 [Text Score 2 format](text-format.md) is the normative grammar and semantics;
-this record states what that format and its tools must achieve.
+this record states what that format, its tools and the evaluation harness must
+achieve.
 
 The format defines _system document_, _assembled score_, _content_ and
 _layout_. An _in-scope element_ is a score element that belongs to one of the
@@ -133,19 +135,23 @@ implement the grammar and semantic rules of the format.
 
 ### OMR-REQ-009: Comparison protocol
 
-Comparing a source score with its round trip shall follow a protocol that is
-accepted under research-evidence review before it executes. The protocol shall
-fix the in-repository comparison dependencies and their versions, bound external
-desktop score editors by major version while recording each run's exact version
-string and executable hash as provenance, define an in-scope element and
-_identical_, state the denominator of every percentage and say how generated
-identifiers are treated, since an identifier difference alone is not a content
-difference. It
+Comparing a source score with its round trip for formal acceptance evidence
+shall follow a protocol accepted under research-evidence review before that
+formal acceptance run executes (local in-scope unit tests and repository- or
+synthetic-fixture debugging without network downloads or private-gold access
+under OMR-REQ-015 remain unconstrained by pre-execution protocol merge under
+the
+[repository record policy](../../../../../docs/governance/record-system.md#project-namespaces)).
+The protocol shall fix the in-repository comparison dependencies and their
+versions, bound external desktop score editors by major version while recording
+each run's exact version string and executable hash as provenance, define an
+in-scope element and _identical_, state the denominator of every percentage and
+say how generated identifiers are treated, since an identifier difference alone
+is not a content difference. It
 shall assign every difference to exactly one of the 27 content categories or to
 layout. A difference that cannot be assigned is a protocol defect, never
 agreement. Missing content and extra content both count as differences.
-The [comparison protocol](comparison-protocol.md) is that protocol once it is
-accepted.
+The [comparison protocol](comparison-protocol.md) is that protocol.
 
 ## Acceptance
 
@@ -191,6 +197,88 @@ pieces and the public corpus files. Its definition and comparison basis belong
 to the comparison protocol and shall be recorded before the score is reported.
 The score shall not gate acceptance.
 
+## Real-data splits and recognizer evaluation
+
+### OMR-REQ-016: Unified real-data alignment and piece-level split manifest
+
+A single versioned local manifest shall inventory all `23` accepted private
+gold pieces (`2,033` measures across `92` restored US-Letter facsimile pages)
+at piece, page and physical printed grand-staff system levels, recording each
+system's facsimile-page bounding box, local staff-space pixels, measure-ordinal
+range, barline coordinate status, box trust, overlay-QA approval status,
+book/plate group (`G1` through `G7`), label trust tier (`L0` all five review
+aspects converged versus `L1` per-aspect converged with explicit aspect masks),
+and documented open-reading measure-category masks. Splits shall never divide a
+piece: `7` pieces (`gold-01` through `gold-06` in Book 1 plus `gold-18` in Book
+2; `432` measures, `23` pages) form the frozen `TEST` set, and the remaining
+`16` accepted model-draft-free pieces (`1,601` measures, `69` pages) form the
+non-test `TRAIN/DEV` pool. An explicit `TEST` exclusion manifest (`SHA-256`
+digests and anonymized batch identifiers) shall exclude `TEST` pieces from
+training, prompt or threshold tuning, and synthetic re-rendering.
+
+### OMR-REQ-017: Overlay QA, normalized system crops and printed-system slices
+
+Every one of the `92` restored facsimile pages shall complete visual bounding-box
+overlay QA before its system crops enter baseline evaluation or downstream
+datasets (with raw `.heic` captures warped through stored page quads into the
+same schema if later staged locally). Each approved printed system shall yield
+a staff-space-normalized system crop (`14.0` pixels per staff space with padded
+margins preserving ledger lines, pedals, dynamics, hairpins, ottavas and slurs)
+paired with its canonical per-system `Text Score 2` target slice derived along
+the physical printed-system measure-ordinal boundaries. Re-assembling all
+printed-system slices of each of the `23` pieces and converting forward to
+MusicXML shall reproduce the accepted gold score with zero counted in-scope
+content differences (`23 / 23` equal under OMR-REQ-009).
+
+### OMR-REQ-018: B-normalized per-category recognition and second-reader scorer
+
+For formal Stage S0 baseline and recognizer evaluation evidence, evaluation
+rules, `B`-normalization, open-reading masks, candidate parse-failure
+accounting and statistical estimators shall follow the
+[evaluation and real-data alignment protocol](evaluation-protocol.md) accepted
+under research-evidence review before external reader installation, weight
+downloads, private-input crop/overlay runs or formal S0 baseline execution
+(local in-scope unit tests and synthetic-fixture debugging without external
+installs, network downloads or private-gold access remain unconstrained under
+[project namespaces](../../../../../docs/governance/record-system.md#project-namespaces)).
+In drafter mode, the primary metric shall be the paired measure-level
+recognition (`A`-class) error rate (share of reference measures with at least
+one unmasked `A`-class content difference after normalizing
+representation/toolchain `B`-class artifacts and separating layout `C`-class
+differences), reported overall, per review aspect and per category with
+piece-cluster bootstrap `95%` confidence intervals alongside `musicdiff` `6.0`
+normalized edit distance; unparsable or wrong-staff-count candidate outputs
+shall fail closed by counting all unmasked reference measures and symbols of
+the failed unit as non-identical rather than aborting evaluation. In blind
+second-reader mode, the scorer shall report recall of baseline draft `A`-error
+measures (and late-round survivor measures) within a `<= 20%` flagged-measure
+budget, error-correlation rate, per-measure confidence calibration (`AUROC`,
+`ECE`, `AURC`) where posteriors exist, and expected review-pass projections.
+
+### OMR-REQ-019: Test-set touch governance and Stage S0 baselines
+
+Every evaluation run that reads or scores `TEST` predictions shall append an
+immutable record to a local touch ledger (`w2-touch-log.jsonl`) naming the UTC
+timestamp, code commit and tree digest, reader and weight SHA-256 digests,
+split subset and command; training pilots shall touch `TEST` at most `3` times
+with all touches reported, and Stage S0 baselines shall perform zero parameter
+or threshold tuning on `TEST` within a finite cumulative S0 `TEST`-touch fuse.
+Stage S0 shall measure and report (a) the initial agent drafts (`build-01` or
+`draft.musicxml` against accepted gold on `TEST` and `TRAIN/DEV` separately,
+re-fitting the review-pass model parameters against the historical review
+archive) and (b) stock `copista-28m` (`Apache-2.0`, executed locally in an
+isolated out-of-worktree environment) in both drafter and blind second-reader
+modes on the staged restored facsimile pages.
+
+### OMR-REQ-020: Discrepancy, sidecar and round-logging schema
+
+The evaluation harness shall emit and validate a versioned JSON schema
+(`omr-discrepancy-log-v1`) capturing per-measure candidate discrepancies,
+declared reader capability masks, raw and non-`TEST`-fitted calibrated
+confidence, flag decisions, and `A/B/C/R` by category review-round records for
+downstream training, workflow integration and flywheel workstreams, subject to
+OMR-REQ-015 privacy scanning before any public summary is written.
+
 ## Evidence and boundaries
 
 ### OMR-REQ-014: Evidence separation
@@ -204,8 +292,10 @@ direct MusicXML, cannot. A comparison with another representation shall be
 recorded under the claim its method supports: a capability mapping against the
 content categories supports a capability claim, and a round trip supports a
 fidelity claim. Tokenizer counts report counts for named tokenizers on named
-inputs. This work makes no claim about model accuracy or review-effort
-savings.
+inputs. Converter round trips and tokenizer counts make no claim about model
+accuracy or review-effort savings; recognizer baseline measurements report
+observed error rates and fitted pass-model projections only on the named
+inputs, reader versions and protocol.
 
 ### OMR-REQ-015: Privacy and fixture provenance
 
@@ -253,17 +343,22 @@ content nor unsupported content. A reverse converter ignores them.
 
 The evidence has three parts:
 
-- Protocols. Every experiment or runtime observation (including the comparison
-  protocol, tokenizer counts, MuseScore import checks and any capability
-  mapping that uses tool or runtime observations) needs a protocol accepted
-  under research-evidence review before execution. A capability mapping done
-  solely by comparing accepted project requirements and format records with
-  published standards, without executing software or measuring data/model
-  outputs, is source-based desk research and does not need an experiment
-  protocol. It still needs recoverable source citations and independent
-  research-evidence review before serving as a gate result. A protocol names
-  its exact subject, environment, isolation, expected observations, evidence
-  limits, bounds and cleanup.
+- Protocols. Formal acceptance runs and empirical experiments with external or
+  private-gold effects (including formal comparison runs, tokenizer-count
+  fetches, formal MuseScore import checks and any capability mapping reported
+  from empirical corpus/gold runs) require a protocol accepted under
+  research-evidence review before execution; routine in-scope local unit tests
+  and repository- or synthetic-fixture debugging without network downloads or
+  private-gold access under OMR-REQ-015 require no pre-execution protocol merge
+  or attempt quota
+  ([project namespaces](../../../../../docs/governance/record-system.md#project-namespaces)).
+  A capability mapping done solely by comparing accepted project requirements
+  and format records with published standards, without executing software or
+  measuring data/model outputs, is source-based desk research and does not need
+  an experiment protocol. It still needs recoverable source citations and
+  independent research-evidence review before serving as a gate result. A
+  protocol names its exact subject, environment, isolation, expected
+  observations, evidence limits, bounds and cleanup.
 - Inputs. Accepted private gold pieces stay private and are counted only in
   aggregate and by anonymized batch numbers. Public corpus inputs and committed
   fixtures need a license that permits the use and a recorded provenance.

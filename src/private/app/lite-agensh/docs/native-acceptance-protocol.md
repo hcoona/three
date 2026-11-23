@@ -11,8 +11,9 @@ acceptance report.
 Subject: the C# LiteAgensh executable built from the exact candidate of the
 implementation PR linked to [Issue #1526](https://github.com/hcoona/three/issues/1526).
 Before execution, record that immutable commit/build hash, applicable check
-results and accepted design/contract identities in the PR. No unspecified
-latest checkout substitutes for the recorded candidate.
+results and candidate/accepted design-contract identities in the PR
+(self-consistent at merge). No unspecified latest checkout substitutes for the
+recorded candidate.
 
 Use the owner's Windows host, root-selected .NET SDK, installed Git and Copilot
 CLI. Initial metadata is .NET 10.0.403, Git 2.53.0.windows.1 and Copilot 1.0.105.
@@ -22,11 +23,14 @@ required executable flags before relying on them. Changed interfaces pause
 dependent work pending reviewed invocation/validation updates. Disable SDK
 runtime acquisition and native auto-update; do not install another CLI.
 
-The accepted Wave must still grant LiteAgensh work. Implementation prerequisites
-and this protocol must already be accepted, with independent research-evidence
-review. The owner explicitly approved using existing GitHub Copilot account
-credits under the following native soft-limit semantics; no current account
-balance, personal usage or authentication artifact belongs in public evidence.
+Before paid native acceptance execution, the accepted Wave must grant that paid
+run and this protocol must be accepted on `main` with independent
+research-evidence review; local credential-free development and controlled
+tests on working branches require neither protocol merge nor attempt quotas
+([project namespaces](../../../../../docs/governance/record-system.md#project-namespaces)).
+The owner explicitly approved using existing GitHub Copilot account credits
+under the following native soft-limit semantics; no current account balance,
+personal usage or authentication artifact belongs in public evidence.
 
 ## Owner-approved effects and budgets
 

@@ -5,11 +5,15 @@ This record is the comparison protocol that
 consumers are the implementers of the W1 round-trip harness, their
 independent reviewers and the W1 acceptance decision in the repository
 [Delivery Wave](../../../../../docs/delivery-wave.md). It fixes how a score and
-its round trip are compared and scored before anything executes.
+its round trip are compared and scored for formal acceptance.
 
-This record governs execution only once it is accepted under
+This record governs formal acceptance evidence once accepted under
 [research-evidence review](../../../../../.github/skills/research-evidence-review/SKILL.md),
-and every later change needs the same review before the changed part executes.
+and later changes require that review before formal acceptance runs rely on
+them; in-scope local unit tests and repository- or synthetic-fixture pilot
+debugging without network downloads or private-gold access on working branches
+run without pre-merge protocol gates
+([project namespaces](../../../../../docs/governance/record-system.md#project-namespaces)).
 It is not a result report. Local results that informed it, including the
 failed adjacent-measure calibration case and the harness pilots and
 private-gold probes behind the voice-position and octave-shift rules, are
@@ -1393,14 +1397,20 @@ It is reported and never gates acceptance.
    separate steps).
 6. Run the system-assembly test on gold.
 
-Each arm runs once per converter code tree (`pyproject.toml`, `src` and
-`tests`) under test. Unrelated monorepo commits or documentation updates that
-leave that code tree clean and unchanged do not invalidate a run's preflight or
-resumption; the commit at preflight and at run execution is recorded as
-provenance. Reruns after converter fixes are allowed under this protocol, each
-with its code tree and commit recorded, and every completed run is listed in
-the results carrier. The acceptance figures come from one run in which every
-arm used the same converter code tree and MuseScore build. The bounds of one
+For a formal acceptance run, each arm runs once per converter code tree
+(`pyproject.toml`, `src` and `tests`) under test. Unrelated monorepo commits or
+documentation updates that leave that code tree clean and unchanged do not
+invalidate a run's preflight or resumption; the commit at preflight and at run
+execution is recorded as provenance. Reruns after converter fixes are allowed
+under this protocol, each with its code tree and commit recorded, and every
+completed formal run is listed in the results carrier. Local repository- or
+synthetic-fixture pilots and scratch debugging runs without network downloads
+or private-gold access (`OMR-REQ-015`) outside formal acceptance reporting are
+unconstrained in count, uncommitted working-tree state (in a fresh
+`--run-dir`), and branch state without merging to `main`
+([project namespaces](../../../../../docs/governance/record-system.md#project-namespaces)).
+The acceptance figures come from one formal run in which every arm used the
+same converter code tree and MuseScore build. The bounds of one
 run are 200 PDMX files, 50 Lieder extracts, the accepted gold pieces, at most
 the 1,356 Lieder scores of the pinned release for selection exports, and
 300 seconds per conversion or comparison step.

@@ -9,14 +9,18 @@ it when the subject or effects change. Without it, normal product use could
 silently inherit the former fixture-only acceptance protocol.
 
 The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) grants work.
-This protocol must separately merge before observation. It is not a successful
-run report and does not reopen the former development acceptance campaign.
-The [validation basis](validation.md) retains its evidence-level boundaries.
+This protocol must merge before paid native audit observation; it is not a
+successful run report and does not reopen the former development acceptance
+campaign. Local credential-free development, controlled tests, and non-paid
+debugging on working branches follow the
+[repository record policy](../../../../../docs/governance/record-system.md#project-namespaces)
+without `main`-merge preconditions or attempt quotas. The
+[validation basis](validation.md) retains its evidence-level boundaries.
 
 ## Subject, environment and recorded identity
 
-Use the C# product built once from an exact accepted `main` revision containing
-the required repair and this protocol. Record the revision, application hash
+For paid native audit execution, use the C# product built once from an exact
+accepted `main` revision containing the required repair and this protocol. Record the revision, application hash
 and build identity, resolved configuration and Chinese goal hashes, and accepted
 contract/protocol identities in private execution state before dispatch. Use
 that unchanged binary for initialization, preflight, calibration, execution and
@@ -211,8 +215,8 @@ The owner permits the existing `reconnect --state <owned-state>` settlement-only
 branch for the retained actual10 failed audit described in #1552 and later
 qualifying closed failed runs in this same continuing campaign. The
 [entrypoint contract](implementation-contracts.md#closed-failed-run-reconnect)
-must be accepted before its implementation, and that implementation must be
-accepted before execution. Record and independently review the exact accepted
+and its implementation must be accepted on `main` before executing that
+settlement operation. Record and independently review the exact accepted
 binary, original subject, target state, existing reservation/session bindings,
 expected effects, finite operation bounds and invocation before operating.
 This permission does not apply to historical unknowns in the old ledger.
@@ -286,8 +290,8 @@ accepted subject is `3805a50490afbdd6c53ec4e3c6e8c64a3150858f`.
 Keep exact private reservation/session/runtime identifiers and evidence local.
 This does not release the old ledgers' historical unknowns or grant another reset.
 
-Separately accept the contract, recovery design and validation prerequisites,
-then the implementation, before invoking `reconcile --state <owned-state>
+Accept the contract, recovery design, validation updates and implementation on
+`main` before invoking `reconcile --state <owned-state>
 --reservation <id>` against that retained case. Supply compatible retained
 lineage through `--evidence <owned-proof>` when the old state lacks its marker.
 The proof's recorded success is not authority: the accepted implementation must
@@ -381,10 +385,10 @@ failure. Retain the missing allocation stack/peak as a limitation when absent.
    settlement before any safe repetition. Diagnose only the exact owned run,
    leases, session identities and necessary private native diagnostics.
    Source findings, runtime observations, inferences and hypotheses remain
-   distinct. Independently classify material findings before bounded repairs;
-   changed requirements, architecture or recovery policy must separately
-   become accepted prerequisites. Land and validate repairs through ordinary
-   review/CI, then build the exact accepted revision for a new attempt.
+   distinct. Apply `GOV-011` finding disposition; evolve any changed
+   requirements, architecture or recovery policy self-consistently with the
+   repair at merge into `main`, validate through ordinary review/CI, and build
+   the exact accepted revision before starting a new paid attempt.
    Existing pause, reconnect and explicit fresh-summary resume may be used
    only within their accepted ownership, identity and remaining-budget
    contracts after a real interruption; do not induce crash/recovery tests.

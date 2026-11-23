@@ -117,11 +117,11 @@ CI work and [shared package execution](build-and-qualification.md).
 
 For each new integration, first identify its maintained native library or
 supported tool interface, the inputs/configuration it evaluates, the facts and
-errors it exposes, and the required facts still unavailable. Review that concrete
-boundary before implementation. Follow the HLD's
-[native integration boundary](../high-level-design.md#native-integrations), including
-native-language helpers and owner disposition when a necessary capability is
-missing. Internal implementation and transfer formats have no compatibility
+errors it exposes, and the required facts still unavailable. Establish and
+review that concrete boundary with the integration before merge. Follow the
+HLD's [native integration boundary](../high-level-design.md#native-integrations),
+including native-language helpers and owner disposition when a necessary
+capability is missing. Internal implementation and transfer formats have no compatibility
 obligation. Rewrite producers and consumers together instead of adding aliases
 or porting ecosystem parsing and resolution rules into C#.
 

@@ -37,10 +37,18 @@ the frozen `OMR-REQ-012` replay reproduced `327 / 327` deduplicated loci (`356`
 raw entries, `0` failed), and `Qwen3-VL-2B-Instruct` tokenizer counts were
 recorded alongside the completed ABC 2.1 capability mapping. With W1's
 [Delivery Wave](../../../../docs/delivery-wave.md) entry retired on acceptance,
-only design and planning under [Issue #686](https://github.com/hcoona/three/issues/686)
-remains authorized until a later workstream receives its own Delivery Wave
-entry (see [Agent handoff](docs/agent-handoff.md)). There is no recognizer,
-model, packaging or release.
+[PR #1734](https://github.com/hcoona/three/pull/1734) authorized W2
+([Issue #1489](https://github.com/hcoona/three/issues/1489)) and W3
+([Issue #1490](https://github.com/hcoona/three/issues/1490)) alongside design
+and planning under [Issue #686](https://github.com/hcoona/three/issues/686),
+and the [evaluation and real-data alignment protocol](docs/evaluation-protocol.md)
+defines the W3 real-data split/alignment schema and W2 Stage S0 baseline
+protocol; feature/workstream advancement beyond active Wave grants requires its
+own Delivery Wave entry while contract-preserving routine maintenance without
+new external or privacy effects follows the
+[record policy](../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+(see [Agent handoff](docs/agent-handoff.md)). There is no trained recognizer,
+model packaging or release.
 
 ## Usage
 
@@ -116,28 +124,34 @@ journey is:
    MusicXML for editing.
 4. The owner reviews the score against the page and corrects it.
 
-The records here cover the text format and the requirements its tools must
-meet, which is steps 2 and 3 without the recognizer. The recognizer and its
-training are later workstreams. Their direction and research context are tracked
-in [Issue #686](https://github.com/hcoona/three/issues/686), and the text
-representation work in [Issue #1488](https://github.com/hcoona/three/issues/1488).
+The records here cover the text format, real-data alignment and splits, and the
+requirements and evaluation protocols its tools and candidate recognizers must
+meet. Recognizer training and workflow integration are later workstreams. Their
+direction and research context are tracked in
+[Issue #686](https://github.com/hcoona/three/issues/686), W1 text
+representation in [Issue #1488](https://github.com/hcoona/three/issues/1488), W2
+evaluation and baselines in
+[Issue #1489](https://github.com/hcoona/three/issues/1489), and W3 real-data
+inventory and splits in
+[Issue #1490](https://github.com/hcoona/three/issues/1490).
 
 Text Score 2 is derived from the owner's as-printed text convention but is
 specified anew, with a versioned normative grammar. It is the pilot baseline
 representation. It is not a finding that it outperforms ABC, MusicXML or
 another representation. That comparison needs model evidence that this project
-does not produce.
+does not yet produce.
 
 ## Records and authority
 
-| Reader question                                                        | Authority                                                     |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------- |
-| What must the format, its tools and their acceptance evidence achieve? | [Requirements](docs/requirements.md)                          |
-| What exactly is a valid system document or assembled score?            | [Text Score 2 format](docs/text-format.md)                    |
-| How is a round trip compared and scored?                               | [Comparison protocol](docs/comparison-protocol.md)            |
-| How do I route a change or operate W1 formal runs safely?              | [Agent handoff](docs/agent-handoff.md)                        |
-| What work is currently authorized?                                     | Repository [Delivery Wave](../../../../docs/delivery-wave.md) |
-| Where are progress, reviews and findings?                              | The two Issues above and their linked pull requests           |
+| Reader question                                                                 | Authority                                                                  |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| What must the format, its tools and their acceptance/baseline evidence achieve? | [Requirements](docs/requirements.md)                                       |
+| What exactly is a valid system document or assembled score?                     | [Text Score 2 format](docs/text-format.md)                                 |
+| How is a converter round trip compared and scored?                              | [Comparison protocol](docs/comparison-protocol.md)                         |
+| How are real-data splits, system crops and recognizer baselines evaluated?      | [Evaluation and real-data alignment protocol](docs/evaluation-protocol.md) |
+| How do I route a change or operate formal/baseline runs safely?                 | [Agent handoff](docs/agent-handoff.md)                                     |
+| What work is currently authorized?                                              | Repository [Delivery Wave](../../../../docs/delivery-wave.md)              |
+| Where are progress, reviews and findings?                                       | The Issues above and their linked pull requests                            |
 
 The README owns purpose, user context, current status and routing. The
 requirements own the obligations of the format, its tools and their acceptance
@@ -174,6 +188,18 @@ the harness would choose its own measure after seeing results. It needs its
 own carrier because an accepted protocol must be fixed before execution and
 changes only under research-evidence review, independently of format and
 requirement changes. Issues carry its results, not the protocol.
+
+W2 and W3 implementers, their independent reviewers, and downstream W4 through
+W8 workstreams consume the
+[evaluation and real-data alignment protocol](docs/evaluation-protocol.md),
+which fixes the unified `23`-piece alignment/split manifest schema, `92`-page
+overlay QA and `14.0 px` system-crop rules, `B`-normalized per-category
+recognition (`A`-class) and blind second-reader metrics, test-set touch ledger,
+isolated `copista-28m` installation/execution bounds, and discrepancy logging
+schema for formal baseline evidence and private-input operations. Without it,
+splits, masks or thresholds could shift after inspecting recognizer outputs,
+and noisy OMR predictions would collide with the W1 converter protocol's
+fail-stop rules.
 
 Replacement coding agents and contributors consume the
 [agent handoff](docs/agent-handoff.md) before modifying project files or

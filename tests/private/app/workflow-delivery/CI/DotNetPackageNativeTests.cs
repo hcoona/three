@@ -294,20 +294,20 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                 GitRevision revision = await new GitReader(source).ReadAsync("HEAD", token);
                 await NativeProcess.RunAsync("git", source,
                     ["clone", "--shared", "--no-checkout", "--", source, checkout], token);
-                string[] checkoutArguments = ["checkout", "--detach", revision.Commit];
-                // This package fixture needs Git history, not unrelated products' LFS payloads.
-                NativeCommandResult checkoutResult = await NativeProcess.ExecuteAsync(
-                    new("git", checkout, checkoutArguments, 120,
-                        new Dictionary<string, string?> { ["GIT_LFS_SKIP_SMUDGE"] = "1" }), token);
-                DotNetNativeFixture.RequireSuccess(checkoutResult,
-                    "Fixture git " + string.Join(' ', checkoutArguments) + " in " + checkout);
+                // Keep source history, but materialize only the product's .NET and NBGV inputs.
+                await NativeProcess.RunAsync("git", checkout, ["read-tree", "--empty"], token);
                 string sourceRevision = revision.Commit;
                 string[] paths = revision.Entries.Select(entry => entry.Path).Where(path =>
                     DotNetInheritedInputs.Consumes(path,
-                        [DotNetRepositoryReader.Parent(Project)])).ToArray();
+                        [DotNetRepositoryReader.Parent(Project)]) ||
+                    path is "mise.toml" or "mise.lock").ToArray();
                 foreach (string path in paths)
-                    await File.WriteAllBytesAsync(Path.Combine(checkout, path),
+                {
+                    string destination = Path.Combine(checkout, path);
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                    await File.WriteAllBytesAsync(destination,
                         await File.ReadAllBytesAsync(Path.Combine(source, path), token), token);
+                }
                 if (discoverGraph)
                 {
                     await File.WriteAllTextAsync(Path.Combine(checkout, "dirs.proj"), $"""
@@ -324,7 +324,7 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                     string blob = (await NativeProcess.RunAsync("git", checkout,
                         ["hash-object", "--no-filters", "-w", "--", path], token)).Trim();
                     await NativeProcess.RunAsync("git", checkout,
-                        ["update-index", "--cacheinfo", "100644", blob, path], token);
+                        ["update-index", "--add", "--cacheinfo", "100644", blob, path], token);
                 }
                 string tree =
                     (await NativeProcess.RunAsync("git", checkout, ["write-tree"], token)).Trim();
@@ -334,7 +334,7 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                         "commit-tree", tree, "-p", sourceRevision,
                             "-m", "Native NuGet fixture snapshot"], token)).Trim();
                 await NativeProcess.RunAsync(
-                    "git", checkout, ["update-ref", "HEAD", candidate], token);
+                    "git", checkout, ["update-ref", "--no-deref", "HEAD", candidate], token);
                 revision = await new GitReader(checkout).ReadAsync(candidate, token);
                 string candidateCommitText = await NativeProcess.RunAsync("git", checkout,
                     ["cat-file", "commit", candidate], token);

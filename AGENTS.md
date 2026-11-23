@@ -45,7 +45,10 @@ authorities.
 
 Use the [documentation portal](docs/README.md) and
 [family catalog](docs/governance/record-families.yaml) to find project authorities.
-Keep project records separate and use path-qualified cross-project references.
+Keep project records separate and use path-qualified cross-project references;
+development workflow, Wave semantics, local iteration freedom, and review
+triggers remain repository-wide
+([project namespaces](docs/governance/record-system.md#project-namespaces)).
 A README is sufficient when no distinct record has a current consumer.
 
 Before making or reviewing architecture, abstraction, dependency-boundary,
@@ -53,24 +56,19 @@ security/recovery or test/evidence strategy decisions, invoke
 [shared engineering guidance](.github/skills/engineering-guidance/SKILL.md)
 and follow its project routing.
 
-For structural record changes, `repository`-namespace record edits,
-portal-routing, generated-interface, or governance-catalog changes,
-project-record edits altering authority ownership, established requirement
-identifiers, or consumer contracts, and Issue/PR-template, Agent Skill, `hk`,
-or control-governed workflow changes, invoke
-[record-system review](.github/skills/record-system-review/SKILL.md) directly;
-ordinary source, test, non-control workflow, runtime-data, status-comment, and
-routine in-place project documentation updates preserving existing ownership,
-portal routing, requirement identifiers, and consumers do not trigger it.
-For research/evidence changes, experiment protocols, mutable-source rechecks,
-or platform-support claims, and every merged Wave change, invoke
+For structural record changes, `repository`-namespace record edits, or
+authority, identifier, consumer-contract, routing, generated-interface, catalog,
+template, Agent Skill, `hk`, or control-governed workflow changes, invoke
+[record-system review](.github/skills/record-system-review/SKILL.md) directly.
+For `research` records, platform/support claims, fired mutable-source rechecks,
+formal or empirical evidence reports, or Wave grants/operations with external,
+paid, or credentialed empirical effects, invoke
 [research-evidence review](.github/skills/research-evidence-review/SKILL.md)
-directly, retaining applicable domain reviews. Routine development and governed
-CI validation, faithful check/status reporting, and recording a completed
-review (`No material findings.`) do not trigger another review round
-([workflows](docs/governance/record-system.md#workflows),
+directly, retaining applicable domain reviews; routine in-scope local
+development/debugging and governed CI validation are out of scope
+([work authorization](docs/governance/record-system.md#work-authorization-and-concurrency),
 [enforcement](docs/governance/record-system.md#enforcement)). Authors and
-implementers cannot satisfy their own independent review or solely adjudicate
+implementers cannot satisfy their own independent review or solely dismiss
 material findings.
 These canonical paths are the invocation interface; no implicit skill discovery
 is assumed. Do not edit generated `.agents/skills/` or `.github/agents/` outputs

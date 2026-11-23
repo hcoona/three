@@ -43,18 +43,20 @@ checksum = "sha256:dcc60d59a0746999f99064a01c020445d54d84228c691cdbf25b49ac3b591
 url = "https://nodejs.org/dist/v26.13.0/node-v26.13.0-win-x64.zip"
 
 [[tools.pkl]]
-version = "0.32.1"
+version = "0.33.1"
 backend = "aqua:apple/pkl"
 
 [tools.pkl."platforms.linux-x64"]
-checksum = "sha256:3180b62da95c0cad1d904e9bb6c5f4a8f9032413c21e53194bb91ff1ee5f3211"
-url = "https://github.com/apple/pkl/releases/download/0.32.1/pkl-linux-amd64"
-url_api = "https://api.github.com/repos/apple/pkl/releases/assets/487426567"
+checksum = "sha256:acbca9bb4f31139d09e295d03c9fb25f77edf5a74af4e772b56b32dc6dc17c44"
+checksum_source = "mise-versions"
+url = "https://github.com/apple/pkl/releases/download/0.33.1/pkl-linux-amd64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/764390166"
 
 [tools.pkl."platforms.windows-x64"]
-checksum = "sha256:8550a00fcf027335e42c5e2cd553b88e98845408cb1880b3e3d1860caf46d22a"
-url = "https://github.com/apple/pkl/releases/download/0.32.1/pkl-windows-amd64.exe"
-url_api = "https://api.github.com/repos/apple/pkl/releases/assets/487426668"
+checksum = "sha256:b1da686befc4ce4d92fe81bd2892e7457a505328313380010c4791c7f68d7432"
+checksum_source = "mise-versions"
+url = "https://github.com/apple/pkl/releases/download/0.33.1/pkl-windows-amd64.exe"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/764390372"
 
 [[tools.pnpm]]
 version = "12.21.0"

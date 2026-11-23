@@ -43,9 +43,14 @@ normative content.
 There is one repository authority for generic governance and work authorization.
 A project owns its product, architecture, decisions, research, security, and
 validation records under its own `<project-root>/docs/` when those records are
-needed. Shared libraries and engineering tools can be projects; a package,
-language, test assembly, or build manifest alone does not define that boundary.
-The owner performs the source's owner and maintainer roles.
+needed. Development workflow, Delivery Wave semantics, local iteration freedom,
+and review triggers are uniform across the repository; project records own
+domain behavior, external/paid or privacy risk boundaries, and criteria for
+accepting formal or release evidence, and must not impose workflow gates,
+`main`-merge preconditions, or run-count limits on local harmless development
+and debugging. Shared libraries and engineering tools can be projects; a
+package, language, test assembly, or build manifest alone does not define that
+boundary. The owner performs the source's owner and maintainer roles.
 
 The [family catalog](record-families.yaml) routes records and project namespaces;
 it is not a second workspace or product database. Create concern directories
@@ -153,22 +158,46 @@ defined validation point.
 
 ## Work Authorization and Concurrency
 
+Contract-preserving, non-feature defect and test fixes, CI
+troubleshooting/diagnostics, lint/formatting, doc-drift repairs, and routine
+Renovate or dependency compatibility adjustments without new external, paid,
+credentialed, or privacy effects execute directly through ordinary pull requests
+without a Delivery Wave entry.
+
 The target branch's accepted `docs/delivery-wave.md` is the sole positive
-work-authorization authority. Each entry identifies accepted inputs, one bounded
-advancement and outcome, material exclusions, and any permitted external effects.
+work-authorization authority for feature or capability advancements,
+architectural or public-contract changes, and external or risk-bearing
+operations. Each entry identifies accepted inputs, one bounded advancement and
+outcome, material exclusions, and any explicitly permitted external or
+risk-bearing effects.
 
-A work item is executable only when:
+Within authorized work, routine local editing, restore/build/lint/test/pilot
+debugging, out-of-repository scratch harnesses, read-only
+repository/GitHub/public-source inspection, independent delegated review, and
+ordinary Issue/PR/CI validation (including failed-job reruns) are permitted by
+default with no attempt quota and need not be repeated in each entry. External
+or irreversible side effects—package or release publication, ruleset or
+permission changes, non-public or credential-bearing dependency sources or
+external services, ambient or external account/secret access or mutation,
+persistent host mutations outside repository/toolchain/build/cache/temp state,
+destructive fault injection, and paid or non-recoverable campaign
+dispatches—remain unauthorized without explicit Delivery Wave authorization/risk
+disposition (and accepted protocols with cumulative bounds where empirical or
+paid), even inside a test command or CI workflow step.
 
-- an accepted Delivery Wave entry grants that work and remains present;
-- the work stays inside the entry's advancement, outcome, exclusions, and effects;
-- its requirement, architecture, evidence, or other declared prerequisites are already
-  accepted;
-- any policy-required repository-owner risk disposition is recorded in the entry; and
-- it does not depend on an unaccepted result.
+A work item is executable when:
 
-Relied-on prerequisites and shared canonical authorities must remain current through
-acceptance. If the target branch supersedes or materially changes one, dependent work
-must pause until its scope and gate evidence are reevaluated and its validation and
+- either it qualifies as contract-preserving routine maintenance above without
+  new external, paid, credentialed, or privacy effects, or an accepted Delivery
+  Wave entry grants that work and remains present;
+- the work stays inside the applicable scope, exclusions, and permitted external
+  effects; and
+- any required repository-owner risk disposition and external/paid protocol are
+  already accepted before executing external or paid effects.
+
+Relied-on shared canonical authorities must remain current through acceptance.
+If the target branch supersedes or materially changes one, dependent work must
+pause until its scope and gate evidence are reevaluated and its validation and
 review are refreshed against the current authority.
 
 An Issue, Milestone, branch, pull request, comment, label, or unmerged Wave edit cannot
@@ -188,32 +217,35 @@ progress coordination, or benefits from separate proposal discussion. A bounded 
 may use its pull request as the work carrier when the accepted Wave entry already
 contains sufficient scope. Work carriers do not become authorization authorities.
 
-Independent entries may proceed concurrently. Work remains ordered when it has an
-unresolved dependency, modifies the same canonical authority under conflicting
-assumptions, or requires an earlier owner decision. A material change to a shared
-prerequisite pauses only the entries that rely on it.
+There is no global delivery phase, and owning records need not merge into `main`
+before dependent implementation begins. Requirements, architecture, contracts,
+validation criteria, and implementation may evolve concurrently in one branch or
+across a stacked pull-request chain, provided each merge into `main` preserves a
+valid, self-consistent repository state between implementation and its owning
+records (and satisfies any ordered ruleset or external-risk gate). Independent
+entries and Slices may proceed concurrently; work remains ordered when it
+modifies the same canonical authority under conflicting assumptions, requires an
+earlier owner decision, or executes external/paid effects gated on an accepted
+protocol. A material change to a shared authority pauses only the work that
+relies on it.
 
-There is no global delivery phase. Each Slice follows its own accepted dependencies.
-Implementation requires accepted Slice requirements, applicable architecture and
-contracts, a validation basis, explicit unsupported cases, and any additional
-preimplementation condition owned by an applicable domain record. Implementation of one
-Slice may overlap requirements or architecture work for another Slice whose own
-advancement is authorized.
-
-One or more pull requests may contribute to a bounded outcome. When that outcome is
-accepted, or the repository owner decides not to continue it, an accepted Wave change
-deletes the entry. That deletion ends only the current grant; later defects, changed
-requirements, or further advancement require a new or amended entry.
+One or more pull requests may contribute to a bounded Wave outcome. Close the
+entry atomically in its final implementation pull request (or through a
+Wave-only pull request on owner stop or explicit closure). That deletion ends
+only the current grant; further feature, contract, or external-risk advancement
+requires a new or amended entry.
 
 A Delivery Wave has no fixed duration. A replacement Wave selects a new finite set.
-Unfinished work continues only when the new accepted file contains an entry authorizing
-its next bounded outcome. Omission ends the old grant; it is not automatic carry-over.
+Unfinished Wave-scoped work continues only when the new accepted file contains an
+entry authorizing its next bounded outcome. Omission ends the old grant; it is
+not automatic carry-over.
 
-Every merged change to `docs/delivery-wave.md` evaluates applicable current
-mutable-source rechecks, even when no research file changes. Rechecks stay with
-the concern that consumes them; the [agent execution guidance](../engineering/agent-execution.md)
-owns the Codex interface trigger. Admit a structured registry only with an
-actual consumer, typed contract, and review point.
+Evaluate mutable-source rechecks on demand when a change relies on or updates
+the governed external interface or when observed runtime behavior contradicts
+the recorded contract. Rechecks stay with the concern that consumes them (for
+example, [agent execution guidance](../engineering/agent-execution.md) owns the
+Codex interface check). Admit a structured registry only with an actual
+consumer, typed contract, and review point.
 
 ## Lifecycle Through Git and GitHub
 
@@ -275,34 +307,14 @@ Architecture uses a global overview and scoped views. Designs are created only f
 coherent implementation boundaries that need independent review. Research is organized
 by question and baseline; experiments are organized by reproducible protocol.
 
-Classify validation versus empirical experiments by operation purpose and external
-effects rather than invocation channel. Credential-free local restore, build, lint, and
-test runs using standard package-manager default public registries (when not cleared,
-restricted, or excluded by accepted repository configuration or the Wave), public
-dependency sources and toolchains declared in accepted repository configuration, or owned
-local/temporary synthetic fixture sources, and governed CI/PR checks of declared
-contracts (including standard ephemeral runner-issued job plumbing such as checkout,
-cache, artifact, and public-release rate-limit tokens/state in accepted workflows, defect
-fixes, and ordinary reruns of failed workflow jobs) are development and delivery
-validation rather than experiments: the underlying work still requires Delivery Wave
-authorization, retains relevant chronological CI/workflow run and attempt identities when
-reporting gate results and applicable recovery checks, supports claims only about the
-tested source and environment, and needs no separate experiment protocol, disposable
-host, or attempt quota. Unmodeled external or platform probes, credential-bearing,
-non-public, or unaccepted external dependency sources (neither a comment nor an unmerged
-branch commit can grant them), user/Environment secrets, OIDC/package publication,
-interactive login or consent, account/tenant/permission enrollment or switching,
-accessing, creating, rotating, or mutating real, persistent, external, or ambient
-user/host accounts, brokers, keyrings, credentials, or secrets, mutating ambient
-auth/host configuration (outside that standard ephemeral runner-issued CI job plumbing),
-mutating persistent host or shared state outside normal repository Git state (including linked-worktree metadata),
-accepted locked-toolchain/SDK install and state roots, build and validation-report
-outputs, owned temporary/synthetic-test state, local package or tool caches, ephemeral
-CI-runner job/cache/artifact state, and any Wave-named tool state, destructive fault injection, and paid or non-recoverable campaign
-dispatches remain outside routine validation and require explicit Delivery Wave
-authorization/risk disposition and an accepted experiment protocol with cumulative bounds
-even inside a test command or CI workflow step. Where an accepted Wave entry and protocol
-bound an existing host, reviewers must not invent disposable-VM or OS-user prerequisites.
+Routine in-scope local and governed CI validation of declared contracts is not
+an empirical experiment: it supports claims only about the tested source and
+environment, retains chronological CI run/attempt identities when reporting gate
+results, and requires no experiment protocol, disposable host, or attempt quota.
+Operations with external, credentialed, destructive, or paid effects—or
+unmodeled external/platform probes—follow the external-effect and experiment
+rules in [Work Authorization and Concurrency](#work-authorization-and-concurrency)
+regardless of invocation channel.
 
 Requirement identifiers are permanent once merged into the accepted target branch.
 Preserve each project's existing identifier syntax, meaning, and retirement
@@ -333,75 +345,28 @@ Use:
 The [checker contract](checker-contract.md) defines bounded validation inputs,
 commands and review interfaces. The repository's record checker supplies
 repeatable mechanical validation and an explicit inventory/report for reviewers.
-Run it against an explicit accepted base and candidate snapshot and retain its
-report in the governing review carrier (the proposing pull request, or the
-governing Issue when no pull request governs). Reviewers resolve unprepared ownership and inspect
-semantic admission, requirement meaning, evidence and domain gates; a clean
-mechanical report does not decide those concerns. The checker is advisory and
-does not install an automatic CI or blocking hook gate. Blocking activation
+Run it against an explicit accepted base and candidate snapshot when changing
+maintained records, portals, generated interfaces, `apm.lock.yaml`, or catalogs,
+moving or deleting paths they reference, or adding or renaming
+[discovered record candidates](checker-contract.md#independent-discovery-and-classification),
+and record the command, snapshots, and diagnostic summary in the governing pull
+request or Issue review carrier. Reviewers resolve unprepared ownership and
+inspect semantic admission, requirement meaning, evidence and domain gates; a
+clean mechanical report does not decide those concerns. The checker is advisory
+and does not install an automatic CI or blocking hook gate. Blocking activation
 requires demonstrated snapshot semantics, deterministic remediation and an
 explicitly accepted control change.
 
-Keep independent `record-system-review` decoupled from lightweight local
-`records:check`. Structural record changes (additions, moves, splits,
-retirements/deletions, and rebindings), edits to `repository`-namespace records
-in [`record-families.yaml`](record-families.yaml) (such as `README.md`,
-`docs/README.md`, `docs/governance/**`, `docs/engineering/**`,
-`docs/delivery-wave.md`, `AGENTS.md`, `docs/AGENTS.md`, `CONTRIBUTING.md`, and
-`schemas/governance/**`), changes to portal routing, generated agent/skill
-interfaces, `record-families.yaml`, `controls.yaml`, Issue/PR templates, Agent
-Skills, `hk`, or control-governed workflows, and project-record edits that alter
-authority ownership, established requirement identifiers, or
-consumer/immutability/license contracts trigger `record-system-review`. Ordinary source, test, non-control
-workflow, runtime-data, status-comment, and routine in-place project
-documentation updates preserving existing record ownership, portal routing,
-requirement identifiers, and consumers do not trigger `record-system-review`
-merely because they are durable. Run `records:check` when editing or deleting
-maintained records, portals, generated interfaces, `apm.lock.yaml`, or
-governance catalogs, adding or renaming
-[discovered record candidates](checker-contract.md#independent-discovery-and-classification),
-or moving or deleting paths referenced by maintained records, `apm.lock.yaml`,
-or catalogs; pure in-place code, test, non-control workflow, runtime-data, and
-status-comment edits (and deletions of unreferenced non-record assets) skip it.
-Preserve a zero-diagnostic `records:check` baseline on `main` rather than
-normalizing pre-existing baseline failures; if an unrelated baseline diagnostic
-ever exists on `main`, evaluate the `base -> candidate` delta and any
-changed-scope coverage gap while reporting honestly that the global run exited
-nonzero.
-
-Under [GOV-002](governance-system.md#gov-002-one-canonical-authority) and
-[GOV-011](governance-system.md#gov-011-separate-findings-from-disposition),
-retain detailed check caveats, snapshot/command metadata, coverage gaps, and
-independent material-finding classifications in one authoritative ledger in the
-governing pull request (by default the PR body's `## Validation and Review`
-section, or a dedicated PR review comment when needed)—or in the governing
-Issue when no pull request governs—which may index and link existing review or
-triage comments, CI runs, and bulky raw JSON or test reports rather than
-re-copying them, while keeping `record-system-gate` on the proposing pull
-request's merge. Concise routing summaries (such as Issue progress notes or
-overview sections) may link to that authoritative ledger without repeating
-secondary check caveats so long as they make no broader claim. Companion Issue
-and pull-request updates reviewed together before publication as one declared
-ordered batch are evaluated against the batch rather than failing solely
-because later writes in the batch have not executed yet, then applied and read
-back in order.
-
-Purely deterministic carrier defects—formatting or lint fixes, Markdown
-delimiter or syntax typos, commitlint or length adjustments, container-pointer
-typos whose cited comment/fragment identifier, content, and provenance are
-unchanged, and display-text typos whose link target and underlying
-commit/run/artifact identity are unchanged and unambiguous—may be repaired
-directly by the author and verified mechanically without third-party `GOV-011`
-classification or permanent triage rows, provided the fix does not alter
-authority ownership, source/commit/run/build/artifact provenance, evidence
-classification, claim scope, security or privacy boundaries, contract or test
-coverage, or an owner decision. Misattributed or ambiguous commit,
-workflow-run, build, or evidence-artifact identifiers remain material
-provenance findings requiring independent `GOV-011` classification. Re-reviews
-evaluate the remediation delta and affected conclusions or consumers rather
-than re-opening unchanged closed triage prose. Faithful check or status
-reporting and recording a completed review (`No material findings.`) do not
-trigger another review round.
+Contextual reviews evaluate the proposed repository diff and the validity and
+provenance of the evidence it relies on, not the prose completeness, formatting
+typos, or API write order of pull-request or Issue discussion. Record required
+check results, independent reviews, and any disputed or unresolved
+[GOV-011](governance-system.md#gov-011-separate-findings-from-disposition)
+classifications or owner dispositions once in the governing review carrier
+(`record-system-gate` remains on pull-request merge); agreed findings not
+requiring an owner decision are verified on the remediation delta by the
+originating independent reviewer, and nonmaterial mechanical defects use
+mechanical verification.
 
 Candidate discovery must be independent of the mutable family catalog and
 include root interfaces, repository and project document roots, hidden legacy
@@ -450,14 +415,11 @@ and explicit validation and control activation boundaries.
 The User Story role, admission and requirement/validation routing additionally
 derive from the [upstream story record][story-source] and
 [record-family entry][story-family-source] at
-`f2e36bbccbda134ed8aa21f783cd76a9cdbeaf64`. Validation-versus-experiment
-boundaries incorporate the public
-[`hcoona/microsoft-authentication-cli#523`][mac-523] (`G9`) distinction at
-Three scope, alongside local Three rules for review-carrier routing,
-mechanical-versus-material triage, and checker trigger scope. They use Three's
-existing project namespaces and record-admission rules without importing
-authentication-product policy; other parts of this policy retain the original
-source baseline above.
+`f2e36bbccbda134ed8aa21f783cd76a9cdbeaf64`. Three adds repository-wide workflow
+precedence over project records, merge-time consistency between implementation
+and owning records, external-effect blacklisting (`G9` context in
+[`hcoona/microsoft-authentication-cli#523`][mac-523]), and diff-focused review
+boundaries without importing authentication-product policy.
 
 [source]: https://github.com/hcoona/microsoft-authentication-cli/blob/1a02498589769c38bc16eefc2efc5f9eca6e6994/docs/governance/record-system.md
 [story-source]: https://github.com/hcoona/microsoft-authentication-cli/blob/f2e36bbccbda134ed8aa21f783cd76a9cdbeaf64/docs/product/user-stories.md
