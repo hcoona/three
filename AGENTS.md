@@ -56,10 +56,17 @@ security/recovery or test/evidence strategy decisions, invoke
 [shared engineering guidance](.github/skills/engineering-guidance/SKILL.md)
 and follow its project routing.
 
-For structural record changes, `repository`-namespace record edits, or
-authority, identifier, consumer-contract, routing, generated-interface, catalog,
-template, Agent Skill, `hk`, or control-governed workflow changes, invoke
-[record-system review](.github/skills/record-system-review/SKILL.md) directly.
+For structural record changes; edits to governance, work-authorization,
+shared-principle, or root instruction/workflow/template authorities
+(`docs/governance/**`, `docs/delivery-wave.md`, `schemas/governance/**`,
+`docs/engineering/engineering-principles.md`, `AGENTS.md`, `docs/AGENTS.md`,
+`CONTRIBUTING.md`, `.github/pull_request_template.md`); portal-routing,
+generated-interface ownership or `apm.lock.yaml` source/deployment provenance,
+`hk`, control-governed workflow, or control-governed Agent Skill changes;
+record edits altering authority ownership, established requirement identifiers,
+or consumer/immutability/license contracts; or claims to the Record-System
+Gate, invoke [record-system review](.github/skills/record-system-review/SKILL.md)
+directly.
 For `research` records, platform/support claims, fired mutable-source rechecks,
 formal or empirical evidence reports, or Wave grants/operations with external,
 paid, or credentialed empirical effects, invoke

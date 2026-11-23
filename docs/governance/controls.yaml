@@ -77,10 +77,12 @@ controls:
       - docs/governance/record-system.md#work-authorization-and-concurrency
       - docs/governance/record-system.md#enforcement
       - docs/governance/record-system.md#record-system-gate
-    invariant: Structural record changes, repository-namespace record edits, and authority, identifier,
-      consumer-contract, routing, generated-interface, catalog, template, Agent Skill, hk, or control-governed workflow
-      changes receive independent review of authority, repository-wide workflow precedence, actual consumers,
-      lifecycle, and policy-control agreement.
+    invariant: Structural record changes; edits to governance, work-authorization, shared-principle, or root
+      instruction/workflow/template authorities; portal-routing, generated-interface ownership or apm.lock.yaml
+      source/deployment provenance, hk, control-governed workflow, or control-governed Agent Skill changes; record edits
+      altering authority ownership, established requirement identifiers, or consumer/immutability/license contracts; and
+      claims to the Record-System Gate receive independent review of authority, repository-wide workflow precedence,
+      actual consumers, lifecycle, and policy-control agreement.
     runner: agent-skill
     implementation:
       kind: repository-path
