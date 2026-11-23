@@ -369,6 +369,68 @@ ends a grant. Git and the proposing PR retain the reason and history.
   matrix. Existing closed-campaign slots remain spent. Ordinary qualification
   does not revive native experimentation or live-operation grants.
 
+### Diagnose and repair Windows NuGet workflow caller liveness
+
+- **Work carrier:** the authorization PR proposing this entry and its linked
+  diagnosis and repair PRs. [PR #1673](https://github.com/hcoona/three/pull/1673)
+  retains the triggering ordinary Windows CI failures and independent
+  evidence-gap classification. The repository owner explicitly requested this
+  narrow shared-adapter diagnostic and repair advancement.
+- **Accepted inputs:** the [governance policy](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [engineering principles](engineering/engineering-principles.md), and
+  Workflow Delivery's [portal](../src/private/app/workflow-delivery/docs/README.md),
+  [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
+  [execution boundaries](../src/private/app/workflow-delivery/docs/design/execution-boundaries.md),
+  [.NET integration](../src/private/app/workflow-delivery/docs/integration/dotnet.md)
+  and [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md).
+  Retain the existing native-command contract, caller scenarios, failed source
+  epochs and evidence limits; an evidence gap is not an established source or
+  platform defect.
+- **Advancement and outcome:** add the minimum necessary timeout-observation
+  diagnostics at the shared `NativeProcess` boundary before cleanup, then use
+  ordinary Windows validation to localize and repair the four existing
+  `NuGetWorkflowCallerTests` failures: the Absent state row, the Exact and
+  Conflict verification rows, and unhandled-observation failure. Bind original
+  source/run/attempt and retained results before selecting a causal repair.
+  Start with watchdog/launch/cancellation-observation timing and root/exit-wait/
+  stdout/stderr completion states in the existing diagnostic result boundary,
+  not a child-process tracking service or independent full tracing channel.
+  A shared cancellation or reported await does not prove which boundary
+  stalled; a phase observation is not by itself a root-cause attribution.
+- **Owner decisions and boundaries:** preserve the real runner-image `pwsh`,
+  the existing four first steps, 30-second deadline, method-level scheduling,
+  assertions, serialized result contract, native execution and bounded cleanup
+  semantics, target frameworks and dependency selections. Component owners
+  select the proportionate causal repair under the engineering principles.
+  A required change to those contracts, trust/recovery boundaries or material
+  scope/feasibility tradeoff returns to the repository owner.
+- **Ordering and gates:** merge this entry before substantive work. Accept any
+  changed governing decision before its dependent implementation. Retain
+  independent engineering/OCR, record-system and research-evidence review as
+  applicable, independent material-finding classification, explicit-base
+  record checks, applicable HK, focused managed validation and ordinary CI on
+  the actual source. Keep development-only probes in outside-repository
+  temporary projects; design durable diagnostics and tests from the accepted
+  contracts rather than copying a development fixture.
+- **Acceptance and closure:** the four existing Windows caller scenarios and
+  their applicable ordinary checks pass with the preserved contracts. Keep
+  original failures, unproven causes and unrelated LiteAgensh uncertainty
+  distinct; successful qualification does not retroactively establish a cause
+  or broader platform support. Delete this entry when the bounded repair is
+  accepted or the owner stops it. Other active grants remain unchanged.
+- **Effects:** permit directly required shared-adapter, caller/test and owning
+  record changes, repository and read-only GitHub/public-source inspection,
+  locked local preparation and credential-free validation in owned state,
+  independent delegated review, and ordinary PR/check operations and their
+  normal CI.
+- **Exclusions:** no timeout increase, retry or blanket serialization, new
+  tracing service, unrelated process/handle/account inspection, shared-host
+  configuration change, provider substitution or dependency/runtime upgrade.
+  No live registry/model/service operation, paid native execution, publication,
+  release/proving or campaign dispatch, credential, authentication or access
+  change. Closed campaign limits and other grants are not reopened or enlarged.
+
 ### Update System.CommandLine for the three existing CLI consumers
 
 - **Work carrier:** the authorization PR proposing this entry and the existing
