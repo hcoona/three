@@ -66,6 +66,7 @@ public sealed class NativeCommandTests(TestContext context)
         Assert.AreEqual(NativeTermination.Cancelled, result.Termination);
         Assert.IsTrue(root.HasExited, "The owned root must exit before returning.");
         Assert.IsFalse(result.Succeeded);
+        Assert.DoesNotContain("cancellation-observed=", NativeDiagnostic.Describe(result));
     }
 
     [TestMethod]
@@ -84,6 +85,20 @@ public sealed class NativeCommandTests(TestContext context)
         Assert.Contains("3-second deadline", result.Error!);
         Assert.IsTrue(root.HasExited, "Timeout cleanup must join the owned root.");
         Assert.IsFalse(result.Succeeded);
+
+        string diagnostic = NativeDiagnostic.Describe(result);
+        Assert.Contains("monotonic ms", diagnostic);
+        foreach (string field in (string[])["watchdog-arm", "start-begin", "start-return",
+                     "cancellation-observed"])
+            Assert.MatchesRegex($@"\b{field}=\d+\b", diagnostic);
+        Assert.Contains("root=not-exited", diagnostic);
+        Assert.Contains("root-exit-code=not-applicable", diagnostic);
+        Assert.MatchesRegex(@"\bobserved-await=(exit-wait|stdout-drain|stderr-drain)\b",
+            diagnostic);
+        foreach (string wait in (string[])["exit-wait", "stdout-drain", "stderr-drain"])
+            Assert.MatchesRegex($@"\b{wait}=(succeeded|canceled|faulted|not-completed)\b",
+                diagnostic);
+        Assert.MatchesRegex(@"\b(exit-wait|stdout-drain|stderr-drain)=canceled\b", diagnostic);
     }
 
     // Each stream builds its own strict decoder, so both reject invalid UTF-8. The bound is

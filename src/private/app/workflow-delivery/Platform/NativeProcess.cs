@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Text;
 
@@ -17,6 +18,7 @@ internal static class NativeProcess
         if (token.IsCancellationRequested)
             return new(NativeTermination.Cancelled, null, "", "", 0, "Command cancelled.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        long watchdogArmMs = elapsed.ElapsedMilliseconds;
         timeout.CancelAfter(TimeSpan.FromSeconds(command.DeadlineSeconds));
         using var process = new Process
         {
@@ -39,9 +41,14 @@ internal static class NativeProcess
                 if (value is null) process.StartInfo.Environment.Remove(name);
                 else process.StartInfo.Environment[name] = value;
             }
+        long startBeginMs;
+        long startReturnMs;
         try
         {
-            if (!process.Start())
+            startBeginMs = elapsed.ElapsedMilliseconds;
+            bool started = process.Start();
+            startReturnMs = elapsed.ElapsedMilliseconds;
+            if (!started)
                 return new(NativeTermination.StartFailed, null, "", "",
                     elapsed.Elapsed.TotalSeconds, "Native command could not start.");
         }
@@ -56,11 +63,14 @@ internal static class NativeProcess
         using var error = StrictReader(process.StandardError.BaseStream);
         var stdout = new StringBuilder();
         var stderr = new StringBuilder();
-        Task[] tasks = [CaptureAsync(output, stdout, timeout.Token),
-            CaptureAsync(error, stderr, timeout.Token), process.WaitForExitAsync(timeout.Token)];
+        Task stdoutDrain = CaptureAsync(output, stdout, timeout.Token);
+        Task stderrDrain = CaptureAsync(error, stderr, timeout.Token);
+        Task exitWait = process.WaitForExitAsync(timeout.Token);
+        Task[] tasks = [stdoutDrain, stderrDrain, exitWait];
         NativeTermination termination = NativeTermination.Exited;
         string? failure = null;
         bool closingInput = false;
+        Task? awaited = null;
         try
         {
             if (command.CloseStandardInput)
@@ -72,17 +82,34 @@ internal static class NativeProcess
             var pending = new List<Task>(tasks);
             while (pending.Count != 0)
             {
-                Task completed = await Task.WhenAny(pending);
-                await completed;
-                pending.Remove(completed);
+                awaited = await Task.WhenAny(pending);
+                await awaited;
+                pending.Remove(awaited);
+                awaited = null;
             }
         }
         catch (OperationCanceledException)
         {
+            long cancellationObservedMs = elapsed.ElapsedMilliseconds;
             termination = token.IsCancellationRequested
                 ? NativeTermination.Cancelled : NativeTermination.TimedOut;
             failure = termination == NativeTermination.Cancelled ? "Command cancelled."
                 : $"Native command exceeded its {command.DeadlineSeconds}-second deadline.";
+            if (termination == NativeTermination.TimedOut)
+            {
+                string observedAwait = awaited == exitWait ? "exit-wait"
+                    : awaited == stdoutDrain ? "stdout-drain"
+                    : awaited == stderrDrain ? "stderr-drain" : "unobserved";
+                // These awaits share a token; the observed await does not identify a stall.
+                failure += " Pre-cleanup timeout observation (monotonic ms since stopwatch start): "
+                    + $"watchdog-arm={watchdogArmMs}, start-begin={startBeginMs}, "
+                    + $"start-return={startReturnMs}, "
+                    + $"cancellation-observed={cancellationObservedMs}; "
+                    + $"observed-await={observedAwait}; exit-wait={Completion(exitWait)}, "
+                    + $"stdout-drain={Completion(stdoutDrain)}, "
+                    + $"stderr-drain={Completion(stderrDrain)}; "
+                    + DescribeRoot(process) + ".";
+            }
         }
         catch (Exception exception) when (exception is IOException or DecoderFallbackException ||
             closingInput && exception is InvalidOperationException)
@@ -112,6 +139,39 @@ internal static class NativeProcess
         int? code = process.HasExited ? process.ExitCode : null;
         return new(termination, code, stdout.ToString(), stderr.ToString(),
             elapsed.Elapsed.TotalSeconds, failure);
+    }
+
+    private static string Completion(Task task) => task.Status switch
+    {
+        TaskStatus.RanToCompletion => "succeeded",
+        TaskStatus.Canceled => "canceled",
+        TaskStatus.Faulted => "faulted",
+        _ => "not-completed",
+    };
+
+    private static string DescribeRoot(Process process)
+    {
+        bool? exited = null;
+        int? exitCode = null;
+        try
+        {
+            exited = process.HasExited;
+            if (exited == true) exitCode = process.ExitCode;
+        }
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+        {
+            // A failed observation must not replace the timeout or prevent cleanup.
+        }
+
+        string state = exited switch
+        {
+            true => "exited",
+            false => "not-exited",
+            null => "unavailable",
+        };
+        string code = exited == false ? "not-applicable"
+            : exitCode?.ToString(CultureInfo.InvariantCulture) ?? "unavailable";
+        return $"root={state}, root-exit-code={code}";
     }
 
     private static StreamReader StrictReader(Stream stream) => new(stream,
