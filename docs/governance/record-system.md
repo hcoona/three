@@ -48,9 +48,11 @@ and review triggers are uniform across the repository; project records own
 domain behavior, external/paid or privacy risk boundaries, and criteria for
 accepting formal or release evidence, and must not impose workflow gates,
 `main`-merge preconditions, or run-count limits on local harmless development
-and debugging. Shared libraries and engineering tools can be projects; a
-package, language, test assembly, or build manifest alone does not define that
-boundary. The owner performs the source's owner and maintainer roles.
+and debugging. Shared libraries, engineering tools, and standalone skills can
+own component namespaces; a package, language, directory prefix, test assembly,
+or build manifest alone does not define that boundary, and test roots, generated
+deployment roots, or sub-concern folders do not form separate namespaces. The
+owner performs the source's owner and maintainer roles.
 
 The [family catalog](record-families.yaml) routes records and project namespaces;
 it is not a second workspace or product database. Create concern directories

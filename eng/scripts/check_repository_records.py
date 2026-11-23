@@ -831,8 +831,8 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
             continue
         if namespace != "repository" and (
             not safe_path(namespace)
-            or not namespace.startswith("src/")
             or not current.directory(namespace)
+            or current.symlink_ancestor(namespace)
         ):
             error("invalid-namespace", path, namespace)
         selected = [p for p in current.entries if matches(p, path)]
