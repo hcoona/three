@@ -109,8 +109,8 @@ importers:
         specifier: 8.1.2
         version: 8.1.2(chokidar@3.6.0)
       markdownlint-cli2:
-        specifier: 0.24.1
-        version: 0.24.1
+        specifier: 0.24.2
+        version: 0.24.2
       nerdbank-gitversioning:
         specifier: ^3.7.91
         version: 3.10.94
@@ -2009,19 +2009,10 @@ packages:
     peerDependencies:
       markdownlint-cli2: '>=0.0.4'
 
-  markdownlint-cli2@0.24.1:
-    resolution: {integrity: sha512-nLhes/MIPJQLm+Gmh+3jQEnwMOaalaN0wfCD2qz1247zNZ7R3r2WDHJB191x4hcy6soKAUTybp1bFK7aJGw/WA==}
-    engines: {node: '>=22'}
-    hasBin: true
-
   markdownlint-cli2@0.24.2:
     resolution: {integrity: sha512-bgxzhJkgR7t2puRgePHZYVqKzC90etPzxOC+9ZNATjAVJB2zs7EAolfF1inVsrkgYN+ykVIHIxk0WypG2VVLZA==}
     engines: {node: '>=22'}
     hasBin: true
-
-  markdownlint@0.42.1:
-    resolution: {integrity: sha512-Otolm9JX12iO2NG5cetlKfzGygpiLSlHuqXKxoT6HGhN5HtbxprJPicKZqqCQd88qOvUi/TEs3o1AmcYioVscA==}
-    engines: {node: '>=22'}
 
   markdownlint@0.42.2:
     resolution: {integrity: sha512-IhlUBVT+kHBX+u3EjEsQdFB4q0Rl0Hx+JsGsvVkonNut1/n8Kv8yXzwk0pazC9uF35JlwMZ+LxV4CQ9YNAbG8w==}
@@ -4567,27 +4558,9 @@ snapshots:
       punycode.js: 2.3.1
       uc.micro: 3.0.0
 
-  markdownlint-cli2-formatter-default@0.0.6(markdownlint-cli2@0.24.1):
-    dependencies:
-      markdownlint-cli2: 0.24.1
-
   markdownlint-cli2-formatter-default@0.0.6(markdownlint-cli2@0.24.2):
     dependencies:
       markdownlint-cli2: 0.24.2
-
-  markdownlint-cli2@0.24.1:
-    dependencies:
-      globby: 16.2.4
-      js-yaml: 5.5.0
-      jsonc-parser: 3.3.1
-      jsonpointer: 5.0.1
-      markdown-it: 15.0.3
-      markdownlint: 0.42.1
-      markdownlint-cli2-formatter-default: 0.0.6(markdownlint-cli2@0.24.1)
-      micromatch: 4.0.8
-      smol-toml: 1.9.1
-    transitivePeerDependencies:
-      - supports-color
 
   markdownlint-cli2@0.24.2:
     dependencies:
@@ -4600,21 +4573,6 @@ snapshots:
       markdownlint-cli2-formatter-default: 0.0.6(markdownlint-cli2@0.24.2)
       micromatch: 4.0.8
       smol-toml: 1.9.1
-    transitivePeerDependencies:
-      - supports-color
-
-  markdownlint@0.42.1:
-    dependencies:
-      micromark: 4.0.3
-      micromark-core-commonmark: 2.0.4
-      micromark-extension-directive: 4.0.0
-      micromark-extension-gfm-autolink-literal: 2.1.0
-      micromark-extension-gfm-footnote: 2.1.0
-      micromark-extension-gfm-table: 2.1.2
-      micromark-extension-math: 3.1.0
-      micromark-util-types: 2.0.3
-      re2js: 2.9.1
-      string-width: 8.3.0
     transitivePeerDependencies:
       - supports-color
 
