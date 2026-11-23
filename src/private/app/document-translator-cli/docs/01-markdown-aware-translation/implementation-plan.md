@@ -758,24 +758,21 @@ Recommended groups:
 | Validation agent      | Phase 7      | Structural fingerprints, protected-byte validation, encoding preservation, and negative tests. |
 | Integration agent     | Phases 8-9   | End-to-end command orchestration, fixture matrix, error mapping, and validation command runs.  |
 
-Coordination rules:
+Component and scope boundaries:
 
-1. Merge agents only through narrow, reviewed seams: `TranslationOptions`,
+1. Connect component groups through narrow seams: `TranslationOptions`,
    `ITextSegmentTranslator`, `MarkdownTranslationSegment`,
    `TextSegmentTranslationRequest`, `TextRange`, `ProtectedSlice`, patch mapping
    metadata, and typed Markdown failure results.
-2. Do not allow multiple agents to edit the same component family concurrently
-   after implementation begins.
-3. Require each agent to add or update tests before handing off.
-4. Require each agent to document any requirement ambiguity in the pull request
-   discussion instead of silently choosing a broader behavior.
-5. Stop implementation if a proposed change conflicts with the frozen
-   requirements or high-level design; update the design documents first only
-   after explicit approval.
+2. Substantive product or scope changes beyond the accepted requirements and
+   high-level design require repository-owner approval; within authorized work,
+   owning requirement and design records and implementation may evolve
+   concurrently so long as each merge into `main` stays self-consistent
+   ([work authorization and concurrency](../../../../../../docs/governance/record-system.md#work-authorization-and-concurrency)).
 
 ## 15. Review and Iteration Gates
 
-Use these review gates before implementation is accepted:
+Use these merge-time domain review criteria before changes are accepted:
 
 1. **Requirements traceability review**: verify every functional requirement,
    failure semantics, non-functional requirement, acceptance criterion, and
@@ -787,15 +784,9 @@ Use these review gates before implementation is accepted:
 3. **Adversarial safety review**: actively search for paths that could corrupt
    Markdown, translate protected bytes, bypass validation, write partial output,
    leak content or secrets, or silently fall back to legacy translation.
-4. **Implementation sequencing review**: verify the phases are ordered so
-   baseline behavior is protected before refactoring, shared models exist before
-   consumers, and integration happens only after safety checks are testable.
-5. **Writing quality review**: verify the document uses American English,
-   professional tone, precise engineering language, and actionable instructions
-   for senior AI coding agents.
 
 Finding classification, disposition, and review evidence follow the
-[repository record system](../../../../../../docs/governance/record-system.md).
+[repository record system](../../../../../../docs/governance/record-system.md#enforcement).
 The checks above retain their product-specific purpose; this plan does not
 define a separate review-iteration or acceptance policy.
 

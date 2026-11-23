@@ -10,7 +10,8 @@ publication behavior or permission to reopen a completed campaign.
 
 Read the system context, then the container view, then
 [middle-level components and scope routes](middle-level-design.md).
-The [Wave](../../../../../docs/delivery-wave.md) owns work authorization;
+The [record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+and [Wave](../../../../../docs/delivery-wave.md) govern work authorization;
 the [handoff](agent-handoff.md) retains operational limits. Historical records
 keep their original scope under the
 [historical source rule](README.md#historical-source-rule).

@@ -348,5 +348,6 @@ operation; a display name or latest-artifact search is not a replacement.
 Historical observations retain their original revision, attempt, scope,
 counterexamples and failures. No live campaign, postmerge test, authentication,
 Environment, publisher-registration or access change follows from source
-acceptance. The [Wave](../../../../docs/delivery-wave.md) owns current work
-authorization; further substantive work requires an accepted entry.
+acceptance. Work authorization follows the
+[repository record policy](../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+and accepted [Delivery Wave](../../../../docs/delivery-wave.md).

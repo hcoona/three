@@ -368,8 +368,8 @@ and outside all repository worktrees, execute formal acceptance runs in order:
    classify every counted difference and failure type under the pre-posted
    [source triage method](https://github.com/hcoona/three/issues/1488#issuecomment-6721091552)
    with explicit evidence labels, complete independent `research-evidence-review`
-   and GOV-011 triage, use local `harness view` for the owner's spot-check, and
-   post sanitized results to the governing Issue.
+   and applicable GOV-011 finding disposition, use local `harness view` for the
+   owner's spot-check, and post sanitized results to the governing Issue.
 7. **Complete auxiliary validation-basis protocols when required:** execute
    `replay-req012 --manifest` and `tokenizer-counts` on the completed formal run
    per [Validation basis](requirements.md#validation-basis)

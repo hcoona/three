@@ -115,10 +115,11 @@ Git-free original-archive consumption remain unchanged.
 
 This is source evidence and a correction inference, separate from the later
 exact Linux observation linked above. The selected integration follows the
-current Python package contract. Historical package lifetimes are spent or
-expired; any further native experiment requires its own accepted exact subject,
-protocol, readiness and effects authorization. No remaining lifetime or
-historical preparation reserve supplies current permission.
+current Python package contract. Historical package lifetimes and preparation
+reserves are spent or expired; routine checks, new native experiments and work
+authorization follow the
+[qualification boundary below](#qualification-and-recheck-boundary),
+[workflows][record-workflows] and [the repository record policy][record-auth].
 
 ## Native Original-Archive Build Identity
 
@@ -180,11 +181,12 @@ below, including the absent `.gitignore` marker and equal wheel, sdist and
 rebuilt-wheel versions. Changed backend/source shapes or shared preparation and
 consumer requirements are evaluated by their integration author and checked by
 independent engineering/evidence review. Missing necessary native capability
-stops for owner disposition. Exact
-helper/tool/runtime/Git identities, finite command/diagnostic/time/state bounds,
-public-only dependency/cache effects, owned cleanup and original evidence must
-be accepted in the concrete protocol before execution. Completed graph and
-enrichment campaigns remain stopped. Windows remains the owner's feasibility
+stops for owner disposition. Routine contract tests below, new
+native-qualification experiments (helper/tool/runtime/Git identities, finite
+bounds, public-only dependency/cache effects, owned cleanup and original
+evidence) and work authorization follow [workflows][record-workflows] and
+[the repository record policy][record-auth]. Completed graph, enrichment and
+package campaigns remain stopped. Windows remains the owner's feasibility
 assumption. No registry publication, dispatch or credentials/access/Environment
 operation follows from this design evidence.
 
@@ -228,3 +230,6 @@ qualifies only its recorded native output adoption and both original consumers, 
 separately classified audit-method exception retained. One package lifetime was spent
 and both unused slots expired. Existing callers, root pytest and Release retain
 separate qualification requirements.
+
+[record-auth]: ../../../../../../docs/governance/record-system.md#work-authorization-and-concurrency
+[record-workflows]: ../../../../../../docs/governance/record-system.md#workflows

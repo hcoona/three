@@ -232,8 +232,9 @@ the locked pytest: the early hook returns the consumed fields without importing 
 conftest or collecting a test, ambient `PYTEST_ADDOPTS`/`PYTEST_PLUGINS` do not
 reach it, a `pythonpath` is reported for rejection, and a missing required plugin
 fails the query.
-Actual complete fact/caller qualification still needs its separately accepted
-concrete protocol and complete operation/ownership/check mapping.
+Complete fact/caller qualification belongs to the
+[Python integration contract](../integration/python.md#native-python-ci-group)
+rather than this source basis.
 
 ## PyPA Dependency Pin Recheck
 
@@ -265,8 +266,9 @@ establishes neither universal containment nor zero egress.
 
 The first accepted success stopped that campaign and expired both unused
 diagnostics. Retained fixtures replay application adaptation, not new native
-qualification. Further experiments require their own accepted protocol and
-effects authorization.
+qualification; routine contract checks, new empirical experiments and work
+authorization follow [workflows][record-workflows] and
+[the repository record policy][record-auth].
 
 ## Later Evidence and Recheck
 
@@ -293,9 +295,10 @@ caller cutover were pending at that time. They are now owned by the Python integ
 [package execution](../integration/python.md#native-python-package-execution)
 contracts, with their own qualification.
 
-If further native execution is needed, its exact remaining subject first needs
-a concrete accepted isolated protocol. Reuse the retained primitive evidence
-for its qualified boundary; do not repeat it as a complete-reader test.
+Reuse the retained primitive evidence for its qualified boundary rather than
+repeating that closed campaign as a complete-reader test; routine contract
+checks, new native experiments and authorization follow
+[workflows][record-workflows] and [the record policy][record-auth].
 
 The metadata, passive-extraction and identity facts these findings rely on are
 guarded by `PythonNativeContractTests` and `PythonPreparationNativeTests` in the
@@ -340,3 +343,5 @@ findings separate from later operation observations and support claims.
 [pypa-helper-pin]: https://github.com/hcoona/three/blob/8d2ed8ed86ebea8df509a0a2d78b0671ecb7a1b8/pyproject.toml#L21
 [pypa-build-wheel]: https://files.pythonhosted.org/packages/ad/9b/9fb3585dabcd73a1b2a6267f63f62649347c9e6d072c9fde365b105abb2c/build-1.6.1-py3-none-any.whl
 [uv-0131]: https://github.com/astral-sh/uv/tree/62faed3351cfee2121b3c28b937b1f4b93233a93
+[record-auth]: ../../../../../../docs/governance/record-system.md#work-authorization-and-concurrency
+[record-workflows]: ../../../../../../docs/governance/record-system.md#workflows

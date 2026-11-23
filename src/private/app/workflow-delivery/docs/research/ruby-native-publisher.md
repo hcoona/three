@@ -144,10 +144,11 @@ selects owned state and native API composition within those limits.
 
 The original source responses, retrieval requests, hashes and independent source
 assessments remain in the delivery work carrier. They establish the stated
-source behavior only. Concrete integration acceptance and credential-free local
-tests/ordinary CI must precede implementation/caller delivery claims. New live
-feed, authentication, publisher configuration or publication work requires its
-own bounded authorization; this research reopens no completed campaign.
+source behavior only. Implementation or caller delivery claims require self-consistent concrete
+integration contracts, credential-free local tests and ordinary CI at merge.
+New live feed, authentication, publisher configuration or publication work
+requires its own bounded authorization; this research reopens no completed
+campaign.
 
 The locked Ruby and its bundled RubyGems are guarded by contract tests instead of a
 recheck. `RubyNativePublisherContractTests` runs the production
@@ -221,10 +222,11 @@ Before implementation or admission relies on mutable destination support,
 authentication, publisher behavior or registry APIs, the implementer rechecks
 the official guide; an independent evidence reviewer assesses material changes.
 Changed service behavior, ownership or publication tuple also triggers that
-check. The next Wave selecting Ruby implementation or operations is the fallback
-review event. Retain results in the Issue/PR and update affected current
-conclusions; pinned source identity does not establish continuing applicability
-or authorize new service operations.
+check. Review of the next PR or Wave entry selecting dependent Ruby
+implementation or operations is the fallback review event. Retain results in
+the Issue/PR and keep affected current conclusions self-consistent at merge and
+before any authorized live operation; pinned source identity does not establish
+continuing applicability or authorize new service operations.
 
 [push]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/commands/push_command.rb
 [gemcutter]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/gemcutter_utilities.rb

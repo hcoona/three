@@ -213,6 +213,7 @@ deletion and no automatic push/publication occurs.
 The implementation/acceptance PR retains exact identities, environment,
 commands/results, sanitized observations and counterexamples, actual reported
 credits/overshoot, known limitations, independent domain/evidence review,
-finding triage and owner acceptance. Never upload tokens, authentication
-artifacts, current account usage/balance, private paths or raw agent transcripts.
-Passing establishes only the tested Windows Copilot-backed boundary.
+applicable GOV-011 finding disposition and owner acceptance. Never upload
+tokens, authentication artifacts, current account usage/balance, private paths
+or raw agent transcripts. Passing establishes only the tested Windows
+Copilot-backed boundary.
