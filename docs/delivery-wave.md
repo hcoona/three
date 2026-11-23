@@ -925,3 +925,107 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
       implementation.
     - No release, proving or campaign dispatch, publication, Environment,
       account, publisher or upstream feature request.
+
+### Decouple record-system-review triggers from namespace and domain skills
+
+- **Work carrier:** [Issue #1738](https://github.com/hcoona/three/issues/1738)
+  and its linked authorization and implementation pull requests.
+- **Accepted inputs:** the [governance policy](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [checker contract](governance/checker-contract.md),
+  [family catalog](governance/record-families.yaml),
+  [control catalog](governance/controls.yaml),
+  [documentation portal](README.md),
+  [engineering principles](engineering/engineering-principles.md), root
+  [`AGENTS.md`](../AGENTS.md), [`docs/AGENTS.md`](AGENTS.md),
+  [`CONTRIBUTING.md`](../CONTRIBUTING.md),
+  [`.github/pull_request_template.md`](../.github/pull_request_template.md),
+  [record-system review](../.github/skills/record-system-review/SKILL.md) and
+  its `evals/` fixtures,
+  [`eng/scripts/check_repository_records.py`](../eng/scripts/check_repository_records.py),
+  [`tests/eng/test_repository_records.py`](../tests/eng/test_repository_records.py),
+  the [xUnit-to-MSTest migration skill](../.apm/skills/migrate-xunit-to-mstest/SKILL.md),
+  and [`apm.lock.yaml`](../apm.lock.yaml).
+- **Owner decisions and boundaries:**
+    - Trigger `record-system-review` by governance, topology, and contract
+      responsibility rather than literal `namespace: repository` or blanket
+      `Agent Skill` packaging
+      ([GOV-001](governance/governance-system.md#gov-001-consumer-backed-governance),
+      [GOV-003](governance/governance-system.md#gov-003-minimum-sufficient-mechanism),
+      [GOV-005](governance/governance-system.md#gov-005-controls-implement-policy)):
+      scope it to structural record changes (additions, moves, splits,
+      retirements/deletions, and catalog rebindings); repository governance,
+      work-authorization, shared-principle, and root instruction/workflow
+      authorities (`docs/governance/**`, `docs/delivery-wave.md`,
+      `schemas/governance/**`, `docs/engineering/engineering-principles.md`,
+      `AGENTS.md`, `docs/AGENTS.md`, `CONTRIBUTING.md`, and
+      `.github/pull_request_template.md`); portal routing, generated-interface
+      ownership or `apm.lock.yaml` source/deployment provenance (excluding
+      content and hash regeneration of an already-bound local skill whose
+      source mapping, owners, and deployed file set are unchanged), `hk`,
+      control-governed workflows, and control-governed Agent Skills (skills
+      implementing controls in `docs/governance/controls.yaml`, including their
+      `evals/`, or repository governance routing, rather than domain/coding
+      skills); and any record edit—inside or outside `src/`—that alters
+      authority ownership, established requirement identifiers, or
+      consumer/immutability/license contracts, or claims the Record-System
+      Gate. Add no extra classification fields to `record-families.yaml` or
+      `controls.yaml`, and keep `mise run records:check` covering in-place
+      edits across all maintained records, portals, skills, `apm.lock.yaml`,
+      and catalogs.
+    - Replace the `namespace.startswith("src/")` restriction in
+      `eng/scripts/check_repository_records.py` (and align
+      `docs/governance/checker-contract.md` and
+      [project namespaces](governance/record-system.md#project-namespaces) as
+      needed) with the deterministic path and snapshot invariant that a
+      non-`repository` binding `namespace` is a safe, existing, direct
+      (non-symlink) repository directory
+      ([GOV-004](governance/governance-system.md#gov-004-preserve-human-judgment),
+      [GOV-005](governance/governance-system.md#gov-005-controls-implement-policy)),
+      without hardcoded path-prefix allowlists or exclusion lists; keep
+      semantic component-boundary review (`repository` versus an owning
+      project, engineering tool, or standalone skill directory) in
+      `record-system.md#project-namespaces` and `record-system-review`.
+    - Rebind `xunit-to-mstest-guidance-source` in
+      `docs/governance/record-families.yaml` from `namespace: repository` to
+      `namespace: .apm/skills/migrate-xunit-to-mstest`, while retaining
+      `public-landing` (`README.md`) and `shared-engineering`
+      (`docs/engineering/*.md`) in `namespace: repository` as repository-wide
+      records whose routine in-place maintenance no longer triggers
+      `record-system-review`.
+- **Advancement and outcome:** atomically update `AGENTS.md`,
+  `docs/governance/record-system.md` (if needed),
+  `docs/governance/checker-contract.md`, `docs/governance/controls.yaml`,
+  `docs/governance/record-families.yaml`,
+  `.github/skills/record-system-review/` (including affected `evals/`),
+  `eng/scripts/check_repository_records.py`, and focused namespace tests in
+  `tests/eng/test_repository_records.py`, closing this entry atomically in the
+  implementation pull request.
+- **Ordering and gates:** merge this authorization before substantive edits.
+  Review the implementation pull request against the accepted target-branch
+  policies, catalogs, and `record-system-review` Skill under
+  [changing rules](governance/governance-system.md#changing-rules), retaining
+  atomic alignment
+  ([GOV-006](governance/governance-system.md#gov-006-atomic-governance-changes)),
+  staged CI-profile HK checks, explicit-base `records:check`,
+  `mise run records:test`, independent `record-system-review`, shared
+  engineering guidance for the checker change, `GOV-011` finding disposition,
+  ordinary CI (`Validate`), and explicit repository-owner disposition
+  (`record-system-gate`).
+- **Acceptance and closure:** affected policies, interfaces, catalogs,
+  `record-system-review` Skill/evals, and checker implementation/tests agree
+  atomically without new catalog metadata or path-prefix allowlists/blacklists;
+  `xunit-to-mstest-guidance-source` uses
+  `namespace: .apm/skills/migrate-xunit-to-mstest`; `mise run records:test`,
+  zero-diagnostic explicit-base `records:check`, HK, and `Validate` pass; and
+  independent review and owner disposition are complete. Delete this entry
+  atomically on acceptance or owner stop.
+- **Exclusions:**
+    - No edits to `GOV-001` through `GOV-011` in
+      `docs/governance/governance-system.md` or
+      `docs/engineering/engineering-principles.md`.
+    - No changes to `schemas/governance/*.schema.json`.
+    - No `#1303` snapshot-output, JSON constant, or unchecked-reference changes.
+    - No workflow, ruleset, dependency, lockfile, `apm.yml`, `apm.lock.yaml`,
+      manual `.agents/skills/` / `.github/agents/`, or external, paid, or
+      credentialed changes.
