@@ -190,24 +190,34 @@ def begin_run(
     confinement: Confinement,
     plan: RunPlan,
     source: Mapping[str, object],
+    *,
+    allow_dirty: bool = False,
 ) -> None:
     """Freeze the plan and source state in the run record, or check them.
 
-    A resumed run must have a clean project tree, the same plan and gold
-    hashes, and the frozen converter/harness code tree (falling back to
-    ``commit`` only for run records written before ``tree`` existed).
+    Formal runs require a clean project tree; a fresh ``pilot`` run may pass
+    ``allow_dirty=True`` and records ``dirty: True`` in ``run.json``. Resuming
+    an existing run always requires clean, matching code trees and the same
+    plan and gold hashes (falling back to ``commit`` only for run records
+    written before ``tree`` existed).
 
     Raises:
-        RecordError: If the project tree is dirty or a resumed run differs
-            from the frozen one.
+        RecordError: If a clean project tree is required and the tree is dirty,
+            if a dirty run is resumed, or if a resumed run differs from the
+            frozen one.
     """
-    if source.get("dirty"):
+    if source.get("dirty") and not allow_dirty:
         message = "the project source has uncommitted changes"
         raise RecordError(message)
     record = load_run_record(confinement)
     frozen = plan.frozen()
     existing = record.get("run")
     if isinstance(existing, dict):
+        if existing.get("dirty") or source.get("dirty"):
+            message = (
+                "a dirty pilot run cannot be resumed; start a fresh --run-dir"
+            )
+            raise RecordError(message)
         if existing.get("plan") != frozen:
             message = "the run plan or a gold hash differs from the frozen run"
             raise RecordError(message)

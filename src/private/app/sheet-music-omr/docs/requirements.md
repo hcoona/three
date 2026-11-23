@@ -133,19 +133,23 @@ implement the grammar and semantic rules of the format.
 
 ### OMR-REQ-009: Comparison protocol
 
-Comparing a source score with its round trip shall follow a protocol that is
-accepted under research-evidence review before it executes. The protocol shall
-fix the in-repository comparison dependencies and their versions, bound external
-desktop score editors by major version while recording each run's exact version
-string and executable hash as provenance, define an in-scope element and
-_identical_, state the denominator of every percentage and say how generated
-identifiers are treated, since an identifier difference alone is not a content
-difference. It
+Comparing a source score with its round trip for formal acceptance evidence
+shall follow a protocol accepted under research-evidence review before that
+formal acceptance run executes (local in-scope unit tests and repository- or
+synthetic-fixture debugging without network downloads or private-gold access
+under OMR-REQ-015 remain unconstrained by pre-execution protocol merge under
+the
+[repository record policy](../../../../../docs/governance/record-system.md#project-namespaces)).
+The protocol shall fix the in-repository comparison dependencies and their
+versions, bound external desktop score editors by major version while recording
+each run's exact version string and executable hash as provenance, define an
+in-scope element and _identical_, state the denominator of every percentage and
+say how generated identifiers are treated, since an identifier difference alone
+is not a content difference. It
 shall assign every difference to exactly one of the 27 content categories or to
 layout. A difference that cannot be assigned is a protocol defect, never
 agreement. Missing content and extra content both count as differences.
-The [comparison protocol](comparison-protocol.md) is that protocol once it is
-accepted.
+The [comparison protocol](comparison-protocol.md) is that protocol.
 
 ## Acceptance
 
@@ -253,17 +257,22 @@ content nor unsupported content. A reverse converter ignores them.
 
 The evidence has three parts:
 
-- Protocols. Every experiment or runtime observation (including the comparison
-  protocol, tokenizer counts, MuseScore import checks and any capability
-  mapping that uses tool or runtime observations) needs a protocol accepted
-  under research-evidence review before execution. A capability mapping done
-  solely by comparing accepted project requirements and format records with
-  published standards, without executing software or measuring data/model
-  outputs, is source-based desk research and does not need an experiment
-  protocol. It still needs recoverable source citations and independent
-  research-evidence review before serving as a gate result. A protocol names
-  its exact subject, environment, isolation, expected observations, evidence
-  limits, bounds and cleanup.
+- Protocols. Formal acceptance runs and empirical experiments with external or
+  private-gold effects (including formal comparison runs, tokenizer-count
+  fetches, formal MuseScore import checks and any capability mapping reported
+  from empirical corpus/gold runs) require a protocol accepted under
+  research-evidence review before execution; routine in-scope local unit tests
+  and repository- or synthetic-fixture debugging without network downloads or
+  private-gold access under OMR-REQ-015 require no pre-execution protocol merge
+  or attempt quota
+  ([project namespaces](../../../../../docs/governance/record-system.md#project-namespaces)).
+  A capability mapping done solely by comparing accepted project requirements
+  and format records with published standards, without executing software or
+  measuring data/model outputs, is source-based desk research and does not need
+  an experiment protocol. It still needs recoverable source citations and
+  independent research-evidence review before serving as a gate result. A
+  protocol names its exact subject, environment, isolation, expected
+  observations, evidence limits, bounds and cleanup.
 - Inputs. Accepted private gold pieces stay private and are counted only in
   aggregate and by anonymized batch numbers. Public corpus inputs and committed
   fixtures need a license that permits the use and a recorded provenance.

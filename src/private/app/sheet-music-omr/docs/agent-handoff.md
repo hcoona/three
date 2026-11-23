@@ -9,18 +9,23 @@ format specification, comparison protocol, or work-authorization file. The
 [project portal](../README.md) owns purpose, user context, command-line usage,
 and top-level record routing.
 
-The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) is the sole
-positive work authority ([Issue #686](https://github.com/hcoona/three/issues/686)
+The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) governs
+feature/capability advancements, architectural or public-contract changes, and
+external/privacy effects ([Issue #686](https://github.com/hcoona/three/issues/686)
 for sheet-music recognition design and planning; the W1 text-representation
 grant for [Issue #1488](https://github.com/hcoona/three/issues/1488) was
 retired after owner acceptance of `formal-5` in
-[#1488 comment 7083509900](https://github.com/hcoona/three/issues/1488#issuecomment-7083509900)).
-Any implementation, experiment, runtime execution, tool installation, or dataset
-download beyond `#686`'s documentation and planning scope requires its own
-accepted Delivery Wave entry; evidence acceptance does not retain or revive W1's
-spent execution grant. A pull request, local run record, or issue comment cannot
-enlarge authorization or waive an accepted gate. Chronological progress,
-reviews, and findings remain in those Issues and their linked pull requests.
+[#1488 comment 7083509900](https://github.com/hcoona/three/issues/1488#issuecomment-7083509900)),
+while contract-preserving routine maintenance without new external, paid, or
+privacy effects follows the
+[record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency).
+Any new workstream/feature implementation, empirical experiment, external or
+host tool installation outside locked repository toolchains, dataset download,
+or private-gold execution beyond `#686` requires its own accepted Delivery Wave
+entry; evidence acceptance does not retain or revive W1's spent execution grant. A pull request, local run record, or issue
+comment cannot enlarge authorization or waive an accepted gate. Chronological
+progress, reviews, and findings remain in those Issues and their linked pull
+requests.
 
 ## Change routing
 
@@ -246,9 +251,10 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
       and [stop conditions](comparison-protocol.md#stop-conditions), and
       follow [Validation basis](requirements.md#validation-basis) for
       `replay-req012` and `tokenizer-counts`;
-    - run formal corpus/gold execution, `replay-req012`, and `tokenizer-counts`
-      only from a clean `origin/main` checkout after any newly authorized
-      protocol and converter changes are merged.
+    - for formal acceptance evidence, run corpus/gold execution,
+      `replay-req012`, and `tokenizer-counts` from a clean `origin/main`
+      checkout after any newly authorized protocol and converter changes are
+      merged.
 
 ## External state, privacy and worktree hygiene
 
@@ -266,7 +272,9 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   `download`.
 - **Code-tree and MuseScore provenance binding:** `harness/cli.py:_require_preflight`
   and `harness/run.py:begin_run` enforce the clean project code-tree (`CODE_PATHS`)
-  and per-run MuseScore identity invariants defined in
+  on formal runs (`pilot` permits uncommitted edits in a fresh `--run-dir`,
+  recording `dirty: true` provenance) and per-run MuseScore identity invariants
+  defined in
   [Tools and environment](comparison-protocol.md#tools-and-environment) and
   [Execution and bounds](comparison-protocol.md#execution-and-bounds). Start
   any newly authorized formal run in a fresh external run directory while
@@ -287,25 +295,33 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   `TextScore2.csproj` normalizer prototype (superseded by the Python package in
   `#1570`–`#1609`).
 
-## Execution gates for future authorized harness runs
+## Formal acceptance gates for future authorized harness runs
 
-Every `python -m sheet_music_omr.harness` subcommand (`preflight`, `download`,
-`select`, `run`, `report`, `replay-req012`, `tokenizer-counts`, `view`, and
-`pilot`) creates or locks external `RUN`/`DOWNLOADS` state or invokes host
-`MuseScore 4`, network, or private-gold effects; invoke any harness subcommand
-only when a new accepted [Delivery Wave](../../../../../docs/delivery-wave.md)
-entry explicitly authorizes those effects (`#1488`'s W1 grant is closed; only
-locked in-workspace checks—`pytest`, `ruff`, and `pyrefly`—remain ordinary local
-package checks when modifying authorized code). With out-of-repository `GOLD` (`--gold-status` and `--gold-cache`), `DOWNLOADS`
+`#1488`'s W1 grant is closed; `#686` authorizes design and planning, while
+contract-preserving routine maintenance without new external, paid, or privacy
+effects follows the
+[record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency).
+Within authorized `sheet-music-omr` code work, local harmless debugging on
+working branches—including `pytest`, `ruff`, `pyrefly`, `harness view` on
+scratch runs, and `harness pilot` on repository/synthetic fixtures in an
+out-of-worktree temporary directory without network downloads or private-gold
+access—runs freely without `origin/main`-merge preconditions or attempt quotas
+([project namespaces](../../../../../docs/governance/record-system.md#project-namespaces)).
+Dataset downloads, private-gold access
+([OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance)), and
+formal acceptance runs (`preflight`, `download`, `select`, `run`, `report`,
+`replay-req012`, and `tokenizer-counts` reported as acceptance evidence)
+require explicit Wave authorization for those external/privacy effects. With
+out-of-repository `GOLD` (`--gold-status` and `--gold-cache`), `DOWNLOADS`
 (carrying `download-ledger.json`, or initialized with `--prior-total
 2350276855`), and the `OMR-REQ-012` desk-study archive staged outside OneDrive
-and outside all repository worktrees, execute these steps in order:
+and outside all repository worktrees, execute formal acceptance runs in order:
 
-1. **Confirm clean code baseline and pre-selection gates on `main`:** ensure any
-   newly authorized record, protocol, converter, or comparator updates are
-   accepted and merged on `origin/main` and `src/private/app/sheet-music-omr/`
-   has a clean code tree. Never bypass a stop by editing run artifacts or
-   skipping files manually.
+1. **Confirm clean code baseline on `main` for formal acceptance:** ensure the
+   authorized record, protocol, converter, and comparator updates being
+   evaluated for formal acceptance are merged on `origin/main` and
+   `src/private/app/sheet-music-omr/` has a clean code tree. Never bypass a
+   stop by editing run artifacts or skipping files manually.
 2. **Verify host MuseScore 4 availability (Windows or WSL2):** confirm Windows
    host `MuseScore4.exe` (`4.x`) is reachable (default
    `C:\Program Files\MuseScore 4\bin\MuseScore4.exe` or

@@ -279,14 +279,17 @@ current bounded work. It does not turn a proposed design/protocol into an
 accepted prerequisite or runtime evidence, and a completed migration grant
 does not authorize later refinement.
 
-Before a slice starts, accept its relevant requirements, architecture/contracts,
-validation basis and unsupported cases. Resolve concrete native/MCP package/framing
-and operation-schema choices in the applicable design change before dependent
-implementation, without inventing a generic adapter/plugin framework.
+Owning requirements, architecture/contracts, validation criteria, unsupported
+cases, and concrete native/MCP package/framing or operation-schema choices may
+evolve concurrently with implementation in one branch or across a stacked PR
+chain so long as each merge into `main` stays self-consistent, without
+inventing a generic adapter/plugin framework.
 
 The useful implementation boundaries are local state/collaboration/MCP;
-Git/check/integration; and native host/lifecycle/recovery. They may overlap only
-where accepted dependencies permit. Track actual tasks, dependencies, progress
+Git/check/integration; and native host/lifecycle/recovery. Independent slices
+may proceed concurrently unless they modify the same canonical authority under
+conflicting assumptions or execute paid/external effects gated on an accepted
+protocol. Track actual tasks, dependencies, progress
 and review results in [Issue #1542](https://github.com/hcoona/three/issues/1542)
 for refinement; [Issue #1526](https://github.com/hcoona/three/issues/1526)
 retains the original implementation and acceptance,
@@ -350,10 +353,10 @@ need a new approval for each repetition.
 ## Acceptance carrier
 
 Each implementation PR retains the exact reviewed base/candidate, actual
-commands and results, record/HK checks, source rechecks, independent applicable
-engineering/record/evidence review, independent finding classification and any
-owner dispositions. Refresh affected evidence when the candidate or relied-on
-authority changes.
+commands and results, applicable record/HK checks and source rechecks,
+independent applicable engineering/record/evidence review, `GOV-011` finding
+disposition and any owner dispositions. Refresh affected evidence when the
+candidate or relied-on authority changes.
 
 The acceptance PR links the scenario results, reproducible environment and
 native observation evidence. It names unresolved/unsupported behavior and

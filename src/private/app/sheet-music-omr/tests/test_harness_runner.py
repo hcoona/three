@@ -260,6 +260,41 @@ def test_pilot_runs_every_phase_and_resumes(
     assert "Y:\n  m " in shown
 
 
+def test_pilot_allows_dirty_source_in_fresh_run_dir(
+    roots: Confinement,
+    tmp_path: Path,
+) -> None:
+    """A fresh pilot allows uncommitted edits while formal runs reject them."""
+    plan = _plan(roots, ["p0001"])
+    with pytest.raises(RecordError, match="uncommitted changes"):
+        begin_run(roots, plan, {"commit": COMMIT, "dirty": True})
+
+    def dirty_git(arguments: Sequence[str]) -> str:
+        if arguments[0] == "rev-parse":
+            return COMMIT
+        if arguments[0] == "status":
+            return " M src/sheet_music_omr/parser.py\n"
+        return ""
+
+    pilot_root = tmp_path / "dirty_pilot"
+    pilot_root.mkdir()
+    launcher = CopyLauncher()
+    dependencies = _dependencies(launcher, pilot_root, source=dirty_git)
+    arguments = _cli_arguments(
+        pilot_root,
+        "pilot",
+        "--fixtures",
+        str(FIXTURE),
+    )
+
+    assert main(arguments, dependencies=dependencies) == 0
+    recorded = read_object(pilot_root / "run" / "run.json")
+    run_meta = recorded["run"]
+    assert isinstance(run_meta, dict)
+    assert run_meta["dirty"] is True
+    assert main(arguments, dependencies=dependencies) == 2  # noqa: PLR2004 - stop on dirty resume
+
+
 def test_pilot_in_worker_processes_matches_the_inline_run(
     tmp_path: Path,
 ) -> None:

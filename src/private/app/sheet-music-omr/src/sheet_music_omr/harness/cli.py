@@ -625,7 +625,12 @@ def _pilot(
         (),
         tuple((file.id, file.x) for file in public),
     )
-    begin_run(confinement, plan, source_state(effects.git))
+    begin_run(
+        confinement,
+        plan,
+        source_state(effects.git),
+        allow_dirty=True,
+    )
     _execute(confinement, effects, musescore, plan, arguments.jobs)
     write_report(confinement)
     shutil.rmtree(confinement.temp, ignore_errors=True)
