@@ -57,15 +57,13 @@ security/recovery or test/evidence strategy decisions, invoke
 and follow its project routing.
 
 For structural record changes; edits to governance, work-authorization,
-shared-principle, or root instruction/workflow/template authorities
-(`docs/governance/**`, `docs/delivery-wave.md`, `schemas/governance/**`,
-`docs/engineering/engineering-principles.md`, `AGENTS.md`, `docs/AGENTS.md`,
-`CONTRIBUTING.md`, `.github/pull_request_template.md`); portal-routing,
-generated-interface ownership or `apm.lock.yaml` source/deployment provenance,
-`hk`, control-governed workflow, or control-governed Agent Skill changes;
-record edits altering authority ownership, established requirement identifiers,
-or consumer/immutability/license contracts; or claims to the Record-System
-Gate, invoke [record-system review](.github/skills/record-system-review/SKILL.md)
+shared-principle, or root instruction/workflow/template authorities;
+portal-routing, generated-interface ownership or `apm.lock.yaml`
+source/deployment mappings, `hk`, control-governed workflow, or
+control-governed Agent Skill changes; record edits altering authority
+ownership, established requirement identifiers, or
+consumer/immutability/license contracts; or claims to the Record-System Gate,
+invoke [record-system review](.github/skills/record-system-review/SKILL.md)
 directly.
 For `research` records, platform/support claims, fired mutable-source rechecks,
 formal or empirical evidence reports, or Wave grants/operations with external,
