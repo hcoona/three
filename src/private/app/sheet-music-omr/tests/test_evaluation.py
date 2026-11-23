@@ -1053,3 +1053,206 @@ def test_installer_wheel_decoding_provenance_and_overlay_geometry(  # noqa: C901
     )
     assert loaded_m["gold-01"][0]["categories"] == ["accidental", "pitch"]
     assert len(loaded_sha) == 64  # noqa: PLR2004
+
+
+def test_alignment_source_reconciliation_and_multi_system_detection(
+    tmp_path: Path,
+) -> None:
+    """Verify source-map/extracts page reconciliation and 2-system detection."""
+    reflowed_xml = _one_part_grand_staff_xml(
+        [
+            _grand_measure(1, rh_step="C", first=True),
+            '<measure number="2"><print new-page="yes"/></measure>',
+            '<measure number="3"><print new-system="yes"/></measure>',
+            '<measure number="4"><print new-system="yes"/></measure>',
+        ]
+    ).encode("utf-8")
+
+    # 1. gold-05 source-map.json["measures"] overrides reflowed XML page breaks
+    ws_map = tmp_path / "ws-map"
+    ws_map.mkdir()
+    (ws_map / "source-map.json").write_text(
+        json.dumps(
+            {
+                "measures": [
+                    {"measure": 1, "pdf_page": 1, "system": 1},
+                    {"measure": 2, "pdf_page": 1, "system": 1},
+                    {"measure": 3, "pdf_page": 2, "system": 1},
+                    {"measure": 4, "pdf_page": 2, "system": 2},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    res_map, basis_map = aln_mod.resolve_piece_system_ordinals(
+        5, ws_map, reflowed_xml, 2, 4
+    )
+    assert basis_map == "source-map.json"
+    assert [(r[0], r[1], r[2], r[3]) for r in res_map] == [
+        (1, 1, 1, 2),
+        (2, 1, 3, 3),
+        (2, 2, 4, 4),
+    ]
+
+    # 1b. Invalid per-page system index (system: 0) fails closed
+    (ws_map / "source-map.json").write_text(
+        json.dumps(
+            {
+                "measures": [
+                    {"measure": 1, "pdf_page": 1, "system": 0},
+                    {"measure": 2, "pdf_page": 2, "system": 1},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(StopConditionError, match="system indices"):
+        aln_mod.resolve_piece_system_ordinals(5, ws_map, reflowed_xml, 2, 2)
+
+    # 2. source-extracts.json["regions"] reconciles reflowed 1+3 XML to 2+2
+    ws_ext = tmp_path / "ws-ext"
+    ws_ext.mkdir()
+    (ws_ext / "notes.md").write_text("", encoding="utf-8")
+    (ws_ext / "source-extracts.json").write_text(
+        json.dumps(
+            {
+                "regions": [
+                    {"page": 1, "system": 1, "ordinals": [1]},
+                    {"page": 1, "system": 2, "ordinals": [2]},
+                    {"page": 2, "system": 1, "ordinals": [3]},
+                    {"page": 2, "system": 2, "ordinals": [4]},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    res_ext, basis_ext = aln_mod.resolve_piece_system_ordinals(
+        20, ws_ext, reflowed_xml, 2, 4
+    )
+    assert basis_ext == "musicxml-print+source-extracts"
+    assert [(r[0], r[1], r[2], r[3]) for r in res_ext] == [
+        (1, 1, 1, 1),
+        (1, 2, 2, 2),
+        (2, 1, 3, 3),
+        (2, 2, 4, 4),
+    ]
+
+    # 2b. Skipped/malformed IDs, wrong counts, or conflicting ordinals fail
+    for bad_regions in (
+        [
+            {"page": 1, "system": 1, "ordinals": [1]},
+            {"page": 1, "system": 3, "ordinals": [2]},
+            {"page": 2, "system": 1, "ordinals": [3]},
+            {"page": 2, "system": 2, "ordinals": [4]},
+        ],
+        [
+            {"page": 1, "system": 1, "ordinals": [1, 2]},
+            {"page": 1, "system": 2, "ordinals": [2]},
+            {"page": 2, "system": 1, "ordinals": [3]},
+            {"page": 2, "system": 2, "ordinals": [4]},
+        ],
+        [
+            {"page": 1, "system": 0, "ordinals": [1]},
+            {"page": 1, "system": 2, "ordinals": [2]},
+            {"page": 2, "system": 1, "ordinals": [3]},
+            {"page": 2, "system": 2, "ordinals": [4]},
+        ],
+        [{"page": 1, "system": 0}],
+        [
+            {"ordinals": [1.9]},
+            {"ordinals": [2]},
+            {"ordinals": [3]},
+            {"ordinals": [4]},
+        ],
+        [
+            {"page": 1, "system": 1, "ordinals": [1.9]},
+            {"page": 1, "system": 2, "ordinals": [2]},
+            {"page": 2, "system": 1, "ordinals": [3]},
+            {"page": 2, "system": 2, "ordinals": [4]},
+        ],
+        [
+            {"page": 1, "system": 1, "ordinals": [True]},
+            {"page": 1, "system": 2, "ordinals": [2]},
+            {"page": 2, "system": 1, "ordinals": [3]},
+            {"page": 2, "system": 2, "ordinals": [4]},
+        ],
+        [
+            {"page": 1, "system": 1, "ordinals": [None]},
+            {"page": 1, "system": 2, "ordinals": [2]},
+            {"page": 2, "system": 1, "ordinals": [3]},
+            {"page": 2, "system": 2, "ordinals": [4]},
+        ],
+    ):
+        (ws_ext / "source-extracts.json").write_text(
+            json.dumps({"regions": bad_regions}),
+            encoding="utf-8",
+        )
+        with pytest.raises(StopConditionError):
+            aln_mod.resolve_piece_system_ordinals(
+                20, ws_ext, reflowed_xml, 2, 4
+            )
+    (ws_ext / "source-extracts.json").write_text("{broken", encoding="utf-8")
+    with pytest.raises(StopConditionError, match="unreadable"):
+        aln_mod.resolve_piece_system_ordinals(20, ws_ext, reflowed_xml, 2, 4)
+
+    # 3. 2-system synthetic scan (including tight 25px treble-bass gap)
+    title_bot, tempo_top, footer_top = 202, 242, 1680
+    from PIL import ImageDraw  # noqa: PLC0415
+
+    for sys1_top, tb_step in ((260, 130), (305, 81)):
+        im = Image.new("L", (1400, 1800), 255)
+        dr = ImageDraw.Draw(im)
+        dr.rectangle([620, 170, 780, title_bot], fill=0)
+        dr.rectangle([180, tempo_top, 290, 250], fill=0)
+        for top_y in (sys1_top, 920):
+            if top_y != sys1_top:
+                dr.rectangle([180, top_y - 26, 290, top_y - 14], fill=0)
+            for st_y in (top_y, top_y + tb_step):
+                for ln in range(5):
+                    y = st_y + ln * 14
+                    dr.line([(160, y), (1240, y)], fill=0, width=2)
+            dr.line(
+                [(160, top_y), (160, top_y + tb_step + 56)], fill=0, width=3
+            )
+            dr.line(
+                [(1240, top_y), (1240, top_y + tb_step + 56)], fill=0, width=3
+            )
+            ped_y0 = (
+                top_y + tb_step + 76
+                if top_y == sys1_top
+                else top_y + tb_step + 108
+            )
+            dr.rectangle([200, ped_y0, 260, ped_y0 + 14], fill=0)
+        dr.rectangle([680, footer_top, 720, 1705], fill=0)
+
+        dets = aln_mod.detect_grand_staff_systems(im, expected_systems=2)
+        assert len(dets) == 2  # noqa: PLR2004
+        assert title_bot < dets[0].box_px[1] < tempo_top
+        assert (
+            dets[0].treble_lines_y[0] - dets[0].box_px[1]
+            >= 4.0 * dets[0].staff_space_px
+        )
+        assert (
+            sys1_top + tb_step + 90
+            < dets[0].box_px[3]
+            <= dets[1].box_px[1]
+            < 920 - 26
+        )
+        assert 920 + tb_step + 122 < dets[1].box_px[3] < footer_top
+        assert (
+            dets[1].box_px[3] - dets[1].bass_lines_y[4]
+            >= 4.0 * dets[1].staff_space_px
+        )
+
+
+def test_outer_margin_tight_boundary_reachability() -> None:
+    """Verify exact 4*sp top/bottom boundaries remain reachable near headers."""
+    for t_end, exp_y in ((202, 203), (203, 204)):
+        dark_tight = aln_mod.np.zeros((600, 400), dtype=bool)
+        dark_tight[170 : t_end + 1, 50:350] = True
+        dark_tight[242:251, 80:160] = True
+        dark_tight[502:523, 50:350] = True
+        yt_got, yb_got = aln_mod._find_outer_vertical_edges(  # noqa: SLF001
+            dark_tight, [(260, 390)], [(40, 360)], 14.0
+        )
+        assert (yt_got, yb_got) == (exp_y, 502)

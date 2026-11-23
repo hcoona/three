@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import itertools
 import json
+import math
 import os
 import re
 import shutil
@@ -425,6 +427,254 @@ def extract_pdf_pages_via_pdfium(
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
+def _five_line_comb_score(
+    profs: Sequence[np.ndarray], h: int, sp: float, slope: float = 0.0
+) -> np.ndarray:
+    """Compute top-5-strip order-statistic 5-line comb score."""
+    offs = [round(k * sp) for k in range(5)]
+    lim = h - offs[-1]
+    if lim <= 0:
+        return np.zeros(0, dtype=np.float32)
+    n_s = len(profs)
+    mid_s = 0.5 * (n_s - 1)
+    aligned = np.zeros((n_s, lim), dtype=np.float32)
+    for s_i, prof_s in enumerate(profs):
+        stack = np.stack([prof_s[off : lim + off] for off in offs], axis=0)
+        s_ord = np.sort(stack, axis=0)
+        sc = 0.5 * s_ord[0] + 0.5 * s_ord[1]
+        dy = round(slope * (s_i - mid_s))
+        if dy == 0:
+            aligned[s_i] = sc
+        elif 0 < dy < lim:
+            aligned[s_i, :-dy] = sc[dy:]
+        elif 0 < -dy < lim:
+            aligned[s_i, -dy:] = sc[:dy]
+    k_keep = min(n_s, max(1, n_s - 3))
+    return np.sort(aligned, axis=0)[-k_keep:].mean(axis=0)
+
+
+def _find_main_horizontal_span(  # noqa: C901, PLR0912, PLR0915
+    thin: np.ndarray,
+    top_line: float,
+    yb: float,
+    best_sp: float,
+) -> tuple[int, int]:
+    """Locate main system ``(x0, x1)`` while excluding facing-page slivers."""
+    h, w = thin.shape
+    bot_line = yb + 4.0 * best_sp
+    staff_col = np.maximum(
+        thin[
+            max(0, int(top_line) - 4) : min(
+                h, int(top_line + 4.0 * best_sp) + 5
+            ),
+            :,
+        ].mean(axis=0),
+        thin[max(0, int(yb) - 4) : min(h, int(bot_line) + 5), :].mean(axis=0),
+    )
+    col_cut = max(2.2, 0.13 * float(staff_col.max())) if w > 0 else 2.2
+    active = staff_col >= col_cut
+    if not np.any(active):
+        return max(0, round(0.05 * w)), min(w, round(0.95 * w))
+
+    # Identify outer facing-page seams (>= 16 blank cols in outer 15% margin)
+    # BEFORE bridging internal gaps so narrow facing-page seams never merge!
+    seam_min_blank = max(14, round(0.95 * best_sp))
+    outer_lo = round(0.15 * w)
+    outer_hi = round(0.85 * w)
+    raw_runs: list[tuple[int, int]] = []
+    in_r = False
+    r0 = 0
+    for x_i in range(w):
+        if active[x_i] and not in_r:
+            in_r, r0 = True, x_i
+        elif not active[x_i] and in_r:
+            raw_runs.append((r0, x_i - 1))
+            in_r = False
+    if in_r:
+        raw_runs.append((r0, w - 1))
+
+    seam_left = 0
+    for (_la, lb), (ra, _rb) in itertools.pairwise(raw_runs):
+        if lb < outer_lo and (ra - lb - 1) >= seam_min_blank:
+            seam_left = lb + 1
+    seam_right = w
+    for (_la, lb), (ra, _rb) in itertools.pairwise(raw_runs):
+        if (
+            ra > outer_hi
+            and (ra - lb - 1) >= seam_min_blank
+            and seam_right == w
+        ):
+            seam_right = ra - 1
+
+    interior = active.copy()
+    if seam_left > 0:
+        interior[:seam_left] = False
+    if seam_right < w:
+        interior[seam_right + 1 :] = False
+    on_idx = np.nonzero(interior)[0]
+    if len(on_idx) == 0:
+        on_idx = np.nonzero(active)[0]
+
+    bridge_px = max(24, round(2.4 * best_sp))
+    bridged = interior.copy()
+    for a_i, b_i in itertools.pairwise(on_idx):
+        if int(b_i - a_i - 1) <= bridge_px:
+            bridged[a_i : b_i + 1] = True
+
+    runs: list[tuple[int, int, int]] = []
+    in_run = False
+    r_start = 0
+    for x_i in range(w):
+        if bridged[x_i] and not in_run:
+            in_run, r_start = True, x_i
+        elif not bridged[x_i] and in_run:
+            runs.append((x_i - r_start, r_start, x_i - 1))
+            in_run = False
+    if in_run:
+        runs.append((w - r_start, r_start, w - 1))
+
+    runs.sort(reverse=True)
+    _, ix0, ix1 = runs[0]
+    x0 = (
+        0
+        if (ix0 <= round(3.0 * best_sp) and seam_left == 0)
+        else max(0, round(ix0 - 4.6 * best_sp))
+    )
+    x1 = (
+        w
+        if ((w - 1 - ix1) <= round(2.5 * best_sp) and seam_right == w)
+        else min(w, round(ix1 + 2.4 * best_sp))
+    )
+    if seam_left > 0:
+        x0 = max(x0, seam_left + 10)
+    if seam_right < w:
+        x1 = min(x1, seam_right - 10)
+    return x0, max(x0 + 64, x1)
+
+
+def _scan_outer_margin_1d(
+    clear: np.ndarray, staff_edge: float, best_sp: float
+) -> int:
+    """Scan outward from ``staff_edge`` for a clear band >= ``4.0 * sp``."""
+    n = len(clear)
+    wide_blank = max(32, math.ceil(2.15 * best_sp))
+    min_y = math.floor(staff_edge - 4.0 * best_sp)
+    y_outer = max(6, round(staff_edge - 9.0 * best_sp))
+    start_up = max(y_outer + wide_blank, round(staff_edge - 0.8 * best_sp))
+    for y_c in range(min(n - 6, start_up), y_outer + wide_blank - 1, -1):
+        if bool(clear[y_c - wide_blank : y_c].all()):
+            y_goal = max(6, min(y_c - 8, min_y - 1))
+            y_top = max(6, y_c - 8)
+            while y_top > y_goal and bool(clear[y_top - 1]):
+                y_top -= 1
+            if y_top <= min_y:
+                thin_lim = max(10, round(best_sp))
+                above_lo = max(6, y_top - thin_lim - 1)
+                if (
+                    y_top >= min_y - 1
+                    and not bool(clear[max(6, y_top - 3) : y_top].all())
+                    and above_lo > y_outer + 16
+                    and bool(clear[above_lo - 16 : above_lo].all())
+                ):
+                    continue
+                return y_top
+    hi_fb = min(n - 6, min_y + 4)
+    for y_c in range(hi_fb, y_outer + 7, -1):
+        if bool(clear[y_c - 8 : y_c].all()):
+            return max(6, min(min_y, y_c - 4))
+    return y_outer
+
+
+def _find_outer_vertical_edges(
+    dark: np.ndarray,
+    chosen: Sequence[tuple[int, int]],
+    x_spans: Sequence[tuple[int, int]],
+    best_sp: float,
+) -> tuple[int, int]:
+    """Find outer top/bottom bounds crossing Tempo/Ped. gaps with >=4*sp pad."""
+    h, w = dark.shape
+    xa0, xb0 = max(0, x_spans[0][0]), min(w, x_spans[0][1])
+    clear_t = dark[:, xa0 : max(xa0 + 32, xb0)].sum(axis=1) <= 3  # noqa: PLR2004
+    y_outer_top = _scan_outer_margin_1d(clear_t, float(chosen[0][0]), best_sp)
+
+    bot_last = float(chosen[-1][1] + 4.0 * best_sp)
+    xak, xbk = max(0, x_spans[-1][0]), min(w, x_spans[-1][1])
+    clear_b = dark[:, xak : max(xak + 32, xbk)].sum(axis=1) <= 3  # noqa: PLR2004
+    bot_flip = _scan_outer_margin_1d(clear_b[::-1], h - bot_last, best_sp)
+    return y_outer_top, min(h - 6, h - bot_flip)
+
+
+def _compute_system_vertical_bounds(
+    arr: np.ndarray,
+    chosen: Sequence[tuple[int, int]],
+    x_spans: Sequence[tuple[int, int]],
+    best_sp: float,
+) -> list[tuple[int, int]]:
+    """Find clear-gutter ``(y0, y1)`` per system so notation is not clipped."""
+    h, w = arr.shape
+    n_sys = len(chosen)
+    pad_r = 32
+    padded = np.pad(arr, ((pad_r, pad_r), (0, 0)), mode="edge")
+    csum = np.cumsum(
+        np.vstack([np.zeros((1, w), dtype=np.float64), padded]), axis=0
+    )
+    local_bg = (csum[2 * pad_r + 1 :] - csum[: -(2 * pad_r + 1)]) / float(
+        2 * pad_r + 1
+    )
+    dark = (local_bg - arr) > 24.0  # noqa: PLR2004
+
+    splits: list[int] = []
+    for s_idx in range(n_sys - 1):
+        prev_bot = float(chosen[s_idx][1] + 4.0 * best_sp)
+        next_top = float(chosen[s_idx + 1][0])
+        lo_y = max(8, round(prev_bot + 0.8 * best_sp))
+        hi_y = min(h - 9, round(next_top - 0.8 * best_sp))
+        if hi_y < lo_y:
+            splits.append(round(0.5 * (prev_bot + next_top)))
+            continue
+        xa = max(0, min(x_spans[s_idx][0], x_spans[s_idx + 1][0]) + 14)
+        xb = min(w, max(x_spans[s_idx][1], x_spans[s_idx + 1][1]) - 14)
+        row_cnt = dark[lo_y - 3 : hi_y + 4, xa : max(xa + 32, xb)].sum(axis=1)
+        gutter_cnt = np.convolve(
+            row_cnt, np.ones(7, dtype=np.int64), mode="valid"
+        )
+        ys = np.arange(lo_y, hi_y + 1, dtype=np.float64)
+        mid_y = 0.5 * (prev_bot + next_top)
+        clear_idx = np.nonzero(gutter_cnt == 0)[0]
+        if len(clear_idx) > 0:
+            best_rel = int(
+                clear_idx[int(np.argmin(np.abs(ys[clear_idx] - mid_y)))]
+            )
+        else:
+            min_g = int(gutter_cnt.min())
+            near_idx = np.nonzero(gutter_cnt <= min_g + 2)[0]
+            best_rel = int(
+                near_idx[int(np.argmin(np.abs(ys[near_idx] - mid_y)))]
+            )
+        splits.append(lo_y + best_rel)
+
+    y_outer_top, y_outer_bot = _find_outer_vertical_edges(
+        dark, chosen, x_spans, best_sp
+    )
+
+    bounds: list[tuple[int, int]] = []
+    for s_idx, (yt, yb) in enumerate(chosen):
+        top_l = float(yt)
+        bot_l = float(yb + 4.0 * best_sp)
+        y0 = (
+            y_outer_top
+            if s_idx == 0
+            else max(splits[s_idx - 1] + 3, round(top_l - 9.2 * best_sp))
+        )
+        y1 = (
+            y_outer_bot
+            if s_idx == n_sys - 1
+            else min(splits[s_idx] - 3, round(bot_l + 9.2 * best_sp))
+        )
+        bounds.append((max(0, y0), min(h, max(y0 + 32, y1))))
+    return bounds
+
+
 def detect_grand_staff_systems(  # noqa: C901, PLR0912, PLR0915
     page_im: Image.Image, expected_systems: int
 ) -> list[DetectedSystemBox]:
@@ -435,8 +685,6 @@ def detect_grand_staff_systems(  # noqa: C901, PLR0912, PLR0915
         msg = f"expected_systems must be >= 1, got {expected_systems}"
         raise StopConditionError(msg)
 
-    # Vertical thin-darkness map: highlights 1-4px horizontal staff lines while
-    # suppressing thick filled noteheads, beams and dark margins.
     thin = np.zeros_like(arr)
     for delta in (2, 3, 4):
         above = arr[: -2 * delta, :]
@@ -445,74 +693,84 @@ def detect_grand_staff_systems(  # noqa: C901, PLR0912, PLR0915
         contrast = np.maximum(0.0, np.minimum(above, below) - mid - 10.0)
         thin[delta:-delta, :] = np.maximum(thin[delta:-delta, :], contrast)
 
-    x_lo, x_hi = int(0.10 * w), int(0.90 * w)
+    x_lo, x_hi = int(0.12 * w), int(0.88 * w)
     strips = np.linspace(x_lo, x_hi, 9, dtype=int)
+    profs = [
+        np.convolve(
+            thin[:, strips[s_i] : strips[s_i + 1]].mean(axis=1),
+            np.array([0.25, 0.5, 0.25], dtype=np.float32),
+            mode="same",
+        )
+        for s_i in range(8)
+    ]
 
+    n_needed = 2 * expected_systems
     best_sp = 16.5
+    best_slope = 0.0
     best_peak_sum = -1.0
     for sp_cand in np.arange(12.0, 24.5, 0.25):
-        offsets = [round(k * sp_cand) for k in range(5)]
-        limit = h - offsets[-1]
-        if limit <= 0:
-            continue
-        comb = np.zeros(limit, dtype=np.float32)
-        for s_i in range(8):
-            prof = thin[:, strips[s_i] : strips[s_i + 1]].mean(axis=1)
-            acc = np.zeros(limit, dtype=np.float32)
-            for off in offsets:
-                acc += prof[off : limit + off]
-            comb += acc / 8.0
-        top_vals = np.partition(comb, -min(limit, 2 * expected_systems * 3))[
-            -min(limit, 2 * expected_systems * 3) :
-        ]
-        sc = float(top_vals.mean())
-        if sc > best_peak_sum:
-            best_peak_sum = sc
-            best_sp = float(sp_cand)
+        sp_f = float(sp_cand)
+        md_c = max(12, round(5.2 * sp_f))
+        for slope_c in (-1.5, -0.75, 0.0, 0.75, 1.5):
+            comb_c = _five_line_comb_score(profs, h, sp_f, slope_c)
+            if len(comb_c) <= n_needed:
+                continue
+            peaks_c: list[float] = []
+            picked_y: list[int] = []
+            for y_idx in np.argsort(-comb_c):
+                y_i = int(y_idx)
+                if y_i < round(1.8 * sp_f) or y_i > h - round(5.8 * sp_f):
+                    continue
+                if all(abs(y_i - py) >= md_c for py in picked_y):
+                    picked_y.append(y_i)
+                    peaks_c.append(float(comb_c[y_i]))
+                    if len(peaks_c) >= n_needed:
+                        break
+            if len(peaks_c) == n_needed:
+                sc = sum(peaks_c)
+                if sc > best_peak_sum:
+                    best_peak_sum = sc
+                    best_sp = sp_f
+                    best_slope = slope_c
 
-    offsets = [round(k * best_sp) for k in range(5)]
-    limit = h - offsets[-1]
-    comb = np.zeros(limit, dtype=np.float32)
-    for s_i in range(8):
-        prof = thin[:, strips[s_i] : strips[s_i + 1]].mean(axis=1)
-        acc = np.zeros(limit, dtype=np.float32)
-        for off in offsets:
-            acc += prof[off : limit + off]
-        comb += acc / 8.0
-
-    # Extract candidate 5-line staff peaks via NMS (min spacing 2.6 * best_sp)
-    min_dist = max(12, round(2.6 * best_sp))
-    n_needed = 2 * expected_systems
+    comb = _five_line_comb_score(profs, h, best_sp, best_slope)
+    max_comb = float(comb.max()) if len(comb) > 0 else 0.0
+    min_support = max(0.05, 0.004 * max_comb)
+    min_dist = max(12, round(5.2 * best_sp))
     cands: list[tuple[int, float]] = []
     for y_idx in np.argsort(-comb):
         y_int = int(y_idx)
+        val_c = float(comb[y_int])
+        if val_c < min_support:
+            break
         if y_int < round(1.8 * best_sp) or y_int > h - round(5.8 * best_sp):
             continue
         if all(abs(y_int - cy) >= min_dist for cy, _ in cands):
-            cands.append((y_int, float(comb[y_int])))
-            if len(cands) >= max(n_needed + 8, n_needed * 2):
+            cands.append((y_int, val_c))
+            if len(cands) >= n_needed + 4:
                 break
     cands.sort(key=lambda t: t[0])
     if len(cands) < n_needed:
         msg = (
-            f"found only {len(cands)} candidate staves, need {n_needed} "
+            f"found only {len(cands)} supported staves, need {n_needed} "
             f"(sp={best_sp:.2f})"
         )
         raise StopConditionError(msg)
 
-    # DP to pick exact ``expected_systems`` disjoint (treble, bass) pairs
+    max_s = max(*(s for _, s in cands), 1e-6)
     m_c = len(cands)
     pair_score = np.full((m_c, m_c), -1e9, dtype=np.float64)
     for a in range(m_c):
         ya, sa = cands[a]
+        na = math.log1p(9.0 * sa / max_s) / math.log(10.0)
         for b in range(a + 1, m_c):
             yb, sb = cands[b]
+            nb = math.log1p(9.0 * sb / max_s) / math.log(10.0)
             gap_sp = (yb - (ya + 4.0 * best_sp)) / best_sp
-            if gap_sp < 1.5 or gap_sp > 14.5:  # noqa: PLR2004
+            if gap_sp < 1.5 or gap_sp > 17.5:  # noqa: PLR2004
                 continue
-            # Prefer typical piano grand-staff intra-system gap (~3.5-8.0 sp)
-            gap_pen = 0.08 * max(0.0, abs(gap_sp - 5.5) - 2.5) ** 2
-            pair_score[a, b] = float(sa + sb) - gap_pen
+            gap_pen = 0.015 * max(0.0, abs(gap_sp - 6.5) - 5.5) ** 2
+            pair_score[a, b] = float(na + nb) - gap_pen
 
     dp = np.full((expected_systems, m_c, m_c), -1e9, dtype=np.float64)
     neg_inf = -1e8
@@ -536,9 +794,10 @@ def detect_grand_staff_systems(  # noqa: C901, PLR0912, PLR0915
                             continue
                         yb_prev = cands[pb][0] + 4.0 * best_sp
                         inter_sp = (ya - yb_prev) / best_sp
-                        if inter_sp < 2.0:  # noqa: PLR2004
+                        if inter_sp < 1.8:  # noqa: PLR2004
                             continue
-                        val = dp[k - 1, pa, pb] + pair_score[a, b]
+                        inter_pen = 0.35 * max(0.0, 3.2 - inter_sp) ** 2
+                        val = dp[k - 1, pa, pb] + pair_score[a, b] - inter_pen
                         if val > best_prev:
                             best_prev = val
                             best_pair = (pa, pb)
@@ -565,49 +824,17 @@ def detect_grand_staff_systems(  # noqa: C901, PLR0912, PLR0915
             cur = prev[(k, cur[0], cur[1])]
     chosen.reverse()
 
-    ink_threshold = 215.0
-    ink_mask = arr < ink_threshold
+    x_spans = [
+        _find_main_horizontal_span(thin, float(yt), float(yb), best_sp)
+        for yt, yb in chosen
+    ]
+    y_bounds = _compute_system_vertical_bounds(arr, chosen, x_spans, best_sp)
+
     boxes: list[DetectedSystemBox] = []
-    for s_idx, (yt, yb) in enumerate(chosen):
-        top_line = float(yt)
-        bot_line = float(yb + 4.0 * best_sp)
-        upper_clamp = (
-            max(12, round(top_line - 6.5 * best_sp))
-            if s_idx == 0
-            else round(
-                0.5 * ((chosen[s_idx - 1][1] + 4.0 * best_sp) + top_line)
-            )
-        )
-        lower_clamp = (
-            min(h - 12, round(bot_line + 6.5 * best_sp))
-            if s_idx == expected_systems - 1
-            else round(0.5 * (bot_line + chosen[s_idx + 1][0]))
-        )
-        band_y0 = max(0, min(round(top_line - 4.5 * best_sp), upper_clamp))
-        band_y1 = min(h, max(round(bot_line + 4.5 * best_sp), lower_clamp))
-        # Keep >=4 sp margins while preventing adjacent system box overlap
-        y0 = max(0, min(round(top_line - 4.2 * best_sp), band_y0))
-        y1 = min(h, max(round(bot_line + 4.2 * best_sp), band_y1))
-        if s_idx > 0:
-            prev_bot = chosen[s_idx - 1][1] + 4.0 * best_sp
-            y0 = max(y0, round(prev_bot + 0.8 * best_sp))
-        if s_idx + 1 < expected_systems:
-            next_top = chosen[s_idx + 1][0]
-            y1 = min(y1, round(next_top - 0.8 * best_sp))
-
-        col_ink = ink_mask[int(top_line) : int(bot_line) + 1, 30 : w - 30].sum(
-            axis=0
-        )
-        xs = np.nonzero(col_ink >= 2)[0]  # noqa: PLR2004
-        if len(xs) > 0:
-            ix0 = int(xs[0]) + 30
-            ix1 = int(xs[-1]) + 30
-        else:
-            ix0, ix1 = round(0.06 * w), round(0.94 * w)
-        x0 = max(0, round(ix0 - 2.2 * best_sp))
-        x1 = min(w, round(ix1 + 2.2 * best_sp))
-
-        t_lines = tuple(round(top_line + k * best_sp, 2) for k in range(5))
+    for (yt, yb), (x0, x1), (y0, y1) in zip(
+        chosen, x_spans, y_bounds, strict=True
+    ):
+        t_lines = tuple(round(float(yt) + k * best_sp, 2) for k in range(5))
         b_lines = tuple(round(float(yb) + k * best_sp, 2) for k in range(5))
         boxes.append(
             DetectedSystemBox(
@@ -629,7 +856,11 @@ def render_page_overlay(
 ) -> None:
     """Render visual QA overlay showing system boxes and ordinals."""
     rgb = page_im.convert("RGB")
-    draw = ImageDraw.Draw(rgb)
+    w_pg, h_pg = rgb.size
+    canvas = Image.new("RGB", (w_pg + 280, h_pg), (248, 250, 252))
+    canvas.paste(rgb, (0, 0))
+    draw = ImageDraw.Draw(canvas)
+    draw.line([(w_pg, 0), (w_pg, h_pg)], fill=(203, 213, 225), width=2)
     colors = [(220, 38, 38), (22, 163, 74), (37, 99, 235), (180, 83, 9)]
     for idx, (sys_no, (o_lo, o_hi), det) in enumerate(systems):
         color = colors[idx % len(colors)]
@@ -638,16 +869,21 @@ def render_page_overlay(
             draw.line([(x0, t_y), (x1, t_y)], fill=(6, 182, 212), width=1)
         for b_y in det.bass_lines_y:
             draw.line([(x0, b_y), (x1, b_y)], fill=(168, 85, 247), width=1)
-        draw.rectangle([x0, y0, x1, y1], outline=color, width=4)
-        label = (
-            f"{gold_id} p{page_index} sys{sys_no}: m.{o_lo}..{o_hi} "
-            f"(sp={det.staff_space_px:.1f}px)"
+        draw.rectangle([x0, y0, x1, y1], outline=color, width=2)
+        yc = max(24, min(h_pg - 24, (y0 + y1) // 2))
+        draw.line([(x1, yc), (w_pg + 8, yc)], fill=color, width=2)
+        draw.rectangle([w_pg + 8, yc - 22, w_pg + 272, yc + 22], fill=color)
+        draw.text(
+            (w_pg + 14, yc - 17),
+            f"{gold_id} p{page_index:02d} S{sys_no:02d}",
+            fill=(255, 255, 255),
         )
-        draw.rectangle(
-            [x0, max(0, y0 - 24), min(2299, x0 + 460), y0], fill=color
+        draw.text(
+            (w_pg + 14, yc + 3),
+            f"m.{o_lo}..{o_hi} (sp={det.staff_space_px:.1f})",
+            fill=(255, 255, 255),
         )
-        draw.text((x0 + 6, max(0, y0 - 20)), label, fill=(255, 255, 255))
-    atomic_save_png(rgb, out_path)
+    atomic_save_png(canvas, out_path)
 
 
 def export_normalized_crop(
@@ -703,6 +939,30 @@ def resolve_piece_system_ordinals(  # noqa: C901, PLR0911, PLR0912, PLR0915
             )
         _validate_partition(idx, out, source_page_count, measure_count)
         return out, "system-map.json"
+
+    if idx == 5 and src_map_p.exists():  # noqa: PLR2004
+        raw_m5 = json.loads(src_map_p.read_text(encoding="utf-8"))["measures"]
+        grouped_5: dict[tuple[int, int], list[JsonDict]] = {}
+        for r in raw_m5:
+            grouped_5.setdefault(
+                (int(r["pdf_page"]), int(r["system"])), []
+            ).append(r)
+        out = []
+        for (pg, sy), items in sorted(grouped_5.items()):
+            ords = [int(x["measure"]) for x in items]
+            if sorted(ords) != list(range(min(ords), max(ords) + 1)):
+                msg = f"non-contiguous measure rows in gold-05 p{pg} s{sy}"
+                raise StopConditionError(msg)
+            xs_set: set[int] = set()
+            for x in items:
+                xb = x.get("x_bounds_px_600dpi", [])
+                if isinstance(xb, list):
+                    xs_set.update(round(int(v) * 2300 / 5100) for v in xb)
+            out.append(
+                (pg, sy, min(ords), max(ords), sorted(xs_set), "approximate")
+            )
+        _validate_partition(idx, out, source_page_count, measure_count)
+        return out, "source-map.json"
 
     if idx == 9 and src_map_p.exists():  # noqa: PLR2004
         rows = json.loads(src_map_p.read_text(encoding="utf-8"))
@@ -778,7 +1038,7 @@ def resolve_piece_system_ordinals(  # noqa: C901, PLR0911, PLR0912, PLR0915
         _validate_partition(idx, out, source_page_count, measure_count)
         return out, "notes.md"
 
-    # 3. MusicXML printed system starts (1:1 on 01, 03..06, 11, 17, 19, 20)
+    # 3. MusicXML printed system starts (reconciled with source-extracts.json)
     lay = system_starts(gold_xml_bytes)
     starts_1 = [s.ordinal + 1 for s in lay.starts]
     ranges = [
@@ -788,6 +1048,18 @@ def resolve_piece_system_ordinals(  # noqa: C901, PLR0911, PLR0912, PLR0915
         )
         for k in range(len(starts_1))
     ]
+    if idx == 20:  # noqa: PLR2004
+        return (
+            _reconcile_source_extracts(
+                idx,
+                ws_dir / "source-extracts.json",
+                ranges,
+                source_page_count,
+                measure_count,
+            ),
+            "musicxml-print+source-extracts",
+        )
+
     xml_pages = [s.page for s in lay.starts]
     if max(xml_pages) == source_page_count:
         out = []
@@ -901,6 +1173,86 @@ def _parse_gold10_notes(
     return out
 
 
+def _parse_source_extract_row(
+    idx: int, r: object
+) -> tuple[int, int, list[int] | None]:
+    if not isinstance(r, dict):
+        msg = f"gold-{idx:02d}: non-object entry in source-extracts"
+        raise StopConditionError(msg)
+    pk = r.get("pdf_page", r.get("source_page", r.get("page")))
+    sk = r.get("source_system", r.get("system"))
+    if (
+        not isinstance(pk, int)
+        or isinstance(pk, bool)
+        or pk < 1
+        or not isinstance(sk, int)
+        or isinstance(sk, bool)
+        or sk < 1
+    ):
+        msg = f"gold-{idx:02d}: malformed source-extracts page/system keys"
+        raise StopConditionError(msg)
+    if "ordinals" not in r:
+        return pk, sk, None
+    raw_o = r["ordinals"]
+    if (
+        not isinstance(raw_o, list)
+        or not raw_o
+        or not all(
+            isinstance(x, int) and not isinstance(x, bool) for x in raw_o
+        )
+    ):
+        msg = f"gold-{idx:02d}: malformed source-extracts ordinals"
+        raise StopConditionError(msg)
+    return pk, sk, list(raw_o)
+
+
+def _reconcile_source_extracts(
+    idx: int,
+    extracts_p: Path,
+    ranges: Sequence[tuple[int, int]],
+    source_page_count: int,
+    measure_count: int,
+) -> list[tuple[int, int, int, int, list[int], str]]:
+    """Reconcile reflowed MusicXML system ranges against source-extracts."""
+    try:
+        ext_raw = json.loads(extracts_p.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        msg = f"gold-{idx:02d}: unreadable source-extracts.json ({exc})"
+        raise StopConditionError(msg) from exc
+    ext_rows = ext_raw.get("regions") if isinstance(ext_raw, dict) else ext_raw
+    if not isinstance(ext_rows, list) or len(ext_rows) != len(ranges):
+        msg = f"gold-{idx:02d}: source-extracts count != {len(ranges)} systems"
+        raise StopConditionError(msg)
+
+    parsed = sorted(
+        (_parse_source_extract_row(idx, r) for r in ext_rows),
+        key=lambda item: (item[0], item[1]),
+    )
+    keys = [(pg, sy) for pg, sy, _ in parsed]
+    pages = [pg for pg, _ in keys]
+    if len(set(keys)) != len(ranges) or set(pages) != set(
+        range(1, source_page_count + 1)
+    ):
+        msg = f"gold-{idx:02d}: invalid source-extracts page/system keys"
+        raise StopConditionError(msg)
+    global_ids = [sy for _, sy in keys] == list(
+        range(1, len(ranges) + 1)
+    ) and pages == sorted(pages)
+    p_cnt: Counter[int] = Counter()
+    out: list[tuple[int, int, int, int, list[int], str]] = []
+    for (pg, sy, ords), (fo, lo) in zip(parsed, ranges, strict=True):
+        p_cnt[pg] += 1
+        local_sy = p_cnt[pg] if global_ids else sy
+        if ords is not None and ords != list(range(fo, lo + 1)):
+            msg = (
+                f"gold-{idx:02d}: source-extracts ordinals {ords} != {fo}..{lo}"
+            )
+            raise StopConditionError(msg)
+        out.append((pg, local_sy, fo, lo, [], "absent"))
+    _validate_partition(idx, out, source_page_count, measure_count)
+    return out
+
+
 def _extract_barlines_2300(row: Mapping[str, object]) -> tuple[list[int], str]:
     scale_600 = 2300.0 / 5100.0
     if "right_barlines_px_600dpi" in row and isinstance(
@@ -967,6 +1319,16 @@ def _validate_partition(
             f"1..{source_page_count}"
         )
         raise StopConditionError(msg)
+    by_page: dict[int, list[int]] = {}
+    for pg, sy, *_ in systems:
+        by_page.setdefault(pg, []).append(sy)
+    for pg, sys_nums in by_page.items():
+        if sys_nums != list(range(1, len(sys_nums) + 1)):
+            msg = (
+                f"gold-{idx:02d} p{pg}: system indices {sys_nums} != "
+                f"1..{len(sys_nums)}"
+            )
+            raise StopConditionError(msg)
     expected_next = 1
     for pg, sy, fo, lo, _, _ in systems:
         if fo != expected_next or lo < fo:
