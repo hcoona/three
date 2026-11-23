@@ -495,6 +495,61 @@ internal sealed class Phase7Run
             token
         );
 
+    internal Task<Phase7Clock.ObservedPoll> ObserveRampProbePollAsync(
+        Task<Phase7Handoff.Startup> targetStart,
+        Task<JsonObject> run,
+        DateTimeOffset eligible,
+        long registeredAfter,
+        CancellationToken token
+    ) =>
+        ObserveAsync(
+            next => Clock.WaitForPollAsync(next, WorkDeadline, registeredAfter: registeredAfter),
+            async (poll, next) =>
+            {
+                try
+                {
+                    await Task.WhenAny(poll, targetStart, run)
+                        .WaitAsync(next).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (next.IsCancellationRequested)
+                {
+                    await RequireColdRampTargetAsync(targetStart, run, eligible)
+                        .ConfigureAwait(false);
+                    throw;
+                }
+                await RequireColdRampTargetAsync(targetStart, run, eligible).ConfigureAwait(false);
+            },
+            token
+        );
+
+    internal static async Task RequireColdRampTargetAsync(
+        Task<Phase7Handoff.Startup> targetStart,
+        Task<JsonObject> run,
+        DateTimeOffset eligible
+    )
+    {
+        Phase7Handoff.Startup? early = null;
+        if (targetStart.IsCompleted)
+        {
+            early = await targetStart.ConfigureAwait(false);
+            if (early.Operation.IsCompleted)
+            {
+                await early.Operation.ConfigureAwait(false);
+            }
+        }
+        if (run.IsCompleted)
+        {
+            Assert.Fail(
+                "Run ended before the cold admission probe: "
+                    + (await run.ConfigureAwait(false)).ToJsonString()
+            );
+        }
+        if (early is not null)
+        {
+            Assert.Fail($"{early.Worker} started before eligibility {eligible:O}.");
+        }
+    }
+
     private static async Task<T> ObserveAsync<T>(
         Func<CancellationToken, Task<T>> observe,
         Func<Task<T>, CancellationToken, Task> wait,

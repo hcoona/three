@@ -290,7 +290,8 @@ internal sealed class Phase7Clock : TimeProvider
     internal void Advance(
         ObservedPoll poll,
         DateTimeOffset strictlyBefore,
-        CancellationToken token
+        CancellationToken token,
+        DateTimeOffset? through = null
     )
     {
         lock (gate)
@@ -300,20 +301,24 @@ internal sealed class Phase7Clock : TimeProvider
                 item.Observation == poll.Observation && item.Id == poll.TimerId
             );
             DateTimeOffset now = GetUtcNow();
+            DateTimeOffset target = through ?? poll.Due;
             if (
                 poll.Observation != observation
                 || timer is null
                 || timer.Disposed
                 || timer.Due != poll.Due
                 || poll.Due < now
-                || poll.Due >= strictlyBefore
+                || target < poll.Due
+                || target >= strictlyBefore
             )
             {
                 throw new InvalidOperationException(
-                    "The observed owner poll is no longer armed within this phase."
+                    through is null
+                        ? "The observed owner poll is no longer armed within this phase."
+                        : "The observed progress poll cannot be advanced through this ramp probe."
                 );
             }
-            AdvanceTo(timer, now, poll.Due, strictlyBefore);
+            AdvanceTo(timer, now, target, strictlyBefore);
         }
     }
 

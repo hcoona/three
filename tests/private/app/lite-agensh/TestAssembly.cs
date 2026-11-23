@@ -1,6 +1,10 @@
 using System.Text;
 using System.Text.Json;
 using LiteAgensh.Tests.Support;
+using Microsoft.Testing.Platform.Builder;
+using Microsoft.Testing.Platform.Configurations;
+using Microsoft.Testing.Platform.Extensions.TestHost;
+using Microsoft.Testing.Platform.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 [assembly: Parallelize(Workers = 2, Scope = ExecutionScope.ClassLevel)]
@@ -10,6 +14,47 @@ namespace LiteAgensh.Tests;
 [TestClass]
 public sealed class TestAssembly
 {
+    public static void AddExtensions(ITestApplicationBuilder builder, string[] arguments) =>
+        builder.TestHost.AddTestHostApplicationLifetime(
+            services => new ResultsLifetime(services.GetConfiguration())
+        );
+
+    private sealed class ResultsLifetime(IConfiguration configuration)
+        : ITestHostApplicationLifetime
+    {
+        private string? original;
+        private bool changed;
+
+        public string Uid => "LiteAgensh.Tests.FixtureResults";
+        public string Version => typeof(TestAssembly).Assembly.GetName().Version!.ToString();
+        public string DisplayName => "LiteAgensh Fixture Results";
+        public string Description => "Keep owned fixture evidence with the test host results.";
+
+        public Task<bool> IsEnabledAsync() => Task.FromResult(true);
+
+        public Task BeforeRunAsync(CancellationToken cancellationToken)
+        {
+            original = Environment.GetEnvironmentVariable("ThreeTestResultsDirectory");
+            if (string.IsNullOrWhiteSpace(original))
+            {
+                Environment.SetEnvironmentVariable(
+                    "ThreeTestResultsDirectory", configuration.GetTestResultDirectory()
+                );
+                changed = true;
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task AfterRunAsync(int exitCode, CancellationToken cancellationToken)
+        {
+            if (changed)
+            {
+                Environment.SetEnvironmentVariable("ThreeTestResultsDirectory", original);
+            }
+            return Task.CompletedTask;
+        }
+    }
+
     private static readonly string[] EnvironmentNames =
     [
         "GIT_CONFIG_GLOBAL",

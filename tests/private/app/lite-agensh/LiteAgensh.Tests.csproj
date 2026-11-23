@@ -9,6 +9,12 @@
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
   </ItemGroup>
   <ItemGroup>
+    <TestingPlatformBuilderHook Include="52eb1669-eb96-49ca-a5e7-4420162a9dbc">
+      <DisplayName>LiteAgensh Fixture Results</DisplayName>
+      <TypeFullName>LiteAgensh.Tests.TestAssembly</TypeFullName>
+    </TestingPlatformBuilderHook>
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\..\..\src\private\app\lite-agensh\LiteAgensh.csproj" />
     <ProjectReference Include="..\lite-agensh-test-process\LiteAgensh.TestProcess.csproj" />
     <ProjectReference Include="..\lite-agensh-offline-owner\LiteAgensh.OfflineOwner.csproj" />

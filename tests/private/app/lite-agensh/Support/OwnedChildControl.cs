@@ -105,16 +105,99 @@ internal sealed class OwnedChildControl : IAsyncDisposable
 
     internal async Task<OwnedChildIdentity> ReadReadyAsync(CancellationToken cancellationToken)
     {
-        await pipe.WaitForConnectionAsync(cancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(5), cancellationToken)
-            .ConfigureAwait(false);
+        using (
+            CancellationTokenSource connectionStage =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+        )
+        {
+            await ObserveDirectReadinessStageAsync(
+                pipe.WaitForConnectionAsync(connectionStage.Token),
+                connectionStage, cancellationToken
+            ).ConfigureAwait(false);
+        }
         reader = new(pipe, Encoding.UTF8, false, 1024, leaveOpen: true);
-        string? line = await reader
-            .ReadLineAsync(cancellationToken)
-            .AsTask()
-            .WaitAsync(TimeSpan.FromSeconds(5), cancellationToken)
+        using CancellationTokenSource readyStage = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken
+        );
+        Task<string?> line = reader.ReadLineAsync(readyStage.Token).AsTask();
+        await ObserveDirectReadinessStageAsync(line, readyStage, cancellationToken)
             .ConfigureAwait(false);
-        return ParseReady(line);
+        return ParseReady(await line.ConfigureAwait(false));
+    }
+
+    private static async Task ObserveDirectReadinessStageAsync(
+        Task operation,
+        CancellationTokenSource stage,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            // The observation's winner is independent of how late I/O responds to cancellation.
+            await operation.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            OperationCanceledException? callerCancellation = null;
+            if (
+                error is OperationCanceledException ioCancellation
+                && cancellationToken.IsCancellationRequested
+                && ioCancellation.CancellationToken != cancellationToken
+                && IsStageCancellation(ioCancellation)
+            )
+            {
+                callerCancellation = new(
+                    ioCancellation.Message, ioCancellation, cancellationToken
+                );
+            }
+
+            List<Exception> secondary = [];
+            try
+            {
+                await stage.CancelAsync().ConfigureAwait(false);
+            }
+            catch (Exception cleanup)
+            {
+                secondary.Add(cleanup);
+            }
+            try
+            {
+                await operation.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException canceled) when (IsStageCancellation(canceled)) { }
+            catch (Exception cleanup)
+            {
+                if (!ReferenceEquals(cleanup, error))
+                {
+                    secondary.Add(cleanup);
+                }
+            }
+            if (secondary.Count != 0)
+            {
+                (callerCancellation ?? error).Data["OwnedReadinessObservationCleanup"] =
+                    Json.ExceptionDetails(
+                        new AggregateException(
+                            "Owned readiness observation cleanup failed.", secondary
+                        )
+                    );
+            }
+            if (callerCancellation is not null)
+            {
+                throw callerCancellation;
+            }
+            throw;
+        }
+
+        bool IsStageCancellation(OperationCanceledException error) =>
+            operation.IsCanceled
+            && stage.IsCancellationRequested
+            && (
+                error.CancellationToken == stage.Token
+                || !error.CancellationToken.CanBeCanceled
+                || (error.CancellationToken == cancellationToken
+                    && cancellationToken.IsCancellationRequested)
+            );
     }
 
     // Only the product-owned held-check producer uses this prelaunch-aware path.

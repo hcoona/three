@@ -1942,7 +1942,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     firstRelease.TrySetResult();
                     var first = await ConsumeAsync(firstStart).ConfigureAwait(false);
                     Assert.AreEqual(firstReleasedAt, first.CompletedAt);
-                    Probe("worker2", handoff.SecondStarting.Task, first.CompletedAt);
+                    await ProbeAsync("worker2", handoff.SecondStarting.Task, first.CompletedAt)
+                        .ConfigureAwait(false);
 
                     await state.UntilAsync(handoff.SecondStarting.Task, state.WorkDeadline, token)
                         .ConfigureAwait(false);
@@ -1966,7 +1967,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     secondRelease.TrySetResult();
                     var second = await ConsumeAsync(secondStart).ConfigureAwait(false);
                     Assert.AreEqual(secondReleasedAt, second.CompletedAt);
-                    Probe("worker3", handoff.ThirdStarting.Task, second.CompletedAt);
+                    await ProbeAsync("worker3", handoff.ThirdStarting.Task, second.CompletedAt)
+                        .ConfigureAwait(false);
 
                     await state.UntilAsync(handoff.ThirdStarting.Task, state.WorkDeadline, token)
                         .ConfigureAwait(false);
@@ -2341,6 +2343,11 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 void Cold(string worker, Task starting)
                 {
                     Assert.IsFalse(starting.IsCompleted);
+                    AssertColdState(worker);
+                }
+
+                void AssertColdState(string worker)
+                {
                     Assert.IsFalse(entries.ContainsKey(worker));
                     Assert.IsNull(state.Database.ReadMetadata($"worker:{worker}:session"));
                     Assert.AreEqual(0m, state.Reservation(worker).Allowance);
@@ -2354,21 +2361,49 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     );
                 }
 
-                void Probe(string worker, Task starting, DateTimeOffset completedAt)
+                async Task ProbeAsync(
+                    string worker,
+                    Task<Phase7Handoff.Startup> starting,
+                    DateTimeOffset completedAt
+                )
                 {
                     DateTimeOffset eligible = completedAt.AddSeconds(10);
                     DateTimeOffset probe = eligible.AddSeconds(-1);
-                    Cold(worker, starting);
-                    Assert.IsFalse(state.Active.IsCompleted);
+                    Task<JsonObject> run = state.Active;
+                    await Phase7Run.RequireColdRampTargetAsync(starting, run, eligible)
+                        .ConfigureAwait(false);
+                    AssertColdState(worker);
                     Assert.IsLessThanOrEqualTo(
                         probe,
                         state.Clock.GetUtcNow(),
                         "Required pre-eligibility probe was missed."
                     );
-                    // Explicit scenario movement needs NO future timer < probe.
-                    // A registration AT probe is valid and fires on this advance.
-                    state.Clock.Advance(probe - state.Clock.GetUtcNow());
-                    Cold(worker, starting);
+
+                    // A pass that sampled time before the jump may still be in Git.
+                    // Wake its known progress wait, then witness the following pass.
+                    Phase7Clock.ObservedPoll wake = await state
+                        .ObserveRampProbePollAsync(
+                            starting, run, eligible, registeredAfter: 0, token
+                        )
+                        .ConfigureAwait(false);
+                    try
+                    {
+                        state.Clock.Advance(wake, state.WorkDeadline, token, through: probe);
+                    }
+                    catch (Exception error) when (error is InvalidOperationException
+                        or OperationCanceledException)
+                    {
+                        await Phase7Run.RequireColdRampTargetAsync(starting, run, eligible)
+                            .ConfigureAwait(false);
+                        throw;
+                    }
+                    await state
+                        .ObserveRampProbePollAsync(starting, run, eligible, wake.TimerId, token)
+                        .ConfigureAwait(false);
+                    await Phase7Run.RequireColdRampTargetAsync(starting, run, eligible)
+                        .ConfigureAwait(false);
+                    Assert.AreEqual(probe, state.Clock.GetUtcNow());
+                    AssertColdState(worker);
                     Assert.IsLessThan(eligible, state.Clock.GetUtcNow());
                     Console.WriteLine(
                         "PHASE7_DELAYED_COLD "
@@ -2383,8 +2418,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                                 ["grantOpen"] = state.Reservation(worker).GrantOpen,
                             }.ToJsonString()
                     );
-                    Assert.IsFalse(state.Active.IsCompleted);
-                    Assert.IsFalse(starting.IsCompleted);
+                    await Phase7Run.RequireColdRampTargetAsync(starting, run, eligible)
+                        .ConfigureAwait(false);
                     state.Clock.Advance(eligible - state.Clock.GetUtcNow());
                 }
             })
