@@ -111,7 +111,8 @@ bound fails CI; it does not add an application retry mechanism.
 
 When the selected protocol or direct client cohort changes, the integration
 author rechecks its published source identity, dependency metadata and these
-version-bound findings before dependent implementation. Independent Release
+version-bound findings, keeping them self-consistent with dependent
+implementation at merge. Independent Release
 integration review is the fallback review. The unchanged publisher guards and
 native qualification requirements must pass on the actual new dependency graph
 before its implementation is accepted; earlier passes do not transfer.

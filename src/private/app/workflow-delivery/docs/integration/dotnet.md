@@ -179,7 +179,7 @@ frameworks or the provider retain actual controller, native endpoint and clean
 consumer qualification; changing feeds or rolling the controller forward is
 not preparation.
 
-Before an API-cohort or required-endpoint SDK change, the .NET integration reviewer
+Before adopting an API-cohort or required-endpoint SDK change, the .NET integration reviewer
 rechecks the package TFM/API floor and native loading contract. Qualify the actual
 standalone controller, complete output transfer, basis and candidate native task
 operations, resolved assembly identities and official NBGV binding. Unavailable

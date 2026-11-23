@@ -104,9 +104,9 @@ publication, dispatch or credential/configuration changes.
 
 ## Native Ruby CI Integration
 
-Accept the [native Ruby planning facts](#native-ruby-planning-facts)
-and [CI group contract](#native-ruby-ci-group) before
-changing the reader and caller group. Use the private application's
+Keep the [native Ruby planning facts](#native-ruby-planning-facts),
+[CI group contract](#native-ruby-ci-group) and the reader and caller group
+self-consistent at each merge into `main`. Use the private application's
 native command/paired-selection/result interfaces. A small Ruby helper can
 consume activated RubyGems/Bundler APIs through the already required Ruby runtime;
 C# consumes structured answers and does not implement Gemfile/lock syntax,
@@ -146,11 +146,16 @@ Root `ruby-group` now owns PR checks; the duplicate root job and shadow PR
 workflow are retired with the fixture relocation. Ruby's group result gates merge
 through the existing required Validate aggregate; Ruby transfers no facts to
 another ecosystem group. Manual Release uses its
-ordinary caller; historical readers use their pinned producers. Public source establishes interface candidates,
-not current native qualification; source findings and bounded validation limits
-must be accepted before observations. Further work requires the current Wave
-and applicable concrete authorization; this contract does not reopen any stopped
-Ruby campaign or supply publication, dispatch, authentication or configuration authority.
+ordinary caller; historical readers use their pinned producers. Public source
+establishes interface candidates, not runtime qualification: routine
+credential-free local and governed CI checks of declared contracts in owned
+state need no experiment protocol or campaign slot, while
+[workflows](../../../../../../docs/governance/record-system.md#workflows),
+[the repository record policy](../../../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+and the accepted [Delivery Wave](../../../../../../docs/delivery-wave.md) govern
+empirical experiments and work authorization. This contract reopens no stopped
+Ruby campaign and supplies no publication, dispatch, authentication or
+configuration authority.
 
 The native source basis is public and pinned: Bundler
 [2.4.20 Definition](https://github.com/ruby/rubygems/blob/de20c7e7b7d7cc7a9ef088684a2c742d5a651ebf/bundler/lib/bundler/definition.rb)
@@ -326,7 +331,7 @@ Changes follow the [shared review core](../design/release.md#release-integration
 credential-free component tests and ordinary Linux CI must qualify native
 command/configuration/output boundaries, original build/inspection/consumption,
 failure-after-effect, cancellation, missing transfers and complete results on
-the final subject. Run complete affected suites and repository HK/hooks/record
+the final subject. Run complete affected suites, repository HK/hooks and applicable record
 checks. These checks do not establish current token/publisher configuration or
 a new live feed/publication. Historical readers and spent campaigns remain
 intact; no runtime schema compatibility alias is added.

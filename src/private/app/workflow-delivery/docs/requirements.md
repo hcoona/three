@@ -7,15 +7,18 @@ Workflow Delivery application. The [HLD](high-level-design.md),
 [middle-level design](middle-level-design.md) and
 [integration contracts](middle-level-design.md#integration-mapping) realize it; the
 [application README](../README.md) owns the implemented interface. The
-[Delivery Wave](../../../../../docs/delivery-wave.md) owns work authorization,
-and the [handoff](agent-handoff.md) owns operating entry points and retained
-limits. Historical records and evidence keep their original scope under the
-[historical source rule](README.md#historical-source-rule).
+[record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+and [Delivery Wave](../../../../../docs/delivery-wave.md) govern work
+authorization, and the [handoff](agent-handoff.md) routes operating entry points
+and retained limits. Historical records and evidence keep their original scope
+under the [historical source rule](README.md#historical-source-rule).
 
-A requirement change is confirmed first; architecture, contracts,
-implementation and validation then follow before callers switch. A feasibility
-conflict returns to an explicit requirement decision. Prior success does not
-qualify a different implementation or environment.
+Substantive product or scope changes require explicit owner confirmation;
+records and implementation evolve concurrently under
+[the record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency),
+staying self-consistent at merge before callers switch. A feasibility conflict
+returns to an explicit requirement decision. Prior success does not qualify a
+different implementation or environment.
 
 ## Mission
 
@@ -540,9 +543,10 @@ delivery increment, such as the npm first slice or the NuGet second slice;
 Requirements review is complete when the supported journeys, mandatory behavior,
 non-goals and platform assumptions have explicit dispositions and no unresolved
 product decision is hidden in implementation detail. Architecture reconciliation
-then maps the accepted behavior to responsibilities and necessary contracts.
+maps the confirmed behavior to responsibilities and necessary contracts.
 
 Later design cannot silently weaken these requirements. Support and completion
 claims require the corresponding implementation and validation; requirements
 acceptance alone supplies neither. The [repository record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
-owns work authorization and its termination through accepted Wave changes.
+owns work authorization, including positive
+[Delivery Wave](../../../../../docs/delivery-wave.md) grants and their closure.

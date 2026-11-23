@@ -56,12 +56,14 @@ subsequent owner platform-reliance decision remain distinct evidence.
 Before a destination or publisher-profile selection relies on mutable upload,
 filename, retention, index or OIDC sources, the implementer rechecks the cited
 official documentation; contrary observations also trigger this check. An
-independent evidence reviewer assesses material changes, and the next Wave
-selecting Python implementation or operations is the fallback review event.
+independent evidence reviewer assesses material changes, and review of the next
+PR or Wave entry selecting dependent Python implementation or operations is the
+fallback review event.
 Recheck backend/build documentation when selecting or changing its version,
 and reevaluate repository-code findings when the selected adapter changes.
-Record results in the Issue/PR and update affected current conclusions before
-execution. These rechecks do not reopen a closed campaign or authorize a probe.
+Record results in the Issue/PR and keep affected current conclusions
+self-consistent at merge and before any authorized live operation. These
+rechecks do not reopen a closed campaign or authorize a probe.
 
 ## Development-Branch Native Version Projection
 

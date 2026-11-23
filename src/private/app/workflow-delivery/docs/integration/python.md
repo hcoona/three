@@ -161,8 +161,9 @@ excluded from CI qualification.
 The [primitive native observation](../research/python-native-planning.md#primitive-native-observation)
 is independently accepted and stopped; both unused diagnostic reserves expired.
 It qualifies the pinned helper composition on its recorded Linux host, not complete
-fact assembly or caller integration. Do not repeat that campaign; a later native
-experiment needs its own accepted protocol.
+fact assembly or caller integration. Do not repeat that closed campaign; native
+experiments and work authorization follow [workflows][record-workflows] and
+[the repository record policy][record-auth].
 
 ### Python Quality and Caller Mapping
 
@@ -237,13 +238,11 @@ input with no consumers versus unresolved scope, tableless quality owners,
 native pytest endpoint/configuration/target errors and cancellation, root shared
 inputs, selected package/group preparation, and every required distribution/result
 transfer. The existing core nonempty selected-check contract remains intact.
-Complete native collection/query qualification requires its own accepted exact
-protocol using the actual current tools and lock format; the stopped primitive
-campaign is not reused or repeated. Ordinary PR CI remains available for its
-authorized caller-integration qualification after contract acceptance. A change
-to Python selection or caller code is qualified, after contract acceptance, by
-ordinary PR CI together with the tests with controlled fixtures above; only a new
-native collection or query experiment needs its own accepted protocol.
+The stopped primitive campaign is not reused or repeated: selection, query and
+caller changes stay self-consistent with owning contracts at merge and qualify
+through the controlled-fixture tests above and governed CI, while new
+collection/query experiments (bound to actual tools/locks) and authorization
+follow [workflows][record-workflows] and [the record policy][record-auth].
 
 The shared core owns the
 [paired direct-reason transfer](../design/repository-and-selection.md#paired-direct-selection-reasons)
@@ -280,11 +279,13 @@ version injection, smoke witness or static-project rewrite is introduced.
 Tests with controlled fixtures cover complete declared outputs and version agreement,
 failed/missing required checks, native preparation/build failure, installed
 consumer origin, Git-free sdist invocation, cancellation and original result
-transfer. Native qualification additionally observes actual selected frozen
-installation, noneditable plugin independence, shared backend requirements,
-wheel/sdist contents and both clean consumers using one concrete protected finite
-protocol with a diagnostic buffer. Stop at the first accepted success. Source
-findings alone do not establish those results.
+transfer. Native qualification also observes selected frozen installation,
+noneditable plugin independence, shared backend requirements, wheel/sdist
+contents and both clean consumers, beyond source findings. The closed
+finite-protocol package campaigns have spent their lifetimes; routine checks,
+new qualification experiments and authorization follow the
+[package contract below](#native-python-package-execution),
+[workflows][record-workflows] and [the record policy][record-auth].
 
 Native preparation and the current Python caller own their locked build inputs.
 Retired control-package generators and adapter constants have no remaining
@@ -401,9 +402,10 @@ preparation contract. Affected producer/consumer changes preserve selected/full
 preparation and complete checks together. Tests with controlled fixtures cover root-only
 and mixed member preparation, native name/target agreement, explicit full versus
 incremental selection, complete partition/result transfer and failures/cancellation.
-Ordinary authorized PR CI qualifies the complete affected caller group before
-delivery. No local package experiment, historical campaign, Release or publication
-authority follows from this integration contract.
+Governed PR CI qualifies the affected caller group before delivery. No
+empirical experiment, closed-campaign revival, Release dispatch or publication
+authority follows; see [workflows][record-workflows] and
+[the record policy][record-auth].
 
 ## Native Python Package Execution
 
@@ -452,7 +454,7 @@ there is no skip flag or application fallback. Frozen preparation remains the
 selected installation authority. Native Directory requirements still enforce
 editability equality under permissive checking; compatible-version checks do not
 prove original-archive identity. A changed tool or necessary
-backend shape requires the affected native-contract review before use.
+backend shape requires the affected native-contract review before merge.
 
 Consume normal native distribution metadata through maintained packaging and
 Python library interfaces. Preserve necessary archive path, size and ambiguous
@@ -491,11 +493,12 @@ support. Do not rewrite `pyproject.toml` to force success.
 Keep complete build, contents, wheel install/import and Git-free sdist
 build/install/import obligations individually visible even when one native
 build serves multiple checks. Native fact selection remains separate from
-execution. The exact tools/helper/harness, environment/download/cache effects,
-finite command/diagnostic/time/state bounds, stop and owned cleanup must receive
-independent review and protected protocol acceptance before native qualification.
-Earlier graph/enrichment campaigns supply no package allowance. Missing necessary
-native capability stops for owner disposition without reduced check coverage.
+execution. Routine checks, new native-qualification experiments
+(tools/helper/harness, environment/download/cache effects, finite bounds, stop
+and cleanup) and work authorization follow [workflows][record-workflows] and
+[the record policy][record-auth]; closed graph/enrichment/package campaigns
+supply no allowance. Missing necessary native capability stops for owner
+disposition without reduced check coverage.
 
 ## Concrete Python Release Integration
 
@@ -670,7 +673,7 @@ native command/configuration and output boundaries, original
 preparation/consumption, partial-state order, failure-after-effect,
 cancellation, missing transfers and complete results with controlled contract
 tests and credential-free local builds/tests. Run complete affected suites,
-HK/hooks and exact record checks. Ordinary Linux CI must qualify the final
+HK/hooks and applicable record checks. Ordinary Linux CI must qualify the final
 component/caller subject before delivery. These checks do not prove current OIDC
 configuration, live registry behavior or a new publication and do not reopen
 the stopped Python package or publication campaigns.
@@ -684,3 +687,6 @@ conditions and observation.
 | Existing destination/use         | Native completion conditions to preserve                                                                                                                          | Post-publication observation                                                                                        |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | TestPyPI Buddy and PyPI Official | Complete intended wheel/sdist set, normalized version, index file/metadata identity, both original files and required visibility; supported exact-subset recovery | Each intended file listed in the selected index with matching hashes and not yanked, and its downloaded bytes equal |
+
+[record-auth]: ../../../../../../docs/governance/record-system.md#work-authorization-and-concurrency
+[record-workflows]: ../../../../../../docs/governance/record-system.md#workflows

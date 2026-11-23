@@ -172,9 +172,12 @@ The [common integration tables](integration/common.md) own only the Official
 channel scope and CLI/boundary payload table. Keep each inventory with its actual
 caller changes in its single owner. The
 [Release review core](design/release.md#release-integration-review) applies to
-affected integrations. None of these records grants execution or publication;
-the [Wave](../../../../../docs/delivery-wave.md) and
-[handoff](agent-handoff.md#authorization-and-closed-campaigns) retain those bounds.
+affected integrations. None of these records grants live execution, publication
+or campaign authority; the
+[record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency),
+[Wave](../../../../../docs/delivery-wave.md) and
+[handoff](agent-handoff.md#authorization-and-closed-campaigns) govern work
+authorization and retained campaign bounds.
 
 The former caller inventory and migration order remain at their
 [immutable source][former-plan]. Historical producer identities and exact
