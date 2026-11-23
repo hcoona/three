@@ -286,9 +286,7 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
                 "creator-identity", "observed", process.Id, Hello["birthTicks"]!.GetValue<long>()
             );
             Assert.AreEqual(
-                Phase6OwnedCreator.Hash(
-                    Path.ChangeExtension(Phase6OwnedCreator.Executable, ".dll")
-                ),
+                Phase6OwnedCreator.Hash(Phase6OwnedCreator.AssemblyPath),
                 Hello["moduleSha256"]!.GetValue<string>()
             );
             Assert.AreEqual(

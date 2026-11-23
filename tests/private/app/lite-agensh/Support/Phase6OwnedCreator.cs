@@ -37,7 +37,12 @@ internal sealed class Phase6OwnedCreator : IAsyncDisposable
     internal CreditReservation Target =>
         Ledger.Reservations(Database.RunId).Single(row => row.Id == TargetId);
     internal static string Executable =>
-        Path.Combine(AppContext.BaseDirectory, "LiteAgensh.OfflineOwner.exe");
+        Path.Combine(
+            AppContext.BaseDirectory,
+            OperatingSystem.IsWindows() ? "LiteAgensh.OfflineOwner.exe" : "LiteAgensh.OfflineOwner"
+        );
+    internal static string AssemblyPath =>
+        Path.Combine(AppContext.BaseDirectory, "LiteAgensh.OfflineOwner.dll");
 
     private Phase6OwnedCreator(GitScenarioState git, Dictionary<string, string?> environment)
     {
@@ -136,10 +141,7 @@ internal sealed class Phase6OwnedCreator : IAsyncDisposable
             process.StartTime.ToUniversalTime().Ticks,
             Hello["birthTicks"]!.GetValue<long>()
         );
-        Assert.AreEqual(
-            Hash(Path.ChangeExtension(Executable, ".dll")),
-            Hello["moduleSha256"]!.GetValue<string>()
-        );
+        Assert.AreEqual(Hash(AssemblyPath), Hello["moduleSha256"]!.GetValue<string>());
         Assert.AreEqual(
             Hash(typeof(Coordinator).Assembly.Location),
             Hello["productSha256"]!.GetValue<string>()
