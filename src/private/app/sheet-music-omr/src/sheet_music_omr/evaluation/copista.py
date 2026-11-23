@@ -836,6 +836,7 @@ def append_test_touches(  # noqa: PLR0913
     piece_count: int,
     command: Sequence[str],
     open_reading_masks_sha256: str | None = None,
+    claimed_copista_touch_index: int | None = None,
     purpose: str = "S0-baseline",
     cap: int = S0_TEST_TOUCH_CAP,
 ) -> list[int]:
@@ -878,7 +879,7 @@ def append_test_touches(  # noqa: PLR0913
     counts: list[int] = []
     with touch_log_path.open("a", encoding="utf-8") as fh:
         for idx, (r_id, r_sha, w_sha) in enumerate(readers, start=1):
-            rec = {
+            rec: dict[str, object] = {
                 "utc": utc_now,
                 "run_id": run_id,
                 "git_commit": git_commit,
@@ -892,6 +893,8 @@ def append_test_touches(  # noqa: PLR0913
                 "command": list(command),
                 "purpose": purpose,
             }
+            if idx == 1 and claimed_copista_touch_index is not None:
+                rec["claimed_copista_touch_index"] = claimed_copista_touch_index
             fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
             counts.append(len(s0_touches) + idx)
     return counts
@@ -925,6 +928,101 @@ def append_test_touch(  # noqa: PLR0913
         purpose=purpose,
         cap=cap,
     )[0]
+
+
+def claim_or_append_s0_touches(  # noqa: PLR0913
+    *,
+    touch_log_path: Path,
+    run_id: str,
+    git_commit: str,
+    code_tree_sha256: str,
+    copista_reader_id: str,
+    copista_reader_sha256: str,
+    copista_weights_sha256: str,
+    piece_count: int,
+    command: Sequence[str],
+    open_reading_masks_sha256: str,
+    purpose: str = "S0-baseline",
+    cap: int = S0_TEST_TOUCH_CAP,
+) -> tuple[int, int]:
+    """Claim one unclaimed ``run-copista`` touch in ledger or append both."""
+    existing = (
+        [
+            json.loads(ln)
+            for ln in touch_log_path.read_text(encoding="utf-8").splitlines()
+            if ln.strip()
+        ]
+        if touch_log_path.is_file()
+        else []
+    )
+    s0_touches = [
+        r
+        for r in existing
+        if r.get("split") == "TEST" and r.get("purpose") == purpose
+    ]
+    claimed_indices = {
+        r["claimed_copista_touch_index"]
+        for r in s0_touches
+        if isinstance(r.get("claimed_copista_touch_index"), int)
+    }
+    expected_fields = {
+        "run_id": run_id,
+        "git_commit": git_commit,
+        "code_tree_sha256": code_tree_sha256,
+        "reader_id": copista_reader_id,
+        "reader_sha256": copista_reader_sha256,
+        "weights_sha256": copista_weights_sha256,
+        "open_reading_masks_sha256": open_reading_masks_sha256,
+        "piece_count": piece_count,
+        "purpose": purpose,
+    }
+    unclaimed_idx: int | None = None
+    for idx, rec in enumerate(s0_touches, start=1):
+        cmd_list = rec.get("command")
+        is_inf = isinstance(cmd_list, list) and "run-copista" in cmd_list
+        if (
+            idx not in claimed_indices
+            and is_inf
+            and all(rec.get(k) == v for k, v in expected_fields.items())
+        ):
+            unclaimed_idx = idx
+
+    if unclaimed_idx is not None:
+        (t_a,) = append_test_touches(
+            touch_log_path=touch_log_path,
+            run_id=run_id,
+            git_commit=git_commit,
+            code_tree_sha256=code_tree_sha256,
+            readers=[("agent-build-01", None, None)],
+            piece_count=piece_count,
+            command=command,
+            open_reading_masks_sha256=open_reading_masks_sha256,
+            claimed_copista_touch_index=unclaimed_idx,
+            purpose=purpose,
+            cap=cap,
+        )
+        return t_a, unclaimed_idx
+
+    t_a, t_b = append_test_touches(
+        touch_log_path=touch_log_path,
+        run_id=run_id,
+        git_commit=git_commit,
+        code_tree_sha256=code_tree_sha256,
+        readers=[
+            ("agent-build-01", None, None),
+            (
+                copista_reader_id,
+                copista_reader_sha256,
+                copista_weights_sha256,
+            ),
+        ],
+        piece_count=piece_count,
+        command=command,
+        open_reading_masks_sha256=open_reading_masks_sha256,
+        purpose=purpose,
+        cap=cap,
+    )
+    return t_a, t_b
 
 
 def copista_provenance_sha256(prov: dict[str, object]) -> str:
@@ -1318,6 +1416,7 @@ def setup_copista_environment(
 def run_copista_inference_and_assemble(  # noqa: C901, PLR0912, PLR0915
     *,
     confinement: Confinement,
+    command_argv: Sequence[str],
     workers: int = 4,
     device: str = "cpu",
     formal: bool = False,
@@ -1404,11 +1503,23 @@ def run_copista_inference_and_assemble(  # noqa: C901, PLR0912, PLR0915
                 preds_dir / f"{stem_pf}.posteriors.json", run_dir
             )
 
-    # Freeze open_reading_masks_sha256 before running (TEST scoring touches are
-    # recorded atomically in score-s0 before scoring any TEST piece per
-    # evaluation-protocol.md:605-616).
+    # Freeze open_reading_masks_sha256 & record TEST touch BEFORE any TEST read!
     with confinement.lock(downloads_dir / ".ledger.lock"):
         freeze_run_masks(run_dir, downloads_dir, masks_sha)
+        n_test = sum(1 for p in manifest["pieces"] if p.get("split") == "TEST")
+        if n_test > 0:
+            _ = append_test_touch(
+                touch_log_path=downloads_dir / "w2-touch-log.jsonl",
+                run_id=run_dir.name,
+                git_commit=cur_commit,
+                code_tree_sha256=cur_tree_sha,
+                reader_id=f"copista-28m@{COPISTA_HF_REVISION[:7]}",
+                reader_sha256=COPISTERIA_ARCHIVE_SHA256,
+                weights_sha256=str(prov["combined_weights_sha256"]),
+                piece_count=n_test,
+                command=command_argv,
+                open_reading_masks_sha256=masks_sha,
+            )
 
     preds_dir.mkdir(parents=True, exist_ok=True)
     tmp_dir.mkdir(parents=True, exist_ok=True)

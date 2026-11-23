@@ -33,7 +33,7 @@ from sheet_music_omr.evaluation.copista import (
     COPISTA_HF_REVISION,
     COPISTERIA_COMMIT,
     S0_TEST_TOUCH_CAP,
-    append_test_touches,
+    claim_or_append_s0_touches,
     copista_provenance_sha256,
     run_copista_inference_and_assemble,
     setup_copista_environment,
@@ -671,22 +671,17 @@ def run_stage_s0_scoring(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ledger_lock = downloads_dir / ".ledger.lock"
     n_test_pieces = sum(1 for pm in pieces_meta if pm["split"] == "TEST")
 
-    # Append immutable TEST touches atomically BEFORE reading ANY TEST files!
+    # Claim verified run-copista touch & append agent-build-01 BEFORE TEST read!
     copista_reader_id = f"copista-28m@{COPISTA_HF_REVISION[:7]}"
     with confinement.lock(ledger_lock):
-        t_count_a, t_count_b = append_test_touches(
+        t_count_a, t_count_b = claim_or_append_s0_touches(
             touch_log_path=touch_log_p,
             run_id=run_id,
             git_commit=git_commit,
             code_tree_sha256=tree_sha,
-            readers=[
-                ("agent-build-01", None, None),
-                (
-                    copista_reader_id,
-                    str(prov["copisteria_archive_sha256"]),
-                    str(prov["combined_weights_sha256"]),
-                ),
-            ],
+            copista_reader_id=copista_reader_id,
+            copista_reader_sha256=str(prov["copisteria_archive_sha256"]),
+            copista_weights_sha256=str(prov["combined_weights_sha256"]),
             piece_count=n_test_pieces,
             command=command_argv,
             open_reading_masks_sha256=frozen_masks_sha,
@@ -2142,6 +2137,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             elif args.command == "run-copista":
                 res = run_copista_inference_and_assemble(
                     confinement=conf,
+                    command_argv=[
+                        "python",
+                        "-m",
+                        "sheet_music_omr.evaluation",
+                        *raw_argv,
+                    ],
                     workers=args.jobs,
                     device=args.device,
                     formal=bool(args.formal),

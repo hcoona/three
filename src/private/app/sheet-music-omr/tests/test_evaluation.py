@@ -1480,3 +1480,63 @@ def test_t01_archive_join_and_req012_manifest_validation(
         cli_mod._load_and_verify_req012_manifest(  # noqa: SLF001
             good_req, {"gold-02": 400}, formal=True
         )
+
+
+def test_s0_touch_ledger_single_line_claim_atomicity(tmp_path: Path) -> None:
+    """Verify run-copista + score-s0 charges 2 touches (1+1) atomically."""
+    tlog = tmp_path / "claim-touch.jsonl"
+    t1 = append_test_touch(
+        touch_log_path=tlog,
+        run_id="r-1",
+        git_commit="c1",
+        code_tree_sha256="t1",
+        reader_id="copista-28m@44464d1",
+        reader_sha256="rs",
+        weights_sha256="ws",
+        piece_count=7,
+        command=["python", "-m", "sheet_music_omr.evaluation", "run-copista"],
+        open_reading_masks_sha256="ms",
+    )
+    assert t1 == 1
+    # Mismatched commit cannot claim r-1's run-copista touch -> charges +2
+    ta_miss, tb_miss = cop_mod.claim_or_append_s0_touches(
+        touch_log_path=tlog,
+        run_id="r-other",
+        git_commit="c-other",
+        code_tree_sha256="t1",
+        copista_reader_id="copista-28m@44464d1",
+        copista_reader_sha256="rs",
+        copista_weights_sha256="ws",
+        piece_count=7,
+        command=["score-s0"],
+        open_reading_masks_sha256="ms",
+    )
+    assert (ta_miss, tb_miss) == (2, 3)
+    # Matching score-s0 claims t1 atomically in the ledger line -> charges +1!
+    ta, tb = cop_mod.claim_or_append_s0_touches(
+        touch_log_path=tlog,
+        run_id="r-1",
+        git_commit="c1",
+        code_tree_sha256="t1",
+        copista_reader_id="copista-28m@44464d1",
+        copista_reader_sha256="rs",
+        copista_weights_sha256="ws",
+        piece_count=7,
+        command=["score-s0"],
+        open_reading_masks_sha256="ms",
+    )
+    assert (ta, tb) == (4, 1)
+    # Re-running score-s0 without fresh run-copista cannot re-claim t1 -> +2!
+    ta2, tb2 = cop_mod.claim_or_append_s0_touches(
+        touch_log_path=tlog,
+        run_id="r-1",
+        git_commit="c1",
+        code_tree_sha256="t1",
+        copista_reader_id="copista-28m@44464d1",
+        copista_reader_sha256="rs",
+        copista_weights_sha256="ws",
+        piece_count=7,
+        command=["score-s0"],
+        open_reading_masks_sha256="ms",
+    )
+    assert (ta2, tb2) == (5, 6)
