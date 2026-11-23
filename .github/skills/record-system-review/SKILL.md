@@ -1,6 +1,6 @@
 ---
 name: record-system-review
-description: Review repository record-system changes for authority, lifecycle, consumer, routing, and policy-control consistency. Use for changes that add, move, split, delete, or rebind records; edit governance, work-authorization, shared-principle, or root instruction/workflow/template authorities; alter portal routing, generated-interface ownership or apm.lock.yaml source/deployment provenance, hk, control-governed workflows, or control-governed Agent Skills; alter authority ownership, established requirement identifiers, or consumer/immutability/license contracts in any record; or claim the Record-System Gate.
+description: Review repository record-system changes for authority, lifecycle, consumer, routing, and policy-control consistency. Use for changes that add, move, split, delete, or rebind records; edit governance, work-authorization, shared-principle, or root instruction/workflow/template authorities; alter portal routing, generated-interface ownership or apm.lock.yaml source/deployment mappings, hk, control-governed workflows, or control-governed Agent Skills; alter authority ownership, established requirement identifiers, or consumer/immutability/license contracts in any record; or claim the Record-System Gate.
 ---
 
 # Record-System Review
@@ -21,18 +21,15 @@ shared-principle, or root instruction/workflow/template authorities
 (`docs/governance/**`, `docs/delivery-wave.md`, `schemas/governance/**`,
 `docs/engineering/engineering-principles.md`, `AGENTS.md`, `docs/AGENTS.md`,
 `CONTRIBUTING.md`, and `.github/pull_request_template.md`); portal-routing,
-generated-interface ownership or `apm.lock.yaml` source/deployment provenance
-(excluding content and hash regeneration of an already-bound local skill whose
-source mapping, owners, and deployed file set are unchanged), `hk`,
-control-governed workflow, or control-governed Agent Skill changes (skills
-implementing controls in
+generated-interface ownership or `apm.lock.yaml` source/deployment mappings,
+`hk`, control-governed workflow, or control-governed Agent Skill changes
+(skills implementing controls in
 [`controls.yaml`](../../../docs/governance/controls.yaml), including their
-`evals/`, or repository governance routing, rather than domain/coding skills);
-and any record edit—inside or outside `src/`—that alters authority ownership,
-established requirement identifiers, or consumer/immutability/license contracts,
-or claims the Record-System Gate, trigger this review. Routine in-place edits
-outside these triggers remain covered by `mise run records:check` and applicable
-domain reviews.
+`evals/`, or repository governance routing); and any record edit that alters
+authority ownership, established requirement identifiers, or
+consumer/immutability/license contracts, or claims the Record-System Gate,
+trigger this review. Routine in-place edits outside these triggers remain
+covered by `mise run records:check` and applicable domain reviews.
 
 ## Reviewer Preconditions
 
