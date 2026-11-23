@@ -61,7 +61,6 @@ if TYPE_CHECKING:
 
 _SPANNER_TAGS: tuple[tuple[str, str], ...] = (
     (".//notations/slur", "slur"),
-    (".//notations/tuplet", "tuplet"),
     (".//notations/ornaments/wavy-line", "wavy-line"),
     (".//direction-type/wedge", "wedge"),
     (".//direction-type/dashes", "dashes"),

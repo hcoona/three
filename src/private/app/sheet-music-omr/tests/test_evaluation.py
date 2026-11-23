@@ -1256,3 +1256,84 @@ def test_outer_margin_tight_boundary_reachability() -> None:
             dark_tight, [(260, 390)], [(40, 360)], 14.0
         )
         assert (yt_got, yb_got) == (exp_y, 502)
+
+
+def test_tuplet_numbers_preserved_across_merge_and_page_concat() -> None:
+    """Keep <tuplet number='1'> intact in 2-part merge and page concat."""
+    triplet_notes = "".join(
+        f"<note><pitch><step>{step}</step><octave>{octv}</octave></pitch>"
+        "<duration>2</duration><voice>1</voice><type>eighth</type>"
+        "<time-modification><actual-notes>3</actual-notes>"
+        "<normal-notes>2</normal-notes></time-modification>"
+        f"{tup_tag}</note>"
+        for step, octv, tup_tag in (
+            (
+                "C",
+                4,
+                (
+                    '<notations><tuplet type="start" number="1"/>'
+                    '<slur type="start" number="1"/></notations>'
+                ),
+            ),
+            ("D", 4, ""),
+            (
+                "E",
+                4,
+                (
+                    '<notations><tuplet type="stop" number="1"/>'
+                    '<slur type="stop" number="1"/></notations>'
+                ),
+            ),
+        )
+    ) + (
+        "<note><rest/><duration>18</duration><voice>1</voice>"
+        "<type>half</type><dot/></note>"
+    )
+    two_part_triplet = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        "<score-partwise><part-list>"
+        '<score-part id="P1"><part-name>RH</part-name></score-part>'
+        '<score-part id="P2"><part-name>LH</part-name></score-part>'
+        '</part-list><part id="P1"><measure number="1">'
+        "<attributes><divisions>6</divisions><key><fifths>0</fifths></key>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time>"
+        "<clef><sign>G</sign><line>2</line></clef></attributes>"
+        f"{triplet_notes}</measure></part>"
+        '<part id="P2"><measure number="1">'
+        "<attributes><divisions>6</divisions><key><fifths>0</fifths></key>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time>"
+        "<clef><sign>F</sign><line>4</line></clef></attributes>"
+        f"{triplet_notes.replace('<octave>4</octave>', '<octave>3</octave>')}"
+        "</measure></part></score-partwise>"
+    )
+
+    from sheet_music_omr.musicxml_reverse import (  # noqa: PLC0415
+        _load as load_xml,
+    )
+
+    merged = merge_two_part_grand_staff(two_part_triplet)
+    assert '<slur type="start" number="12"' in merged
+    expected_measure_tuplets = [
+        ("1", "start", "1"),
+        ("1", "stop", "1"),
+        ("2", "start", "1"),
+        ("2", "stop", "1"),
+    ]
+    assert [
+        (n.findtext("staff"), t.get("type"), t.get("number"))
+        for n in load_xml(merged).findall(".//note")
+        for t in n.findall("./notations/tuplet")
+    ] == expected_measure_tuplets
+
+    asm = concat_page_predictions([two_part_triplet, two_part_triplet])
+    assert asm.parse_valid is True
+    assert asm.failed_pages == ()
+    assert asm.xml_text is not None
+    assert [
+        (n.findtext("staff"), t.get("type"), t.get("number"))
+        for n in load_xml(asm.xml_text).findall(".//note")
+        for t in n.findall("./notations/tuplet")
+    ] == expected_measure_tuplets * 2
+    sc = score_prediction(asm.xml_text, asm.xml_text)
+    assert sc.parse_valid is True
+    assert len(sc.measures) == 2  # noqa: PLR2004
