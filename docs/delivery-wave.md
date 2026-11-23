@@ -422,47 +422,6 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
   release/proving or campaign dispatch, credential, authentication or access
   change. Closed campaign limits and other grants are not reopened or enlarged.
 
-### Update System.CommandLine for the three existing CLI consumers
-
-- **Work carrier:** the authorization PR proposing this entry and the existing
-  dependency update in [PR #1673](https://github.com/hcoona/three/pull/1673).
-  The repository owner selected this narrow authorization before substantive
-  dependency work.
-- **Accepted inputs:** the [governance policy](governance/governance-system.md),
-  [record policy](governance/record-system.md),
-  [engineering principles](engineering/engineering-principles.md), root
-  `Directory.Packages.props`, the affected application and test locks, and
-  the existing requirements, designs and validation contracts routed by
-  [Document Translator](../src/private/app/document-translator-cli/docs/README.md),
-  [Qidian Downloader](../src/private/app/qidian-novel-downloader/README.md) and
-  [Copilot Telegram Hook](../src/private/app/vscode-copilot-telegram-hook/docs/README.md).
-- **Advancement and outcome:** integrate the System.CommandLine 3.0.0 update
-  from #1673, including the shared CPM declaration, those three consumers'
-  application and test locks, and necessary compatibility repairs in their
-  existing source, tests and owning records. Component owners select the
-  proportionate engineering-principled repair rather than merely the smallest
-  diff. Preserve existing caller-visible command behavior and product
-  boundaries.
-- **Ordering and gates:** merge this authorization before substantive work.
-  Keep shared-authority changes ordered with their other consumers, and keep
-  changed governing decisions and implementation self-consistent at each merge
-  into `main`. Retain applicable independent engineering/OCR, record-system and
-  research-evidence review, `GOV-011` finding disposition, applicable
-  explicit-base record checks and HK, existing credential-free tests and
-  ordinary CI on the actual source. Recheck a relied-on mutable interface
-  before dependent work. A material product, feasibility or scope tradeoff
-  returns to the owner.
-- **Acceptance and closure:** the declared dependency update and necessary
-  repairs pass the existing applicable checks while preserving current command
-  contracts, target frameworks, trust, recovery and support boundaries.
-  Delete this entry when the bounded update is accepted or the owner stops it.
-- **Exclusions:** no unrelated dependency upgrade, product feature or
-  target-framework change; no live translation, Qidian, Telegram or Copilot
-  service execution, user-level installation, paid native operation,
-  campaign replay, publication, release/proving dispatch, credential,
-  authentication, permission or access change. Existing closed-campaign
-  boundaries remain unchanged.
-
 ### Design and plan sheet-music recognition
 
 - **Work carrier:** [Issue #686](https://github.com/hcoona/three/issues/686),
