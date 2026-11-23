@@ -112,6 +112,22 @@ rule, but the bound is stricter than the protocol's per-step bound, so the
 results carrier lists any such timeout for the owner to review before its
 figures are used.
 
+The W2/W3 evaluation and real-data alignment CLI runs the
+[evaluation and real-data alignment protocol](docs/evaluation-protocol.md)
+with external `--run-dir` and `--downloads` directories:
+
+```powershell
+uv run --package sheet-music-omr `
+  python -m sheet_music_omr.evaluation COMMAND --run-dir RUN --downloads DOWNLOADS [options]
+```
+
+The sequence is `setup-copista`, `align`, visual inspection of all 92
+`RUN/overlays/<gold_id>-p<NN>.png` images (updating
+`RUN/alignment/box-overrides.json` and re-running `align` if any box clips
+notation), `approve-overlays --overlays-sha256 SHA256 --note NOTE`,
+`run-copista` and `score-s0` (with `--formal` on `align`, `run-copista` and
+`score-s0` for clean-tree formal runs).
+
 ## User and primary journey
 
 The user is the repository owner, who turns photographed pages of piano scores
