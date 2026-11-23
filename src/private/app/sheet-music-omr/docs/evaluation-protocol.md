@@ -3,12 +3,19 @@
 This record is the protocol that
 [OMR-REQ-016 through OMR-REQ-020](requirements.md#real-data-splits-and-recognizer-evaluation)
 require for W2 ([Issue #1489](https://github.com/hcoona/three/issues/1489)) and
-W3 ([Issue #1490](https://github.com/hcoona/three/issues/1490)) under the
-accepted [Delivery Wave](../../../../../docs/delivery-wave.md) entry. Its
+W3 ([Issue #1490](https://github.com/hcoona/three/issues/1490)). Its
 consumers are W2 and W3 implementers, their independent reviewers, and
-downstream W4 through W8 workstreams.
+downstream W4 through W8 workstreams. With W2 and W3 accepted and closed on
+`w2-s0-formal-3`
+([#1490 comment 7109703011](https://github.com/hcoona/three/issues/1490#issuecomment-7109703011),
+[#1489 comment 7109703768](https://github.com/hcoona/three/issues/1489#issuecomment-7109703768))
+and their [Delivery Wave](../../../../../docs/delivery-wave.md) entry retired,
+this protocol does not itself grant work: any new external installation,
+network download, private-input alignment/inference, or `TEST` evaluation
+requires a new accepted Delivery Wave entry.
 
-This record governs external reader installation, `copista-28m` weight
+When authorized by an accepted Delivery Wave entry, this record governs
+external reader installation, `copista-28m` weight
 downloads, private-input overlay/crop generation, `TEST`/private-gold access
 and formal Stage S0 baseline evidence once accepted on `main` under applicable
 [record-system review](../../../../../.github/skills/record-system-review/SKILL.md),
@@ -73,7 +80,7 @@ flowchart LR
     Private["Staged Gold, Facsimile PDFs & Review Archive (read-only)"]
     Venv["Isolated copista-venv (copisteria + CPU torch)"]
     RunDir["RUN_S0 (manifests, overlays, crops, slices, predictions, reports)"]
-    Ledger["DOWNLOADS/w2-download-ledger.json (10 GB cap)"]
+    Ledger["DOWNLOADS/w2-download-ledger.json (historical 10 GB cap, retired)"]
   end
   Private -->|read-only| Align
   Align --> RunDir
@@ -130,13 +137,15 @@ flowchart LR
       `DOWNLOADS/w2-copista-venv`, together with the verified `copisteria`
       commit/archive `SHA-256` and both weight `SHA-256` digests.
     - **W2/W3 download ledger (`DOWNLOADS/w2-download-ledger.json`):** separate
-      from W1's closed `2,350,276,855`-byte ledger. Before any network fetch of
-      the `copisteria` archive or `copista-28m` weight files (and recording new
-      wheel bytes fetched when creating `w2-copista-venv`), the installer
-      reserves and records exact byte counts and `SHA-256` digests against the
-      `10,000,000,000`-byte (`10 GB`) cumulative W2/W3 fuse, including failed
-      or aborted transfers, and reuses verified cached files on rerun at `0`
-      new network bytes.
+      from W1's closed `2,350,276,855`-byte ledger. Under the W2/W3 Wave run,
+      before any network fetch of the `copisteria` archive or `copista-28m`
+      weight files (and recording new wheel bytes fetched when creating
+      `w2-copista-venv`), the installer reserved and recorded exact byte counts
+      and `SHA-256` digests against the historical `10,000,000,000`-byte (`10 GB`)
+      cumulative W2/W3 fuse, including failed or aborted transfers, reusing
+      verified cached files on rerun at `0` new network bytes. That W2/W3
+      download allowance retired on closure at `480,830,451` recorded bytes and
+      does not carry forward without a new accepted Delivery Wave bound.
 
 ## Real-data alignment, overlay QA and system crops
 
@@ -611,15 +620,19 @@ dict[str, dict[str, int]]}]` keying `A/B/C/R` counts by category for offline
   `evidence-2m.pt` and `small/v7_obj-recall-30m_best.pt` for `copista-28m`),
   `split`, `piece_count`, `command` (`list[str]`) and `purpose`
   (`"S0-baseline"`). Stage S0 performs zero parameter or threshold tuning on
-  `TEST` and has an accident-fuse ceiling of `6` cumulative S0 `TEST` touch
+  `TEST` and had an accident-fuse ceiling of `6` cumulative S0 `TEST` touch
   records (covering `agent-build-01` and `copista-28m@44464d1` plus bounded
-  bug-fix reruns, all reported); future W6 training pilots remain capped at `3`
-  `TEST` touches per pilot.
-- **Finite execution bounds:**
+  bug-fix reruns, all reported; exhausted at `6 / 6` on `w2-s0-formal-3`);
+  future W6 training pilots remain capped at `3` `TEST` touches per pilot when
+  authorized by a W6 Delivery Wave entry.
+- **Historical W2/W3 finite execution bounds (retired on closure; new external
+  or private-input runs require a new accepted Delivery Wave entry, and any
+  further S0 `TEST` scoring also requires an accepted protocol amendment
+  setting a new finite bound):**
     - `10,000,000,000` bytes (`10 GB`) cumulative W2/W3 download cap in
-      `DOWNLOADS/w2-download-ledger.json`;
+      `DOWNLOADS/w2-download-ledger.json` (retired at `480,830,451` bytes);
     - `6` cumulative S0 `TEST` touch records in
-      `DOWNLOADS/w2-touch-log.jsonl`;
+      `DOWNLOADS/w2-touch-log.jsonl` (exhausted at `6 / 6` records);
     - `92` pages (`23` pieces) for overlay extraction, slice verification,
       `build-01` scoring and `copista-28m` inference (`300`-second per-page /
       per-piece worker timeout).
