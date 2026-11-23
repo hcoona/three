@@ -43,7 +43,28 @@ recorded alongside the completed ABC 2.1 capability mapping. With W1's
 and planning under [Issue #686](https://github.com/hcoona/three/issues/686),
 and the [evaluation and real-data alignment protocol](docs/evaluation-protocol.md)
 defines the W3 real-data split/alignment schema and W2 Stage S0 baseline
-protocol; feature/workstream advancement beyond active Wave grants requires its
+protocol (`#1739`, implemented in `#1746`–`#1749`). On `w2-s0-formal-3`
+(`main` commit `385aa460d2f7634696799ecae5c4961c8709ca6d`; runtime observations
+recorded in
+[#1490 comment 7108804779](https://github.com/hcoona/three/issues/1490#issuecomment-7108804779)
+and
+[#1489 comment 7108805391](https://github.com/hcoona/three/issues/1489#issuecomment-7108805391),
+pending repository-owner acceptance and Wave closure), W3 completed the unified
+`23`-piece alignment/split manifest (`7`-piece `TEST` `432` measures / `111`
+printed systems vs. `16`-piece `TRAIN_DEV` `1,601` measures / `323` printed
+systems), `92 / 92` page overlay approvals (`434` `14.0 px` normalized system
+crops), and `23 / 23` zero-difference printed-system `Text Score 2` slice
+round-trips on the tested pieces, while W2 recorded fail-closed end-to-end Stage S0 drafter and blind
+second-reader baselines (`TEST` Layer-1 `A`-error rate `0.458333` for
+`agent-build-01` vs. `0.979167` for stock `copista-28m@44464d1` where `20 / 23`
+`TEST` page outputs failed validation and were scored fail-closed, ratio
+`2.136364`, `95%` CI `1.651282..2.835939`; `TRAIN_DEV` `0.463460` vs.
+`0.896315` where `49 / 69` `TRAIN_DEV` page outputs failed validation and were
+scored fail-closed, ratio `1.933962`), the `225`-row `T01` review-pass model
+re-fit, and `4,070` schema-validated `omr-discrepancy-log-v1` records (`6 / 6`
+S0 `TEST` touches spent, `480,830,451 / 10,000,000,000` download bytes).
+Feature/workstream
+advancement beyond active Wave grants requires its
 own Delivery Wave entry while contract-preserving routine maintenance without
 new external or privacy effects follows the
 [record policy](../../../../docs/governance/record-system.md#work-authorization-and-concurrency)

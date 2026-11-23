@@ -409,3 +409,25 @@ in order:
    `TEST`, validate `omr-discrepancy-log-v1` records, and pass the
    `OMR-REQ-015` privacy scan and applicable `research-evidence-review` before
    posting S0 results to `#1489` and `#1490`.
+5. **Completed `w2-s0-formal-3` status and exhausted S0 `TEST` touch ceiling:**
+   runtime observation: on clean `origin/main` commit
+   `385aa460d2f7634696799ecae5c4961c8709ca6d`, `w2-s0-formal-3` completed W3
+   alignment (`92 / 92` approved overlays, `434` exported `14.0 px` crops,
+   `23 / 23` zero-difference printed-system `Text Score 2` slice round-trips on
+   the tested pieces) and W2 Stage S0 scoring (`4,070` validated
+   `omr-discrepancy-log-v1` rows; `480,830,451 / 10,000,000,000` bytes in
+   `w2-download-ledger.json`), with independently reviewed sanitized reports
+   posted to
+   [#1490 comment 7108804779](https://github.com/hcoona/three/issues/1490#issuecomment-7108804779)
+   and
+   [#1489 comment 7108805391](https://github.com/hcoona/three/issues/1489#issuecomment-7108805391)
+   pending repository-owner acceptance and Delivery Wave entry retirement.
+   `DOWNLOADS/w2-touch-log.jsonl` is now at `6 / 6` recorded `"S0-baseline"`
+   `TEST` touches (`S0_TEST_TOUCH_CAP = 6`), reaching the accepted protocol's
+   stop condition: no further S0 `TEST` evaluation may run under the current
+   Delivery Wave grant and protocol, and resuming would require accepted
+   Delivery Wave authorization together with an accepted protocol amendment
+   establishing a new finite bound. Do not delete or edit prior
+   `w2-touch-log.jsonl` lines or overwrite preserved `w2-s0-1` and
+   `w2-s0-formal-1` through `w2-s0-formal-3` external run directories until the
+   repository owner deletes them after results review.
