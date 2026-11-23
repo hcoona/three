@@ -552,13 +552,20 @@ category)` (`null` / `"unavailable"` when `D_piece` has `0` errors in
       `E[passes]` under both pre-registered `(d = 0.6, phi = 0.5)` and
       `(d_hat, phi_hat)`.
 - **Downstream gates recorded for W6/W7 reference (not S0 pass/fail stops):**
+  Per-category element recall `recall_c = identical_c / elements_c` (`null` /
+  `"unavailable"` when `elements_c == 0`) is computed over unmasked `Y_gold`
+  Layer 1 (`b_normalized`) `ElementTally` elements across the DP-aligned
+  measures (`identical_c = 0` on unmatched `insbar` or `parse_valid == false`;
+  `P1` pools `pitch` + `chord_membership`, `N4`/`N7` share `tempo_rehearsal`).
   Drafter `G1` (`r <= 0.33`, bootstrap `95%` upper bound `<= 0.60`), `G2`
-  (per-category recall drop `<= 5` percentage points on `P1, D3, L2, X1, L3,
-L1, N2, N6`, or `null` / `"unavailable"` if gold category count is `0`), `G3`
-  (`>= 99%` parse rate and non-increasing `B` rate), `G4` (`AUROC >= 0.75`);
-  Second-reader `GO` (catches `>= 50%` of baseline `A`-error measures while
-  flagging `<= 20%` of measures). Stage S0 measures where `build-01` and stock
-  `copista-28m` stand against these gates.
+  (per-category recall drop `recall_c(baseline) - recall_c(candidate) <= 0.05`
+  on `P1, D3, L2, X1, L3, L1, N2, N6`, using `agent-build-01` as the S0
+  comparison baseline and `max(recall_c(agent-build-01),
+recall_c(copista-28m))` for W6 drafter promotion, or `null` / `"unavailable"`
+  if `elements_c == 0`), `G3` (`>= 99%` parse rate and non-increasing `B`
+  rate), `G4` (`AUROC >= 0.75`); Second-reader `GO` (catches `>= 50%` of
+  baseline `A`-error measures while flagging `<= 20%` of measures). Stage S0
+  measures where `build-01` and stock `copista-28m` stand against these gates.
 
 ## Discrepancy and round-logging schema
 
