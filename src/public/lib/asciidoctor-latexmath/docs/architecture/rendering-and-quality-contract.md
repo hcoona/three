@@ -1,12 +1,16 @@
 # Rendering and Quality Contract
 
-The product constraints P1–P5 and their development gates are retained from the
+The product constraints P1–P5 and their merge/release quality gates are adapted
+from the
 [imported contract](https://github.com/hcoona/three/blob/b673ee27aab8553a4ee259bcaca87a197178463c/src/public/lib/asciidoctor-latexmath/.specify/memory/constitution.md).
-They govern this extension; repository authorization, record lifecycle and
-governance amendments follow the [repository record policy](../../../../../../docs/governance/record-system.md).
-Migration preserves these product constraints and introduces no new behavior
-or release authorization. The former constitution-wide versioning, maintainer
-quorum, recurring process audit and living-log machinery are retired.
+They govern this extension's domain contracts; repository work authorization,
+development workflow, local iteration freedom, concurrent branch/stacked-PR
+evolution of specs, tests, code, and docs, and record lifecycle follow the
+[repository record policy](../../../../../../docs/governance/record-system.md#project-namespaces).
+Migration preserves these product constraints and introduces no new behavior or
+release authorization. The former constitution-wide versioning, maintainer
+quorum, waterfall stage-ordering lock, recurring process audit and living-log
+machinery are retired.
 
 ## Core Principles
 
@@ -23,15 +27,13 @@ Rules:
   Out-of-Scope Examples (MUST NOT add later without MAJOR bump): Block macro syntax, auto-math environment inference via AST sweeping.
   Rationale: Tighter surface reduces maintenance & cognitive load; BlockMacro adds negligible value over block form while increasing complexity.
 
-### P2. Interface-First Waterfall with Enforced TDD
+### P2. Declared Interface and Contract-Test Alignment
 
 Rules:
 
-- Public API (processor names, attribute matrix, renderer pipeline contract) MUST be specified before code.
-- For each new capability: write failing RSpec contract + behavior tests BEFORE implementation (Red → Green → Refactor).
-- Waterfall stages (Interface Spec → Tests → Implementation → Documentation → Release) MUST NOT be reordered.
-- Any change to a declared interface REQUIRES a matching spec diff + version evaluation (the versioning rule in P4).
-  Rationale: Freezes expectations early, prevents scope drift, elevates test artifacts to first-class design assets.
+- Every public API capability (processor names, attribute matrix, renderer pipeline contract) MUST be explicitly specified in the declared interface records and covered by RSpec contract + behavior specs (including failure/error cases) at merge into `main`.
+- Any change to a declared interface REQUIRES a matching spec/contract update and version evaluation (the versioning rule in P4).
+  Rationale: Prevents undocumented interface drift and keeps test artifacts aligned with declared public behavior without imposing waterfall stage gates on local iteration.
 
 ### P3. Configuration & Behavior Parity with Asciidoctor-Diagram
 
@@ -71,7 +73,7 @@ Rules:
 - Inline embedding (data URI / embedded SVG) is OPTIONAL and disabled by default; enabling it is an additive behavior not altering cache key unless new differentiating fields are introduced via future principle update.
   Rationale: Fixed stage list + minimal cache key guarantees deterministic reuse while maximizing cache stability across engine/tool switches. Version bumps form the explicit contract boundary for structural pipeline changes; excluding tool identity prevents unnecessary cache invalidations.
 
-## Development Workflow & Quality Gates
+## Merge and Release Quality Gates
 
 Current integration examples use `SpecSupport::TmpDir` (`Dir.mktmpdir`) and
 block-scoped `Dir.chdir` in the
@@ -82,21 +84,19 @@ temporary-directory, environment-cleanup and real-HOME/global-cache isolation
 requirements. Aruba references in dated clarifications, imported baseline
 rationale and completed tasks retain their historical scope.
 
-Phases (Waterfall):
+Merge and release gates (evaluated at merge into `main` or gem release rather
+than imposing local step-ordering preconditions):
 
-1. Interface Definition: Attribute matrix + processor responsibilities + renderer pipeline documented.
-2. Test Authoring: RSpec specs (contract + behavior + error cases) created & failing.
-3. Implementation Stage 1: Processor scaffolds & pipeline skeleton returning placeholders to make tests executable.
-4. Implementation Stage 2: Full rendering logic, caching, external tool integration, performance tuning.
-5. Documentation: Update README, docs/architecture/overview.md, class diagrams, usage examples, CHANGELOG entries.
-6. Release: Version bump rationale recorded; tag + packaged gem.
-
-Quality Gates (must PASS before advancing):
-
-- Gate A (after Phase 1): All declared interfaces documented; no hidden attributes.
-- Gate B (after Phase 2): All tests exist & fail for correct reasons (no pending or false positives).
-- Gate C (after Stage 2 impl): All contract + behavior tests pass; style & security checks pass.
-- Gate D (release): Changelog, version bump classification, reproducible build verification, cache determinism spot check.
+- **Interface & documentation alignment (merge):** All declared interfaces,
+  processor responsibilities, attribute matrix entries, and renderer-pipeline
+  contracts are documented with no hidden attributes, and `README.md`,
+  `docs/architecture/overview.md`, and class diagrams agree with the code.
+- **Contract & behavior verification (merge):** RSpec contract, behavior, and
+  error-case specs cover the capability with no pending/false-positive specs,
+  pass 100%, and `standardrb` style and security checks pass.
+- **Release readiness (release):** `CHANGELOG.md`, SemVer bump classification
+  rationale, reproducible gem build verification, and cache-determinism spot
+  checks pass.
 
 ## Documentation and Traceability
 
