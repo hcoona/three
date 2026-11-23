@@ -1337,3 +1337,206 @@ def test_tuplet_numbers_preserved_across_merge_and_page_concat() -> None:
     sc = score_prediction(asm.xml_text, asm.xml_text)
     assert sc.parse_valid is True
     assert len(sc.measures) == 2  # noqa: PLR2004
+
+
+def test_t01_archive_join_and_req012_manifest_validation(
+    tmp_path: Path,
+) -> None:
+    """Verify full 225-row T01 join (burst, R rows, str entries) & req012."""
+    from sheet_music_omr.evaluation import cli as cli_mod  # noqa: PLC0415
+
+    reports_d = tmp_path / "reports"
+    imm_d = tmp_path / "immich"
+    reports_d.mkdir()
+    for p_num in (1, 4, 8):
+        (imm_d / f"ws-{p_num}" / "reviews").mkdir(parents=True)
+
+    # 1. gold-01 _annotations_initial_full: 67 burst A + 2 narrative R outside
+    g1_rev = imm_d / "ws-1" / "reviews" / "p1_annotations_initial_full"
+    g1_rev.mkdir()
+    (g1_rev / "findings.json").write_text(
+        json.dumps([{"measure": 1} for _ in range(67)]),
+        encoding="utf-8",
+    )
+    # 2. gold-01 r3 survivors: 23 anchor measures (1..23), one spanning to 25
+    g1_r3 = imm_d / "ws-1" / "reviews" / "root-review-3"
+    g1_r3.mkdir()
+    (g1_r3 / "findings.json").write_text(
+        json.dumps(
+            [{"measure": m} for m in range(1, 23)]
+            + [{"measure": 23, "measure_end": 25}]
+        ),
+        encoding="utf-8",
+    )
+    # 3. gold-04 root-r3: string rejected_provisional_finding BEFORE finding!
+    g4_r3 = imm_d / "ws-4" / "reviews" / "root-r3"
+    g4_r3.mkdir()
+    (g4_r3 / "findings.json").write_text(
+        json.dumps(
+            {
+                "rejected_provisional_finding": "provisional note",
+                "finding": {"measure": 5},
+            }
+        ),
+        encoding="utf-8",
+    )
+    # 4. gold-08 r2: 120 located + 11 unlocated string withdrawn_findings
+    g8_r2 = imm_d / "ws-8" / "reviews" / "root-r2"
+    g8_r2.mkdir()
+    (g8_r2 / "findings.json").write_text(
+        json.dumps(
+            {
+                "findings": [{"measure": 2} for _ in range(120)],
+                "withdrawn_findings": ["retracted" for _ in range(11)],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    main_rows = (
+        [["01-p", "r1", "p1_annotations_initial_full", "N6", "A"]] * 67
+        + [["01-p", "r1", "p1_annotations_initial_full", "N6", "R"]] * 2
+        + [["01-p", "r3", "root-review-3", "P1", "A"]] * 23
+        + [["04-p", "r3", "root-r3", "L1", "R"]]
+        + [["08-p", "r2", "root-r2", "D1", "A"]] * 120
+        + [["08-p", "r2", "root-r2", "L2", "R"]] * 11
+    )
+    assert len(main_rows) == 224  # noqa: PLR2004
+    (reports_d / "T01-findings-classified.json").write_text(
+        json.dumps(main_rows), encoding="utf-8"
+    )
+    (reports_d / "T01-findings-addendum.json").write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {
+                        "piece": "04-p",
+                        "round": "r3",
+                        "folder": "root-r3",
+                        "cat": "L2",
+                        "cls": "C",
+                        "tier": "posted T01#6",
+                    },
+                    {
+                        "piece": "01-p",
+                        "round": "r1",
+                        "folder": "root-review-1",
+                        "cat": "N1",
+                        "cls": "A",
+                        "tier": "nonstandard file, possible duplicate",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    joined = aln_mod.extract_t01_archive_join(
+        reports_d,
+        imm_d,
+        {1: "ws-1", 4: "ws-4", 8: "ws-8"},
+        {"gold-01": 30, "gold-04": 10, "gold-08": 10},
+    )
+    assert joined["total_live_rows"] == 225  # noqa: PLR2004
+    assert joined["located_rows"] == 211  # noqa: PLR2004
+    assert joined["unlocated_rows"] == 14  # noqa: PLR2004
+    assert joined["round_a_all"][1] == 67  # noqa: PLR2004
+    assert 1 not in joined["round_a_ex_burst"]
+    assert joined["per_measure_rounds"][("gold-04", 5, 3)]["C"]["L2"] == 1
+    assert joined["unlocated_rounds"][("gold-04", 3)]["R"]["L1"] == 1
+
+    # 5. _load_and_verify_req012_manifest rejects bad count & verifies 326/324
+    bad_req = tmp_path / "bad-req012.json"
+    bad_req.write_text(
+        json.dumps({"set_b_full_archive_deduplicated": {"loci": []}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(StopConditionError, match="326"):
+        cli_mod._load_and_verify_req012_manifest(  # noqa: SLF001
+            bad_req, {"gold-02": 400}, formal=False
+        )
+    set_a_cnt = 28
+    loci_326 = [
+        {
+            "gold_id": "gold-02",
+            "w1_category": "beam",
+            "t01_category": "L6",
+            "in_set_a": i < set_a_cnt,
+            "replay_target": {"target_measure_ordinals": [min(i + 1, 324)]},
+        }
+        for i in range(326)
+    ]
+    good_req = tmp_path / "good-req012.json"
+    good_req.write_text(
+        json.dumps({"set_b_full_archive_deduplicated": {"loci": loci_326}}),
+        encoding="utf-8",
+    )
+    triples, post_m = cli_mod._load_and_verify_req012_manifest(  # noqa: SLF001
+        good_req, {"gold-02": 400}, formal=False
+    )
+    assert len(triples) == 324  # noqa: PLR2004
+    assert post_m[("gold-02", 324)]["L6"] == 3  # noqa: PLR2004
+    with pytest.raises(StopConditionError, match="SHA-256"):
+        cli_mod._load_and_verify_req012_manifest(  # noqa: SLF001
+            good_req, {"gold-02": 400}, formal=True
+        )
+
+
+def test_s0_touch_ledger_single_line_claim_atomicity(tmp_path: Path) -> None:
+    """Verify run-copista + score-s0 charges 2 touches (1+1) atomically."""
+    tlog = tmp_path / "claim-touch.jsonl"
+    t1 = append_test_touch(
+        touch_log_path=tlog,
+        run_id="r-1",
+        git_commit="c1",
+        code_tree_sha256="t1",
+        reader_id="copista-28m@44464d1",
+        reader_sha256="rs",
+        weights_sha256="ws",
+        piece_count=7,
+        command=["python", "-m", "sheet_music_omr.evaluation", "run-copista"],
+        open_reading_masks_sha256="ms",
+    )
+    assert t1 == 1
+    # Mismatched commit cannot claim r-1's run-copista touch -> charges +2
+    ta_miss, tb_miss = cop_mod.claim_or_append_s0_touches(
+        touch_log_path=tlog,
+        run_id="r-other",
+        git_commit="c-other",
+        code_tree_sha256="t1",
+        copista_reader_id="copista-28m@44464d1",
+        copista_reader_sha256="rs",
+        copista_weights_sha256="ws",
+        piece_count=7,
+        command=["score-s0"],
+        open_reading_masks_sha256="ms",
+    )
+    assert (ta_miss, tb_miss) == (2, 3)
+    # Matching score-s0 claims t1 atomically in the ledger line -> charges +1!
+    ta, tb = cop_mod.claim_or_append_s0_touches(
+        touch_log_path=tlog,
+        run_id="r-1",
+        git_commit="c1",
+        code_tree_sha256="t1",
+        copista_reader_id="copista-28m@44464d1",
+        copista_reader_sha256="rs",
+        copista_weights_sha256="ws",
+        piece_count=7,
+        command=["score-s0"],
+        open_reading_masks_sha256="ms",
+    )
+    assert (ta, tb) == (4, 1)
+    # Re-running score-s0 without fresh run-copista cannot re-claim t1 -> +2!
+    ta2, tb2 = cop_mod.claim_or_append_s0_touches(
+        touch_log_path=tlog,
+        run_id="r-1",
+        git_commit="c1",
+        code_tree_sha256="t1",
+        copista_reader_id="copista-28m@44464d1",
+        copista_reader_sha256="rs",
+        copista_weights_sha256="ws",
+        piece_count=7,
+        command=["score-s0"],
+        open_reading_masks_sha256="ms",
+    )
+    assert (ta2, tb2) == (5, 6)

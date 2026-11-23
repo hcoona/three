@@ -1466,6 +1466,58 @@ def load_open_reading_masks(  # noqa: C901
     return masks, sha256_bytes(canonical)
 
 
+def _extract_t01_live_rows(
+    t01_main: object, t01_add: object
+) -> list[tuple[int, int, str, str, str]]:
+    main_rows = (
+        t01_main["rows"]
+        if isinstance(t01_main, dict) and "rows" in t01_main
+        else t01_main
+    )
+    add_rows = (
+        t01_add["rows"]
+        if isinstance(t01_add, dict) and "rows" in t01_add
+        else t01_add
+    )
+    if not isinstance(main_rows, list) or not isinstance(add_rows, list):
+        msg = "invalid T01 findings JSON structure"
+        raise StopConditionError(msg)
+
+    live_rows: list[tuple[int, int, str, str, str]] = []
+    for row in main_rows:
+        if isinstance(row, dict):
+            p_s, r_s = str(row["piece"]), str(row["round"])
+            f_s, c_s, cls_s = (
+                str(row["folder"]),
+                str(row["cat"]),
+                str(row["cls"]),
+            )
+        else:
+            p_s, r_s = str(row[0]), str(row[1])
+            f_s, c_s, cls_s = str(row[2]), str(row[3]), str(row[4])
+        p_num = int(p_s.split("-")[0])
+        rnd = int(r_s.lstrip("r"))
+        live_rows.append((p_num, rnd, f_s, c_s, cls_s))
+
+    for row in add_rows:
+        if isinstance(row, dict):
+            if str(row.get("tier", "")).startswith("nonstandard"):
+                continue
+            p_s, rnd_s = str(row["piece"]), str(row["round"])
+            f_s, c_s, cls_s = (
+                str(row["folder"]),
+                str(row["cat"]),
+                str(row["cls"]),
+            )
+        else:
+            p_s, rnd_s = str(row[0]), str(row[1])
+            f_s, c_s, cls_s = str(row[2]), str(row[3]), str(row[4])
+        if rnd_s.startswith("r") and rnd_s[1:].isdigit():
+            p_num = int(p_s.split("-")[0])
+            live_rows.append((p_num, int(rnd_s[1:]), f_s, c_s, cls_s))
+    return live_rows
+
+
 def extract_t01_archive_join(  # noqa: C901, PLR0912, PLR0915
     desk_study_reports_dir: Path,
     immich_dir: Path,
@@ -1483,19 +1535,7 @@ def extract_t01_archive_join(  # noqa: C901, PLR0912, PLR0915
             encoding="utf-8"
         )
     )
-
-    live_rows: list[tuple[int, int, str, str, str]] = []
-    for row in t01_main["rows"]:
-        p_num = int(str(row[0]).split("-")[0])
-        rnd = int(str(row[1]).lstrip("r"))
-        live_rows.append((p_num, rnd, str(row[2]), str(row[3]), str(row[4])))
-    for row in t01_add["rows"]:
-        rnd_s = str(row[1])
-        if rnd_s.startswith("r") and rnd_s[1:].isdigit():
-            p_num = int(str(row[0]).split("-")[0])
-            live_rows.append(
-                (p_num, int(rnd_s[1:]), str(row[2]), str(row[3]), str(row[4]))
-            )
+    live_rows = _extract_t01_live_rows(t01_main, t01_add)
 
     if len(live_rows) != 225:  # noqa: PLR2004
         msg = f"expected 225 live T01 r<N> rows, got {len(live_rows)}"
@@ -1527,7 +1567,14 @@ def extract_t01_archive_join(  # noqa: C901, PLR0912, PLR0915
             msg = f"missing archive findings file for {gid} {folder}"
             raise StopConditionError(msg)
         raw_items = _load_t01_folder_entries(fp)
-        is_gold01_burst = p_num == 1 and folder == "annotations-fingering-1"
+        is_gold01_r1_ann = p_num == 1 and (
+            folder in {"annotations-fingering-1", "root-review-1"}
+            or folder.endswith("_annotations_initial_full")
+        )
+        is_gold01_burst = p_num == 1 and (
+            folder == "annotations-fingering-1"
+            or folder.endswith("_annotations_initial_full")
+        )
 
         for entry_idx, (rnd, cat, cls) in enumerate(entries):
             if cls == "A":
@@ -1541,8 +1588,7 @@ def extract_t01_archive_join(  # noqa: C901, PLR0912, PLR0915
 
             # gold-01 r1 rows 222-223: 2 narrative R retractions
             if (
-                p_num == 1
-                and folder == "root-review-1"
+                is_gold01_r1_ann
                 and cls == "R"
                 and entry_idx in {len(raw_items), len(raw_items) + 1}
             ):
@@ -1611,11 +1657,11 @@ def extract_t01_archive_join(  # noqa: C901, PLR0912, PLR0915
 def _load_t01_folder_entries(fp: Path) -> list[dict[str, object]]:
     data = json.loads(fp.read_text(encoding="utf-8"))
     if isinstance(data, list):
-        return [x for x in data if isinstance(x, dict)]
+        return [x if isinstance(x, dict) else {} for x in data]
     if not isinstance(data, dict):
         return []
     out: list[dict[str, object]] = []
-    # Container key order fixed in docs/evaluation-protocol.md:522-529
+    # Container key order fixed in docs/evaluation-protocol.md:519-522
     for key in (
         "findings",
         "confirmed_findings",
@@ -1630,9 +1676,11 @@ def _load_t01_folder_entries(fp: Path) -> list[dict[str, object]]:
     ):
         val = data.get(key)
         if isinstance(val, list):
-            out.extend(x for x in val if isinstance(x, dict))
+            out.extend(x if isinstance(x, dict) else {} for x in val)
         elif isinstance(val, dict):
             out.append(val)
+        elif isinstance(val, str):
+            out.append({})
     return out
 
 
