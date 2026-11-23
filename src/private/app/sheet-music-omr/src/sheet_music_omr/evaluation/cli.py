@@ -377,6 +377,84 @@ def _piece_table_from_score(
     )
 
 
+REQ012_MANIFEST_SHA256 = (
+    "968fcdac6c0ecf5c1f8d720f954a29bbf52ca88cf548d812b4f8b01f7c4b8f55"
+)
+
+
+def _load_and_verify_req012_manifest(  # noqa: C901
+    req012_manifest_path: Path,
+    measure_counts: Mapping[str, int],
+    *,
+    formal: bool,
+) -> tuple[set[tuple[str, int, str]], dict[tuple[str, int], Counter[str]]]:
+    """Verify canonical ``req012-private-manifest.json`` before TEST touch."""
+    try:
+        raw_bytes = req012_manifest_path.read_bytes()
+    except OSError as exc:
+        msg = f"invalid req012 manifest {req012_manifest_path.name}: {exc}"
+        raise StopConditionError(msg) from exc
+    if formal and sha256_bytes(raw_bytes) != REQ012_MANIFEST_SHA256:
+        msg = "req012-private-manifest.json SHA-256 mismatch vs requirements.md"
+        raise StopConditionError(msg)
+    try:
+        req012_raw = json.loads(raw_bytes.decode("utf-8"))
+        req012_loci = req012_raw["set_b_full_archive_deduplicated"]["loci"]
+    except (UnicodeDecodeError, ValueError, KeyError, TypeError) as exc:
+        msg = f"invalid req012 manifest {req012_manifest_path.name}: {exc}"
+        raise StopConditionError(msg) from exc
+    if not isinstance(req012_loci, list) or len(req012_loci) != 326:  # noqa: PLR2004
+        msg = "expected 326 confirmed-B loci in req012-private-manifest.json"
+        raise StopConditionError(msg)
+
+    span_triples: set[tuple[str, tuple[int, ...], str]] = set()
+    req012_triples: set[tuple[str, int, str]] = set()
+    req012_post_by_m: dict[tuple[str, int], Counter[str]] = {}
+    for locus in req012_loci:
+        if not isinstance(locus, dict):
+            msg = "non-object locus in req012-private-manifest.json"
+            raise StopConditionError(msg)
+        gid = str(locus.get("gold_id", ""))
+        w1_cat = str(locus.get("w1_category", ""))
+        t01_cat = str(locus.get("t01_category") or w1_cat)
+        rep = locus.get("replay_target")
+        ords = (
+            rep.get("target_measure_ordinals")
+            if isinstance(rep, dict)
+            else None
+        )
+        in_set_a = locus.get("in_set_a")
+        if (
+            gid not in measure_counts
+            or w1_cat not in CONTENT_CATEGORIES
+            or not isinstance(ords, list)
+            or not ords
+            or not isinstance(in_set_a, bool)
+        ):
+            msg = f"malformed req012 locus for {gid!r} / {w1_cat!r}"
+            raise StopConditionError(msg)
+        m_tuple: list[int] = []
+        for m_ord in ords:
+            if (
+                not isinstance(m_ord, int)
+                or isinstance(m_ord, bool)
+                or not (1 <= m_ord <= measure_counts[gid])
+            ):
+                msg = f"invalid measure ordinal {m_ord!r} in req012 {gid}"
+                raise StopConditionError(msg)
+            m_tuple.append(m_ord)
+            req012_triples.add((gid, m_ord, w1_cat))
+            if not in_set_a:
+                req012_post_by_m.setdefault((gid, m_ord), Counter())[
+                    t01_cat
+                ] += 1
+        span_triples.add((gid, tuple(m_tuple), w1_cat))
+    if len(span_triples) != 324:  # noqa: PLR2004
+        msg = f"expected 324 unique req012 triples, got {len(span_triples)}"
+        raise StopConditionError(msg)
+    return req012_triples, req012_post_by_m
+
+
 def _req012_filtered_layer1_rate(  # noqa: C901
     pieces_meta: Sequence[Mapping[str, object]],
     scores_by_gid: Mapping[str, PredictionScore],
@@ -559,6 +637,36 @@ def run_stage_s0_scoring(  # noqa: C901, PLR0912, PLR0913, PLR0915
             msg = f"missing required XML or prediction sidecar for {gid}"
             raise StopConditionError(msg)
 
+    # Load & validate non-TEST archive metadata BEFORE appending TEST touches!
+    measure_counts = {
+        str(pm["gold_id"]): int(pm["measure_count"]) for pm in pieces_meta
+    }  # type: ignore[arg-type]
+    req012_triples, req012_post_by_m = _load_and_verify_req012_manifest(
+        req012_manifest_path, measure_counts, formal=formal
+    )
+    try:
+        status_raw = json.loads(
+            (immich_dir / "batch-status.json").read_text(encoding="utf-8")
+        )
+        ws_by_num = {
+            int(p["number"]): str(p["workspace"]) for p in status_raw["pieces"]
+        }
+    except (
+        OSError,
+        UnicodeDecodeError,
+        ValueError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        msg = f"invalid batch-status.json: {exc}"
+        raise StopConditionError(msg) from exc
+    t01_join = extract_t01_archive_join(
+        desk_study_dir / "omr-finetune-research" / "reports",
+        immich_dir,
+        ws_by_num,
+        measure_counts,
+    )
+
     touch_log_p = downloads_dir / "w2-touch-log.jsonl"
     ledger_lock = downloads_dir / ".ledger.lock"
     n_test_pieces = sum(1 for pm in pieces_meta if pm["split"] == "TEST")
@@ -636,37 +744,6 @@ def run_stage_s0_scoring(  # noqa: C901, PLR0912, PLR0913, PLR0915
             msg = f"{gid}.musicxml missing or hash mismatch vs meta.json"
             raise StopConditionError(msg)
         copista_meta_by_gid[gid] = c_meta
-
-    # Load req012 confirmed-B triples and post-T01 round counts
-    req012_raw = json.loads(req012_manifest_path.read_text(encoding="utf-8"))
-    req012_loci = req012_raw["sets"]["set_b_full_archive_deduplicated"]["loci"]
-    req012_triples: set[tuple[str, int, str]] = set()
-    req012_post_by_m: dict[tuple[str, int], Counter[str]] = {}
-    for locus in req012_loci:
-        gid = str(locus["gold_id"])
-        cat = str(locus["w1_category"])
-        for m_0 in locus["target_measure_ordinals"]:
-            m_1 = int(m_0) + 1
-            req012_triples.add((gid, m_1, cat))
-            if not locus.get("in_t01_baseline"):
-                req012_post_by_m.setdefault((gid, m_1), Counter())[cat] += 1
-
-    # Extract T01 225-row join & survivors
-    status_raw = json.loads(
-        (immich_dir / "batch-status.json").read_text(encoding="utf-8")
-    )
-    ws_by_num = {
-        int(p["number"]): str(p["workspace"]) for p in status_raw["pieces"]
-    }
-    measure_counts = {
-        str(pm["gold_id"]): int(pm["measure_count"]) for pm in pieces_meta
-    }  # type: ignore[arg-type]
-    t01_join = extract_t01_archive_join(
-        desk_study_dir / "omr-finetune-research" / "reports",
-        immich_dir,
-        ws_by_num,
-        measure_counts,
-    )
 
     tmp_dir = run_dir / "tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -2065,12 +2142,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             elif args.command == "run-copista":
                 res = run_copista_inference_and_assemble(
                     confinement=conf,
-                    command_argv=[
-                        "python",
-                        "-m",
-                        "sheet_music_omr.evaluation",
-                        *raw_argv,
-                    ],
                     workers=args.jobs,
                     device=args.device,
                     formal=bool(args.formal),

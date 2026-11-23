@@ -1318,7 +1318,6 @@ def setup_copista_environment(
 def run_copista_inference_and_assemble(  # noqa: C901, PLR0912, PLR0915
     *,
     confinement: Confinement,
-    command_argv: Sequence[str],
     workers: int = 4,
     device: str = "cpu",
     formal: bool = False,
@@ -1405,23 +1404,11 @@ def run_copista_inference_and_assemble(  # noqa: C901, PLR0912, PLR0915
                 preds_dir / f"{stem_pf}.posteriors.json", run_dir
             )
 
-    # Freeze open_reading_masks_sha256 & record TEST touch BEFORE running!
+    # Freeze open_reading_masks_sha256 before running (TEST scoring touches are
+    # recorded atomically in score-s0 before scoring any TEST piece per
+    # evaluation-protocol.md:605-616).
     with confinement.lock(downloads_dir / ".ledger.lock"):
         freeze_run_masks(run_dir, downloads_dir, masks_sha)
-        n_test = sum(1 for p in manifest["pieces"] if p.get("split") == "TEST")
-        if n_test > 0:
-            _ = append_test_touch(
-                touch_log_path=downloads_dir / "w2-touch-log.jsonl",
-                run_id=run_dir.name,
-                git_commit=cur_commit,
-                code_tree_sha256=cur_tree_sha,
-                reader_id=f"copista-28m@{COPISTA_HF_REVISION[:7]}",
-                reader_sha256=COPISTERIA_ARCHIVE_SHA256,
-                weights_sha256=str(prov["combined_weights_sha256"]),
-                piece_count=n_test,
-                command=command_argv,
-                open_reading_masks_sha256=masks_sha,
-            )
 
     preds_dir.mkdir(parents=True, exist_ok=True)
     tmp_dir.mkdir(parents=True, exist_ok=True)
