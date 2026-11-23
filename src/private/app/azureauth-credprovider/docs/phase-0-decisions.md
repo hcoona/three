@@ -18,17 +18,17 @@ coordination follows the repository policy linked below. The
 
 ## Decision Summary
 
-| Area              | Decision                                                                                                                                            |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product name      | Use substitution placeholders until the final product name is selected.                                                                             |
-| MVP acceptance    | Accept an MVP only when one shared credential product satisfies the listed cross-ecosystem acceptance criteria.                                     |
-| Target platforms  | Treat Windows as first-class and keep Linux and macOS as release validation targets, while this Phase 0 group uses local-run-first validation only. |
-| Release train     | Ship one coordinated product train, not independent ecosystem products.                                                                             |
-| Package integrity | Require artifact integrity evidence before release readiness closes.                                                                                |
-| Package signing   | Require signing where approved signing infrastructure exists; record explicit release waivers otherwise.                                            |
-| Tracker           | Keep the product decisions here; use repository work carriers for coordination and gate-review evidence.                                            |
-| Decision format   | Use the domain gate-decision fields below, with repository policy governing work authorization.                                                     |
-| Gate governance   | Mandatory evidence-gate failures stop dependent work and enter Phase 1R.                                                                            |
+| Area              | Decision                                                                                                                                                  |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product name      | Use substitution placeholders until the final product name is selected.                                                                                   |
+| MVP acceptance    | Accept an MVP only when one shared credential product satisfies the listed cross-ecosystem acceptance criteria.                                           |
+| Target platforms  | Treat Windows as first-class and keep Linux and macOS as release validation targets, while this Phase 0 group uses local-run-first validation only.       |
+| Release train     | Ship one coordinated product train, not independent ecosystem products.                                                                                   |
+| Package integrity | Require artifact integrity evidence before release readiness closes.                                                                                      |
+| Package signing   | Require signing where approved signing infrastructure exists; record explicit release waivers otherwise.                                                  |
+| Tracker           | Keep the product decisions here; use repository work carriers for coordination and gate-review evidence.                                                  |
+| Decision format   | Use the domain gate-decision fields below, with repository policy governing work authorization.                                                           |
+| Gate governance   | Mandatory gates govern `main`-merged dependent behavior/locks, support/release claims, and external or persistent-store effects; failures enter Phase 1R. |
 
 ## Product-Name Placeholder Policy
 
@@ -112,50 +112,51 @@ This document remains the product's Phase 0 decision baseline. Durable product
 requirements, contracts, decisions, and evidence stay in this project document
 root, with [project-breakdown.md](project-breakdown.md) routing their consumers.
 
-The [repository record policy](../../../../../docs/governance/record-system.md)
-owns Issue/PR coordination, review carriers, and record lifecycle. The accepted
-[Delivery Wave](../../../../../docs/delivery-wave.md) owns positive work
-authorization. Gate-review evidence in a work carrier links to the affected
-project decision and preserves the domain evidence fields below; neither a
-tracker entry nor a product gate result grants additional work.
+Work authorization, concurrency, local iteration freedom, Issue/PR review
+carriers, and record lifecycle follow
+[the repository record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+and [Delivery Wave](../../../../../docs/delivery-wave.md). Gate-review evidence
+in a work carrier links to the affected project decision and preserves the
+domain evidence fields below; neither a tracker entry nor a product gate result
+grants work authorization or external/persistent-store effects.
 
 ## Decision-Record Format
 
 Each future gate or scope decision must include these fields:
 
-| Field                      | Required content                                                                                      |
-| -------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Decision ID                | Stable identifier, such as `phase-1.1-nuget-evidence`.                                                |
-| Gate name                  | The product gate name; original phase names remain recoverable through `project-breakdown.md`.        |
-| Owner                      | Accountable role, such as PL, ARCH, ID, CONFIG, PLATFORM, or adapter lead.                            |
-| Date                       | Decision date.                                                                                        |
-| Status                     | Proposed, accepted, rejected, superseded, or blocked.                                                 |
-| Evidence links             | Source-inspection notes, prototype results, tests, logs, or external tracker links.                   |
-| Decision                   | The accepted outcome, including pass, fail, accept, defer, remove, or re-scope.                       |
-| Affected requirements      | Requirements, design sections, or phase exit criteria affected by the decision.                       |
-| Follow-up actions          | Required work, owners, and dependency effects.                                                        |
-| Implementation may proceed | Whether the domain prerequisite is satisfied; separate accepted Wave authorization is still required. |
+| Field                      | Required content                                                                                                                                                                                                                                                                                                      |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Decision ID                | Stable identifier, such as `phase-1.1-nuget-evidence`.                                                                                                                                                                                                                                                                |
+| Gate name                  | The product gate name; original phase names remain recoverable through `project-breakdown.md`.                                                                                                                                                                                                                        |
+| Owner                      | Accountable role, such as PL, ARCH, ID, CONFIG, PLATFORM, or adapter lead.                                                                                                                                                                                                                                            |
+| Date                       | Decision date.                                                                                                                                                                                                                                                                                                        |
+| Status                     | Proposed, accepted, rejected, superseded, or blocked.                                                                                                                                                                                                                                                                 |
+| Evidence links             | Source-inspection notes, prototype results, tests, logs, or external tracker links.                                                                                                                                                                                                                                   |
+| Decision                   | The accepted outcome, including pass, fail, accept, defer, remove, or re-scope.                                                                                                                                                                                                                                       |
+| Affected requirements      | Requirements, design sections, or phase exit criteria affected by the decision.                                                                                                                                                                                                                                       |
+| Follow-up actions          | Required work, owners, and dependency effects.                                                                                                                                                                                                                                                                        |
+| Implementation may proceed | Whether the domain gate is satisfied for merging dependent domain contracts/behavior, claiming support, or executing external/persistent-credential effects (with repository work authorization governed by [the record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency)). |
 
 Decision records must distinguish evidence-backed conclusions from provisional recommendations.
 
 ## Gate Governance
 
-Gates are execution boundaries. A mandatory gate must close before dependent implementation proceeds. Closing a gate requires the owning role to record the decision with evidence in the system of record.
+Mandatory domain gates govern `main`-merged dependent domain behavior or contract/packaging/cache locks, product support or release claims, and external authentication/registry operations or persistent host/credential-store mutations (such as OS keychain/DPAPI/Secret Service or user `~/.npmrc`/`.yarnrc.yml` writes); they do not block credential-free local development/debugging in owned temporary state or concurrent pre-merge branch/stacked-PR evolution ([project namespaces](../../../../../docs/governance/record-system.md#project-namespaces)). Closing a gate requires the owning role to record the decision with evidence in the system of record.
 
 Phase 1 gate classification is:
 
-| Gate                                              | Classification                                            | Required Phase 1 decision                                                                                                                                                                                                                          |
-| ------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.1 NuGet evidence gate                           | Mandatory                                                 | Record pass/fail evidence for plugin launch, handshake, authentication message flow, and runtime packaging constraints. Failure enters Phase 1R.                                                                                                   |
-| 1.2 AzureAuth suitability gate                    | Optional substrate                                        | Select AzureAuth or direct MSAL. AzureAuth failure does not block shared-core work; continue through the identity-provider abstraction with direct MSAL unless PL and ID explicitly re-scope.                                                      |
-| 1.3 Python backend-helper evidence gate           | Mandatory before release packaging lock                   | Record pass/fail evidence for backend discovery, fixed helper invocation, installed layout, and release-packaging expectations. Release packaging cannot lock until those expectations are accepted.                                               |
-| 1.4 npm, pnpm, and Yarn configuration update gate | Mandatory for npm/pnpm writes and conditional Yarn writes | Record pass/fail evidence for config resolution and update behavior for user-level and CI temporary scopes. Phases 12 and 13B are blocked until this gate closes. Yarn write failure enters Phase 1R unless the requirement is explicitly changed. |
-| 1.5 Git GUI and PATH discovery gate               | Mandatory for supported Git installation modes            | Record pass/fail evidence for Git for Windows, PATH-sensitive shells, and at least one GUI-launched Git scenario. Failure enters Phase 1R or narrows supported installation modes through an explicit decision.                                    |
-| 1.6 Secure-cache behavior gate                    | Mandatory before persistent cache behavior locks          | Record pass/fail evidence for platform secure-store behavior, failure modes, and no-plaintext fallback policy on target platforms.                                                                                                                 |
-| 1A MVP identity-flow selection                    | Mandatory before contract freeze                          | Explicitly accept, defer, or remove interactive browser, device code, PAT compatibility, service principal, managed identity, workload identity federation, and Azure Pipelines system access token for MVP.                                       |
-| 1R Re-scope gate                                  | Conditional                                               | Runs only for failed mandatory evidence or required sequence/scope changes. Record an explicit accept, defer, remove, requirement-change, or sequence-change decision before dependent Phase 2 or later work proceeds.                             |
+| Gate                                              | Classification                                            | Required Phase 1 decision                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1.1 NuGet evidence gate                           | Mandatory                                                 | Record pass/fail evidence for plugin launch, handshake, authentication message flow, and runtime packaging constraints before merging dependent NuGet behavior or packaging locks to `main`. Failure enters Phase 1R.                                                                                              |
+| 1.2 AzureAuth suitability gate                    | Optional substrate                                        | Select AzureAuth or direct MSAL. AzureAuth failure does not block shared-core work; continue through the identity-provider abstraction with direct MSAL unless PL and ID explicitly re-scope.                                                                                                                      |
+| 1.3 Python backend-helper evidence gate           | Mandatory before release packaging lock                   | Record pass/fail evidence for backend discovery, fixed helper invocation, installed layout, and release-packaging expectations. Release packaging cannot lock on `main` until those expectations are accepted.                                                                                                     |
+| 1.4 npm, pnpm, and Yarn configuration update gate | Mandatory for npm/pnpm writes and conditional Yarn writes | Record pass/fail evidence for config resolution and update behavior for user-level and CI temporary scopes before merging Phases 12 and 13B write behavior to `main`, claiming write support, or mutating persistent user config. Yarn write failure enters Phase 1R unless the requirement is explicitly changed. |
+| 1.5 Git GUI and PATH discovery gate               | Mandatory for supported Git installation modes            | Record pass/fail evidence for Git for Windows, PATH-sensitive shells, and at least one GUI-launched Git scenario. Failure enters Phase 1R or narrows supported installation modes through an explicit decision.                                                                                                    |
+| 1.6 Secure-cache behavior gate                    | Mandatory before persistent cache behavior locks          | Record pass/fail evidence for platform secure-store behavior, failure modes, and no-plaintext fallback policy on target platforms; persistent-cache contracts and defaults cannot merge to `main` until this gate or Phase 1R closes.                                                                              |
+| 1A MVP identity-flow selection                    | Mandatory before contract freeze                          | Explicitly accept, defer, or remove interactive browser, device code, PAT compatibility, service principal, managed identity, workload identity federation, and Azure Pipelines system access token for MVP before `main` contract freeze.                                                                         |
+| 1R Re-scope gate                                  | Conditional                                               | Runs only for failed mandatory evidence or required sequence/scope changes. Record an explicit accept, defer, remove, requirement-change, or sequence-change decision before merging dependent Phase 2+ behavior/locks to `main`, claiming support, or executing external or persistent-store effects.             |
 
-If a mandatory evidence gate fails, dependent implementation stops and the failure enters Phase 1R. Phase 1R must use the failed evidence, affected requirements, and owner recommendations to record one of these outcomes before dependent Phase 2 or later work proceeds:
+If a mandatory evidence gate fails, those gated `main` merges, claims, and effects remain blocked and enter Phase 1R, where the failed evidence, affected requirements, and owner recommendations must produce one of these recorded outcomes before dependent Phase 2+ merges, claims, or effects proceed:
 
 1. Accept revised scope.
 2. Defer the requirement with explicit release impact.
@@ -164,7 +165,7 @@ If a mandatory evidence gate fails, dependent implementation stops and the failu
 
 AzureAuth suitability remains an optional substrate gate. If AzureAuth fails suitability, the project continues through the identity-provider abstraction with direct MSAL unless PL and ID explicitly re-scope the program.
 
-Yarn write support remains a product requirement. Until the npm, pnpm, and Yarn configuration update gate closes, Yarn support is limited to read-only diagnostics and explicit unsupported-write messaging. Shipping without Yarn write support requires Phase 1R to record an approved requirement change.
+Yarn write support remains a product requirement. Until the npm, pnpm, and Yarn configuration update gate closes, Yarn on `main` is limited to read-only diagnostics and explicit unsupported-write messaging. Shipping without Yarn write support requires Phase 1R to record an approved requirement change.
 
 Package integrity and package signing are separate release decisions. Integrity validation is mandatory for release readiness. Signing follows the signing policy in this record and any recorded waivers.
 

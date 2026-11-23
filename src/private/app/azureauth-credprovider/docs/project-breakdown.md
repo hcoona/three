@@ -7,12 +7,13 @@ Azure DevOps credential provider. The C# application and
 [Python backend and shim](../python/README.md) are components of one product.
 The existing document root owns their shared product knowledge.
 
-Repository work authorization and work carriers follow the
-[repository record policy](../../../../../docs/governance/record-system.md)
-and the accepted [Delivery Wave](../../../../../docs/delivery-wave.md).
-The product gates below are additional prerequisites, not work grants. A phase
-number, an old implementation permission, or an internal validation result does
-not authorize implementation, authentication experiments, or publication.
+Work authorization, work carriers, concurrency, and local iteration freedom
+follow [the repository record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+and [Delivery Wave](../../../../../docs/delivery-wave.md). The
+[domain gates](#domain-gates) below are product prerequisites, not work grants;
+a phase number, an old implementation permission, or an internal validation
+result does not authorize repository work, external authentication/registry
+operations, persistent host/credential-store mutations, or publication.
 
 ## Product and Contract Records
 
@@ -38,10 +39,11 @@ implementation alone does not resolve a conflicting product claim.
 
 ## Domain Gates
 
-A mandatory evidence-gate failure stops dependent work until the accountable
-owner records an explicit re-scope decision. The
-[Phase 0 gate rules and decision fields](phase-0-decisions.md#gate-governance)
-retain the product's evidence and acceptance requirements.
+The [Phase 0 gate rules and decision fields](phase-0-decisions.md#gate-governance)
+define how mandatory domain gates bound `main`-merged domain locks, support
+claims, and external or persistent-credential effects until closed or
+explicitly re-scoped, without blocking local credential-free work
+([project namespaces](../../../../../docs/governance/record-system.md#project-namespaces)).
 
 | Concern                                | Gate, evidence, and current decision to consult                                                                                                                                                                                                                                                                                 |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
