@@ -174,12 +174,6 @@ internal static class Phase7CreatorProgram
                     }
                 );
             evidence.Phase(phase, "completed", clock.GetUtcNow());
-            phase = "initialize";
-            evidence.Phase(phase, "started", clock.GetUtcNow());
-            RequireSuccess(
-                await NewCoordinator("initialize").InitializeAsync(token).ConfigureAwait(false)
-            );
-            evidence.Phase(phase, "completed", clock.GetUtcNow());
             evidence.BindRun(database.RunId, clock.GetUtcNow());
             phase = "preflight";
             evidence.Phase(phase, "started", clock.GetUtcNow());

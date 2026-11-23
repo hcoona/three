@@ -39,7 +39,10 @@ internal sealed class OwnedChildControl : IAsyncDisposable
     }
 
     internal static string ExecutablePath =>
-        Path.Combine(AppContext.BaseDirectory, "LiteAgensh.TestProcess.exe");
+        Path.Combine(
+            AppContext.BaseDirectory,
+            OperatingSystem.IsWindows() ? "LiteAgensh.TestProcess.exe" : "LiteAgensh.TestProcess"
+        );
 
     internal string PipeName { get; }
 
