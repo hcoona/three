@@ -70,8 +70,16 @@ scored fail-closed, ratio `1.933962`), the `225`-row `T01` review-pass model
 re-fit, and `4,070` schema-validated `omr-discrepancy-log-v1` records (`6 / 6`
 S0 `TEST` touches spent, `480,830,451 / 10,000,000,000` download bytes). With
 both the W1 and W2/W3 [Delivery Wave](../../../../docs/delivery-wave.md)
-entries retired on acceptance, [Issue #686](https://github.com/hcoona/three/issues/686)
-retains design and planning authority; feature/workstream
+entries retired on acceptance, the active
+[W4 and W5 Delivery Wave entry](../../../../docs/delivery-wave.md#build-omr-synthetic-data-engine-and-system-detection-benchmark-w4-and-w5)
+(merged in [PR #1752](https://github.com/hcoona/three/pull/1752)) authorizes W4
+([Issue #1491](https://github.com/hcoona/three/issues/1491):
+`#1493`–`#1496`, synthetic training-data engine and Stage S3 proof slice) and
+W5 ([Issue #1497](https://github.com/hcoona/three/issues/1497), blind
+system-detection benchmark and candidate carry-state assembly validator) under
+the [synthetic data and system-detection protocol](docs/synthetic-protocol.md),
+alongside design and planning under
+[Issue #686](https://github.com/hcoona/three/issues/686); feature/workstream
 advancement beyond active Wave grants requires its
 own Delivery Wave entry while contract-preserving routine maintenance without
 new external or privacy effects follows the
@@ -194,6 +202,7 @@ does not yet produce.
 | What exactly is a valid system document or assembled score?                     | [Text Score 2 format](docs/text-format.md)                                 |
 | How is a converter round trip compared and scored?                              | [Comparison protocol](docs/comparison-protocol.md)                         |
 | How are real-data splits, system crops and recognizer baselines evaluated?      | [Evaluation and real-data alignment protocol](docs/evaluation-protocol.md) |
+| How are synthetic training pairs, Stage S3 gates and W5 detectors evaluated?    | [Synthetic data and system-detection protocol](docs/synthetic-protocol.md) |
 | How do I route a change or operate formal/baseline runs safely?                 | [Agent handoff](docs/agent-handoff.md)                                     |
 | What work is currently authorized?                                              | Repository [Delivery Wave](../../../../docs/delivery-wave.md)              |
 | Where are progress, reviews and findings?                                       | The Issues above and their linked pull requests                            |
@@ -246,6 +255,18 @@ schema for formal baseline evidence and private-input operations. Without it,
 splits, masks or thresholds could shift after inspecting recognizer outputs,
 and noisy OMR predictions would collide with the W1 converter protocol's
 fail-stop rules.
+
+W4 and W5 implementers, their independent reviewers, and downstream W6 through
+W8 training consumers use the
+[synthetic data and system-detection protocol](docs/synthetic-protocol.md)
+before installing external rendering/detector tools, fetching optional corpora,
+running Stage S3 synthetic batches, or benchmarking blind system detectors on
+staged facsimile pages. It needs a carrier distinct from `requirements.md` and
+the closed W1/W2-W3 protocols because it binds engine-specific coordinate
+scales, MEI/SVG round-trip gates, `rights_variant` and `TEST`-exclusion digest
+and work-identity checks, offline `AGPL` CLI isolation, and the dedicated W4/W5
+download and formal-run ledgers without altering the retired Stage S0
+recognizer rules.
 
 Replacement coding agents and contributors consume the
 [agent handoff](docs/agent-handoff.md) before modifying project files or

@@ -279,6 +279,108 @@ confidence, flag decisions, and `A/B/C/R` by category review-round records for
 downstream training, workflow integration and flywheel workstreams, subject to
 OMR-REQ-015 privacy scanning before any public summary is written.
 
+## Synthetic training-data engine and system-detection benchmark
+
+### OMR-REQ-021: Rights-segregated symbolic intake and TEST exclusion
+
+Every ingested symbolic score and derived synthetic sample shall carry an
+explicit `rights_variant` (`permissive`, `nc_sa` or `private_traindev`) stored
+in physically separated manifest and output partitions; sources with unverified
+or non-permitted licenses and public image-plus-partial-label sets (`GrandStaff`,
+`Camera-GrandStaff`, `FP-GrandStaff`, `OLiMPiC`, `Polish-scores`, `SMB`) shall
+be rejected fail-closed from training manifests. Every retained source file
+shall be filtered or extracted to a single two-staff piano part, pass the
+structural scope screen (`OMR-REQ-001` through `OMR-REQ-008` and
+[Unsupported content](#unsupported-content)), parse in `music21`, convert
+cleanly to canonical `Text Score 2` and forward MusicXML 4.0, record per-measure
+category densities and coverage gaps relative to real-book targets, and pass
+fail-closed `TEST`-exclusion verification against `test-exclusion.json`,
+raw-file `SHA-256` digests and authorized non-notation work-identity metadata
+(rejecting missing or uninformative composer/title metadata as well as any
+batch-ID, `SHA-256` digest or normalized composer/work/catalogue match, without
+parsing `TEST` gold notation).
+
+### OMR-REQ-022: Labeled annotation injection and unlabeled clutter separation
+
+A deterministic, seeded annotation injector shall augment canonical symbolic
+piano scores toward real-book category densities across `N6` fingering (digits
+`1` through `5`, chord-stacked, placed above or below across a mixture spanning
+fingering-free through dense pieces), `N1` dynamics, `N2` hairpins, `N3/N4`
+expression and tempo text, `N5` pedal (both text-and-star and bracket-line
+styles), `L2` slurs (including overlapping, cross-staff and explicit-side
+slurs), `L3` articulations and fermatas, `L4` arpeggios and `P3` ottavas,
+emitting an explicit per-sample injection log while weighting source selection
+toward `D2` tuplets, `D4` cross-staff notation, `P2` clef changes and `N8`
+barlines, repeats and voltas. Every injected musical notation mark shall be
+present in the rendered sample's ground-truth `Text Score 2` label; non-notation
+visual clutter (pencil marks, handwritten digits, show-through and gutter
+shading) shall be composited strictly on rasterized page images after label
+derivation so labels with and without clutter remain byte-identical.
+
+### OMR-REQ-023: Dual-engine layout rendering and round-trip label gates
+
+Batch rendering drivers for host `MuseScore 4.x` CLI (primary) and isolated
+`Verovio 6.x` (secondary) shall sample style/font parameters and system/page
+break densities spanning real plate groups (`G1` through `G7`), emitting
+`~300 dpi` untrimmed page rasters, verified `1:1` rendered-measure-to-block
+ordinals, system and measure bounding boxes mapped to page pixels (accounting
+for MuseScore's `1 / 12` `.mpos`/`.spos`-to-PNG-pixel scale and `0`-based
+sidecar page index, and Verovio's nested SVG `viewBox`/margin transform,
+expanded vertically to enclose all assigned staff and annotation ink), and
+per-system `Text Score 2` slices with explicit carry-in headers. every rendered
+sample shall pass a fail-closed round-trip label gate (verifying MuseScore's
+MusicXML re-export via `compare_file` and `musicdiff 6.0`, and verifying
+Verovio's MEI export via `music21` + `musicdiff 6.0` plus direct MEI checks for
+facets `musicdiff` omits before slicing canonical `Text Score 2`), dropping any
+failed sample, excluding any disabled category or unchecked W1 supplementary
+facet from emitted samples, and reporting per-category drop rates across at
+least `50` pieces per engine before Stage S3 statistics are accepted. Per
+[OMR-REQ-014](#omr-req-014-evidence-separation), the re-export and `Text Score
+2` round-trip gates verify symbolic preservation of the checked facets (trusting
+the renderer to paint them rather than verifying each mark's pixel legibility in
+the PNG), and diagnostic Verovio SVG glyph checks establish SVG element presence
+only without waiving a failed symbolic gate.
+
+### OMR-REQ-024: Facsimile-residue degradation, warped crops and statistics
+
+With the default recognizer input domain locked to restored US-Letter facsimile
+PDFs (`~303 dpi`), `Tier R` degradation shall apply reproducible seeded
+page-level restoration-residue transforms (mild residual mesh warp,
+resampling/deblur blur, illumination and paper-tint variation, mirrored
+show-through, gutter shading and unlabeled pencil/handwritten clutter),
+co-warping system and measure bounding boxes through the forward geometric map
+to emit YOLO-format page box labels and `14.0`-pixel-per-staff-space
+grand-staff system crops paired with canonical `Text Score 2` targets and
+carry-in state. Stage S3 shall record `>= 100`-page per-engine throughput, peak
+memory and bytes per page, verify YOLO system overlays on `>= 50` pages per
+engine (`0` missed or merged systems), and compare synthetic `Tier R` crops
+against W3's `TRAIN_DEV` real crops across staff-space, staff-line thickness,
+blur, noise, contrast and residual warp slope.
+
+### OMR-REQ-025: Blind system-detection benchmark and assembly validator
+
+Formal W4 Stage S3 and W5 evaluations shall follow the
+[synthetic data and system-detection protocol](synthetic-protocol.md) accepted
+under research-evidence review before external tool/package installation, tool
+or corpus network fetches, batch synthetic rendering or private-page detector
+benchmarking (routine local unit/scenario tests and repository-fixture runs
+without network fetches or private-gold access remain unconstrained under
+[project namespaces](../../../../../docs/governance/record-system.md#project-namespaces)).
+W5 shall benchmark blind off-the-shelf system detectors (repository `K`-free
+`comb + DP`, `kobimusic/copisteria` layout front-end, and offline external
+`homr` CLI) against W3's pixel-approved grand-staff boxes (`69` `TRAIN_DEV`
+pages with zero `TEST` parameter tuning, plus at most one completed locked
+zero-tuning `92`-page per-book-group box-geometry count report that never reads
+`TEST` notation labels), reporting missed, merged, split, spurious
+false-positive and wrong-staff-count systems (or `unscorable_page_frame` when
+exact page-coordinate mapping cannot be verified) per book group (`G1` through
+`G7`) to decide whether a trained YOLO detector is warranted. A deterministic
+candidate system-assembly validator shall check the exact expected `(page,
+system)` tuple sequence and reuse `assemble` and forward MusicXML 4.0 conversion
+to verify carry links, measure continuity, spanner closure and `music21` parse
+validity supporting gate `G3 >= 99%`, returning structured diagnostics without
+silently repairing corrupt musical content.
+
 ## Evidence and boundaries
 
 ### OMR-REQ-014: Evidence separation
