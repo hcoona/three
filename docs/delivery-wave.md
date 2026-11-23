@@ -522,6 +522,138 @@ ends a grant. Git and the proposing PR retain the reason and history.
   model-hosting or storage services; no change to the private transcription
   repository; no publication, credential or access change.
 
+### Establish OMR evaluation baselines and real-data splits (W2 and W3)
+
+- **Work carrier:** [Issue #1489](https://github.com/hcoona/three/issues/1489)
+  (W2) and [Issue #1490](https://github.com/hcoona/three/issues/1490) (W3),
+  sub-issues of #686, and their linked pull requests. Following W1 completion
+  (#1488, #1721) and the owner dispositions recorded on #1489 and #1490, the
+  repository owner requested authorization of W2 and W3.
+- **Accepted inputs:** those of the sheet-music design and planning entry and
+  the accepted project records under `src/private/app/sheet-music-omr/`
+  ([portal](../src/private/app/sheet-music-omr/README.md),
+  [requirements](../src/private/app/sheet-music-omr/docs/requirements.md),
+  [Text Score 2 format](../src/private/app/sheet-music-omr/docs/text-format.md),
+  [comparison protocol](../src/private/app/sheet-music-omr/docs/comparison-protocol.md)
+  and [handoff](../src/private/app/sheet-music-omr/docs/agent-handoff.md)).
+  Findings in #686, #1489 and #1490 are unreviewed research inputs; any
+  repository record that relies on one rechecks it under research-evidence
+  review.
+- **Owner decisions:**
+    - W2 and W3 code consists of experiments under
+      `src/private/app/sheet-music-omr/` in Python integrated with existing
+      workspace checks and CI. Heavy external reader dependencies
+      (`copisteria`, `torch` and PDF/image helpers) install into an isolated
+      out-of-worktree environment recorded per run so repository-locked
+      toolchains remain unchanged. This does not select product language,
+      packaging or release.
+    - Freeze the `7`-piece (`432`-measure, `23`-page) piece-level test set
+      (`gold-01` through `gold-06` in Book 1 plus `gold-18` in Book 2; `113`
+      accepted-MusicXML `<print>` system segments, ~`111` printed grand-staff
+      systems in workspace source maps pending W3 overlay QA) before any OMR
+      model output touches the data; assign the remaining `16` accepted
+      model-draft-free pieces (`1,601` measures, `69` pages across Book 1, Book
+      2 and `G7`; `380` MusicXML `<print>` segments, ~`323` printed grand-staff
+      systems pending W3 overlay QA) to the non-test development and training
+      pool. Never split below the piece, and exclude test pieces from tuning,
+      threshold selection and synthetic re-rendering.
+    - Stage S0 baselines evaluate the existing initial agent drafts
+      (`build-01` or `draft.musicxml` against accepted gold) and stock
+      `copista-28m` (`kobimusic/copisteria` and `kobimusic/copista-28m`,
+      `Apache-2.0`) in both drafter and blind second-reader modes on the staged
+      restored US-Letter facsimile PDFs (`92` pages, plus raw `.heic` captures
+      via stored page quads if later staged locally). Skip the paid
+      commercial-tool bake-off and `rokot-omr-2b`/`Qwen3-VL` weights in this
+      entry.
+    - Layout-only (`C`-class) differences are reported separately and do not
+      count as recognition (`A`-class) errors. Live transcription-workflow
+      adoption and any selective-review policy remain deferred to W7 (#1499).
+    - Public repository records, Issues and pull requests exclude private
+      paths, piece or book identities and copyrighted score content, reporting
+      only anonymized batch numbers (`gold-01` through `gold-23`), group
+      identifiers (`G1` through `G7`) and aggregate counts or metrics. The
+      owner's development agents may inspect local score pages, overlays,
+      crops, drafts, reviews and accepted gold read-only through their model
+      services; although the owner imposes no blanket prohibition on external
+      compute for separately authorized training workstreams, W2 and W3 S0
+      execution here runs locally without uploading score material to
+      third-party OMR, hosting or cloud-compute services.
+    - Numeric download and runtime bounds under Effects are accident fuses, not
+      limits on normal development; test-set evaluation caps in the W2 protocol
+      bound selection bias.
+- **Advancement and outcome:**
+    - Accept project records (or bounded sections/addenda where record
+      admission warrants) defining: (a) the unified real-data alignment and
+      split manifest schema covering the `23` pieces at page, grand-staff
+      system crop, measure-ordinal range, box trust and documented open-reading
+      mask levels, together with canonical per-system `Text Score 2` target
+      slices; and (b) the W2 evaluation and Stage S0 baseline protocol covering
+      test-set touch rules, B-normalized per-category recognition (`A`-class)
+      scoring in drafter and blind second-reader modes, piece-cluster bootstrap
+      intervals, `musicdiff` 6.0 normalized edit distance, review-pass model
+      fitting, stock `copista-28m` execution/isolation, and the downstream
+      discrepancy/logging schema.
+    - Implement the alignment/cropping and overlay-QA tools, per-system slice
+      verifier, B-normalized per-category W2 scorer, and isolated local
+      `copista-28m` baseline runner and touch-log harness under
+      `src/private/app/sheet-music-omr/`.
+    - Produce the local 23-piece alignment and split manifest, complete overlay
+      QA across the `92` restored facsimile pages, cut normalized system crops,
+      verify that re-assembled per-system slices match all `23` accepted gold
+      pieces with zero content differences, run Stage S0 baselines for initial
+      agent drafts and stock `copista-28m`, and publish the sanitized S0
+      baseline tables, pass-model re-fit and downstream logging schema on #1489
+      and #1490.
+- **Ordering and gates:** merge this entry before substantive W2 or W3
+  implementation, package/tool installation, weight download or runtime
+  execution. Accept the W2 and W3 requirements, schemas and
+  evaluation/runtime/isolation protocols under record-system review,
+  research-evidence review and shared engineering guidance before installing
+  external reader or host packages (`kobimusic/copisteria`, its out-of-worktree
+  `torch`/CV stack, or host `poppler-utils`), downloading `kobimusic/copista-28m`
+  weights, generating real-page overlays or crops, executing S0 measurements or
+  running `copista-28m`. Independently classify material review findings before
+  repair. New product, scope or feasibility tradeoffs return to the owner.
+- **Acceptance and closure:** the unified 23-piece system-alignment and split
+  manifest, `92`-page overlay QA, zero-difference per-system slice verification,
+  tested W2 scorer, and independently reviewed sanitized S0 baseline results
+  (`build-01`/`draft` and stock `copista-28m` in drafter and second-reader
+  modes, keeping `TEST` and `TRAIN/DEV` separated) and logging schema are
+  recorded on #1489 and #1490, and project portal/handoff records are updated.
+  Delete this entry when accepted or when the owner stops W2 and W3.
+- **Effects:** permit the design and planning entry's inspection, Issue and
+  documentation effects; local read-only use of the private transcription
+  archive, staged restored facsimile PDFs and capture manifest (plus raw
+  `.heic` photos if staged locally), `gold-cache` (including the #1705 staged
+  `gold-01` copy read-only, with no further edits to any gold or archive file),
+  and local desk-study archive; creation and use of out-of-worktree `RUN`,
+  `DOWNLOADS`, alignment/crop/overlay output, and isolated virtual-environment
+  and cache directories; host `MuseScore 4.x` command-line invocation recorded
+  by exact version and executable SHA-256 per run; installation in an isolated
+  out-of-worktree environment (and/or host `poppler-utils` if needed for PDF
+  rasterization) of `kobimusic/copisteria` (`Apache-2.0`) and its Python
+  dependencies (`torch`, `torchvision`, `opencv-python`, `scipy`, `pillow`,
+  `numpy`, `huggingface_hub`, `pypdfium2`), recorded by exact commit/version per
+  run, and download of `kobimusic/copista-28m` weights (`Apache-2.0`), stopping
+  to return to the owner before cumulative new W2/W3 downloads exceed `10 GB`
+  (tracked separately from W1's closed `2,350,276,855`-byte ledger);
+  experimental source, tests and records under
+  `src/private/app/sheet-music-omr/` and directly required record-routing or CI
+  test-selection updates; isolated local runs and credential-free tests; and
+  ordinary pull-request/check operations and their normal CI.
+- **Exclusions:** no model training or weight fine-tuning (W6, #1498); no
+  synthetic rendering or augmentation engine (W4, #1491); no standalone general
+  system-detector model training (W5, #1497); no live workflow modification or
+  selective-review policy change (W7, #1499); no paid commercial-tool purchase
+  or `rokot-omr-2b`/`Qwen3-VL` weight download; no committed fixture other than
+  self-authored, public-domain or CC0 material with provenance; no commit or
+  public upload of private paths, piece/book identities or copyrighted score
+  content, and no upload of score material to external OMR, hosting or cloud
+  compute services under this entry; no modification to the private
+  transcription repository or staged gold files; no change to existing
+  repository-locked tool/runtime versions or other projects' behavior, and no
+  publication, release, credential or access change.
+
 ### Align .NET tests that launch external tools with the engineering principles
 
 - **Work carrier:** [Issue #1501](https://github.com/hcoona/three/issues/1501),
