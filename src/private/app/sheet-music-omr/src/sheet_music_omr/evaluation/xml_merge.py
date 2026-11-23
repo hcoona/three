@@ -242,11 +242,15 @@ def merge_two_part_grand_staff(  # noqa: C901, PLR0912, PLR0915
 
     div1 = 1
     div2 = 1
+    eff_time1: tuple[str, str] | None = None
+    eff_time2: tuple[str, str] | None = None
     merged_part = ET.Element("part", {"id": "P1"})
 
     for idx, (m1, m2) in enumerate(zip(m1_list, m2_list, strict=True)):
-        d1_txt = m1.findtext("./attributes/divisions")
-        d2_txt = m2.findtext("./attributes/divisions")
+        o1_raw = _combine_attributes_blocks(_opening_attributes_blocks(m1))
+        o2_raw = _combine_attributes_blocks(_opening_attributes_blocks(m2))
+        d1_txt = o1_raw.findtext("divisions") if o1_raw is not None else None
+        d2_txt = o2_raw.findtext("divisions") if o2_raw is not None else None
         if d1_txt and d1_txt.strip().isdigit():
             div1 = int(d1_txt.strip())
         if d2_txt and d2_txt.strip().isdigit():
@@ -258,10 +262,18 @@ def merge_two_part_grand_staff(  # noqa: C901, PLR0912, PLR0915
 
         t1 = _time_signature_tuple(m1)
         t2 = _time_signature_tuple(m2)
-        if t1 is not None and t2 is not None and t1[:2] != t2[:2]:
+        if t1 is not None:
+            eff_time1 = t1[:2]
+        if t2 is not None:
+            eff_time2 = t2[:2]
+        if (
+            eff_time1 is not None
+            and eff_time2 is not None
+            and eff_time1 != eff_time2
+        ):
             msg = (
-                f"conflicting time signatures in measure {idx + 1}: "
-                f"{t1} vs {t2}"
+                f"conflicting effective time signatures in measure {idx + 1}: "
+                f"{eff_time1} vs {eff_time2}"
             )
             raise CandidateNormalizationError(msg)
 
@@ -277,10 +289,14 @@ def merge_two_part_grand_staff(  # noqa: C901, PLR0912, PLR0915
         _scale_measure_divisions(cm1, div1, target_div)
         _scale_measure_divisions(cm2, div2, target_div)
 
+        open_a1_list = _opening_attributes_blocks(cm1)
+        open_a2_list = _opening_attributes_blocks(cm2)
+        open_a1_ids = {id(el) for el in open_a1_list}
+        open_a2_ids = {id(el) for el in open_a2_list}
         out_m = ET.Element("measure", dict(cm1.attrib))
         merged_attrs = _merge_measure_attributes(
-            cm1.find("attributes"),
-            cm2.find("attributes"),
+            _combine_attributes_blocks(open_a1_list),
+            _combine_attributes_blocks(open_a2_list),
             target_div=target_div if idx == 0 or d1_txt or d2_txt else None,
             include_staves=(idx == 0),
         )
@@ -299,20 +315,13 @@ def merge_two_part_grand_staff(  # noqa: C901, PLR0912, PLR0915
         if merged_attrs is not None:
             out_m.append(merged_attrs)
 
-        seen_attrs_1 = False
         for ch in cm1:
-            if ch.tag in {"print", "barline"}:
+            if ch.tag in {"print", "barline"} or id(ch) in open_a1_ids:
                 continue
             if ch.tag == "attributes":
-                if not seen_attrs_1:
-                    seen_attrs_1 = True
-                    continue
-                for clef in ch.findall("clef"):
-                    ca = ET.Element("attributes")
-                    cc = copy.deepcopy(clef)
-                    cc.set("number", "1")
-                    ca.append(cc)
-                    out_m.append(ca)
+                mid_a1 = _emit_mid_measure_attributes(ch, staff_no=1)
+                if mid_a1 is not None:
+                    out_m.append(mid_a1)
                 continue
             _tag_staff_and_clef(ch, staff_no=1, voice_offset=0)
             out_m.append(ch)
@@ -325,20 +334,13 @@ def merge_two_part_grand_staff(  # noqa: C901, PLR0912, PLR0915
             dur.text = str(s1_cursor)
             out_m.append(backup)
 
-        seen_attrs_2 = False
         for ch in cm2:
-            if ch.tag in {"print", "barline"}:
+            if ch.tag in {"print", "barline"} or id(ch) in open_a2_ids:
                 continue
             if ch.tag == "attributes":
-                if not seen_attrs_2:
-                    seen_attrs_2 = True
-                    continue
-                for clef in ch.findall("clef"):
-                    ca = ET.Element("attributes")
-                    cc = copy.deepcopy(clef)
-                    cc.set("number", "2")
-                    ca.append(cc)
-                    out_m.append(ca)
+                mid_a2 = _emit_mid_measure_attributes(ch, staff_no=2)
+                if mid_a2 is not None:
+                    out_m.append(mid_a2)
                 continue
             _tag_staff_and_clef(ch, staff_no=2, voice_offset=max_v1)
             out_m.append(ch)
@@ -402,6 +404,47 @@ def _tag_staff_and_clef(
         st_el = element.find("staff")
         if st_el is not None:
             st_el.text = str(staff_no)
+
+
+def _opening_attributes_blocks(measure: ET.Element) -> list[ET.Element]:
+    """Return all onset-0 ``<attributes>`` blocks before any timed event."""
+    blocks: list[ET.Element] = []
+    for ch in measure:
+        if ch.tag in {"note", "backup", "forward"}:
+            break
+        if ch.tag == "attributes":
+            blocks.append(ch)
+    return blocks
+
+
+def _combine_attributes_blocks(
+    blocks: Sequence[ET.Element],
+) -> ET.Element | None:
+    if not blocks:
+        return None
+    out = ET.Element("attributes")
+    for b in blocks:
+        for child in b:
+            out.append(copy.deepcopy(child))
+    return out
+
+
+def _emit_mid_measure_attributes(
+    attr_el: ET.Element, staff_no: int
+) -> ET.Element | None:
+    """Tag a mid-measure ``<attributes>`` block for ``staff_no`` inline."""
+    if any(
+        attr_el.find(tag) is not None for tag in ("divisions", "time", "staves")
+    ):
+        msg = "unsupported mid-measure divisions/time/staves in 2-part merge"
+        raise CandidateNormalizationError(msg)
+    out = ET.Element("attributes")
+    for sub in attr_el:
+        if sub.tag in {"key", "clef"}:
+            sc = copy.deepcopy(sub)
+            sc.set("number", str(staff_no))
+            out.append(sc)
+    return out if len(out) > 0 else None
 
 
 def _insert_staff_in_note(note: ET.Element, staff_no: int) -> None:

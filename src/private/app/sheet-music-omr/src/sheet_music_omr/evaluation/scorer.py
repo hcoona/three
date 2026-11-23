@@ -21,6 +21,7 @@ from collections import Counter
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+import music21 as m21
 from musicdiff.annotation import AnnExtra, AnnMeasure
 from musicdiff.comparison import Comparison, DiffOperation
 
@@ -46,7 +47,6 @@ from sheet_music_omr.comparison import (
     _locate,
     _musicxml_part_staff_indices,
     _part_slice,
-    _signature,
     _single_part_score,
     _voice_content_groups,
     _whole_symbols,
@@ -732,7 +732,7 @@ def _run_aligned_pass(
 
 
 def _is_symbol_only_timesig_diff(diff: Difference) -> bool:
-    if diff.categories != ("time_signature",):
+    if diff.categories != {"time_signature"}:
         return False
     if not isinstance(diff.y_object, AnnExtra) or not isinstance(
         diff.t_object, AnnExtra
@@ -740,7 +740,19 @@ def _is_symbol_only_timesig_diff(diff: Difference) -> bool:
         return False
     if diff.y_object.kind != "timesig" or diff.t_object.kind != "timesig":
         return False
-    return _signature(diff.t_object) == _signature(diff.y_object)
+    t_ts = diff.t_object.get_object()
+    y_ts = diff.y_object.get_object()
+    if not isinstance(t_ts, m21.meter.TimeSignature) or not isinstance(
+        y_ts, m21.meter.TimeSignature
+    ):
+        return False
+    if (t_ts.numerator, t_ts.denominator) != (y_ts.numerator, y_ts.denominator):
+        return False
+    pair = (t_ts.numerator, t_ts.denominator)
+    syms = {t_ts.symbol or "normal", y_ts.symbol or "normal"}
+    return (pair == (4, 4) and syms <= {"normal", "common"}) or (
+        pair == (2, 2) and syms <= {"normal", "cut"}
+    )
 
 
 def _score_aligned(  # noqa: C901, PLR0912, PLR0913, PLR0915
@@ -811,16 +823,20 @@ def _score_aligned(  # noqa: C901, PLR0912, PLR0913, PLR0915
     op_to_step: dict[int, tuple[int | None, int | None]] = {}
     cat_edit_dist: Counter[str] = Counter()
 
+    cat_rank = {c: idx for idx, c in enumerate(CONTENT_CATEGORIES)}
     for t_i, y_j, op in tagged_ops:
         op_rec = record_of(op, locations)
         op_to_step[id(op_rec)] = (t_i, y_j)
         assigned = _assign(op, op_rec, pending)  # type: ignore[arg-type]
         differences.extend(assigned)
-        cats = [
-            c for d in assigned for c in d.categories if c in CONTENT_CATEGORIES
-        ]
-        if cats:
-            cat_edit_dist[cats[0]] += int(op.edit_distance)
+        syms = sorted(
+            [s for d in assigned for s in d.symbols if s in cat_rank],
+            key=cat_rank.__getitem__,
+        )
+        if syms:
+            q_ed, r_ed = divmod(int(op.edit_distance), len(syms))
+            for idx_s, s_cat in enumerate(syms):
+                cat_edit_dist[s_cat] += q_ed + (1 if idx_s < r_ed else 0)
 
     differences, pairings = _apply_pairing(
         differences, locations, cross_staff_owned
@@ -840,7 +856,7 @@ def _score_aligned(  # noqa: C901, PLR0912, PLR0913, PLR0915
         t_i: Counter() for t_i in delbar_attr_ref
     }
 
-    touched_y_by_m_cat: dict[tuple[int, str], set[int]] = {}
+    loss_by_y_elem: dict[int, Counter[str]] = {}
 
     # 1. Attribute insbar and delbar structural markers explicitly
     for t_i, y_j in alignment:
@@ -903,30 +919,31 @@ def _score_aligned(  # noqa: C901, PLR0912, PLR0913, PLR0915
         for cat in diff.categories:
             if ref_m_count > 0:
                 l0_by_m[m_idx][cat] += 1
-            if cat in LAYER1_CATEGORIES and not is_sym_ts:
-                if ref_m_count > 0:
-                    l1_by_m[m_idx][cat] += 1
-                if diff.y_object is not None and ref_m_count > 0:
-                    touched_y_by_m_cat.setdefault((m_idx, cat), set()).add(
-                        id(diff.y_object)
-                    )
+            if cat in LAYER1_CATEGORIES and not is_sym_ts and ref_m_count > 0:
+                l1_by_m[m_idx][cat] += 1
+        if diff.y_object is not None and not is_sym_ts and ref_m_count > 0:
+            elem_loss = loss_by_y_elem.setdefault(id(diff.y_object), Counter())
+            for sym in diff.symbols:
+                if sym in LAYER1_CATEGORIES:
+                    elem_loss[sym] += 1
 
-    # Track per-measure musicdiff element identical counts for G2 recall
+    # Track per-measure constituent element identical counts for G2 recall
     el_ident_by_m: list[Counter[str]] = [Counter() for _ in range(ref_m_count)]
-    md_el_by_m: list[Counter[str]] = [Counter() for _ in range(ref_m_count)]
     for elem in elements:
         loc = y_locs.get(id(elem))
         em_idx = (
             loc.measure_index if loc and loc.measure_index is not None else 0
         )
         em_idx = min(max(em_idx, 0), max(0, ref_m_count - 1))
-        for sym in _whole_symbols(elem):
-            if sym in CONTENT_CATEGORIES and ref_m_count > 0:
-                md_el_by_m[em_idx][sym] += 1
-    for m_idx in range(ref_m_count):
-        for cat, tot_m in md_el_by_m[m_idx].items():
-            non_id = len(touched_y_by_m_cat.get((m_idx, cat), set()))
-            el_ident_by_m[m_idx][cat] = max(0, tot_m - non_id)
+        if ref_m_count <= 0:
+            continue
+        elem_syms = Counter(
+            s for s in _whole_symbols(elem) if s in CONTENT_CATEGORIES
+        )
+        elem_loss = loss_by_y_elem.get(id(elem), Counter())
+        for cat, elem_tot in elem_syms.items():
+            lost = min(elem_tot, elem_loss.get(cat, 0))
+            el_ident_by_m[em_idx][cat] += elem_tot - lost
 
     # 3. Per-measure supplementary checks (Layer 0 & Layer 1)
     supp_ident_by_m = _score_aligned_supplementary(

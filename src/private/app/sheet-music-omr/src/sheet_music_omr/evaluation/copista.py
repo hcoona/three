@@ -74,6 +74,7 @@ import traceback
 from pathlib import Path
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ["COPISTERIA_DETECTOR"] = "28m"
 import torch
 torch.set_num_threads(1)
 
@@ -1508,6 +1509,7 @@ def run_copista_inference_and_assemble(  # noqa: C901, PLR0912, PLR0915
             worker_env = {
                 **os.environ,
                 "OMR_EXPECTED_COPISTERIA_ROOT": str(src_root),
+                "COPISTERIA_DETECTOR": "28m",
             }
             try:
                 subprocess.run(  # noqa: S603 - verified venv & worker script

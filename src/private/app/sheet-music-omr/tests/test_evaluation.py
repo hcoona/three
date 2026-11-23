@@ -5,6 +5,7 @@ from __future__ import annotations
 import http.client
 import io
 import json
+import xml.etree.ElementTree as ET
 from typing import TYPE_CHECKING, Any, Self
 
 import numpy as np
@@ -153,6 +154,137 @@ def test_two_part_merge_and_page_concat_scenario(tmp_path: Path) -> None:
         == ms.element_totals.get("voice")
         for ms in sc.measures
     )
+
+    # Effective meter carry-forward rejects bar-2 conflict on one staff only
+    conflicting_meter_2p = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        "<score-partwise><part-list>"
+        '<score-part id="P1"><part-name>Right</part-name></score-part>'
+        '<score-part id="P2"><part-name>Left</part-name></score-part>'
+        '</part-list><part id="P1"><measure number="1">'
+        "<attributes><divisions>1</divisions><key><fifths>0</fifths></key>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time>"
+        "<clef><sign>G</sign><line>2</line></clef></attributes>"
+        "<note><pitch><step>C</step><octave>4</octave></pitch>"
+        "<duration>4</duration><type>whole</type></note></measure>"
+        '<measure number="2"><attributes>'
+        "<time><beats>3</beats><beat-type>4</beat-type></time></attributes>"
+        "<note><pitch><step>D</step><octave>4</octave></pitch>"
+        "<duration>3</duration><type>half</type><dot/></note></measure></part>"
+        '<part id="P2"><measure number="1">'
+        "<attributes><divisions>1</divisions><key><fifths>0</fifths></key>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time>"
+        "<clef><sign>F</sign><line>4</line></clef></attributes>"
+        "<note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>4</duration><type>whole</type></note></measure>"
+        '<measure number="2">'
+        "<note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>4</duration><type>whole</type></note></measure></part>"
+        "</score-partwise>"
+    )
+    with pytest.raises(
+        aln_mod.MusicXmlError.__bases__[0], match="conflicting effective time"
+    ):
+        merge_two_part_grand_staff(conflicting_meter_2p)
+
+    # Mid-measure clef change stays at its timed onset after first note
+    mid_clef_2p = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        "<score-partwise><part-list>"
+        '<score-part id="P1"><part-name>Right</part-name></score-part>'
+        '<score-part id="P2"><part-name>Left</part-name></score-part>'
+        '</part-list><part id="P1"><measure number="1">'
+        "<attributes><divisions>1</divisions><key><fifths>0</fifths></key>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time>"
+        "<clef><sign>G</sign><line>2</line></clef></attributes>"
+        "<note><pitch><step>C</step><octave>4</octave></pitch>"
+        "<duration>2</duration><type>half</type></note>"
+        "<attributes><clef><sign>F</sign><line>4</line></clef></attributes>"
+        "<note><pitch><step>E</step><octave>3</octave></pitch>"
+        "<duration>2</duration><type>half</type></note></measure></part>"
+        '<part id="P2"><measure number="1">'
+        "<attributes><divisions>1</divisions><key><fifths>0</fifths></key>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time>"
+        "<clef><sign>F</sign><line>4</line></clef></attributes>"
+        "<note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>4</duration><type>whole</type></note></measure></part>"
+        "</score-partwise>"
+    )
+    merged_mid_clef = merge_two_part_grand_staff(mid_clef_2p)
+    tags_m1 = [
+        (
+            ch.tag,
+            ch.findtext("pitch/step"),
+            ch.findtext("clef[@number='1']/sign"),
+        )
+        for ch in ET.fromstring(merged_mid_clef).findall("./part/measure/*")  # noqa: S314
+    ]
+    assert ("note", "C", None) in tags_m1
+    assert ("attributes", None, "F") in tags_m1
+    assert ("note", "E", None) in tags_m1
+    assert (
+        tags_m1.index(("note", "C", None))
+        < tags_m1.index(("attributes", None, "F"))
+        < tags_m1.index(("note", "E", None))
+    )
+
+    # Common time vs numeric 4/4 is B-normalized out of Layer 1, and deleting
+    # a 3-note chord marks 0/2 chord_membership constituents identical!
+    ref_chord_m1 = (
+        '<measure number="1"><attributes><divisions>1</divisions>'
+        "<key><fifths>0</fifths></key>"
+        '<time symbol="common"><beats>4</beats>'
+        "<beat-type>4</beat-type></time><staves>2</staves>"
+        '<clef number="1"><sign>G</sign><line>2</line></clef>'
+        '<clef number="2"><sign>F</sign><line>4</line></clef></attributes>'
+        "<note><pitch><step>C</step><octave>4</octave></pitch>"
+        "<duration>4</duration><voice>1</voice><type>whole</type>"
+        "<staff>1</staff></note>"
+        "<note><chord/><pitch><step>E</step><octave>4</octave></pitch>"
+        "<duration>4</duration><voice>1</voice><type>whole</type>"
+        "<staff>1</staff></note>"
+        "<note><chord/><pitch><step>G</step><octave>4</octave></pitch>"
+        "<duration>4</duration><voice>1</voice><type>whole</type>"
+        "<staff>1</staff></note>"
+        "<backup><duration>4</duration></backup>"
+        "<note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>4</duration><voice>5</voice><type>whole</type>"
+        "<staff>2</staff></note></measure>"
+    )
+    ref_chord_common = _one_part_grand_staff_xml([ref_chord_m1])
+    cand_numeric_44 = ref_chord_common.replace(
+        '<time symbol="common">', "<time>"
+    )
+    sc_ts = score_prediction(cand_numeric_44, ref_chord_common)
+    assert sc_ts.measures[0].layer0_counts.get("time_signature", 0) == 2  # noqa: PLR2004
+    assert "time_signature" not in sc_ts.measures[0].layer1_counts
+
+    # Contradictory symbol="common" on 3/4 MUST NOT be suppressed in Layer 1!
+    cand_bad_34_common = ref_chord_common.replace(
+        "<beats>4</beats>", "<beats>3</beats>"
+    )
+    sc_bad_ts = score_prediction(cand_bad_34_common, cand_numeric_44)
+    assert sc_bad_ts.measures[0].layer1_counts.get("time_signature", 0) >= 1
+
+    cand_rest_m1 = (
+        '<measure number="1"><attributes><divisions>1</divisions>'
+        "<key><fifths>0</fifths></key>"
+        '<time symbol="common"><beats>4</beats>'
+        "<beat-type>4</beat-type></time><staves>2</staves>"
+        '<clef number="1"><sign>G</sign><line>2</line></clef>'
+        '<clef number="2"><sign>F</sign><line>4</line></clef></attributes>'
+        "<note><rest/><duration>4</duration><voice>1</voice>"
+        "<type>whole</type><staff>1</staff></note>"
+        "<backup><duration>4</duration></backup>"
+        "<note><pitch><step>C</step><octave>3</octave></pitch>"
+        "<duration>4</duration><voice>5</voice><type>whole</type>"
+        "<staff>2</staff></note></measure>"
+    )
+    cand_rest_rh = _one_part_grand_staff_xml([cand_rest_m1])
+    sc_ch = score_prediction(cand_rest_rh, ref_chord_common)
+    assert sc_ch.element_totals["chord_membership"] == 2  # noqa: PLR2004
+    assert sc_ch.element_identical_layer1["chord_membership"] == 0
+    assert sc_ch.category_edit_distance.get("chord_membership", 0) >= 1
 
 
 def test_scorer_dp_alignment_forbidden_pages_and_fail_closed(
