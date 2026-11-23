@@ -93,10 +93,11 @@ running workers alive during cancellation; it is reserved for the short
 GitHub's job outcome, not on a final shell step completing.
 When job status conditions or the cited GitHub semantics change, or a hosted
 run contradicts this cancellation behavior, tooling maintainers recheck the
-references and relevant ordinary-run evidence with independent evidence
-review. Every merged Delivery Wave is the existing fallback review event.
-If the contract is uncertain, pause dependent changes and claims while
-preserving required checks; do not assume cancellation completed.
+references and relevant ordinary-run evidence with independent evidence review;
+review of the next PR changing CI job-status or cancellation wiring is the
+fallback applicability review. If the contract is uncertain, pause dependent
+changes and claims while preserving required checks; do not assume cancellation
+completed.
 Required work does not use `continue-on-error`. Jobs wait only for inputs
 they consume, so source checks, selected language tests and independently
 built platform artifacts can run concurrently. Existing supported runner and
@@ -110,15 +111,17 @@ command/failure captures, plus required execution results, outcomes and JUnit
 durations when those phases run. These use ordinary CI artifact retention;
 copy decision-relevant observations into the Issue or PR.
 
-Normal validation retains the candidate, selection reasons, actual interpreter,
-test result and skip reasons, command/commit elapsed time, CI job/step timing,
-and owned temporary-file/inode observations in the Issue or implementation PR.
-Use ordinary runs to collect JUnit durations; do not repeat complete suites
-solely for timing. Compare equivalent work, identify the critical path, and
-separate test execution from setup, cache handling and dependency/queue waits.
-Parallel job durations are not added as wall time. Integration optimization
-preserves required real-tool proof, immutable preparation reuse, isolated
-writable fixtures, bounded concurrency and owned temporary-file cleanup.
+Normal validation records the tested snapshot, executed commands, and
+pass/fail/skip outcomes in the Issue or implementation PR; collect command/CI
+timing, JUnit durations, and temporary-file/inode observations when
+investigating performance, timeouts, or resource exhaustion rather than on
+routine changes. Use ordinary runs to collect JUnit durations; do not repeat
+complete suites solely for timing. Compare equivalent work, identify the
+critical path, and separate test execution from setup, cache handling and
+dependency/queue waits. Parallel job durations are not added as wall time.
+Integration optimization preserves required real-tool proof, immutable
+preparation reuse, isolated writable fixtures, bounded concurrency and owned
+temporary-file cleanup.
 
 A real-tool test that CI must run fails when `CI=true` and its tool is
 missing; local runs may still skip it with the reason. Platform-capability
