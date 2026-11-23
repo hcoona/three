@@ -12,7 +12,8 @@ and [design plan][original-design] with code and tests at Three commit
 `d4c30ceba97190f4771141bc0200e5326ac3fce7`. Both originals identify GitHub Copilot
 as author, disclose AI assistance, and carry the date 2025-11-08. These are their
 provenance statements, not evidence that the designs were independently reviewed.
-Product or runtime work requires its own accepted Delivery Wave grant.
+Work authorization follows the
+[repository record policy](../../../../../../docs/governance/record-system.md#work-authorization-and-concurrency).
 
 ## Context
 

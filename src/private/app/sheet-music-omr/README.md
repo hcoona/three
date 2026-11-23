@@ -185,9 +185,10 @@ acceptance consume the comparison protocol, which fixes the comparison
 dependencies, MuseScore 4 provenance bounds, inputs, element measure and
 category assignment of every round-trip result. Without it
 the harness would choose its own measure after seeing results. It needs its
-own carrier because an accepted protocol must be fixed before execution and
-changes only under research-evidence review, independently of format and
-requirement changes. Issues carry its results, not the protocol.
+own carrier because an accepted protocol must be fixed before formal acceptance
+execution and changes under research-evidence review before formal acceptance
+runs rely on it, independently of format and requirement changes. Issues carry
+its results, not the protocol.
 
 W2 and W3 implementers, their independent reviewers, and downstream W4 through
 W8 workstreams consume the

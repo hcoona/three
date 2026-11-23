@@ -274,10 +274,12 @@ disposition; no paid billing probe is required or authorized by these scenarios.
 
 ## Implementation and evidence ordering
 
-The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) selects the
-current bounded work. It does not turn a proposed design/protocol into an
-accepted prerequisite or runtime evidence, and a completed migration grant
-does not authorize later refinement.
+Work authorization follows
+[the repository record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+and the accepted [Delivery Wave](../../../../../docs/delivery-wave.md). Wave
+authorization does not turn a proposed design/protocol into an accepted
+prerequisite or runtime evidence, and a completed migration grant does not
+authorize further feature, contract, or paid/external advancement.
 
 Owning requirements, architecture/contracts, validation criteria, unsupported
 cases, and concrete native/MCP package/framing or operation-schema choices may

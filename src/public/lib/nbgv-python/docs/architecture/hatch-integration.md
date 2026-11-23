@@ -8,7 +8,8 @@ metadata from Python packaging values and to interpret existing tests. The
 design provenance and unresolved API expectations. The [README](../../README.md)
 remains the package reader's configuration reference; this record supplies the
 internal rationale and evidence limits that a usage example cannot carry.
-Implementation changes require their own accepted Delivery Wave grant.
+Work authorization follows the
+[repository record policy](../../../../../../docs/governance/record-system.md#work-authorization-and-concurrency).
 
 ## Functional Scope
 
@@ -117,7 +118,8 @@ not depend on a .NET installation. Existing tests retain that separation:
 
 These sources support bounded implementation claims, not an end-to-end NBGV,
 Hatch plugin discovery, operating-system support, or publication claim. The
-unimplemented parts of the original testing plan remain unverified; this
-record does not authorize new tests or runtime experiments. The separate
-sample owns its usage and limitations and is not the validation authority for
-the library.
+unimplemented parts of the original testing plan remain unverified; validation
+and external-effect boundaries follow the
+[repository record policy](../../../../../../docs/governance/record-system.md#workflows).
+The separate sample owns its usage and limitations and is not the validation
+authority for the library.

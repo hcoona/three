@@ -8,11 +8,14 @@ diagnostician and independent evidence reviewer consume it; the owner maintains
 it when the subject or effects change. Without it, normal product use could
 silently inherit the former fixture-only acceptance protocol.
 
-The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) grants work.
-This protocol must merge before paid native audit observation; it is not a
-successful run report and does not reopen the former development acceptance
-campaign. Local credential-free development, controlled tests, and non-paid
-debugging on working branches follow the
+Work authorization follows
+[the repository record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+and the accepted [Delivery Wave](../../../../../docs/delivery-wave.md). Paid
+native audit observation requires an accepted Wave risk grant and this merged
+protocol on `main`; this protocol is not a successful run report and does not
+reopen the former development acceptance campaign. Local credential-free
+development, controlled tests, and non-paid debugging on working branches
+follow the
 [repository record policy](../../../../../docs/governance/record-system.md#project-namespaces)
 without `main`-merge preconditions or attempt quotas. The
 [validation basis](validation.md) retains its evidence-level boundaries.
@@ -437,8 +440,9 @@ explicit decision after outcome/ownership inspection and targets only named
 owned resources; no broad deletion or process-name killing.
 
 Issue #1552 and its linked PRs retain exact source/build and accepted-authority
-identities, commands/results, applicable rechecks, independent reviews and
-triage, and sanitized outcomes/limitations. Do not publish private paths,
-native/account/session identifiers, raw transcripts, authentication artifacts,
-private source or personal account usage/balance. No release or proving
-dispatch, credential/access change or automatic publication is authorized.
+identities, commands/results, applicable rechecks, applicable independent
+reviews and GOV-011 finding disposition, and sanitized outcomes/limitations. Do
+not publish private paths, native/account/session identifiers, raw transcripts,
+authentication artifacts, private source or personal account usage/balance. No
+release or proving dispatch, credential/access change or automatic publication
+is authorized.
