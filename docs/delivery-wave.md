@@ -891,20 +891,30 @@ ends a grant. Git and the proposing PR retain the reason and history.
   [control catalog](governance/controls.yaml),
   [family catalog](governance/record-families.yaml),
   [engineering principles](engineering/engineering-principles.md),
+  [HK execution](engineering/hk-execution.md),
   [agent execution and recovery](engineering/agent-execution.md), root
   [`AGENTS.md`](../AGENTS.md), [`docs/AGENTS.md`](AGENTS.md),
   [`CONTRIBUTING.md`](../CONTRIBUTING.md),
   [`.github/pull_request_template.md`](../.github/pull_request_template.md),
   [record-system review](../.github/skills/record-system-review/SKILL.md) and
   [research-evidence review](../.github/skills/research-evidence-review/SKILL.md)
-  with their `evals/` fixtures, and the project portals and documentation under
+  with their `evals/` fixtures, and the project portals, documentation, and OMR
+  harness/tests under
   [Workflow Delivery](../src/private/app/workflow-delivery/docs/README.md),
   [LiteAgensh](../src/private/app/lite-agensh/README.md), and
   [Sheet-Music OMR](../src/private/app/sheet-music-omr/README.md).
 - **Owner decisions and boundaries:**
-    - Keep `GOV-001` through `GOV-011` in
+    - Keep `GOV-001` through `GOV-010` in
       `docs/governance/governance-system.md` and
-      `docs/engineering/engineering-principles.md` unchanged.
+      `docs/engineering/engineering-principles.md` unchanged. Amend
+      [GOV-011](governance/governance-system.md#gov-011-separate-findings-from-disposition)
+      (and its `#source` adaptation note) so agreed (`true positive`) findings
+      not requiring an owner decision are remediated directly and verified on
+      the delta by the originating independent reviewer without a third-party
+      classifier; require an independent third-party classifier only when
+      disputing a finding as `false positive` or classifying it as `unresolved`
+      (retaining repository-owner disposition for unresolved findings and any
+      finding requiring a value, risk, scope, governance, or release decision).
     - Keep development workflow, Delivery Wave semantics, local iteration
       freedom, and review triggers uniform at repository scope (`GOV-002`,
       `GOV-005`). Project-local records (`validation`, `protocol`,
@@ -912,26 +922,35 @@ ends a grant. Git and the proposing PR retain the reason and history.
       or privacy risk boundaries, and criteria for accepting formal or release
       evidence; they must not impose workflow gates, `main`-merge preconditions,
       or run-count limits on local harmless development and debugging.
+    - Exempt routine maintenance from Delivery Wave ceremony: contract-preserving,
+      non-feature defect and test fixes, CI troubleshooting/diagnostics,
+      lint/formatting, doc-drift repairs, and routine Renovate or dependency
+      compatibility adjustments without new external, paid, credentialed, or
+      privacy effects execute directly through ordinary pull requests without a
+      Wave entry. Wave entries govern feature/capability advancements,
+      architectural or public-contract changes, and external/risk-bearing
+      operations, and close atomically in their final implementation PR (or a
+      Wave-only PR on owner stop or explicit closure).
     - Replace pre-merge record-before-implementation serial locks with
       consistency at each merge into `main` between implementation and its
       owning records, allowing records and implementation to evolve concurrently
       in one branch or across a stacked PR chain while keeping Wave
-      authorization merge-gated before newly proposed scope or external effects
-      and keeping explicit risk protocols accepted before executing external or
-      paid effects.
+      authorization merge-gated before newly proposed Wave-scoped advancements
+      or external effects and keeping explicit risk protocols accepted before
+      executing external or paid effects.
     - Govern by external-effect blacklist rather than routine-work allowlists:
-      within an accepted Wave entry's project and outcome scope, local editing,
-      restore/build/lint/test/pilot debugging, out-of-repository scratch
-      harnesses, and ordinary CI validation/reruns are permitted by default
-      with no attempt quota. External or irreversible side effects—package or
-      release publication, ruleset/permission changes, non-public or
-      credential-bearing dependency sources or external services, ambient or
-      external account/secret access or mutation, persistent host mutations
-      outside repository/toolchain/build/cache/temp state, destructive fault
-      injection, and paid or non-recoverable campaign dispatches—remain
-      unauthorized without explicit Wave authorization/risk disposition (and
-      accepted protocols with cumulative bounds where empirical or paid), even
-      inside a test or workflow step.
+      within authorized work, local editing, restore/build/lint/test/pilot
+      debugging, out-of-repository scratch harnesses, and ordinary CI
+      validation/reruns are permitted by default with no attempt quota. External
+      or irreversible side effects—package or release publication,
+      ruleset/permission changes, non-public or credential-bearing dependency
+      sources or external services, ambient or external account/secret access or
+      mutation, persistent host mutations outside
+      repository/toolchain/build/cache/temp state, destructive fault injection,
+      and paid or non-recoverable campaign dispatches—remain unauthorized
+      without explicit Wave authorization/risk disposition (and accepted
+      protocols with cumulative bounds where empirical or paid), even inside a
+      test or workflow step.
     - Contract `docs/delivery-wave.md` to bounded scope/outcome, exclusions,
       and explicit external/risk effects, removing routine `Effects`
       boilerplate and pre-merge doc-before-code serial clauses across active
@@ -940,54 +959,66 @@ ends a grant. Git and the proposing PR retain the reason and history.
       boundaries
       ([OMR-REQ-015](../src/private/app/sheet-music-omr/docs/requirements.md#omr-req-015-privacy-and-fixture-provenance)),
       and paid credit ledgers.
-    - Remove `#1715`'s defensive allowlist enumerations while retaining concise
-      positive boundaries: `research-evidence-review` governs `research`
-      records, platform/support claims, mutable-source rechecks, and external,
-      paid, or formal acceptance-evidence operations (routine local and CI
-      validation is out of scope); `record-system-review` and `records:check`
-      stay decoupled; one authoritative review ledger (`GOV-002`) and direct
-      mechanical repair of non-provenance carrier defects versus `GOV-011`
-      triage for material architectural, contract, security, or provenance
-      findings remain in force with delta-bounded re-reviews and destination
-      checks before retrying uncertain external writes.
+    - Remove `#1715`'s incident carve-outs and negative exclusion lists in favor
+      of concise root-cause boundaries: focus contextual reviews on the proposed
+      repository diff and relied-on evidence provenance rather than PR/Issue
+      discussion mechanics, with delta-bounded re-reviews and destination checks
+      before repeating uncertain external writes; trigger
+      `research-evidence-review` and mutable-source rechecks on demand (only
+      when changing `research` records, relying on or updating mutable external
+      interfaces, reporting formal/empirical evidence, making platform/support
+      claims, or authorizing/executing external or paid empirical effects, not
+      on every Wave edit); remove routine PR timing/JUnit/inode and raw
+      `records:check` byte-attachment requirements (retaining timing for
+      performance investigations and recording `records:check` commands,
+      snapshots, and diagnostic summaries); contract
+      `.github/pull_request_template.md` to three concise sections (`Summary`,
+      `Authorization and Scope`, `Validation and Review`); and allow
+      `sheet_music_omr.harness pilot` to run on uncommitted working trees
+      (recording `dirty` provenance in `run.json` while keeping clean-tree
+      enforcement on non-pilot formal `run`).
 - **Advancement and outcome:** atomically contract
+  `docs/governance/governance-system.md` (`GOV-011` and `#source`),
   `docs/governance/record-system.md`, `docs/delivery-wave.md`,
   `docs/governance/checker-contract.md`, `docs/governance/controls.yaml`,
-  `docs/engineering/agent-execution.md`, `AGENTS.md`, `docs/AGENTS.md` (if
-  affected), `CONTRIBUTING.md`,
+  `docs/engineering/hk-execution.md`, `docs/engineering/agent-execution.md`,
+  `AGENTS.md`, `docs/AGENTS.md` (if affected), `CONTRIBUTING.md`,
+  `.github/pull_request_template.md`,
   `.github/skills/{record-system-review,research-evidence-review}/` (including
-  `evals/`), and workflow-overreach clauses in Workflow Delivery, LiteAgensh,
-  and Sheet-Music OMR project records, closing this entry atomically on
-  acceptance.
-- **Ordering and gates:** merge this control-plane entry before executing the
-  substantive edits. Review the subsequent contraction PR against the accepted
-  target-branch policies, catalogs, and review Skills under
+  `evals/`), workflow-overreach clauses in Workflow Delivery, LiteAgensh, and
+  Sheet-Music OMR project records, and the dirty-tree `pilot` relaxation in
+  `src/private/app/sheet-music-omr/{src/sheet_music_omr/harness,tests}/`,
+  closing this entry atomically on acceptance.
+- **Ordering and gates:** merge this control-plane amendment before executing
+  the newly added substantive edits. Review the subsequent contraction PR
+  against the accepted target-branch policies, catalogs, and review Skills under
   [changing rules](governance/governance-system.md#changing-rules), retaining
   atomic alignment
   ([GOV-006](governance/governance-system.md#gov-006-atomic-governance-changes)),
-  staged CI-profile HK checks, explicit-base `records:check` with a retained
-  report outside the worktree, independent `record-system-review`,
-  `research-evidence-review`, and applicable engineering/OCR reviews for
-  touched project records, independent `GOV-011` classification of material
+  staged CI-profile HK checks, explicit-base `records:check`, focused OMR
+  package checks (`pytest`, `ruff`, `pyrefly`), independent
+  `record-system-review`, `research-evidence-review`, and applicable
+  engineering/OCR reviews, independent `GOV-011` classification of material
   findings, ordinary CI (`Validate`), and explicit repository-owner disposition
   (`record-system-gate`).
 - **Acceptance and closure:** repository governance, active Wave entries,
-  contributor/agent interfaces, review Skills/evals, and touched project
-  records agree atomically without defensive allowlist bloat or subproject
-  workflow gates, preserving all established requirement identifiers, pass HK
-  and zero-diagnostic `records:check`, and clear independent review and owner
+  contributor/agent interfaces, PR template, review Skills/evals, touched
+  project records, and OMR `harness pilot` agree atomically, preserving all
+  established requirement identifiers, pass HK, OMR tests/lint/typechecks, and
+  zero-diagnostic `records:check`, and clear independent review and owner
   disposition. Delete this entry atomically on acceptance or owner stop.
 - **Effects:** permit repository and read-only GitHub/public-source inspection,
-  edits to the named governance, Wave, interface, review-Skill, and project
-  documentation files, locked local conformance and record checks writing
-  reports outside the worktree, independent delegated review and `GOV-011`
-  classification, and ordinary Issue/PR/check operations and their normal CI.
+  edits to the named governance, Wave, engineering, interface, template,
+  review-Skill, project documentation, and OMR `harness`/`tests` files, locked
+  local conformance, record, and OMR Python checks, independent delegated review
+  and `GOV-011` classification, and ordinary Issue/PR/check operations and their
+  normal CI.
 - **Exclusions:**
-    - No edits to `GOV-001` through `GOV-011` or
+    - No edits to `GOV-001` through `GOV-010` or
       `docs/engineering/engineering-principles.md`.
-    - No product-code, test, `eng/scripts/check_repository_records.py`,
-      workflow, ruleset, dependency, lockfile, or manual `.agents/skills/` /
-      `.github/agents/` changes.
+    - No other product-code or test changes outside OMR `harness pilot`, and no
+      `eng/scripts/check_repository_records.py`, workflow, ruleset, dependency,
+      lockfile, or manual `.agents/skills/` / `.github/agents/` changes.
     - No change to closed Workflow Delivery campaign slots, LiteAgensh credit
       ledgers or allowances, OMR download caps or private-gold privacy
       boundaries
