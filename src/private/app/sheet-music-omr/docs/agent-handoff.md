@@ -271,7 +271,10 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   commit downloaded corpora, MuseScore scratch files, or run outputs
   ([OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance)).
   W1's `20,000,000,000`-byte download allowance ended when `#1488` was retired
-  at a completed cumulative total of `2,350,276,855` bytes; any new download
+  at a completed cumulative total of `2,350,276,855` bytes, and W2/W3's
+  `10,000,000,000`-byte download allowance ended when `#1489` and `#1490` were
+  retired at `480,830,451` bytes in `w2-download-ledger.json` (`6 / 6` S0
+  `TEST` touches in `w2-touch-log.jsonl`); any new download
   requires explicit bounds in a future Delivery Wave entry, and initializing a
   fresh authorized `DOWNLOADS` directory without `download-ledger.json` must
   pass `--prior-total 2350276855` and `--basis` on the first `preflight` or
@@ -378,29 +381,39 @@ and outside all repository worktrees, execute formal acceptance runs in order:
    sanitized reports, and obtain owner acceptance before retiring the governing
    Delivery Wave entry.
 
-## Formal baseline gates for W2 and W3 runs
+## Formal baseline gates for future authorized W2 and W3 runs
 
-Under the accepted W2 and W3 [Delivery Wave](../../../../../docs/delivery-wave.md)
-entry (`#1489`, `#1490`), local unit tests and synthetic-fixture debugging
-without external package installation, network downloads or private-gold access
-run freely on working branches; execute external and private-gold W2/W3 steps
-in order:
+`#1489` (W2) and `#1490` (W3) are accepted and closed on `w2-s0-formal-3`
+([#1490 comment 7108804779](https://github.com/hcoona/three/issues/1490#issuecomment-7108804779),
+[#1489 comment 7108805391](https://github.com/hcoona/three/issues/1489#issuecomment-7108805391),
+owner acceptance dispositions in
+[#1490 comment 7109703011](https://github.com/hcoona/three/issues/1490#issuecomment-7109703011)
+and
+[#1489 comment 7109703768](https://github.com/hcoona/three/issues/1489#issuecomment-7109703768)),
+with their [Delivery Wave](../../../../../docs/delivery-wave.md) entry retired;
+no further W2/W3 external downloads, private-gold alignment/inference, or `TEST`
+scoring is authorized without a new accepted Delivery Wave entry. Within
+contract-preserving routine maintenance, local unit tests and synthetic-fixture
+debugging without external package installation, network downloads or
+private-gold access run freely on working branches; if a future Delivery Wave
+entry authorizes follow-on W2/W3 or recognizer-evaluation runs, execute
+external and private-gold steps in order:
 
 1. **Accept protocol on `main` before external or private-input effects:**
    ensure [OMR-REQ-016 through OMR-REQ-020](requirements.md#real-data-splits-and-recognizer-evaluation)
    and the [evaluation and real-data alignment protocol](evaluation-protocol.md)
-   are accepted on `origin/main` before installing external reader packages
-   (`kobimusic/copisteria`, `w2-copista-venv`), downloading `copista-28m`
-   weights, generating real-page overlays or crops from private inputs, or
-   running formal Stage S0 baseline measurements.
+   (including any required protocol amendment) are accepted on `origin/main`
+   before installing external reader packages (`kobimusic/copisteria`,
+   `w2-copista-venv`), downloading weights, generating real-page overlays or
+   crops from private inputs, or running formal baseline measurements.
 2. **Keep external installations and ledgers out of worktrees:** install
    `kobimusic/copisteria` and CPU PyTorch wheels only into
-   `DOWNLOADS/w2-copista-venv`, track W2/W3 network bytes in
-   `DOWNLOADS/w2-download-ledger.json` against the `10,000,000,000`-byte cap
-   (separate from W1's closed `2,350,276,855`-byte ledger), and verify pinned
-   commits and `SHA-256` digests before running inference.
+   `DOWNLOADS/w2-copista-venv`, track network bytes in
+   `DOWNLOADS/w2-download-ledger.json` against an explicitly authorized Wave
+   cap, and verify pinned commits and `SHA-256` digests before running
+   inference.
 3. **Complete W3 alignment, `92`-page overlay QA, and `0`-diff slice
-   verification before S0 scoring:** approve all `92 / 92` page overlays in
+   verification before scoring:** approve all `92 / 92` page overlays in
    `overlay-qa.json`, verify `0` content differences on re-assembled
    printed-system `Text Score 2` slices across all `23` pieces, and write
    `RUN/splits/test-exclusion.json`.
@@ -408,26 +421,22 @@ in order:
    `DOWNLOADS/w2-touch-log.jsonl` before scoring `TEST`, perform zero tuning on
    `TEST`, validate `omr-discrepancy-log-v1` records, and pass the
    `OMR-REQ-015` privacy scan and applicable `research-evidence-review` before
-   posting S0 results to `#1489` and `#1490`.
-5. **Completed `w2-s0-formal-3` status and exhausted S0 `TEST` touch ceiling:**
+   posting results to the governing Issue.
+5. **Preserved `w2-s0-formal-3` baseline and exhausted S0 `TEST` touch ceiling:**
    runtime observation: on clean `origin/main` commit
    `385aa460d2f7634696799ecae5c4961c8709ca6d`, `w2-s0-formal-3` completed W3
    alignment (`92 / 92` approved overlays, `434` exported `14.0 px` crops,
    `23 / 23` zero-difference printed-system `Text Score 2` slice round-trips on
    the tested pieces) and W2 Stage S0 scoring (`4,070` validated
-   `omr-discrepancy-log-v1` rows; `480,830,451 / 10,000,000,000` bytes in
-   `w2-download-ledger.json`), with independently reviewed sanitized reports
-   posted to
-   [#1490 comment 7108804779](https://github.com/hcoona/three/issues/1490#issuecomment-7108804779)
-   and
-   [#1489 comment 7108805391](https://github.com/hcoona/three/issues/1489#issuecomment-7108805391)
-   pending repository-owner acceptance and Delivery Wave entry retirement.
-   `DOWNLOADS/w2-touch-log.jsonl` is now at `6 / 6` recorded `"S0-baseline"`
-   `TEST` touches (`S0_TEST_TOUCH_CAP = 6`), reaching the accepted protocol's
-   stop condition: no further S0 `TEST` evaluation may run under the current
-   Delivery Wave grant and protocol, and resuming would require accepted
-   Delivery Wave authorization together with an accepted protocol amendment
-   establishing a new finite bound. Do not delete or edit prior
+   `omr-discrepancy-log-v1` rows; `480,830,451` bytes in
+   `w2-download-ledger.json`). `DOWNLOADS/w2-touch-log.jsonl` is at `6 / 6`
+   recorded `"S0-baseline"` `TEST` touches (`S0_TEST_TOUCH_CAP = 6`), reaching
+   the accepted protocol's S0 stop condition: no further S0 `TEST` evaluation
+   may run without accepted Delivery Wave authorization together with an
+   accepted protocol amendment establishing a new finite bound (downstream W6
+   training pilots carry their own separate `3`-touch-per-pilot limit in
+   [Test-set touch governance](evaluation-protocol.md#test-set-touch-governance-bounds-stops-and-cleanup)
+   when authorized by a W6 Delivery Wave entry). Do not delete or edit prior
    `w2-touch-log.jsonl` lines or overwrite preserved `w2-s0-1` and
    `w2-s0-formal-1` through `w2-s0-formal-3` external run directories until the
-   repository owner deletes them after results review.
+   repository owner deletes them after closure merge.
