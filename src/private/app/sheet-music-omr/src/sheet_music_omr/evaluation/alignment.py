@@ -552,7 +552,40 @@ def _find_main_horizontal_span(  # noqa: C901, PLR0912, PLR0915
     return x0, max(x0 + 64, x1)
 
 
-def _find_outer_vertical_edges(  # noqa: C901, PLR0912
+def _scan_outer_margin_1d(
+    clear: np.ndarray, staff_edge: float, best_sp: float
+) -> int:
+    """Scan outward from ``staff_edge`` for a clear band >= ``4.0 * sp``."""
+    n = len(clear)
+    wide_blank = max(32, math.ceil(2.15 * best_sp))
+    min_y = math.floor(staff_edge - 4.0 * best_sp)
+    y_outer = max(6, round(staff_edge - 9.0 * best_sp))
+    start_up = max(y_outer + wide_blank, round(staff_edge - 0.8 * best_sp))
+    for y_c in range(min(n - 6, start_up), y_outer + wide_blank - 1, -1):
+        if bool(clear[y_c - wide_blank : y_c].all()):
+            y_goal = max(6, min(y_c - 8, min_y - 1))
+            y_top = max(6, y_c - 8)
+            while y_top > y_goal and bool(clear[y_top - 1]):
+                y_top -= 1
+            if y_top <= min_y:
+                thin_lim = max(10, round(best_sp))
+                above_lo = max(6, y_top - thin_lim - 1)
+                if (
+                    y_top >= min_y - 1
+                    and not bool(clear[max(6, y_top - 3) : y_top].all())
+                    and above_lo > y_outer + 16
+                    and bool(clear[above_lo - 16 : above_lo].all())
+                ):
+                    continue
+                return y_top
+    hi_fb = min(n - 6, min_y + 4)
+    for y_c in range(hi_fb, y_outer + 7, -1):
+        if bool(clear[y_c - 8 : y_c].all()):
+            return max(6, min(min_y, y_c - 4))
+    return y_outer
+
+
+def _find_outer_vertical_edges(
     dark: np.ndarray,
     chosen: Sequence[tuple[int, int]],
     x_spans: Sequence[tuple[int, int]],
@@ -560,55 +593,15 @@ def _find_outer_vertical_edges(  # noqa: C901, PLR0912
 ) -> tuple[int, int]:
     """Find outer top/bottom bounds crossing Tempo/Ped. gaps with >=4*sp pad."""
     h, w = dark.shape
-    wide_blank = max(32, math.ceil(2.15 * best_sp))
-    top0 = float(chosen[0][0])
-    min_top_y = math.floor(top0 - 4.0 * best_sp)
     xa0, xb0 = max(0, x_spans[0][0]), min(w, x_spans[0][1])
     clear_t = dark[:, xa0 : max(xa0 + 32, xb0)].sum(axis=1) <= 3  # noqa: PLR2004
-    y_outer_top = max(6, round(top0 - 9.0 * best_sp))
-    start_up = max(y_outer_top + wide_blank, round(top0 - 0.8 * best_sp))
-    found_top = False
-    for y_c in range(min(h - 6, start_up), y_outer_top + wide_blank - 1, -1):
-        if bool(clear_t[y_c - wide_blank : y_c].all()):
-            y_goal = max(6, min(y_c - 8, min_top_y - 1))
-            y_top = max(6, y_c - 8)
-            while y_top > y_goal and bool(clear_t[y_top - 4 : y_top].all()):
-                y_top -= 1
-            if y_top <= min_top_y:
-                y_outer_top = y_top
-                found_top = True
-                break
-    if not found_top:
-        hi_fb = min(h - 6, min_top_y + 4)
-        for y_c in range(hi_fb, y_outer_top + 7, -1):
-            if bool(clear_t[y_c - 8 : y_c].all()):
-                y_outer_top = max(6, min(min_top_y, y_c - 4))
-                break
+    y_outer_top = _scan_outer_margin_1d(clear_t, float(chosen[0][0]), best_sp)
 
     bot_last = float(chosen[-1][1] + 4.0 * best_sp)
-    min_bot_y = math.ceil(bot_last + 4.0 * best_sp)
     xak, xbk = max(0, x_spans[-1][0]), min(w, x_spans[-1][1])
     clear_b = dark[:, xak : max(xak + 32, xbk)].sum(axis=1) <= 3  # noqa: PLR2004
-    y_outer_bot = min(h - 6, round(bot_last + 8.6 * best_sp))
-    start_dn = min(y_outer_bot - wide_blank, round(bot_last + 0.8 * best_sp))
-    found_bot = False
-    for y_c in range(max(6, start_dn), y_outer_bot - wide_blank + 1):
-        if bool(clear_b[y_c : y_c + wide_blank].all()):
-            y_goal_b = min(h - 6, max(y_c + 8, min_bot_y + 1))
-            y_bot = min(h - 6, y_c + 8)
-            while y_bot < y_goal_b and bool(clear_b[y_bot : y_bot + 4].all()):
-                y_bot += 1
-            if y_bot >= min_bot_y:
-                y_outer_bot = y_bot
-                found_bot = True
-                break
-    if not found_bot:
-        lo_fb = max(6, min_bot_y - 4)
-        for y_c in range(lo_fb, y_outer_bot - 7):
-            if bool(clear_b[y_c : y_c + 8].all()):
-                y_outer_bot = min(h - 6, max(min_bot_y, y_c + 4))
-                break
-    return y_outer_top, y_outer_bot
+    bot_flip = _scan_outer_margin_1d(clear_b[::-1], h - bot_last, best_sp)
+    return y_outer_top, min(h - 6, h - bot_flip)
 
 
 def _compute_system_vertical_bounds(

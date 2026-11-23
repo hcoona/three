@@ -1232,11 +1232,27 @@ def test_alignment_source_reconciliation_and_multi_system_detection(
             dets[0].treble_lines_y[0] - dets[0].box_px[1]
             >= 4.0 * dets[0].staff_space_px
         )
-        assert dets[0].box_px[3] <= dets[1].box_px[1]
-        assert dets[0].box_px[3] > sys1_top + tb_step + 90
-        assert dets[1].box_px[1] < 920 - 26
+        assert (
+            sys1_top + tb_step + 90
+            < dets[0].box_px[3]
+            <= dets[1].box_px[1]
+            < 920 - 26
+        )
         assert 920 + tb_step + 122 < dets[1].box_px[3] < footer_top
         assert (
             dets[1].box_px[3] - dets[1].bass_lines_y[4]
             >= 4.0 * dets[1].staff_space_px
         )
+
+
+def test_outer_margin_tight_boundary_reachability() -> None:
+    """Verify exact 4*sp top/bottom boundaries remain reachable near headers."""
+    for t_end, exp_y in ((202, 203), (203, 204)):
+        dark_tight = aln_mod.np.zeros((600, 400), dtype=bool)
+        dark_tight[170 : t_end + 1, 50:350] = True
+        dark_tight[242:251, 80:160] = True
+        dark_tight[502:523, 50:350] = True
+        yt_got, yb_got = aln_mod._find_outer_vertical_edges(  # noqa: SLF001
+            dark_tight, [(260, 390)], [(40, 360)], 14.0
+        )
+        assert (yt_got, yb_got) == (exp_y, 502)
