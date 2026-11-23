@@ -11,16 +11,25 @@ Read the accepted target-branch [governance policy](docs/governance/governance-s
 [Delivery Wave](docs/delivery-wave.md) before starting work. Unmerged changes
 are proposals and cannot authorize themselves.
 
-Identify the applicable accepted entry, bounded outcome, inputs, exclusions,
-and effects, then read the owning project authorities. Use an Issue when several
-contributors or PRs need coordination; a bounded single change may use its PR
-as the work carrier. Neither carrier enlarges the accepted grant. The
-[record policy](docs/governance/record-system.md#work-authorization-and-concurrency)
-retains the source work-authorization and dependency rules for repository work.
+Confirm whether the work qualifies as contract-preserving routine maintenance
+without new external, paid, credentialed, or privacy effects, or requires an
+accepted Delivery Wave entry (identifying its bounded outcome, inputs,
+exclusions, and any permitted external effects), then read the owning project
+authorities. Within authorized work, routine local editing,
+build/lint/test/pilot debugging, and ordinary CI validation are permitted by
+default without attempt quotas, and implementation may evolve concurrently with
+its owning records in one branch or across a stacked PR chain so long as each
+merge into `main` is self-consistent
+([work authorization](docs/governance/record-system.md#work-authorization-and-concurrency)).
+Use an Issue when several contributors or PRs need coordination; a bounded
+single change may use its PR as the work carrier. Neither carrier enlarges
+authorization, and project records do not add workflow gates on local
+development ([project namespaces](docs/governance/record-system.md#project-namespaces)).
 
-If a relied-on accepted prerequisite changes, pause affected work and refresh
-scope, validation, and review. Preserve unrelated work and human-source inputs.
-Product/domain preconditions and external-effects authorization still apply.
+If a relied-on shared canonical authority changes on `main`, pause affected
+work and refresh scope, validation, and review. Preserve unrelated work and
+human-source inputs. Explicit Wave risk dispositions and accepted protocols
+still gate external or paid effects.
 
 For design, security or test/evidence decisions, apply the relevant
 [shared engineering principles](docs/engineering/engineering-principles.md)
@@ -49,24 +58,19 @@ unstaged content. Record the snapshot and scope actually checked.
 CI compares its base with the actual tested checkout;
 local pre-commit uses HK's configured stashing. Do not claim staged/worktree
 equivalence without evidence. Existing profile and path exclusions still apply.
-When editing or deleting maintained records, portals, generated interfaces,
-`apm.lock.yaml`, or governance catalogs—or adding or renaming
-[discovered record candidates](docs/governance/checker-contract.md#independent-discovery-and-classification),
-or moving or deleting paths referenced by maintained records, `apm.lock.yaml`,
-or catalogs ([enforcement](docs/governance/record-system.md#enforcement))—run
+When changing maintained records, portals, generated interfaces,
+`apm.lock.yaml`, or governance catalogs, moving or deleting paths they
+reference, or adding or renaming
+[discovered record candidates](docs/governance/checker-contract.md#independent-discovery-and-classification)
+([enforcement](docs/governance/record-system.md#enforcement)), run
 `mise run records:check -- --base <accepted-commit> --worktree --output ../three-record-review.json`
-and retain its report in the governing PR (or governing Issue when no PR
-governs) with the reviewed snapshot. Pure in-place source, test, non-control
-workflow, runtime-data, and status-comment edits (and deletions of unreferenced
-non-record assets) skip `records:check`. Use
-`--candidate <commit>` instead of `--worktree` for an immutable candidate, and
-preserve Three's zero-diagnostic `main` baseline. The
+and record the command, snapshot commits, and diagnostic summary in the
+governing PR or Issue review carrier. Use `--candidate <commit>` instead of
+`--worktree` for an immutable candidate. The
 [checker contract](docs/governance/checker-contract.md) defines the advisory
 tool's scope, limitations and separate contextual review. Run
-`mise run records:test` when changing that implementation. Preserve the report
-bytes or a retrievable artifact, not only a temporary path or digest. Write the
-report outside the worktree so it does not become an input to the next
-validation run.
+`mise run records:test` when changing that implementation. Write the report
+outside the worktree so it does not become an input to the next validation run.
 
 HK checks source/configuration conformance. Run affected project tests
 explicitly before independent implementation review. With the pinned SDK and
@@ -89,21 +93,20 @@ at committed HEAD in explicit full mode on Linux, including native preparation,
 configured pytest targets and adopted distribution checks. Commit tracked changes
 before using this command; Windows contributors need a Linux environment for it.
 The managed project command does not replace that complete native group.
-General CI selects affected
-work from its actual Git comparison; its
-explicit full mode selects all suites. See the
+General CI selects affected work from its actual Git comparison; its explicit
+full mode selects all suites. See the
 [execution contract](docs/engineering/hk-execution.md#ci-execution-contract).
-Record normal commit/command elapsed time and relevant JUnit/CI step durations
-in the work carrier, along with actual scope and results. For native tests,
-retain the [temporary-file and inode constraints](docs/engineering/workspaces.md#python).
+Record actual scope and test results in the work carrier (add timing or JUnit
+durations when investigating performance or timeouts). For native tests, retain
+the [temporary-file and inode constraints](docs/engineering/workspaces.md#python).
 
 ## Pull Requests and Review
 
-State the bounded problem and resulting repository change. Link the accepted
-authorization, work carrier, and governing records; identify material exclusions,
-external effects, record/consumer changes, and the smallest useful validation.
-Distinguish source findings, observations, inference, hypotheses, and decisions.
-Keep progress and review results in the PR or Issue, not policy or the Wave.
+State the bounded problem and resulting repository change. Cite the applicable
+authorization (or routine contract-preserving maintenance), governing records,
+and any external effects or copied-source provenance when present, along with
+the smallest useful validation. Keep progress and review results in the PR or
+Issue, not policy or the Wave.
 
 The [control catalog](docs/governance/controls.yaml) identifies existing checks
 and review triggers. Invoke the canonical procedures directly by path:
@@ -111,20 +114,14 @@ and review triggers. Invoke the canonical procedures directly by path:
 - [Record-system review](.github/skills/record-system-review/SKILL.md)
 - [Research-evidence review](.github/skills/research-evidence-review/SKILL.md)
 
-Retain required
-domain reviews. Identify the independent reviewer, material findings, independent
-triage, and required owner dispositions in one authoritative ledger in the
-governing carrier (by default the PR's `## Validation and Review` section, or
-the governing Issue when no PR governs); concise routing summaries may link to
-that ledger without repeating secondary caveats when making no broader claim.
-Purely deterministic non-provenance carrier defects follow
-[mechanical verification](docs/governance/record-system.md#enforcement), whereas
-misattributed or ambiguous commit, workflow-run, build, or artifact identifiers
-remain material provenance findings under `GOV-011`. Author checks cannot
-satisfy independent review.
-Routine development/CI validation runs, faithful check/status reporting, and
-recording a completed review (`No material findings.`) do not trigger another
-review round or require a separate repository report.
+Retain required domain reviews. Record required checks, independent reviews, and
+any disputed or unresolved `GOV-011` classifications or owner dispositions once
+in the governing PR or Issue carrier
+([enforcement](docs/governance/record-system.md#enforcement)). Author checks
+cannot satisfy independent review; agreed findings not requiring an owner
+decision are verified on the remediation delta by the originating independent
+reviewer, nonmaterial mechanical defects use mechanical verification, and a
+clean review requires no separate repository report.
 
 Do not create an Issue, decision record, design, or new metadata solely to fill
 a template. The record admission rules and actual consumers determine the need.

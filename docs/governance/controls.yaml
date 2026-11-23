@@ -73,12 +73,14 @@ controls:
       - Record authors and repository owner at record-system review
     governing_rules:
       - docs/governance/governance-system.md#changing-rules
+      - docs/governance/record-system.md#project-namespaces
+      - docs/governance/record-system.md#work-authorization-and-concurrency
       - docs/governance/record-system.md#enforcement
       - docs/governance/record-system.md#record-system-gate
-    invariant: Structural record changes, repository-namespace record edits, portal-routing, generated-interface, or
-      governance-catalog changes, project-record authority/identifier/consumer-contract changes, and Issue/PR-template,
-      Agent Skill, hk, or control-governed workflow changes receive independent review of authority, actual consumers,
-      lifecycle, routing and policy-control agreement.
+    invariant: Structural record changes, repository-namespace record edits, and authority, identifier,
+      consumer-contract, routing, generated-interface, catalog, template, Agent Skill, hk, or control-governed workflow
+      changes receive independent review of authority, repository-wide workflow precedence, actual consumers,
+      lifecycle, and policy-control agreement.
     runner: agent-skill
     implementation:
       kind: repository-path
@@ -90,21 +92,23 @@ controls:
     state: current
     class: procedural-review
     enforcement: review-required
-    producer: Reviewer independent of originating reviewer, change author, and implementation agent
+    producer: Originating independent reviewer for agreed findings; reviewer independent of originating reviewer,
+      change author, and implementation agent for disputed or unresolved findings
     maintainer: Repository owner
     consumers:
       - Change author and owner disposing of material findings
     governing_rules:
       - docs/governance/governance-system.md#gov-011-separate-findings-from-disposition
       - docs/governance/record-system.md#enforcement
-    invariant: Each material finding receives evidenced true-positive, false-positive, or unresolved classification
-      independently before remediation or dismissal, while purely deterministic non-provenance carrier defects use
-      mechanical verification.
+    invariant: Agreed material findings not requiring an owner decision are verified on the remediation delta by the
+      originating independent reviewer; disputed (false-positive) or unresolved material findings receive evidenced
+      independent third-party classification before dismissal or owner disposition, while nonmaterial mechanical defects
+      use mechanical verification.
     runner: agent-skill
     implementation:
       kind: review-procedure
-      value: Apply GOV-011 and the canonical review procedure to material findings; record independent classifications
-        and owner dispositions in the governing PR, or in the governing Issue when no PR governs.
+      value: Apply GOV-011; record third-party classifications of disputed or unresolved findings and required owner
+        dispositions in the governing PR or Issue review carrier.
     execution_points:
       - local-validation
       - pull-request-review
@@ -139,15 +143,15 @@ controls:
     producer: Reviewer independent of the change author and implementation agent
     maintainer: Repository owner
     consumers:
-      - Research authors and repository owner during research, recheck and evidence review, including every merged Wave
-        change
+      - Research authors and repository owner during research, fired recheck, and empirical evidence review
     governing_rules:
+      - docs/governance/record-system.md#work-authorization-and-concurrency
       - docs/governance/record-system.md#workflows
       - docs/governance/record-system.md#enforcement
       - docs/governance/governance-system.md
-    invariant: Research and empirical operations preserve source boundaries, accepted effects and protocols, evidence
-      labels, reproducibility, and claim limits without treating routine development or governed CI validation as
-      experiments; review applicable mutable-source triggers at every Wave change.
+    invariant: Research, formal or empirical evidence reports, platform/support claims, fired mutable-source rechecks,
+      and external or paid empirical operations preserve source boundaries, accepted effects and protocols, evidence
+      labels, reproducibility, and claim limits, while routine local and governed CI validation stays out of scope.
     runner: agent-skill
     implementation:
       kind: repository-path

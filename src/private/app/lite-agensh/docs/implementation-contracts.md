@@ -1,10 +1,11 @@
 # Implementation Contracts
 
-This record completes the concrete boundaries required before implementation
-under the accepted [architecture](architecture.md) and
-[requirements](requirements.md). Implementers consume these contracts when
-working independently; the owner maintains them when integration changes.
-The capability/source inventory is not a second API contract.
+This record defines the concrete implementation boundaries under the
+[architecture](architecture.md) and [requirements](requirements.md).
+Implementers consume these contracts and may evolve them concurrently with code
+so long as each merge into `main` stays self-consistent; the owner maintains
+them when integration changes. The capability/source inventory is not a second
+API contract.
 
 ## Application and dependencies
 

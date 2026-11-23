@@ -37,10 +37,13 @@ the frozen `OMR-REQ-012` replay reproduced `327 / 327` deduplicated loci (`356`
 raw entries, `0` failed), and `Qwen3-VL-2B-Instruct` tokenizer counts were
 recorded alongside the completed ABC 2.1 capability mapping. With W1's
 [Delivery Wave](../../../../docs/delivery-wave.md) entry retired on acceptance,
-only design and planning under [Issue #686](https://github.com/hcoona/three/issues/686)
-remains authorized until a later workstream receives its own Delivery Wave
-entry (see [Agent handoff](docs/agent-handoff.md)). There is no recognizer,
-model, packaging or release.
+feature/workstream advancement beyond design and planning under
+[Issue #686](https://github.com/hcoona/three/issues/686) requires its own
+Delivery Wave entry while contract-preserving routine maintenance without new
+external or privacy effects follows the
+[record policy](../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+(see [Agent handoff](docs/agent-handoff.md)). There is no recognizer, model,
+packaging or release.
 
 ## Usage
 

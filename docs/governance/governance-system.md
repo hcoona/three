@@ -117,10 +117,13 @@ manifest, or a tag.
 
 ### GOV-011: Separate Findings From Disposition
 
-A reviewer must not solely adjudicate its own material findings. A reviewer independent
-of the originating review, change author, and implementation agent must classify each
-material finding as a true positive, false positive, or unresolved and record the
-evidence for that classification in the pull request or other governing review carrier.
+Agreed (`true positive`) material findings that do not require an owner decision may be
+remediated directly and verified on the remediation delta by the originating independent
+reviewer. A reviewer, change author, or implementation agent must not solely dismiss a
+material finding: a reviewer independent of the originating review, change author, and
+implementation agent must classify any disputed (`false positive`) or `unresolved`
+material finding and record the evidence for that classification in the pull request or
+other governing review carrier.
 
 The repository owner decides the disposition of unresolved findings and any finding that
 requires a value, risk, scope, governance, or release decision.
@@ -193,8 +196,11 @@ and automation must not choose a winner by inference.
 ## Source
 
 Adapted from [the pinned Governance System][source] at
-`1a02498589769c38bc16eefc2efc5f9eca6e6994`. GOV-001 through GOV-011 preserve
-its wording; only `main-v2` becomes `main` in GOV-008. Repository scope and
+`1a02498589769c38bc16eefc2efc5f9eca6e6994`. GOV-001 through GOV-010 preserve
+its wording (with `main-v2` becoming `main` in GOV-008); GOV-011 is adapted so
+agreed findings not requiring an owner decision are verified directly on the
+remediation delta by the originating independent reviewer while disputed or
+unresolved findings retain third-party classification. Repository scope and
 project namespaces are the local adaptations. The source
 [copyright and license notice](reference-license.txt) is retained.
 

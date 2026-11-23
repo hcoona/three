@@ -1,10 +1,20 @@
 # Current Delivery Wave
 
-This record is the sole positive work-authorization authority under the
-[repository record policy](governance/record-system.md#work-authorization-and-concurrency).
-Only its accepted `main` version grants work. Issues, PRs, sessions and proposed
-edits cannot add to or enlarge a grant. Merge changes authorization; deletion
-ends a grant. Git and the proposing PR retain the reason and history.
+This record is the sole positive work-authorization authority for feature or
+capability advancements, architectural or public-contract changes, and external
+or risk-bearing operations under the
+[repository record policy](governance/record-system.md#work-authorization-and-concurrency);
+contract-preserving routine maintenance without new external, paid,
+credentialed, or privacy effects executes directly through ordinary pull
+requests without a Wave entry. Only `main`'s accepted version grants Wave
+authorization. Within an authorized workstream, routine local editing, builds,
+lint, tests, scratch harnesses, read-only inspection, independent review, and
+ordinary Issue/PR/CI validation (including failed-job reruns) are permitted by
+default with no attempt quota, and implementation may evolve concurrently with
+its owning records so long as each merge into `main` stays self-consistent.
+Entries declare bounded scope and outcome, exclusions, and any explicitly
+permitted external or risk-bearing effects. Merge changes authorization;
+deletion ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
@@ -35,9 +45,10 @@ ends a grant. Git and the proposing PR retain the reason and history.
   demonstrates the benefit. The first selected change is editable YAML
   configuration with a separate Markdown goal and standard VS Code YAML
   Schema guidance, retaining existing JSON configuration compatibility.
-  Follow-on changes may cover the whole LiteAgensh project rather than only
-  that first input format; each remains inside this product outcome and its
-  applicable accepted decisions.
+  Follow-on changes may cover the whole LiteAgensh project—including directly
+  required dependency, schema/editor and record-routing integration—rather than
+  only that first input format; each remains inside this product outcome and
+  its applicable accepted decisions.
 - **Owner decisions and boundaries:** workers share a goal and cooperation
   template and select work through tasks, advisory claims and peer messages;
   do not replace that model with permanently assigned worker responsibilities
@@ -46,15 +57,14 @@ ends a grant. Git and the proposing PR retain the reason and history.
   calibration, paging, reports and root-task lifecycle require concrete
   decisions before their behavior changes, not speculative rewrites.
 - **Ordering and gates:** merge this authorization before substantive work.
-  Land changed requirements, architecture, contracts or validation decisions
-  before implementation that depends on them. Keep dependent consumers and
-  navigation consistent. Retain applicable independent engineering,
-  record-system and research-evidence review, independent classification of
-  material findings, explicit-base record checks, focused managed validation
-  and ordinary CI. Recheck a relied-on mutable interface before dependent
-  changes; uncertainty pauses only that dependent work. Do not infer native
-  support from controlled tests or add a new support claim without its
-  required evidence.
+  Keep implementation and its owning records self-consistent at each merge into
+  `main`, and keep dependent consumers and navigation consistent. Retain
+  applicable independent engineering, record-system and research-evidence
+  review, `GOV-011` finding disposition, applicable explicit-base record
+  checks, focused managed validation and ordinary CI. Recheck a relied-on
+  mutable interface before dependent changes; uncertainty pauses only that
+  dependent work. Do not infer native support from controlled tests or add a
+  new support claim without its required evidence.
 - **Acceptance and closure:** the owner accepts coherent migration semantics,
   human-usable operation and proportionate implementation within the existing
   product boundary. Only an explicit further repository-owner request closes
@@ -62,11 +72,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
   the broader refinement workstream. Retention does not grant another
   product, provider or trust boundary. Keep plans, findings and progress in
   the Issue and PRs rather than the Wave.
-- **Effects:** permit repository and read-only GitHub/public-source inspection,
-  LiteAgensh source, tests and owning records, directly required dependency,
-  schema/editor and record-routing integration, ordinary package restoration,
-  local builds and credential-free managed scenarios, independent delegated
-  review, and ordinary Issue/PR/check operations and their normal CI.
 - **Exclusions:** no new paid native acceptance executions, account or quota
   inspection, provider/backend substitution, publication, release/proving
   dispatch, credential, authentication, subscription or access change.
@@ -124,10 +129,10 @@ ends a grant. Git and the proposing PR retain the reason and history.
   the existing installed Copilot CLI without a version restriction; a CLI
   version change alone requires no further owner approval. Record the observed
   version and verify the required supported interfaces before dependent native
-  work. Separately accept the corresponding owning-record and implementation
-  changes before use. Retain the existing SDK selection, disabled runtime
-  acquisition and automatic updates, and no CLI installation, backend
-  substitution, authentication or access change.
+  work. Accept the corresponding owning-record and implementation changes on
+  `main` before dependent native use. Retain the existing SDK selection,
+  disabled runtime acquisition and automatic updates, and no CLI installation,
+  backend substitution, authentication or access change.
   Workers must not edit those protected inputs or workflows, commit/push,
   mutate GitHub, invoke nested agents/models or inspect unrelated host,
   credential, account or historical-session data. The executor may inspect
@@ -161,8 +166,8 @@ ends a grant. Git and the proposing PR retain the reason and history.
   provider-complete zero usage. Permit conditional application to the retained
   actual08 worker28 case declared in the
   [user-audit protocol](../src/private/app/lite-agensh/docs/user-audit-protocol.md#verified-pre-dispatch-accounting),
-  plus qualifying fresh sessions in this continuing campaign. Separately accept
-  the owning records and implementation before any disposition. The public
+  plus qualifying fresh sessions in this continuing campaign. Accept the owning
+  records and implementation on `main` before any disposition. The public
   accounting-only path must recheck live evidence and ownership; no snapshot
   substitution, manual edit, blanket historical release or second reset.
   Native limits remain soft, with possible in-flight overshoot accepted and
@@ -174,19 +179,19 @@ ends a grant. Git and the proposing PR retain the reason and history.
   cumulative reading may establish accounting without successful original
   SDK-send delivery or individual final-return certificates for historical
   cancelled requests. This is native-reported accounting, not provider-final
-  invoices or zero usage. Separately accept the owning decision and its
-  implementation before an exact non-dispatch invocation; preserve original
-  failures, unobserved-provider limits, all other uncertainty and the sole ledger.
+  invoices or zero usage. Accept the owning decision and its implementation on
+  `main` before an exact non-dispatch invocation; preserve original failures,
+  unobserved-provider limits, all other uncertainty and the sole ledger.
 - **Ordering and gates:** this Wave must merge before newly authorized work.
-  Author and separately accept the exact project-local operational protocol
-  before any native observation. It must cover the subject/build identities,
+  Accept the exact project-local operational protocol on `main` before any paid
+  native observation. It must cover the subject/build identities,
   environment and interface rechecks, repository and owned-state scope,
   actions, expected observations, finite bounds, stops, cleanup and evidence
-  limits; the old fixture-only protocol is not a substitute. Retain independent
-  record-system, research-evidence and applicable engineering review, separate
-  material-finding classification, exact-base record checks, relevant managed
-  validation and ordinary CI. Failed attempts retain their outcomes and all
-  ledger/session/evidence state before any safe repetition.
+  limits; the old fixture-only protocol is not a substitute. Retain applicable
+  independent record-system, research-evidence and engineering review,
+  `GOV-011` finding disposition, applicable exact-base record checks, relevant
+  managed validation and ordinary CI. Failed attempts retain their outcomes and
+  all ledger/session/evidence state before any safe repetition.
 - **Acceptance and closure:** require actual native dispatch and peer
   coordination, substantive source-backed audit outputs with independent
   finding classification, a Chinese final summary in team state and the
@@ -219,7 +224,8 @@ ends a grant. Git and the proposing PR retain the reason and history.
   [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md) and
   [historical readers](../src/private/app/workflow-delivery/docs/validation/historical-readers.md).
 - **Advancement and outcome:** audit and reconcile Workflow V1, V2 and V3
-  documentation against the current implementation and accepted authorities.
+  documentation (including directly affected record-routing/catalog bindings)
+  against the current implementation and accepted authorities.
   Delete superseded records after migrating current consumers, links and any
   unique current rationale or evidence. Use immutable Git references for
   historical bodies rather than an archive or duplicate authority. Begin with
@@ -228,10 +234,10 @@ ends a grant. Git and the proposing PR retain the reason and history.
   evidence limits, stable requirement identifiers, legal notices and immutable
   human-source inputs.
 - **Ordering and gates:** merge this authorization before substantive cleanup.
-  Migrate consumers and navigation atomically with retirement. Retain independent
-  record-system, research-evidence and applicable engineering/OCR reviews,
-  independent classification of material findings, record checks and affected
-  HK validation. Product, evidence-level or authority changes outside faithful
+  Migrate consumers and navigation atomically with retirement. Retain
+  applicable independent record-system, research-evidence and engineering/OCR
+  reviews, `GOV-011` finding disposition, record checks and affected HK
+  validation. Product, evidence-level or authority changes outside faithful
   documentation reconciliation return to the owner.
 - **Acceptance and closure:** the current tree has one authority per retained
   concern, accurate implementation/status routing and no superseded body
@@ -239,10 +245,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
   may close or delete this entry; completing or merging an individual cleanup
   PR does not authorize its closure. Retaining the entry does not enlarge this
   bounded documentation scope. Keep progress and results in the Issue and PRs.
-- **Effects:** permit repository and read-only GitHub inspection, documentation
-  and directly affected record-routing/catalog changes, local record and
-  conformance checks, independent delegated review, and ordinary Issue/PR/check
-  operations and their normal CI.
 - **Exclusions:** no runtime, dependency, workflow-execution or product-behavior
   changes; no new empirical experiments or support claims; no release/proving
   dispatch, publication, authentication, Environment, account, publisher or
@@ -292,10 +294,10 @@ ends a grant. Git and the proposing PR retain the reason and history.
       configuration guards; a mirror-only test is removed; record the PNPM
       12.13.0 depth recheck under research-evidence review.
 - **Ordering and gates:** land the .NET authority and shared helpers before
-  their consumers. Each implementation PR follows the existing Workflow
-  Delivery engineering, OCR, record-system and research-evidence review gates;
-  independently classify material findings before repair. New feasibility or
-  product tradeoffs return to the owner.
+  their consumers. Each implementation PR follows the applicable Workflow
+  Delivery engineering, OCR, record-system and research-evidence review gates
+  and `GOV-011` finding disposition. New feasibility or product tradeoffs
+  return to the owner.
 - **Acceptance:** a routine Renovate patch update of each affected tool
   changes only committed configuration and passes ordinary CI without code,
   test or workflow edits; no remaining literal duplicates a committed tool
@@ -303,11 +305,8 @@ ends a grant. Git and the proposing PR retain the reason and history.
   protects `main`. Dispatch-only Release and smoke workflows are accepted on
   static validation (actionlint, workflow tests and their local readers)
   because their campaigns are closed. Delete this entry when accepted.
-- **Effects:** permit source and repository/GitHub inspection, documentation,
-  workflow, Renovate and implementation changes, locked tool preparation,
-  isolated local builds and credential-free tests, independent delegated
-  review, ordinary PR/check operations and their normal CI, and the owner-
-  authorized `main` ruleset required-check rename.
+- **External effects:** permit the owner-authorized `main` ruleset
+  required-check rename.
 - **Exclusions:** no Python 3.15 migration (tracked by #1247) and no change to
   the Renovate Python hold; no release, proving or campaign dispatch,
   publication, credential, Environment, account, publisher or other access
@@ -345,12 +344,12 @@ ends a grant. Git and the proposing PR retain the reason and history.
   a material product/feasibility tradeoff returns to the repository owner;
   it is not implicitly authorized as dependency maintenance.
 - **Ordering and gates:** merge this authorization before the newly proposed
-  substantive work. Reconcile changed project decisions and version-bound
-  source findings before implementation that depends on them. Retain
-  independent engineering/OCR, record-system and research-evidence review,
-  independent finding classification, explicit-base record checks, applicable
-  HK and ordinary qualification. An earlier client/source qualification does
-  not qualify a new dependency cohort.
+  substantive work. Keep changed project decisions, version-bound source
+  findings, and implementation self-consistent at each merge into `main`.
+  Retain applicable independent engineering/OCR, record-system and
+  research-evidence review, `GOV-011` finding disposition, applicable
+  explicit-base record checks and HK, and ordinary qualification. An earlier
+  client/source qualification does not qualify a new dependency cohort.
 - **Acceptance:** the declared updates pass the existing applicable ordinary
   checks on their actual source: resolved package/output identities,
   NBGV/SDK binding, locked native restore and clean consumers, controlled
@@ -358,11 +357,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
   journey. Preserve historical failures and original publication evidence
   without promoting them into new support or destination claims. Delete
   this entry when the bounded repair is accepted.
-- **Effects:** permit repository and read-only GitHub/public-source inspection,
-  directly affected source, dependencies, locks, Renovate configuration and
-  owning records, locked tool preparation, isolated credential-free local
-  builds/tests, independent delegated review, and ordinary Issue/PR/check
-  operations and their normal CI.
 - **Exclusions:** no campaign replay, new proving generation, release/proving
   dispatch, publication, credential, authentication, permission or access
   change; no repository-wide target-framework migration or new runtime
@@ -390,9 +384,11 @@ ends a grant. Git and the proposing PR retain the reason and history.
 - **Advancement and outcome:** add the minimum necessary timeout-observation
   diagnostics at the shared `NativeProcess` boundary before cleanup, then use
   ordinary Windows validation to localize and repair the four existing
-  `NuGetWorkflowCallerTests` failures: the Absent state row, the Exact and
-  Conflict verification rows, and unhandled-observation failure. Bind original
-  source/run/attempt and retained results before selecting a causal repair.
+  `NuGetWorkflowCallerTests` failures (including directly required
+  shared-adapter, caller/test and owning record changes): the Absent state row,
+  the Exact and Conflict verification rows, and unhandled-observation failure.
+  Bind original source/run/attempt and retained results before selecting a
+  causal repair.
   Start with watchdog/launch/cancellation-observation timing and root/exit-wait/
   stdout/stderr completion states in the existing diagnostic result boundary,
   not a child-process tracking service or independent full tracing channel.
@@ -405,25 +401,20 @@ ends a grant. Git and the proposing PR retain the reason and history.
   select the proportionate causal repair under the engineering principles.
   A required change to those contracts, trust/recovery boundaries or material
   scope/feasibility tradeoff returns to the repository owner.
-- **Ordering and gates:** merge this entry before substantive work. Accept any
-  changed governing decision before its dependent implementation. Retain
-  independent engineering/OCR, record-system and research-evidence review as
-  applicable, independent material-finding classification, explicit-base
-  record checks, applicable HK, focused managed validation and ordinary CI on
-  the actual source. Keep development-only probes in outside-repository
-  temporary projects; design durable diagnostics and tests from the accepted
-  contracts rather than copying a development fixture.
+- **Ordering and gates:** merge this entry before substantive work. Keep any
+  changed governing decision and its implementation self-consistent at each
+  merge into `main`. Retain applicable independent engineering/OCR,
+  record-system and research-evidence review, `GOV-011` finding disposition,
+  applicable explicit-base record checks and HK, focused managed validation and
+  ordinary CI on the actual source. Keep development-only probes in
+  outside-repository temporary projects; design durable diagnostics and tests
+  from the accepted contracts rather than copying a development fixture.
 - **Acceptance and closure:** the four existing Windows caller scenarios and
   their applicable ordinary checks pass with the preserved contracts. Keep
   original failures, unproven causes and unrelated LiteAgensh uncertainty
   distinct; successful qualification does not retroactively establish a cause
   or broader platform support. Delete this entry when the bounded repair is
   accepted or the owner stops it. Other active grants remain unchanged.
-- **Effects:** permit directly required shared-adapter, caller/test and owning
-  record changes, repository and read-only GitHub/public-source inspection,
-  locked local preparation and credential-free validation in owned state,
-  independent delegated review, and ordinary PR/check operations and their
-  normal CI.
 - **Exclusions:** no timeout increase, retry or blanket serialization, new
   tracing service, unrelated process/handle/account inspection, shared-host
   configuration change, provider substitution or dependency/runtime upgrade.
@@ -448,26 +439,23 @@ ends a grant. Git and the proposing PR retain the reason and history.
 - **Advancement and outcome:** integrate the System.CommandLine 3.0.0 update
   from #1673, including the shared CPM declaration, those three consumers'
   application and test locks, and necessary compatibility repairs in their
-  existing source and tests. Component owners select the proportionate
-  engineering-principled repair rather than merely the smallest diff.
-  Preserve existing caller-visible command behavior and product boundaries.
+  existing source, tests and owning records. Component owners select the
+  proportionate engineering-principled repair rather than merely the smallest
+  diff. Preserve existing caller-visible command behavior and product
+  boundaries.
 - **Ordering and gates:** merge this authorization before substantive work.
-  Keep prerequisite and shared-authority changes ordered with their other
-  consumers; accept changed governing decisions before dependent implementation.
-  Retain independent engineering/OCR, record-system and research-evidence
-  review, independent material-finding classification, explicit-base record
-  checks, applicable HK, existing credential-free tests and ordinary CI on
-  the actual source. Recheck a relied-on mutable interface before dependent
-  work. A material product, feasibility or scope tradeoff returns to the owner.
+  Keep shared-authority changes ordered with their other consumers, and keep
+  changed governing decisions and implementation self-consistent at each merge
+  into `main`. Retain applicable independent engineering/OCR, record-system and
+  research-evidence review, `GOV-011` finding disposition, applicable
+  explicit-base record checks and HK, existing credential-free tests and
+  ordinary CI on the actual source. Recheck a relied-on mutable interface
+  before dependent work. A material product, feasibility or scope tradeoff
+  returns to the owner.
 - **Acceptance and closure:** the declared dependency update and necessary
   repairs pass the existing applicable checks while preserving current command
   contracts, target frameworks, trust, recovery and support boundaries.
   Delete this entry when the bounded update is accepted or the owner stops it.
-- **Effects:** permit repository and read-only GitHub/public-source inspection,
-  the directly affected dependency, locks, source, tests and owning records,
-  locked tool preparation, ordinary package restoration, isolated local builds
-  and credential-free managed tests, independent delegated review, and
-  ordinary Issue/PR/check operations and their normal CI.
 - **Exclusions:** no unrelated dependency upgrade, product feature or
   target-framework change; no live translation, Qidian, Telegram or Copilot
   service execution, user-level installation, paid native operation,
@@ -496,25 +484,21 @@ ends a grant. Git and the proposing PR retain the reason and history.
   recognizing photographed or scanned printed piano scores into editable
   notation, including model fine-tuning options. Maintain the workstream
   decomposition, dependencies, open owner decisions and desk-research
-  findings in the Issues. Admit project records only when the record policy's
-  admission questions have concrete answers. The outcome is a current plan
-  from which the owner can authorize each further workstream as its own
-  bounded entry.
-- **Ordering and gates:** apply record-system review to new or changed records,
-  research-evidence review to research records and evidence-backed claims, and
-  the shared engineering guidance to architecture, dependency-boundary and
-  test/evidence strategy decisions, with independent classification of
-  material findings. Product value, scope and risk decisions, including those
+  findings in the Issues. Admit project records (including directly affected
+  record-routing/catalog bindings) only when the record policy's admission
+  questions have concrete answers. The outcome is a current plan from which the
+  owner can authorize each further workstream as its own bounded entry.
+- **Ordering and gates:** apply applicable record-system review, applicable
+  research-evidence review, and the shared engineering guidance to architecture,
+  dependency-boundary and test/evidence strategy decisions, with `GOV-011`
+  finding disposition. Product value, scope and risk decisions, including those
   listed on #686, return to the owner.
 - **Acceptance and closure:** only an explicit further repository-owner request
   closes or deletes this entry. Retaining it does not enlarge this design and
   planning scope.
-- **Effects:** permit repository and read-only GitHub inspection, read-only
-  retrieval of public web sources, read-only local inspection of the owner's
-  private transcription repository and local desk-study archive, documentation
-  and directly affected record-routing/catalog changes, Issue and sub-issue
-  creation and editing, independent delegated review, and ordinary
-  pull-request/check operations and their normal CI.
+- **External effects:** permit read-only local inspection of the owner's
+  private transcription repository and local desk-study archive, and Issue and
+  sub-issue creation and editing.
 - **Exclusions:** no implementation, experiment, runtime observation, tool or
   package installation, dataset or model download, training, inference or paid
   compute; work on a workstream beyond its design and planning requires its
@@ -578,9 +562,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
       compute for separately authorized training workstreams, W2 and W3 S0
       execution here runs locally without uploading score material to
       third-party OMR, hosting or cloud-compute services.
-    - Numeric download and runtime bounds under Effects are accident fuses, not
-      limits on normal development; test-set evaluation caps in the W2 protocol
-      bound selection bias.
+    - Numeric download and runtime bounds under External effects are accident
+      fuses, not limits on normal development; test-set evaluation caps in the
+      W2 protocol bound selection bias.
 - **Advancement and outcome:**
     - Accept project records (or bounded sections/addenda where record
       admission warrants) defining: (a) the unified real-data alignment and
@@ -596,7 +580,8 @@ ends a grant. Git and the proposing PR retain the reason and history.
     - Implement the alignment/cropping and overlay-QA tools, per-system slice
       verifier, B-normalized per-category W2 scorer, and isolated local
       `copista-28m` baseline runner and touch-log harness under
-      `src/private/app/sheet-music-omr/`.
+      `src/private/app/sheet-music-omr/` (including directly required
+      record-routing or CI test-selection updates).
     - Produce the local 23-piece alignment and split manifest, complete overlay
       QA across the `92` restored facsimile pages, cut normalized system crops,
       verify that re-assembled per-system slices match all `23` accepted gold
@@ -606,14 +591,15 @@ ends a grant. Git and the proposing PR retain the reason and history.
       and #1490.
 - **Ordering and gates:** merge this entry before substantive W2 or W3
   implementation, package/tool installation, weight download or runtime
-  execution. Accept the W2 and W3 requirements, schemas and
-  evaluation/runtime/isolation protocols under record-system review,
+  execution. Keep W2/W3 records and implementation self-consistent at each
+  merge into `main`, and accept the W2 and W3 schemas and
+  evaluation/runtime/isolation protocols on `main` under record-system review,
   research-evidence review and shared engineering guidance before installing
   external reader or host packages (`kobimusic/copisteria`, its out-of-worktree
   `torch`/CV stack, or host `poppler-utils`), downloading `kobimusic/copista-28m`
-  weights, generating real-page overlays or crops, executing S0 measurements or
-  running `copista-28m`. Independently classify material review findings before
-  repair. New product, scope or feasibility tradeoffs return to the owner.
+  weights, generating real-page overlays or crops from private inputs,
+  executing S0 measurements or running `copista-28m`. Apply `GOV-011` finding
+  disposition. New product, scope or feasibility tradeoffs return to the owner.
 - **Acceptance and closure:** the unified 23-piece system-alignment and split
   manifest, `92`-page overlay QA, zero-difference per-system slice verification,
   tested W2 scorer, and independently reviewed sanitized S0 baseline results
@@ -621,26 +607,22 @@ ends a grant. Git and the proposing PR retain the reason and history.
   modes, keeping `TEST` and `TRAIN/DEV` separated) and logging schema are
   recorded on #1489 and #1490, and project portal/handoff records are updated.
   Delete this entry when accepted or when the owner stops W2 and W3.
-- **Effects:** permit the design and planning entry's inspection, Issue and
-  documentation effects; local read-only use of the private transcription
+- **External effects:** permit the design and planning entry's private-archive
+  inspection and Issue effects; local read-only use of the private transcription
   archive, staged restored facsimile PDFs and capture manifest (plus raw
   `.heic` photos if staged locally), `gold-cache` (including the #1705 staged
   `gold-01` copy read-only, with no further edits to any gold or archive file),
   and local desk-study archive; creation and use of out-of-worktree `RUN`,
   `DOWNLOADS`, alignment/crop/overlay output, and isolated virtual-environment
   and cache directories; host `MuseScore 4.x` command-line invocation recorded
-  by exact version and executable SHA-256 per run; installation in an isolated
-  out-of-worktree environment (and/or host `poppler-utils` if needed for PDF
-  rasterization) of `kobimusic/copisteria` (`Apache-2.0`) and its Python
+  by exact version and executable SHA-256 per run; and installation in an
+  isolated out-of-worktree environment (and/or host `poppler-utils` if needed
+  for PDF rasterization) of `kobimusic/copisteria` (`Apache-2.0`) and its Python
   dependencies (`torch`, `torchvision`, `opencv-python`, `scipy`, `pillow`,
   `numpy`, `huggingface_hub`, `pypdfium2`), recorded by exact commit/version per
   run, and download of `kobimusic/copista-28m` weights (`Apache-2.0`), stopping
   to return to the owner before cumulative new W2/W3 downloads exceed `10 GB`
-  (tracked separately from W1's closed `2,350,276,855`-byte ledger);
-  experimental source, tests and records under
-  `src/private/app/sheet-music-omr/` and directly required record-routing or CI
-  test-selection updates; isolated local runs and credential-free tests; and
-  ordinary pull-request/check operations and their normal CI.
+  (tracked separately from W1's closed `2,350,276,855`-byte ledger).
 - **Exclusions:** no model training or weight fine-tuning (W6, #1498); no
   synthetic rendering or augmentation engine (W4, #1491); no standalone general
   system-detector model training (W5, #1497); no live workflow modification or
@@ -700,24 +682,18 @@ ends a grant. Git and the proposing PR retain the reason and history.
        process with an in-repository test helper process. Repair other
        principle findings in those tests, such as missing launch deadlines.
        Record the inventory and dispositions in #1501.
-    2. Under #1503, decide which real-tool tests CI must run. In CI, those
-       tests fail rather than skip when their tool is missing. CI results
-       name skipped tests and their reasons.
+    2. Under #1503, decide which real-tool tests CI must run, updating affected
+       test configuration and CI workflows as needed. In CI, those tests fail
+       rather than skip when their tool is missing. CI results name skipped
+       tests and their reasons.
 - **Ordering and gates:** merge this entry before any of the work. Each pull
-  request follows the owning project's engineering and OCR review gates. It
-  also follows record-system review for record changes, and
-  research-evidence review for evidence claims. Independently classify
-  material findings before repair. Any new feasibility or product tradeoff
-  returns to the owner.
+  request follows the owning project's engineering and OCR review gates,
+  applicable record-system and research-evidence review, and `GOV-011` finding
+  disposition. Any new feasibility or product tradeoff returns to the owner.
 - **Acceptance:**
     - Each remaining external-executable test has a recorded disposition.
     - Tests that CI must run fail when their tool is missing.
     - Delete this entry when accepted.
-- **Effects:** permit source and repository/GitHub inspection,
-  documentation, test, test-configuration and CI workflow changes,
-  isolated local builds and credential-free tests, independent delegated
-  review, ordinary Issue/PR/check operations and their normal CI, and
-  ordinary reruns of failed CI jobs.
 - **Exclusions:**
     - No product-behavior, runtime or dependency version changes.
     - No change to existing mise tool installation in workflows (#1505).
@@ -766,18 +742,15 @@ ends a grant. Git and the proposing PR retain the reason and history.
 - **Ordering and gates:** merge this entry before any of the work, and
   advancement 1 before advancement 2, so `main` is never less protected.
   Each pull request follows the Workflow Delivery engineering and OCR review
-  gates and record-system review for record changes, with independent
-  classification of material findings. A gated job that fails on `main`
-  for a reason outside this entry returns to the owner.
+  gates, applicable record-system review, and `GOV-011` finding
+  disposition. A gated job that fails on `main` for a reason outside this entry
+  returns to the owner.
 - **Acceptance:**
     - Every other `ci.yml` job is a direct or transitive dependency of
       `Validate`, and the enforcing check passes.
     - The `main` ruleset requires only `Validate`.
     - Delete this entry when accepted.
-- **Effects:** permit source and repository/GitHub inspection,
-  documentation, test and CI workflow changes, credential-free local
-  tests, independent delegated review, ordinary Issue/PR/check operations
-  and their normal CI, and the owner-authorized `main` ruleset
+- **External effects:** permit the owner-authorized `main` ruleset
   required-check change.
 - **Exclusions:**
     - No other ruleset, branch-protection, permission or access change.
@@ -825,19 +798,18 @@ ends a grant. Git and the proposing PR retain the reason and history.
       [Issue #1512](https://github.com/hcoona/three/issues/1512), which this
       entry does not authorize.
 - **Advancement and outcome:** amend the Workflow Delivery design and .NET
-  integration records, implement the tool dimension in planning, execution
-  and result collection, and declare the required tools in the AzureAuth
-  CredProvider and vscode-copilot-telegram-hook test projects whose tests
-  launch Python, Node.js or npm.
-- **Ordering and gates:** merge this entry before any of the work. Accept the
-  design record changes before code relies on them. Start execution grouping
-  only after the `main` ruleset no longer names `Build & Test (.NET 10)`
-  under advancement 2 of the `Validate` entry. Each pull request
-  follows the Workflow Delivery engineering and OCR review gates,
-  record-system review for record changes, and research-evidence review for
-  evidence claims such as the #1501 cause analysis, with independent
-  classification of material findings. New feasibility or product tradeoffs
-  return to the owner.
+  integration records, implement the tool dimension in planning, execution,
+  result collection and affected CI workflows, and declare the required tools
+  in the AzureAuth CredProvider and vscode-copilot-telegram-hook test projects
+  whose tests launch Python, Node.js or npm.
+- **Ordering and gates:** merge this entry before any of the work. Keep design
+  record and code changes self-consistent at each merge into `main`. Start
+  execution grouping only after the `main` ruleset no longer names
+  `Build & Test (.NET 10)` under advancement 2 of the `Validate` entry. Each
+  pull request follows the Workflow Delivery engineering and OCR review gates,
+  applicable record-system review, and applicable research-evidence review
+  (such as the #1501 cause analysis), with `GOV-011` finding
+  disposition. New feasibility or product tradeoffs return to the owner.
 - **Acceptance:**
     - The .NET execution group without declared tools launches no Python,
       Node.js or npm.
@@ -846,11 +818,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
       against the locked Python. Toolcache prewarming is considered only if
       it does, and only by a further owner decision.
     - Delete this entry when accepted.
-- **Effects:** permit source and repository/GitHub inspection, Workflow
-  Delivery source, documentation, test, test-project and CI workflow changes,
-  isolated local builds and credential-free tests, independent delegated
-  review, ordinary Issue/PR/check operations and their normal CI, and
-  ordinary reruns of failed CI jobs.
 - **Exclusions:**
     - No runner dimension, filtered subsets or extra selection inputs
       (#1512).
@@ -895,27 +862,22 @@ ends a grant. Git and the proposing PR retain the reason and history.
     - The Workflow Delivery Node group plans the matrix; the workflow does
       not hard-code it. Each matrix job is gated through `Validate`.
 - **Advancement and outcome:** amend the Node integration and CI design
-  records, commit the schedule data and its update mechanism, implement the
-  planning, and replace the literal matrix.
+  records, commit the schedule data and its Renovate update mechanism,
+  implement the planning, and replace the literal matrix in `ci.yml`.
 - **Ordering and gates:** merge this entry before any of the work. Replace
   the matrix only after the `main` ruleset no longer names Node.js matrix
   jobs under the `Validate` entry. Each pull request follows the Workflow
-  Delivery engineering and OCR review gates and record-system review for
-  record changes, with independent classification of material findings. A
-  new scheduled workflow with write access, differing `engines` ranges whose
-  combination is a product tradeoff, or another new feasibility or product
-  tradeoff returns to the owner.
+  Delivery engineering and OCR review gates, applicable record-system review,
+  and `GOV-011` finding disposition. A new scheduled workflow with
+  write access, differing `engines` ranges whose combination is a product
+  tradeoff, or another new feasibility or product tradeoff returns to the
+  owner.
 - **Acceptance:**
     - No Node.js version list remains hard-coded in `ci.yml`.
     - Changing `engines.node` or the committed schedule data changes the
       planned matrix without a workflow edit.
     - A schedule update arrives as an ordinary reviewable pull request.
     - Delete this entry when accepted.
-- **Effects:** permit source and repository/GitHub inspection, Workflow
-  Delivery source, documentation, test, Renovate configuration, committed
-  schedule data and CI workflow changes, credential-free local tests,
-  independent delegated review, ordinary Issue/PR/check operations and their
-  normal CI.
 - **Exclusions:**
     - No change to declared `engines` ranges or the locked Node.js version.
     - No change to existing mise tool installation in workflows (#1505).
@@ -980,10 +942,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
   retain the credential-free compatibility check. Keep the new job within the
   existing `Validate` ruleset. Each implementation PR follows Workflow
   Delivery's applicable CI design, permission-boundary, engineering and OCR
-  reviews, record-system review for record changes, research-evidence review,
-  and independent classification of material findings. A need to expand App
-  permissions, run Renovate with credentials in a PR, or weaken the
-  three-day delay returns to the owner.
+  reviews, applicable record-system and research-evidence review, and `GOV-011`
+  finding disposition. A need to expand App permissions, run Renovate with
+  credentials in a PR, or weaken the three-day delay returns to the owner.
 - **Acceptance:**
     - The scheduled Renovate CLI runs on a Node selected from its package's
       declared `engines.node`; repository tasks still use the locked Node.
@@ -997,163 +958,11 @@ ends a grant. Git and the proposing PR retain the reason and history.
       configuration without credentials.
     - The full-clone patch is absent and the existing pre-clone remains.
     - Delete this entry when accepted.
-- **Effects:** permit repository and public npm package inspection/download,
-  source, documentation, package-lock, Renovate and CI changes, credential-free
-  local tests, ordinary Issue/PR/check operations and their normal CI, and
-  independent delegated review. Existing scheduled Renovate activity and
-  GitHub App permissions remain unchanged.
 - **Exclusions:**
+    - Existing scheduled Renovate activity and GitHub App permissions remain
+      unchanged; no new token, credential, permission, repository access or
+      credentialed PR validation.
     - No pnpm workspace membership or general `#1512` check-unit design or
       implementation.
-    - No new token, credential, permission, repository access or credentialed
-      PR validation.
     - No release, proving or campaign dispatch, publication, Environment,
       account, publisher or upstream feature request.
-
-### Contract repository governance, Wave semantics, and project workflow gates
-
-- **Work carrier:** the pull request proposing this entry and its linked atomic
-  governance contraction pull request, following repository-owner review after
-  [PR #1715](https://github.com/hcoona/three/pull/1715) closed
-  [Issue #1709](https://github.com/hcoona/three/issues/1709) and
-  [Issue #1302](https://github.com/hcoona/three/issues/1302).
-- **Accepted inputs:** the [governance policy](governance/governance-system.md),
-  [record policy](governance/record-system.md),
-  [checker contract](governance/checker-contract.md),
-  [control catalog](governance/controls.yaml),
-  [family catalog](governance/record-families.yaml),
-  [engineering principles](engineering/engineering-principles.md),
-  [HK execution](engineering/hk-execution.md),
-  [agent execution and recovery](engineering/agent-execution.md), root
-  [`AGENTS.md`](../AGENTS.md), [`docs/AGENTS.md`](AGENTS.md),
-  [`CONTRIBUTING.md`](../CONTRIBUTING.md),
-  [`.github/pull_request_template.md`](../.github/pull_request_template.md),
-  [record-system review](../.github/skills/record-system-review/SKILL.md) and
-  [research-evidence review](../.github/skills/research-evidence-review/SKILL.md)
-  with their `evals/` fixtures, and the project portals, documentation, and OMR
-  harness/tests under
-  [Workflow Delivery](../src/private/app/workflow-delivery/docs/README.md),
-  [LiteAgensh](../src/private/app/lite-agensh/README.md), and
-  [Sheet-Music OMR](../src/private/app/sheet-music-omr/README.md).
-- **Owner decisions and boundaries:**
-    - Keep `GOV-001` through `GOV-010` in
-      `docs/governance/governance-system.md` and
-      `docs/engineering/engineering-principles.md` unchanged. Amend
-      [GOV-011](governance/governance-system.md#gov-011-separate-findings-from-disposition)
-      (and its `#source` adaptation note) so agreed (`true positive`) findings
-      not requiring an owner decision are remediated directly and verified on
-      the delta by the originating independent reviewer without a third-party
-      classifier; require an independent third-party classifier only when
-      disputing a finding as `false positive` or classifying it as `unresolved`
-      (retaining repository-owner disposition for unresolved findings and any
-      finding requiring a value, risk, scope, governance, or release decision).
-    - Keep development workflow, Delivery Wave semantics, local iteration
-      freedom, and review triggers uniform at repository scope (`GOV-002`,
-      `GOV-005`). Project-local records (`validation`, `protocol`,
-      `agent-handoff`, `design`, `contracts`) own domain behavior, external/paid
-      or privacy risk boundaries, and criteria for accepting formal or release
-      evidence; they must not impose workflow gates, `main`-merge preconditions,
-      or run-count limits on local harmless development and debugging.
-    - Exempt routine maintenance from Delivery Wave ceremony: contract-preserving,
-      non-feature defect and test fixes, CI troubleshooting/diagnostics,
-      lint/formatting, doc-drift repairs, and routine Renovate or dependency
-      compatibility adjustments without new external, paid, credentialed, or
-      privacy effects execute directly through ordinary pull requests without a
-      Wave entry. Wave entries govern feature/capability advancements,
-      architectural or public-contract changes, and external/risk-bearing
-      operations, and close atomically in their final implementation PR (or a
-      Wave-only PR on owner stop or explicit closure).
-    - Replace pre-merge record-before-implementation serial locks with
-      consistency at each merge into `main` between implementation and its
-      owning records, allowing records and implementation to evolve concurrently
-      in one branch or across a stacked PR chain while keeping Wave
-      authorization merge-gated before newly proposed Wave-scoped advancements
-      or external effects and keeping explicit risk protocols accepted before
-      executing external or paid effects.
-    - Govern by external-effect blacklist rather than routine-work allowlists:
-      within authorized work, local editing, restore/build/lint/test/pilot
-      debugging, out-of-repository scratch harnesses, and ordinary CI
-      validation/reruns are permitted by default with no attempt quota. External
-      or irreversible side effects—package or release publication,
-      ruleset/permission changes, non-public or credential-bearing dependency
-      sources or external services, ambient or external account/secret access or
-      mutation, persistent host mutations outside
-      repository/toolchain/build/cache/temp state, destructive fault injection,
-      and paid or non-recoverable campaign dispatches—remain unauthorized
-      without explicit Wave authorization/risk disposition (and accepted
-      protocols with cumulative bounds where empirical or paid), even inside a
-      test or workflow step.
-    - Contract `docs/delivery-wave.md` to bounded scope/outcome, exclusions,
-      and explicit external/risk effects, removing routine `Effects`
-      boilerplate and pre-merge doc-before-code serial clauses across active
-      entries while preserving each entry's substantive scope, ruleset-ordering
-      safeguards (`#1511`/`#1509`/`#1508`), closed-campaign limits, privacy
-      boundaries
-      ([OMR-REQ-015](../src/private/app/sheet-music-omr/docs/requirements.md#omr-req-015-privacy-and-fixture-provenance)),
-      and paid credit ledgers.
-    - Remove `#1715`'s incident carve-outs and negative exclusion lists in favor
-      of concise root-cause boundaries: focus contextual reviews on the proposed
-      repository diff and relied-on evidence provenance rather than PR/Issue
-      discussion mechanics, with delta-bounded re-reviews and destination checks
-      before repeating uncertain external writes; trigger
-      `research-evidence-review` and mutable-source rechecks on demand (only
-      when changing `research` records, relying on or updating mutable external
-      interfaces, reporting formal/empirical evidence, making platform/support
-      claims, or authorizing/executing external or paid empirical effects, not
-      on every Wave edit); remove routine PR timing/JUnit/inode and raw
-      `records:check` byte-attachment requirements (retaining timing for
-      performance investigations and recording `records:check` commands,
-      snapshots, and diagnostic summaries); contract
-      `.github/pull_request_template.md` to three concise sections (`Summary`,
-      `Authorization and Scope`, `Validation and Review`); and allow
-      `sheet_music_omr.harness pilot` to run on uncommitted working trees
-      (recording `dirty` provenance in `run.json` while keeping clean-tree
-      enforcement on non-pilot formal `run`).
-- **Advancement and outcome:** atomically contract
-  `docs/governance/governance-system.md` (`GOV-011` and `#source`),
-  `docs/governance/record-system.md`, `docs/delivery-wave.md`,
-  `docs/governance/checker-contract.md`, `docs/governance/controls.yaml`,
-  `docs/engineering/hk-execution.md`, `docs/engineering/agent-execution.md`,
-  `AGENTS.md`, `docs/AGENTS.md` (if affected), `CONTRIBUTING.md`,
-  `.github/pull_request_template.md`,
-  `.github/skills/{record-system-review,research-evidence-review}/` (including
-  `evals/`), workflow-overreach clauses in Workflow Delivery, LiteAgensh, and
-  Sheet-Music OMR project records, and the dirty-tree `pilot` relaxation in
-  `src/private/app/sheet-music-omr/{src/sheet_music_omr/harness,tests}/`,
-  closing this entry atomically on acceptance.
-- **Ordering and gates:** merge this control-plane amendment before executing
-  the newly added substantive edits. Review the subsequent contraction PR
-  against the accepted target-branch policies, catalogs, and review Skills under
-  [changing rules](governance/governance-system.md#changing-rules), retaining
-  atomic alignment
-  ([GOV-006](governance/governance-system.md#gov-006-atomic-governance-changes)),
-  staged CI-profile HK checks, explicit-base `records:check`, focused OMR
-  package checks (`pytest`, `ruff`, `pyrefly`), independent
-  `record-system-review`, `research-evidence-review`, and applicable
-  engineering/OCR reviews, independent `GOV-011` classification of material
-  findings, ordinary CI (`Validate`), and explicit repository-owner disposition
-  (`record-system-gate`).
-- **Acceptance and closure:** repository governance, active Wave entries,
-  contributor/agent interfaces, PR template, review Skills/evals, touched
-  project records, and OMR `harness pilot` agree atomically, preserving all
-  established requirement identifiers, pass HK, OMR tests/lint/typechecks, and
-  zero-diagnostic `records:check`, and clear independent review and owner
-  disposition. Delete this entry atomically on acceptance or owner stop.
-- **Effects:** permit repository and read-only GitHub/public-source inspection,
-  edits to the named governance, Wave, engineering, interface, template,
-  review-Skill, project documentation, and OMR `harness`/`tests` files, locked
-  local conformance, record, and OMR Python checks, independent delegated review
-  and `GOV-011` classification, and ordinary Issue/PR/check operations and their
-  normal CI.
-- **Exclusions:**
-    - No edits to `GOV-001` through `GOV-010` or
-      `docs/engineering/engineering-principles.md`.
-    - No other product-code or test changes outside OMR `harness pilot`, and no
-      `eng/scripts/check_repository_records.py`, workflow, ruleset, dependency,
-      lockfile, or manual `.agents/skills/` / `.github/agents/` changes.
-    - No change to closed Workflow Delivery campaign slots, LiteAgensh credit
-      ledgers or allowances, OMR download caps or private-gold privacy
-      boundaries
-      ([OMR-REQ-015](../src/private/app/sheet-music-omr/docs/requirements.md#omr-req-015-privacy-and-fixture-provenance)),
-      paid native execution, publication, dispatch, credential, authentication,
-      or access state.

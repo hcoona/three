@@ -9,11 +9,13 @@ owns current commands, callers and local validation. The
 [change routing](#change-routing) table names the sections to read before a
 change.
 
-The accepted [Wave](../../../../../docs/delivery-wave.md) is the sole positive
-work authority. Further substantive work requires an accepted entry. A PR,
-proposed document, research result, local observation or merged source cannot
-grant itself broader effects. Do not use Workflow v1/v2 to fill a V3 decision
-gap. Internal formats may break; there is no requirement to retain old readers
+The accepted [Wave](../../../../../docs/delivery-wave.md) governs feature,
+capability, architectural, public-contract, and external-risk work under the
+[record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency),
+while contract-preserving routine maintenance without new external or
+credentialed effects uses ordinary pull requests. A PR, proposed document,
+research result, local observation or merged source cannot grant itself broader
+effects. Do not use Workflow v1/v2 to fill a V3 decision gap. Internal formats may break; there is no requirement to retain old readers
 in the new core. Historical readers use
 [actual producer-qualified source](validation/historical-readers.md); no
 compatibility tree, runtime replay service or parallel source authority is
@@ -48,37 +50,32 @@ ecosystem root input at once; check each applicable
 
 ## Starting Work
 
-Root [agent instructions](../../../../../AGENTS.md) route the accepted
-governance, record policy, Wave and shared engineering guidance.
-[Agent execution and recovery](../../../../../docs/engineering/agent-execution.md)
-owns inspecting worker ownership, worktree state, checks and unresolved findings
-and exact-session recovery, and
-[GOV-011](../../../../../docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)
-owns independent classification of material findings. Workflow Delivery adds:
+Root [agent instructions](../../../../../AGENTS.md), the
+[record policy](../../../../../docs/governance/record-system.md#project-namespaces),
+[agent execution and recovery](../../../../../docs/engineering/agent-execution.md),
+and [GOV-011](../../../../../docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)
+own repository-wide workflow, local iteration freedom, concurrent branch or
+stacked-PR evolution of records and code (self-consistent at each merge into
+`main`), review triggers, and finding disposition. Within authorized work,
+routine credential-free local builds and tests have no `main`-merge
+precondition or attempt quota. Workflow Delivery adds domain-specific routing:
 
-1. Inspect the actual Git branch, worktree/index state, accepted target and PR
-   checks. Preserve unrelated user changes.
-2. Confirm affected requirements, native responsibility, transfer/permission
+1. Confirm affected requirements, native responsibility, transfer/permission
    boundaries, concrete integration contract and validation basis. New
    feasibility or material product/trust/cost tradeoffs return to the owner;
    do not compensate by implementing missing lower-layer guarantees.
-3. Prepare and validate complete affected changes, including applicable tests,
-   root HK, hooks and `git diff --check`, before independent engineering/OCR review,
-   record-system and research-evidence review.
-4. Keep terminal outcomes, originals and source/run identities intact. Await
-   terminal tool/worker output and verify evidence before dependent effects.
-
-Return fixes to original reviewers until clear. For Workflow Delivery reviews,
-use the open-code-review (OCR) delegate skill, the APM dependency
-`open-code-review-delegate` declared in the root `apm.yml` and deployed as the generated
-`.agents/skills/open-code-review-delegate/SKILL.md`, including the complete Git
-manifest when OCR filtering omits documentation. After every two review
-iterations, after changes and reviews, and before PR preparation, review the
-whole change again and remove anything unnecessary, duplicated or wordy. "Every merged Wave change" in the root agent instructions means a merged
-change to `docs/delivery-wave.md` ([record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency)). The pinned
-[NuGet delivery retrospective](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/nuget-delivery-retrospective.md#next-agent-guide)
-retains practical Windows/PowerShell, timestamp, helper-basename and
-draft-path delivery lessons as historical lessons, not rules.
+2. Validate affected suites, root HK and `git diff --check`, and run Workflow
+   Delivery implementation review through the open-code-review (OCR) delegate
+   skill (`open-code-review-delegate` in root `apm.yml`, deployed at
+   `.agents/skills/open-code-review-delegate/SKILL.md`), supplying the complete
+   Git manifest when OCR filtering omits documentation. Retain applicable
+   record-system and research-evidence reviews and remove unnecessary or
+   duplicated complexity before PR preparation.
+3. Keep terminal campaign outcomes, originals and source/run identities intact.
+   The pinned
+   [NuGet delivery retrospective](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/nuget-delivery-retrospective.md#next-agent-guide)
+   retains historical Windows/PowerShell, timestamp, helper-basename and
+   draft-path lessons as context, not workflow rules.
 
 ## Authorization and Closed Campaigns
 

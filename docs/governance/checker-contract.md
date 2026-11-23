@@ -26,12 +26,9 @@ mise run records:test
 
 Write generated reports outside the worktree, as in the examples above. A report
 inside the worktree becomes an untracked candidate on the next run and requires
-classification like any other input. Attach the report or a retrievable artifact to the
-governing PR (or the governing Issue when no PR governs), together with the command and
-tool revision. A local filename and a digest alone do not provide the bytes needed for
-another reviewer to repeat the check. The [enforcement policy](record-system.md#enforcement)
-defines when `records:check` runs while preserving Three's zero-diagnostic `main`
-baseline.
+classification like any other input. Record the executed command, snapshot
+commits, tool versions, and diagnostic summary in the governing PR or Issue
+review carrier.
 
 ## Inputs and Results
 

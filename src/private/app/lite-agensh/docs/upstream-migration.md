@@ -211,7 +211,8 @@ or selected package/executable version before first dependent implementation,
 after a dependency/CLI upgrade or a protocol mismatch. The independent
 research-evidence reviewer evaluates the result and affected conclusions in the
 PR; changed/uncertain contracts pause only dependent work until the design and
-validation agree. Each merged Wave change is the fallback applicability review.
+validation agree. Review of the next PR or Wave entry selecting dependent
+LiteAgensh native, SQLite or MCP work is the fallback applicability review.
 The same trigger/evaluator/action/fallback covers SQLite/MCP packages when their
 slice selects versions. The Agensh baseline is immutable; choosing another
 revision requires a source-delta review, not a freshness poll.
