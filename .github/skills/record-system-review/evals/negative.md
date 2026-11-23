@@ -9,7 +9,9 @@ A pull request:
   without a governing policy or failure mode;
 - adds a rule in `src/private/app/example/docs/agent-handoff.md` forbidding local
   credential-free test runs on unmerged feature branches or capping local debugging at
-  three runs before opening a pull request.
+  three runs before opening a pull request;
+- binds a fixture README in `docs/governance/record-families.yaml` to `namespace: tests`
+  instead of its owning project directory.
 
 ## Expected Findings
 
@@ -21,3 +23,6 @@ A pull request:
    workflow and local iteration freedom are repository-wide; a project handoff record
    may define formal acceptance-evidence criteria or external-risk bounds, not `main`-merge
    preconditions or run-count quotas on local harmless debugging.
+4. A blocking `record-system.md#project-namespaces` finding: `tests` is a test container
+   root rather than an owning project, engineering tool, or standalone skill namespace;
+   bind the fixture record to its owning project namespace.

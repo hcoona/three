@@ -110,7 +110,9 @@ Each retained canonical record matches exactly one current binding. Its family
 supplies the shared responsibilities; its binding supplies the owning namespace,
 representation, path and lifecycle. Version-2 catalog input is supported only
 for accepted-base comparison during migration, not as a second current format.
-A namespace is `repository` or the owning project path, not a global ID prefix.
+A namespace is `repository` or an existing direct (non-symlink) owning directory
+path, not a global ID prefix; contextual review verifies the semantic component
+boundary.
 `current` describes accepted carriers still in use. A proposed change to that
 state does not take effect before merge; state alone does not prove coverage.
 

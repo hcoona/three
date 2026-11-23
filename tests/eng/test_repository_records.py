@@ -271,6 +271,58 @@ def test_move_and_companion_namespace(repo: Repository) -> None:
     assert route["base_namespaces"] == route["candidate_namespaces"] == [owner]
 
 
+def test_non_src_owning_directory_and_invalid_namespaces(
+    repo: Repository,
+) -> None:
+    """Allow direct non-src owning directories and reject invalid namespaces."""
+    repo.write(
+        "eng/tool/README.md",
+        "# REQ-001: Tool contract\n\nEngineering tool behavior.\n",
+    )
+    repo.write(
+        ".apm/skills/example/SKILL.md",
+        "# Example skill\n\nStandalone migration guidance.\n",
+    )
+    repo.write(
+        "src/private/app/example/README.md",
+        "# REQ-001: App contract\n\nIndependent project requirement.\n",
+    )
+    repo.bind("eng/tool/README.md", namespace="eng/tool")
+    repo.bind(".apm/skills/example/SKILL.md", namespace=".apm/skills/example")
+    repo.bind(
+        "src/private/app/example/README.md",
+        namespace="src/private/app/example",
+    )
+    repo.save()
+    repo.route_all()
+    assert repo.check()["diagnostics"] == []
+
+    repo.write("eng/linked/README.md", "# Linked\n\nTracked descendant.\n")
+    repo.commit()
+    (repo.root / "eng/linked/README.md").unlink()
+    (repo.root / "eng/linked").rmdir()
+    (repo.root / "eng/linked").symlink_to(repo.root / "eng/tool")
+    target_binding = next(
+        b for b in repo.catalog["bindings"] if b["path"] == "eng/tool/README.md"
+    )
+    for bad in (
+        ".",
+        "../outside",
+        "eng/*",
+        "eng/missing",
+        "eng/tool/README.md",
+        "eng/linked",
+    ):
+        target_binding["namespace"] = bad
+        repo.save()
+        report = repo.check()
+        assert any(
+            d["code"] == "invalid-namespace"
+            and d["path"] == "eng/tool/README.md"
+            for d in report["diagnostics"]
+        ), bad
+
+
 def test_directory_browsing_and_portal_traversal(repo: Repository) -> None:
     """Verify directory browsing and portal traversal."""
     repo.write("eng/component/source.py", "VALUE = 1\n")
@@ -1419,7 +1471,7 @@ def test_native_root_skill_requires_exact_local_source(
     repo.write(path, "# Generated skill\n")
     if mutation != "missing-source":
         repo.write(source, "# Canonical skill\n")
-        repo.bind(source)
+        repo.bind(source, namespace=".apm/skills/example")
         repo.save()
         repo.route_all()
     lock = {

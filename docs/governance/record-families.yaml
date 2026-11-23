@@ -454,7 +454,7 @@ bindings:
     format: markdown
   - id: xunit-to-mstest-guidance-source
     family: test-migration-guidance-source
-    namespace: repository
+    namespace: .apm/skills/migrate-xunit-to-mstest
     state: current
     carrier: repository-files
     path: .apm/skills/migrate-xunit-to-mstest/**/*.md

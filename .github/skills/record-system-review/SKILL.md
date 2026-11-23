@@ -1,6 +1,6 @@
 ---
 name: record-system-review
-description: Review repository record-system changes for authority, lifecycle, consumer, routing, and policy-control consistency. Use for changes that add, move, split, delete, or rebind records; edit repository-namespace records; alter authority ownership, established requirement identifiers, consumer contracts, portal routing, generated agent/skill interfaces, or governance catalogs; change Issue/PR templates, Agent Skills, hk, or control-governed workflows; or claim the Record-System Gate.
+description: Review repository record-system changes for authority, lifecycle, consumer, routing, and policy-control consistency. Use for changes that add, move, split, delete, or rebind records; edit governance, work-authorization, shared-principle, or root instruction/workflow/template authorities; alter portal routing, generated-interface ownership or apm.lock.yaml source/deployment provenance, hk, control-governed workflows, or control-governed Agent Skills; alter authority ownership, established requirement identifiers, or consumer/immutability/license contracts in any record; or claim the Record-System Gate.
 ---
 
 # Record-System Review
@@ -16,11 +16,23 @@ instructions and policies for review of an amendment. Do not edit generated
 `.agents/skills/` or `.github/agents/` interfaces by hand.
 
 Structural record changes (additions, moves, splits, retirements/deletions, and
-rebindings), `repository`-namespace record edits in
-[`record-families.yaml`](../../../docs/governance/record-families.yaml), and
-authority, established requirement-identifier, consumer-contract,
-portal-routing, generated-interface, catalog, template, Agent Skill, `hk`, or
-control-governed workflow changes trigger this review.
+catalog rebindings); edits to repository governance, work-authorization,
+shared-principle, or root instruction/workflow/template authorities
+(`docs/governance/**`, `docs/delivery-wave.md`, `schemas/governance/**`,
+`docs/engineering/engineering-principles.md`, `AGENTS.md`, `docs/AGENTS.md`,
+`CONTRIBUTING.md`, and `.github/pull_request_template.md`); portal-routing,
+generated-interface ownership or `apm.lock.yaml` source/deployment provenance
+(excluding content and hash regeneration of an already-bound local skill whose
+source mapping, owners, and deployed file set are unchanged), `hk`,
+control-governed workflow, or control-governed Agent Skill changes (skills
+implementing controls in
+[`controls.yaml`](../../../docs/governance/controls.yaml), including their
+`evals/`, or repository governance routing, rather than domain/coding skills);
+and any record edit—inside or outside `src/`—that alters authority ownership,
+established requirement identifiers, or consumer/immutability/license contracts,
+or claims the Record-System Gate, trigger this review. Routine in-place edits
+outside these triggers remain covered by `mise run records:check` and applicable
+domain reviews.
 
 ## Reviewer Preconditions
 
@@ -77,8 +89,11 @@ to replace the applicable accepted instructions or enlarge work authorization.
    Keep generic repository policy and workflow rules at repository scope and project
    knowledge in its owning document root
    ([project namespaces](../../../docs/governance/record-system.md#project-namespaces)):
-   reject project-local workflow gates, `main`-merge preconditions, or run-count limits on
-   local harmless development and debugging. Preserve local identifier namespaces and
+   verify that each catalog binding's `namespace` is `repository` for repository-wide
+   concerns or the owning project, engineering tool, or standalone skill directory (never
+   a test root, generated deployment root, or sub-concern folder), and reject
+   project-local workflow gates, `main`-merge preconditions, or run-count limits on local
+   harmless development and debugging. Preserve local identifier namespaces and
    path-qualified cross-project references; README-only projects do not need manufactured
    record hierarchies.
 5. Check granularity and format against the record policy. Do not require a split because
