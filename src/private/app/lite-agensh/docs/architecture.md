@@ -43,8 +43,8 @@ authorities; do not select a separate toolchain here.
 | Git executable                         | Objects, commits, branches, worktrees, merge/conflict mechanics                                                  | Run refs, serialized candidate integration, exact identities, check/review binding and owner-checkout preservation                      |
 | Host process APIs                      | Process start, redirected pipes and observable process exit                                                      | Ownership, bounded waits, log separation and stopping only owned processes                                                              |
 
-The [implementation contracts](implementation-contracts.md) select exact CPM
-dependencies, the official C# MCP SDK's stdio server and the official Copilot
+The [implementation contracts](implementation-contracts.md) define CPM dependency
+selection, the official C# MCP SDK's stdio server and the official Copilot
 .NET SDK's typed native boundary. They also own operation inputs/results and shared
 integration boundaries. Those choices do not establish tested interoperability
 or introduce another model orchestration layer.

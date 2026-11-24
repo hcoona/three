@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using LiteAgensh.Tests.Support;
@@ -15,7 +16,15 @@ public sealed class SerializedToolSpecs(TestContext context)
     public async Task AllSourceToolsBoundAndTruthful()
     {
         CancellationToken token = context.CancellationToken;
-        GitScenarioState state = await GitScenarioState.CreateAsync(token).ConfigureAwait(false);
+        GitScenarioState state = await GitScenarioState.CreateAsync(
+            token,
+            integrationChecks: [GitScenarioState.ExitCheck(0)],
+            configuredCheck: (_, _, _, _, checkToken) =>
+            {
+                checkToken.ThrowIfCancellationRequested();
+                return Task.FromResult(new ProcessResult(0, "", "", false));
+            }
+        ).ConfigureAwait(false);
         bool completed = false;
         try
         {
@@ -73,6 +82,14 @@ public sealed class SerializedToolSpecs(TestContext context)
                                                         wire.Description
                                                     );
                                                 }
+                                                var searchTool = Assert.ContainsSingle(
+                                                    catalog.Where(tool =>
+                                                        tool.Name == "work_search"
+                                                    )
+                                                );
+                                                AssertWorkSearchInputContract(
+                                                    searchTool.JsonSchema
+                                                );
                                                 JsonObject run = await Call(
                                                         owner,
                                                         "run_info",
@@ -499,6 +516,12 @@ public sealed class SerializedToolSpecs(TestContext context)
                                                     Text(candidate, "state")
                                                 );
                                                 Assert.AreEqual(head, Text(candidate, "head"));
+                                                string diff = Text(candidate, "diff");
+                                                Assert.Contains("wire.txt", diff);
+                                                Assert.Contains(
+                                                    "+serialized local candidate",
+                                                    diff
+                                                );
                                                 Assert.Contains(
                                                     "Peer inspected wire.txt.",
                                                     candidate["comments"]!.ToJsonString()
@@ -513,19 +536,41 @@ public sealed class SerializedToolSpecs(TestContext context)
                                                     changeId,
                                                     Id(Assert.ContainsSingle(Items(changes)))
                                                 );
+                                                long healthCheckId = state.Number(
+                                                    """
+                                                    SELECT id FROM checks
+                                                    WHERE kind='integration' AND change_id IS NULL
+                                                        AND status='passed'
+                                                    ORDER BY id LIMIT 1;
+                                                    """
+                                                );
+                                                Assert.IsGreaterThan(0L, healthCheckId);
+                                                JsonObject healthResult = await Call(
+                                                        owner,
+                                                        "check_read",
+                                                        new() { ["id"] = healthCheckId }
+                                                    )
+                                                    .ConfigureAwait(false);
+                                                JsonObject health = Assert.ContainsSingle(
+                                                    Items(healthResult)
+                                                );
+                                                Assert.AreEqual(healthCheckId, Id(health));
+                                                Assert.IsTrue(health.ContainsKey("changeId"));
+                                                Assert.IsNull(health["changeId"]);
+                                                Assert.AreEqual(
+                                                    "integration",
+                                                    Text(health, "kind")
+                                                );
+                                                Assert.AreEqual("passed", Text(health, "status"));
                                                 JsonObject checks = await Call(
                                                         owner,
                                                         "check_read",
                                                         new() { ["changeId"] = changeId }
                                                     )
                                                     .ConfigureAwait(false);
-                                                Assert.IsNotEmpty(Items(checks));
-                                                Assert.IsTrue(
-                                                    Items(checks)
-                                                        .All(check =>
-                                                            Text(check, "status") == "passed"
-                                                        )
-                                                );
+                                                await AssertChangeChecksAsync(
+                                                    state, changeId, checks, token
+                                                ).ConfigureAwait(false);
                                                 Assert.AreEqual(
                                                     "serialized local candidate\n",
                                                     await state
@@ -563,6 +608,12 @@ public sealed class SerializedToolSpecs(TestContext context)
                                                     )
                                                 );
                                                 Assert.HasCount(29, entries);
+                                                Assert.HasCount(
+                                                    entries.Count,
+                                                    entries
+                                                        .Select(entry => entry.Groups[1].Value)
+                                                        .ToHashSet(StringComparer.Ordinal)
+                                                );
                                                 Assert.AreEqual(
                                                     13,
                                                     entries.Count(entry =>
@@ -729,6 +780,8 @@ public sealed class SerializedToolSpecs(TestContext context)
                         Assert.IsFalse(result["ok"]!.GetValue<bool>());
                         Assert.AreEqual(code, Text(result, "code"));
                         Assert.IsNotEmpty(Text(result, "message"));
+                        Assert.IsTrue(result.TryGetPropertyValue("data", out JsonNode? data));
+                        Assert.IsNull(data);
                         Assert.AreEqual(1L, state.Count("SELECT COUNT(*) FROM tasks;"));
                         Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM events;"));
                         Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM shown_notices;"));
@@ -1039,6 +1092,67 @@ public sealed class SerializedToolSpecs(TestContext context)
             }
         }
         throw new InvalidOperationException("Runtime worktree root not found.");
+    }
+
+    private static async Task AssertChangeChecksAsync(
+        GitScenarioState state,
+        long changeId,
+        JsonObject result,
+        CancellationToken token
+    )
+    {
+        List<long> expectedIds = [];
+        using (var connection = state.Database.Open())
+        {
+            using (var command = Sql.Command(
+                connection, "SELECT id FROM checks WHERE change_id=$id;", null, ("$id", changeId)
+            ))
+            using (var reader = Sql.Reader(command))
+            {
+                while (reader.Read())
+                {
+                    expectedIds.Add(reader.GetInt64(0));
+                }
+            }
+        }
+        JsonObject[] checks = Items(result);
+        Assert.IsNotEmpty(expectedIds);
+        CollectionAssert.AreEquivalent(expectedIds.ToArray(), checks.Select(Id).ToArray());
+        string[] identity = (await state.GitAsync(
+            state.Repository, token, "rev-parse",
+            state.IntegrationRef, state.IntegrationRef + "^{tree}"
+        ).ConfigureAwait(false)).Split(
+            '\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+        );
+        Assert.HasCount(2, identity);
+        foreach (JsonObject check in checks)
+        {
+            Assert.AreEqual<long?>(changeId, check["changeId"]?.GetValue<long>());
+            Assert.AreEqual("passed", Text(check, "status"));
+            Assert.AreEqual(identity[0], Text(check, "commit"));
+            Assert.AreEqual(identity[1], Text(check, "tree"));
+        }
+    }
+
+    private static void AssertWorkSearchInputContract(JsonElement schema)
+    {
+        Assert.AreEqual("object", schema.GetProperty("type").GetString());
+        Assert.IsFalse(schema.GetProperty("additionalProperties").GetBoolean());
+        Assert.AreEqual(
+            "query",
+            Assert.ContainsSingle(schema.GetProperty("required").EnumerateArray()).GetString()
+        );
+        JsonElement properties = schema.GetProperty("properties");
+        Assert.AreEqual("string", properties.GetProperty("query").GetProperty("type").GetString());
+        JsonElement cursor = properties.GetProperty("cursor");
+        Assert.AreEqual("integer", cursor.GetProperty("type").GetString());
+        Assert.AreEqual(0, cursor.GetProperty("minimum").GetInt32());
+        JsonElement limit = properties.GetProperty("limit");
+        Assert.AreEqual("integer", limit.GetProperty("type").GetString());
+        Assert.AreEqual(1, limit.GetProperty("minimum").GetInt32());
+        Assert.AreEqual(200, limit.GetProperty("maximum").GetInt32());
+        Assert.IsFalse(properties.TryGetProperty("actor", out _));
+        Assert.IsFalse(properties.TryGetProperty("runId", out _));
     }
 
     private static long Id(JsonObject value) => value["id"]!.GetValue<long>();

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Numerics;
 using System.Reflection;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
@@ -153,37 +154,91 @@ internal sealed class NativeSdkSession : INativeSdkSession
             throw new OperationException("credit_unknown",
                 "Original native history must be checked before exact session activation.");
         }
-        using CancellationTokenSource deadline =
-            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(TimeSpan.FromSeconds(ProbeTimeoutSeconds));
-        client = await host.GetClientAsync(cwd, evidencePath, deadline.Token).ConfigureAwait(false);
-        OriginalNativeShutdown original = await ReadOriginalShutdownAsync(
-            origin,
-            (cursor, token) => client.Rpc.Sessions.ReadPersistedEventsAsync(
-                origin.SessionId, cursor, max: 200, direction: EventsReadDirection.Forward,
-                cancellationToken: token),
-            deadline.Token
-        ).ConfigureAwait(false);
-        using FileStream evidence = new(
-            evidencePath + ".original-shutdown.json", FileMode.CreateNew,
-            FileAccess.Write, FileShare.Read);
-        await System.Text.Json.JsonSerializer.SerializeAsync(
-            evidence, original.Evidence(origin), cancellationToken: deadline.Token
-        ).ConfigureAwait(false);
-        evidence.Flush(flushToDisk: true);
-        recoveryEvidencePath = evidencePath + ".recovery-usage.jsonl";
+
+        return await ReadBoundedOriginalShutdownAsync(
+                origin,
+                OpenHistoryAsync,
+                PersistEvidenceAsync,
+                TimeProvider.System,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        async Task<ReadOriginalHistoryPage> OpenHistoryAsync(CancellationToken token)
+        {
+            CopilotClient acquired = await host
+                .GetClientAsync(cwd, evidencePath, token)
+                .ConfigureAwait(false);
+            client = acquired;
+            return (cursor, pageToken) => acquired.Rpc.Sessions.ReadPersistedEventsAsync(
+                origin.SessionId,
+                cursor,
+                max: 200,
+                direction: EventsReadDirection.Forward,
+                cancellationToken: pageToken
+            );
+        }
+
+        async Task PersistEvidenceAsync(OriginalNativeShutdown original, CancellationToken token)
+        {
+            using FileStream evidence = new(
+                evidencePath + ".original-shutdown.json",
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.Read
+            );
+            await System.Text.Json.JsonSerializer.SerializeAsync(
+                    evidence,
+                    original.Evidence(origin),
+                    cancellationToken: token
+                )
+                .ConfigureAwait(false);
+            evidence.Flush(flushToDisk: true);
+            recoveryEvidencePath = evidencePath + ".recovery-usage.jsonl";
+        }
+    }
+
+    internal delegate Task<EventsReadResult> ReadOriginalHistoryPage(
+        string? cursor,
+        CancellationToken cancellationToken
+    );
+
+    internal static async Task<OriginalNativeShutdown> ReadBoundedOriginalShutdownAsync(
+        NativeRecoveryOrigin origin,
+        Func<CancellationToken, Task<ReadOriginalHistoryPage>> openHistory,
+        Func<OriginalNativeShutdown, CancellationToken, Task> persistEvidence,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken
+    )
+    {
+        using CancellationTokenSource timeout = new(
+            TimeSpan.FromSeconds(ProbeTimeoutSeconds),
+            timeProvider
+        );
+        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            timeout.Token
+        );
+        CancellationToken token = deadline.Token;
+        ReadOriginalHistoryPage readPage = await openHistory(token).ConfigureAwait(false);
+        OriginalNativeShutdown original = await ReadOriginalShutdownAsync(origin, readPage, token)
+            .ConfigureAwait(false);
+        await persistEvidence(original, token).ConfigureAwait(false);
         return original;
     }
 
     internal static async Task<OriginalNativeShutdown> ReadOriginalShutdownAsync(
         NativeRecoveryOrigin origin,
-        Func<string?, CancellationToken, Task<EventsReadResult>> read,
+        ReadOriginalHistoryPage read,
         CancellationToken cancellationToken
     )
     {
         SessionStartEvent? start = null;
         SessionShutdownEvent? shutdown = null;
         Dictionary<string, long> receipts = new(StringComparer.Ordinal);
+        HashSet<string> originalToolCalls = new(StringComparer.Ordinal);
+        HashSet<string> coveredToolRequests = new(StringComparer.Ordinal);
+        HashSet<(string Source, string Usage)> coveredToolReceipts = [];
         HashSet<string> cursors = new(StringComparer.Ordinal);
         string? cursor = null;
         do
@@ -260,6 +315,21 @@ internal sealed class NativeSdkSession : INativeSdkSession
                     }
                     receipts[identity.SourceSessionId] = Math.Max(identity.Sequence,
                         receipts.GetValueOrDefault(identity.SourceSessionId));
+                    if (start is not null
+                        && update is ToolExecutionCompleteEvent { Data.ToolUsage: { } metered })
+                    {
+                        coveredToolReceipts.Add((identity.SourceSessionId, identity.UsageId));
+                        if (!string.IsNullOrWhiteSpace(metered.RequestId))
+                        {
+                            coveredToolRequests.Add(metered.RequestId);
+                        }
+                    }
+                }
+                else if (start is not null && shutdown is null
+                    && update is ToolExecutionStartEvent toolStart
+                    && !string.IsNullOrWhiteSpace(toolStart.Data.ToolCallId))
+                {
+                    originalToolCalls.Add(toolStart.Data.ToolCallId);
                 }
                 else if (update is SessionResumeEvent)
                 {
@@ -272,6 +342,32 @@ internal sealed class NativeSdkSession : INativeSdkSession
                 {
                     throw new OperationException("credit_unknown",
                         "New native work followed the selected original termination.");
+                }
+                else if (shutdown is not null
+                    && update is ToolExecutionCompleteEvent completion
+                    && originalToolCalls.Contains(completion.Data.ToolCallId)
+                    && completion.Data.ToolUsage is { } laterUsage)
+                {
+                    bool proved = !string.IsNullOrWhiteSpace(laterUsage.RequestId)
+                        && coveredToolRequests.Contains(laterUsage.RequestId);
+                    if (laterUsage.Accounting is { } laterIdentity
+                        && !string.IsNullOrWhiteSpace(laterIdentity.SourceSessionId)
+                        && !string.IsNullOrWhiteSpace(laterIdentity.UsageId))
+                    {
+                        // Replay keys are independent of a possibly newer receipt sequence.
+                        proved |= coveredToolReceipts.Contains(
+                            (laterIdentity.SourceSessionId, laterIdentity.UsageId))
+                            || laterIdentity.Sequence >= 0
+                                && shutdown.Data.UsageAccountingWatermarks!.TryGetValue(
+                                    laterIdentity.SourceSessionId, out long laterFrontier)
+                                && laterIdentity.Sequence <= laterFrontier;
+                    }
+                    if (!proved)
+                    {
+                        throw new OperationException("credit_unknown",
+                            "Unproved coverage for an original tool usage receipt "
+                            + "beyond the selected termination frontier.");
+                    }
                 }
             }
             if (!page.HasMore)
@@ -550,6 +646,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
         if (
             metadata.SessionId != expectedSession
             || activeSessionId != expectedSession
+            || !Path.IsPathFullyQualified(metadata.WorkingDirectory)
             || !Path.GetFullPath(metadata.WorkingDirectory)
                 .TrimEnd(Path.DirectorySeparatorChar)
                 .Equals(
@@ -850,25 +947,43 @@ internal sealed class NativeSdkSession : INativeSdkSession
 
     internal static double NativeLimit(decimal allowance)
     {
-        double result = (double)allowance;
-        try
+        const string invalidWindow = "Native credit window is invalid.";
+        if (allowance <= 0m)
         {
-            if ((decimal)result > allowance)
-            {
-                result = Math.BitDecrement(result);
-            }
-        }
-        catch (OverflowException)
-        {
-            result = Math.BitDecrement(result);
+            throw new OperationException("credit_unknown", invalidWindow);
         }
 
-        if (!double.IsFinite(result) || result <= 0)
+        Span<int> bits = stackalloc int[4];
+        decimal.GetBits(allowance, bits);
+        BigInteger numerator = ((BigInteger)unchecked((uint)bits[2]) << 64)
+            | ((BigInteger)unchecked((uint)bits[1]) << 32)
+            | unchecked((uint)bits[0]);
+        BigInteger denominator = BigInteger.Pow(10, (bits[3] >> 16) & 0xFF);
+
+        // Find the exact power-of-two interval, then floor to its binary64 grid.
+        int exponent = (int)(numerator.GetBitLength() - denominator.GetBitLength());
+        if (exponent >= 0
+            ? numerator < (denominator << exponent)
+            : (numerator << -exponent) < denominator)
         {
-            throw new OperationException("credit_unknown", "Native credit window is invalid.");
+            exponent--;
         }
 
-        return result;
+        const int fractionBits = 52;
+        const ulong implicitBit = 1UL << fractionBits;
+        int shift = fractionBits - exponent;
+        BigInteger significand = shift >= 0
+            ? (numerator << shift) / denominator
+            : numerator / (denominator << -shift);
+
+        // Every positive decimal fits in the normal range; never emit an invalid cap.
+        if (exponent is < -1022 or > 1023
+            || significand < implicitBit || significand >= (implicitBit << 1))
+        {
+            throw new OperationException("credit_unknown", invalidWindow);
+        }
+
+        return Math.ScaleB((double)significand, exponent - fractionBits);
     }
 
     public async ValueTask DisposeAsync()

@@ -208,6 +208,15 @@ internal sealed class Phase6LegacyGuardInput
                 File.ReadAllBytes(path)
             );
         }
+        else if (selection == "W")
+        {
+            JsonObject preservation = JsonNode.Parse(originals["source-after.json"])!.AsObject();
+            Assert.ContainsSingle(preservation["checkouts"]!.AsArray())!["path"] =
+                Path.Combine(root, "mismatched-checkout");
+            string path = PathFor("source-after.json");
+            File.WriteAllText(path, preservation.ToJsonString(), new UTF8Encoding(false));
+            envelope["inputSha256"]!["source-after.json"] = Digest(File.ReadAllBytes(path));
+        }
         else
         {
             throw new ArgumentOutOfRangeException(nameof(selection));
@@ -227,6 +236,10 @@ internal sealed class Phase6LegacyGuardInput
                 PathFor("run-after.evidence-only.sqlite"),
                 originals["run-after.evidence-only.sqlite"]
             );
+        }
+        else if (selection == "W")
+        {
+            File.WriteAllBytes(PathFor("source-after.json"), originals["source-after.json"]);
         }
         File.WriteAllBytes(EvidencePath, envelopeBytes);
         foreach ((string name, byte[] bytes) in originals)

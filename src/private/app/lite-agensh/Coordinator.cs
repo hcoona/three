@@ -2027,16 +2027,30 @@ public sealed class Coordinator
                         continue;
                     }
 
-                    RecoveredNativeUsage usage = await nativeWorkers
-                        .ReadSettledUsageAsync(
-                            current,
-                            git.GetWorkerPath(
-                                current.Worker == "calibration" ? "worker1" : current.Worker
-                            ),
-                            EvidencePath("recovery"),
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false);
+                    RecoveredNativeUsage usage;
+                    try
+                    {
+                        usage = await nativeWorkers
+                            .ReadSettledUsageAsync(
+                                current,
+                                git.GetWorkerPath(
+                                    current.Worker == "calibration" ? "worker1" : current.Worker
+                                ),
+                                EvidencePath("recovery"),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationException exception)
+                        when (settlementOnly
+                            && NativeWorkerFactory.IsPreActivationEligibilityRefusal(exception))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        localFailure ??= exception;
+                        AddSettlementDetails(details, reservation.Worker, reservation.Id,
+                            "usage-recovery-eligibility", exception);
+                        continue;
+                    }
 
                     try
                     {

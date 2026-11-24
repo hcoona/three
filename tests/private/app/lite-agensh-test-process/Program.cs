@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO.Pipes;
@@ -19,15 +20,26 @@ internal static class Program
             return ReportExit(immediateCode);
         }
 
-        bool controlledHost = arguments.Length > 0 && arguments[0] == "controlled-native-host";
-        bool heldCandidateCheck = arguments.Length > 0 && arguments[0] == "held-candidate-check";
+        string role = arguments.Length > 0 ? arguments[0] : "";
+        bool controlledHost = role == "controlled-native-host";
+        bool heldCandidateCheck = role == "held-candidate-check";
+        bool outputHandoffRoot = role == "output-handoff-root";
+        bool outputHolder = role == "inherited-output-holder";
         if (
-            arguments.Length is < 3 or > 4
-            || (arguments[0] != "hold" && !controlledHost && !heldCandidateCheck)
-            || ((controlledHost || heldCandidateCheck) && arguments.Length != 3)
+            arguments.Length is < 3 or > 5
+            || (
+                role != "hold"
+                && !controlledHost
+                && !heldCandidateCheck
+                && !outputHandoffRoot
+                && !outputHolder
+            )
+            || ((controlledHost || heldCandidateCheck || outputHolder) && arguments.Length != 3)
+            || (outputHandoffRoot ? arguments.Length != 5 : arguments.Length > 4)
             || !IsOwnedPipeName(arguments[1])
             || !TryExitCode(arguments[2], out int exitCode)
-            || (arguments.Length == 4 && !IsOwnedPipeName(arguments[3]))
+            || (arguments.Length >= 4 && !IsOwnedPipeName(arguments[3]))
+            || (outputHandoffRoot && !IsOwnedPipeName(arguments[4]))
         )
         {
             Console.Error.WriteLine("Invalid owned-helper protocol arguments.");
@@ -35,6 +47,7 @@ internal static class Program
         }
 
         Process? descendant = null;
+        bool handedOffDescendant = false;
         double? connectReturnedAtMilliseconds = null;
         double? readyWriteEnteredAtMilliseconds = null;
         bool? activeGuardCancellationRequestedAtReadyEntry = null;
@@ -50,10 +63,13 @@ internal static class Program
                 PipeDirection.InOut,
                 PipeOptions.Asynchronous
             );
+            using NamedPipeClientStream? startGrant = outputHandoffRoot
+                ? new(".", arguments[4], PipeDirection.InOut, PipeOptions.Asynchronous)
+                : null;
             using (CancellationTokenSource connectionGuard = new(TimeSpan.FromSeconds(5)))
             {
                 activeGuardToken = connectionGuard.Token;
-                await pipe.ConnectAsync(activeGuardToken).ConfigureAwait(false);
+                await (startGrant ?? pipe).ConnectAsync(activeGuardToken).ConfigureAwait(false);
             }
             connectReturnedAtMilliseconds = Stopwatch
                 .GetElapsedTime(startupStarted)
@@ -63,6 +79,28 @@ internal static class Program
             );
             activeGuard = "interaction";
             activeGuardToken = interaction.Token;
+            if (startGrant is not null)
+            {
+                attemptedOperation = "holder-start-grant";
+                bool granted = await ReceiveHolderStartGrantAsync(startGrant, activeGuardToken)
+                    .ConfigureAwait(false);
+                startGrant.Dispose();
+                if (!granted)
+                {
+                    Console.Error.WriteLine("Owned holder startup was not granted.");
+                    return 65;
+                }
+
+                attemptedOperation = "handoff-connect";
+                activeGuard = "handoff-connection";
+                using CancellationTokenSource handoffConnection =
+                    CancellationTokenSource.CreateLinkedTokenSource(interaction.Token);
+                handoffConnection.CancelAfter(TimeSpan.FromSeconds(5));
+                activeGuardToken = handoffConnection.Token;
+                await pipe.ConnectAsync(activeGuardToken).ConfigureAwait(false);
+                activeGuard = "interaction";
+                activeGuardToken = interaction.Token;
+            }
             using StreamReader reader = new(pipe, Encoding.UTF8, false, 1024, leaveOpen: true);
             using StreamWriter writer = new(pipe, new UTF8Encoding(false), 1024, leaveOpen: true)
             {
@@ -74,7 +112,7 @@ internal static class Program
                 Console.Error.WriteLine("owned check diagnostic stderr before READY");
             }
 
-            if (arguments.Length == 4)
+            if (arguments.Length >= 4)
             {
                 ProcessStartInfo start = new(
                     Environment.ProcessPath
@@ -83,8 +121,10 @@ internal static class Program
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,
+                    // Keep stdout inherited; give the handoff holder a separate stderr.
+                    RedirectStandardError = outputHandoffRoot,
                 };
-                start.ArgumentList.Add("hold");
+                start.ArgumentList.Add(outputHandoffRoot ? "inherited-output-holder" : "hold");
                 start.ArgumentList.Add(arguments[3]);
                 start.ArgumentList.Add("0");
                 descendant =
@@ -93,16 +133,7 @@ internal static class Program
             }
 
             using Process self = Process.GetCurrentProcess();
-            string ready = string.Join(
-                "|",
-                "READY",
-                self.Id.ToString(CultureInfo.InvariantCulture),
-                self.StartTime.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture),
-                (descendant?.Id ?? 0).ToString(CultureInfo.InvariantCulture),
-                (descendant?.StartTime.ToUniversalTime().Ticks ?? 0).ToString(
-                    CultureInfo.InvariantCulture
-                )
-            );
+            string ready = ReadyFrame(self, descendant);
             attemptedOperation = "ready-write";
             readyWriteEnteredAtMilliseconds = Stopwatch
                 .GetElapsedTime(startupStarted)
@@ -120,7 +151,11 @@ internal static class Program
                 return 65;
             }
 
-            return ReportExit(exitCode);
+            int reportedExit = outputHolder ? exitCode : ReportExit(exitCode);
+            // Only RELEASE transfers custody. On EOF or setup failure the root still joins
+            // its descendant; the test sends RELEASE only after acquiring the holder.
+            handedOffDescendant = outputHandoffRoot;
+            return reportedExit;
         }
         catch (OperationCanceledException error)
         {
@@ -151,16 +186,86 @@ internal static class Program
             {
                 using (descendant)
                 {
-                    if (!descendant.HasExited)
+                    if (outputHandoffRoot)
                     {
-                        descendant.Kill(entireProcessTree: true);
+                        if (!handedOffDescendant)
+                        {
+                            await StopOutputHolderAsync(descendant).ConfigureAwait(false);
+                        }
                     }
+                    else
+                    {
+                        if (!descendant.HasExited)
+                        {
+                            descendant.Kill(entireProcessTree: true);
+                        }
 
-                    await descendant
-                        .WaitForExitAsync(CancellationToken.None)
-                        .WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
-                        .ConfigureAwait(false);
+                        await descendant
+                            .WaitForExitAsync(CancellationToken.None)
+                            .WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
+                            .ConfigureAwait(false);
+                    }
                 }
+            }
+        }
+    }
+
+    private static async Task<bool> ReceiveHolderStartGrantAsync(
+        NamedPipeClientStream pipe, CancellationToken cancellationToken
+    )
+    {
+        using StreamReader reader = new(pipe, Encoding.UTF8, false, 1024, leaveOpen: true);
+        using StreamWriter writer = new(pipe, new UTF8Encoding(false), 1024, leaveOpen: true)
+        {
+            AutoFlush = true,
+        };
+        using Process self = Process.GetCurrentProcess();
+        await writer.WriteLineAsync(ReadyFrame(self, null).AsMemory(), cancellationToken)
+            .ConfigureAwait(false);
+        return await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) == "RELEASE";
+    }
+
+    private static string ReadyFrame(Process self, Process? descendant) =>
+        string.Join(
+            "|",
+            "READY",
+            self.Id.ToString(CultureInfo.InvariantCulture),
+            self.StartTime.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture),
+            (descendant?.Id ?? 0).ToString(CultureInfo.InvariantCulture),
+            (descendant?.StartTime.ToUniversalTime().Ticks ?? 0).ToString(
+                CultureInfo.InvariantCulture
+            )
+        );
+
+    private static async Task StopOutputHolderAsync(Process holder)
+    {
+        Exception? stopFailure = null;
+        try
+        {
+            if (!holder.HasExited)
+            {
+                holder.Kill();
+            }
+        }
+        catch (Exception error) when (
+            error is (InvalidOperationException or Win32Exception) && holder.HasExited
+        )
+        { }
+        catch (Exception error)
+        {
+            stopFailure = error;
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                using CancellationTokenSource exit = new(TimeSpan.FromSeconds(5));
+                await holder.WaitForExitAsync(exit.Token).ConfigureAwait(false);
+            }
+            catch (Exception error) when (stopFailure is not null)
+            {
+                stopFailure.Data["OutputHolderExitJoin"] = error;
             }
         }
     }

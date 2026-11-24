@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using LiteAgensh.Tests.Support;
 using Microsoft.Data.Sqlite;
@@ -15,7 +16,7 @@ public sealed class OfflineReconcileSpecs(TestContext context)
     ];
 
     [TestMethod]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task EndedRunExclusiveProofAndRecheck()
     {
         Phase6OwnedCreator creator = await Phase6OwnedCreator.OpenAsync(context.CancellationToken);
@@ -48,6 +49,7 @@ public sealed class OfflineReconcileSpecs(TestContext context)
                 Phase6State.Financial(creator.Database, creator.Ledger).ToJsonString()
             );
             await creator.ExitAsync(context.CancellationToken);
+            AssertSyntheticRuntimeIdentityRefusals(creator, accounting);
             AssertCancellationAndRepeat(creator, accounting, null, "controlled-native-dependency");
             // Controlled local cancellation is legitimate; native PAID admission
             // must still reject the unchanged non-native receipt namespace.
@@ -70,7 +72,117 @@ public sealed class OfflineReconcileSpecs(TestContext context)
     }
 
     [TestMethod]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
+    public async Task ReusedRuntimePidLeavesCurrentHelperLiveAndReleasesUncalledBacking()
+    {
+        Phase6OwnedCreator creator = await Phase6OwnedCreator.OpenAsync(context.CancellationToken);
+        await creator.RunBodyAsync(async () =>
+        {
+            await creator.EndRunAsync(context.CancellationToken);
+            AssertGenuineTerminal(creator);
+            OwnedChildControl control = new();
+            Exception? primary = null;
+            try
+            {
+                Process live = control.StartDirect();
+                OwnedChildIdentity ready = await control.ReadReadyAsync(context.CancellationToken);
+                Assert.IsFalse(live.HasExited);
+                Assert.AreEqual(live.Id, ready.Pid);
+                Assert.AreEqual(live.StartTime.ToUniversalTime().Ticks, ready.BirthTicks);
+                long oldBirth = ready.BirthTicks - 1;
+                Assert.IsGreaterThan(0L, oldBirth);
+                await creator.ExitAsync(context.CancellationToken);
+                JsonNode diagnostic = JsonNode.Parse(
+                    creator.Database.ReadMetadata($"native:session:{creator.Target.SessionId}")!
+                )!;
+                long lease = diagnostic["runtimeLeaseId"]!.GetValue<long>();
+                using SqliteConnection connection = creator.Database.Open();
+                JsonNode original = Assert.ContainsSingle(Phase6State.Rows(
+                    connection,
+                    "SELECT pid,start_ticks FROM process_leases WHERE id=$id AND state='exited';",
+                    ("$id", lease)
+                ))!;
+                JsonObject originalHistory = Phase6State.History(creator.Database);
+                Exception? dispositionFailure = null;
+                try
+                {
+                    // Synthetic retained identity; the helper's observed birth stays unchanged.
+                    SetIdentity(ready.Pid, oldBirth);
+                    AssertCancellationAndRepeat(
+                        creator,
+                        creator.AccountingOnly(),
+                        null,
+                        "controlled-native-dependency",
+                        "SYNTHETIC RETAINED LEASE; controlled public path, NOT OS PID recycling"
+                    );
+                    Assert.IsFalse(live.HasExited);
+                    Assert.AreEqual(ready.Pid, live.Id);
+                    Assert.AreEqual(ready.BirthTicks, live.StartTime.ToUniversalTime().Ticks);
+                }
+                catch (Exception error)
+                {
+                    dispositionFailure = error;
+                    throw;
+                }
+                finally
+                {
+                    try
+                    {
+                        SetIdentity(
+                            original["pid"]!.GetValue<long>(),
+                            original["start_ticks"]!.GetValue<long>()
+                        );
+                        Assert.AreEqual(
+                            originalHistory.ToJsonString(),
+                            Phase6State.History(creator.Database).ToJsonString()
+                        );
+                    }
+                    catch (Exception secondary) when (dispositionFailure is not null)
+                    {
+                        dispositionFailure.Data["SyntheticRuntimeLeaseRestore"] =
+                            Json.ExceptionDetails(secondary);
+                    }
+                }
+                using CancellationTokenSource exit =
+                    CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+                exit.CancelAfter(TimeSpan.FromSeconds(5));
+                await control.ReleaseAsync(exit.Token);
+                await live.WaitForExitAsync(exit.Token);
+                Assert.AreEqual(0, live.ExitCode);
+
+                void SetIdentity(long pid, long birth)
+                {
+                    using SqliteCommand update = Sql.Command(
+                        connection,
+                        "UPDATE process_leases SET pid=$pid,start_ticks=$birth "
+                            + "WHERE id=$id AND state='exited';",
+                        null,
+                        ("$pid", pid), ("$birth", birth), ("$id", lease)
+                    );
+                    Assert.AreEqual(1, update.ExecuteNonQuery());
+                }
+            }
+            catch (Exception error)
+            {
+                primary = error;
+                throw;
+            }
+            finally
+            {
+                try
+                {
+                    await control.DisposeAsync();
+                }
+                catch (Exception secondary) when (primary is not null)
+                {
+                    primary.Data["ReusedPidHelperCleanup"] = Json.ExceptionDetails(secondary);
+                }
+            }
+        });
+    }
+
+    [TestMethod]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task ReconcileIdempotenceAndConservation()
     {
         Phase6OwnedCreator creator = await Phase6OwnedCreator.OpenAsync(context.CancellationToken);
@@ -105,7 +217,7 @@ public sealed class OfflineReconcileSpecs(TestContext context)
     }
 
     [TestMethod(DisplayName = "SYNTHETIC CONTRACT ONLY: legacy compatibility guard inputs")]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task LegacyCompatibilityContractGuards()
     {
         Phase6OwnedCreator first = await Phase6OwnedCreator.OpenAsync(context.CancellationToken);
@@ -150,6 +262,11 @@ public sealed class OfflineReconcileSpecs(TestContext context)
                             + "associations."
                         )
                     ),
+                    (
+                        "W",
+                        "Retained source/worktree observations contradict the compatible source "
+                            + "lineage."
+                    ),
                 }
             )
             {
@@ -190,6 +307,14 @@ public sealed class OfflineReconcileSpecs(TestContext context)
         if (mutation == "dispatch")
         {
             ledger.BeginDispatch(row.RunId, row.Id, 200);
+            OperationException incomplete = Assert.ThrowsExactly<OperationException>(() =>
+                ledger.RecordSdkUsage(
+                    row.Id,
+                    new(row.SessionId!, 0, null, 0),
+                    final: false
+                )
+            );
+            Assert.AreEqual("credit_unknown", incomplete.Code);
         }
         else if (mutation == "contradictory-usage")
         {
@@ -207,6 +332,21 @@ public sealed class OfflineReconcileSpecs(TestContext context)
             expected = row with { Allowance = row.Allowance + 1 };
         }
         JsonObject before = CoreProjection(ledger, scratch.PathFor("core.sqlite"));
+        if (mutation == "dispatch")
+        {
+            JsonNode usage = Assert.ContainsSingle(before["usage"]!.AsArray())!;
+            Assert.AreEqual(row.SessionId, usage["session_id"]!.GetValue<string>());
+            Assert.AreEqual(
+                proof["diagnostic"]!["reportedNanoAiu"]!.GetValue<string>(),
+                usage["reported_nano_aiu"]!.GetValue<string>()
+            );
+            Assert.IsNull(usage["status"]);
+            Assert.AreEqual(0L, usage["reported_requests"]!.GetValue<long>());
+            Assert.AreEqual(1L, usage["dispatch_count"]!.GetValue<long>());
+            Assert.AreEqual("uncertain", ledger.Reservations().Single().State);
+        }
+        Assert.IsEmpty(before["status"]!["cancellations"]!.AsArray());
+        Assert.IsEmpty(before["reports"]!.AsArray());
         OperationException rejection = Assert.ThrowsExactly<OperationException>(() =>
             ledger.CancelBeforeDispatch(expected, proof, "core-guard-input-not-public-proof")
         );
@@ -231,6 +371,49 @@ public sealed class OfflineReconcileSpecs(TestContext context)
 
     [TestMethod]
     [Timeout(120_000)]
+    public void CoreCancellationRejectsContradictoryRepeatWithoutChangingStoredProof()
+    {
+        context.CancellationToken.ThrowIfCancellationRequested();
+        using ScratchDirectory scratch = new();
+        string path = scratch.PathFor("core.sqlite");
+        CreditLedger ledger = new(path, 200);
+        (CreditReservation row, JsonObject proof) = CoreOriginal(ledger, scratch.PathFor("raw"));
+        proof["source"] = new JsonObject
+        {
+            ["applicationBuild"] = "11111111-1111-4111-8111-111111111111",
+        };
+        const string inspection = "core-guard-input-not-public-proof";
+        JsonObject first = ledger.CancelBeforeDispatch(row, proof, inspection);
+        Assert.IsFalse(first["idempotent"]!.GetValue<bool>());
+        Assert.AreEqual("released", ledger.Reservations().Single().State);
+        Assert.IsFalse(ledger.Reservations().Single().GrantOpen);
+        JsonObject before = CoreProjection(ledger, path);
+        using SqliteConnection connection = Phase6State.OpenFile(path);
+        const string cancellationRows =
+            "SELECT * FROM credit_cancellations ORDER BY reservation_id;";
+        string stored = Phase6State.Rows(connection, cancellationRows).ToJsonString();
+        JsonObject contradictory = proof.DeepClone().AsObject();
+        contradictory["source"]!["applicationBuild"] = "22222222-2222-4222-8222-222222222222";
+
+        OperationException rejected = Assert.ThrowsExactly<OperationException>(() =>
+            ledger.CancelBeforeDispatch(row, contradictory, inspection)
+        );
+        Assert.AreEqual("credit_unknown", rejected.Code);
+        Assert.AreEqual(
+            "Existing cancellation has contradictory retained evidence.", rejected.Message
+        );
+        Assert.AreEqual(before.ToJsonString(), CoreProjection(ledger, path).ToJsonString());
+        Assert.AreEqual(stored, Phase6State.Rows(connection, cancellationRows).ToJsonString());
+
+        JsonObject repeat = ledger.CancelBeforeDispatch(row, proof, inspection);
+        Assert.IsTrue(repeat["idempotent"]!.GetValue<bool>());
+        Assert.AreEqual(first["proof"]!.ToJsonString(), repeat["proof"]!.ToJsonString());
+        Assert.AreEqual(before.ToJsonString(), CoreProjection(ledger, path).ToJsonString());
+        Assert.AreEqual(stored, Phase6State.Rows(connection, cancellationRows).ToJsonString());
+    }
+
+    [TestMethod]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task CoreCancellationAndAdmissionConserveOneAuthorization()
     {
         using ScratchDirectory scratch = new();
@@ -457,11 +640,101 @@ public sealed class OfflineReconcileSpecs(TestContext context)
         );
     }
 
+    private static void AssertSyntheticRuntimeIdentityRefusals(
+        Phase6OwnedCreator creator,
+        Coordinator accounting
+    )
+    {
+        JsonNode diagnostic = JsonNode.Parse(
+            creator.Database.ReadMetadata($"native:session:{creator.Target.SessionId}")!
+        )!;
+        long lease = diagnostic["runtimeLeaseId"]!.GetValue<long>();
+        using SqliteConnection connection = creator.Database.Open();
+        JsonNode original = Assert.ContainsSingle(Phase6State.Rows(
+            connection,
+            "SELECT pid,start_ticks FROM process_leases WHERE id=$id AND state='exited';",
+            ("$id", lease)
+        ))!;
+        using Process live = Process.GetCurrentProcess();
+        JsonObject originalHistory = Phase6State.History(creator.Database);
+        foreach ((long pid, long birth, string reason) in new[]
+        {
+            (
+                (long)live.Id,
+                live.StartTime.ToUniversalTime().Ticks,
+                "An exact original owner/runtime identity is still alive."
+            ),
+            (
+                original["pid"]!.GetValue<long>(),
+                0L,
+                "Original process identity is missing."
+            ),
+        })
+        {
+            Exception? primary = null;
+            try
+            {
+                SetIdentity(pid, birth);
+                JsonObject history = Phase6State.History(creator.Database);
+                JsonObject money = Phase6State.Financial(creator.Database, creator.Ledger);
+                JsonObject rejected = accounting.Reconcile(creator.TargetId);
+                Assert.AreEqual(
+                    "credit_unknown", rejected["code"]?.GetValue<string>(), rejected.ToJsonString()
+                );
+                Assert.AreEqual(reason, rejected["message"]!.GetValue<string>());
+                Assert.AreEqual(
+                    history.ToJsonString(),
+                    Phase6State.History(creator.Database).ToJsonString()
+                );
+                Assert.AreEqual(
+                    money.ToJsonString(),
+                    Phase6State.Financial(creator.Database, creator.Ledger).ToJsonString()
+                );
+            }
+            catch (Exception error)
+            {
+                primary = error;
+                throw;
+            }
+            finally
+            {
+                try
+                {
+                    SetIdentity(
+                        original["pid"]!.GetValue<long>(),
+                        original["start_ticks"]!.GetValue<long>()
+                    );
+                    Assert.AreEqual(
+                        originalHistory.ToJsonString(),
+                        Phase6State.History(creator.Database).ToJsonString()
+                    );
+                }
+                catch (Exception secondary) when (primary is not null)
+                {
+                    primary.Data["SyntheticRuntimeLeaseRestore"] = Json.ExceptionDetails(secondary);
+                }
+            }
+        }
+
+        void SetIdentity(long pid, long birth)
+        {
+            using SqliteCommand update = Sql.Command(
+                connection,
+                "UPDATE process_leases SET pid=$pid,start_ticks=$birth "
+                    + "WHERE id=$id AND state='exited';",
+                null,
+                ("$pid", pid), ("$birth", birth), ("$id", lease)
+            );
+            Assert.AreEqual(1, update.ExecuteNonQuery());
+        }
+    }
+
     private static void AssertCancellationAndRepeat(
         Phase6OwnedCreator creator,
         Coordinator accounting,
         string? evidence,
-        string kind
+        string kind,
+        string? outerEvidence = null
     )
     {
         JsonObject history = Phase6State.History(creator.Database);
@@ -547,9 +820,9 @@ public sealed class OfflineReconcileSpecs(TestContext context)
             "PHASE6_CANCELLATION "
                 + new JsonObject
                 {
-                    ["outerEvidence"] = evidence is null
+                    ["outerEvidence"] = outerEvidence ?? (evidence is null
                         ? "genuine-current-controlled-public"
-                        : "SYNTHETIC CONTRACT ONLY; literal native-sdk IS NOT native proof",
+                        : "SYNTHETIC CONTRACT ONLY; literal native-sdk IS NOT native proof"),
                     ["first"] = first,
                     ["repeat"] = repeat.DeepClone(),
                     ["before"] = before,

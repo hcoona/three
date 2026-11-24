@@ -8,7 +8,7 @@ namespace LiteAgensh.Tests;
 public sealed class ReconnectSettlementSpecs(TestContext context)
 {
     [TestMethod]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     [DataRow("controlled")]
     [DataRow("missing-capability")]
     [DataRow("unsettled-stop")]
@@ -23,7 +23,10 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             if (scenario == "missing-capability")
             {
                 Assert.IsFalse(preflight["ok"]!.GetValue<bool>());
-                Assert.AreEqual("native_probe_failed", preflight["code"]!.GetValue<string>());
+                Assert.AreEqual(
+                    "native_probe_failed", preflight["code"]!.GetValue<string>(),
+                    preflight.ToJsonString()
+                );
                 Assert.IsNull(state.Database.ReadMetadata("native:controlled_preflight_receipt"));
                 Assert.IsEmpty(state.Ledger.Reservations(state.Database.RunId));
                 Assert.IsNull(state.Database.ReadMetadata("native:sdk_preflight_receipt"));
@@ -42,6 +45,30 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                 receipt["sessionId"]!.GetValue<string>()
             );
             Assert.AreEqual(30d, receipt["sessions"]![0]!["appliedLimit"]!.GetValue<double>());
+            if (scenario == "controlled")
+            {
+                JsonObject preflightHistory = Phase6State.History(state.Database);
+                JsonObject preflightMoney = Phase6State.Financial(state.Database, state.Ledger);
+                Assert.IsEmpty(preflightHistory["coordinator_segments"]!.AsArray());
+                Assert.IsEmpty(preflightHistory["coordinator_turns"]!.AsArray());
+                Assert.IsEmpty(preflightMoney["rows"]!.AsArray());
+                Assert.IsEmpty(preflightMoney["usage"]!.AsArray());
+                JsonObject uncalibrated = await state
+                    .Reopen()
+                    .RunAsync("run", context.CancellationToken);
+                Assert.IsFalse(uncalibrated["ok"]!.GetValue<bool>());
+                Assert.AreEqual("unavailable", uncalibrated["code"]!.GetValue<string>());
+                Assert.Contains(
+                    "complete paid calibration",
+                    uncalibrated["message"]!.GetValue<string>()
+                );
+                Assert.IsTrue(JsonNode.DeepEquals(
+                    preflightHistory, Phase6State.History(state.Database)
+                ));
+                Assert.IsTrue(JsonNode.DeepEquals(
+                    preflightMoney, Phase6State.Financial(state.Database, state.Ledger)
+                ));
+            }
             JsonObject calibrated = await state.Reopen().CalibrateAsync(context.CancellationToken);
             CreditReservation calibration = state
                 .Ledger.Reservations(state.Database.RunId)
@@ -101,7 +128,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
     }
 
     [TestMethod]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     [DataRow(false)]
     [DataRow(true)]
     public async Task ControlledReceiptAdmissionUnknownAssociationPreservesBacking(bool mismatch)
@@ -144,13 +171,19 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
     }
 
     [TestMethod]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task ClosedFailedRunUsageOnly()
     {
         Phase6PublicRun state = await Phase6PublicRun.CreateAsync(1, context.CancellationToken);
         await state.RunBodyAsync(async () =>
         {
+            CreditReservation unrelated = state.Ledger.Reserve(
+                "unrelated-campaign-run", "worker1", 30m, 30m,
+                Path.Combine(state.Database.StatePath, "unrelated.usage")
+            );
             await state.FailOriginalAsync(context.CancellationToken);
+            state.Ledger.MarkStarted(unrelated.Id);
+            state.Ledger.MarkUncertain(unrelated.Id);
             CreditReservation original = state
                 .Ledger.Reservations(state.Database.RunId)
                 .Single(row => row.Worker == "worker1");
@@ -164,6 +197,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             );
             JsonObject history = Phase6State.History(state.Database);
             JsonObject before = Phase6State.Financial(state.Database, state.Ledger);
+            JsonObject unrelatedBefore = UnrelatedFinancial(before);
             state.Reader = (row, token) =>
             {
                 token.ThrowIfCancellationRequested();
@@ -180,6 +214,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             GitScenarioState.Data(result);
             Assert.AreEqual("usage-settlement", result["data"]!["operation"]!.GetValue<string>());
             Assert.IsFalse(result["data"]!["runUncertain"]!.GetValue<bool>());
+            Assert.IsTrue(result["data"]!["accounting"]!["uncertain"]!.GetValue<bool>());
             CreditReservation settled = state
                 .Ledger.Reservations(state.Database.RunId)
                 .Single(row => row.Id == original.Id);
@@ -188,6 +223,8 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             JsonObject accounting = state.Ledger.Status(state.Database.RunId, 207.25m);
             Assert.AreEqual(227.25m, accounting["actualReported"]!.GetValue<decimal>());
             Assert.AreEqual(20m, accounting["overshoot"]!.GetValue<decimal>());
+            Assert.IsTrue(accounting["uncertain"]!.GetValue<bool>());
+            Assert.AreEqual(257.25m, accounting["campaignCommitted"]!.GetValue<decimal>());
             Assert.AreEqual(140m, settled.Actual!.Value - original.Actual!.Value);
             Assert.AreEqual(
                 history.ToJsonString(),
@@ -195,6 +232,14 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             );
             JsonObject after = Phase6State.Financial(state.Database, state.Ledger);
             AssertOldReportsPreserved(before, after);
+            Assert.IsTrue(JsonNode.DeepEquals(unrelatedBefore, UnrelatedFinancial(after)));
+            OperationException paidGate = Assert.ThrowsExactly<OperationException>(() =>
+                state.Ledger.Reserve(
+                    "blocked-paid-run", "worker1", 30m, 30m,
+                    Path.Combine(state.Database.StatePath, "blocked.usage")
+                )
+            );
+            Assert.AreEqual("credit_unknown", paidGate.Code);
             state.Reader = null; // Any recovery read now throws; not a call counter.
             JsonObject repeated = await state
                 .Reopen()
@@ -208,15 +253,33 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                 history.ToJsonString(),
                 Phase6State.History(state.Database).ToJsonString()
             );
+
+            JsonObject UnrelatedFinancial(JsonObject financial)
+            {
+                JsonObject retained = new();
+                foreach ((string table, string key) in new[]
+                {
+                    ("rows", "id"), ("usage", "reservation_id"),
+                    ("owners", "reservation_id"), ("reports", "reservation_id"),
+                })
+                {
+                    retained[table] = new JsonArray(financial[table]!.AsArray()
+                        .Where(row => row![key]!.GetValue<string>() == unrelated.Id)
+                        .Select(row => row!.DeepClone()).ToArray());
+                }
+                return retained;
+            }
         });
     }
 
     [TestMethod]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     [DataRow("association")]
     [DataRow("partial")]
     [DataRow("reader-error")]
     [DataRow("association-first")]
+    [DataRow("saved-session-first")]
+    [DataRow("missing-start-first")]
     public async Task MixedRecoveryPreservesPaidGates(string rejection)
     {
         Phase6PublicRun state = await Phase6PublicRun.CreateAsync(2, context.CancellationToken);
@@ -235,6 +298,33 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             {
                 Assert.AreEqual("uncertain", original.State);
                 Assert.AreEqual(80m, original.Actual);
+            }
+            bool savedSessionMismatch = rejection == "saved-session-first";
+            bool missingStart = rejection == "missing-start-first";
+            // First-target faults must precede the eligible sibling.
+            bool rejectionFirst = rejection == "association-first" || savedSessionMismatch
+                || missingStart;
+            CreditReservation rejected = originals[rejectionFirst ? 0 : 1];
+            CreditReservation settled = originals[rejectionFirst ? 1 : 0];
+            if (savedSessionMismatch)
+            {
+                string sessionKey = $"worker:{rejected.Worker}:session";
+                Assert.IsFalse(string.IsNullOrWhiteSpace(rejected.SessionId));
+                Assert.AreEqual(rejected.SessionId, state.Database.ReadMetadata(sessionKey));
+                Assert.AreEqual(
+                    rejected.Id,
+                    state.Database.ReadMetadata($"worker:{rejected.Worker}:reservation")
+                );
+                state.Database.WriteMetadata(sessionKey, rejected.SessionId + "-contradictory");
+            }
+            if (missingStart)
+            {
+                string key = NoDispatchCancellation.Marker(rejected.Id);
+                using var connection = state.Database.Open();
+                Assert.AreEqual(
+                    1,
+                    Sql.Execute(connection, "DELETE FROM meta WHERE key=$key;", null, ("$key", key))
+                );
             }
             JsonObject history = Phase6State.History(state.Database);
             JsonObject before = Phase6State.Financial(state.Database, state.Ledger);
@@ -284,13 +374,31 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                 );
                 AssertRecoveryFailure(state, originals[0], "usage-recovery", readerCause);
             }
-            bool rejectionFirst = rejection == "association-first";
-            int rejectedIndex = rejectionFirst ? 0 : 1;
-            int settledIndex = rejectionFirst ? 1 : 0;
+            List<string> readerEntries = [];
             state.Reader = (row, token) =>
             {
+                readerEntries.Add(row.Id);
                 token.ThrowIfCancellationRequested();
-                bool rejects = row.Id == originals[rejectedIndex].Id;
+                bool rejects = row.Id == rejected.Id;
+                if (rejects && missingStart)
+                {
+                    // Take the real preactivation path; the sibling uses the validated-reader seam.
+                    NativeWorkerFactory factory = new(
+                        state.Database,
+                        new(state.Database),
+                        state.Ledger,
+                        () => throw new InvalidOperationException(
+                            "A missing original start must not create a recovery host."
+                        )
+                    );
+                    return factory.ReadSettledUsageAsync(
+                        row,
+                        new GitOperations(state.Database, new(state.Database))
+                            .GetWorkerPath(row.Worker),
+                        Path.Combine(state.Database.StatePath, "native", "missing-start-recovery"),
+                        token
+                    );
+                }
                 if (rejects && rejection == "reader-error")
                 {
                     throw new OperationException("credit_unknown", readerCause);
@@ -315,6 +423,15 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             JsonObject result = await state
                 .Reopen()
                 .RunAsync("reconnect", context.CancellationToken);
+            if (savedSessionMismatch)
+            {
+                Assert.DoesNotContain(rejected.Id, readerEntries);
+                Assert.Contains(settled.Id, readerEntries);
+            }
+            if (missingStart)
+            {
+                CollectionAssert.AreEqual(new[] { rejected.Id, settled.Id }, readerEntries);
+            }
             Assert.IsFalse(result["ok"]!.GetValue<bool>());
             Assert.AreEqual("credit_unknown", result["code"]!.GetValue<string>());
             Assert.AreEqual("usage-settlement", result["data"]!["operation"]!.GetValue<string>());
@@ -325,17 +442,15 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                     .Ledger.Reservations(state.Database.RunId)
                     .Where(row => row.Worker != "calibration"),
             ];
-            Assert.AreEqual(originals[settledIndex].Id, actual[settledIndex].Id);
-            Assert.AreEqual(originals[rejectedIndex].Id, actual[rejectedIndex].Id);
-            Assert.AreEqual("reconciled", actual[settledIndex].State);
-            Assert.AreEqual(120m, actual[settledIndex].Actual);
-            Assert.AreEqual(
-                40m,
-                actual[settledIndex].Actual!.Value - originals[settledIndex].Actual!.Value
-            );
-            Assert.AreEqual("uncertain", actual[rejectedIndex].State);
-            Assert.AreEqual(80m, actual[rejectedIndex].Actual);
-            Assert.AreEqual(originals[rejectedIndex].Allowance, actual[rejectedIndex].Allowance);
+            Assert.HasCount(2, actual);
+            CreditReservation settledAfter = actual.Single(row => row.Id == settled.Id);
+            CreditReservation rejectedAfter = actual.Single(row => row.Id == rejected.Id);
+            Assert.AreEqual("reconciled", settledAfter.State);
+            Assert.AreEqual(120m, settledAfter.Actual);
+            Assert.AreEqual(40m, settledAfter.Actual!.Value - settled.Actual!.Value);
+            Assert.AreEqual("uncertain", rejectedAfter.State);
+            Assert.AreEqual(80m, rejectedAfter.Actual);
+            Assert.AreEqual(rejected.Allowance, rejectedAfter.Allowance);
             JsonObject after = Phase6State.Financial(state.Database, state.Ledger);
             AssertOldReportsPreserved(before, after);
             Assert.AreEqual(
@@ -344,7 +459,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             );
             JsonObject finalReport = Assert.ContainsSingle(
                 after["reports"]!.AsArray().OfType<JsonObject>().Where(report =>
-                    report["reservation_id"]!.GetValue<string>() == originals[settledIndex].Id
+                    report["reservation_id"]!.GetValue<string>() == settled.Id
                     && !before["reports"]!.AsArray().Any(old =>
                         old!["id"]!.GetValue<long>() == report["id"]!.GetValue<long>()
                     )
@@ -357,13 +472,27 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                     System.Globalization.CultureInfo.InvariantCulture
                 )
             );
-            if (rejectionFirst)
+            if (savedSessionMismatch || missingStart)
             {
-                JsonObject raw = Assert.ContainsSingle(
-                    after["usage"]!.AsArray().OfType<JsonObject>().Where(row =>
-                        row["reservation_id"]!.GetValue<string>() == originals[0].Id
-                    )
+                Assert.AreEqual(rejected, rejectedAfter);
+                Assert.AreEqual(
+                    UsageRow(before, rejected.Id).ToJsonString(),
+                    UsageRow(after, rejected.Id).ToJsonString()
                 );
+                JsonNode accounting = result["data"]!["accounting"]!;
+                Assert.IsTrue(accounting["uncertain"]!.GetValue<bool>());
+                Assert.AreEqual(
+                    before["status"]!["actualReported"]!.GetValue<decimal>() + 40m,
+                    accounting["actualReported"]!.GetValue<decimal>()
+                );
+                Assert.AreEqual(
+                    before["status"]!["campaignCommitted"]!.GetValue<decimal>() + 20m,
+                    accounting["campaignCommitted"]!.GetValue<decimal>()
+                );
+            }
+            else if (rejectionFirst)
+            {
+                JsonObject raw = UsageRow(after, rejected.Id);
                 Assert.AreEqual(
                     120_000_000_000d,
                     double.Parse(
@@ -376,12 +505,22 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             }
             AssertRecoveryFailure(
                 state,
-                originals[rejectedIndex],
-                rejection == "reader-error" ? "usage-recovery" : "usage-recovery-ledger",
-                rejection == "reader-error"
-                    ? readerCause
-                    : rejection == "partial" ? "absent, invalid or incomplete"
-                    : "Settled recovery association changed"
+                rejected,
+                rejection switch
+                {
+                    "reader-error" => "usage-recovery",
+                    "saved-session-first" => "usage-recovery-association",
+                    "missing-start-first" => "usage-recovery-eligibility",
+                    _ => "usage-recovery-ledger",
+                },
+                rejection switch
+                {
+                    "reader-error" => readerCause,
+                    "saved-session-first" => "The saved native session/reservation association",
+                    "missing-start-first" => "Required original native limit evidence is missing.",
+                    "partial" => "absent, invalid or incomplete",
+                    _ => "Settled recovery association changed",
+                }
             );
             Assert.AreEqual(
                 "credit_unknown",
@@ -391,6 +530,23 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                 history.ToJsonString(),
                 Phase6State.History(state.Database).ToJsonString()
             );
+            if (missingStart)
+            {
+                readerEntries.Clear();
+                JsonObject repeat = await state
+                    .Reopen()
+                    .RunAsync("reconnect", context.CancellationToken);
+                Assert.AreEqual(result.ToJsonString(), repeat.ToJsonString());
+                Assert.AreEqual(rejected.Id, Assert.ContainsSingle(readerEntries));
+                Assert.AreEqual(
+                    after.ToJsonString(),
+                    Phase6State.Financial(state.Database, state.Ledger).ToJsonString()
+                );
+                Assert.AreEqual(
+                    history.ToJsonString(),
+                    Phase6State.History(state.Database).ToJsonString()
+                );
+            }
             JsonObject resume = await state.Reopen().RunAsync("resume", context.CancellationToken);
             Assert.IsFalse(resume["ok"]!.GetValue<bool>());
             Assert.AreEqual("conflict", resume["code"]!.GetValue<string>());
@@ -399,6 +555,13 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                 Phase6State.History(state.Database).ToJsonString()
             );
         });
+
+        static JsonObject UsageRow(JsonObject financial, string reservationId) =>
+            Assert.ContainsSingle(
+                financial["usage"]!.AsArray().OfType<JsonObject>().Where(row =>
+                    row["reservation_id"]!.GetValue<string>() == reservationId
+                )
+            );
     }
 
     private static void AssertRecoveryFailure(
@@ -442,7 +605,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
     }
 
     [TestMethod]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task MixedRecoveryUnfinishedCrashAndFreshResumeDoNotFallback()
     {
         Phase6PublicRun fresh = await Phase6PublicRun.CreateAsync(1, context.CancellationToken);
@@ -475,8 +638,16 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                 .AccountingOnly()
                 .RunAsync("reconnect", context.CancellationToken);
             Assert.IsFalse(result["ok"]!.GetValue<bool>());
-            Assert.AreEqual("unavailable", result["code"]!.GetValue<string>());
+            Assert.AreEqual(
+                "unavailable",
+                result["code"]!.GetValue<string>(),
+                $"Original reconnect result: {DescribeReconnectResult(result)}"
+            );
             Assert.Contains("reader gate", result["message"]!.GetValue<string>());
+            Assert.AreNotEqual(
+                "usage-settlement",
+                result["data"]?["operation"]?.GetValue<string>()
+            );
             Assert.AreEqual("uncertain", crash.Target.State);
             Assert.IsNull(crash.Target.Actual);
             Assert.AreEqual(before.Allowance, crash.Target.Allowance);
@@ -496,10 +667,40 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                 Phase6State.Number(crash.Database, "SELECT COUNT(*) FROM coordinator_turns;")
             );
         });
+
+        static string DescribeReconnectResult(JsonObject original) =>
+            new JsonObject
+            {
+                ["ok"] = original["ok"] is JsonValue success && success.TryGetValue(out bool ok)
+                    ? JsonValue.Create(ok)
+                    : null,
+                ["code"] = BoundedField(original["code"], 64),
+                ["message"] = BoundedField(original["message"], 256),
+                ["data.operation"] = BoundedField(
+                    (original["data"] as JsonObject)?["operation"],
+                    64
+                ),
+            }.ToJsonString();
+
+        static string? BoundedField(JsonNode? field, int limit)
+        {
+            if (
+                field is not JsonValue value
+                || !value.TryGetValue(out string? text)
+                || text is null
+            )
+            {
+                return null;
+            }
+            string safe = string.Concat(
+                text.Take(limit).Select(ch => ch is >= ' ' and <= '~' ? ch : ' ')
+            );
+            return text.Length <= limit ? safe : safe + "...";
+        }
     }
 
     [TestMethod]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task MixedRecoveryFreshResumeRetainsStalePaidGate()
     {
         Phase6PublicRun state = await Phase6PublicRun.CreateAsync(1, context.CancellationToken);

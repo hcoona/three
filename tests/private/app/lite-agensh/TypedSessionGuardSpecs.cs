@@ -8,6 +8,8 @@ namespace LiteAgensh.Tests;
 [TestClass]
 public sealed class TypedSessionGuardSpecs(TestContext context)
 {
+    private const string ToolReceiptSource = "typed-history-only-tool-source";
+
     public static IEnumerable<(double? total, string? status, long requests)> IncompleteUsage =>
         [
             (null, "complete", 1),
@@ -119,6 +121,7 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
     [DataRow("reported-session")]
     [DataRow("active-session")]
     [DataRow("directory")]
+    [DataRow("relative-directory")]
     [DataRow("already-in-use")]
     [DataRow("remote")]
     [DataRow("model")]
@@ -143,6 +146,11 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
                 break;
             case "directory":
                 metadata.WorkingDirectory = Path.Combine(cwd, "other");
+                break;
+            case "relative-directory":
+                const string child = "lite-agensh-relative-metadata";
+                cwd = Path.GetFullPath(child);
+                metadata.WorkingDirectory = child;
                 break;
             case "already-in-use":
                 metadata.AlreadyInUse = true;
@@ -271,7 +279,7 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
     {
         ManualScenarioClock clock = new();
         TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource<NativeUsage> never = new(
+        TaskCompletionSource<NativeUsage> pendingRead = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         CancellationToken observed = default;
@@ -280,23 +288,34 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
             {
                 observed = token;
                 entered.SetResult();
-                return await never.Task.WaitAsync(token);
+                return await pendingRead.Task.WaitAsync(token);
             },
             context.CancellationToken,
             () => "usage",
             clock
         );
-        await entered.Task.WaitAsync(context.CancellationToken);
+        try
+        {
+            await ObserveReadProbeEntryAsync(entered.Task, probe);
 
-        clock.Advance(TimeSpan.FromSeconds(30) - TimeSpan.FromTicks(1));
-        Assert.IsFalse(observed.IsCancellationRequested);
-        clock.Advance(TimeSpan.FromTicks(1));
-        Assert.IsTrue(observed.IsCancellationRequested);
-        OperationException error = await Assert.ThrowsExactlyAsync<OperationException>(() => probe);
+            clock.Advance(TimeSpan.FromSeconds(30) - TimeSpan.FromTicks(1));
+            Assert.IsFalse(observed.IsCancellationRequested);
+            clock.Advance(TimeSpan.FromTicks(1));
+            Assert.IsTrue(observed.IsCancellationRequested);
+            _ = await Task.WhenAny(probe).WaitAsync(ReadProbeObservationFuse);
+            OperationException error = await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                probe
+            );
 
-        Assert.AreEqual("native_probe_failed", error.Code);
-        Assert.AreEqual("Native usage query exceeded its 30-second deadline.", error.Message);
-        Assert.IsFalse(context.CancellationToken.IsCancellationRequested);
+            Assert.AreEqual("native_probe_failed", error.Code);
+            Assert.AreEqual("Native usage query exceeded its 30-second deadline.", error.Message);
+            Assert.IsFalse(context.CancellationToken.IsCancellationRequested);
+        }
+        catch (Exception primary)
+        {
+            await EndFailedReadProbeAsync(pendingRead, probe, primary);
+            throw;
+        }
     }
 
     [TestMethod]
@@ -307,7 +326,7 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
             context.CancellationToken
         );
         TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource<NativeUsage> never = new(
+        TaskCompletionSource<NativeUsage> pendingRead = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         CancellationToken observed = default;
@@ -316,24 +335,71 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
             {
                 observed = token;
                 entered.SetResult();
-                return await never.Task.WaitAsync(token);
+                return await pendingRead.Task.WaitAsync(token);
             },
             request.Token,
             timeProvider: clock
         );
-        await entered.Task.WaitAsync(context.CancellationToken);
+        try
+        {
+            await ObserveReadProbeEntryAsync(entered.Task, probe);
 
-        request.Cancel();
-        var error =
-            await Assert.ThrowsExactlyAsync<NativeSdkSession.RequestedReadCanceledException>(() =>
-                probe
+            request.Cancel();
+            _ = await Task.WhenAny(probe).WaitAsync(ReadProbeObservationFuse);
+            var error =
+                await Assert.ThrowsExactlyAsync<NativeSdkSession.RequestedReadCanceledException>(
+                    () => probe
+                );
+
+            Assert.AreEqual(request.Token, error.RequestToken);
+            Assert.AreEqual(observed, error.CancellationToken);
+            var cause = Assert.IsInstanceOfType<OperationCanceledException>(error.InnerException);
+            Assert.AreEqual(observed, cause.CancellationToken);
+            Assert.AreEqual(
+                new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                clock.GetUtcNow()
             );
+        }
+        catch (Exception primary)
+        {
+            await EndFailedReadProbeAsync(pendingRead, probe, primary);
+            throw;
+        }
+    }
 
-        Assert.AreEqual(request.Token, error.RequestToken);
-        Assert.AreEqual(observed, error.CancellationToken);
-        var cause = Assert.IsInstanceOfType<OperationCanceledException>(error.InnerException);
-        Assert.AreEqual(observed, cause.CancellationToken);
-        Assert.AreEqual(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), clock.GetUtcNow());
+    private static readonly TimeSpan ReadProbeObservationFuse = TimeSpan.FromSeconds(5);
+
+    private async Task ObserveReadProbeEntryAsync(Task entered, Task probe)
+    {
+        Task first = await Task.WhenAny(entered, probe)
+            .WaitAsync(ReadProbeObservationFuse, context.CancellationToken);
+        if (first == probe && !entered.IsCompletedSuccessfully)
+        {
+            await probe;
+            Assert.Fail("The native probe returned without entering its controlled read.");
+        }
+        await entered;
+    }
+
+    private async Task EndFailedReadProbeAsync<T>(
+        TaskCompletionSource<T> pendingRead,
+        Task probe,
+        Exception primary
+    )
+    {
+        pendingRead.TrySetCanceled();
+        try
+        {
+            _ = await Task.WhenAny(probe).WaitAsync(ReadProbeObservationFuse);
+            await probe;
+        }
+        catch (Exception secondary)
+        {
+            if (!ReferenceEquals(secondary, primary))
+            {
+                context.WriteLine("Secondary read-probe completion failure: {0}", secondary);
+            }
+        }
     }
 
     [TestMethod]
@@ -378,36 +444,171 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
 
 #pragma warning disable GHCP001 // Selected public typed history and accounting contracts.
     [TestMethod]
-    [DataRow("later-shutdown", "Original routine termination or accounting frontier is invalid")]
+    [DataRow(
+        "wrong-shutdown-start",
+        "Original routine termination or accounting frontier is invalid"
+    )]
+    [DataRow(
+        "shutdown-after-segment-end",
+        "Matching original routine native termination is missing"
+    )]
     [DataRow("error-shutdown", "Original routine termination or accounting frontier is invalid")]
-    [DataRow("frontier", "Original routine termination or accounting frontier is invalid")]
+    [DataRow(
+        "assistant-frontier",
+        "Original routine termination or accounting frontier is invalid"
+    )]
+    [DataRow("tool-frontier", "Original routine termination or accounting frontier is invalid")]
     [DataRow("blank-cursor", "Original native history is expired, incomplete or unsupported")]
     [DataRow("expired", "Original native history is expired, incomplete or unsupported")]
     [DataRow("incomplete", "Matching original routine native termination is missing")]
     [DataRow("reused-cursor", "Native history cursor was reused")]
     [DataRow("page-error", "Later typed history page failed")]
+    [DataRow(
+        "resumed-lifetime",
+        "A resumed session cannot substitute for the original native lifetime"
+    )]
+    [DataRow("later-work", "New native work followed the selected original termination")]
+    [DataRow(
+        "later-tool-receipt",
+        "Unproved coverage for an original tool usage receipt "
+        + "beyond the selected termination frontier"
+    )]
+    [DataRow(
+        "later-unmarked-tool-source",
+        "Unproved coverage for an original tool usage receipt "
+        + "beyond the selected termination frontier"
+    )]
+    [DataRow(
+        "later-tool-without-request",
+        "Unproved coverage for an original tool usage receipt "
+        + "beyond the selected termination frontier"
+    )]
+    [DataRow(
+        "later-missing-tool-accounting",
+        "Unproved coverage for an original tool usage receipt "
+        + "beyond the selected termination frontier"
+    )]
+    [DataRow(
+        "later-partial-tool-accounting",
+        "Unproved coverage for an original tool usage receipt "
+        + "beyond the selected termination frontier"
+    )]
     public async Task ReadOriginalShutdownTypedHistoryRejectsOneFaultAfterHealthyControl(
         string fault,
         string reason
     )
     {
         var (origin, history) = TypedOriginalHistory();
+        const string pendingToolCall = "typed-history-pending-tool-call";
+        bool laterReceipt = fault is "later-tool-receipt" or "later-unmarked-tool-source"
+            or "later-tool-without-request" or "later-missing-tool-accounting"
+            or "later-partial-tool-accounting";
+        var coveredTool = (ToolExecutionCompleteEvent)history[^2];
+        string[] cursors = ["snapshot/Aq", "r%2FQh", "keep+case:Jz", "tail/Us", "end:Kb"];
         OperationException pageFailure = new(
             "native_history_failed",
             "Later typed history page failed."
         );
-        Task<OriginalNativeShutdown> ReadAsync(string selection)
+        async Task<OriginalNativeShutdown> ReadAsync(string selection)
         {
             int nextPage = 0;
-            return NativeSdkSession.ReadOriginalShutdownAsync(
+            OriginalNativeShutdown shutdown = await NativeSdkSession.ReadOriginalShutdownAsync(
                 origin,
-                (_, token) =>
+                (cursor, token) =>
                 {
                     token.ThrowIfCancellationRequested();
                     int index = nextPage++;
+                    Assert.AreEqual(index == 0 ? null : cursors[index - 1], cursor);
                     if (selection == "page-error" && index == 1)
                     {
                         throw pageFailure;
+                    }
+                    SessionEvent[] events = index < history.Length ? [history[index]] : [];
+                    if (selection == "resumed-lifetime" && index == history.Length - 1)
+                    {
+                        events =
+                        [
+                            new SessionResumeEvent
+                            {
+                                Id = Guid.NewGuid(),
+                                Timestamp = history[index].Timestamp.AddMilliseconds(-1),
+                                Data = new()
+                                {
+                                    ResumeTime = history[index].Timestamp.AddMilliseconds(-1),
+                                    EventCount = index,
+                                },
+                            },
+                            history[index],
+                        ];
+                    }
+                    else if (laterReceipt && index == 1)
+                    {
+                        // Use durable starts instead of the live assistant usage DTO in this row.
+                        events =
+                        [
+                            TypedToolStart(history[index].Timestamp, coveredTool.Data.ToolCallId),
+                            TypedToolStart(
+                                history[index].Timestamp.AddMilliseconds(100), pendingToolCall
+                            ),
+                        ];
+                    }
+                    else if (laterReceipt && index == history.Length)
+                    {
+                        bool distinct = selection == fault;
+                        ToolExecutionUsage covered = coveredTool.Data.ToolUsage!;
+                        bool withoutRequest = fault == "later-tool-without-request";
+                        bool missingAccounting = fault == "later-missing-tool-accounting";
+                        bool partialAccounting = fault == "later-partial-tool-accounting";
+                        bool unmarkedSource = distinct && fault == "later-unmarked-tool-source";
+                        if (partialAccounting)
+                        {
+                            events =
+                            [
+                                TypedToolReceipt(
+                                    origin.SegmentEndTime.AddMilliseconds(-500),
+                                    pendingToolCall,
+                                    "typed-history-pending-operation",
+                                    distinct ? "" : "typed-history-pending-usage",
+                                    sequence: 5
+                                ),
+                            ];
+                        }
+                        else
+                        {
+                            events =
+                            [
+                                TypedToolReceipt(
+                                    origin.SegmentEndTime.AddMilliseconds(-500),
+                                    distinct ? pendingToolCall : coveredTool.Data.ToolCallId,
+                                    withoutRequest || (!distinct && fault == "later-tool-receipt")
+                                        ? ""
+                                        : distinct
+                                            ? "typed-history-pending-operation"
+                                            : covered.RequestId!,
+                                    distinct || withoutRequest
+                                        ? "typed-history-pending-usage"
+                                        : covered.Accounting!.UsageId,
+                                    sequence: (withoutRequest && !distinct) || unmarkedSource
+                                        ? 5 : 6,
+                                    source: unmarkedSource
+                                        ? "typed-history-unrepresented-source"
+                                        : ToolReceiptSource,
+                                    includeAccounting: !missingAccounting
+                                ),
+                            ];
+                        }
+                    }
+                    else if (selection == "later-work" && index == history.Length)
+                    {
+                        events =
+                        [
+                            new AssistantTurnStartEvent
+                            {
+                                Id = Guid.NewGuid(),
+                                Timestamp = origin.SegmentEndTime.AddMilliseconds(-500),
+                                Data = new() { TurnId = "typed-history-later-turn" },
+                            },
+                        ];
                     }
                     return Task.FromResult(
                         new EventsReadResult
@@ -418,17 +619,17 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
                             Cursor = selection == "blank-cursor" && index == history.Length
                                 ? ""
                                 : selection == "reused-cursor" && index > 0
-                                    ? "1"
-                                    : (index + 1).ToString(
-                                        System.Globalization.CultureInfo.InvariantCulture
-                                    ),
-                            Events = index < history.Length ? [history[index]] : [],
+                                    ? cursors[0]
+                                    : cursors[index],
+                            Events = events,
                             HasMore = selection != "incomplete" && index < history.Length,
                         }
                     );
                 },
                 context.CancellationToken
             );
+            Assert.AreEqual(cursors.Length, nextPage);
+            return shutdown;
         }
 
         OriginalNativeShutdown healthy = await ReadAsync("");
@@ -436,28 +637,36 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
         Assert.AreEqual(history[^1].Id, healthy.EventId);
         Assert.AreEqual(history[^1].Timestamp, healthy.Timestamp);
         Assert.AreEqual(3L, healthy.Watermarks[origin.SessionId]);
-        if (fault is "later-shutdown" or "error-shutdown" or "frontier")
+        Assert.AreEqual(5L, healthy.Watermarks[ToolReceiptSource]);
+        if (fault is "wrong-shutdown-start" or "shutdown-after-segment-end" or "error-shutdown"
+            or "assistant-frontier" or "tool-frontier")
         {
             var terminal = (SessionShutdownEvent)history[^1];
             Dictionary<string, long> marks = new(
                 terminal.Data.UsageAccountingWatermarks!,
                 StringComparer.Ordinal
             );
-            if (fault == "frontier")
+            if (fault == "assistant-frontier")
             {
                 marks[origin.SessionId] = 2;
+            }
+            else if (fault == "tool-frontier")
+            {
+                marks[ToolReceiptSource] = 4;
             }
             history[^1] = new SessionShutdownEvent
             {
                 Id = terminal.Id,
-                Timestamp = terminal.Timestamp,
+                Timestamp = fault == "shutdown-after-segment-end"
+                    ? origin.SegmentEndTime.AddMilliseconds(1)
+                    : terminal.Timestamp,
                 Data = new()
                 {
                     CodeChanges = terminal.Data.CodeChanges,
                     ModelMetrics = terminal.Data.ModelMetrics,
                     TotalApiDuration = terminal.Data.TotalApiDuration,
                     SessionStartTime = terminal.Data.SessionStartTime
-                        + (fault == "later-shutdown" ? 1 : 0),
+                        + (fault == "wrong-shutdown-start" ? 1 : 0),
                     ShutdownType = fault == "error-shutdown"
                         ? ShutdownType.Error
                         : terminal.Data.ShutdownType,
@@ -487,54 +696,77 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
     {
         var (origin, history) = TypedOriginalHistory();
         ManualScenarioClock clock = new();
-        long started = clock.GetTimestamp();
-        List<CancellationToken> pageTokens = [];
-        Task<NativeUsage> probe = NativeSdkSession.ReadProbeAsync(
-            async budget =>
+        TaskCompletionSource<(CancellationToken Token, Task<EventsReadResult> Read)> secondPage =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource<EventsReadResult> pendingPage = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        CancellationToken acquisitionToken = default;
+        CancellationToken firstPageToken = default;
+        bool persisted = false;
+
+        Task<EventsReadResult> ReadPage(string? cursor, CancellationToken token)
+        {
+            if (cursor is null)
             {
-                OriginalNativeShutdown original = await NativeSdkSession.ReadOriginalShutdownAsync(
-                    origin,
-                    (cursor, token) =>
+                firstPageToken = token;
+                clock.Advance(TimeSpan.FromSeconds(20));
+                return Task.FromResult(
+                    new EventsReadResult
                     {
-                        pageTokens.Add(token);
-                        int index = cursor is null ? 0 : 1;
-                        clock.Advance(TimeSpan.FromSeconds(index == 0 ? 20 : 11));
-                        token.ThrowIfCancellationRequested();
-                        return Task.FromResult(
-                            new EventsReadResult
-                            {
-                                CursorStatus = EventsCursorStatus.Ok,
-                                Cursor = (index + 1).ToString(
-                                    System.Globalization.CultureInfo.InvariantCulture
-                                ),
-                                Events = [history[index]],
-                                HasMore = true,
-                            }
-                        );
-                    },
-                    budget
+                        CursorStatus = EventsCursorStatus.Ok,
+                        Cursor = "second-page",
+                        Events = history,
+                        HasMore = true,
+                    }
                 );
-                return new NativeUsage(origin.SessionId, original.TotalNanoAiu, "complete", 3);
+            }
+
+            Assert.AreEqual("second-page", cursor);
+            Task<EventsReadResult> blocked = pendingPage.Task.WaitAsync(token);
+            secondPage.SetResult((token, blocked));
+            return blocked;
+        }
+
+        Task<OriginalNativeShutdown> probe = NativeSdkSession.ReadBoundedOriginalShutdownAsync(
+            origin,
+            token =>
+            {
+                acquisitionToken = token;
+                return Task.FromResult<NativeSdkSession.ReadOriginalHistoryPage>(ReadPage);
             },
-            context.CancellationToken,
-            () => "original history composition",
-            clock
+            (_, _) =>
+            {
+                persisted = true;
+                return Task.CompletedTask;
+            },
+            clock,
+            context.CancellationToken
         );
+        try
+        {
+            await ObserveReadProbeEntryAsync(secondPage.Task, probe);
+            var (secondPageToken, blocked) = await secondPage.Task;
+            Assert.AreEqual(acquisitionToken, firstPageToken);
+            Assert.AreEqual(firstPageToken, secondPageToken);
 
-        OperationException failure = await Assert.ThrowsExactlyAsync<OperationException>(
-            () => probe
-        );
+            clock.Advance(TimeSpan.FromSeconds(10) - TimeSpan.FromTicks(1));
+            Assert.IsFalse(blocked.IsCompleted);
+            clock.Advance(TimeSpan.FromTicks(1));
+            Assert.IsTrue(secondPageToken.IsCancellationRequested);
+            Assert.IsFalse(context.CancellationToken.IsCancellationRequested);
 
-        Assert.AreEqual("native_probe_failed", failure.Code);
-        Assert.AreEqual(
-            "Native original history composition query exceeded its 30-second deadline.",
-            failure.Message
-        );
-        Assert.HasCount(2, pageTokens);
-        Assert.AreEqual(pageTokens[0], pageTokens[1]);
-        Assert.IsTrue(pageTokens[0].IsCancellationRequested);
-        Assert.IsFalse(context.CancellationToken.IsCancellationRequested);
-        Assert.AreEqual(TimeSpan.FromSeconds(31), clock.GetElapsedTime(started));
+            _ = await Task.WhenAny(probe).WaitAsync(ReadProbeObservationFuse);
+            var failure = await Assert.ThrowsAsync<OperationCanceledException>(() => probe);
+            Assert.AreEqual(secondPageToken, failure.CancellationToken);
+            Assert.IsTrue(blocked.IsCanceled);
+            Assert.IsFalse(persisted);
+        }
+        catch (Exception primary)
+        {
+            await EndFailedReadProbeAsync(pendingPage, probe, primary);
+            throw;
+        }
     }
 
     private static (NativeRecoveryOrigin Origin, SessionEvent[] History) TypedOriginalHistory()
@@ -585,6 +817,13 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
                     },
                 },
             },
+            TypedToolReceipt(
+                segment.AddMilliseconds(2_500),
+                "typed-history-tool-call",
+                "typed-history-tool-operation",
+                "typed-history-tool-receipt",
+                sequence: 5
+            ),
             new SessionShutdownEvent
             {
                 Id = Guid.NewGuid(),
@@ -602,11 +841,61 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
                     SessionStartTime = start.ToUnixTimeMilliseconds(),
                     ShutdownType = ShutdownType.Routine,
                     TotalNanoAiu = 230_000_000_000d,
-                    UsageAccountingWatermarks = new Dictionary<string, long> { [session] = 3 },
+                    UsageAccountingWatermarks = new Dictionary<string, long>
+                    {
+                        [session] = 3,
+                        [ToolReceiptSource] = 5,
+                    },
                 },
             },
         ];
         return (origin, history);
+    }
+
+    private static ToolExecutionStartEvent TypedToolStart(
+        DateTimeOffset timestamp,
+        string callId
+    ) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Timestamp = timestamp,
+            Data = new() { ToolCallId = callId, ToolName = "typed-history-metered-tool" },
+        };
+
+    private static ToolExecutionCompleteEvent TypedToolReceipt(
+        DateTimeOffset timestamp,
+        string callId,
+        string requestId,
+        string usageId,
+        long sequence,
+        string source = ToolReceiptSource,
+        bool includeAccounting = true
+    )
+    {
+        const string toolModel = "typed-history-tool-model";
+        return new()
+        {
+            Id = Guid.NewGuid(),
+            Timestamp = timestamp,
+            Data = new()
+            {
+                ToolCallId = callId,
+                Success = true,
+                ToolUsage = new()
+                {
+                    Model = toolModel,
+                    RequestId = requestId,
+                    CopilotUsage = new() { Model = toolModel, TotalNanoAiu = 1_000_000_000 },
+                    Accounting = !includeAccounting ? null : new()
+                    {
+                        SourceSessionId = source,
+                        Sequence = sequence,
+                        UsageId = usageId,
+                    },
+                },
+            },
+        };
     }
 #pragma warning restore GHCP001
 
@@ -624,16 +913,29 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
     }
 
     [TestMethod]
-    public void NativeLimitUnrepresentableIntegerNeverRaisesAuthorizedCeiling()
+    public void NativeLimitOrdinaryCreditCeilingRoundsDownToBackedBinaryValue()
     {
-        double limit = NativeSdkSession.NativeLimit(9_007_199_254_740_993m);
+        const long unitsPerCredit = 1L << 46;
+        // 100.2 = 501/5 lies four fifths of a binary64 step above the backed value.
+        const long backedUnits = 501 * unitsPerCredit / 5;
 
-        Assert.AreEqual(9_007_199_254_740_992d, limit);
-        Assert.IsTrue((decimal)limit <= 9_007_199_254_740_993m);
+        double limit = NativeSdkSession.NativeLimit(100.2m);
+
+        Assert.AreEqual((double)backedUnits, limit * unitsPerCredit);
+    }
+
+    [TestMethod]
+    public void NativeLimitPreservesExactAndDownwardRoundedCeilings()
+    {
+        Assert.AreEqual(
+            9_007_199_254_740_992d,
+            NativeSdkSession.NativeLimit(9_007_199_254_740_993m)
+        );
         Assert.AreEqual(100.5d, NativeSdkSession.NativeLimit(100.5m));
     }
 
     [TestMethod]
+    [Timeout(5_000, CooperativeCancellation = true)]
     public async Task NativeUsageFencePendingCompactionRequiresMatchingTerminalBeforeRead()
     {
         NativeUsageFence fence = new();
@@ -666,6 +968,7 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
     [DataRow("wrong-attempt")]
     [DataRow("failed")]
     [DataRow("overlap")]
+    [Timeout(5_000, CooperativeCancellation = true)]
     public async Task NativeUsageFenceContradictoryCompactionPermanentlyRejectsCapture(
         string scenario
     )
@@ -857,50 +1160,91 @@ public sealed class TypedSessionGuardSpecs(TestContext context)
     [TestMethod]
     public async Task HandleExhaustedLimitAsyncRenewalAppliesAndVerifiesExactBackedCeiling()
     {
+        const decimal backedCeiling = 100.2m;
+        const long unitsPerCredit = 1L << 46;
+        const long backedUnits = 501 * unitsPerCredit / 5;
         string? appliedRequest = null;
         // Only the pinned typed exhausted-limit response needs experimental acknowledgement.
 #pragma warning disable GHCP001
         UISessionLimitsExhaustedResponse? applied = null;
 #pragma warning restore GHCP001
         decimal? verified = null;
+        TaskCompletionSource applyEntered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        TaskCompletionSource completeApply = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        Task applyOperation = Task.CompletedTask;
 
-        await NativeSdkSession.HandleExhaustedLimitAsync(
+        Task renewal = NativeSdkSession.HandleExhaustedLimitAsync(
             "request-17",
             token =>
             {
                 token.ThrowIfCancellationRequested();
-                return Task.FromResult(125.5m);
+                return Task.FromResult(backedCeiling);
             },
             (request, response, token) =>
             {
                 token.ThrowIfCancellationRequested();
                 appliedRequest = request;
                 applied = response;
-                return Task.CompletedTask;
+                applyOperation = completeApply.Task.WaitAsync(token);
+                applyEntered.TrySetResult();
+                return applyOperation;
             },
             (limit, token) =>
             {
                 token.ThrowIfCancellationRequested();
-                if (applied is null)
-                {
-                    throw new InvalidOperationException(
-                        "A ceiling must be applied before verification."
-                    );
-                }
-
+                Assert.IsTrue(
+                    applyOperation.IsCompletedSuccessfully,
+                    "The Set operation must complete before verification."
+                );
+                Assert.IsNotNull(applied);
                 verified = limit;
                 return Task.CompletedTask;
             },
             context.CancellationToken
         );
 
-        Assert.AreEqual("request-17", appliedRequest);
-        Assert.IsNotNull(applied);
+        Exception? primaryFailure = null;
+        try
+        {
+            await applyEntered.Task.WaitAsync(
+                TimeSpan.FromSeconds(5), context.CancellationToken
+            );
+            Assert.IsFalse(applyOperation.IsCompleted);
+            Assert.IsFalse(renewal.IsCompleted);
+            Assert.IsNotNull(applied);
+            completeApply.TrySetResult();
+            await renewal.WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken);
+
+            Assert.AreEqual("request-17", appliedRequest);
 #pragma warning disable GHCP001
-        Assert.AreEqual(UISessionLimitsExhaustedResponseAction.Set, applied.Action);
+            Assert.AreEqual(UISessionLimitsExhaustedResponseAction.Set, applied.Action);
 #pragma warning restore GHCP001
-        Assert.AreEqual<double?>(125.5d, applied.MaxAiCredits);
-        Assert.AreEqual<decimal?>(125.5m, verified);
+            Assert.AreEqual<double?>((double)backedUnits / unitsPerCredit, applied.MaxAiCredits);
+            Assert.AreEqual<decimal?>(backedCeiling, verified);
+        }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+            throw;
+        }
+        finally
+        {
+            completeApply.TrySetResult();
+            try
+            {
+                await Task.WhenAll(renewal, applyOperation).WaitAsync(
+                    TimeSpan.FromSeconds(5), CancellationToken.None
+                );
+            }
+            catch (Exception exception) when (primaryFailure is not null)
+            {
+                context.WriteLine("Exhausted-limit renewal join failed: " + exception);
+            }
+        }
     }
 
     [TestMethod]

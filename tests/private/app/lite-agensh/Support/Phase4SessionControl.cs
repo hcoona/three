@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text.Json.Nodes;
 using GitHub.Copilot;
 
@@ -8,11 +9,16 @@ namespace LiteAgensh.Tests.Support;
 // No native client, transport, model or historical recovery is implemented here.
 internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
 {
+    private static readonly TimeSpan HeldFactoryBound = TimeSpan.FromSeconds(5);
     private readonly TaskCompletionSource release = Signal();
     private OwnedChildControl? child;
     private Process? process;
     private ProcessRunner? processes;
     private bool settled;
+    private CancellationTokenSource? heldFactoryIo;
+    private Task<HeldOutcome>? heldFactoryOutcome;
+    private bool heldFactoryObservedByCase;
+    private bool heldFactoryWaitExpired;
 
     internal Phase4SessionControl(
         TypedHostControl? state = null,
@@ -48,6 +54,10 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
     internal bool ReportSettlement { get; init; }
 
     internal OperationException? HostFailure { get; set; }
+
+    internal Func<HostStopEntry>? ReadStopAtHostEntry { get; set; }
+
+    internal HostStopEntry? StopAtHostEntry { get; private set; }
 
     internal bool FailExactOpen { get; set; }
 
@@ -99,9 +109,44 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
         ReportSettlementBoundary(signalled ? "release-signalled" : "release-already-signalled");
     }
 
+    internal void BeginHeldFactoryCompletion()
+    {
+        if (heldFactoryIo is not null)
+        {
+            throw new InvalidOperationException("The held Phase4 factory already has an owner.");
+        }
+        heldFactoryIo = new();
+        heldFactoryOutcome = ObserveOutcomeAsync(Factory.CompleteAsync());
+    }
+
+    internal async Task AwaitHeldFactoryAsync(CancellationToken token)
+    {
+        ReleaseHost();
+        HeldOutcome outcome;
+        try
+        {
+            outcome = await heldFactoryOutcome!
+                .WaitAsync(HeldFactoryBound, token)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException bound)
+        {
+            heldFactoryWaitExpired = true;
+            throw new TimeoutException(
+                $"Timed out observing the original Phase4 factory for runtime {Id}.", bound
+            );
+        }
+        heldFactoryObservedByCase = true;
+        if (outcome.Error is { } error)
+        {
+            ExceptionDispatchInfo.Capture(error).Throw();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         // The factory invokes this boundary after its worker stop attempts.
+        StopAtHostEntry ??= ReadStopAtHostEntry?.Invoke();
         HostEntered.TrySetResult();
         ReportSettlementBoundary("host-entered");
         if (HoldHost)
@@ -125,11 +170,14 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
         }
         if (!settled && child is not null)
         {
-            await child.ReleaseAsync(CancellationToken.None).ConfigureAwait(false);
-            await process!
-                .WaitForExitAsync(CancellationToken.None)
-                .WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
+            using CancellationTokenSource exit = CancellationTokenSource.CreateLinkedTokenSource(
+                heldFactoryIo?.Token ?? CancellationToken.None
+            );
+            exit.CancelAfter(HeldFactoryBound);
+            await child
+                .ReleaseAsync(exit.Token)
                 .ConfigureAwait(false);
+            await process!.WaitForExitAsync(exit.Token).ConfigureAwait(false);
             ReportSettlementBoundary("runtime-exit-observed");
             if (process.ExitCode != 0)
             {
@@ -147,6 +195,177 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
     internal async Task CleanupAsync(bool preserveState = false)
     {
         ReleaseHost();
+        await DisposeOwnedResourcesAsync(preserveState).ConfigureAwait(false);
+    }
+
+    internal async Task CleanupHeldFactoryAsync(
+        Exception? primary,
+        Action<string> report,
+        Action<TaskStatus?>? captureSettlement = null,
+        bool reportRootCleanup = false
+    )
+    {
+        List<Exception> failures = [];
+        if (!release.Task.IsCompletedSuccessfully)
+        {
+            Attempt(failures, ReleaseHost);
+        }
+
+        Task<HeldOutcome>? ioCancellation = null;
+        TimeoutException? unresolved = null;
+        string root = State.Cwd(string.Empty);
+        if (heldFactoryOutcome is { } factory)
+        {
+            if (heldFactoryWaitExpired && !factory.IsCompleted)
+            {
+                ioCancellation = CancelHeldFactoryIo();
+            }
+            try
+            {
+                Task outcomes =
+                    ioCancellation is null ? factory : Task.WhenAll(factory, ioCancellation);
+                await outcomes.WaitAsync(HeldFactoryBound, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException bound)
+            {
+                unresolved = new(
+                    $"Phase4 factory or I/O cancellation missed the cleanup bound "
+                        + $"for runtime {Id}, lease {LeaseId}. "
+                        + $"The full owned scope is retained (root: {root}) "
+                        + "pending terminal cleanup.",
+                    bound
+                );
+                failures.Add(unresolved);
+                Task<HeldOutcome> stop = ioCancellation ?? CancelHeldFactoryIo();
+                Attempt(failures, () => captureSettlement?.Invoke(null));
+                // Transfer the entire fixture, not just its files. The deferred owner reports
+                // terminal cleanup without using the case's TestContext after it unwinds.
+                unresolved.Data["Phase4FactoryOutcome"] = factory;
+                unresolved.Data["Phase4IoCancellationOutcome"] = stop;
+                unresolved.Data["Phase4DeferredCleanup"] = FinishHeldScopeAsync(
+                    stop, deferred: true);
+            }
+        }
+
+        if (unresolved is null)
+        {
+            failures.AddRange(
+                await FinishHeldScopeAsync(ioCancellation, captureSettlement).ConfigureAwait(false)
+            );
+            if (reportRootCleanup)
+            {
+                Attempt(failures, () =>
+                    report($"Phase4ManagedCleanup: {root}; exists={Directory.Exists(root)}")
+                );
+            }
+        }
+        failures.RemoveAll(error => ReferenceEquals(primary, error));
+        if (failures.Count == 0)
+        {
+            return;
+        }
+        if (primary is null)
+        {
+            if (failures.Count == 1)
+            {
+                ExceptionDispatchInfo.Capture(failures[0]).Throw();
+            }
+            throw new AggregateException("Phase4 fixture teardown failed.", failures);
+        }
+        foreach (Exception error in failures.ToArray())
+        {
+            Attempt(failures, () => report($"Secondary Phase4 teardown failure: {error}"));
+        }
+        primary.Data["Phase4CleanupFailures"] = failures.ToArray();
+    }
+
+    private Task<HeldOutcome> CancelHeldFactoryIo() =>
+        ObserveOutcomeAsync(heldFactoryIo!.CancelAsync());
+
+    private async Task<List<Exception>> FinishHeldScopeAsync(
+        Task<HeldOutcome>? ioCancellation,
+        Action<TaskStatus?>? captureSettlement = null,
+        bool deferred = false
+    )
+    {
+        // A terminal result racing a timeout must not make the handoff run disposal inline.
+        HeldOutcome? outcome = heldFactoryOutcome is { } factory
+            ? await factory.ConfigureAwait(
+                deferred ? ConfigureAwaitOptions.ForceYielding : ConfigureAwaitOptions.None
+            )
+            : null;
+        List<Exception> failures = [];
+        if (!heldFactoryObservedByCase && outcome?.Error is { } factoryError)
+        {
+            failures.Add(factoryError);
+        }
+        if (
+            ioCancellation is not null
+            && (await ioCancellation.ConfigureAwait(false)).Error is { } cancellationError
+        )
+        {
+            failures.Add(cancellationError);
+        }
+        Attempt(failures, () => captureSettlement?.Invoke(outcome?.Status));
+        try
+        {
+            await DisposeOwnedResourcesAsync(preserveState: false).ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+        Attempt(failures, () => heldFactoryIo?.Dispose());
+
+        if (deferred)
+        {
+            Attempt(failures, () =>
+            {
+                string root = State.Cwd(string.Empty);
+                Console.Error.WriteLine(
+                    $"PHASE4_DEFERRED_CLEANUP runtime={Id}; factoryStatus={outcome?.Status}; "
+                        + $"root={root}; exists={Directory.Exists(root)}; failures={failures.Count}"
+                );
+                foreach (Exception error in failures)
+                {
+                    Console.Error.WriteLine(
+                        $"PHASE4_DEFERRED_CLEANUP_FAILURE runtime={Id}; {error}");
+                }
+            });
+        }
+        return failures;
+    }
+
+    private static void Attempt(List<Exception> failures, Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+    }
+
+    private static async Task<HeldOutcome> ObserveOutcomeAsync(Task operation)
+    {
+        try
+        {
+            await operation.ConfigureAwait(false);
+            return new(operation.Status, null);
+        }
+        catch (Exception error)
+        {
+            return new(operation.Status, error);
+        }
+    }
+
+    private readonly record struct HeldOutcome(TaskStatus Status, Exception? Error);
+
+    private async Task DisposeOwnedResourcesAsync(bool preserveState)
+    {
         if (child is not null)
         {
             await child.DisposeAsync().ConfigureAwait(false);
@@ -196,6 +415,12 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
     internal static TaskCompletionSource Signal() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    internal sealed record HostStopEntry(
+        bool SessionClosed,
+        string? WorkerLifecycle,
+        CreditReservation Reservation
+    );
+
     internal sealed class Session(
         Phase4SessionControl host,
         TypedHostControl.TypedSession inner,
@@ -207,6 +432,7 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
         private NativeUsage? usage;
         private string? worker;
         private decimal? limit;
+        private Task? abort;
 
         public string SessionId => inner.SessionId;
 
@@ -221,6 +447,10 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
         internal TypedHostControl.TypedSession Guard => inner;
 
         internal bool Closed { get; private set; }
+
+        internal TaskCompletionSource AbortEntered { get; } = Signal();
+
+        internal Task? AbortWait { get; set; }
 
         internal string? OpenedWorker => worker;
 
@@ -237,6 +467,8 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
 
         internal double TurnNanoAiu { get; set; } = 7_250_000_000;
 
+        internal NativeUsage? UsageOnLimitUpdate { get; set; }
+
         internal OperationException? StopFailure { get; set; }
 
         internal bool HoldSend { get; set; }
@@ -247,9 +479,15 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
 
         internal TaskCompletionSource SendEntered { get; } = Signal();
 
-        internal TaskCompletionSource FenceEntered { get; private set; } = Signal();
+        internal Func<long>? ReadDispatchAtSendEntry { get; set; }
 
-        internal Task ArmFence() => (FenceEntered = Signal()).Task;
+        internal List<long> DispatchesAtSendEntry { get; } = [];
+
+        internal TaskCompletionSource<bool> FenceEntered { get; private set; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal Task<bool> ArmFence() =>
+            (FenceEntered = new(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
 
         internal TaskCompletionSource SendRelease { get; } = Signal();
 
@@ -344,6 +582,7 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
                 .UpdateLimitAsync(expectedSession, cap, cancellationToken)
                 .ConfigureAwait(false);
             limit = cap;
+            usage = UsageOnLimitUpdate ?? usage;
             return await ReadAsync(expectedSession, cap, cancellationToken).ConfigureAwait(false);
         }
 
@@ -355,13 +594,14 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
             bool verifyLocalWork = false
         )
         {
+            bool abortCompletedAtEntry = abort?.IsCompletedSuccessfully == true;
             Task<NativeUsage> captured = fence.CaptureAsync(
                 token => ReadAsync(expectedSession, expectedLimit, token, validateEvents),
                 cancellationToken
             );
             // CaptureAsync has synchronously reached its read/wait boundary.
             // This signal is explicit dependency entry, not an incomplete-task oracle.
-            FenceEntered.TrySetResult();
+            FenceEntered.TrySetResult(abortCompletedAtEntry);
             return captured;
         }
 
@@ -378,6 +618,10 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
             WorkAdmission? admission = null
         )
         {
+            if (ReadDispatchAtSendEntry is { } read)
+            {
+                DispatchesAtSendEntry.Add(read());
+            }
             SendEntered.TrySetResult();
             if (HoldSend)
             {
@@ -399,10 +643,21 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
             };
         }
 
-        public Task AbortAsync(CancellationToken cancellationToken)
+        public Task AbortAsync(CancellationToken cancellationToken) =>
+            abort = AbortCoreAsync(cancellationToken);
+
+        private async Task AbortCoreAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return StopFailure is null ? Task.CompletedTask : Task.FromException(StopFailure);
+            if (StopFailure is { } failure)
+            {
+                throw failure;
+            }
+            AbortEntered.TrySetResult();
+            if (AbortWait is { } wait)
+            {
+                await wait.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
 
         public void Quiesce() { }

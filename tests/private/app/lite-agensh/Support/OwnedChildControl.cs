@@ -200,7 +200,7 @@ internal sealed class OwnedChildControl : IAsyncDisposable
             );
     }
 
-    // Only the product-owned held-check producer uses this prelaunch-aware path.
+    // Product-owned launches use this prelaunch-aware path instead of direct fixture startup.
     // The caller supplies its case-entry deadline, not merely an unbounded host token.
     internal async Task<OwnedChildIdentity> ReadReadyAsync(
         Task producer,
@@ -489,9 +489,9 @@ internal sealed class OwnedChildControl : IAsyncDisposable
             }
             try
             {
+                using CancellationTokenSource exit = new(TimeSpan.FromSeconds(5));
                 await directProcess
-                    .WaitForExitAsync(CancellationToken.None)
-                    .WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
+                    .WaitForExitAsync(exit.Token)
                     .ConfigureAwait(false);
                 exitObserved = directProcess.HasExited;
                 ObservedExitCode = directProcess.ExitCode;

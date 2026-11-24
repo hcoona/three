@@ -30,9 +30,7 @@ public sealed class DispatchCancellationSpecs(TestContext context)
     )
     {
         Phase4SessionControl host = new() { HoldHost = true };
-        Task? completion = null;
         Exception? primaryFailure = null;
-        bool completionObserved = false;
         try
         {
             await host.StartOwnedRuntimeAsync(context.CancellationToken);
@@ -66,35 +64,25 @@ public sealed class DispatchCancellationSpecs(TestContext context)
                 )
             );
 
-            completion = host.Factory.CompleteAsync();
-            try
-            {
-                await host.HostEntered.Task.WaitAsync(
-                    TimeSpan.FromSeconds(5),
-                    context.CancellationToken
-                );
-                Assert.IsTrue(host.Sessions.All(session => session.Closed));
-                Assert.AreEqual(
-                    "stopped",
-                    host.State.Database.ReadMetadata("worker:worker1:lifecycle")
-                );
-                Assert.AreEqual("active", host.State.Read(own).State);
-                Assert.IsTrue(host.State.Read(own).GrantOpen);
-                Assert.IsNull(host.State.Read(own).Actual);
-                Assert.AreEqual(7.25m, host.State.Read(peer).Actual);
-                Assert.IsTrue(host.State.Read(peer).GrantOpen);
-                Assert.AreEqual(
-                    192.75m,
-                    host.State.Accounting["outstandingAuthorization"]!.GetValue<decimal>()
-                );
-                Assert.AreEqual("running", LeaseState(host));
-            }
-            finally
-            {
-                host.ReleaseHost();
-            }
-            await completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
-            completionObserved = true;
+            host.BeginHeldFactoryCompletion();
+            await host.HostEntered.Task.WaitAsync(
+                TimeSpan.FromSeconds(5), context.CancellationToken);
+            Assert.IsTrue(host.Sessions.All(session => session.Closed));
+            Assert.AreEqual(
+                "stopped",
+                host.State.Database.ReadMetadata("worker:worker1:lifecycle")
+            );
+            Assert.AreEqual("active", host.State.Read(own).State);
+            Assert.IsTrue(host.State.Read(own).GrantOpen);
+            Assert.IsNull(host.State.Read(own).Actual);
+            Assert.AreEqual(7.25m, host.State.Read(peer).Actual);
+            Assert.IsTrue(host.State.Read(peer).GrantOpen);
+            Assert.AreEqual(
+                192.75m,
+                host.State.Accounting["outstandingAuthorization"]!.GetValue<decimal>()
+            );
+            Assert.AreEqual("running", LeaseState(host));
+            await host.AwaitHeldFactoryAsync(context.CancellationToken);
 
             Assert.AreEqual("exited", LeaseState(host));
             JsonObject runtime = JsonNode
@@ -135,58 +123,12 @@ public sealed class DispatchCancellationSpecs(TestContext context)
         catch (Exception exception)
         {
             primaryFailure = exception;
+            throw;
         }
         finally
         {
-            host.ReleaseHost();
-            try
-            {
-                if (completion is not null && !completionObserved)
-                {
-                    await completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
-                }
-            }
-            catch (Exception exception)
-            {
-                if (primaryFailure is null)
-                {
-                    primaryFailure = exception;
-                }
-                else
-                {
-                    context.WriteLine("Secondary factory completion failure: {0}", exception);
-                }
-            }
-            finally
-            {
-                bool preserveState = completion is { IsCompleted: false };
-                if (preserveState)
-                {
-                    context.WriteLine(
-                        "Retained state for pending factory completion: {0}",
-                        host.State.Cwd(string.Empty)
-                    );
-                }
-                try
-                {
-                    await host.CleanupAsync(preserveState);
-                }
-                catch (Exception exception)
-                {
-                    if (primaryFailure is null)
-                    {
-                        primaryFailure = exception;
-                    }
-                    else
-                    {
-                        context.WriteLine("Secondary fixture cleanup failure: {0}", exception);
-                    }
-                }
-            }
-        }
-        if (primaryFailure is not null)
-        {
-            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(primaryFailure).Throw();
+            await host.CleanupHeldFactoryAsync(
+                primaryFailure, message => context.WriteLine(message));
         }
     }
 
@@ -333,7 +275,11 @@ public sealed class DispatchCancellationSpecs(TestContext context)
     )
     {
         Phase4SessionControl host = new();
-        using CancellationTokenSource cancellation = new();
+        using CancellationTokenSource cancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+        Task<JsonObject>? send = null;
+        Exception? primaryFailure = null;
+        bool sendObserved = false;
         try
         {
             CreditReservation own = host.Reserve("worker1");
@@ -347,14 +293,25 @@ public sealed class DispatchCancellationSpecs(TestContext context)
                 context.CancellationToken
             );
             host.Sessions[0].HoldSend = racing;
-            Task<JsonObject> send = one.PromptAsync("An actual paid intent.", cancellation.Token);
-            await host.Sessions[0]
-                .SendEntered.Task.WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken);
+            Task entered = host.Sessions[0].SendEntered.Task;
+            send = one.PromptAsync("An actual paid intent.", cancellation.Token);
+            if (
+                await Task.WhenAny(entered, send)
+                    .WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken) == send
+            )
+            {
+                await send;
+                Assert.Fail("The prompt returned before entering its controlled send.");
+            }
+            await entered;
             if (racing)
             {
                 await cancellation.CancelAsync();
                 OperationCanceledException original =
-                    await Assert.ThrowsAsync<OperationCanceledException>(() => send);
+                    await Assert.ThrowsAsync<OperationCanceledException>(() =>
+                        send.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
+                    );
+                sendObserved = true;
                 Assert.IsTrue(original.CancellationToken.IsCancellationRequested);
                 OperationException settlement = await Assert.ThrowsExactlyAsync<OperationException>(
                     host.Factory.CompleteAsync
@@ -370,6 +327,7 @@ public sealed class DispatchCancellationSpecs(TestContext context)
             else
             {
                 await send;
+                sendObserved = true;
                 await host.Factory.CompleteAsync();
                 Assert.AreEqual("reconciled", host.State.Read(own).State);
                 Assert.AreEqual(7.25m, host.State.Read(own).Actual);
@@ -393,10 +351,48 @@ public sealed class DispatchCancellationSpecs(TestContext context)
                 .Single(row => row["reservationId"]!.GetValue<string>() == own.Id);
             Assert.AreEqual(1L, ownReport["dispatches"]!.GetValue<long>());
         }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+            throw;
+        }
         finally
         {
-            host.Sessions.FirstOrDefault()?.SendRelease.TrySetResult();
-            await host.CleanupAsync();
+            try
+            {
+                if (send is not null && !sendObserved)
+                {
+                    await cancellation.CancelAsync();
+                    host.Sessions.FirstOrDefault()?.SendRelease.TrySetCanceled(cancellation.Token);
+                    await send.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+                }
+            }
+            catch (Exception exception) when (primaryFailure is not null || sendObserved)
+            {
+                if (!sendObserved)
+                {
+                    context.WriteLine("Secondary prompt completion failure: {0}", exception);
+                }
+            }
+            finally
+            {
+                bool preserveState = send is { IsCompleted: false };
+                if (preserveState)
+                {
+                    context.WriteLine(
+                        "Retained state for pending prompt: {0}",
+                        host.State.Cwd(string.Empty)
+                    );
+                }
+                try
+                {
+                    await host.CleanupAsync(preserveState);
+                }
+                catch (Exception exception) when (primaryFailure is not null)
+                {
+                    context.WriteLine("Secondary fixture cleanup failure: {0}", exception);
+                }
+            }
         }
     }
 
@@ -411,9 +407,7 @@ public sealed class DispatchCancellationSpecs(TestContext context)
     )
     {
         Phase4SessionControl host = new() { HoldHost = true };
-        Task? completion = null;
         Exception? primaryFailure = null;
-        bool completionObserved = false;
         try
         {
             await host.StartOwnedRuntimeAsync(context.CancellationToken);
@@ -424,14 +418,11 @@ public sealed class DispatchCancellationSpecs(TestContext context)
             await one.StartAsync(host.State.Cwd("worker1"), null, context.CancellationToken);
             await two.StartAsync(host.State.Cwd("worker2"), null, context.CancellationToken);
             await two.PromptAsync("Binding rejection must preserve me.", context.CancellationToken);
-            completion = host.Factory.CompleteAsync();
-            try
+            host.BeginHeldFactoryCompletion();
+            await host.HostEntered.Task.WaitAsync(
+                TimeSpan.FromSeconds(5), context.CancellationToken);
+            using (SqliteConnection connection = host.State.Database.Open())
             {
-                await host.HostEntered.Task.WaitAsync(
-                    TimeSpan.FromSeconds(5),
-                    context.CancellationToken
-                );
-                using SqliteConnection connection = host.State.Database.Open();
                 switch (scenario)
                 {
                     case "missing-association":
@@ -445,15 +436,16 @@ public sealed class DispatchCancellationSpecs(TestContext context)
                     case "reused-session":
                         Sql.Execute(
                             connection,
-                            (
-                                "INSERT INTO native_sessions(\n    "
-                                + "reservation_id,worker,session_id,recovery,initialize_json,c"
-                                + "reated_at)\nSELECT reservation_id,worker,session_id,recover"
-                                + "y,initialize_json,created_at\nFROM native_sessions WHERE "
-                                + "reservation_id=$id;"
-                            ),
+                            """
+                            INSERT INTO native_sessions(
+                                reservation_id,worker,session_id,recovery,initialize_json,
+                                created_at)
+                            SELECT $other,worker,session_id,recovery,initialize_json,created_at
+                            FROM native_sessions WHERE reservation_id=$id;
+                            """,
                             null,
-                            ("$id", own.Id)
+                            ("$id", own.Id),
+                            ("$other", peer.Id)
                         );
                         break;
                     case "missing-lineage":
@@ -474,14 +466,7 @@ public sealed class DispatchCancellationSpecs(TestContext context)
                         throw new ArgumentOutOfRangeException(nameof(scenario));
                 }
             }
-            finally
-            {
-                host.ReleaseHost();
-            }
-            OperationException error = await Assert.ThrowsExactlyAsync<OperationException>(() =>
-                completion
-            );
-            completionObserved = true;
+            OperationException error = await AwaitHeldFactoryRejectionAsync(host);
             Assert.AreEqual("credit_or_ownership_unknown", error.Code);
             Assert.Contains(
                 scenario switch
@@ -493,7 +478,8 @@ public sealed class DispatchCancellationSpecs(TestContext context)
                         ),
                     "unsettled-ownership" => "Controlled owned-runtime stop failed.",
                     "missing-association" => "A required native association is missing.",
-                    "reused-session" => "A required native association is not unique.",
+                    "reused-session" =>
+                        "Fresh native associations are missing, reused or contradictory.",
                     _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
                 },
                 error.Message
@@ -516,55 +502,8 @@ public sealed class DispatchCancellationSpecs(TestContext context)
         }
         finally
         {
-            host.ReleaseHost();
-            try
-            {
-                if (completion is not null)
-                {
-                    try
-                    {
-                        await completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
-                    }
-                    catch (Exception) when (completionObserved)
-                    {
-                        // The body already asserted this terminal settlement failure.
-                    }
-                }
-            }
-            catch (Exception exception)
-            {
-                if (primaryFailure is null)
-                {
-                    primaryFailure = exception;
-                }
-                else
-                {
-                    context.WriteLine("Secondary factory completion failure: {0}", exception);
-                }
-            }
-            finally
-            {
-                bool preserveState = completion is { IsCompleted: false };
-                if (preserveState)
-                {
-                    context.WriteLine(
-                        "Retained state for pending factory completion: {0}",
-                        host.State.Cwd(string.Empty)
-                    );
-                }
-                try
-                {
-                    await host.CleanupAsync(preserveState);
-                }
-                catch (Exception exception) when (primaryFailure is not null)
-                {
-                    context.WriteLine("Secondary fixture cleanup failure: {0}", exception);
-                }
-            }
-        }
-        if (primaryFailure is not null)
-        {
-            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(primaryFailure).Throw();
+            await host.CleanupHeldFactoryAsync(
+                primaryFailure, message => context.WriteLine(message));
         }
     }
 
@@ -583,9 +522,7 @@ public sealed class DispatchCancellationSpecs(TestContext context)
             HoldHost = true,
             ReportSettlement = scenario == "fresh-stop",
         };
-        Task? completion = null;
         Exception? primaryFailure = null;
-        bool completionObserved = false;
         string scratchRoot = host.State.Cwd(string.Empty);
         OperationException original = new(
             "controlled_fresh_stop",
@@ -627,145 +564,125 @@ public sealed class DispatchCancellationSpecs(TestContext context)
                     host.Id
                 );
             }
-            completion = host.Factory.CompleteAsync();
-            OperationException? failure = null;
-            try
-            {
-                await host.HostEntered.Task.WaitAsync(
-                    TimeSpan.FromSeconds(5),
-                    context.CancellationToken
-                );
-                Assert.IsTrue(host.Sessions.All(session => session.Closed));
-                Assert.AreEqual("running", LeaseState(host));
-                Assert.AreEqual(
-                    (long)host.ReadyIdentity.Pid,
-                    host.State.RunValue(
-                        "SELECT pid FROM process_leases WHERE kind=$id;",
-                        "native:runtime:" + host.Id
-                    )
-                );
-                Assert.AreEqual(
-                    host.ReadyIdentity.BirthTicks,
-                    host.State.RunValue(
-                        "SELECT start_ticks FROM process_leases WHERE kind=$id;",
-                        "native:runtime:" + host.Id
-                    )
-                );
-                Assert.IsTrue(host.State.Read(own).GrantOpen);
-                Assert.IsNull(host.State.Read(own).Actual);
-                Assert.AreEqual(100m, host.State.Read(own).Allowance);
-                Assert.AreEqual(7.25m, host.State.Read(peer).Actual);
-                Assert.IsEmpty(host.State.Accounting["cancellations"]!.AsArray());
-                string key = $"native:runtime:{host.Id}:session:{own.SessionId}";
-                JsonObject binding = JsonNode
-                    .Parse(host.State.Database.ReadMetadata(key)!)!
-                    .AsObject();
-                Assert.AreEqual(host.Id, binding["runtimeId"]!.GetValue<string>());
-                Assert.AreEqual(host.LeaseId, binding["runtimeLeaseId"]!.GetValue<long>());
-                Assert.AreEqual(own.SessionId, binding["sessionId"]!.GetValue<string>());
-                Assert.AreEqual(own.Worker, binding["worker"]!.GetValue<string>());
-                Assert.AreEqual(cwd, binding["workingDirectory"]!.GetValue<string>());
-                JsonObject diagnostic = JsonNode
-                    .Parse(host.State.Database.ReadMetadata($"native:session:{own.SessionId}")!)!
-                    .AsObject();
-                Assert.AreEqual(own.SessionId, diagnostic["sessionId"]!.GetValue<string>());
-                Assert.AreEqual(host.Id, diagnostic["runtimeId"]!.GetValue<string>());
-                Assert.AreEqual(host.LeaseId, diagnostic["runtimeLeaseId"]!.GetValue<long>());
-                Assert.AreEqual(cwd, diagnostic["workingDirectory"]!.GetValue<string>());
-                Assert.AreEqual("0", diagnostic["reportedNanoAiu"]!.GetValue<string>());
-                Assert.IsNull(diagnostic["aiCreditsStatus"]);
-                Assert.AreEqual(0L, diagnostic["totalUserRequests"]!.GetValue<long>());
-                Assert.AreEqual(
-                    0L,
-                    Sql.Scalar(
-                        ledger,
-                        "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
-                        null,
-                        ("$id", own.Id)
-                    )
-                );
-                Assert.AreEqual(
-                    0L,
-                    Sql.Scalar(
-                        ledger,
-                        "SELECT reported_requests FROM credit_sdk_usage WHERE reservation_id=$id;",
-                        null,
-                        ("$id", own.Id)
-                    )
-                );
-                context.WriteLine(
-                    $"Phase4FreshRejectionBaseline: {new JsonObject
-                    {
-                        ["scenario"] = scenario,
-                        ["runId"] = host.State.Database.RunId,
-                        ["reservationId"] = own.Id,
-                        ["pid"] = host.ReadyIdentity.Pid,
-                        ["birthTicks"] = host.ReadyIdentity.BirthTicks,
-                        ["binding"] = binding.DeepClone(),
-                        ["diagnostic"] = diagnostic,
-                        ["scratchRoot"] = scratchRoot,
-                    }.ToJsonString()}"
-                );
-                if (scenario != "fresh-stop")
+            host.BeginHeldFactoryCompletion();
+            await host.HostEntered.Task.WaitAsync(
+                TimeSpan.FromSeconds(5), context.CancellationToken);
+            Assert.IsTrue(host.Sessions.All(session => session.Closed));
+            Assert.AreEqual("running", LeaseState(host));
+            Assert.AreEqual(
+                (long)host.ReadyIdentity.Pid,
+                host.State.RunValue(
+                    "SELECT pid FROM process_leases WHERE kind=$id;",
+                    "native:runtime:" + host.Id
+                )
+            );
+            Assert.AreEqual(
+                host.ReadyIdentity.BirthTicks,
+                host.State.RunValue(
+                    "SELECT start_ticks FROM process_leases WHERE kind=$id;",
+                    "native:runtime:" + host.Id
+                )
+            );
+            Assert.IsTrue(host.State.Read(own).GrantOpen);
+            Assert.IsNull(host.State.Read(own).Actual);
+            Assert.AreEqual(100m, host.State.Read(own).Allowance);
+            Assert.AreEqual(7.25m, host.State.Read(peer).Actual);
+            Assert.IsEmpty(host.State.Accounting["cancellations"]!.AsArray());
+            string key = $"native:runtime:{host.Id}:session:{own.SessionId}";
+            JsonObject binding = JsonNode
+                .Parse(host.State.Database.ReadMetadata(key)!)!
+                .AsObject();
+            Assert.AreEqual(host.Id, binding["runtimeId"]!.GetValue<string>());
+            Assert.AreEqual(host.LeaseId, binding["runtimeLeaseId"]!.GetValue<long>());
+            Assert.AreEqual(own.SessionId, binding["sessionId"]!.GetValue<string>());
+            Assert.AreEqual(own.Worker, binding["worker"]!.GetValue<string>());
+            Assert.AreEqual(cwd, binding["workingDirectory"]!.GetValue<string>());
+            JsonObject diagnostic = JsonNode
+                .Parse(host.State.Database.ReadMetadata($"native:session:{own.SessionId}")!)!
+                .AsObject();
+            Assert.AreEqual(own.SessionId, diagnostic["sessionId"]!.GetValue<string>());
+            Assert.AreEqual(host.Id, diagnostic["runtimeId"]!.GetValue<string>());
+            Assert.AreEqual(host.LeaseId, diagnostic["runtimeLeaseId"]!.GetValue<long>());
+            Assert.AreEqual(cwd, diagnostic["workingDirectory"]!.GetValue<string>());
+            Assert.AreEqual("0", diagnostic["reportedNanoAiu"]!.GetValue<string>());
+            Assert.IsNull(diagnostic["aiCreditsStatus"]);
+            Assert.AreEqual(0L, diagnostic["totalUserRequests"]!.GetValue<long>());
+            Assert.AreEqual(
+                0L,
+                Sql.Scalar(
+                    ledger,
+                    "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
+                    null,
+                    ("$id", own.Id)
+                )
+            );
+            Assert.AreEqual(
+                0L,
+                Sql.Scalar(
+                    ledger,
+                    "SELECT reported_requests FROM credit_sdk_usage WHERE reservation_id=$id;",
+                    null,
+                    ("$id", own.Id)
+                )
+            );
+            context.WriteLine(
+                $"Phase4FreshRejectionBaseline: {new JsonObject
                 {
+                    ["scenario"] = scenario,
+                    ["runId"] = host.State.Database.RunId,
+                    ["reservationId"] = own.Id,
+                    ["pid"] = host.ReadyIdentity.Pid,
+                    ["birthTicks"] = host.ReadyIdentity.BirthTicks,
+                    ["binding"] = binding.DeepClone(),
+                    ["diagnostic"] = diagnostic,
+                    ["scratchRoot"] = scratchRoot,
+                }.ToJsonString()}"
+            );
+            if (scenario != "fresh-stop")
+            {
+                Assert.AreEqual(
+                    "stopped",
+                    host.State.Database.ReadMetadata("worker:worker1:lifecycle")
+                );
+            }
+            switch (scenario)
+            {
+                case "runtime-binding":
+                    binding["runtimeId"] = "contradictory-serialized-runtime";
+                    break;
+                case "lease-binding":
+                    // A negative absent-lease binding, not a fabricated positive lease.
+                    binding["runtimeLeaseId"] = 0L;
+                    break;
+                case "cwd-binding":
+                    binding["workingDirectory"] = host.State.Cwd("contradictory-cwd");
+                    break;
+                case "missing-durable-requests":
+                    // SDK long remains zero. Only the application's durable observation is lost.
                     Assert.AreEqual(
-                        "stopped",
-                        host.State.Database.ReadMetadata("worker:worker1:lifecycle")
+                        1,
+                        Sql.Execute(
+                            ledger,
+                            (
+                                "UPDATE credit_sdk_usage SET reported_requests=NULL WHERE "
+                                + "reservation_id=$id;"
+                            ),
+                            null,
+                            ("$id", own.Id)
+                        )
                     );
-                }
-                switch (scenario)
-                {
-                    case "runtime-binding":
-                        binding["runtimeId"] = "contradictory-serialized-runtime";
-                        break;
-                    case "lease-binding":
-                        // A negative absent-lease binding, not a fabricated positive lease.
-                        binding["runtimeLeaseId"] = 0L;
-                        break;
-                    case "cwd-binding":
-                        binding["workingDirectory"] = host.State.Cwd("contradictory-cwd");
-                        break;
-                    case "missing-durable-requests":
-                        // SDK long remains zero. Only the application's durable observation is
-                        // lost.
-                        Assert.AreEqual(
-                            1,
-                            Sql.Execute(
-                                ledger,
-                                (
-                                    "UPDATE credit_sdk_usage SET reported_requests=NULL WHERE "
-                                    + "reservation_id=$id;"
-                                ),
-                                null,
-                                ("$id", own.Id)
-                            )
-                        );
-                        break;
-                    case "fresh-stop":
-                        Assert.AreSame(original, host.Sessions[0].FirstFailure);
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException(nameof(scenario));
-                }
-                if (scenario is "runtime-binding" or "lease-binding" or "cwd-binding")
-                {
-                    host.State.Database.WriteMetadata(key, binding.ToJsonString());
-                }
+                    break;
+                case "fresh-stop":
+                    Assert.AreSame(original, host.Sessions[0].FirstFailure);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(scenario));
             }
-            finally
+            if (scenario is "runtime-binding" or "lease-binding" or "cwd-binding")
             {
-                host.ReleaseHost();
-                try
-                {
-                    await completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
-                }
-                catch (OperationException exception)
-                {
-                    failure = exception;
-                    completionObserved = true;
-                }
+                host.State.Database.WriteMetadata(key, binding.ToJsonString());
             }
-            OperationException rejected = Assert.IsInstanceOfType<OperationException>(failure);
+            OperationException rejected = await AwaitHeldFactoryRejectionAsync(host);
             Assert.AreEqual("credit_or_ownership_unknown", rejected.Code);
             Assert.AreEqual(
                 "Native cohort settlement retained unresolved evidence: "
@@ -854,104 +771,59 @@ public sealed class DispatchCancellationSpecs(TestContext context)
         catch (Exception exception)
         {
             primaryFailure = exception;
+            throw;
         }
         finally
         {
-            host.ReleaseHost();
-            try
-            {
-                if (completion is not null && !completionObserved)
-                {
-                    await completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
-                }
-            }
-            catch (Exception exception)
-            {
-                if (primaryFailure is null)
-                {
-                    primaryFailure = exception;
-                }
-                else
-                {
-                    context.WriteLine("Secondary factory completion failure: {0}", exception);
-                }
-            }
-            finally
-            {
-                bool preserveState = completion is { IsCompleted: false };
-                if (scenario == "fresh-stop")
-                {
-                    try
-                    {
-                        TaskStatus? status = completion?.Status;
-                        bool terminal = status is TaskStatus.RanToCompletion
-                            or TaskStatus.Faulted or TaskStatus.Canceled;
-                        context.WriteLine(
-                            "Phase4FreshRejectionFactorySettlement: {0}",
-                            new JsonObject
-                            {
-                                ["runtimeId"] = host.Id,
-                                ["observedAt"] = DateTimeOffset.UtcNow,
-                                ["factoryStatus"] = status?.ToString(),
-                                ["factoryTerminal"] = terminal,
-                                ["settlementFailures"] = terminal
-                                    ? host.Factory.SettlementFailures.DeepClone() : null,
-                                ["settlementDetails"] = terminal
-                                    ? host.Factory.SettlementDetails.DeepClone() : null,
-                            }.ToJsonString()
-                        );
-                        if (terminal)
-                        {
-                            context.WriteLine(
-                                "Phase4FreshRejectionLedgerAfterFactorySettlement: {0}; {1}",
-                                host.Id,
-                                host.State.Accounting.ToJsonString()
-                            );
-                        }
-                    }
-                    catch (Exception exception)
-                    {
-                        context.WriteLine(
-                            "Secondary factory settlement evidence failure: {0}", exception
-                        );
-                    }
-                }
-                if (preserveState)
-                {
-                    context.WriteLine(
-                        "Retained state for pending factory completion: {0}", scratchRoot
-                    );
-                }
-                try
-                {
-                    await host.CleanupAsync(preserveState);
-                    context.WriteLine(
-                        $"Phase4ManagedCleanup: {scratchRoot}; exists={Directory.Exists(
-                            scratchRoot
-                        )}"
-                    );
-                    if (!preserveState)
-                    {
-                        Assert.IsFalse(Directory.Exists(scratchRoot));
-                    }
-                }
-                catch (Exception exception)
-                {
-                    if (primaryFailure is null)
-                    {
-                        primaryFailure = exception;
-                    }
-                    else
-                    {
-                        context.WriteLine("Secondary fixture cleanup failure: {0}", exception);
-                    }
-                }
-            }
+            await host.CleanupHeldFactoryAsync(
+                primaryFailure,
+                message => context.WriteLine(message),
+                scenario == "fresh-stop" ? ReportFactorySettlement : null,
+                reportRootCleanup: true
+            );
         }
-        if (primaryFailure is not null)
+        Assert.IsFalse(Directory.Exists(scratchRoot));
+
+        void ReportFactorySettlement(TaskStatus? status)
         {
-            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(primaryFailure).Throw();
+            bool terminal = status.HasValue;
+            context.WriteLine(
+                "Phase4FreshRejectionFactorySettlement: {0}",
+                new JsonObject
+                {
+                    ["runtimeId"] = host.Id,
+                    ["observedAt"] = DateTimeOffset.UtcNow,
+                    ["factoryStatus"] = status?.ToString(),
+                    ["factoryTerminal"] = terminal,
+                    ["settlementFailures"] = terminal
+                        ? host.Factory.SettlementFailures.DeepClone() : null,
+                    ["settlementDetails"] = terminal
+                        ? host.Factory.SettlementDetails.DeepClone() : null,
+                }.ToJsonString()
+            );
+            if (terminal)
+            {
+                context.WriteLine(
+                    "Phase4FreshRejectionLedgerAfterFactorySettlement: {0}; {1}",
+                    host.Id,
+                    host.State.Accounting.ToJsonString()
+                );
+            }
         }
+    }
+
+    private async Task<OperationException> AwaitHeldFactoryRejectionAsync(Phase4SessionControl host)
+    {
+        OperationException? rejection = null;
+        try
+        {
+            await host.AwaitHeldFactoryAsync(context.CancellationToken);
+        }
+        catch (OperationException error)
+        {
+            rejection = error;
+        }
+        return Assert.IsInstanceOfType<OperationException>(rejection);
     }
 
     private static long Reports(Phase4SessionControl host, CreditReservation reservation)

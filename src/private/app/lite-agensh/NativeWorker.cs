@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 
@@ -29,6 +30,7 @@ internal sealed class NativeWorker : INativeWorker
     private bool nativeIdle;
     private string? evidencePath;
     private (NativeUsage Usage, long Dispatches)? undispatchedBaseline;
+    private OperationException? sharedCapUsageFailure;
     private NativeUsage? pendingFinalUsage;
     private Exception? settlementFailure;
     private bool usageFinalized;
@@ -300,7 +302,8 @@ internal sealed class NativeWorker : INativeWorker
             turnOwned = true;
             admission?.ThrowIfClosed();
             nativeOperationPending = true;
-            await VerifyCreditsCoreAsync(preparing.Token).ConfigureAwait(false);
+            NativeUsage baseline = await VerifyCreditsCoreAsync(preparing.Token)
+                .ConfigureAwait(false);
             nativeOperationPending = false;
             admission?.ThrowIfClosed();
             if (reservation.Shared)
@@ -316,7 +319,21 @@ internal sealed class NativeWorker : INativeWorker
                 NativeUsage usage = await session
                     .UpdateLimitAsync(SessionId!, limit, preparing.Token)
                     .ConfigureAwait(false);
+                if (
+                    usage.TotalNanoAiu != baseline.TotalNanoAiu
+                    || usage.TotalUserRequests != baseline.TotalUserRequests
+                )
+                {
+                    sharedCapUsageFailure = new OperationException(
+                        "credit_unknown",
+                        "Native cumulative usage changed during a shared cap update."
+                    );
+                }
                 SaveDiagnostic(usage);
+                if (sharedCapUsageFailure is not null)
+                {
+                    throw sharedCapUsageFailure;
+                }
                 credits.RecordSdkUsage(reservation.Id, usage);
                 nativeOperationPending = false;
             }
@@ -404,11 +421,15 @@ internal sealed class NativeWorker : INativeWorker
         }
     }
 
-    private async Task VerifyCreditsCoreAsync(CancellationToken cancellationToken)
+    private async Task<NativeUsage> VerifyCreditsCoreAsync(CancellationToken cancellationToken)
     {
         if (reservation is null || session is null || SessionId is null)
         {
             throw new OperationException("credit_unknown", "No paid native association.");
+        }
+        if (sharedCapUsageFailure is not null)
+        {
+            ExceptionDispatchInfo.Throw(sharedCapUsageFailure);
         }
 
         try
@@ -452,6 +473,7 @@ internal sealed class NativeWorker : INativeWorker
                 reservation.Id,
                 database.Configuration.RunAiCreditAllowance
             );
+            return usage;
         }
         catch (Exception exception)
         {
@@ -586,7 +608,15 @@ internal sealed class NativeWorker : INativeWorker
                                 validateEvents: false
                             )
                             .ConfigureAwait(false);
-                        SaveDiagnostic(finalUsage);
+                        if (sharedCapUsageFailure is null)
+                        {
+                            SaveDiagnostic(finalUsage);
+                        }
+                        else
+                        {
+                            // Do not book ambiguous spend or release backing on ordinary teardown.
+                            failure = sharedCapUsageFailure;
+                        }
                     }
                 }
                 else if (reservation is not null)

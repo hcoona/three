@@ -25,6 +25,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         string version,
         bool undelivered,
         Dictionary<string, string?> environment,
+        decimal runAndCampaignAllowance,
         CancellationToken originalLifetime
     )
     {
@@ -40,10 +41,8 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
             Goal = "Recover original closed-window evidence without additional native work.",
             NativeModel = "controlled-model",
             CreditAllocation = shared ? "shared" : "per-session",
-            // The real calibration spends 7.25; two original legacy allocations
-            // consequently receive 300 each, not a seeded reservation amount.
-            RunAiCreditAllowance = 607.25m,
-            CampaignAiCreditAllowance = 607.25m,
+            RunAiCreditAllowance = runAndCampaignAllowance,
+            CampaignAiCreditAllowance = runAndCampaignAllowance,
         };
         Database = new(configuration.StatePath, configuration);
         Ledger = new(configuration.CampaignLedgerPath, configuration.CampaignAiCreditAllowance);
@@ -85,13 +84,10 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         CancellationToken token,
         bool shared = false,
         string version = "1.0.107",
-        bool undelivered = false
+        bool undelivered = false,
+        decimal runAndCampaignAllowance = 607.25m
     )
     {
-        using CancellationTokenSource lifetime =
-            CancellationTokenSource.CreateLinkedTokenSource(token);
-        lifetime.CancelAfter(TimeSpan.FromSeconds(120));
-        token = lifetime.Token;
         // Test-host strings only, never inspect user/global/system file contents.
         string[] names =
         [
@@ -108,7 +104,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         );
         GitScenarioState git = await GitScenarioState.CreateAsync(token).ConfigureAwait(false);
         RecoveryLifetimeControl state =
-            new(git, shared, version, undelivered, environment, token);
+            new(git, shared, version, undelivered, environment, runAndCampaignAllowance, token);
         try
         {
             await state.Coordinator.InitializeAsync(token).ConfigureAwait(false);
@@ -125,7 +121,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         }
     }
 
-    private Host CreateHost(bool recovery)
+    private Host CreateHost(bool recovery, bool holdNormalStop = false)
     {
         using var connection = Database.Open();
         bool original =
@@ -143,7 +139,8 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                 ? originalVersion
                 : recovery
                     ? RecoveryVersion
-                    : Phase6NativeControl.RuntimeVersion
+                    : Phase6NativeControl.RuntimeVersion,
+            holdNormalStop
         );
         hosts.Add(host);
         if (recovery)
@@ -153,28 +150,92 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         return host;
     }
 
-    internal async Task<RecoveredNativeUsage> RecoverAsync(CancellationToken token)
+    internal Task<RecoveredNativeUsage> RecoverAsync(CancellationToken token) =>
+        ReadRecoveryAsync(token);
+
+    private Task<RecoveredNativeUsage> ReadRecoveryAsync(CancellationToken token, Host? host = null)
     {
         NativeWorkerFactory factory = new(
             Database,
             new(Database),
             Ledger,
-            () => CreateHost(recovery: true)
+            () => host ?? CreateHost(recovery: true)
         );
-        return await factory
-            .ReadSettledUsageAsync(
-                Reservation,
-                Cwd,
-                git.PathFor("recovery-" + Guid.NewGuid().ToString("N")),
-                token
-            )
-            .ConfigureAwait(false);
+        return factory.ReadSettledUsageAsync(
+            Reservation,
+            Cwd,
+            git.PathFor("recovery-" + Guid.NewGuid().ToString("N")),
+            token
+        );
     }
 
-    internal void AssertOriginalLifetime()
+    internal async Task<RecoveredNativeUsage> RecoverWithHeldNormalStopAsync(
+        CancellationToken token
+    )
+    {
+        Host host = CreateHost(recovery: true, holdNormalStop: true);
+        string before = FinancialSnapshot.ToJsonString();
+        using CancellationTokenSource attempt =
+            CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<RecoveredNativeUsage> operation = ReadRecoveryAsync(attempt.Token, host);
+        Exception? checkpointFailure = null;
+        try
+        {
+            await Task.WhenAny(host.NormalStopEntered, operation)
+                .WaitAsync(attempt.Token)
+                .ConfigureAwait(false);
+            if (operation.IsCompleted)
+            {
+                await operation.ConfigureAwait(false);
+            }
+            Assert.IsFalse(
+                operation.IsCompleted, "Exact usage was published before releasing the held stop."
+            );
+            host.AssertNormalStopHeld();
+            Assert.AreEqual(Reservation.SessionId, host.Sessions.Single().ExactSession);
+            Assert.AreEqual(before, FinancialSnapshot.ToJsonString());
+        }
+        catch (Exception error)
+        {
+            checkpointFailure = error;
+            throw;
+        }
+        finally
+        {
+            host.ReleaseNormalStop();
+            if (checkpointFailure is not null)
+            {
+                try
+                {
+                    await attempt.CancelAsync().ConfigureAwait(false);
+                }
+                catch (Exception error)
+                {
+                    checkpointFailure.Data["HeldRecoveryCancellationFailure"] = error;
+                }
+                try
+                {
+                    await operation.ConfigureAwait(false);
+                }
+                catch (Exception error)
+                {
+                    if (!ReferenceEquals(error, checkpointFailure))
+                    {
+                        checkpointFailure.Data["HeldRecoveryObservationFailure"] = error;
+                    }
+                }
+            }
+        }
+        RecoveredNativeUsage result = await operation.ConfigureAwait(false);
+        host.AssertNormallySettled();
+        Assert.AreEqual(host.Sessions.Single().ExactSession, result.Usage.SessionId);
+        return result;
+    }
+
+    internal void AssertOriginalLifetime(decimal expectedAllowance = 300m)
     {
         Assert.AreEqual("uncertain", Reservation.State);
-        Assert.AreEqual(300m, Reservation.Allowance);
+        Assert.AreEqual(expectedAllowance, Reservation.Allowance);
         Assert.AreEqual(200m, Reservation.Actual);
         Assert.AreEqual("uncertain", Peer.State);
         Assert.AreEqual(
@@ -527,11 +588,15 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         RecoveryLifetimeControl state,
         bool original,
         bool recovery,
-        string version
+        string version,
+        bool holdNormalStop
     ) : INativeSdkHost
     {
+        private readonly TaskCompletionSource? normalStopEntered = holdNormalStop ? Signal() : null;
+        private readonly TaskCompletionSource? normalStopRelease = holdNormalStop ? Signal() : null;
         private OwnedChildControl? child;
         private Process? process;
+        private Task? heldNormalStop;
         private bool exited;
         private ExitObservation? normalDisposeExit;
         private ExitObservation? fixtureCleanupExit;
@@ -551,6 +616,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         internal string Version => version;
         internal long CreationSegment { get; private set; }
         internal OwnedChildIdentity? Ready { get; private set; }
+        internal Task NormalStopEntered => normalStopEntered!.Task;
         internal object? CleanupWitness =>
             child is null
                 ? null
@@ -608,13 +674,17 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
             );
         }
 
-        public async ValueTask DisposeAsync()
+        public ValueTask DisposeAsync() => new(heldNormalStop ?? StopAsync());
+
+        private Task StopAsync()
         {
             if (recovery && state.RecoveryCase == "host-stop")
             {
-                throw new OperationException(
-                    "recovery_host_stop_failed",
-                    "The actual owned recovery host could not settle."
+                return Task.FromException(
+                    new OperationException(
+                        "recovery_host_stop_failed",
+                        "The actual owned recovery host could not settle."
+                    )
                 );
             }
             if (recovery && state.RecoveryCase == "after-read")
@@ -625,53 +695,151 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
             {
                 Sessions.Single().FailBackgroundCompaction();
             }
-            if (child is not null && !exited)
+            if (child is null || exited)
             {
-                await child.ReleaseAsync(CancellationToken.None).ConfigureAwait(false);
-                await process!
-                    .WaitForExitAsync(CancellationToken.None)
-                    .WaitAsync(TimeSpan.FromSeconds(5))
-                    .ConfigureAwait(false);
-                normalDisposeExit = new(
-                    process.HasExited,
-                    process.ExitCode,
-                    DateTimeOffset.UtcNow,
-                    "normal-application-host-dispose-after-wait"
-                );
-                Assert.AreEqual(0, normalDisposeExit.ExitCode);
-                new ProcessRunner(state.Database).Complete(LeaseId);
-                exited = true;
+                return Task.CompletedTask;
             }
+            // Session disposal precedes this stop and preserves the activation witness.
+            if (
+                normalStopEntered is not null
+                && Ready is not null
+                && Sessions.Exists(session =>
+                    session is { HasSession: true, ExactSession: not null }
+                )
+            )
+            {
+                Task stop = StopChildAsync(child, normalStopRelease!.Task);
+                heldNormalStop = stop;
+                normalStopEntered.TrySetResult();
+                return stop;
+            }
+            return StopChildAsync(child, checkpointRelease: null);
+        }
+
+        private async Task StopChildAsync(OwnedChildControl owned, Task? checkpointRelease)
+        {
+            if (checkpointRelease is not null)
+            {
+                await checkpointRelease.ConfigureAwait(false);
+            }
+            using CancellationTokenSource settlement = new(TimeSpan.FromSeconds(5));
+            await owned.ReleaseAsync(settlement.Token).ConfigureAwait(false);
+            await process!.WaitForExitAsync(settlement.Token).ConfigureAwait(false);
+            normalDisposeExit = new(
+                process.HasExited,
+                process.ExitCode,
+                DateTimeOffset.UtcNow,
+                "normal-application-host-dispose-after-wait"
+            );
+            Assert.AreEqual(0, normalDisposeExit.ExitCode);
+            new ProcessRunner(state.Database).Complete(LeaseId);
+            exited = true;
+        }
+
+        internal void AssertNormalStopHeld()
+        {
+            Assert.IsTrue(
+                normalStopEntered is { Task.IsCompletedSuccessfully: true }
+                    && normalStopRelease is { Task.IsCompleted: false }
+                    && heldNormalStop is { IsCompleted: false },
+                "The exact recovery host did not reach its held normal stop."
+            );
+            Assert.IsNull(normalDisposeExit);
+            Assert.IsNull(fixtureCleanupExit);
+            Process owned = process!;
+            Assert.IsFalse(owned.HasExited);
+            OwnedChildIdentity? ready = Ready;
+            Assert.IsNotNull(ready);
+            Assert.AreEqual(ready.Pid, owned.Id);
+            Assert.AreEqual(ready.BirthTicks, owned.StartTime.ToUniversalTime().Ticks);
+            AssertRecoveryLease(ready, "running");
+        }
+
+        internal void ReleaseNormalStop() => normalStopRelease?.TrySetResult();
+
+        internal void AssertNormallySettled()
+        {
+            Assert.IsTrue(exited, "The selected host did not complete its normal stop and lease.");
+            Assert.IsNotNull(normalDisposeExit);
+            Assert.IsTrue(normalDisposeExit.ProcessExited);
+            Assert.AreEqual(0, normalDisposeExit.ExitCode);
+            Assert.IsNull(fixtureCleanupExit);
+            AssertRecoveryLease(Ready!, "exited");
+        }
+
+        private void AssertRecoveryLease(OwnedChildIdentity ready, string expectedState)
+        {
+            using var connection = state.Database.Open();
+            Assert.AreEqual(
+                1L,
+                (long)Sql.Scalar(
+                    connection,
+                    """
+                    SELECT COUNT(*) FROM process_leases
+                    WHERE id=$lease AND pid=$pid AND start_ticks=$birth
+                        AND kind=$kind AND state=$state;
+                    """,
+                    null,
+                    ("$lease", LeaseId),
+                    ("$pid", ready.Pid),
+                    ("$birth", ready.BirthTicks),
+                    ("$kind", $"native:runtime:{Id}"),
+                    ("$state", expectedState)
+                )!
+            );
         }
 
         internal async Task CleanupAsync()
         {
             if (child is not null)
             {
+                List<Exception> failures = [];
+                if (heldNormalStop is { } stop)
+                {
+                    ReleaseNormalStop();
+                    try
+                    {
+                        await stop.ConfigureAwait(false);
+                    }
+                    catch (Exception error)
+                    {
+                        failures.Add(error);
+                    }
+                }
                 try
                 {
-                    if (normalDisposeExit is null)
+                    if (normalDisposeExit is null && process is { } owned)
                     {
-                        if (!process!.HasExited)
+                        using CancellationTokenSource settlement = new(TimeSpan.FromSeconds(5));
+                        if (!owned.HasExited)
                         {
-                            await child.ReleaseAsync(CancellationToken.None).ConfigureAwait(false);
+                            await child.ReleaseAsync(settlement.Token).ConfigureAwait(false);
                         }
-                        await process!
-                            .WaitForExitAsync(CancellationToken.None)
-                            .WaitAsync(TimeSpan.FromSeconds(5))
-                            .ConfigureAwait(false);
+                        await owned.WaitForExitAsync(settlement.Token).ConfigureAwait(false);
                         fixtureCleanupExit = new(
-                            process.HasExited,
-                            process.ExitCode,
+                            owned.HasExited,
+                            owned.ExitCode,
                             DateTimeOffset.UtcNow,
                             "exceptional-owned-fixture-cleanup-after-wait"
                         );
                     }
                 }
-                finally
+                catch (Exception error)
+                {
+                    failures.Add(error);
+                }
+                try
                 {
                     await child.DisposeAsync().ConfigureAwait(false);
                     wrapperCleanupCompleted = true;
+                }
+                catch (Exception error)
+                {
+                    failures.Add(error);
+                }
+                if (failures.Count != 0)
+                {
+                    throw new AggregateException("Recovery fixture host cleanup failed.", failures);
                 }
             }
         }
@@ -730,7 +898,6 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
             }
             ExactCap = exact is null ? null : cap;
             ExactSession = exact;
-            HasSession = true;
             current = new(
                 sessionId,
                 host.Recovery ? state.FreshNano : 0,
@@ -773,6 +940,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                     ["workingDirectory"] = cwd,
                 }.ToJsonString()
             );
+            HasSession = true;
         }
 
         public Task<NativeUsage> ReadAsync(

@@ -28,7 +28,10 @@ internal static class Phase7CreatorProgram
         evidence.Phase(phase, "started");
         using CancellationTokenSource protocol = new(TimeSpan.FromSeconds(120));
         CancellationToken token = protocol.Token;
-        Phase7Sessions? sessions = null;
+        NamedPipeClientStream? ownedPipe = null;
+        StreamReader? ownedReader = null;
+        StreamWriter? ownedWriter = null;
+        Phase7Sessions? sessionsToDispose = null;
         Task<JsonObject>? active = null;
         using CancellationTokenSource caller = CancellationTokenSource.CreateLinkedTokenSource(
             token
@@ -36,21 +39,22 @@ internal static class Phase7CreatorProgram
         Exception? primary = null;
         try
         {
-            using NamedPipeClientStream pipe = new(
+            NamedPipeClientStream pipe = ownedPipe = new(
                 ".",
                 args[0],
                 PipeDirection.InOut,
                 PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly
             );
-            await pipe.ConnectAsync(token)
-                .WaitAsync(TimeSpan.FromSeconds(5), token)
+            await pipe.ConnectAsync(TimeSpan.FromSeconds(5), token)
                 .ConfigureAwait(false);
             evidence.Phase(phase, "completed");
-            using StreamReader reader = new(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
-            using StreamWriter writer = new(pipe, new UTF8Encoding(false), 4096, leaveOpen: true)
-            {
-                AutoFlush = true,
-            };
+            StreamReader reader = ownedReader = new(
+                pipe, Encoding.UTF8, false, 4096, leaveOpen: true
+            );
+            StreamWriter writer = ownedWriter = new(
+                pipe, new UTF8Encoding(false), 4096, leaveOpen: true
+            );
+            writer.AutoFlush = true;
             using Process self = Process.GetCurrentProcess();
             phase = "hello";
             evidence.Phase(phase, "prepared");
@@ -68,11 +72,23 @@ internal static class Phase7CreatorProgram
                 .ConfigureAwait(false);
             phase = "start-command";
             evidence.Phase(phase, "started");
-            string? line = await reader
-                .ReadLineAsync(token)
-                .AsTask()
-                .WaitAsync(TimeSpan.FromSeconds(30), token)
-                .ConfigureAwait(false);
+            string? line;
+            using (CancellationTokenSource startRead =
+                CancellationTokenSource.CreateLinkedTokenSource(token))
+            {
+                startRead.CancelAfter(TimeSpan.FromSeconds(30));
+                try
+                {
+                    line = await reader.ReadLineAsync(startRead.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException error) when (
+                    startRead.IsCancellationRequested && !token.IsCancellationRequested
+                )
+                {
+                    throw new TimeoutException(
+                        "Creator START read exceeded thirty seconds.", error);
+                }
+            }
             JsonObject command = JsonNode
                 .Parse(line ?? throw new IOException("Missing START."))!
                 .AsObject();
@@ -120,7 +136,7 @@ internal static class Phase7CreatorProgram
                 journal,
                 evidence: evidence
             );
-            sessions = control;
+            sessionsToDispose = control;
             CollaborationOperations collaboration = new(database);
             TaskCompletionSource settled = new(TaskCreationOptions.RunContinuationsAsynchronously);
             TaskCompletionSource returnGate = new(
@@ -145,10 +161,14 @@ internal static class Phase7CreatorProgram
                             operation == "run"
                                 ? async () =>
                                 {
-                                    // Real factory Complete has already settled workers/common host
-                                    // and booked usage. Normal wrapper cleanup is separate and
-                                    // real.
-                                    await control.DisposeAsync().ConfigureAwait(false);
+                                    // Real factory Complete settled the common host and usage.
+                                    // Take wrapper cleanup before awaiting its single attempt.
+                                    Phase7Sessions closing = sessionsToDispose
+                                        ?? throw new InvalidOperationException(
+                                            "Original session cleanup ownership was already taken."
+                                        );
+                                    sessionsToDispose = null;
+                                    await closing.DisposeAsync().ConfigureAwait(false);
                                     evidence.Phase(
                                         "native-common-settlement", "completed", clock.GetUtcNow()
                                     );
@@ -408,16 +428,15 @@ internal static class Phase7CreatorProgram
         }
         catch (Exception error)
         {
-            primary = error;
-            evidence.Phase(phase, "failed", error: error);
-            Console.Error.WriteLine(
-                "PHASE7_CREATOR_PRIMARY " + LiteAgensh.Json.ExceptionDetails(error)
-            );
+            ReportPrimary(error);
         }
         finally
         {
             bool cleanupFailed = false;
             evidence.Phase("creator-cleanup", "started");
+            DisposePipeResource(ownedWriter);
+            DisposePipeResource(ownedReader);
+            DisposePipeResource(ownedPipe);
             caller.Cancel();
             if (active is not null)
             {
@@ -431,17 +450,21 @@ internal static class Phase7CreatorProgram
                 catch (Exception error)
                 {
                     cleanupFailed = true;
-                    evidence.Phase("creator-join", "failed", error: error);
-                    Console.Error.WriteLine(
-                        "PHASE7_CREATOR_JOIN_SECONDARY " + LiteAgensh.Json.ExceptionDetails(error)
-                    );
+                    if (!ReferenceEquals(error, primary))
+                    {
+                        evidence.Phase("creator-join", "failed", error: error);
+                        Console.Error.WriteLine(
+                            "PHASE7_CREATOR_JOIN_SECONDARY "
+                            + LiteAgensh.Json.ExceptionDetails(error)
+                        );
+                    }
                 }
             }
-            if (sessions is not null)
+            if (sessionsToDispose is { } remaining)
             {
                 try
                 {
-                    await sessions.DisposeAsync().ConfigureAwait(false);
+                    await remaining.DisposeAsync().ConfigureAwait(false);
                 }
                 catch (Exception error)
                 {
@@ -456,8 +479,41 @@ internal static class Phase7CreatorProgram
             evidence.CaptureSqlite(diagnostics);
             evidence.Phase("creator-cleanup", cleanupFailed ? "failed" : "completed");
             evidence.Flush();
+
+            void DisposePipeResource(IDisposable? resource)
+            {
+                try
+                {
+                    resource?.Dispose();
+                }
+                catch (Exception error)
+                {
+                    cleanupFailed = true;
+                    if (primary is null)
+                    {
+                        ReportPrimary(error);
+                    }
+                    else
+                    {
+                        evidence.Phase("creator-cleanup", "pipe-dispose-failed", error: error);
+                        Console.Error.WriteLine(
+                            "PHASE7_CREATOR_PIPE_CLEANUP_SECONDARY "
+                                + LiteAgensh.Json.ExceptionDetails(error)
+                        );
+                    }
+                }
+            }
         }
         return primary is null ? 0 : 1;
+
+        void ReportPrimary(Exception error)
+        {
+            primary = error;
+            evidence.Phase(phase, "failed", error: error);
+            Console.Error.WriteLine(
+                "PHASE7_CREATOR_PRIMARY " + LiteAgensh.Json.ExceptionDetails(error)
+            );
+        }
     }
 
     private static string Hash(string path) =>

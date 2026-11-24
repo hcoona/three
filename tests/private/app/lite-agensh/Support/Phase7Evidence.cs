@@ -202,7 +202,7 @@ internal sealed class Phase7Evidence : IDisposable
     {
         foreach ((string resource, string directory) in directories)
         {
-            int found = 0, unavailable = 0;
+            int captured = 0, unavailable = 0;
             for (int slot = 0; slot < 32; slot++)
             {
                 Capture<Snapshot>("activity", slot, MaximumActivityBytes);
@@ -214,9 +214,9 @@ internal sealed class Phase7Evidence : IDisposable
             Write("sqlite-coverage", new
             {
                 resource,
-                availableFiles = found,
+                availableFiles = captured,
                 unavailableFiles = unavailable,
-                state = found != 0 ? "partial-application-observations"
+                state = captured != 0 ? "partial-application-observations"
                     : unavailable != 0 ? "unavailable" : "absent",
                 externalOrUninstrumentedHolder = "unknown",
             });
@@ -229,16 +229,30 @@ internal sealed class Phase7Evidence : IDisposable
                     using FileStream input = new(
                         path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete
                     );
-                    found++;
                     byte[] buffer = new byte[limit];
                     int count = input.ReadAtLeast(buffer, limit, throwOnEndOfStream: false);
                     if (input.ReadByte() != -1)
                     {
+                        unavailable++;
                         Write("sqlite-source", new { resource, kind, slot, state = "truncated" });
                         return;
                     }
                     using JsonDocument document = JsonDocument.Parse(buffer.AsMemory(0, count));
                     T? data = document.RootElement.Deserialize<T>(ProjectionOptions);
+                    bool available = data switch
+                    {
+                        Snapshot
+                        {
+                            Version: 1, Database: { Length: > 0 }, Kind: "run" or "campaign",
+                            ProcessId: > 0, Active: not null, Recent: not null,
+                        } => true,
+                        Incident
+                        {
+                            Version: 1, Database: { Length: > 0 }, ProcessId: > 0,
+                            Failure: not null, Sources: not null,
+                        } => true,
+                        _ => false,
+                    };
                     bool warningPresent = HasWarning(document.RootElement);
                     if (document.RootElement.TryGetProperty("sources", out JsonElement sources)
                         && sources.ValueKind == JsonValueKind.Array)
@@ -248,14 +262,22 @@ internal sealed class Phase7Evidence : IDisposable
                             && snapshot.ValueKind == JsonValueKind.Object && HasWarning(snapshot)
                         );
                     }
+                    if (!available)
+                    {
+                        unavailable++;
+                    }
+                    else
+                    {
+                        captured++;
+                    }
                     Write("sqlite-source", new
                     {
                         resource,
                         kind,
                         slot,
-                        state = data is null ? "unavailable" : "captured",
+                        state = available ? "captured" : "unavailable",
                         warningPresent,
-                        stale = data is Snapshot activity
+                        stale = available && data is Snapshot activity
                             ? (bool?)(DateTimeOffset.UtcNow - activity.ObservedAtUtc
                                 > TimeSpan.FromSeconds(30)) : null,
                         data,

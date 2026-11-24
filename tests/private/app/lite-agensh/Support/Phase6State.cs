@@ -92,6 +92,45 @@ internal static class Phase6State
         }
     }
 
+    internal static void QualifyExistingCreatorStore(RunConfiguration configuration)
+    {
+        // Qualify the store before a RunDatabase open can run initialization SQL.
+        string path = Path.Combine(configuration.StatePath, "run.sqlite");
+        using SqliteConnection existing = OpenFile(path);
+        string? json = Sql.Scalar(existing, "SELECT value FROM meta WHERE key='configuration';")
+            as string;
+        RunConfiguration? stored = json is null
+            ? null
+            : JsonSerializer.Deserialize<RunConfiguration>(json, Json.Options);
+        if (
+            stored is null
+            || stored.StatePath != configuration.StatePath
+            || stored.CampaignLedgerPath != configuration.CampaignLedgerPath
+            || stored.RepositoryPath != configuration.RepositoryPath
+            || !Guid.TryParseExact(
+                Sql.Scalar(existing, "SELECT value FROM meta WHERE key='run_id';") as string,
+                "N",
+                out _
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "Creator descendant cleanup could not qualify its already configured store."
+            );
+        }
+        if (
+            Sql.Scalar(
+                existing,
+                "SELECT name FROM sqlite_schema WHERE type='table' AND name='process_leases';"
+            ) is null
+        )
+        {
+            throw new InvalidOperationException(
+                "Creator descendant cleanup has no existing lease registry to resolve."
+            );
+        }
+    }
+
     internal static long Number(
         RunDatabase database,
         string query,

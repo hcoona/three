@@ -237,11 +237,14 @@ internal sealed class Phase7Sessions(
                 return;
             }
             evidence?.Host("shared-host-settlement", "started", Id, LeaseId, Ready, false);
-            await child.ReleaseAsync(CancellationToken.None).ConfigureAwait(false);
-            await process
-                .WaitForExitAsync(CancellationToken.None)
-                .WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
-                .ConfigureAwait(false);
+            using (CancellationTokenSource release = new(TimeSpan.FromSeconds(5)))
+            {
+                await child.ReleaseAsync(release.Token).ConfigureAwait(false);
+            }
+            using (CancellationTokenSource exit = new(TimeSpan.FromSeconds(5)))
+            {
+                await process.WaitForExitAsync(exit.Token).ConfigureAwait(false);
+            }
             observedExitCode = process.ExitCode;
             Require(observedExitCode == 0, "Owned native host did not exit normally.");
             new ProcessRunner(database).Complete(LeaseId);
@@ -269,11 +272,14 @@ internal sealed class Phase7Sessions(
                 if (child is not null && !normalExit
                     && process is not null && !process.HasExited && Ready is not null)
                 {
-                    await child.ReleaseAsync(CancellationToken.None).ConfigureAwait(false);
-                    await process
-                        .WaitForExitAsync(CancellationToken.None)
-                        .WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
-                        .ConfigureAwait(false);
+                    using (CancellationTokenSource release = new(TimeSpan.FromSeconds(5)))
+                    {
+                        await child.ReleaseAsync(release.Token).ConfigureAwait(false);
+                    }
+                    using (CancellationTokenSource exit = new(TimeSpan.FromSeconds(5)))
+                    {
+                        await process.WaitForExitAsync(exit.Token).ConfigureAwait(false);
+                    }
                     observedExitCode = process.ExitCode;
                 }
             }
@@ -352,6 +358,7 @@ internal sealed class Phase7Sessions(
         public string? NativeFailure => null;
         public JsonObject? Metadata { get; private set; }
         internal string Worker { get; private set; } = "";
+        internal string? ExactSession { get; private set; }
         internal string Operation => host.Operation;
         internal int CompletedTurns { get; private set; }
         internal bool Disposed => disposed;
@@ -367,6 +374,7 @@ internal sealed class Phase7Sessions(
         {
             Worker = worker;
             SessionId = sessionId;
+            ExactSession = exactSession;
             evidence?.Session("session-open", "started", host.Id, sessionId, worker, database.Now);
             try
             {

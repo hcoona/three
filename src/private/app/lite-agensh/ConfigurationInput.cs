@@ -8,6 +8,9 @@ namespace LiteAgensh;
 
 internal static class ConfigurationInput
 {
+    private static JsonSerializerOptions LegacyJsonOptions { get; } =
+        new(Json.Options) { AllowDuplicateProperties = false };
+
     internal static async Task<RunConfiguration> LoadAsync(
         string path,
         CancellationToken cancellationToken
@@ -20,8 +23,13 @@ internal static class ConfigurationInput
             && !extension.Equals(".yml", StringComparison.OrdinalIgnoreCase)
         )
         {
-            return JsonSerializer.Deserialize<RunConfiguration>(text, Json.Options)
+            RunConfiguration legacy = JsonSerializer.Deserialize<RunConfiguration>(
+                text,
+                LegacyJsonOptions
+            )
                 ?? throw new ArgumentException("Configuration must be a JSON object.");
+            RequireStringArrayItems(legacy, "JSON");
+            return legacy;
         }
 
         JsonObject input;
@@ -70,6 +78,18 @@ internal static class ConfigurationInput
             )
             .ConfigureAwait(false);
         RunConfiguration configuration = input.Deserialize<RunConfiguration>(Json.Options)!;
+        RequireStringArrayItems(configuration, "YAML");
+
+        return configuration with
+        {
+            RepositoryPath = ResolvePath(configuration.RepositoryPath, directory),
+            StatePath = ResolvePath(configuration.StatePath, directory),
+            CampaignLedgerPath = ResolvePath(configuration.CampaignLedgerPath, directory),
+        };
+    }
+
+    private static void RequireStringArrayItems(RunConfiguration configuration, string format)
+    {
         // System.Text.Json does not enforce collection-element nullability.
         if (
             configuration.NativeArguments.Any(value => value is null)
@@ -80,15 +100,8 @@ internal static class ConfigurationInput
                 .Any(check => check is not null && check.Arguments.Any(value => value is null))
         )
         {
-            throw new ArgumentException("YAML string arrays cannot contain null items.");
+            throw new ArgumentException($"{format} string arrays cannot contain null items.");
         }
-
-        return configuration with
-        {
-            RepositoryPath = ResolvePath(configuration.RepositoryPath, directory),
-            StatePath = ResolvePath(configuration.StatePath, directory),
-            CampaignLedgerPath = ResolvePath(configuration.CampaignLedgerPath, directory),
-        };
     }
 
     private static string ResolvePath(string path, string directory)

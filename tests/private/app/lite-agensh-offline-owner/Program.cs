@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Pipes;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -13,6 +14,8 @@ namespace LiteAgensh.Tests.OfflineOwner;
 // Sole ordinary executable entry; never a test runner or business-test result.
 internal static class Program
 {
+    private const string ControlledStartupStopCode = "phase6_controlled_startup_stop";
+
     private static async Task<int> Main(string[] args)
     {
         if (args is ["phase7-exact", _, _, _])
@@ -24,6 +27,16 @@ internal static class Program
             return 2;
         }
         Console.Error.WriteLine("PHASE6_CHILD_ENTER");
+        using Phase7Evidence evidence = new(
+            args[1],
+            "phase6-creator",
+            Environment.GetEnvironmentVariable("ThreeTestResultsDirectory"),
+            report: Console.Error.WriteLine
+        );
+        using Activity evidenceScope = evidence.BeginScope();
+        (string Resource, string Directory)[] diagnostics = [];
+        string phase = "pipe-connect";
+        evidence.Phase(phase, "started");
         using CancellationTokenSource deadline = new(TimeSpan.FromSeconds(120));
         CancellationToken token = deadline.Token;
         using NamedPipeClientStream pipe = new(
@@ -32,21 +45,28 @@ internal static class Program
             PipeDirection.InOut,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly
         );
+        StreamReader? ownedReader = null;
+        StreamWriter? ownedWriter = null;
         Phase6NativeControl? control = null;
+        ExceptionDispatchInfo? startupProtocolFailure = null;
         int exitCode = 0;
         try
         {
             Console.Error.WriteLine("PHASE6_CHILD_CONNECT_ENTER");
-            await pipe.ConnectAsync(token)
-                .WaitAsync(TimeSpan.FromSeconds(5), token)
+            await pipe.ConnectAsync(TimeSpan.FromSeconds(5), token)
                 .ConfigureAwait(false);
             Console.Error.WriteLine("PHASE6_CHILD_CONNECT_RETURN");
-            using StreamReader reader = new(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
-            using StreamWriter writer = new(pipe, new UTF8Encoding(false), 4096, leaveOpen: true)
-            {
-                AutoFlush = true,
-            };
+            evidence.Phase(phase, "completed");
+            StreamReader reader = ownedReader = new(
+                pipe, Encoding.UTF8, false, 4096, leaveOpen: true
+            );
+            StreamWriter writer = ownedWriter = new(
+                pipe, new UTF8Encoding(false), 4096, leaveOpen: true
+            );
+            writer.AutoFlush = true;
             using Process self = Process.GetCurrentProcess();
+            phase = "hello";
+            evidence.Phase(phase, "prepared");
             Console.Error.WriteLine("PHASE6_CHILD_HELLO_ENTER");
             await SendAsync(
                     writer,
@@ -64,8 +84,13 @@ internal static class Program
                 )
                 .ConfigureAwait(false);
             Console.Error.WriteLine("PHASE6_CHILD_HELLO_RETURN");
+            phase = "start-command";
+            evidence.Phase(phase, "started");
             await ReceiveAsync(reader, args[1], "START", token).ConfigureAwait(false);
             Console.Error.WriteLine("PHASE6_CHILD_START_RECEIVED");
+            evidence.Phase(phase, "completed");
+            phase = "configuration";
+            evidence.Phase(phase, "started");
             string configurationPath = Path.GetFullPath(args[2]);
             RunConfiguration configuration =
                 JsonSerializer.Deserialize<RunConfiguration>(
@@ -85,6 +110,14 @@ internal static class Program
                     "Creator paths must belong to its supplied root."
                 );
             }
+            diagnostics =
+            [
+                ("run", Path.Combine(configuration.StatePath, "run.sqlite.diagnostics")),
+                ("campaign", configuration.CampaignLedgerPath + ".diagnostics"),
+            ];
+            evidence.Phase(phase, "completed");
+            phase = "fixture-state";
+            evidence.Phase(phase, "started");
             RunDatabase database = new(configuration.StatePath, configuration);
             CreditLedger ledger = new(
                 configuration.CampaignLedgerPath,
@@ -92,7 +125,10 @@ internal static class Program
             );
             Phase6NativeControl nativeControl = new(database);
             control = nativeControl;
-            Func<CreditReservation, Task> opened = async reservation =>
+            evidence.Phase(phase, "completed");
+            evidence.BindRun(database.RunId, database.Now);
+            bool continueReceived = false;
+            async Task OpenedAsync(CreditReservation reservation, CancellationToken admissionToken)
             {
                 using var campaign = OpenCampaign(configuration.CampaignLedgerPath);
                 Sql.Execute(
@@ -103,24 +139,42 @@ internal static class Program
                         + "' AND NEW.state='released' BEGIN "
                         + "SELECT RAISE(ABORT,'phase6-target-release-blocked'); END;"
                 );
-                await SendAsync(
-                        writer,
-                        args[1],
-                        "OPENED",
-                        new()
-                        {
-                            ["runId"] = database.RunId,
-                            ["target"] = JsonSerializer.SerializeToNode(
-                                ledger
-                                    .Reservations(database.RunId)
-                                    .Single(row => row.Id == reservation.Id)
-                            ),
-                        },
-                        token
-                    )
-                    .ConfigureAwait(false);
-                await ReceiveAsync(reader, args[1], "CONTINUE", token).ConfigureAwait(false);
-            };
+                using CancellationTokenSource startup =
+                    CancellationTokenSource.CreateLinkedTokenSource(token, admissionToken);
+                string stage = "OPENED";
+                try
+                {
+                    evidence.Phase("opened-handshake", "sending");
+                    await SendAsync(
+                            writer,
+                            args[1],
+                            stage,
+                            new()
+                            {
+                                ["runId"] = database.RunId,
+                                ["target"] = JsonSerializer.SerializeToNode(
+                                    ledger
+                                        .Reservations(database.RunId)
+                                        .Single(row => row.Id == reservation.Id)
+                                ),
+                            },
+                            startup.Token
+                        )
+                        .ConfigureAwait(false);
+                    stage = "CONTINUE";
+                    evidence.Phase("continue-command", "waiting");
+                    await ReceiveAsync(reader, args[1], stage, startup.Token).ConfigureAwait(false);
+                    startup.Token.ThrowIfCancellationRequested();
+                    continueReceived = true;
+                    evidence.Phase("continue-command", "received");
+                }
+                catch (Exception error)
+                {
+                    error.Data["liteagensh.phase"] = stage;
+                    startupProtocolFailure = ExceptionDispatchInfo.Capture(error);
+                    throw;
+                }
+            }
             Factory? factory = null;
             CollaborationOperations collaboration = new(database);
             Coordinator NewCoordinator() =>
@@ -131,31 +185,42 @@ internal static class Program
                     (_, _, _) =>
                         factory = new(
                             new(database, new(database), ledger, nativeControl.CreateHost),
-                            opened
+                            OpenedAsync
                         )
                 );
-            JsonObject initialized = await NewCoordinator()
-                .InitializeAsync(token)
-                .ConfigureAwait(false);
-            RequireSuccess(initialized);
+            phase = "preflight";
+            evidence.Phase(phase, "started");
             JsonObject preflight = await NewCoordinator()
                 .PreflightAsync(token)
                 .ConfigureAwait(false);
             RequireSuccess(preflight);
+            evidence.Phase(phase, "completed");
+            phase = "calibration";
+            evidence.Phase(phase, "started");
             JsonObject calibrated = await NewCoordinator()
                 .CalibrateAsync(token)
                 .ConfigureAwait(false);
             RequireSuccess(calibrated);
+            evidence.Phase(phase, "completed");
+            phase = "run-start";
+            evidence.Phase(phase, "started");
             JsonObject run = await NewCoordinator().RunAsync("run", token).ConfigureAwait(false);
+            startupProtocolFailure?.Throw();
+            evidence.Phase(phase, "completed");
             // Same terminal only: no factory Complete/worker Dispose after removal.
             if (
                 run["ok"]!.GetValue<bool>()
+                || !continueReceived
+                || database.ReadMetadata("lifecycle:stop_reason") != ControlledStartupStopCode
                 || !factory!
                     .SettlementFailures.ToJsonString()
                     .Contains("phase6-target-release-blocked", StringComparison.Ordinal)
             )
             {
-                throw new InvalidOperationException("Creator did not reach its selected rollback.");
+                throw new InvalidOperationException(
+                    "Creator did not receive CONTINUE and reach its controlled startup stop"
+                        + " and selected rollback."
+                );
             }
             using (var campaign = OpenCampaign(configuration.CampaignLedgerPath))
             {
@@ -168,6 +233,8 @@ internal static class Program
                 runtimes.Add(host.Witness);
             }
             control = null;
+            phase = "ended-unresolved";
+            evidence.Phase(phase, "sending");
             await SendAsync(
                     writer,
                     args[1],
@@ -176,7 +243,6 @@ internal static class Program
                     {
                         ["role"] = "setup-not-business-credit",
                         ["runId"] = database.RunId,
-                        ["initialize"] = initialized,
                         ["preflight"] = preflight,
                         ["calibration"] = calibrated,
                         ["run"] = run,
@@ -193,18 +259,27 @@ internal static class Program
                     token
                 )
                 .ConfigureAwait(false);
+            phase = "exit-command";
+            evidence.Phase(phase, "waiting");
             await ReceiveAsync(reader, args[1], "EXIT", token).ConfigureAwait(false);
+            evidence.Phase(phase, "completed");
             Console.WriteLine("PHASE6_CREATOR_SETUP_COMPLETE zero-business-credit");
         }
         catch (Exception error)
         {
             exitCode = 1;
-            Console.Error.WriteLine(
-                "PHASE6_CREATOR_PRIMARY " + LiteAgensh.Json.ExceptionDetails(error).ToJsonString()
-            );
+            Exception primary = startupProtocolFailure?.SourceException ?? error;
+            evidence.Phase(phase, "failed", error: primary);
+            ReportFailure("PRIMARY", primary);
+            if (!ReferenceEquals(error, primary))
+            {
+                ReportFailure("COORDINATOR_SECONDARY", error);
+            }
         }
         finally
         {
+            DisposePipeWrapper(ownedWriter);
+            DisposePipeWrapper(ownedReader);
             if (control is not null)
             {
                 try
@@ -213,16 +288,32 @@ internal static class Program
                 }
                 catch (Exception secondary)
                 {
-                    Console.Error.WriteLine(
-                        "PHASE6_CREATOR_CLEANUP_SECONDARY "
-                            + LiteAgensh.Json.ExceptionDetails(secondary).ToJsonString()
-                    );
+                    ReportFailure("CLEANUP_SECONDARY", secondary);
                     exitCode = 1;
                 }
             }
+            evidence.CaptureSqlite(diagnostics);
         }
         return exitCode;
+
+        void DisposePipeWrapper(IDisposable? wrapper)
+        {
+            try
+            {
+                wrapper?.Dispose();
+            }
+            catch (Exception error)
+            {
+                ReportFailure(exitCode == 0 ? "PRIMARY" : "CLEANUP_SECONDARY", error);
+                exitCode = 1;
+            }
+        }
     }
+
+    private static void ReportFailure(string kind, Exception error) =>
+        Console.Error.WriteLine(
+            $"PHASE6_CREATOR_{kind} " + LiteAgensh.Json.ExceptionDetails(error).ToJsonString()
+        );
 
     private static string Hash(string path) =>
         Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path)));
@@ -286,11 +377,49 @@ internal static class Program
         CancellationToken token
     )
     {
-        string? line = await reader
-            .ReadLineAsync(token)
-            .AsTask()
-            .WaitAsync(TimeSpan.FromSeconds(30), token)
-            .ConfigureAwait(false);
+        using CancellationTokenSource reading =
+            CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<string?> read = reader.ReadLineAsync(reading.Token).AsTask();
+        string? line;
+        try
+        {
+            line = await read.WaitAsync(TimeSpan.FromSeconds(30), token).ConfigureAwait(false);
+        }
+        catch (Exception primary)
+        {
+            primary.Data["liteagensh.phase"] = stage;
+            List<(string Kind, Exception Error)> cleanupFailures = [];
+            try
+            {
+                await reading.CancelAsync().ConfigureAwait(false);
+            }
+            catch (Exception secondary)
+            {
+                cleanupFailures.Add(("PIPE_CANCEL_SECONDARY", secondary));
+            }
+            try
+            {
+                // A line delivered after the failed observation cannot complete this stage.
+                await read.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException canceled) when (
+                read.IsCanceled && canceled.CancellationToken == reading.Token
+            )
+            { }
+            catch (Exception secondary)
+            {
+                if (!ReferenceEquals(primary, secondary))
+                {
+                    cleanupFailures.Add(("PIPE_READ_SECONDARY", secondary));
+                }
+            }
+            foreach ((string kind, Exception secondary) in cleanupFailures)
+            {
+                secondary.Data["liteagensh.phase"] = stage;
+                ReportFailure(kind, secondary);
+            }
+            throw;
+        }
         if (
             line is null
             || line.Length > 4096
@@ -304,8 +433,10 @@ internal static class Program
         }
     }
 
-    private sealed class Factory(NativeWorkerFactory real, Func<CreditReservation, Task> opened)
-        : INativeWorkerFactory
+    private sealed class Factory(
+        NativeWorkerFactory real,
+        Func<CreditReservation, CancellationToken, Task> opened
+    ) : INativeWorkerFactory
     {
         public JsonArray SettlementFailures => real.SettlementFailures;
         public JsonArray SettlementDetails => real.SettlementDetails;
@@ -334,7 +465,7 @@ internal static class Program
     private sealed class Startup(
         INativeWorker real,
         CreditReservation reservation,
-        Func<CreditReservation, Task> opened
+        Func<CreditReservation, CancellationToken, Task> opened
     ) : INativeWorker
     {
         public string? SessionId => real.SessionId;
@@ -357,9 +488,9 @@ internal static class Program
         {
             await real.StartAsync(cwd, exactSession, token, recoveryLabel, admission)
                 .ConfigureAwait(false);
-            await opened(reservation).ConfigureAwait(false);
+            await opened(reservation, token).ConfigureAwait(false);
             throw new OperationException(
-                "phase6_controlled_startup_stop",
+                ControlledStartupStopCode,
                 "Controlled startup stopped after real Start and before any target dispatch."
             );
         }

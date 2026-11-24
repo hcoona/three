@@ -41,9 +41,12 @@ public sealed class TelemetrySpecs(TestContext context)
             Assert.IsNotNull(sampled);
             sampled.SetTag("private.payload", secret);
         }
+        string ownedSpan;
         using (Activity? owned = ApplicationTelemetry.Source.StartActivity("coordinator.run"))
         {
             Assert.IsNotNull(owned);
+            ownedSpan = owned.SpanId.ToString();
+            owned.SetTag("liteagensh.result.code", "redaction-witness");
             owned.SetTag("private.payload", secret);
             owned.AddEvent(new ActivityEvent(secret));
         }
@@ -77,6 +80,7 @@ public sealed class TelemetrySpecs(TestContext context)
             record["kind"]!.GetValue<string>() == "sqlite-source"
             && record["detail"]!["kind"]!.GetValue<string>() == "incident"
         ))["detail"]!;
+        Assert.AreEqual("captured", capture["state"]!.GetValue<string>());
         Assert.AreEqual(5, primary.SqliteErrorCode);
         Assert.AreEqual(5, capture["data"]!["failure"]!["primaryCode"]!.GetValue<int>());
         Assert.AreEqual(
@@ -94,11 +98,72 @@ public sealed class TelemetrySpecs(TestContext context)
             && record["detail"]!["operation"]!.GetValue<string>() == "sqlite.acquisition"
             && record["detail"]!["state"]!.GetValue<string>() == "started"
         ));
+        JsonNode retainedOwner = Assert.ContainsSingle(records.Where(record =>
+            record["kind"]!.GetValue<string>() == "activity"
+            && record["detail"]!["spanId"]!.GetValue<string>() == ownedSpan
+            && record["detail"]!["state"]!.GetValue<string>() == "stopped"
+        ))["detail"]!;
+        Assert.AreEqual("coordinator.run", retainedOwner["operation"]!.GetValue<string>());
+        Assert.AreEqual(
+            "redaction-witness",
+            retainedOwner["tags"]!["liteagensh.result.code"]!.GetValue<string>()
+        );
         Assert.Contains(scope.TraceId.ToString(), retained);
         Assert.DoesNotContain(unrelatedTrace, retained);
         Assert.DoesNotContain(secret, retained);
         Assert.DoesNotContain("INSERT INTO", retained);
         Assert.DoesNotContain(state.DiagnosticsPath, retained);
+    }
+
+    [TestMethod]
+    [DataRow(
+        "not a JSON snapshot",
+        "unavailable-or-malformed",
+        DisplayName = "Malformed JSON source"
+    )]
+    [DataRow(
+        """
+        {"version":1,"database":"owned-run","kind":"run","processId":10001,
+        "processBirthUtc":"2026-01-01T00:00:00+00:00",
+        "observedAtUtc":"2026-01-01T00:00:00+00:00",
+        "truncated":false,"active":null,"recent":[]}
+        """,
+        "unavailable",
+        DisplayName = "Parsed source with valid identity but missing active observations"
+    )]
+    public void UnusableSqliteSourceDoesNotClaimAvailableObservations(
+        string sourceText,
+        string expectedState
+    )
+    {
+        using ScratchDirectory results = new();
+        string directory = results.PathFor("sqlite-sources");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, "activity-00.json"), sourceText);
+        using Phase7Evidence evidence = new(
+            Guid.NewGuid().ToString("N"), "test-owner", results.PathFor("results"),
+            report: message => context.WriteLine(message)
+        );
+        evidence.CaptureSqlite([("run", directory)]);
+        evidence.Flush();
+
+        JsonNode[] records = ReadEvidence(evidence.FilePath)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => JsonNode.Parse(line)!).ToArray();
+        JsonNode source = Assert.ContainsSingle(records.Where(record =>
+            record["kind"]!.GetValue<string>() == "sqlite-source"
+        ))["detail"]!;
+        JsonNode coverage = Assert.ContainsSingle(records.Where(record =>
+            record["kind"]!.GetValue<string>() == "sqlite-coverage"
+        ))["detail"]!;
+        Assert.AreEqual(expectedState, source["state"]!.GetValue<string>());
+        Assert.AreEqual(0, coverage["availableFiles"]!.GetValue<int>());
+        Assert.AreEqual(1, coverage["unavailableFiles"]!.GetValue<int>());
+        Assert.AreEqual("unavailable", coverage["state"]!.GetValue<string>());
+        Assert.AreEqual(
+            "unknown",
+            coverage["externalOrUninstrumentedHolder"]!.GetValue<string>()
+        );
     }
 
     [TestMethod]

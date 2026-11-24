@@ -11,8 +11,9 @@ API contract.
 
 Use one `LiteAgensh.csproj` executable under the project root, namespace
 `LiteAgensh`, target `$(CurrentTargetFramework)`. Use root SDK/CPM/NBGV rules.
-Select `Microsoft.Data.Sqlite` 10.0.14 and `ModelContextProtocol` 2.4.0 through
-CPM; retain existing `Microsoft.Extensions.Hosting` selection. Select
+Select `Microsoft.Data.Sqlite` through root CPM and its lockfiles; do not maintain
+a separate SQLite version requirement here. Select `ModelContextProtocol` 2.4.0
+through CPM; retain existing `Microsoft.Extensions.Hosting` selection. Select
 `GitHub.Copilot.SDK` through root CPM and its lockfiles. Normal reviewed
 CPM/Renovate SDK upgrades are permitted; a historical package version is not
 a compatibility allowlist. Retain the exact selected SDK identity in build

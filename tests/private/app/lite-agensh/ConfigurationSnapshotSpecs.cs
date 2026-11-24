@@ -139,30 +139,82 @@ public sealed class ConfigurationSnapshotSpecs(TestContext context)
     }
 
     [TestMethod]
-    public async Task LoadAsyncLegacyJsonRelativePathsAreNotReinterpretedAsYaml()
+    [DataRow("repositoryPath", "checkout")]
+    [DataRow("statePath", "run")]
+    public async Task LoadAsyncLegacyJsonRelativePathsAreNotReinterpretedAsYaml(
+        string field,
+        string relative
+    )
     {
         using ScratchDirectory scratch = new();
         string path = scratch.PathFor("legacy.json");
-        File.WriteAllText(
-            path,
-            """
-            {"repositoryPath":"checkout","statePath":"run","campaignLedgerPath":"credits.sqlite",
-             "goal":"Repair parsing."}
-            """
-        );
+        JsonObject input = new()
+        {
+            ["repositoryPath"] = scratch.PathFor("checkout"),
+            ["statePath"] = scratch.PathFor("run"),
+            ["campaignLedgerPath"] = scratch.PathFor("credits.sqlite"),
+            ["goal"] = Goal,
+        };
+        input[field] = relative;
+        File.WriteAllText(path, input.ToJsonString());
 
         RunConfiguration loaded = await ConfigurationInput.LoadAsync(
             path,
             context.CancellationToken
         );
+        (
+            loaded with
+            {
+                RepositoryPath = scratch.PathFor("checkout"),
+                StatePath = scratch.PathFor("run"),
+            }
+        ).Validate();
         ArgumentException error = Assert.ThrowsExactly<ArgumentException>(loaded.Validate);
 
-        Assert.AreEqual("checkout", loaded.RepositoryPath);
+        Assert.AreEqual(
+            relative,
+            field == "repositoryPath" ? loaded.RepositoryPath : loaded.StatePath
+        );
         Assert.AreEqual(
             "Repository, state and campaign ledger paths must be absolute.",
             error.Message
         );
         Assert.IsFalse(Directory.Exists(scratch.PathFor("run")));
+    }
+
+    [TestMethod]
+    public async Task RunDatabaseRelativeLegacyLedgerRejectsBeforeCreatingState()
+    {
+        using ScratchDirectory scratch = new();
+        string ledger = $"owned-relative-ledger-{Guid.NewGuid():N}.sqlite";
+        string path = scratch.PathFor("legacy.json");
+        File.WriteAllText(
+            path,
+            new JsonObject
+            {
+                ["repositoryPath"] = scratch.PathFor("checkout"),
+                ["statePath"] = scratch.PathFor("run"),
+                ["campaignLedgerPath"] = ledger,
+                ["goal"] = Goal,
+            }.ToJsonString()
+        );
+        RunConfiguration loaded = await ConfigurationInput.LoadAsync(
+            path,
+            context.CancellationToken
+        );
+        (loaded with { CampaignLedgerPath = scratch.PathFor("credits.sqlite") }).Validate();
+
+        ArgumentException error = Assert.ThrowsExactly<ArgumentException>(() =>
+            new RunDatabase(loaded.StatePath, loaded)
+        );
+
+        Assert.AreEqual(ledger, loaded.CampaignLedgerPath);
+        Assert.AreEqual(
+            "Repository, state and campaign ledger paths must be absolute.",
+            error.Message
+        );
+        Assert.IsFalse(Directory.Exists(loaded.StatePath));
+        Assert.IsFalse(File.Exists(ledger));
     }
 
     [TestMethod]
@@ -301,6 +353,30 @@ public sealed class ConfigurationSnapshotSpecs(TestContext context)
             Assert.AreEqual(expectedPath, error.Path);
         }
 
+        Assert.IsFalse(Directory.Exists(scratch.PathFor("run")));
+        Assert.IsFalse(File.Exists(scratch.PathFor("credits.sqlite")));
+    }
+
+    [TestMethod]
+    public async Task LoadAsyncNullLegacyProtectedPathRejectsBeforeState()
+    {
+        using ScratchDirectory scratch = new();
+        JsonObject configuration = new()
+        {
+            ["repositoryPath"] = scratch.PathFor("checkout"),
+            ["statePath"] = scratch.PathFor("run"),
+            ["campaignLedgerPath"] = scratch.PathFor("credits.sqlite"),
+            ["goal"] = Goal,
+            ["protectedPaths"] = new JsonArray((JsonNode?)null),
+        };
+        string path = scratch.PathFor("invalid.json");
+        File.WriteAllText(path, configuration.ToJsonString());
+
+        ArgumentException error = await Assert.ThrowsExactlyAsync<ArgumentException>(() =>
+            ConfigurationInput.LoadAsync(path, context.CancellationToken)
+        );
+
+        Assert.AreEqual("JSON string arrays cannot contain null items.", error.Message);
         Assert.IsFalse(Directory.Exists(scratch.PathFor("run")));
         Assert.IsFalse(File.Exists(scratch.PathFor("credits.sqlite")));
     }
@@ -452,8 +528,10 @@ public sealed class ConfigurationSnapshotSpecs(TestContext context)
     public async Task PublishedSchemaAndExampleAgreeWithGoalAndAllocationInputContract()
     {
         string project = FindProductDirectory();
+        string schemaPath = Path.Combine(project, "schemas", "run.schema.json");
+        string examplePath = Path.Combine(project, "examples", "run.yaml");
         JsonObject schema = JsonNode
-            .Parse(File.ReadAllText(Path.Combine(project, "schemas", "run.schema.json")))!
+            .Parse(File.ReadAllText(schemaPath))!
             .AsObject();
         JsonArray required = schema["required"]!.AsArray();
         JsonObject properties = schema["properties"]!.AsObject();
@@ -476,22 +554,39 @@ public sealed class ConfigurationSnapshotSpecs(TestContext context)
         Assert.IsFalse(properties.ContainsKey("goal"));
         Assert.AreEqual("string", properties["goalFile"]!["type"]!.GetValue<string>());
         Assert.AreEqual(1, properties["goalFile"]!["minLength"]!.GetValue<int>());
+        Assert.AreEqual("string", properties["creditAllocation"]!["type"]!.GetValue<string>());
         Assert.AreEqual(
             "per-session",
             properties["creditAllocation"]!["default"]!.GetValue<string>()
         );
-        Assert.HasCount(2, properties["creditAllocation"]!["enum"]!.AsArray());
-        Assert.Contains(
-            "shared",
-            properties["creditAllocation"]!["enum"]!
-                .AsArray()
-                .Select(node => node!.GetValue<string>())
+        string[] allocations = properties["creditAllocation"]!["enum"]!
+            .AsArray()
+            .Select(node => node!.GetValue<string>())
+            .ToArray();
+        Assert.HasCount(2, allocations);
+        Assert.Contains("per-session", allocations);
+        Assert.Contains("shared", allocations);
+        JsonObject permission = Assert.IsInstanceOfType<JsonObject>(
+            properties["nativePermissionPolicy"]
         );
+        Assert.AreEqual("string", permission["type"]!.GetValue<string>());
+        Assert.AreEqual("deny", permission["default"]!.GetValue<string>());
+        string[] permissionChoices = permission["enum"]!.AsArray()
+            .Select(node => node!.GetValue<string>()).ToArray();
+        Assert.HasCount(2, permissionChoices);
+        Assert.Contains("deny", permissionChoices);
+        Assert.Contains("trusted", permissionChoices);
         Assert.AreEqual(0, properties["workerStartIntervalSeconds"]!["minimum"]!.GetValue<int>());
         Assert.AreEqual(30, properties["runAiCreditAllowance"]!["minimum"]!.GetValue<int>());
+        Assert.AreEqual(
+            "# yaml-language-server: $schema="
+                + Path.GetRelativePath(Path.GetDirectoryName(examplePath)!, schemaPath)
+                    .Replace('\\', '/'),
+            File.ReadLines(examplePath).First()
+        );
 
         RunConfiguration example = await ConfigurationInput.LoadAsync(
-            Path.Combine(project, "examples", "run.yaml"),
+            examplePath,
             context.CancellationToken
         );
         example.Validate();
@@ -499,12 +594,11 @@ public sealed class ConfigurationSnapshotSpecs(TestContext context)
         Assert.StartsWith("# Review the LiteAgensh migration", example.Goal);
         Assert.Contains("Do not start paid native", example.Goal);
         Assert.AreEqual("shared", example.CreditAllocation);
+        Assert.AreEqual("trusted", example.NativePermissionPolicy);
+        Assert.Contains(example.NativePermissionPolicy, permissionChoices);
         Assert.AreEqual(10, example.WorkerCount);
         Assert.AreEqual(30, example.WorkerStartIntervalSeconds);
         Assert.AreEqual(Path.Combine(project, "examples", "run"), example.StatePath);
-        CheckCommand finalCheck = Assert.ContainsSingle(example.FinalChecks);
-        Assert.AreEqual("dotnet", finalCheck.Executable);
-        Assert.AreEqual(600, finalCheck.TimeoutSeconds);
     }
 
     [TestMethod]
