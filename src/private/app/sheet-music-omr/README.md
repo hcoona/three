@@ -184,7 +184,11 @@ documents without starting a proof run. Directory confinement, formal execution
 bounds, isolation rules, and single-pass gates are specified in the
 [synthetic data and system-detection protocol](docs/synthetic-protocol.md#environment-tool-isolation-and-mutable-source-rechecks);
 external provisioning, batch rendering and private-page runs require an
-accepted [Delivery Wave](../../../../docs/delivery-wave.md) entry.
+accepted [Delivery Wave](../../../../docs/delivery-wave.md) entry. W6 Slice A
+bulk crop packaging, clean training-stack smoke verification and offline
+per-system `copista-28m` baseline rules are specified in the
+[training, bulk-packaging and page-detector protocol](docs/training-protocol.md)
+(planned CLI commands are added with the Slice A implementation).
 
 Each worker call has one 300-second bound, which includes starting a fresh
 worker. Some calls hold more than one of the protocol's steps: the content
@@ -236,8 +240,12 @@ inventory and splits in
 [Issue #1490](https://github.com/hcoona/three/issues/1490), W4 synthetic
 training-data engine in
 [Issue #1491](https://github.com/hcoona/three/issues/1491) (`#1493`–`#1496`),
-and W5 system detection and assembly in
-[Issue #1497](https://github.com/hcoona/three/issues/1497).
+W5 system detection and assembly in
+[Issue #1497](https://github.com/hcoona/three/issues/1497), and W6 model
+selection and training pilot in
+[Issue #1498](https://github.com/hcoona/three/issues/1498) (with downstream W7
+[Issue #1499](https://github.com/hcoona/three/issues/1499) and W8
+[Issue #1500](https://github.com/hcoona/three/issues/1500)).
 
 Text Score 2 is derived from the owner's as-printed text convention but is
 specified anew, with a versioned normative grammar. It is the pilot baseline
@@ -247,16 +255,17 @@ does not yet produce.
 
 ## Records and authority
 
-| Reader question                                                                 | Authority                                                                  |
-| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| What must the format, its tools and their acceptance/baseline evidence achieve? | [Requirements](docs/requirements.md)                                       |
-| What exactly is a valid system document or assembled score?                     | [Text Score 2 format](docs/text-format.md)                                 |
-| How is a converter round trip compared and scored?                              | [Comparison protocol](docs/comparison-protocol.md)                         |
-| How are real-data splits, system crops and recognizer baselines evaluated?      | [Evaluation and real-data alignment protocol](docs/evaluation-protocol.md) |
-| How are synthetic training pairs, Stage S3 gates and W5 detectors evaluated?    | [Synthetic data and system-detection protocol](docs/synthetic-protocol.md) |
-| How do I route a change or operate formal/baseline runs safely?                 | [Agent handoff](docs/agent-handoff.md)                                     |
-| What work is currently authorized?                                              | Repository [Delivery Wave](../../../../docs/delivery-wave.md)              |
-| Where are progress, reviews and findings?                                       | The Issues above and their linked pull requests                            |
+| Reader question                                                                 | Authority                                                                        |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| What must the format, its tools and their acceptance/baseline evidence achieve? | [Requirements](docs/requirements.md)                                             |
+| What exactly is a valid system document or assembled score?                     | [Text Score 2 format](docs/text-format.md)                                       |
+| How is a converter round trip compared and scored?                              | [Comparison protocol](docs/comparison-protocol.md)                               |
+| How are real-data splits, system crops and recognizer baselines evaluated?      | [Evaluation and real-data alignment protocol](docs/evaluation-protocol.md)       |
+| How are synthetic training pairs, Stage S3 gates and W5 detectors evaluated?    | [Synthetic data and system-detection protocol](docs/synthetic-protocol.md)       |
+| How are W6 bulk crop datasets, clean model stacks and per-system runs governed? | [Training, bulk-packaging and page-detector protocol](docs/training-protocol.md) |
+| How do I route a change or operate formal/baseline runs safely?                 | [Agent handoff](docs/agent-handoff.md)                                           |
+| What work is currently authorized?                                              | Repository [Delivery Wave](../../../../docs/delivery-wave.md)                    |
+| Where are progress, reviews and findings?                                       | The Issues above and their linked pull requests                                  |
 
 The README owns purpose, user context, current status and routing. The
 requirements own the obligations of the format, its tools and their acceptance
@@ -318,6 +327,18 @@ scales, MEI/SVG round-trip gates, `rights_variant` and `TEST`-exclusion digest
 and work-identity checks, offline `AGPL` CLI isolation, and the dedicated W4/W5
 download and formal-run ledgers without altering the retired Stage S0
 recognizer rules.
+
+W6 and W4 bulk-packaging implementers, their independent reviewers, and
+downstream W7 and W8 workstreams consume the
+[training, bulk-packaging and page-detector protocol](docs/training-protocol.md)
+before provisioning `w6-train-venv`, expanding `PDMX` intake, packaging `20k` /
+`50k` system-crop and page-box datasets, running `TRAIN_DEV` per-system
+`copista-28m` baselines, or executing later RTX 4090 Slice B training and
+replay runs. Without a separate protocol carrier, canonical-work split seeds,
+per-engine category supervision masks, pinned permissive model/processor
+contracts, the pre-registered `4`-fold `TRAIN_DEV` partition, W7 sidecar fields,
+and Slice A's dedicated download and run ledgers could drift across scripts or
+contaminate `TEST` isolation.
 
 Replacement coding agents and contributors consume the
 [agent handoff](docs/agent-handoff.md) before modifying project files or

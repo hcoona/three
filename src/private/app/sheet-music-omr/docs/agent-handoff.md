@@ -12,9 +12,15 @@ and top-level record routing.
 The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) governs
 feature/capability advancements, architectural or public-contract changes, and
 external/privacy effects ([Issue #686](https://github.com/hcoona/three/issues/686)
-for sheet-music recognition design and planning; the W1 text-representation
-grant for [Issue #1488](https://github.com/hcoona/three/issues/1488) was
-retired after owner acceptance of `formal-5` in
+for sheet-music recognition design and planning, and the
+[W6 Slice A Delivery Wave entry](../../../../../docs/delivery-wave.md#prepare-omr-pilot-datasets-and-training-stack-w6-slice-a)
+(merged in [PR #1766](https://github.com/hcoona/three/pull/1766), amended in
+[PR #1769](https://github.com/hcoona/three/pull/1769))
+for [Issue #1498](https://github.com/hcoona/three/issues/1498) and
+[Issue #1491](https://github.com/hcoona/three/issues/1491) (`#1494`–`#1496`);
+the W1 text-representation grant for
+[Issue #1488](https://github.com/hcoona/three/issues/1488) was retired after
+owner acceptance of `formal-5` in
 [#1488 comment 7083509900](https://github.com/hcoona/three/issues/1488#issuecomment-7083509900),
 the W2/W3 grant for [Issue #1489](https://github.com/hcoona/three/issues/1489)
 and [Issue #1490](https://github.com/hcoona/three/issues/1490) was retired in
@@ -22,12 +28,9 @@ and [Issue #1490](https://github.com/hcoona/three/issues/1490) was retired in
 `w2-s0-formal-3`, and the [PR #1752](https://github.com/hcoona/three/pull/1752)
 W4/W5 Stage S3 and system-detection grant for
 [Issue #1491](https://github.com/hcoona/three/issues/1491) (`#1493`–`#1496`)
-and [Issue #1497](https://github.com/hcoona/three/issues/1497) was retired after
-owner acceptance of `w4-w5-formal-2`, `w4-w5-formal-w5-traindev` and
-`w4-w5-formal-w5-locked92` in
-[#1491 comment 7138762309](https://github.com/hcoona/three/issues/1491#issuecomment-7138762309)
-and
-[#1497 comment 7138763006](https://github.com/hcoona/three/issues/1497#issuecomment-7138763006)),
+and [Issue #1497](https://github.com/hcoona/three/issues/1497) was retired in
+[PR #1762](https://github.com/hcoona/three/pull/1762) after owner acceptance of
+`w4-w5-formal-2`, `w4-w5-formal-w5-traindev` and `w4-w5-formal-w5-locked92`),
 while contract-preserving routine maintenance without new external, paid, or
 privacy effects follows the
 [record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency).
@@ -57,6 +60,7 @@ also apply [shared engineering guidance](../../../../../.github/skills/engineeri
 | Real-data alignment, overlay QA, system crops, or split rules       | [OMR-REQ-016 and OMR-REQ-017](requirements.md#real-data-splits-and-recognizer-evaluation), [Evaluation and real-data alignment protocol](evaluation-protocol.md) ([Real-data alignment, overlay QA and system crops](evaluation-protocol.md#real-data-alignment-overlay-qa-and-system-crops)); [OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance); `src/sheet_music_omr/evaluation/alignment.py`, `tests/test_evaluation.py`                                                                                                                 |
 | Recognizer scorer, Stage S0 baselines, touch log, or `copista`      | [OMR-REQ-018 through OMR-REQ-020](requirements.md#real-data-splits-and-recognizer-evaluation), [Evaluation and real-data alignment protocol](evaluation-protocol.md) ([Recognizer comparison and B-normalization](evaluation-protocol.md#recognizer-comparison-and-b-normalization), [Stage S0 baselines and isolated copista-28m execution](evaluation-protocol.md#stage-s0-baselines-and-isolated-copista-28m-execution), [Discrepancy and round-logging schema](evaluation-protocol.md#discrepancy-and-round-logging-schema)); `src/sheet_music_omr/evaluation/` |
 | Synthetic data engine, Stage S3 proof, W5 detectors, or W5 assembly | [OMR-REQ-021 through OMR-REQ-025](requirements.md#synthetic-training-data-engine-and-system-detection-benchmark), [Synthetic data and system-detection protocol](synthetic-protocol.md); [OMR-REQ-014 and OMR-REQ-015](requirements.md#evidence-and-boundaries); `src/sheet_music_omr/synthetic/`, `src/sheet_music_omr/evaluation/w5_detectors.py`, `tests/test_synthetic_intake_injector.py`, `tests/test_w5_and_degrade.py`, `tests/test_synthetic_ledgers_cli.py`                                                                                               |
+| W6 bulk crop packaging, training stack, detector, or per-system run | [OMR-REQ-026 through OMR-REQ-030](requirements.md#pilot-dataset-packaging-clean-training-stack-and-per-system-baseline), [Training, bulk-packaging and page-detector protocol](training-protocol.md); [OMR-REQ-014 and OMR-REQ-015](requirements.md#evidence-and-boundaries); `src/sheet_music_omr/synthetic/`, `src/sheet_music_omr/evaluation/`                                                                                                                                                                                                                   |
 | Project records or navigation only                                  | [Project portal](../README.md), [record policy](../../../../../docs/governance/record-system.md), [family catalog](../../../../../docs/governance/record-families.yaml), [record-system review](../../../../../.github/skills/record-system-review/SKILL.md)                                                                                                                                                                                                                                                                                                        |
 
 ## Accepted W1 baseline on main
@@ -488,3 +492,38 @@ and is prohibited). Do not overwrite
 preserved external `w4-w5-formal-1`, `w4-w5-formal-2`,
 `w4-w5-formal-w5-traindev` and `w4-w5-formal-w5-locked92` run directories
 unless the repository owner deletes those run directories after closure merge.
+
+## Formal Slice A gates for authorized W6 runs
+
+Under the accepted [W6 Slice A Delivery Wave entry](../../../../../docs/delivery-wave.md#prepare-omr-pilot-datasets-and-training-stack-w6-slice-a),
+execute external provisioning, expanded `PDMX` intake, `20k` / `50k` crop
+packaging and `TRAIN_DEV` per-system `copista-28m` baseline runs strictly in
+order:
+
+1. **Accept protocol on `main` before external, bulk or private-input effects:**
+   confirm [OMR-REQ-026 through OMR-REQ-030](requirements.md#pilot-dataset-packaging-clean-training-stack-and-per-system-baseline)
+   and the [training, bulk-packaging and page-detector protocol](training-protocol.md)
+   are merged on `origin/main` before installing `DOWNLOADS/w6-train-venv` or
+   model-metadata files, running expanded W4a intake, rendering bulk `20k` /
+   `50k` synthetic crops, preparing new `TRAIN_DEV` crops, or running
+   private-input `copista-28m` per-system invocations.
+2. **Preserve all prior ledgers and enforce persistent Slice A ledgers:** carry
+   forward `download-ledger.json`, `w2-download-ledger.json`,
+   `w2-touch-log.jsonl`, `w4-w5-download-ledger.json` and
+   `w4-w5-run-ledger.jsonl` unchanged (`locked92` single-pass stop intact), and
+   keep `DOWNLOADS/w6-slice-a-download-ledger.json` (`15 GB` cap, settled
+   history preserved) and append-only `DOWNLOADS/w6-slice-a-run-ledger.jsonl`
+   (`35,000` cumulative rendered pages, `10` private-input `copista-28m`
+   per-system invocations charged pre-start regardless of purpose or outcome)
+   permanently preserved across cleanup and `DOWNLOADS` roots (`100 GB` disk cap
+   across `RUNS/w6-slice-a-*`, `15,000` pages/run).
+3. **Maintain zero `TEST` touches and clean-license isolation:** never pass any
+   `TEST` piece (`gold-01`–`gold-06`, `gold-18`), `TEST` page PDF or `TEST` crop
+   into Slice A packaging, calibration or `copista-28m` per-system runs (`TEST`
+   `gold-cache` entries are read-only solely for W4a file-digest and
+   non-notation work-identity exclusion checks), enforce the external-asset
+   license allowlist and mutable-source recheck gate in
+   [training-protocol.md](training-protocol.md#environment-isolated-provisioning-and-mutable-source-rechecks),
+   and pass `OMR-REQ-015` `privacy.scan` and independent
+   `research-evidence-review` before publishing Slice A readiness and baseline
+   reports to `#1498`, `#1491` (`#1494`–`#1496`) and `#686`.
