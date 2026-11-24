@@ -1286,10 +1286,11 @@ def render_musescore(  # noqa: PLR0913
             msg = "MuseScore re-export changed the canonical measure count"
             raise RenderRejected(msg)
         try:
-            differences = compare_file(round_trip, encoded).category_counts()
+            annotate(round_trip)
         except ProtocolDefectError as exc:
             msg = "MuseScore re-export produced invalid spanner endpoints"
             raise RenderRejected(msg) from exc
+        differences = compare_file(round_trip, encoded).category_counts()
         if differences:
             return _result(
                 engine,

@@ -617,16 +617,16 @@ def test_render_musescore_propagates_ref_defect_and_drops_bad_reexport(
             rights_variant="permissive",
         )
 
-    called_compare = False
+    encoded_seen: list[str] = []
 
-    def _fail_compare(*_args: object):
-        nonlocal called_compare
-        called_compare = True
+    def _capture_then_fail_reexport(xml_text: str):
+        if not encoded_seen:
+            encoded_seen.append(xml_text)
+            return
         msg = "reexport defect"
         raise ProtocolDefectError(msg)
 
-    monkeypatch.setattr(rend_mod, "annotate", lambda *_: None)
-    monkeypatch.setattr(rend_mod, "compare_file", _fail_compare)
+    monkeypatch.setattr(rend_mod, "annotate", _capture_then_fail_reexport)
     res = render_musescore(
         xml,
         style,
@@ -635,5 +635,16 @@ def test_render_musescore_propagates_ref_defect_and_drops_bad_reexport(
         ledger,
         rights_variant="permissive",
     )
-    assert called_compare
     assert res.gate.status == "dropped"
+
+    monkeypatch.setattr(rend_mod, "annotate", lambda *_: None)
+    monkeypatch.setattr(rend_mod, "compare_file", _fail_both)
+    with pytest.raises(ProtocolDefectError, match="synthetic defect"):
+        render_musescore(
+            xml,
+            style,
+            _Ms(),  # type: ignore[arg-type]
+            tmp_path / "comparator-bad",
+            ledger,
+            rights_variant="permissive",
+        )
