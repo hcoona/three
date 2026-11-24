@@ -22,12 +22,19 @@ internal sealed class SerializedToolHost : IAsyncDisposable
     private Exception? primary;
     private readonly int expectedExit;
 
-    private SerializedToolHost(RunDatabase database, string actor, bool preflight)
+    private SerializedToolHost(
+        string statePath,
+        string actor,
+        string[] arguments,
+        int expectedExit,
+        string? workingDirectory = null
+    )
     {
         this.actor = actor;
-        expectedExit = preflight ? 1 : 0;
-        statePath = database.StatePath;
-        string home = Path.Combine(database.StatePath, "phase8-owned-home");
+        this.expectedExit = expectedExit;
+        this.statePath = statePath;
+        workingDirectory ??= statePath;
+        string home = Path.Combine(workingDirectory, "phase8-owned-home");
         Directory.CreateDirectory(home);
         string global = Path.Combine(home, "global.gitconfig");
         if (!File.Exists(global))
@@ -36,7 +43,7 @@ internal sealed class SerializedToolHost : IAsyncDisposable
         }
         ProcessStartInfo start = new(Path.Combine(AppContext.BaseDirectory, "LiteAgensh.exe"))
         {
-            WorkingDirectory = database.StatePath,
+            WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardInput = true,
@@ -60,13 +67,9 @@ internal sealed class SerializedToolHost : IAsyncDisposable
         start.Environment["GIT_CONFIG_NOSYSTEM"] = "1";
         start.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
         start.Environment["OTEL_SDK_DISABLED"] = "true";
-        start.ArgumentList.Add(preflight ? "preflight" : "mcp");
-        start.ArgumentList.Add("--state");
-        start.ArgumentList.Add(database.StatePath);
-        if (!preflight)
+        foreach (string argument in arguments)
         {
-            start.ArgumentList.Add("--actor");
-            start.ArgumentList.Add(actor);
+            start.ArgumentList.Add(argument);
         }
         process = new Process { StartInfo = start };
         bool started = false;
@@ -86,7 +89,7 @@ internal sealed class SerializedToolHost : IAsyncDisposable
                         ["pid"] = process.Id,
                         ["birthTicks"] = birthTicks,
                         ["actor"] = actor,
-                        ["mode"] = preflight ? "preflight" : "mcp",
+                        ["mode"] = arguments[0],
                         ["state"] = statePath,
                         ["productSha256"] = Convert.ToHexString(
                             SHA256.HashData(File.ReadAllBytes(typeof(Program).Assembly.Location))
@@ -133,7 +136,10 @@ internal sealed class SerializedToolHost : IAsyncDisposable
         CancellationToken token
     )
     {
-        SerializedToolHost host = new(database, actor, false);
+        SerializedToolHost host = new(
+            database.StatePath, actor,
+            ["mcp", "--state", database.StatePath, "--actor", actor], expectedExit: 0
+        );
         try
         {
             host.client = await McpClient
@@ -196,18 +202,57 @@ internal sealed class SerializedToolHost : IAsyncDisposable
         CancellationToken token
     ) => GitScenarioState.Data(await InvokeAsync(name, arguments, token).ConfigureAwait(false));
 
-    internal static async Task<JsonObject> RejectIncompatiblePreflightAsync(
+    internal static Task<JsonObject> RejectIncompatiblePreflightAsync(
         RunDatabase database,
+        CancellationToken token
+    ) => ReadLaunchAsync(
+        new(database.StatePath, "owner", ["preflight", "--state", database.StatePath],
+            expectedExit: 1), token
+    );
+
+    internal static Task<JsonObject> RejectInvalidInitializationAsync(
+        string configurationPath,
+        string statePath,
+        CancellationToken token
+    ) => ReadLaunchAsync(
+        new(statePath, "owner", ["init", "--config", configurationPath], expectedExit: 1,
+            workingDirectory: Path.GetDirectoryName(configurationPath)), token
+    );
+
+    internal static Task<JsonObject> InitializeAsync(
+        string configurationPath,
+        string statePath,
+        string workingDirectory,
+        CancellationToken token
+    ) => ReadLaunchAsync(
+        new(statePath, "owner", ["init", "--config", configurationPath], expectedExit: 0,
+            workingDirectory: workingDirectory), token
+    );
+
+    internal static Task<JsonObject> RejectRetainedRecoveryAsync(
+        RunDatabase database,
+        string command,
+        string reservation,
+        CancellationToken token
+    ) => ReadLaunchAsync(
+        new(database.StatePath, "owner",
+            command == "reconcile"
+                ? [command, "--state", database.StatePath, "--reservation", reservation]
+                : [command, "--state", database.StatePath],
+            expectedExit: 1), token
+    );
+
+    private static async Task<JsonObject> ReadLaunchAsync(
+        SerializedToolHost host,
         CancellationToken token
     )
     {
-        SerializedToolHost host = new(database, "owner", true);
         try
         {
             host.process.StandardInput.Close();
             host.output = host.process.StandardOutput.ReadToEndAsync(CancellationToken.None);
             await host.process.WaitForExitAsync(token).ConfigureAwait(false);
-            Assert.AreEqual(1, host.process.ExitCode);
+            Assert.AreEqual(host.expectedExit, host.process.ExitCode);
             return JsonNode
                 .Parse(await host.output.WaitAsync(token).ConfigureAwait(false))!
                 .AsObject();
@@ -216,7 +261,7 @@ internal sealed class SerializedToolHost : IAsyncDisposable
         {
             host.primary = exception;
             Console.Error.WriteLine("PHASE8_PRIMARY " + Json.ExceptionDetails(exception));
-            Console.WriteLine("PHASE8_PRESERVED_STATE " + database.StatePath);
+            Console.WriteLine("PHASE8_PRESERVED_STATE " + host.statePath);
             throw;
         }
         finally

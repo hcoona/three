@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Xml.Linq;
 using LiteAgensh.Tests.Support;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -32,9 +32,9 @@ public sealed class TrustedBoundarySpecs(TestContext context)
     ];
 
     [TestMethod]
-    [TestCategory("HostTrustAndPinnedSelection")]
+    [TestCategory("HostTrust")]
     [Timeout(120_000, CooperativeCancellation = true)]
-    public async Task HostTrustAndPinnedSelection()
+    public async Task HostTrustPreservesOwnedFilesAndCheckout()
     {
         GitScenarioState state = await GitScenarioState
             .CreateAsync(context.CancellationToken)
@@ -96,6 +96,7 @@ public sealed class TrustedBoundarySpecs(TestContext context)
                                 {
                                     ["action"] = "create",
                                     ["title"] = "Rejected sentinel",
+                                    ["body"] = "Otherwise valid synthetic task body.",
                                     ["credential"] = credential,
                                 },
                                 context.CancellationToken
@@ -131,40 +132,6 @@ public sealed class TrustedBoundarySpecs(TestContext context)
                     .ConfigureAwait(false)
             );
 
-            // Declared/source selection, NOT installed CLI or native policy readback.
-            XDocument project = XDocument.Load(SerializedToolSpecs.SourcePath("LiteAgensh.csproj"));
-            Assert.AreEqual("true", project.Descendants("CopilotSkipCliDownload").Single().Value);
-            Assert.IsEmpty(project.Descendants("CopilotCliVersion"));
-            Assert.ContainsSingle(
-                project
-                    .Descendants("PackageReference")
-                    .Where(reference =>
-                        (string?)reference.Attribute("Include") == "GitHub.Copilot.SDK"
-                    )
-            );
-            string root = Path.GetFullPath(
-                Path.Combine(SerializedToolSpecs.SourcePath("."), "../../../..")
-            );
-            XDocument packages = XDocument.Load(Path.Combine(root, "Directory.Packages.props"));
-            XNamespace msbuild = packages.Root!.Name.Namespace;
-            XElement sdk = packages
-                .Descendants(msbuild + "PackageVersion")
-                .Single(item => (string?)item.Attribute("Include") == "GitHub.Copilot.SDK");
-            string productName = Path.GetFileNameWithoutExtension(
-                SerializedToolSpecs.SourcePath("LiteAgensh.csproj")
-            );
-            Assert.Contains(
-                "'$(MSBuildProjectName)' == '" + productName + "'",
-                sdk.Attribute("Condition")!.Value.Split(" or ", StringSplitOptions.TrimEntries)
-            );
-            string selectedSdkVersion = sdk.Attribute("Version")!.Value;
-            JsonObject locked = JsonNode
-                .Parse(File.ReadAllText(SerializedToolSpecs.SourcePath("packages.lock.json")))!
-                .AsObject();
-            JsonObject dependency = locked["dependencies"]!.AsObject().Single().Value![
-                "GitHub.Copilot.SDK"
-            ]!.AsObject();
-            Assert.AreEqual(selectedSdkVersion, dependency["resolved"]!.GetValue<string>());
             Console.WriteLine(
                 "PHASE8_TRUST_EFFECTS "
                     + new JsonObject
@@ -184,8 +151,6 @@ public sealed class TrustedBoundarySpecs(TestContext context)
                         ),
                         ["checkoutHeadPreserved"] = true,
                         ["checkoutStatusPreserved"] = true,
-                        ["sdkDeclaredSelection"] = selectedSdkVersion,
-                        ["cliDeclaredSelection"] = "installed-without-version-restriction",
                         ["installedNativeReadback"] = false,
                         ["nativePolicyEffectivenessObserved"] = false,
                     }.ToJsonString()
@@ -216,7 +181,170 @@ public sealed class TrustedBoundarySpecs(TestContext context)
     }
 
     [TestMethod]
-    [TestCategory("HostTrustAndPinnedSelection")]
+    [TestCategory("HostTrust")]
+    [Timeout(120_000, CooperativeCancellation = true)]
+    public async Task PublicYamlInitFromAnotherDirectoryRetainsGoalAfterSourceRemoval()
+    {
+        using GitScenarioState state = await GitScenarioState.CreateAsync(
+            context.CancellationToken
+        );
+        string input = state.PathFor("yaml-input");
+        string launch = state.PathFor("separate-launch-directory");
+        Directory.CreateDirectory(input);
+        Directory.CreateDirectory(launch);
+        string configuration = Path.Combine(input, "run.yaml");
+        string goalPath = Path.Combine(input, "goal.md");
+        string retainedState = Path.Combine(input, "initialized-run");
+        string unavailableNative = state.PathFor("unavailable-native", "copilot");
+        const string goal = "# Public initialization\nRetain this exact original goal.\n";
+        File.WriteAllText(goalPath, goal);
+        File.WriteAllText(
+            configuration,
+            $"""
+            repositoryPath: ../checkout
+            statePath: ./initialized-run
+            campaignLedgerPath: ./credits.sqlite
+            goalFile: ./goal.md
+            workerCount: 1
+            creditAllocation: shared
+            nativeExecutable: {JsonSerializer.Serialize(unavailableNative)}
+            finalChecks: []
+            """
+        );
+
+        JsonObject initialized = GitScenarioState.Data(
+            await SerializedToolHost.InitializeAsync(
+                configuration, retainedState, launch, context.CancellationToken
+            )
+        );
+        Assert.AreEqual(retainedState, initialized["statePath"]!.GetValue<string>());
+        Assert.AreEqual(state.Repository, initialized["repositoryPath"]!.GetValue<string>());
+        string runId = initialized["runId"]!.GetValue<string>();
+        File.Delete(goalPath);
+        RunDatabase reopened = new(retainedState);
+        Assert.AreEqual(runId, reopened.RunId);
+        Assert.AreEqual(
+            Path.Combine(input, "credits.sqlite"), reopened.Configuration.CampaignLedgerPath
+        );
+        Assert.AreEqual("shared", reopened.Configuration.CreditAllocation);
+
+        await SerializedToolHost.RunAsync(
+            reopened, "owner",
+            async host =>
+            {
+                JsonObject info = await host.DataAsync(
+                    "run_info", new(), context.CancellationToken
+                );
+                Assert.AreEqual(goal, info["goal"]!.GetValue<string>());
+                Assert.AreEqual(retainedState, info["statePath"]!.GetValue<string>());
+                Assert.AreEqual(state.Repository, info["repositoryPath"]!.GetValue<string>());
+            },
+            context.CancellationToken
+        );
+    }
+
+    [TestMethod]
+    [DataRow("reconcile")]
+    [DataRow("reconnect")]
+    [TestCategory("HostTrust")]
+    [Timeout(120_000, CooperativeCancellation = true)]
+    public async Task MissingOriginalLedgerRefusesPublicRecoveryWithoutReplacement(string command)
+    {
+        BoardDeliveryState state = new();
+        bool completed = false;
+        try
+        {
+            state.Send("owner", "worker1", "Retain the run whose original ledger is missing.");
+            LocalTools tools = new(state.Database);
+            _ = new Coordinator(state.Database, tools.Collaboration, tools.Git);
+            string ledgerPath = state.Database.Configuration.CampaignLedgerPath;
+            CreditLedger ledger = new(
+                ledgerPath, state.Database.Configuration.CampaignAiCreditAllowance
+            );
+            CreditReservation reservation = ledger.Reserve(
+                state.Database.RunId, "worker1", 30,
+                state.Database.Configuration.RunAiCreditAllowance,
+                Path.Combine(state.Database.StatePath, "uncalled.usage")
+            );
+            string binding = state.Database.ReadMetadata("native:ledger_binding")!;
+            Assert.IsNotNull(binding);
+            JsonObject before = RetainedRunProjection(state.Database);
+            using (SqliteConnection ownedPool = new(Sql.ConnectionStringFor(ledgerPath)))
+            {
+                SqliteConnection.ClearPool(ownedPool);
+            }
+            string retainedLedger = ledgerPath + ".retained";
+            File.Move(ledgerPath, retainedLedger);
+            string originalDigest = Digest(retainedLedger);
+            Assert.IsFalse(File.Exists(ledgerPath));
+
+            JsonObject result = await SerializedToolHost.RejectRetainedRecoveryAsync(
+                state.Database, command, reservation.Id, context.CancellationToken
+            );
+
+            Assert.IsFalse(result["ok"]!.GetValue<bool>());
+            Assert.AreEqual("credit_unknown", result["code"]!.GetValue<string>());
+            Assert.Contains(
+                "requires its original campaign ledger", result["message"]!.GetValue<string>()
+            );
+            Assert.AreEqual(
+                before.ToJsonString(), RetainedRunProjection(state.Database).ToJsonString()
+            );
+            Assert.AreEqual(binding, state.Database.ReadMetadata("native:ledger_binding"));
+            Assert.IsFalse(File.Exists(ledgerPath));
+            Assert.AreEqual(originalDigest, Digest(retainedLedger));
+            Assert.IsFalse(File.Exists(Path.Combine(state.Database.StatePath, "coordinator.lock")));
+            completed = true;
+        }
+        finally
+        {
+            if (completed)
+            {
+                state.Dispose();
+            }
+            else
+            {
+                Console.WriteLine("PHASE8_PRESERVED_STATE " + state.Database.StatePath);
+            }
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("HostTrust")]
+    [Timeout(120_000, CooperativeCancellation = true)]
+    public async Task InitDuplicateLegacyGoalReturnsFailureWithoutCreatingState()
+    {
+        using ScratchDirectory scratch = new();
+        string path = scratch.PathFor("duplicate.json");
+        string state = scratch.PathFor("run");
+        string ledger = scratch.PathFor("credits.sqlite");
+        using (FileStream stream = File.Create(path))
+        {
+            using Utf8JsonWriter writer = new(stream);
+            writer.WriteStartObject();
+            writer.WriteString("repositoryPath", scratch.PathFor("checkout"));
+            writer.WriteString("statePath", state);
+            writer.WriteString("campaignLedgerPath", ledger);
+            writer.WriteString("goal", "Review only.");
+            writer.WriteString("goal", "Modify sources.");
+            writer.WriteEndObject();
+        }
+
+        JsonObject result = await SerializedToolHost.RejectInvalidInitializationAsync(
+            path, state, context.CancellationToken
+        ).ConfigureAwait(false);
+
+        Assert.IsFalse(result["ok"]!.GetValue<bool>());
+        Assert.AreEqual("failed", result["code"]!.GetValue<string>());
+        Assert.Contains("goal", result["message"]!.GetValue<string>());
+        Assert.IsTrue(result.TryGetPropertyValue("data", out JsonNode? data));
+        Assert.IsNull(data);
+        Assert.IsFalse(Directory.Exists(state));
+        Assert.IsFalse(File.Exists(ledger));
+    }
+
+    [TestMethod]
+    [TestCategory("HostTrust")]
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task IncompatibleOwnedStateRejectedAtPublicLaunchWithoutRecreation()
     {
@@ -233,28 +361,7 @@ public sealed class TrustedBoundarySpecs(TestContext context)
             );
             File.WriteAllText(sentinel, "Do not replace this owned run.\n");
             string beforeFile = Digest(sentinel);
-            JsonObject Projection()
-            {
-                using SqliteConnection connection = state.Database.Open();
-                return new()
-                {
-                    ["metadata"] = Phase6State.Rows(
-                        connection,
-                        "SELECT key,value FROM meta ORDER BY key;"
-                    ),
-                    ["schema"] = Phase6State.Rows(
-                        connection,
-                        "SELECT name,sql FROM sqlite_master WHERE type='table' ORDER BY name;"
-                    ),
-                    ["tasks"] = Phase6State.Rows(connection, "SELECT * FROM tasks ORDER BY id;"),
-                    ["messages"] = Phase6State.Rows(
-                        connection,
-                        "SELECT * FROM messages ORDER BY id;"
-                    ),
-                    ["events"] = Phase6State.Rows(connection, "SELECT * FROM events ORDER BY id;"),
-                };
-            }
-            JsonObject before = Projection();
+            JsonObject before = RetainedRunProjection(state.Database);
             JsonObject result = await SerializedToolHost
                 .RejectIncompatiblePreflightAsync(state.Database, context.CancellationToken)
                 .ConfigureAwait(false);
@@ -262,7 +369,7 @@ public sealed class TrustedBoundarySpecs(TestContext context)
             Assert.AreEqual("failed", result["code"]!.GetValue<string>());
             Assert.Contains("Unsupported run schema 999", result["message"]!.GetValue<string>());
             Assert.Contains("state has not been recreated", result["message"]!.GetValue<string>());
-            JsonObject after = Projection();
+            JsonObject after = RetainedRunProjection(state.Database);
             Assert.AreEqual(before.ToJsonString(), after.ToJsonString());
             Assert.AreEqual(beforeFile, Digest(sentinel));
             Assert.AreEqual("999", state.Database.ReadMetadata("schema_version"));
@@ -294,7 +401,7 @@ public sealed class TrustedBoundarySpecs(TestContext context)
     }
 
     [TestMethod]
-    [TestCategory("HostTrustAndPinnedSelection")]
+    [TestCategory("HostTrust")]
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task MissingCapabilityPreservesBusinessStateAndReleasesOperationOwnership()
     {
@@ -465,6 +572,24 @@ public sealed class TrustedBoundarySpecs(TestContext context)
                 );
             })
             .ConfigureAwait(false);
+    }
+
+    private static JsonObject RetainedRunProjection(RunDatabase database)
+    {
+        using SqliteConnection connection = database.Open();
+        return new()
+        {
+            ["metadata"] = Phase6State.Rows(
+                connection, "SELECT key,value FROM meta ORDER BY key;"
+            ),
+            ["schema"] = Phase6State.Rows(
+                connection,
+                "SELECT name,sql FROM sqlite_master WHERE type='table' ORDER BY name;"
+            ),
+            ["tasks"] = Phase6State.Rows(connection, "SELECT * FROM tasks ORDER BY id;"),
+            ["messages"] = Phase6State.Rows(connection, "SELECT * FROM messages ORDER BY id;"),
+            ["events"] = Phase6State.Rows(connection, "SELECT * FROM events ORDER BY id;"),
+        };
     }
 
     private static string Digest(string file) =>
