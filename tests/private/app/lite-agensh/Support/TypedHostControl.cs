@@ -10,10 +10,12 @@ internal sealed class TypedHostControl : INativeSdkHost, IDisposable
 {
     private readonly ScratchDirectory scratch = new();
     private readonly TaskCompletionSource release = NewSignal();
+    private readonly string? initialUsageStatus;
     private bool disposed;
 
-    internal TypedHostControl(decimal creditAllowance = 400)
+    internal TypedHostControl(decimal creditAllowance = 400, string? initialUsageStatus = null)
     {
+        this.initialUsageStatus = initialUsageStatus;
         CreditAllowance = creditAllowance;
         RunConfiguration configuration = new()
         {
@@ -114,6 +116,23 @@ internal sealed class TypedHostControl : INativeSdkHost, IDisposable
                     SELECT RAISE(ABORT, 'Controlled association prerequisite absent.');
                 END;
                 """,
+            "meta" => $"""
+                CREATE TRIGGER reject_owned_association BEFORE INSERT ON meta
+                WHEN NEW.key='worker:{worker}:session' AND NEW.value='{session}'
+                BEGIN
+                    SELECT RAISE(ABORT,
+                        'Controlled worker binding write rejected after matching associations.')
+                    WHERE EXISTS(
+                        SELECT 1 FROM native_attempts
+                        WHERE usage_path='{path}' AND reservation_id='{id}'
+                            AND worker='{worker}' AND session_id='{session}')
+                        AND EXISTS(
+                            SELECT 1 FROM native_sessions
+                            WHERE reservation_id='{id}' AND worker='{worker}'
+                                AND session_id='{session}');
+                    SELECT RAISE(ABORT, 'Controlled association prerequisite absent.');
+                END;
+                """,
             _ => throw new ArgumentOutOfRangeException(nameof(table)),
         };
         using SqliteConnection connection = Database.Open();
@@ -196,7 +215,7 @@ internal sealed class TypedHostControl : INativeSdkHost, IDisposable
             SessionId = sessionId;
             HasSession = true;
             appliedLimit = limit + (MismatchAppliedCap ? 1 : 0);
-            usage = new(sessionId, 0, null, 0);
+            usage = new(sessionId, 0, host.initialUsageStatus, 0);
             host.Database.WriteMetadata(
                 $"native:runtime:{host.Id}:session:{sessionId}",
                 new JsonObject

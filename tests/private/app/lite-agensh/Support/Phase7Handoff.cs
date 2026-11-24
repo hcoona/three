@@ -191,14 +191,20 @@ internal sealed class Phase7Handoff : IDisposable
         public void WithSettledUsage(NativeUsage usage, Action record)
         {
             inner.WithSettledUsage(usage, record);
-            // The REAL record action has returned, including CloseSharedWindow.
-            // Never call it a second time or infer its effects from an ACK.
-            if (worker == "worker1" && usage.RequireComplete() > 0)
+            // The real record action returned; stop-stage accounting can leave the window open.
+            // Never repeat the action or infer its effects from an ACK.
+            if (
+                worker == "worker1" && usage.Status == "complete" && usage.TotalNanoAiu is > 0
+            )
             {
-                observation.PositiveRecorded.TrySetResult(usage.RequireComplete());
-                if (observation.followingUp)
+                decimal actual = usage.RequireComplete();
+                if (actual > 0)
                 {
-                    observation.FollowupRecorded.TrySetResult(usage.RequireComplete());
+                    observation.PositiveRecorded.TrySetResult(actual);
+                    if (observation.followingUp)
+                    {
+                        observation.FollowupRecorded.TrySetResult(actual);
+                    }
                 }
             }
         }

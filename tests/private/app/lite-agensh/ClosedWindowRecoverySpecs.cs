@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using LiteAgensh.Tests.Support;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -19,7 +20,7 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
     [TestMethod]
     [DataRow(247)]
     [DataRow(347)]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task ClosedWindowMonotonicFinalChargeOriginalLifetimeSettledDeltaWithoutNewWork(
         int final
     )
@@ -90,7 +91,7 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
     [DataRow("session-stop", "actual recovery session could not settle")]
     [DataRow("host-stop", "actual owned recovery host could not settle")]
     [DataRow("background", "Fresh recovery background compaction failed")]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task ClosedWindowMonotonicFinalChargeEligibleThenOneFaultPreservesOriginalBacking(
         string fault,
         string reason
@@ -120,7 +121,7 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
     }
 
     [TestMethod]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task ZeroOriginSavedObservationFaultsRestoreExactProducerBytesWithoutActivation()
     {
         RecoveryLifetimeControl state = await RecoveryLifetimeControl.CreateAsync(
@@ -197,10 +198,12 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("1.0.106")]
-    [Timeout(120_000)]
+    [DataRow("1.0.106", false)]
+    [DataRow("1.0.106", true)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task RuntimeProvenanceMismatchRejectsWithoutRewritingOriginal(
-        string original
+        string original,
+        bool runtimeRecord
     )
     {
         RecoveryLifetimeControl state = await RecoveryLifetimeControl.CreateAsync(
@@ -214,7 +217,39 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
                 247m,
                 (await state.RecoverAsync(context.CancellationToken)).Usage.RequireComplete()
             );
-            state.DamageSavedObservation("runtime-version");
+            string sessionKey = $"native:session:{state.Reservation.SessionId}";
+            string runtimeKey = $"native:runtime:{state.OriginalHost.Id}";
+            string[] provenanceKeys =
+            [
+                NoDispatchCancellation.Marker(state.Reservation.Id),
+                sessionKey,
+                runtimeKey,
+                $"{runtimeKey}:session:{state.Reservation.SessionId}",
+            ];
+            var originalEvidence = provenanceKeys.ToDictionary(
+                key => key, key => state.Database.ReadMetadata(key), StringComparer.Ordinal
+            );
+            foreach (var (key, bytes) in originalEvidence)
+            {
+                Assert.IsNotNull(bytes, key);
+            }
+            string damagedKey = runtimeRecord ? runtimeKey : sessionKey;
+            if (runtimeRecord)
+            {
+                JsonObject runtime = JsonNode.Parse(originalEvidence[runtimeKey]!)!.AsObject();
+                runtime["runtimeVersion"] = "1.0.107";
+                state.Database.WriteMetadata(runtimeKey, runtime.ToJsonString());
+            }
+            else
+            {
+                state.DamageSavedObservation("runtime-version");
+            }
+            string? damaged = state.Database.ReadMetadata(damagedKey);
+            Assert.IsNotNull(damaged);
+            Assert.AreNotEqual(
+                original,
+                JsonNode.Parse(damaged)!["runtimeVersion"]!.GetValue<string>()
+            );
             var before = state.FinancialSnapshot.ToJsonString();
             var failure = await Assert.ThrowsExactlyAsync<OperationException>(() =>
                 state.RecoverAsync(context.CancellationToken)
@@ -223,10 +258,14 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
                 "compatible original zero-origin and verified cap evidence",
                 failure.ToString()
             );
-            Assert.AreEqual(
-                original,
-                state.Original.Metadata!["runtimeVersion"]!.GetValue<string>()
-            );
+            foreach (var (key, bytes) in originalEvidence)
+            {
+                Assert.AreEqual(
+                    key == damagedKey ? damaged : bytes,
+                    state.Database.ReadMetadata(key),
+                    key
+                );
+            }
             Assert.HasCount(1, state.RecoveryHosts);
             Assert.AreEqual(before, state.FinancialSnapshot.ToJsonString());
         });
@@ -235,7 +274,7 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
     [TestMethod]
     [DataRow("missing-live-version", "compatible original zero-origin and verified cap evidence")]
     [DataRow("live-cap", "limit")]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task InstalledRuntimeRecoveryRequiresLiveIdentityAndCap(
         string fault,
         string reason
@@ -267,7 +306,7 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
     }
 
     [TestMethod]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task ZeroOriginUsesVerifiedCeilingOriginal300Spent200ExactCapRemains300()
     {
         RecoveryLifetimeControl state = await RecoveryLifetimeControl.CreateAsync(
@@ -292,7 +331,7 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
 
     [TestMethod]
     [DataRow("1.0.105")]
-    [Timeout(120_000)]
+    [Timeout(120_000, CooperativeCancellation = true)]
     public async Task InstalledRuntimeRecoveryPreservesOriginalVersionWithoutPairAllowlist(
         string original
     )
@@ -306,14 +345,36 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
             state.AssertOriginalLifetime();
             state.RecoveryVersion = "1.0.112";
             var before = state.FinancialSnapshot.ToJsonString();
+            var reservation = state.Reservation;
+            string sessionKey = $"native:session:{reservation.SessionId}";
+            string runtimeKey = $"native:runtime:{state.OriginalHost.Id}";
+            long leaseId = state.OriginalHost.LeaseId;
+            string[] provenanceKeys =
+            [
+                NoDispatchCancellation.Marker(reservation.Id),
+                sessionKey,
+                runtimeKey,
+                $"{runtimeKey}:session:{reservation.SessionId}",
+            ];
+            var originalEvidence = provenanceKeys.ToDictionary(
+                key => key, key => state.Database.ReadMetadata(key), StringComparer.Ordinal
+            );
+            foreach (var (key, bytes) in originalEvidence)
+            {
+                Assert.IsNotNull(bytes, key);
+            }
+            var originalLease = ReadOriginalLease();
 
             var recovered = await state.RecoverAsync(context.CancellationToken);
 
             Assert.AreEqual(247m, recovered.Usage.RequireComplete());
-            Assert.AreEqual(
-                original,
-                state.Original.Metadata!["runtimeVersion"]!.GetValue<string>()
-            );
+            foreach (var (key, bytes) in originalEvidence)
+            {
+                Assert.AreEqual(bytes, state.Database.ReadMetadata(key), key);
+            }
+            Assert.AreEqual(originalLease, ReadOriginalLease());
+            JsonNode retained = JsonNode.Parse(originalEvidence[sessionKey]!)!;
+            Assert.AreEqual(original, retained["runtimeVersion"]!.GetValue<string>());
             Assert.AreEqual(
                 "1.0.112",
                 state.RecoveryHosts.Single().Sessions.Single().Metadata![
@@ -322,9 +383,33 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
             );
             Assert.AreEqual(
                 NativeSdkSession.SdkVersion,
-                state.Original.Metadata!["sdkVersion"]!.GetValue<string>()
+                retained["sdkVersion"]!.GetValue<string>()
             );
             Assert.AreEqual(before, state.FinancialSnapshot.ToJsonString());
+
+            (long Pid, long BirthTicks, string Kind, string State, string CreatedAt)
+                ReadOriginalLease()
+            {
+                using var connection = state.Database.Open();
+                using var command = Sql.Command(
+                    connection,
+                    """
+                    SELECT pid,start_ticks,kind,state,created_at
+                    FROM process_leases WHERE id=$lease;
+                    """,
+                    null,
+                    ("$lease", leaseId)
+                );
+                using var row = Sql.Reader(command);
+                Assert.IsTrue(row.Read(), "The original runtime lease is missing.");
+                return (
+                    row.GetInt64(0),
+                    row.GetInt64(1),
+                    row.GetString(2),
+                    row.GetString(3),
+                    row.GetString(4)
+                );
+            }
         });
     }
 

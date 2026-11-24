@@ -97,6 +97,7 @@ internal sealed class NativeWorkerFactory(
         ["sessionId", "workingDirectory", "selectedModel", "sdkVersion",
             "runtimeVersion", "runtimeId", "runtimeLeaseId", "paidReservation",
             "alreadyInUse", "isRemote"];
+    private static readonly object RecoveryEligibilityMarker = new();
     private readonly object lifecycle = new();
     private readonly List<(NativeWorker Worker, CreditReservation? Reservation)> workers = [];
     private INativeSdkHost? host;
@@ -362,17 +363,15 @@ internal sealed class NativeWorkerFactory(
     {
         if (reservation.Allowance - (reservation.Actual ?? 0) <= 0)
         {
-            throw new OperationException(
-                "credit_unknown", "Exact recovery has no remaining backed capacity."
-            );
+            throw RefuseRecoveryEligibility("Exact recovery has no remaining backed capacity.");
         }
+        double backedLimit = NativeSdkSession.NativeLimit(reservation.Allowance);
         (JsonObject retained, NativeRecoveryOrigin origin) =
-            RecoveryLimitEvidence(reservation, cwd);
+            RecoveryLimitEvidence(reservation, cwd, backedLimit);
         (decimal? BookedActual, NativeUsage Reported)? baseline =
             credits.ReadRecoveryBaseline(reservation.Id);
         RequireRecoveryEvidence(baseline is not null
             && baseline.Value.Reported.SessionId == reservation.SessionId);
-        decimal cap = retained["appliedLimit"]!.GetValue<decimal>();
         using CancellationTokenSource deadline =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(30));
@@ -390,7 +389,7 @@ internal sealed class NativeWorkerFactory(
                 .OpenAsync(
                     reservation.Worker,
                     reservation.SessionId!,
-                    cap,
+                    reservation.Allowance,
                     reservation.SessionId,
                     evidencePrefix,
                     deadline.Token
@@ -398,7 +397,8 @@ internal sealed class NativeWorkerFactory(
                 .ConfigureAwait(false);
             usage = await recovery
                 .ReadSettledAsync(
-                    reservation.SessionId!, cap, deadline.Token, verifyLocalWork: true)
+                    reservation.SessionId!, reservation.Allowance, deadline.Token,
+                    verifyLocalWork: true)
                 .ConfigureAwait(false);
             if (usage.RequireComplete() < (baseline!.Value.BookedActual ?? 0)
                 || usage.TotalNanoAiu < baseline.Value.Reported.TotalNanoAiu
@@ -413,7 +413,7 @@ internal sealed class NativeWorkerFactory(
                 recovery.Metadata is JsonObject observed
                 && observed["sessionId"]?.GetValue<string>() == reservation.SessionId
                 && SameRecoveryPath(observed["workingDirectory"]?.GetValue<string>(), cwd)
-                && observed["appliedLimit"]?.GetValue<double>() == NativeSdkSession.NativeLimit(cap)
+                && observed["appliedLimit"]?.GetValue<double>() == backedLimit
                 && observed["alreadyInUse"]?.GetValue<bool>() == false
                 && observed["isRemote"]?.GetValue<bool>() == false
                 && !string.IsNullOrWhiteSpace(observed["runtimeVersion"]?.GetValue<string>())
@@ -464,7 +464,7 @@ internal sealed class NativeWorkerFactory(
     }
 
     private (JsonObject Metadata, NativeRecoveryOrigin Origin) RecoveryLimitEvidence(
-        CreditReservation reservation, string cwd)
+        CreditReservation reservation, string cwd, double backedLimit)
     {
         try
         {
@@ -491,15 +491,18 @@ internal sealed class NativeWorkerFactory(
                     ("$worker", reservation.Worker), ("$path", reservation.UsagePath),
                     ("$sdk", "sdk:" + NativeSdkSession.SdkVersion))! == 1);
 
+            const string missingEvidence = "Required original native limit evidence is missing.";
+            string startKey = NoDispatchCancellation.Marker(reservation.Id);
             JsonObject Read(string key) =>
                 JsonNode.Parse(Sql.Scalar(connection, "SELECT value FROM meta WHERE key=$key;",
                     snapshot, ("$key", key)) as string
-                    ?? throw new OperationException("credit_unknown",
-                        "Required original native limit evidence is missing."))?.AsObject()
+                    ?? throw (key == startKey
+                        ? RefuseRecoveryEligibility(missingEvidence)
+                        : new OperationException("credit_unknown", missingEvidence)))?.AsObject()
                 ?? throw new OperationException("credit_unknown",
                     "Required original native limit evidence is not structured.");
 
-            JsonObject start = Read(NoDispatchCancellation.Marker(reservation.Id));
+            JsonObject start = Read(startKey);
             JsonObject initial = start["initial"] as JsonObject
                 ?? throw new OperationException("credit_unknown",
                     "Original native start observation is missing.");
@@ -515,9 +518,9 @@ internal sealed class NativeWorkerFactory(
                 && start["sessionId"]?.GetValue<string>() == reservation.SessionId
                 && SameRecoveryPath(start["workingDirectory"]?.GetValue<string>(), cwd)
                 && NoDispatchCancellation.IsEmpty(initial)
-                && initial["appliedLimit"]?.GetValue<decimal>() is > 0
-                && initial["appliedLimit"]!.GetValue<decimal>() <= reservation.Allowance
-                && retained["appliedLimit"]?.GetValue<decimal>() == reservation.Allowance
+                && initial["appliedLimit"]?.GetValue<double>() is double initialLimit
+                && initialLimit > 0 && initialLimit <= backedLimit
+                && retained["appliedLimit"]?.GetValue<double>() == backedLimit
                 && retained["sessionId"]?.GetValue<string>() == reservation.SessionId
                 && SameRecoveryPath(retained["workingDirectory"]?.GetValue<string>(), cwd)
                 && retained["paidReservation"]?.GetValue<bool>() == true
@@ -605,6 +608,17 @@ internal sealed class NativeWorkerFactory(
         path is not null && Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)).Equals(
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(cwd)),
             StringComparison.OrdinalIgnoreCase);
+
+    internal static bool IsPreActivationEligibilityRefusal(OperationException failure) =>
+        failure.Data.Contains(RecoveryEligibilityMarker);
+
+    private static OperationException RefuseRecoveryEligibility(string message)
+    {
+        // Explicitly tag only known local refusals, retaining the public exception shape.
+        OperationException failure = new("credit_unknown", message);
+        failure.Data[RecoveryEligibilityMarker] = true;
+        return failure;
+    }
 
     private static void RequireRecoveryEvidence(bool condition)
     {
