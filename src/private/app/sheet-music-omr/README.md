@@ -68,21 +68,53 @@ second-reader baselines (`TEST` Layer-1 `A`-error rate `0.458333` for
 `0.896315` where `49 / 69` `TRAIN_DEV` page outputs failed validation and were
 scored fail-closed, ratio `1.933962`), the `225`-row `T01` review-pass model
 re-fit, and `4,070` schema-validated `omr-discrepancy-log-v1` records (`6 / 6`
-S0 `TEST` touches spent, `480,830,451 / 10,000,000,000` download bytes). With
-both the W1 and W2/W3 [Delivery Wave](../../../../docs/delivery-wave.md)
-entries retired on acceptance, the active
-[W4 and W5 Delivery Wave entry](../../../../docs/delivery-wave.md#build-omr-synthetic-data-engine-and-system-detection-benchmark-w4-and-w5)
-(merged in [PR #1752](https://github.com/hcoona/three/pull/1752)) authorizes W4
-([Issue #1491](https://github.com/hcoona/three/issues/1491):
-`#1493`–`#1496`, synthetic training-data engine and Stage S3 proof slice) and
-W5 ([Issue #1497](https://github.com/hcoona/three/issues/1497), blind
-system-detection benchmark and candidate carry-state assembly validator) under
-the [synthetic data and system-detection protocol](docs/synthetic-protocol.md),
-alongside design and planning under
-[Issue #686](https://github.com/hcoona/three/issues/686); feature/workstream
-advancement beyond active Wave grants requires its
-own Delivery Wave entry while contract-preserving routine maintenance without
-new external or privacy effects follows the
+S0 `TEST` touches spent, `480,830,451 / 10,000,000,000` download bytes). Under
+[PR #1752](https://github.com/hcoona/three/pull/1752) and the
+[synthetic data and system-detection protocol](docs/synthetic-protocol.md)
+([PR #1755](https://github.com/hcoona/three/pull/1755), implemented in `#1757`,
+`#1760` and `#1761`), the W4a–W4d synthetic
+engine & Stage S3 proof
+([Issue #1491](https://github.com/hcoona/three/issues/1491); W4a
+[Issue #1493](https://github.com/hcoona/three/issues/1493) closed, `#1491` and
+`#1494`–`#1496` retaining the deferred `20k`–`50k`-page bulk pilot and W6
+ablation) and W5
+([Issue #1497](https://github.com/hcoona/three/issues/1497), accepted and
+closed) were accepted at `main` commit
+`abef22536dbd82ca654fa7cd599204c4e59efd62` (runtime observations in
+[#1491 comment 7130836402](https://github.com/hcoona/three/issues/1491#issuecomment-7130836402)
+and
+[#1497 comment 7130837035](https://github.com/hcoona/three/issues/1497#issuecomment-7130837035),
+owner acceptance dispositions in
+[#1491 comment 7138762309](https://github.com/hcoona/three/issues/1491#issuecomment-7138762309)
+and
+[#1497 comment 7138763006](https://github.com/hcoona/three/issues/1497#issuecomment-7138763006)):
+W4a admitted `440` `permissive` piano scores (`380` `PDMX` + `60` `OpenScore
+Lieder`, `14,907` measures, `0` `TEST` overlap), Stage S3 (`w4-w5-formal-2`)
+evaluated `84` distinct round-trip scores per engine (`MuseScore Studio
+4.7.7.261109195`: `37` passed / `47` dropped, `105` `Tier R` pages; `Verovio
+6.4.1`: `54` passed / `30` dropped / `213` pre-excluded,
+`disabled_categories = ['clef', 'cross_staff', 'grace', 'hairpin', 'ottava']`,
+`141` `Tier R` pages, `50` verified overlay pages/engine, and `6 / 6`
+sim-to-real crop descriptors enclosing the real `TRAIN_DEV` median on both
+engines), and W5 (`w4-w5-formal-w5-traindev` and `w4-w5-formal-w5-locked92`)
+recorded blind system-detection counts (`comb_dp_blind` on `TRAIN_DEV`:
+`318 / 323 = 98.45%` exact 2-staff matches, `0` merged, `0` split/truncated,
+and `4` ink-clipped matches driving `recommend_training = true` from
+`TRAIN_DEV` alone; descriptive `TEST` geometry pass: `107 / 111 = 96.40%` exact
+2-staff matches, `0` merged, `0` split/truncated, `3` ink-clipped;
+`copisteria_front` `89 / 434` merged and `343 / 434` split/truncated; offline
+`homr_cli` `92 / 92` `unscorable_page_frame`) and `16 / 16` (`323 / 323`
+systems) zero-difference `TRAIN_DEV` slice assembly plus `5 / 5` fault-class
+rejections (`341,067,483 / 15,000,000,000` download bytes, `889,390,301 /
+50,000,000,000` proof disk bytes, `1,215 / 25,000` formal pages, `1 / 1` locked
+`92`-page pass spent). With the W1, W2/W3 and W4/W5 execution
+[Delivery Wave](../../../../docs/delivery-wave.md) entries retired on
+acceptance, only design and planning under
+[Issue #686](https://github.com/hcoona/three/issues/686) remains active in the
+[Delivery Wave](../../../../docs/delivery-wave.md); feature/workstream
+advancement or new external/private-input execution requires its own Delivery
+Wave entry while contract-preserving routine maintenance without new external or
+privacy effects follows the
 [record policy](../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
 (see [Agent handoff](docs/agent-handoff.md)). There is no trained recognizer,
 model packaging or release.
@@ -152,9 +184,10 @@ proof, `run-w5-detectors` (`--mode traindev` or `--mode locked92 --formal`) for
 the system-detector benchmark and assembly checks, and
 `validate-assembly --expected-systems K FILE...` to validate ordered system
 documents without starting a proof run. Directory confinement, formal execution
-bounds, isolation rules, and single-pass gates are governed by the
-[synthetic data and system-detection protocol](docs/synthetic-protocol.md#environment-tool-isolation-and-mutable-source-rechecks)
-and the accepted [Delivery Wave](../../../../docs/delivery-wave.md).
+bounds, isolation rules, and single-pass gates are specified in the
+[synthetic data and system-detection protocol](docs/synthetic-protocol.md#environment-tool-isolation-and-mutable-source-rechecks);
+external provisioning, batch rendering and private-page runs require an
+accepted [Delivery Wave](../../../../docs/delivery-wave.md) entry.
 
 Each worker call has one 300-second bound, which includes starting a fresh
 worker. Some calls hold more than one of the protocol's steps: the content
