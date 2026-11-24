@@ -465,6 +465,224 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
   model-hosting or storage services; no change to the private transcription
   repository; no publication, credential or access change.
 
+### Prepare OMR pilot datasets and training stack (W6 Slice A)
+
+- **Work carrier:** [Issue #1498](https://github.com/hcoona/three/issues/1498)
+  (W6) and [Issue #1491](https://github.com/hcoona/three/issues/1491) (W4 bulk
+  dataset packaging, with sub-issues
+  [Issue #1494](https://github.com/hcoona/three/issues/1494),
+  [Issue #1495](https://github.com/hcoona/three/issues/1495) and
+  [Issue #1496](https://github.com/hcoona/three/issues/1496)), sub-issues of
+  #686, and their linked pull requests. Following owner dispositions on
+  [#1498](https://github.com/hcoona/three/issues/1498#issuecomment-7141304639)
+  and [#1491](https://github.com/hcoona/three/issues/1491#issuecomment-7141314149),
+  the repository owner requested authorization of CPU Slice A on the current
+  CPU host prior to switching to the local RTX 4090 host for GPU training
+  (Slice B).
+- **Accepted inputs:** those of the sheet-music design and planning entry and
+  the accepted project records under `src/private/app/sheet-music-omr/`
+  ([portal](../src/private/app/sheet-music-omr/README.md),
+  [requirements](../src/private/app/sheet-music-omr/docs/requirements.md),
+  [Text Score 2 format](../src/private/app/sheet-music-omr/docs/text-format.md),
+  [comparison protocol](../src/private/app/sheet-music-omr/docs/comparison-protocol.md),
+  [evaluation and real-data alignment protocol](../src/private/app/sheet-music-omr/docs/evaluation-protocol.md),
+  [synthetic data and system-detection protocol](../src/private/app/sheet-music-omr/docs/synthetic-protocol.md)
+  and [handoff](../src/private/app/sheet-music-omr/docs/agent-handoff.md)).
+  Findings in #686, #1491, #1494 through #1496 and #1498 through #1500 are
+  unreviewed research inputs; any repository record that relies on one rechecks
+  it under research-evidence review.
+- **Owner decisions:**
+    - Stage W6 in two bounded slices: authorize **CPU Slice A** now on the
+      current local CPU host (protocol admission, expanded local `permissive`
+      W4a intake, `20k` and `50k` system-crop dataset packaging, zero-training
+      `copista-28m` per-system crop baseline on `TRAIN_DEV`, and full W6
+      training/decoding/calibration/page-detector implementation verified via
+      tiny-model CPU smoke tests), deferring **GPU Slice B** (`E0` zero-shot
+      inference, multi-hour neural training on the local RTX 4090 `24 GB`
+      physical host, paired local `TRAIN_DEV` replay ablation and final `TEST`
+      evaluation; `local_gpu_only` with zero cloud upload) to a subsequent Wave
+      entry after Slice A readiness acceptance.
+    - Implementation lives under `src/private/app/sheet-music-omr/` in Python
+      integrated with workspace checks and CI, while external ML training,
+      processor/tokenizer and vision packages install into an isolated
+      out-of-worktree environment (`DOWNLOADS/w6-train-venv`) recorded per run
+      so repository-locked toolchains remain unchanged unless a reviewed
+      dependency change is accepted. This does not select product language,
+      packaging or release.
+    - Reuse the `60` already-admitted `OpenScore Lieder` `v3.0.0` (`CC0-1.0`)
+      scores (`w4-w5-formal-2`) and expand newly admitted `PDMX`
+      (`no_license_conflict` `CC0-1.0` / `PDM`) two-staff piano scores from
+      staged `PDMX.csv` and `mxl.tar.gz` (`0` new corpus download bytes) from
+      `380` toward `2,500`–`5,000` total verified `permissive` piano scores
+      (splitting train versus held-out synthetic validation by canonical work
+      before variant generation and enforcing fail-closed `TEST` exclusion), and
+      generate packaged `permissive` `Tier R` `14.0 px` grand-staff system-crop
+      datasets at **`20,000` crops** (Arm A milestone) and **`50,000` crops**
+      (Arm B and page-detector milestone, with co-warped page `system` and
+      `measure` boxes, routing `Verovio`-disabled `clef`, `cross_staff`,
+      `grace`, `hairpin` and `ottava` supervision to `MuseScore 4.x` and
+      recording per-sample category masks so disabled categories are never
+      supervised as negatives). Keep #1491's full `20k`–`50k`-page expansion
+      gated on W6 learning-curve evidence.
+    - Adopt a strictly permissive (`Apache-2.0`, `MIT`, `BSD-3-Clause`) W6
+      model matrix emitting `Text Score 2` across all trainable arms (retiring
+      `E1` ABC round-trip gating given W1's accepted ABC semantic-gap findings,
+      and excluding `CC-BY-NC-4.0` `rokotmidi/rokot-omr-2b`, `CC-BY-NC-4.0`
+      `ConvNeXtV2` weights, `btrkeks/transcoda`'s `AGPL-3.0` code as well as
+      its `CC-BY-NC-4.0` `v2.1` and `CC-BY-4.0` `59M-zeroshot-v1` checkpoints,
+      `AGPL-3.0` `ultralytics` and custom revenue-threshold
+      `SoMarkAI/OXR-1.0`):
+        - **Arm A (small VLM SFT/LoRA):**
+          `Qwen/Qwen3-VL-2B-Instruct@89644892e4` (`Apache-2.0`, control plus
+          `Qwen/Qwen3-VL-4B-Instruct@ebb281ec70` capacity option),
+          `Qwen/Qwen3.5-2B@15852e8c16` (`Apache-2.0`, non-thinking mode) and
+          `PaddlePaddle/PaddleOCR-VL-1.6@132c45f52c` (`0.9B`, `Apache-2.0`,
+          `28x28` `px/token` native dynamic resolution);
+        - **Arm B (`~30M`–`60M` dedicated encoder + autoregressive `Text Score
+2` decoder):** `timm/convnext_tiny.fb_in22k_ft_in1k@bc48a87f11`
+          (`Apache-2.0`, multi-scale `stride 8 + 16` features) control and
+          `zenosai/MonkeyOCRv2-S@8efa4f856a` (`28.5M`, `Apache-2.0` code and
+          weights, native `patch-14` document pixel-reconstruction encoder)
+          challenger;
+        - **2-class (`system`, `measure`) page detector:**
+          `ustc-community/dfine-small-coco@f79e65b5fb` (`D-FINE Small`,
+          `Apache-2.0`, native HuggingFace `DFineForObjectDetection`, with a
+          proposed aspect-preserving `1024`/`1280` long-edge processor override
+          in place of upstream's `640x640` default) primary and
+          `PekingU/rtdetr_v2_r18vd@5650961749` (`Apache-2.0`) control.
+    - Pre-register `4` book-group-preserving folds across the `16` accepted
+      `TRAIN_DEV` pieces (`323` systems, `1,601` measures, `69` pages) for
+      downstream real-crop model selection, cross-fitted temperature/Platt
+      calibration, W7 sidecar emission and Slice B's paired local-only
+      `TRAIN_DEV` replay ablation, keeping frozen `TEST` (`7` pieces, `111`
+      systems, `432` measures, `23` pages) completely untouched (`0` `TEST`
+      touches) throughout Slice A. Also benchmark a zero-training
+      `copista-28m@44464d1` per-system crop adapter (fed by W5's blind
+      `comb_dp_blind` 2-staff crops inside offline `unshare -rn`) on the `69`
+      `TRAIN_DEV` pages (`0` `TEST` touches) to establish the measured
+      `TRAIN_DEV` baseline for that pinned reader and crop pipeline (accounting
+      fail-closed for missing or invalid crops) before GPU training.
+    - Retain #686's privacy boundary (`OMR-REQ-015`) and carry forward all
+      earlier ledgers unchanged.
+- **Advancement and outcome:**
+    - Accept project requirements and the W6 training, bulk-packaging and
+      page-detector protocol defining: (a) expanded `permissive` W4a intake,
+      canonical-work train/synthetic-val splitting, source-measure repetition
+      accounting, per-engine category masks, and `20k` / `50k` `Tier R`
+      `14.0 px` crop + page-box dataset manifests; (b) pinned permissive model,
+      processor/tokenizer and license contracts for Arm A, Arm B and the 2-class
+      `D-FINE` / `RT-DETRv2` page detector; (c) parser/duration/carry
+      constrained `Text Score 2` decoding, pre-registered `4`-fold
+      book-group-preserving `TRAIN_DEV` validation/calibration splits, W7
+      sidecar + `omr-discrepancy-log-v1` schema bindings, and Slice B's paired
+      local-only replay and frozen-`TEST` evaluation rules; (d) the offline
+      `TRAIN_DEV`-only `copista-28m` per-system crop adapter protocol; and
+      (e) Slice A download, disk and persistent formal-run accident-fuse
+      ledgers, stop conditions and cleanup rules.
+    - Implement the expanded W4a/W4d bulk dataset packager, the Arm A, Arm B and
+      `D-FINE` / `RT-DETRv2` training/inference/checkpoint harnesses, the
+      constrained `Text Score 2` decoder, the `4`-fold `TRAIN_DEV` calibration
+      and W7 sidecar pipeline, and the `copista-28m` per-system crop adapter
+      under `src/private/app/sheet-music-omr/` (including directly required
+      record-routing or CI test-selection updates), verified end-to-end on CPU
+      with tiny-model smoke and scenario tests.
+    - Execute the expanded `permissive` W4a intake, the `20k` and `50k`
+      system-crop dataset packaging runs, and the `TRAIN_DEV`-only zero-training
+      `copista-28m` per-system crop benchmark, and publish sanitized Slice A
+      readiness and baseline evidence reports on #1498, #1491 (#1494 through
+      #1496) and #686.
+- **Ordering and gates:** merge this entry before substantive Slice A
+  implementation, external package/wheel/tokenizer installation, network fetch,
+  expanded W4a intake execution, bulk synthetic rendering, private `TRAIN_DEV`
+  crop preparation or `TRAIN_DEV` `copista-28m` per-system execution
+  (preserving `#686`'s read-only local inspection prior to protocol merge).
+  Keep project records and implementation self-consistent at each merge into
+  `main`, and accept the W6 Slice A requirements and protocol on `main` under
+  record-system review, research-evidence review and shared engineering
+  guidance before any authorized `DOWNLOADS/w6-train-venv` or
+  tokenizer/processor/config fetch, any expanded W4a intake run, any bulk
+  `20k`/`50k`-crop synthetic rendering run, any new private `TRAIN_DEV` crop
+  preparation, or any `TRAIN_DEV` `copista-28m` per-system crop benchmark run
+  (rejecting any drifted renderer, tool, wheel or model-metadata identity in
+  formal runs until its license and interface mutable-source rechecks pass and
+  are accepted). Apply `GOV-011` finding disposition. New product, scope or
+  feasibility tradeoffs return to the owner.
+- **Acceptance and closure:** the tested W6 training, constrained-decoding,
+  calibration/sidecar, page-detector and `copista-28m` per-system harnesses are
+  merged on `main` with passing CPU smoke/scenario tests, and independently
+  reviewed sanitized Slice A readiness reports (expanded `permissive` W4a
+  score/measure counts and repetition distributions with zero `TEST` overlap,
+  packaged `20k` and `50k` system-crop + page-box dataset digests/throughput/
+  token-grid stats, pre-registered `4`-fold `TRAIN_DEV` split summary, and
+  `TRAIN_DEV`-only `copista-28m` per-system parse-survival and `A`-error /
+  second-reader metrics with `0` `TEST` touches) are recorded on #1498, #1491
+  (#1494 through #1496) and #686, with project portal/handoff records updated.
+  Close this entry by deleting it in the final PR that completes acceptance, or
+  through an explicit Wave-only closure PR after owner acceptance or owner
+  stop.
+- **External effects:** permit the design and planning entry's private-archive
+  inspection and Issue effects; local read-only use of staged public corpora
+  (`Lieder-v3.0.0.zip`, `PDMX.csv`, `mxl.tar.gz`), staged `TRAIN_DEV` restored
+  facsimile PDFs, `TRAIN_DEV` entries in `gold-cache` (`TEST` entries in
+  `gold-cache` read-only solely for accepted W4a file-digest and non-notation
+  work-identity exclusion checks; zero `TEST` page rasters, `TEST` crops,
+  `TEST` notation scoring or `TEST` touch records), existing `TRAIN_DEV`-only
+  alignment/crop artifacts (never reading frozen `TEST` crops from retained W3
+  artifacts), and cached `w4-synth-venv` / `w2-copista-venv` environments
+  (carrying forward preserved `download-ledger.json`, `w2-download-ledger.json`,
+  `w2-touch-log.jsonl`, `w4-w5-download-ledger.json` and
+  `w4-w5-run-ledger.jsonl` without deleting or resetting settled entries);
+  creation and use of out-of-worktree `RUN`, `DOWNLOADS`, segregated
+  `permissive` packaged crop/box datasets and `DOWNLOADS/w6-train-venv`; host
+  `MuseScore 4.x` CLI and offline `Verovio` batch rendering recorded by
+  observed version and `SHA-256` per run (subject to the accepted
+  mutable-source recheck gate); offline `unshare -rn` execution of cached
+  `copista-28m@44464d1` on `TRAIN_DEV` `comb_dp_blind` system crops; and
+  isolated out-of-worktree installation into `DOWNLOADS/w6-train-venv` of CPU
+  PyTorch/vision/training wheels (`torch`, `torchvision`, `timm`,
+  `transformers`, `peft`, `accelerate`, `safetensors`, `datasets`,
+  `tokenizers`, `sentencepiece` and related pure-Python helpers) plus pinned
+  permissive model config/tokenizer/processor metadata files (without
+  multi-gigabyte foundation checkpoint downloads on the CPU host), stopping to
+  return to the owner before cumulative Slice A network downloads exceed
+  `15,000,000,000` bytes (`15 GB`) in persistent
+  `DOWNLOADS/w6-slice-a-download-ledger.json`, before generated local Slice A
+  datasets and run outputs (`RUNS/w6-slice-a-*`) exceed `100,000,000,000` bytes
+  (`100 GB`) on disk, before a single bulk rendering run reserves or renders
+  more than `15,000` pages (`300`-second per-worker batch timeout), or before
+  cumulative Slice A runs in persistent append-only
+  `DOWNLOADS/w6-slice-a-run-ledger.jsonl` (writing pre-start atomic
+  reservations that charge `reserved_pages` on unsettled crashes and count
+  every partial, non-formal, failed or aborted bulk rendering run `> 200` pages
+  as well as **every** private-input `copista-28m` per-system invocation
+  regardless of purpose — benchmark, debugging or smoke — page count,
+  `--formal` flag or outcome) exceed `35,000` cumulative reserved/settled
+  rendered pages or `10` private-input `copista-28m` per-system invocations
+  (both Slice A ledgers are permanently preserved and carried forward across
+  cleanup and `DOWNLOADS` roots, never deleted or reset; only
+  repository-fixture and synthetic-fixture CPU smoke checks with zero
+  private-input access remain unconstrained).
+- **Exclusions:** no GPU model training, multi-hour full-checkpoint fine-tuning,
+  paid/cloud compute, or `E0` foundation-weight inference under Slice A
+  (deferred to Slice B on the local RTX 4090 host); no `> 15,000`-page single
+  run or full `20k`–`50k`-page #1491 scale-up under this entry; no `TEST`
+  inference, `TEST` scoring, or `w2-touch-log.jsonl` `TEST` touch, and no edit,
+  reset or deletion of historical download, run or `TEST`-touch ledgers (the
+  completed `locked92` W5 pass remains locked); no live transcription-workflow
+  modification or selective-review policy change (W7, #1499); no `AGPL`,
+  `CC-BY-NC` or custom revenue-threshold code or model weights (`homr`,
+  `transcoda`, `ultralytics`, `rokot-omr-2b`, `ConvNeXtV2` NC weights,
+  `OXR-1.0`) in repository code or W6 training artifacts; no ingestion or
+  re-rendering of `TEST` pieces or unreviewed public image+label targets
+  (`GrandStaff`, `OLiMPiC`, `FP-GrandStaff`, `Polish-scores`, `SMB`); no
+  committed fixture other than self-authored, public-domain or `CC0` material
+  with provenance; no commit or public upload of private paths, piece/book
+  identities or copyrighted score content, and no upload of score material or
+  datasets to external OMR, cloud-compute, hosting or storage services; no
+  modification to the private transcription repository or staged gold files; no
+  unreviewed change to repository-locked tool/runtime versions or other
+  projects' behavior, and no publication, release, credential or access change.
+
 ### Align .NET tests that launch external tools with the engineering principles
 
 - **Work carrier:** [Issue #1501](https://github.com/hcoona/three/issues/1501),
