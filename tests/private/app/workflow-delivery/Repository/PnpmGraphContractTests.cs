@@ -30,7 +30,7 @@ public sealed class PnpmGraphContractTests(TestContext context)
         "pnpmfile.cjs", "pnpmfile.js"];
 
     // The complete projection the planner consumes: every member, its native dependency
-    // closure through link, workspace alias, optional, dev, transitive, cycle, injected-peer
+    // closure through link, workspace alias, optional, dev, transitive, cycle, peer
     // and file:/link: publish-directory edges, publish coordinates and non-member inputs.
     // The legacy row turns PNPM's legacy directory filtering on for this run only; the
     // reader's explicit override must keep the projection unchanged.
@@ -231,6 +231,42 @@ public sealed class PnpmGraphContractTests(TestContext context)
             "list", "--recursive", "--json", "--depth", "Infinity"],
             context.CancellationToken);
         Assert.Contains("@contract/app", installed);
+    }
+
+    // PNPM 12.22+ formats directory file: versions from ref_display, so injected peer-qualified
+    // and aliased directory file: dependencies expose presentation syntax rather than canonical
+    // directory coordinates and must fail planning closed.
+    [TestMethod]
+    [OSCondition(OperatingSystems.Linux)]
+    [DataRow("injected-peer",
+        "Unsupported decorated PNPM file: dependency coordinate: " +
+        "file:members/peer-lib(@contract/core@members+core)")]
+    [DataRow("aliased-file",
+        "Unsupported aliased PNPM file: dependency coordinate: @contract/plain@file:vendor/plain")]
+    public async Task GraphReaderRejectsUnsupportedFileDirectoryCoordinates(string shape,
+        string expectedDiagnostic)
+    {
+        using var tool = await PnpmNativeTool.CreateAsync(context.CancellationToken);
+        using var copy = new FixtureCopy("pnpm-contract");
+        string manifest = Path.Combine(copy.Root, "members", shape == "injected-peer"
+            ? "peer-consumer" : "dir-consumer", "package.json");
+        File.WriteAllText(manifest, shape == "injected-peer"
+            ? """
+              {"name":"@contract/peer-consumer","version":"1.0.0","private":true,
+               "dependencies":{"@contract/peer-lib":"workspace:*","@contract/core":"workspace:*"},
+               "dependenciesMeta":{"@contract/peer-lib":{"injected":true}}}
+              """
+            : """
+              {"name":"@contract/dir-consumer","version":"1.0.0","private":true,
+               "dependencies":{"plain-alias":"file:../../vendor/plain"}}
+              """);
+        PnpmNativeTool.AssertExited(await tool.RunAsync("pnpm", copy.Root, ["install",
+            "--lockfile-only", "--offline", "--ignore-scripts"], context.CancellationToken),
+            true);
+
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => Reader(tool, copy.Root).ReadAsync(context.CancellationToken));
+        Assert.AreEqual(expectedDiagnostic, failure.Message);
     }
 
     // PNPM stops a listing at dependency level 256 without a truncation marker. The reader

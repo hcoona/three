@@ -19,9 +19,14 @@ declarations rather than maintaining a second dependency/output manifest. The
 assessment's completed bounded directory-join follow-up supplies its recorded
 composition evidence. Changes to the reader require their own qualification.
 Workflow combines the base/candidate results and computes
-impact with the other ecosystems and declarations. If a necessary fact cannot
-be obtained, return the concrete gap to the owner rather than introducing
-dependency parsing or changing the selected integration silently.
+impact with the other ecosystems and declarations. Starting in PNPM 12.22.0,
+`list --lockfile-only --json` formats directory `file:` `version` fields from
+raw display references rather than bare `file:<path>` coordinates, so aliased
+(`<pkg>@file:...`) and peer- or patch-qualified (`file:...(...)`) directory
+`file:` references are unsupported under the CLI-only reader and fail planning
+closed. If a necessary fact cannot be obtained, return the concrete gap to the
+owner rather than introducing dependency parsing or changing the selected
+integration silently.
 
 ## Native Node CI Group
 

@@ -227,6 +227,8 @@ public sealed class PnpmGraphReaderTests
     [TestMethod]
     [DataRow("ambiguous-output")]
     [DataRow("outside-input")]
+    [DataRow("patch-qualified-file")]
+    [DataRow("aliased-file")]
     [DataRow("unknown-closure")]
     [DataRow("missing-project")]
     [DataRow("extra-full-project")]
@@ -250,6 +252,14 @@ public sealed class PnpmGraphReaderTests
                 break;
             case "outside-input":
                 native.Nodes["packages/app"] = [native.Node("file:../external",
+                    "node_modules/copy")];
+                break;
+            case "patch-qualified-file":
+                native.Nodes["packages/app"] = [native.Node(
+                    "file:packages/library(patch_hash=0123456789abcdef)", "node_modules/copy")];
+                break;
+            case "aliased-file":
+                native.Nodes["packages/app"] = [native.Node("local-library@file:packages/library",
                     "node_modules/copy")];
                 break;
             case "unknown-closure":

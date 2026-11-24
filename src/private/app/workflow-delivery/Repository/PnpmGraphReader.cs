@@ -128,15 +128,24 @@ internal sealed class PnpmGraphReader
                     // Decode a resolved native directory coordinate, never a manifest specifier.
                     if (version.StartsWith("file:", StringComparison.Ordinal))
                     {
+                        if (version.IndexOfAny(['(', ')']) >= 0)
+                            throw new InvalidDataException(
+                                "Unsupported decorated PNPM file: dependency coordinate: " +
+                                version);
                         string source = Absolute(version[5..], root);
                         if (directories.TryGetValue(source, out string? sourceOwner))
                             owners.Add(sourceOwner);
                         else
                             AddInput(Relative(source), true, identity);
                     }
-                    else if (version.StartsWith("link:", StringComparison.Ordinal) &&
-                        owners.Count == 0)
-                        AddInput(Relative(nativePath), true, identity);
+                    else if (version.StartsWith("link:", StringComparison.Ordinal))
+                    {
+                        if (owners.Count == 0)
+                            AddInput(Relative(nativePath), true, identity);
+                    }
+                    else if (version.Contains("@file:", StringComparison.Ordinal))
+                        throw new InvalidDataException(
+                            "Unsupported aliased PNPM file: dependency coordinate: " + version);
                 }
                 else if (RequiredString(resolved).StartsWith("file:", StringComparison.Ordinal))
                 {
