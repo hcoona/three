@@ -381,6 +381,157 @@ to verify carry links, measure continuity, spanner closure and `music21` parse
 validity supporting gate `G3 >= 99%`, returning structured diagnostics without
 silently repairing corrupt musical content.
 
+## Pilot dataset packaging, clean training stack and per-system baseline
+
+### OMR-REQ-026: Expanded intake, work split and crop packaging
+
+Bulk synthetic dataset generation for W6
+([Issue #1498](https://github.com/hcoona/three/issues/1498)) and W4
+([Issue #1491](https://github.com/hcoona/three/issues/1491)) shall reuse the
+`60` already-admitted `OpenScore Lieder` `v3.0.0` (`CC0-1.0`) scores and expand
+newly admitted `PDMX` (`no_license_conflict` `CC0-1.0` and Public Domain Mark)
+two-staff piano scores from staged local archives (`0` new corpus download
+bytes) toward `2,500`–`5,000` verified `permissive` piano scores under
+[OMR-REQ-021](#omr-req-021-rights-segregated-symbolic-intake-and-test-exclusion),
+applying reviewed composer transliteration alias canonicalization **both**
+during `TEST`-exclusion matching/auditing and before split assignment while
+rejecting uninformative or contradictory composer-and-catalogue identities
+fail-closed **before** admission into either split. Admitted scores shall be
+grouped by canonicalized composer identity (scoping ambiguous and composer-local
+catalogue prefixes including `K.`, `L.`, `D.`, `S.`, `Op.`, `WoO` and `No.`
+strictly to canonical composer, requiring corroborating composer metadata for
+single-composer prefixes, and stopping fail-closed if validation-quota minimums
+cannot be met) into disjoint `synth_train` (target `90%`) and `synth_val`
+(target `10%`) quotas **before** annotation injection or rendering variants are
+created, slicing packaged datasets only at complete rendered-variant boundaries
+(`variant_id`, `system_index`, `expected_systems`, `is_final_system`). Packaged
+`permissive` `Tier R` `14.0 px` grand-staff crop datasets at **`20,000` crops**
+(Arm A milestone) and **`50,000` crops** (Arm B and page-detector milestone,
+paired with co-warped page `system` and `measure` boxes) shall route
+`Verovio`-disabled categories (`clef` mid-score changes, `cross_staff`, `grace`,
+`hairpin`, `ottava`) and unchecked W1 supplementary facets to `MuseScore 4.x`,
+record an explicit per-sample `category_supervision_mask` that masks
+disabled-category token logits out of training softmax denominators (or excludes
+Verovio rows when subwords overlap) and excludes Verovio rows from those
+categories' validation denominators so disabled categories are never supervised
+or scored as negatives, and report realized component/work/score split counts,
+unique source-measure coverage and per-measure repetition quantiles (`p50`,
+`p90`, `p99`, `max`).
+
+### OMR-REQ-027: Clean permissive recognizer and page-detector model stack
+
+All W6 model definitions, metadata files and checkpoints in
+`DOWNLOADS/w6-model-meta` and Slice B model weights shall carry strictly
+`Apache-2.0`, `MIT` or `BSD-3-Clause` licenses (with `trust_remote_code=False`
+and zero remote Python code fetches), and supporting Python library wheels
+installed into isolated out-of-worktree `DOWNLOADS/w6-train-venv` (from PyPI
+and PyTorch's official CPU wheel index, covering the accepted Wave's named
+packages and required transitive wheels) shall carry permissive,
+non-strong-copyleft, non-NC, non-revenue-restricted licenses (`Apache-2.0`,
+`MIT`, `MIT-CMU`, `BSD-2-Clause`, `BSD-3-Clause`, `PSF-2.0` / `Python-2.0`,
+`ISC`, `Unlicense`, plus PyTorch/SciPy dynamically linked runtime library
+notices, failing closed on `GPL`/`AGPL` wheel packages, `CC-BY-NC` or
+revenue-threshold external assets while keeping the first-party repository
+package under its existing license and leaving W4/W5 external CLI renderer
+rechecks under [synthetic-protocol.md](synthetic-protocol.md)). The trainable
+matrix shall comprise: (a) **Arm A** small VLMs emitting `Text Score 2`
+(`Qwen/Qwen3-VL-2B-Instruct` control plus `4B` capacity option,
+`Qwen/Qwen3.5-2B` non-thinking mode, and `PaddlePaddle/PaddleOCR-VL-1.6` native
+`28x28` `px/token` grid); (b) **Arm B** `~30M`–`60M` rectangular vision encoders
+(`timm/convnext_tiny.fb_in22k_ft_in1k` fusing `stride 8` and `stride 16`
+features, and `zenosai/MonkeyOCRv2-S` `384`-dim native `patch-14` trunk
+unpermuted to raster order) paired with an autoregressive `Text Score 2`
+Transformer decoder; and (c) **2-class (`system`, `measure`) page detectors**
+(`ustc-community/dfine-small-coco` primary and `PekingU/rtdetr_v2_r18vd` control
+with `do_pad=False` stride-`32`-aligned aspect-preserving resize `(W_32, H_32)`,
+stock labeled `model(pixel_values=..., labels=...)` training forward preserving
+`num_denoising` and auxiliary loss terms, and post-processed pixel coordinates
+clamped to `[0, W_orig] x [0, H_orig]`), evaluating `measure` boxes on
+`synth_val` and `system` boxes on both `synth_val` and held-out `TRAIN_DEV`
+folds (`AP75` on scored detectors, matched `IoU >= 0.85`, ink containment,
+optional blind-comb two-staff W5 matching and downstream assembly integrity)
+against `comb_dp_blind`. In CPU Slice A, every dataset loader, labeled
+forward/backward training step (asserting active denoising loss terms on both
+detectors), checkpoint save/resume path, processor token-grid audit and
+inference entry point shall pass deterministic tiny-model CPU smoke tests
+without downloading multi-gigabyte foundation weights on the CPU host.
+
+### OMR-REQ-028: Constrained decoding, 4-fold real validation and W7 sidecar
+
+Blind held-out recognizer inference shall propagate predicted `carry_out` and
+end `(key, meter, clefs)` header state sequentially from system `0` (failing
+remaining systems of a piece closed with `"upstream_carry_gap"` after an
+abstention rather than guessing unreprinted meter, key, clef or bar-number state
+across a gap), enforce both an online
+**per-measure** token cap and a system-total token cap, and validate candidate
+`Text Score 2` system outputs through the parser, semantic validator,
+measure-duration check and a shared `assembly.py` prefix validator within a
+bounded beam/retry budget (`<= 3` attempts), recording an explicit abstention
+reason and system-level abstention sidecar row (separating mandatory abstention
+review from the `20%` calibrated measure-flag budget) rather than silently
+repairing invalid notation. Across W3's `16` accepted `TRAIN_DEV` pieces (`323`
+printed systems, `1,601` measures, `69` pages), the protocol shall pre-register
+`4` plate-group-disjoint validation folds (keeping every plate group `G1`, `G2`,
+`G4`, `G5`, `G6`, `G7` intact so each training fold retains `>= 236` real
+systems) for real-crop model selection, leak-free out-of-fold temperature or
+Platt confidence calibration (using two-fold-held-out `{0, 1, 2, 3} \ {f, g}`
+inner predictions when calibrating replay branches), W7 sidecar emission
+(`omr-w7-sidecar-v1` as defined in
+[training-protocol.md](training-protocol.md#pre-registered-4-fold-train_dev-split-calibration-w7-sidecar-and-slice-b-gates),
+emitting `omr-discrepancy-log-v1` strictly on aligned `TRAIN_DEV` and `TEST`
+evaluations), and Slice B's paired local-only `synthetic continuation vs.
+synthetic + TRAIN_DEV replay` ablation.
+
+### OMR-REQ-029: Offline per-system copista-28m TRAIN_DEV baseline
+
+Before GPU recognizer training, Slice A shall measure a zero-training
+per-system crop baseline reserving `1` ledger slot **before** opening any
+locator or private file, resolving inputs strictly beneath a pre-staged sealed
+read-only `TRAIN_DEV`-only directory root (`--traindev-root`, containing `69`
+`TRAIN_DEV` page PNGs, `16` accepted `accepted.musicxml` files, `16` Stage S0
+initial `draft.musicxml` files, and a `TRAIN_DEV`-only `traindev-manifest.json`,
+anchored externally by `staging_attestation_sha256` and root `(st_dev, st_ino)`
+in `DOWNLOADS/w6-slice-a-run-ledger.jsonl` outside `--traindev-root`, and opened
+from `/` via component-by-component `dir_fd` `O_NOFOLLOW` traversal that
+verifies `fstat` ownership, read-only mode and `(st_dev, st_ino, st_size,
+st_mtime_ns)` against the ledger-authenticated `staging-attestation.json`
+**before** reading any payload bytes, alongside a single committed portable
+aggregate `SHA-256` digest — never opening `batch-status.json`,
+`test-exclusion.json` or the `23`-piece W3 manifest, and never committing
+per-file private hashes or boxes), and feeding W5's blind `comb_dp_blind`
+2-staff crops from the `69` `TRAIN_DEV` pages (`0` `TEST` touches) into a single
+persistent offline `unshare -rn` supervisor/worker pair with a `300`-second
+per-page watchdog that reaps the inference child cleanly (`returncode >= 0`) and
+settles without spawning a replacement worker on stall. Piece scoring shall preserve `(page, system)` boundaries, restrict
+candidate-to-reference measure alignment strictly to each crop's `1:1`-matched
+oracle system range, force unmatched spurious crops to incur W2 extra-measure
+penalties, and score all measures of missed, merged, split or unparsed oracle
+systems fail-closed under
+[OMR-REQ-018](#omr-req-018-b-normalized-per-category-recognition-and-second-reader-scorer),
+reporting the measured `TRAIN_DEV` parse-survival, Layer-1 `A`-error and blind
+second-reader baseline alongside whole-page Stage S0 `copista-28m`.
+
+### OMR-REQ-030: Slice A execution governance, ledgers and zero-TEST-touch isolation
+
+All W6 Slice A external installations, expanded W4a intake runs, bulk
+`20k`/`50k`-crop synthetic rendering runs and private-input `copista-28m`
+per-system runs shall follow the
+[W6 training, bulk-packaging and page-detector protocol](training-protocol.md)
+accepted on `main` under record-system review, research-evidence review and
+shared engineering guidance (routine local unit, scenario and
+repository/synthetic-fixture CPU smoke tests without network fetches or
+private-input access remain unconstrained). Slice A shall enforce a committed
+wheel and file-digest lock manifest alongside persistent non-resettable
+`DOWNLOADS/w6-slice-a-download-ledger.json` (`15,000,000,000`-byte cap),
+`RUNS/w6-slice-a-*` (`100,000,000,000`-byte disk cap and `15,000` rendered pages
+per run), and append-only `DOWNLOADS/w6-slice-a-run-ledger.jsonl` pre-start
+reservations (`35,000` cumulative rendered pages across all non-exempt rendering
+runs, and `10` `1:1` single-worker private-input `copista-28m` per-system
+invocations charged regardless of purpose, page count, `--formal` flag or
+outcome), attesting the `TRAIN_DEV` input allowlist before opening files and
+keeping frozen `TEST` (`7` pieces, `111` systems) at strictly `0` touches
+throughout Slice A while preserving prior W1, W2/W3 and W4/W5 ledgers unchanged.
+
 ## Evidence and boundaries
 
 ### OMR-REQ-014: Evidence separation
