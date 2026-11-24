@@ -560,3 +560,80 @@ def test_musescore_four_side_pixel_scale_calibration(tmp_path, monkeypatch):
                 _FakeMs(),  # type: ignore[arg-type]
                 tmp_path / label,
             )
+
+
+def test_render_musescore_propagates_ref_defect_and_drops_bad_reexport(
+    tmp_path, monkeypatch
+):
+    """Propagate reference ProtocolDefectError; drop corrupt re-export."""
+    from sheet_music_omr.musicxml_events import (  # noqa: PLC0415
+        ProtocolDefectError,
+    )
+    from sheet_music_omr.synthetic import renderers as rend_mod  # noqa: PLC0415
+    from sheet_music_omr.synthetic.renderers import (  # noqa: PLC0415
+        RenderGateLedger,
+        render_musescore,
+    )
+
+    xml = rend_mod._CALIBRATION_XML  # noqa: SLF001
+    style = sample_layout_and_style(1, 2)
+    page_im = Image.new("L", (420, 360), 255)
+    cdraw = ImageDraw.Draw(page_im)
+    for origin in (80, 190):
+        for ln in range(5):
+            cdraw.line((50, origin + ln * 14, 370, origin + ln * 14), fill=0)
+
+    def _fake_job(_ms: object, out_dir: Path, encoded_xml: str, *_a: object):
+        out_dir.mkdir(parents=True, exist_ok=True)
+        page_im.save(out_dir / "score-1.png", format="PNG")
+        (out_dir / "score.spos").write_text("<score/>", encoding="utf-8")
+        (out_dir / "score.mpos").write_text(
+            '<score><elements><element id="0" x="600" y="960" sx="1920" '
+            'sy="2040" page="0"/><element id="1" x="2520" y="960" sx="1920" '
+            'sy="2040" page="0"/></elements></score>',
+            encoding="utf-8",
+        )
+        (out_dir / "score.musicxml").write_text(encoded_xml, encoding="utf-8")
+
+    class _Ms:
+        version = "4.7.7.261109195"
+        executable_sha256 = "fixture"
+
+    monkeypatch.setattr(rend_mod, "_musescore_job", _fake_job)
+    ledger = RenderGateLedger("musescore")
+
+    def _fail_both(*_args: object):
+        msg = "synthetic defect"
+        raise ProtocolDefectError(msg)
+
+    monkeypatch.setattr(rend_mod, "annotate", _fail_both)
+    with pytest.raises(ProtocolDefectError, match="synthetic defect"):
+        render_musescore(
+            xml,
+            style,
+            _Ms(),  # type: ignore[arg-type]
+            tmp_path / "both-bad",
+            ledger,
+            rights_variant="permissive",
+        )
+
+    called_compare = False
+
+    def _fail_compare(*_args: object):
+        nonlocal called_compare
+        called_compare = True
+        msg = "reexport defect"
+        raise ProtocolDefectError(msg)
+
+    monkeypatch.setattr(rend_mod, "annotate", lambda *_: None)
+    monkeypatch.setattr(rend_mod, "compare_file", _fail_compare)
+    res = render_musescore(
+        xml,
+        style,
+        _Ms(),  # type: ignore[arg-type]
+        tmp_path / "reexport-bad",
+        ledger,
+        rights_variant="permissive",
+    )
+    assert called_compare
+    assert res.gate.status == "dropped"
