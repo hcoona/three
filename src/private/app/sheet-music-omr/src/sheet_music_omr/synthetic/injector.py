@@ -654,18 +654,45 @@ class _Planner:
             for span in relations
             for index in range(span.start.frame.index, span.end.frame.index + 1)
         }
+        mrest_frames: set[int] = set()
         notes_by_frame: dict[tuple[int, int], list[Placed]] = defaultdict(list)
+        max_real_end: dict[int, Fraction] = defaultdict(lambda: Fraction(0))
         for placed in self.events:
+            if isinstance(placed.event, MeasureRest):
+                mrest_frames.add(placed.frame.index)
+            if isinstance(placed.event, Note | Rest | MeasureRest):
+                f_idx = placed.frame.index
+                max_real_end[f_idx] = max(
+                    max_real_end[f_idx], placed.onset + placed.duration
+                )
+            if placed.voice != 1 or placed.displayed_staff != placed.staff:
+                unsafe.add(placed.frame.index)
             if isinstance(placed.event, Note):
                 notes_by_frame[
                     placed.frame.index, placed.displayed_staff
                 ].append(placed)
                 if any(pitch.has_tie_marks for pitch in placed.event.pitches):
                     unsafe.add(placed.frame.index)
+        drift_from = next(
+            (
+                fr.index
+                for fr in self.base.timeline.frames
+                if max_real_end[fr.index] < fr.end
+                or (
+                    fr.index in mrest_frames
+                    and fr.end - fr.start != fr.meter.length
+                )
+            ),
+            len(self.base.timeline.frames),
+        )
         for span in self.spans:
             frame, staff = span.start.frame.index, span.start.staff
             if (
-                frame in unsafe
+                frame >= drift_from
+                or frame in unsafe
+                or span.end.frame.index != frame
+                or span.start.voice != 1
+                or span.end.voice != 1
                 or span.start.displayed_staff != staff
                 or span.end.displayed_staff != staff
             ):
@@ -675,7 +702,13 @@ class _Planner:
                 for p in notes_by_frame[frame, staff]
                 if span.start.time <= p.time < span.end.time
             ]
-            if notes and all(_eligible_ottava(p, staff) for p in notes):
+            if (
+                notes
+                and any(p.time == span.start.time for p in notes)
+                and any(p.end_time == span.end.time for p in notes)
+                and all(p.end_time <= span.end.time for p in notes)
+                and all(_eligible_ottava(p, staff) for p in notes)
+            ):
                 yield span, notes
 
     def add_ottavas(self, limit: int) -> None:

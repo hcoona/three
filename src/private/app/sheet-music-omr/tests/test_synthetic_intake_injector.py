@@ -552,6 +552,28 @@ def test_malformed_comma_composer_and_barline_repedaling():
     assert not compare_file(
         to_musicxml(rebuilt).decode("utf-8"), result.musicxml.decode("utf-8")
     ).category_counts()
+
+    for extra_m1 in (
+        "m 1\n1.1: r/2. x/4\n2.1: r/2. x/4\n",
+        "m 1 len=1/2\n1.1: C6/4 D6/4\n2.1: mrest\n",
+    ):
+        gapped = (
+            _HEADER
+            + extra_m1
+            + "".join(
+                f"m {i}\n1.1: C6/4 r/4 E6/4 F6/4\n2.1: {_LOWER}\n"
+                for i in range(2, 8)
+            )
+        )
+        rg_score = parse_document(gapped)
+        assert isinstance(rg_score, AssembledScore)
+        rg_inj = inject_annotations(
+            rg_score, seed="0", enabled_categories={"P3"}
+        )
+        assert rg_inj.injected_counts["P3"] == 0
+        assert not compare_file(
+            rg_inj.musicxml.decode("utf-8"), rg_inj.musicxml.decode("utf-8")
+        ).category_counts()
     assert _sounding(result.musicxml) == _sounding(to_musicxml(score))
 
 
