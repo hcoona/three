@@ -205,6 +205,14 @@ public sealed class GitOperations
                 Directory
                     .EnumerateFileSystemEntries(Repository)
                     .Any(path => Path.GetFileName(path) != ".git")
+                || (
+                    await GitAsync(
+                            Repository,
+                            ["ls-files", "--stage", "-z"],
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false)
+                ).Length != 0
             )
             {
                 throw new OperationException(

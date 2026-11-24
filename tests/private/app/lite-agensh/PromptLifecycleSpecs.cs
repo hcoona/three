@@ -339,13 +339,19 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                         )
                         .Length - 1
                 );
+                Assert.Contains("board_publish CLAIM", first.Text);
                 Assert.IsFalse(initial["sharedContext"]!.AsObject().ContainsKey("goal"));
+                Assert.IsFalse(initial["sharedContext"]!.AsObject().ContainsKey("cooperation"));
                 Assert.IsTrue(initial["sharedContext"]!.AsObject().ContainsKey("tasks"));
                 long firstBatch = state.SendingBatch("worker1");
                 Assert.IsNull(
                     state.Database.ReadMetadata("native:bootstrap:" + first.Session.SessionId)
                 );
 
+                string firstBacklogBody =
+                    "Backlog decision 00; "
+                    + new string('x', 4000)
+                    + " Preserve this complete earlier evidence suffix.";
                 List<long> messages = [];
                 for (int index = 0; index < 35; index++)
                 {
@@ -355,7 +361,9 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                         new()
                         {
                             ["recipient"] = "team",
-                            ["body"] = $"Backlog decision {index:D2}; preserve its order.",
+                            ["body"] = index == 0
+                                ? firstBacklogBody
+                                : $"Backlog decision {index:D2}; preserve its order.",
                         }
                     );
                     messages.Add(message["id"]!.GetValue<long>());
@@ -404,6 +412,8 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                 Assert.IsFalse(context.ContainsKey("members"));
                 Assert.IsFalse(context.ContainsKey("tasks"));
                 Assert.IsFalse(context.ContainsKey("goal"));
+                Assert.IsFalse(context.ContainsKey("cooperation"));
+                Assert.IsEmpty(context["messages"]?.AsArray() ?? new JsonArray());
                 JsonObject[] events = incremental["events"]!
                     .AsArray()
                     .OfType<JsonObject>()
@@ -411,8 +421,31 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                 JsonObject history = events.Single(item =>
                     item["kind"]!.GetValue<string>() == "group_message_history"
                 );
+                const int earlierMessages = 3;
+                long claimId = claim["id"]!.GetValue<long>();
                 Assert.AreEqual(35, history["total"]!.GetValue<int>());
-                Assert.AreEqual(3, history["earlier"]!.GetValue<int>());
+                Assert.AreEqual(earlierMessages, history["earlier"]!.GetValue<int>());
+                CollectionAssert.AreEqual(
+                    messages
+                        .Skip(earlierMessages)
+                        .Select(id => (Kind: "group", Id: id))
+                        .Append(("dm", direct["id"]!.GetValue<long>()))
+                        .Append(("board", claimId))
+                        .ToArray(),
+                    events
+                        .Where(item =>
+                            item["kind"]!.GetValue<string>() is "group" or "dm" or "board"
+                        )
+                        .Select(item =>
+                            (
+                                Kind: item["kind"]!.GetValue<string>(),
+                                Id: item["kind"]!.GetValue<string>() == "board"
+                                    ? item["payload"]!["gist"]!["id"]!.GetValue<long>()
+                                    : item["payload"]!["message"]!["id"]!.GetValue<long>()
+                            )
+                        )
+                        .ToArray()
+                );
                 string path = history["path"]!.GetValue<string>();
                 Assert.StartsWith(
                     Path.GetFullPath(state.Database.StatePath) + Path.DirectorySeparatorChar,
@@ -429,9 +462,12 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                         full.Select(item => item["payload"]!["message"]!["id"]!.GetValue<long>())
                     )
                 );
+                JsonObject retainedFirstMessage = full.Single(item =>
+                    item["payload"]!["message"]!["id"]!.GetValue<long>() == messages[0]
+                )["payload"]!["message"]!.AsObject();
                 Assert.AreEqual(
-                    "Backlog decision 00; preserve its order.",
-                    full[0]["payload"]!["message"]!["body"]!.GetValue<string>()
+                    firstBacklogBody,
+                    retainedFirstMessage["body"]!.GetValue<string>()
                 );
                 JsonObject dm = events.Single(item => item["kind"]!.GetValue<string>() == "dm");
                 Assert.AreEqual(
@@ -439,17 +475,13 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                     dm["payload"]!["message"]!["id"]!.GetValue<long>()
                 );
                 Assert.IsTrue(dm["payload"]!["urgent"]!.GetValue<bool>());
-                long claimId = claim["id"]!.GetValue<long>();
-                int claimOccurrences =
-                    events.Count(item =>
-                        item["kind"]!.GetValue<string>() == "board"
-                        && item["payload"]!["gist"]!["id"]!.GetValue<long>() == claimId
-                    )
-                    + context["board"]!
+                Assert.DoesNotContain(
+                    claimId,
+                    context["board"]!
                         .AsArray()
                         .OfType<JsonObject>()
-                        .Count(item => item["id"]!.GetValue<long>() == claimId);
-                Assert.AreEqual(1, claimOccurrences);
+                        .Select(item => item["id"]!.GetValue<long>())
+                );
                 long batch = state.SendingBatch("worker1");
                 Assert.AreEqual(
                     0L,
@@ -625,14 +657,44 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                 }
                 else
                 {
-                    turn.Fail(
-                        new OperationException("bootstrap_send_failed", "Controlled failed send.")
+                    const string reason = "Controlled failed send.";
+                    long kickoff = state.Number(
+                        """
+                        SELECT id FROM events
+                        WHERE batch_id=$batch AND kind='kickoff' AND state='sending';
+                        """,
+                        ("$batch", batch)
                     );
+                    turn.Fail(new OperationException("bootstrap_send_failed", reason));
                     await state.Active.WaitAsync(token).ConfigureAwait(false);
                     _ = await state.Active.ConfigureAwait(false);
                     Assert.AreEqual(
                         "bootstrap_send_failed",
                         state.Database.ReadMetadata("lifecycle:stop_reason")
+                    );
+                    Assert.AreEqual(
+                        reason,
+                        state.Value(
+                            """
+                            SELECT last_error FROM delivery_batches
+                            WHERE id=$id AND state='failed';
+                            """,
+                            ("$id", batch)
+                        ) as string
+                    );
+                    Assert.IsGreaterThan(
+                        state.Database.Now.ToUnixTimeMilliseconds(),
+                        state.Number(
+                            """
+                            SELECT next_retry_at FROM events
+                            WHERE id=$id AND batch_id=$batch AND state='failed' AND attempts=1
+                                AND last_error=$reason;
+                            """,
+                            ("$id", kickoff),
+                            ("$batch", batch),
+                            ("$reason", reason)
+                        ),
+                        "The failed kickoff must retain its reason and a first-attempt retry."
                     );
                 }
                 Assert.IsNull(
@@ -680,15 +742,24 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                     BEGIN SELECT RAISE(ABORT,'Phase7 controlled ACK storage failure.'); END;
                     """
                 );
-                _ = state.Start();
+                Task<JsonObject> originalRun = state.Start();
                 Phase7Sessions.Turn turn = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
-                long batch = state.SendingBatch("worker1");
+                long originalBatch = state.SendingBatch("worker1");
+                long originalEvent = state.Number(
+                    "SELECT id FROM events WHERE batch_id=$batch AND kind='kickoff';",
+                    ("$batch", originalBatch)
+                );
+                Assert.IsGreaterThan(0L, originalEvent);
                 turn.Complete();
-                await state.Active.WaitAsync(token).ConfigureAwait(false);
-                JsonObject result = await state.Active.ConfigureAwait(false);
+                JsonObject result = await originalRun.WaitAsync(token).ConfigureAwait(false);
                 Assert.IsFalse(result["ok"]!.GetValue<bool>());
+                Assert.AreEqual("post_delivery_failed", result["code"]!.GetValue<string>());
+                Assert.Contains(
+                    "Phase7 controlled ACK storage failure.",
+                    result["message"]!.GetValue<string>()
+                );
                 Assert.AreEqual(
                     "true",
                     state.Database.ReadMetadata("native:bootstrap:" + turn.Session.SessionId)
@@ -697,12 +768,15 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                     "native-complete",
                     state.Value(
                         "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
-                        ("$id", batch)
+                        ("$id", originalBatch)
                     )
                 );
                 Assert.AreEqual(
                     "sending",
-                    state.Value("SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch))
+                    state.Value(
+                        "SELECT state FROM delivery_batches WHERE id=$id;",
+                        ("$id", originalBatch)
+                    )
                 );
                 Assert.AreEqual(
                     0L,
@@ -711,14 +785,122 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                             "SELECT COUNT(*) FROM shown_notices s JOIN events e ON "
                             + "e.id=s.event_id WHERE e.batch_id=$id;"
                         ),
-                        ("$id", batch)
+                        ("$id", originalBatch)
                     )
                 );
-                Assert.AreEqual(10m, state.Reservation("worker1").Actual);
+                CreditReservation originalUsage = state.Reservation("worker1");
+                Assert.AreEqual(10m, originalUsage.Actual);
+                Assert.AreEqual("reconciled", originalUsage.State);
+                Assert.IsFalse(originalUsage.GrantOpen);
                 Assert.AreEqual(
                     "post_delivery_failed",
-                    state.Database.ReadMetadata("lifecycle:stop_reason")
+                    state.Database.ReadMetadata("lifecycle:stop_reason"),
+                    result.ToJsonString()
                 );
+                Assert.AreEqual("stopped", state.Database.ReadMetadata("lifecycle"));
+                Phase7Sessions.Host originalHost = state.Sessions.Hosts.Single(host =>
+                    host.Operation == "run"
+                );
+                Assert.IsTrue(
+                    originalHost.Witness["managedSettlementBeforeWrapperDispose"]!.GetValue<bool>()
+                );
+
+                state.Execute("DROP TRIGGER phase7_reject_ack;");
+                _ = state.Start("resume");
+                Phase7Sessions.Turn resumed = await state
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
+                    .ConfigureAwait(false);
+                Assert.IsFalse(resumed.Response.IsCompleted);
+                Assert.AreNotEqual(turn.Session.SessionId, resumed.Session.SessionId);
+                long resumedBatch = state.SendingBatch("worker1");
+                Assert.IsGreaterThan(0L, resumedBatch);
+                Assert.AreNotEqual(originalBatch, resumedBatch);
+                Assert.AreEqual(
+                    "sent",
+                    state.Value(
+                        "SELECT state FROM delivery_batches WHERE id=$id;",
+                        ("$id", originalBatch)
+                    )
+                );
+                Assert.AreEqual(
+                    "acknowledged",
+                    state.Value(
+                        "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
+                        ("$id", originalBatch)
+                    )
+                );
+                Assert.AreEqual(
+                    1L,
+                    state.Number(
+                        """
+                        SELECT COUNT(*) FROM shown_notices
+                        WHERE event_id=$id AND recipient='worker1';
+                        """,
+                        ("$id", originalEvent)
+                    )
+                );
+                Assert.AreEqual(
+                    0L,
+                    state.Number(
+                        "SELECT COUNT(*) FROM events WHERE id=$event AND batch_id=$batch;",
+                        ("$event", originalEvent),
+                        ("$batch", resumedBatch)
+                    )
+                );
+                // A fresh bootstrap can still describe retained work outside the event list.
+                JsonObject[] resumedEvents = Events(resumed.Text)["events"]!
+                    .AsArray()
+                    .OfType<JsonObject>()
+                    .ToArray();
+                Assert.DoesNotContain(
+                    originalEvent,
+                    resumedEvents
+                        .Where(item => item["id"] is not null)
+                        .Select(item => item["id"]!.GetValue<long>())
+                );
+                Assert.Contains(
+                    "kickoff",
+                    resumedEvents.Select(item => item["kind"]!.GetValue<string>())
+                );
+
+                Phase7Clock.ObservedPoll resumedPoll = await state
+                    .ObserveOwnerPollAsync(token)
+                    .ConfigureAwait(false);
+                resumed.Complete();
+                await state
+                    .WaitAckAsync(resumedBatch, state.WorkDeadline, token)
+                    .ConfigureAwait(false);
+                GitScenarioState.Data(
+                    await state.StopRunningAsync("pause", resumedPoll, token).ConfigureAwait(false)
+                );
+                Assert.AreEqual(
+                    "acknowledged",
+                    state.Value(
+                        "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
+                        ("$id", resumedBatch)
+                    )
+                );
+                Assert.AreEqual(
+                    "post_delivery_failed",
+                    state.Value(
+                        """
+                        SELECT stop_reason FROM coordinator_segments
+                        WHERE mode='run' AND ended_at IS NOT NULL;
+                        """
+                    )
+                );
+                Assert.AreEqual(
+                    10m,
+                    state
+                        .Ledger.Reservations(state.Database.RunId)
+                        .Single(row => row.Id == originalUsage.Id)
+                        .Actual
+                );
+                CreditReservation resumedUsage = state.Reservation("worker1");
+                Assert.AreNotEqual(originalUsage.Id, resumedUsage.Id);
+                Assert.AreEqual(10m, resumedUsage.Actual);
+                Assert.AreEqual("reconciled", resumedUsage.State);
+                Assert.IsFalse(resumedUsage.GrantOpen);
             })
             .ConfigureAwait(false);
     }
