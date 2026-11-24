@@ -9,17 +9,29 @@ with sub-issues [Issue #1493](https://github.com/hcoona/three/issues/1493)
 W4a, [Issue #1494](https://github.com/hcoona/three/issues/1494) W4b,
 [Issue #1495](https://github.com/hcoona/three/issues/1495) W4c, and
 [Issue #1496](https://github.com/hcoona/three/issues/1496) W4d) and W5
-([Issue #1497](https://github.com/hcoona/three/issues/1497)) under the accepted
-`Build OMR synthetic data engine and system-detection benchmark (W4 and W5)`
-[Delivery Wave](../../../../../docs/delivery-wave.md) entry
-([PR #1752](https://github.com/hcoona/three/pull/1752)). Its consumers are W4
-and W5 implementers, their independent reviewers, and downstream W6
+([Issue #1497](https://github.com/hcoona/three/issues/1497)). Its consumers
+are W4 and W5 implementers, their independent reviewers, and downstream W6
 ([Issue #1498](https://github.com/hcoona/three/issues/1498)) through W8
 ([Issue #1500](https://github.com/hcoona/three/issues/1500)) training and
-workflow workstreams.
+workflow workstreams. With the W4 Stage S3 proof (`w4-w5-formal-2`,
+[#1491 comment 7130836402](https://github.com/hcoona/three/issues/1491#issuecomment-7130836402),
+owner acceptance in
+[#1491 comment 7138762309](https://github.com/hcoona/three/issues/1491#issuecomment-7138762309))
+and W5 system-detection and assembly benchmarks (`w4-w5-formal-w5-traindev` and
+`w4-w5-formal-w5-locked92`,
+[#1497 comment 7130837035](https://github.com/hcoona/three/issues/1497#issuecomment-7130837035),
+owner acceptance in
+[#1497 comment 7138763006](https://github.com/hcoona/three/issues/1497#issuecomment-7138763006))
+accepted at `main` commit `abef22536dbd82ca654fa7cd599204c4e59efd62` and their
+[PR #1752](https://github.com/hcoona/three/pull/1752)
+[Delivery Wave](../../../../../docs/delivery-wave.md) entry retired, this
+protocol does not itself grant work: any new external installation, network
+download, batch synthetic rendering (including the deferred `20k`–`50k`-page
+bulk pilot), detector training, or private-page execution requires a new
+accepted Delivery Wave entry.
 
-Once accepted on `main` under applicable [Delivery Wave](../../../../../docs/delivery-wave.md)
-authorization, this record governs:
+When authorized by an accepted [Delivery Wave](../../../../../docs/delivery-wave.md)
+entry, this record governs:
 
 - external rendering, rasterization and experimental system-detection package
   or CLI installation and optional `nc_sa` symbolic corpus acquisition;
@@ -659,8 +671,18 @@ exact_wrong_staff_count`):** a 1-to-1 matched prediction clips ink if `p`
 
 ## Finite execution bounds, ledgers, stops, privacy and cleanup
 
-- **Accident-fuse bounds (enforced atomically under file locks before and during
-  execution):**
+- **Accident-fuse safeguards and retired `PR #1752` campaign authorization
+  (`ledgers.py` and `cli.py` enforce the download, disk and per-run checks on
+  the supplied `DOWNLOADS` / `RUNS` roots and enforce
+  `DOWNLOADS/w4-w5-run-ledger.jsonl` on `--formal` runs, including `--mode
+locked92` which requires `--formal`; the `PR #1752` Wave execution grant ended
+  on closure, so any new external download, batch synthetic generation, detector
+  training or private-page execution requires a new accepted Delivery Wave
+  entry, any future authorized formal run must reuse or carry forward the
+  preserved `w4-w5-download-ledger.json` and `w4-w5-run-ledger.jsonl` rather
+  than an empty `DOWNLOADS` root — which never resets spent counts or the
+  completed `locked92` pass — and any rerun of the locked `92`-page W5
+  box-geometry report also requires an accepted protocol amendment):**
     1. **Download ledger (`DOWNLOADS/w4-w5-download-ledger.json`):** under an
        exclusive lock, meters every HTTP `HEAD`/`GET` metadata probe and
        reserves exact byte budgets before starting any wheel, checkpoint or
@@ -669,35 +691,43 @@ exact_wrong_staff_count`):** a 1-to-1 matched prediction clips ink if `p`
        reservations conservatively, reusing verified cached files at `0` new
        bytes, and failing closed if any tool attempts an unmetered transfer),
        stopping before cumulative W4/W5 downloads exceed **`15,000,000,000`
-       bytes (`15 GB`)**. Historical `download-ledger.json` and
-       `w2-download-ledger.json` remain untouched.
+       bytes (`15 GB`)** (`PR #1752` campaign closed at `341,067,483` recorded
+       bytes across `204` settled entries; positive download authorization does
+       not carry forward without a new accepted Delivery Wave bound). Historical
+       `download-ledger.json` and `w2-download-ledger.json` remain untouched.
     2. **Generated disk cap:** all local W4/W5 proof output directories reside
        under a metered W4/W5 output root (`RUNS/w4-w5-*`), stopping and
        returning to the repository owner before combined generated local W4/W5
-       proof outputs exceed **`50,000,000,000` bytes (`50 GB`)** on disk.
+       proof outputs exceed **`50,000,000,000` bytes (`50 GB`)** on disk
+       (`PR #1752` campaign closed at `889,390,301` bytes across
+       `w4-w5-formal-1`, `w4-w5-formal-2`, `w4-w5-formal-w5-traindev` and
+       `w4-w5-formal-w5-locked92`).
     3. **Per-run and per-worker bounds:** at most **`5,000` rendered pages** in
        any single proof run and **`300` seconds** per batch worker invocation.
     4. **Persistent formal-run ledger (`DOWNLOADS/w4-w5-run-ledger.jsonl`):**
-       under an exclusive lock (`w4-w5-run-ledger.lock`), atomically reserves
+       under an exclusive lock (`.w4-w5-run-ledger.lock`), atomically reserves
        the run's planned page count and start slot **before** any formal Stage
        S3 or W5 private-page work begins (recording UTC timestamp, `git commit`,
        clean-tree check, command, `reserved_pages` and `status: "started"`), and
        appends a settlement record (`actual_pages`, `status: "completed" |
 "failed"`) on exit; an unsettled `"started"` record from a hard crash
        charges its full `reserved_pages` and blocks further formal starts until
-       inspected, and output cleanup never resets the ledger. Reaching **any**
-       download, disk, per-run or formal-ledger ceiling below **stops execution
-       before exceeding the bound and routes any request to raise or reset a
-       ceiling to the repository owner** via `#1491`, `#1497` or `#686` under the
-       accepted Delivery Wave:
+       inspected, and output cleanup never deletes, edits or resets the ledger.
+       Reaching **any** download, disk, per-run or formal-ledger ceiling below
+       **stops execution before exceeding the bound and routes any request to
+       raise or amend a ceiling to the repository owner** via `#1491`, `#1497`
+       or `#686` under an accepted Delivery Wave:
         - **`25,000` cumulative pages** across all formal Stage S3 and W5 runs
           combined (charging `actual_pages` on settled runs and `reserved_pages`
-          on unsettled crashes);
-        - **`20` formal `69`-page `TRAIN_DEV` W5 detector benchmark starts**; or
+          on unsettled crashes; `1,215` settled pages recorded at `PR #1752`
+          closure);
+        - **`20` formal `69`-page `TRAIN_DEV` W5 detector benchmark starts**
+          (`1 / 20` starts recorded on `w4-w5-formal-w5-traindev`); or
         - **`3` starts toward the single locked zero-tuning `92`-page W5
           box-geometry count report**, with a hard stop prohibiting any further
           `92`-page start once **one** `92`-page pass settles with
-          `status == "completed"`.
+          `status == "completed"` (**spent and locked** at `1 / 3` starts and
+          `1 / 1` completed pass on `w4-w5-formal-w5-locked92`).
           Routine local unit/scenario tests (`pytest`) and repository-fixture
           checks without network fetches or private-data access remain
           unconstrained.

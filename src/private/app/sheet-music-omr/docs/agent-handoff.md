@@ -12,20 +12,22 @@ and top-level record routing.
 The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) governs
 feature/capability advancements, architectural or public-contract changes, and
 external/privacy effects ([Issue #686](https://github.com/hcoona/three/issues/686)
-for sheet-music recognition design and planning, and the
-[W4 and W5 Delivery Wave entry](../../../../../docs/delivery-wave.md#build-omr-synthetic-data-engine-and-system-detection-benchmark-w4-and-w5)
-merged in [PR #1752](https://github.com/hcoona/three/pull/1752) for
-[Issue #1491](https://github.com/hcoona/three/issues/1491) (`#1493`–`#1496`,
-W4 synthetic training-data engine + Stage S3 proof slice) and
-[Issue #1497](https://github.com/hcoona/three/issues/1497) (W5 system-detection
-benchmark + candidate assembly validator); the W1
-text-representation grant for [Issue #1488](https://github.com/hcoona/three/issues/1488)
-was retired after owner acceptance of `formal-5` in
+for sheet-music recognition design and planning; the W1 text-representation
+grant for [Issue #1488](https://github.com/hcoona/three/issues/1488) was
+retired after owner acceptance of `formal-5` in
 [#1488 comment 7083509900](https://github.com/hcoona/three/issues/1488#issuecomment-7083509900),
-and the W2/W3 grant for [Issue #1489](https://github.com/hcoona/three/issues/1489)
+the W2/W3 grant for [Issue #1489](https://github.com/hcoona/three/issues/1489)
 and [Issue #1490](https://github.com/hcoona/three/issues/1490) was retired in
 [PR #1751](https://github.com/hcoona/three/pull/1751) after owner acceptance of
-`w2-s0-formal-3`),
+`w2-s0-formal-3`, and the [PR #1752](https://github.com/hcoona/three/pull/1752)
+W4/W5 Stage S3 and system-detection grant for
+[Issue #1491](https://github.com/hcoona/three/issues/1491) (`#1493`–`#1496`)
+and [Issue #1497](https://github.com/hcoona/three/issues/1497) was retired after
+owner acceptance of `w4-w5-formal-2`, `w4-w5-formal-w5-traindev` and
+`w4-w5-formal-w5-locked92` in
+[#1491 comment 7138762309](https://github.com/hcoona/three/issues/1491#issuecomment-7138762309)
+and
+[#1497 comment 7138763006](https://github.com/hcoona/three/issues/1497#issuecomment-7138763006)),
 while contract-preserving routine maintenance without new external, paid, or
 privacy effects follows the
 [record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency).
@@ -279,10 +281,17 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   commit downloaded corpora, MuseScore scratch files, or run outputs
   ([OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance)).
   W1's `20,000,000,000`-byte download allowance ended when `#1488` was retired
-  at a completed cumulative total of `2,350,276,855` bytes, and W2/W3's
+  at a completed cumulative total of `2,350,276,855` bytes, W2/W3's
   `10,000,000,000`-byte download allowance ended when `#1489` and `#1490` were
   retired at `480,830,451` bytes in `w2-download-ledger.json` (`6 / 6` S0
-  `TEST` touches in `w2-touch-log.jsonl`); any new download
+  `TEST` touches in `w2-touch-log.jsonl`), and W4/W5's `15,000,000,000`-byte
+  download allowance (`341,067,483` bytes across `204` entries in
+  `w4-w5-download-ledger.json`), `50,000,000,000`-byte proof-output disk fuse
+  (`889,390,301` bytes across `runs/w4-w5-*`), and `25,000`-page formal ledger
+  (`1,215` settled pages, `1 / 20` `TRAIN_DEV` W5 starts, and `1 / 3` starts
+  with `1 / 1` completed and locked `92`-page pass in
+  `w4-w5-run-ledger.jsonl`) ended when the `PR #1752` Wave entry was retired;
+  any new download, batch synthetic rendering, or private-page execution
   requires explicit bounds in a future Delivery Wave entry, and initializing a
   fresh authorized `DOWNLOADS` directory without `download-ledger.json` must
   pass `--prior-total 2350276855` and `--basis` on the first `preflight` or
@@ -448,3 +457,34 @@ external and private-gold steps in order:
    `w2-touch-log.jsonl` lines or overwrite preserved `w2-s0-1` and
    `w2-s0-formal-1` through `w2-s0-formal-3` external run directories until the
    repository owner deletes them after closure merge.
+
+## Formal proof and detector gates for future authorized W4 and W5 runs
+
+W4a ([Issue #1493](https://github.com/hcoona/three/issues/1493)) and W5
+([Issue #1497](https://github.com/hcoona/three/issues/1497)) are accepted and
+closed, and the W4a–W4d synthetic engine and Stage S3 proof on
+[Issue #1491](https://github.com/hcoona/three/issues/1491) are accepted at
+`main` commit `abef22536dbd82ca654fa7cd599204c4e59efd62`
+([#1491 comment 7130836402](https://github.com/hcoona/three/issues/1491#issuecomment-7130836402),
+[#1497 comment 7130837035](https://github.com/hcoona/three/issues/1497#issuecomment-7130837035),
+owner acceptance dispositions in
+[#1491 comment 7138762309](https://github.com/hcoona/three/issues/1491#issuecomment-7138762309)
+and
+[#1497 comment 7138763006](https://github.com/hcoona/three/issues/1497#issuecomment-7138763006)),
+with the `PR #1752` [Delivery Wave](../../../../../docs/delivery-wave.md) entry
+retired (`#1491` and `#1494`–`#1496` remain open solely for the deferred
+`20k`–`50k`-page bulk pilot generation and W6 augmentation ablation). No
+further external tool/corpus download, batch synthetic rendering, detector
+training, or private-page execution is authorized without a new accepted
+Delivery Wave entry (and the single zero-tuning `92`-page W5 box-geometry count
+report in `DOWNLOADS/w4-w5-run-ledger.jsonl` is spent and locked against rerun
+absent an accepted protocol amendment). Keep `DOWNLOADS/w4-w5-run-ledger.jsonl` permanently preserved and append-only,
+and preserve settled download history in `DOWNLOADS/w4-w5-download-ledger.json`
+(permitting only normal locked reservation and settlement updates under future
+Wave authorization) — never delete or reset either ledger, and carry both
+forward into any future Wave-authorized `DOWNLOADS` root (starting in a fresh
+or missing `DOWNLOADS` root would hide the recorded `locked92` single-pass stop
+and is prohibited). Do not overwrite
+preserved external `w4-w5-formal-1`, `w4-w5-formal-2`,
+`w4-w5-formal-w5-traindev` and `w4-w5-formal-w5-locked92` run directories
+unless the repository owner deletes those run directories after closure merge.
