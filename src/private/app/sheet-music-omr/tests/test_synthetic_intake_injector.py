@@ -528,8 +528,15 @@ def test_injection_leaves_tied_continuations_and_native_fingering_untouched():
 
 
 def test_malformed_comma_composer_and_barline_repedaling():
-    """Reject empty pre-comma surname and inject clean barline pedals."""
+    """Strip composer lifespans, reject bad surnames and add barline pedals."""
     assert intake.normalize_work_identity(", A. Composer", "Sonata") is None
+    with_dates = intake.normalize_work_identity(
+        "Johann Sebastian Bach (1685-1750)", "Invention BWV 772"
+    )
+    plain = intake.normalize_work_identity("J. S. Bach", "Invention BWV 772")
+    assert with_dates is not None
+    assert plain is not None
+    assert with_dates.matches(plain)
     whole_bass = _HEADER + "".join(
         f"m {i}\n1.1: {_UPPER}\n2.1: C2/1\n" for i in range(1, 7)
     )

@@ -192,8 +192,13 @@ def normalize_work_identity(composer: str, title: str) -> WorkIdentity | None:
     """Return a comparable work identity, or None for uninformative metadata."""
     if not (_informative(composer) and _informative(title)):
         return None
-    surname_parts = _words(composer.split(",", 1)[0]).split()
-    if not surname_parts:
+    cleaned_composer = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", composer)
+    surname_parts = [
+        tok
+        for tok in _words(cleaned_composer.split(",", 1)[0]).split()
+        if tok.isalpha() and tok not in {"jr", "sr"}
+    ]
+    if not surname_parts or len(surname_parts[-1]) < 2:  # noqa: PLR2004
         return None
     surname = surname_parts[-1]
     title_text = _words(title)
