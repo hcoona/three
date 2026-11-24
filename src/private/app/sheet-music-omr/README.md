@@ -139,6 +139,23 @@ shows one file's differences by measure, and `pilot [--fixtures FILE...]` runs
 every phase on repository fixtures. A stop condition is recorded in
 `RUN/run.json` and exits with 2.
 
+The W4/W5 [synthetic and detector CLI](docs/synthetic-protocol.md) exposes its
+arguments through:
+
+```shell
+uv run --package sheet-music-omr python -m sheet_music_omr.synthetic --help
+```
+
+Use `setup-w4-w5` to provision the metered external tools, `intake-w4a` to
+build the audited permissive source partition, `run-s3` for the dual-renderer
+proof, `run-w5-detectors` (`--mode traindev` or `--mode locked92 --formal`) for
+the system-detector benchmark and assembly checks, and
+`validate-assembly --expected-systems K FILE...` to validate ordered system
+documents without starting a proof run. Directory confinement, formal execution
+bounds, isolation rules, and single-pass gates are governed by the
+[synthetic data and system-detection protocol](docs/synthetic-protocol.md#environment-tool-isolation-and-mutable-source-rechecks)
+and the accepted [Delivery Wave](../../../../docs/delivery-wave.md).
+
 Each worker call has one 300-second bound, which includes starting a fresh
 worker. Some calls hold more than one of the protocol's steps: the content
 pass with the supplementary checks, the text-space check's two reverse
@@ -184,9 +201,13 @@ direction and research context are tracked in
 [Issue #686](https://github.com/hcoona/three/issues/686), W1 text
 representation in [Issue #1488](https://github.com/hcoona/three/issues/1488), W2
 evaluation and baselines in
-[Issue #1489](https://github.com/hcoona/three/issues/1489), and W3 real-data
+[Issue #1489](https://github.com/hcoona/three/issues/1489), W3 real-data
 inventory and splits in
-[Issue #1490](https://github.com/hcoona/three/issues/1490).
+[Issue #1490](https://github.com/hcoona/three/issues/1490), W4 synthetic
+training-data engine in
+[Issue #1491](https://github.com/hcoona/three/issues/1491) (`#1493`–`#1496`),
+and W5 system detection and assembly in
+[Issue #1497](https://github.com/hcoona/three/issues/1497).
 
 Text Score 2 is derived from the owner's as-printed text convention but is
 specified anew, with a versioned normative grammar. It is the pilot baseline
