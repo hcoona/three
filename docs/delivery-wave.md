@@ -475,6 +475,8 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
   [Issue #1496](https://github.com/hcoona/three/issues/1496)), sub-issues of
   #686, and their linked pull requests. Following owner dispositions on
   [#1498](https://github.com/hcoona/three/issues/1498#issuecomment-7141304639)
+  (amended in
+  [#1498](https://github.com/hcoona/three/issues/1498#issuecomment-7145361970))
   and [#1491](https://github.com/hcoona/three/issues/1491#issuecomment-7141314149),
   the repository owner requested authorization of CPU Slice A on the current
   CPU host prior to switching to the local RTX 4090 host for GPU training
@@ -626,9 +628,9 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
   facsimile PDFs, `TRAIN_DEV` entries in `gold-cache` (`TEST` entries in
   `gold-cache` read-only solely for accepted W4a file-digest and non-notation
   work-identity exclusion checks; zero `TEST` page rasters, `TEST` crops,
-  `TEST` notation scoring or `TEST` touch records), existing `TRAIN_DEV`-only
-  alignment/crop artifacts (never reading frozen `TEST` crops from retained W3
-  artifacts), and cached `w4-synth-venv` / `w2-copista-venv` environments
+  `TEST` notation scoring or `TEST` touch records), existing `TRAIN_DEV`-only alignment/crop artifacts or dedicated staged
+  `TRAIN_DEV`-only input roots (never reading frozen `TEST` crops from retained
+  W3 artifacts), and cached `w4-synth-venv` / `w2-copista-venv` environments
   (carrying forward preserved `download-ledger.json`, `w2-download-ledger.json`,
   `w2-touch-log.jsonl`, `w4-w5-download-ledger.json` and
   `w4-w5-run-ledger.jsonl` without deleting or resetting settled entries);
@@ -639,10 +641,11 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
   mutable-source recheck gate); offline `unshare -rn` execution of cached
   `copista-28m@44464d1` on `TRAIN_DEV` `comb_dp_blind` system crops; and
   isolated out-of-worktree installation into `DOWNLOADS/w6-train-venv` of CPU
-  PyTorch/vision/training wheels (`torch`, `torchvision`, `timm`,
+  PyTorch/vision/training wheels (`torch`, `torchvision`, `scipy`, `timm`,
   `transformers`, `peft`, `accelerate`, `safetensors`, `datasets`,
-  `tokenizers`, `sentencepiece` and related pure-Python helpers) plus pinned
-  permissive model config/tokenizer/processor metadata files (without
+  `tokenizers`, `sentencepiece` and their required transitive Python/native
+  wheel dependencies such as `numpy`, `pillow`, `regex`, `pyarrow` and
+  `hf-xet`) plus pinned permissive model config/tokenizer/processor metadata files (without
   multi-gigabyte foundation checkpoint downloads on the CPU host), stopping to
   return to the owner before cumulative Slice A network downloads exceed
   `15,000,000,000` bytes (`15 GB`) in persistent
