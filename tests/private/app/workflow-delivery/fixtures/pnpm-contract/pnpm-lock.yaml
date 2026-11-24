@@ -73,10 +73,7 @@ importers:
         version: link:../core
       '@contract/peer-lib':
         specifier: workspace:*
-        version: file:members/peer-lib(@contract/core@members+core)
-    dependenciesMeta:
-      '@contract/peer-lib':
-        injected: true
+        version: link:../peer-lib
 
   members/peer-lib:
     devDependencies:
@@ -107,11 +104,6 @@ packages:
     resolution: {integrity: sha512-v2f1EweD+E8XECIAK/5ccS09UrXHix43LONa3MlcQ12hXsOJ/1MWARo+n6vZCp3munPHyCi7ec1JMc7a0zPV8Q==, tarball: file:vendor/archived-1.0.0.tgz}
     version: 1.0.0
 
-  '@contract/peer-lib@file:members/peer-lib':
-    resolution: {directory: members/peer-lib, type: directory}
-    peerDependencies:
-      '@contract/core': '*'
-
   '@contract/plain@file:vendor/plain':
     resolution: {directory: vendor/plain, type: directory}
 
@@ -121,10 +113,6 @@ packages:
 snapshots:
 
   '@contract/archived@file:vendor/archived-1.0.0.tgz': {}
-
-  '@contract/peer-lib@file:members/peer-lib(@contract/core@members+core)':
-    dependencies:
-      '@contract/core': link:members/core
 
   '@contract/plain@file:vendor/plain': {}
 

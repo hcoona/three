@@ -25,7 +25,7 @@ python = "3.14"
 ruby = "4.0.9"
 
 # Package Managers
-pnpm = "12.21.0"
+pnpm = "12.22.0"
 uv = "0.13.9"
 
 # Git Commit Hook Manager

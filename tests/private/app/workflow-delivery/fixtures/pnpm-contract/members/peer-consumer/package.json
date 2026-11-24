@@ -5,10 +5,5 @@
   "dependencies": {
     "@contract/peer-lib": "workspace:*",
     "@contract/core": "workspace:*"
-  },
-  "dependenciesMeta": {
-    "@contract/peer-lib": {
-      "injected": true
-    }
   }
 }
