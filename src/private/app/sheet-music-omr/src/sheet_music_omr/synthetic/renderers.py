@@ -32,6 +32,7 @@ from sheet_music_omr.comparison import (
     MUSICDIFF_VERSION,
     InstrumentMismatchError,
     ScoreParseError,
+    annotate,
 )
 from sheet_music_omr.harness.musescore import (
     LOCK_NAME,
@@ -49,7 +50,11 @@ from sheet_music_omr.harness.systems import (
     system_starts,
 )
 from sheet_music_omr.model import AssembledScore
-from sheet_music_omr.musicxml_events import read_score, voice_staves
+from sheet_music_omr.musicxml_events import (
+    ProtocolDefectError,
+    read_score,
+    voice_staves,
+)
 from sheet_music_omr.musicxml_reverse import (
     MusicXmlError,
     _parse_xml,
@@ -1260,6 +1265,7 @@ def render_musescore(  # noqa: PLR0913
     try:
         encoded = encode_layout_breaks(x_inj, style.layout)
         categories = _categories(_parse_xml(encoded), encoded)
+        annotate(encoded)
         try:
             _musescore_job(musescore, output_dir, encoded, style)
         finally:
@@ -1279,6 +1285,11 @@ def render_musescore(  # noqa: PLR0913
         if system_starts(round_trip).measures != style.layout.measures:
             msg = "MuseScore re-export changed the canonical measure count"
             raise RenderRejected(msg)
+        try:
+            annotate(round_trip)
+        except ProtocolDefectError as exc:
+            msg = "MuseScore re-export produced invalid spanner endpoints"
+            raise RenderRejected(msg) from exc
         differences = compare_file(round_trip, encoded).category_counts()
         if differences:
             return _result(
