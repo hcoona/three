@@ -648,3 +648,102 @@ def test_render_musescore_propagates_ref_defect_and_drops_bad_reexport(
             ledger,
             rights_variant="permissive",
         )
+
+
+def test_verovio_midscore_clef_chord_ottava_and_cohort_gate():
+    """Scope clef category to mid-score changes and canonicalize MEI chords."""
+    from sheet_music_omr.synthetic import renderers as rend_mod  # noqa: PLC0415
+    from sheet_music_omr.synthetic.renderers import (  # noqa: PLC0415
+        RenderGate,
+        RenderGateLedger,
+    )
+
+    xml_base = rend_mod._CALIBRATION_XML  # noqa: SLF001
+    cats_fn = getattr(rend_mod, "_categories")  # noqa: B009
+    parse_fn = getattr(rend_mod, "_parse_xml")  # noqa: B009
+    assert "clef" not in cats_fn(parse_fn(xml_base), xml_base)
+    with_mid_clef = xml_base.replace(
+        '<measure number="2">',
+        '<measure number="2"><attributes><clef number="2">'
+        "<sign>G</sign><line>2</line></clef></attributes>",
+    )
+    assert "clef" in cats_fn(parse_fn(with_mid_clef), with_mid_clef)
+    restated_same = xml_base.replace(
+        '<measure number="2">',
+        '<measure number="2"><attributes><clef number="2">'
+        "<sign>F</sign><line>4</line></clef></attributes>",
+    )
+    assert "clef" not in cats_fn(parse_fn(restated_same), restated_same)
+
+    clef_ledger = RenderGateLedger("verovio")
+    clef_ledger.record(RenderGate("dropped", {"clef": 2}), {"clef"})
+    assert "clef" in clef_ledger.disabled_categories
+
+    # Chord-member @endid (#n2) matches MusicXML chord-first endpoint (#n1).
+    chord_xml = """<score-partwise><part id="P1"><measure id="m1" number="1">
+      <attributes><divisions>1</divisions></attributes>
+      <direction><direction-type><octave-shift type="down" number="1" size="8"/>
+      </direction-type><staff>1</staff></direction>
+      <note id="n1"><pitch><step>C</step><octave>5</octave></pitch>
+        <duration>4</duration><voice>1</voice><staff>1</staff></note>
+      <note id="n2"><chord/><pitch><step>E</step><octave>5</octave></pitch>
+        <duration>4</duration><voice>1</voice><staff>1</staff></note>
+      <direction><direction-type><octave-shift type="stop" number="1" size="8"/>
+      </direction-type><staff>1</staff></direction>
+      <backup><duration>4</duration></backup>
+      <note id="n3"><rest/><duration>4</duration><voice>2</voice>
+        <staff>2</staff></note>
+    </measure></part></score-partwise>"""
+    chord_mei = """<mei xmlns="http://www.music-encoding.org/ns/mei">
+      <score><scoreDef/><section><measure xml:id="m1">
+      <staff n="1"><layer n="1"><chord xml:id="c1">
+        <note xml:id="n1"/><note xml:id="n2"/></chord></layer></staff>
+      <staff n="2"><layer n="1"><mRest xml:id="n3"/></layer></staff>
+      <octave staff="1" startid="#n1" endid="#n2" dis="8" dis.place="above"/>
+      </measure></section></score></mei>"""
+    assert not compare_mei_supplementary(chord_xml, chord_mei)
+
+    # Wrong tie endid or altered tuplet ratio must be flagged by MEI check.
+    tie_tup_xml = """<score-partwise><part id="P1"><measure id="m1" number="1">
+      <attributes><divisions>3</divisions></attributes>
+      <note id="n1"><pitch><step>C</step><octave>4</octave></pitch>
+        <duration>2</duration><tie type="start"/>
+        <voice>1</voice><staff>1</staff>
+        <time-modification><actual-notes>3</actual-notes>
+          <normal-notes>2</normal-notes></time-modification></note>
+      <note id="n2"><pitch><step>C</step><octave>4</octave></pitch>
+        <duration>2</duration><tie type="stop"/>
+        <voice>1</voice><staff>1</staff>
+        <time-modification><actual-notes>3</actual-notes>
+          <normal-notes>2</normal-notes></time-modification></note>
+      <note id="n3"><pitch><step>C</step><octave>4</octave></pitch>
+        <duration>2</duration><voice>1</voice><staff>1</staff>
+        <time-modification><actual-notes>3</actual-notes>
+          <normal-notes>2</normal-notes></time-modification></note>
+      <backup><duration>6</duration></backup>
+      <note id="n4"><rest/><duration>6</duration><voice>2</voice>
+        <staff>2</staff></note>
+    </measure></part></score-partwise>"""
+    tie_tup_mei = """<mei xmlns="http://www.music-encoding.org/ns/mei">
+      <score><scoreDef/><section><measure xml:id="m1">
+      <staff n="1"><layer n="1"><tuplet num="3" numbase="2">
+        <note xml:id="n1"/><note xml:id="n2"/><note xml:id="n3"/>
+      </tuplet></layer></staff>
+      <staff n="2"><layer n="1"><rest xml:id="n4"/></layer></staff>
+      <tie startid="#n1" endid="#n2"/>
+      </measure></section></score></mei>"""
+    assert not compare_mei_supplementary(tie_tup_xml, tie_tup_mei)
+    assert "tie" in compare_mei_supplementary(
+        tie_tup_xml, tie_tup_mei.replace('endid="#n2"', 'endid="#n3"')
+    )
+    assert "tuplet" in compare_mei_supplementary(
+        tie_tup_xml, tie_tup_mei.replace('numbase="2"', 'numbase="1"')
+    )
+
+    # Cohort evaluates all 25 scores before disabling >5% categories.
+    cohort = RenderGateLedger("verovio", min_cohort_before_disable=25)
+    cohort.record(RenderGate("dropped", {"slur": 1}), {"slur"})
+    assert not cohort.disabled_categories
+    for _ in range(24):
+        cohort.record(RenderGate("passed"), {"slur"})
+    assert not cohort.disabled_categories

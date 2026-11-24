@@ -869,7 +869,6 @@ _DROP_THRESHOLD = 0.05
 _BASIC_CATEGORIES = {
     "pitch",
     "rhythm_rest",
-    "clef",
     "voice",
     "time_signature",
     "key_signature",
@@ -903,6 +902,11 @@ _CATEGORY_TAGS = {
 }
 
 
+_KNOWN_CATEGORIES = (
+    _BASIC_CATEGORIES | set(_CATEGORY_TAGS.values()) | {"clef", "cross_staff"}
+)
+
+
 @dataclass(frozen=True, slots=True)
 class RenderGate:
     """Content-free disposition of one sample, with per-category differences."""
@@ -917,6 +921,7 @@ class RenderGateLedger:
     """Per-engine score counts and per-category round-trip drop rates."""
 
     engine: str
+    min_cohort_before_disable: int = 1
     outcomes: Counter[str] = field(default_factory=Counter)
     category_attempts: Counter[str] = field(default_factory=Counter)
     category_drops: Counter[str] = field(default_factory=Counter)
@@ -934,11 +939,16 @@ class RenderGateLedger:
         self.outcomes[gate.status] += 1
         if gate.status == "excluded":
             return
+        known_diffs = set(gate.category_differences) & _KNOWN_CATEGORIES
         self.category_attempts.update(
-            categories | set(gate.category_differences)
+            (categories & _KNOWN_CATEGORIES) | known_diffs
         )
-        self.category_drops.update(gate.category_differences.keys())
-        if self.engine == "verovio":
+        self.category_drops.update(known_diffs)
+        evaluated = self.outcomes["passed"] + self.outcomes["dropped"]
+        if (
+            self.engine == "verovio"
+            and evaluated >= self.min_cohort_before_disable
+        ):
             self.disabled_categories = {
                 name
                 for name, rate in self.drop_rates().items()
@@ -976,12 +986,40 @@ def _require_ledger(ledger: RenderGateLedger, engine: str) -> None:
         raise ValueError(msg)
 
 
+def _clef_sig(clef: ET.Element) -> tuple[str, str, str]:
+    return (
+        (clef.findtext("sign") or "").strip(),
+        (clef.findtext("line") or "").strip(),
+        (clef.findtext("clef-octave-change") or "0").strip(),
+    )
+
+
+def _has_midscore_clef(root: ET.Element) -> bool:
+    initial: dict[str, tuple[str, str, str]] = {}
+    for m_idx, measure in enumerate(_parts(root), 1):
+        seen_motion = False
+        for child in measure:
+            if child.tag in {"note", "backup", "forward"}:
+                seen_motion = True
+            elif child.tag == "attributes":
+                for clef in child.findall("clef"):
+                    st_num = clef.get("number", "1")
+                    sig = _clef_sig(clef)
+                    if m_idx == 1 and not seen_motion and st_num not in initial:
+                        initial[st_num] = sig
+                    elif initial.get(st_num) != sig:
+                        return True
+    return False
+
+
 def _categories(root: ET.Element, xml: str) -> set[str]:
     categories = _BASIC_CATEGORIES | {
         _CATEGORY_TAGS[node.tag]
         for node in root.iter()
         if node.tag in _CATEGORY_TAGS
     }
+    if _has_midscore_clef(root):
+        categories.add("clef")
     events = read_score(xml).events
     owners = voice_staves(events)
     if any(owners[id(event)][1] != event.staff for event in events):
@@ -1386,6 +1424,14 @@ def _add_note_refs(  # noqa: C901, PLR0912
                 facets["cross_staff"][
                     ident, measure, layer_staff + 1, staff
                 ] += 1
+            if (tm := note.find("time-modification")) is not None:
+                facets["tuplet"][
+                    measure,
+                    staff,
+                    ident,
+                    int(tm.findtext("actual-notes", "0")),
+                    int(tm.findtext("normal-notes", "0")),
+                ] += 1
             for mark in note.findall("notations/technical/fingering"):
                 facets["fingering"][measure, staff, ident, _value(mark)] += 1
             for mark in note.findall("notations/arpeggiate"):
@@ -1408,7 +1454,12 @@ def _add_note_refs(  # noqa: C901, PLR0912
                 facets["tie"][prev_id, ident] += 1
             if "start" in types or "continue" in types:
                 tied[tie_key] = ident
-                tied.setdefault(fallback_key, ident)
+                tied[fallback_key] = ident
+    chord_rep: dict[str, str] = {}
+    for event in xml_score.events:
+        first_id = event.notes[0].attrib["id"]
+        for note in event.notes:
+            chord_rep[note.attrib["id"]] = first_id
     for (measure, staff), voices in layers.items():
         # Numeric identifiers need not survive; relative layer order does.
         facets["voice"][
@@ -1418,31 +1469,15 @@ def _add_note_refs(  # noqa: C901, PLR0912
         facets["arpeggio"][measure, tuple(sorted(members)), direction] += 1
     for span in xml_score.spans:
         if (
-            span.family == "tuplet"
-            and span.start_note is not None
-            and span.stop_note is not None
-        ):
-            start, end = (
-                span.start_note.attrib["id"],
-                span.stop_note.attrib["id"],
-            )
-            tm = span.start_note.find("time-modification")
-            actual_n = (
-                int(tm.findtext("actual-notes", "0")) if tm is not None else 0
-            )
-            normal_n = (
-                int(tm.findtext("normal-notes", "0")) if tm is not None else 0
-            )
-            m, staff, _ = note_positions[start]
-            facets["tuplet"][m, staff, start, end, actual_n, normal_n] += 1
-        if (
             span.family == "slur"
             and span.start_note is not None
             and span.stop_note is not None
         ):
-            start, end = (
-                span.start_note.attrib["id"],
-                span.stop_note.attrib["id"],
+            start = chord_rep.get(
+                span.start_note.attrib["id"], span.start_note.attrib["id"]
+            )
+            end = chord_rep.get(
+                span.stop_note.attrib["id"], span.stop_note.attrib["id"]
             )
             m, staff, _ = note_positions[start]
             facets["slur"][m, staff, start, end] += 1
@@ -1596,16 +1631,24 @@ def _mei_controls(  # noqa: C901, PLR0912
     measure: ET.Element,
     ordinal: int,
     default_pedal: str,
-    lookup: tuple[_NotePositions, Mapping[str, tuple[str, ...]]],
+    lookup: tuple[
+        _NotePositions, Mapping[str, tuple[str, ...]], Mapping[str, str]
+    ],
     facets: _FacetCounts,
 ) -> None:
-    positions, chord_map = lookup
+    positions, chord_map, chord_rep = lookup
     for mark in measure:
         tag = mark.tag
         raw_start = _fragment(mark.get("startid", ""))
         raw_end = _fragment(mark.get("endid", ""))
-        start = chord_map[raw_start][0] if raw_start in chord_map else raw_start
-        end = chord_map[raw_end][0] if raw_end in chord_map else raw_end
+        if tag in {_MEI_DIGIT_TAG, "tie"}:
+            start = (
+                chord_map[raw_start][0] if raw_start in chord_map else raw_start
+            )
+            end = chord_map[raw_end][0] if raw_end in chord_map else raw_end
+        else:
+            start = chord_rep.get(raw_start, raw_start)
+            end = chord_rep.get(raw_end, raw_end)
         staff = (
             _mei_staff(mark, positions, start)
             if tag
@@ -1705,28 +1748,23 @@ def _mei_controls(  # noqa: C901, PLR0912
             facets["tie"][start, end] += 1
 
 
-def _mei_layer_tuplets(
-    layer: ET.Element,
-    ordinal: int,
-    staff_no: int,
+def _mei_walk_tuplet_tree(
+    node: ET.Element,
     positions: _NotePositions,
     facets: _FacetCounts,
+    ratio: tuple[int, int] = (1, 1),
 ) -> None:
-    for tup in layer.iter("tuplet"):
-        tup_ids = [
-            _mei_id(ev)
-            for ev in tup.iter()
-            if ev.tag in _LAYER_EVENTS and _mei_id(ev) in positions
-        ]
-        if tup_ids:
-            facets["tuplet"][
-                ordinal,
-                staff_no,
-                tup_ids[0],
-                tup_ids[-1],
-                int(tup.get("num", "0")),
-                int(tup.get("numbase", "0")),
-            ] += 1
+    cur_a, cur_b = ratio
+    if node.tag == "tuplet":
+        cur_a *= int(node.get("num", "1"))
+        cur_b *= int(node.get("numbase", "1"))
+    elif (cur_a, cur_b) != (1, 1) and node.tag in {"note", "rest"}:
+        ident = _mei_id(node)
+        if ident in positions:
+            m_ord, ev_staff, _ = positions[ident]
+            facets["tuplet"][m_ord, ev_staff, ident, cur_a, cur_b] += 1
+    for child in node:
+        _mei_walk_tuplet_tree(child, positions, facets, (cur_a, cur_b))
 
 
 def _mei_layers(
@@ -1739,7 +1777,7 @@ def _mei_layers(
         staff_no = int(staff.attrib["n"])
         voices = []
         for layer in staff.findall("layer"):
-            _mei_layer_tuplets(layer, ordinal, staff_no, positions, facets)
+            _mei_walk_tuplet_tree(layer, positions, facets)
             members = []
             for note in layer.iter():
                 if note.tag not in _LAYER_EVENTS:
@@ -1789,6 +1827,27 @@ def _mei_heading_lines(mei: ET.Element) -> list[str]:
     return out
 
 
+def _mei_chord_maps(
+    mei: ET.Element, note_positions: _NotePositions
+) -> tuple[dict[str, tuple[str, ...]], dict[str, str]]:
+    chord_map: dict[str, tuple[str, ...]] = {}
+    chord_rep: dict[str, str] = {}
+    for ch in mei.iter("chord"):
+        cid = _mei_id(ch)
+        children = tuple(
+            _mei_id(n)
+            for n in ch.findall("note")
+            if _mei_id(n) in note_positions
+        )
+        for nid in children:
+            chord_rep[nid] = children[0]
+        if cid and children:
+            chord_map[cid] = children
+            chord_rep[cid] = children[0]
+            note_positions[cid] = note_positions[children[0]]
+    return chord_map, chord_rep
+
+
 def compare_mei_supplementary(x_inj: str, mei_text: str) -> Counter[str]:
     """Compare MEI facets using source note IDs and measure-local sites."""
     expected: _FacetCounts = defaultdict(Counter)
@@ -1806,17 +1865,7 @@ def compare_mei_supplementary(x_inj: str, mei_text: str) -> Counter[str]:
     if [_mei_id(m) for m in mei.iter("measure")] != canonical:
         msg = "MEI re-export does not retain one-to-one canonical measure IDs"
         raise RenderRejected(msg)
-    chord_map: dict[str, tuple[str, ...]] = {}
-    for ch in mei.iter("chord"):
-        cid = _mei_id(ch)
-        children = tuple(
-            _mei_id(n)
-            for n in ch.findall("note")
-            if _mei_id(n) in note_positions
-        )
-        if cid and children:
-            chord_map[cid] = children
-            note_positions[cid] = note_positions[children[0]]
+    chord_map, chord_rep = _mei_chord_maps(mei, note_positions)
     pedal_style = "pedstar"
     ordinal = 0
     for node in mei.iter():
@@ -1829,7 +1878,7 @@ def compare_mei_supplementary(x_inj: str, mei_text: str) -> Counter[str]:
                 node,
                 ordinal,
                 pedal_style,
-                (note_positions, chord_map),
+                (note_positions, chord_map, chord_rep),
                 actual,
             )
     return Counter(
@@ -1846,6 +1895,9 @@ _DIFF_FAMILIES = {
     "pitch": "pitch",
     "accid": "accidental",
     "voice": "voice",
+    "clef": "clef",
+    "key": "key_signature",
+    "time": "time_signature",
     "duration": "rhythm_rest",
     "head": "rhythm_rest",
     "dot": "rhythm_rest",
@@ -1853,11 +1905,44 @@ _DIFF_FAMILIES = {
     "beam": "beam",
     "tuplet": "tuplet",
     "tie": "tie",
+    "slur": "slur",
+    "dynam": "dynamic",
     "grace": "grace",
     "articulation": "articulation_fermata",
     "ornament": "ornament",
     "tremolo": "tremolo",
 }
+
+
+def _strip_mei_owned_from_score(score: Score) -> None:
+    """Remove facets verified 1-to-1 by compare_mei_supplementary."""
+    from music21 import articulations, expressions, tempo  # noqa: PLC0415
+
+    strip_stream_classes = (
+        expressions.TextExpression,
+        expressions.RehearsalMark,
+        tempo.MetronomeMark,
+    )
+    for st in score.recurse(streamsOnly=True, includeSelf=True):
+        for el in list(st):
+            if isinstance(el, strip_stream_classes) or type(el).__name__ in {
+                "PedalMark",
+                "ArpeggioMarkSpanner",
+            }:
+                st.remove(el)
+    for gn in score.recurse().notesAndRests:
+        if gn.articulations:
+            gn.articulations = [
+                a
+                for a in gn.articulations
+                if not isinstance(a, articulations.Fingering)
+            ]
+        if gn.expressions:
+            gn.expressions = [
+                e
+                for e in gn.expressions
+                if not isinstance(e, expressions.ArpeggioMark)
+            ]
 
 
 def _parse_score(text: str, fmt: str) -> Score:
@@ -1914,6 +1999,8 @@ def _musicdiff_mei(xml: str, mei: str) -> Counter[str]:
     try:
         reference = _parse_score(xml, "musicxml")
         rendered = _parse_score(mei_compat, "mei")
+        _strip_mei_owned_from_score(reference)
+        _strip_mei_owned_from_score(rendered)
         ops, _ = Comparison.annotated_scores_diff(
             AnnScore(reference, CONTENT_DETAIL),
             AnnScore(rendered, CONTENT_DETAIL),

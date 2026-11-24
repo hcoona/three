@@ -188,7 +188,7 @@ def _parser() -> argparse.ArgumentParser:
         "--rights-variant", choices=("permissive",), default="permissive"
     )
     intake.add_argument(
-        "--max-pdmx", type=lambda v: _integer(v, 0, sys.maxsize), default=260
+        "--max-pdmx", type=lambda v: _integer(v, 0, sys.maxsize), default=380
     )
     intake.add_argument(
         "--max-lieder", type=lambda v: _integer(v, 0, sys.maxsize), default=80
@@ -1430,7 +1430,14 @@ def _prove_engine(  # noqa: PLR0913
     counter: _PageCount,
     calibrated_identity: tuple[str, str] | None = None,
 ) -> tuple[Json, list[CropStatistics]]:
-    engine = _ProofEngine(RenderGateLedger(name))
+    engine = _ProofEngine(
+        RenderGateLedger(
+            name,
+            min_cohort_before_disable=(
+                args.roundtrip_pieces if name == "verovio" else 1
+            ),
+        )
+    )
     started = time.monotonic()
     prior = counter.actual
     overlay_target = (
