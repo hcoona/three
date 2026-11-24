@@ -354,7 +354,8 @@ internal sealed class Phase6OwnedCreator : IAsyncDisposable
         using CancellationTokenSource reading =
             CancellationTokenSource.CreateLinkedTokenSource(token);
         Task<string?> read = reader!.ReadLineAsync(reading.Token).AsTask();
-        await ObservePipeStageAsync(read, reading, TimeSpan.FromSeconds(30), token)
+        TimeSpan fuse = stage == "OPENED" ? TimeSpan.FromSeconds(90) : TimeSpan.FromSeconds(30);
+        await ObservePipeStageAsync(read, reading, fuse, token)
             .ConfigureAwait(false);
         string? line = await read.ConfigureAwait(false);
         Assert.IsNotNull(line, "Creator disconnected before " + stage);

@@ -1623,12 +1623,21 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 ).ConfigureAwait(false);
                 long retainedId = retained["id"]!.GetValue<long>();
                 long originalBatch = state.SendingBatch("worker1");
+                original.Complete();
+                await state
+                   .WaitAckAsync(originalBatch, state.WorkDeadline, token)
+                   .ConfigureAwait(false);
+                Phase7Sessions.Turn changeNotice = await state
+                   .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
+                   .ConfigureAwait(false);
+                Assert.Contains("Retained resume witness", changeNotice.Text);
+                long changeBatch = state.SendingBatch("worker1");
                 Phase7Clock.ObservedPoll originalOwnerPoll = await state
                     .ObserveOwnerPollAsync(token)
                     .ConfigureAwait(false);
-                original.Complete();
+                changeNotice.Complete();
                 await state
-                    .WaitAckAsync(originalBatch, state.WorkDeadline, token)
+                   .WaitAckAsync(changeBatch, state.WorkDeadline, token)
                     .ConfigureAwait(false);
                 GitScenarioState.Data(
                     await state
@@ -1647,47 +1656,47 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 );
                 _ = state.Start("resume");
                 Phase7Sessions.Turn resumed = await state
-                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
-                    .ConfigureAwait(false);
+                   .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
+                   .ConfigureAwait(false);
                 Assert.AreNotEqual(original.Session.SessionId, resumed.Session.SessionId);
                 Assert.AreEqual(
-                    "fresh-session-with-durable-summary",
-                    state.Database.ReadMetadata("worker:worker1:recovery")
+                   "fresh-session-with-durable-summary",
+                   state.Database.ReadMetadata("worker:worker1:recovery")
                 );
                 const string changesHeading = "==== DURABLE CHANGES ====\n";
                 int changesStart = resumed.Text.IndexOf(changesHeading, StringComparison.Ordinal);
                 Assert.IsGreaterThan(-1, changesStart);
                 changesStart += changesHeading.Length;
                 int changesEnd = resumed.Text.IndexOf(
-                    "\n\n==== EVENTS ====\n", changesStart, StringComparison.Ordinal
+                   "\n\n==== EVENTS ====\n", changesStart, StringComparison.Ordinal
                 );
                 Assert.IsGreaterThan(changesStart, changesEnd);
                 JsonObject changes = Assert.IsInstanceOfType<JsonObject>(
-                    JsonNode.Parse(resumed.Text[changesStart..changesEnd])
+                   JsonNode.Parse(resumed.Text[changesStart..changesEnd])
                 );
                 JsonObject retainedSummary = Assert.ContainsSingle(
-                    changes["data"]!["items"]!.AsArray().OfType<JsonObject>()
-                        .Where(item => item["id"]!.GetValue<long>() == retainedId)
+                   changes["data"]!["items"]!.AsArray().OfType<JsonObject>()
+                       .Where(item => item["id"]!.GetValue<long>() == retainedId)
                 );
                 Assert.AreEqual(retainedHead, retainedSummary["head"]!.GetValue<string>());
                 Assert.AreEqual(
-                    "Retained resume witness", retainedSummary["title"]!.GetValue<string>()
+                   "Retained resume witness", retainedSummary["title"]!.GetValue<string>()
                 );
                 Assert.AreEqual("open", retainedSummary["state"]!.GetValue<string>());
                 Assert.Contains("Retained decision for the next segment.", resumed.Text);
                 Assert.Contains("Goal: " + state.Database.Configuration.Goal, resumed.Text);
                 Assert.AreEqual(2L, state.Number("SELECT COUNT(*) FROM coordinator_segments;"));
                 Assert.AreEqual(
-                    10m,
-                    state
-                        .Ledger.Reservations(state.Database.RunId)
-                        .Single(row => row.Id == old.Id)
-                        .Actual
+                   20m,
+                   state
+                       .Ledger.Reservations(state.Database.RunId)
+                       .Single(row => row.Id == old.Id)
+                       .Actual
                 );
                 Assert.IsNull(
-                    state.Database.ReadMetadata("native:bootstrap:" + resumed.Session.SessionId)
+                   state.Database.ReadMetadata("native:bootstrap:" + resumed.Session.SessionId)
                 );
-                Assert.AreEqual(190m, state.Reservation("worker1").Allowance);
+                Assert.AreEqual(180m, state.Reservation("worker1").Allowance);
                 long resumedBatch = state.SendingBatch("worker1");
                 Phase7Clock.ObservedPoll resumedOwnerPoll = await state
                     .ObserveOwnerPollAsync(token)

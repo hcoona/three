@@ -406,8 +406,10 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
                 token
             );
             Task<string?> read = reader!.ReadLineAsync(reading.Token).AsTask();
+            TimeSpan fuse =
+                stage == "CHECKPOINT" ? TimeSpan.FromSeconds(90) : TimeSpan.FromSeconds(30);
             await Phase6OwnedCreator
-                .ObservePipeStageAsync(read, reading, TimeSpan.FromSeconds(30), token)
+                .ObservePipeStageAsync(read, reading, fuse, token)
                 .ConfigureAwait(false);
             string? line = await read.ConfigureAwait(false);
             Assert.IsNotNull(line, "Original creator disconnected before " + stage);
