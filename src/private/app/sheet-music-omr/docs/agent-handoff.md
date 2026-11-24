@@ -478,12 +478,13 @@ further external tool/corpus download, batch synthetic rendering, detector
 training, or private-page execution is authorized without a new accepted
 Delivery Wave entry (and the single zero-tuning `92`-page W5 box-geometry count
 report in `DOWNLOADS/w4-w5-run-ledger.jsonl` is spent and locked against rerun
-absent an accepted protocol amendment). Keep `DOWNLOADS/w4-w5-download-ledger.json`
-and `DOWNLOADS/w4-w5-run-ledger.jsonl` permanently preserved and append-only —
-never delete, edit or reset either ledger, and carry them forward into any
-future Wave-authorized `DOWNLOADS` root (starting in a fresh or missing
-`DOWNLOADS` root would hide the recorded `locked92` single-pass stop and is
-prohibited). Do not overwrite
+absent an accepted protocol amendment). Keep `DOWNLOADS/w4-w5-run-ledger.jsonl` permanently preserved and append-only,
+and preserve settled download history in `DOWNLOADS/w4-w5-download-ledger.json`
+(permitting only normal locked reservation and settlement updates under future
+Wave authorization) — never delete or reset either ledger, and carry both
+forward into any future Wave-authorized `DOWNLOADS` root (starting in a fresh
+or missing `DOWNLOADS` root would hide the recorded `locked92` single-pass stop
+and is prohibited). Do not overwrite
 preserved external `w4-w5-formal-1`, `w4-w5-formal-2`,
 `w4-w5-formal-w5-traindev` and `w4-w5-formal-w5-locked92` run directories
 unless the repository owner deletes those run directories after closure merge.
