@@ -55,7 +55,7 @@ jobs:
         name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
-          version: 2026.11.11
+          version: 2026.11.12
           install: false
           working_directory: ${{ runner.temp }}
       - name: Install selected runtimes
