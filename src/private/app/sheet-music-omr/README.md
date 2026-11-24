@@ -109,15 +109,12 @@ rejections (`341,067,483 / 15,000,000,000` download bytes, `889,390,301 /
 50,000,000,000` proof disk bytes, `1,215 / 25,000` formal pages, `1 / 1` locked
 `92`-page pass spent). With the W1, W2/W3 and W4/W5 execution
 [Delivery Wave](../../../../docs/delivery-wave.md) entries retired on
-acceptance, only design and planning under
-[Issue #686](https://github.com/hcoona/three/issues/686) remains active in the
-[Delivery Wave](../../../../docs/delivery-wave.md); feature/workstream
-advancement or new external/private-input execution requires its own Delivery
-Wave entry while contract-preserving routine maintenance without new external or
-privacy effects follows the
+acceptance, current work authorization and routine-maintenance boundaries
+follow the [Delivery Wave](../../../../docs/delivery-wave.md) and
 [record policy](../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
-(see [Agent handoff](docs/agent-handoff.md)). There is no trained recognizer,
-model packaging or release.
+([Issue #686](https://github.com/hcoona/three/issues/686) is the overall
+planning work carrier; see [Agent handoff](docs/agent-handoff.md)). There is no
+trained recognizer, model packaging or release.
 
 ## Usage
 
