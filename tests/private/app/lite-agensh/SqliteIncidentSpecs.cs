@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -14,6 +15,18 @@ public sealed class SqliteIncidentSpecs
     [TestMethod]
     public void HeldWriterCompetingAcquisitionRetainsCodesTimingAndAvailableHolder()
     {
+        using Process ownProcess = Process.GetCurrentProcess();
+        DateTimeOffset? ownBirth;
+        try
+        {
+            ownBirth = new(ownProcess.StartTime.ToUniversalTime());
+        }
+        catch (Exception birthError) when (
+            birthError is System.ComponentModel.Win32Exception or InvalidOperationException
+        )
+        {
+            ownBirth = null;
+        }
         using ScratchDirectory scratch = new();
         RunConfiguration configuration = new()
         {
@@ -31,10 +44,12 @@ public sealed class SqliteIncidentSpecs
         using SqliteTransactionScope held = Sql.BeginTransaction(writer, operation: "HeldWriter");
         Sql.Execute(writer, "INSERT INTO entries VALUES('writer','uncommitted');", held);
         DateTimeOffset before = DateTimeOffset.UtcNow;
+        long acquisitionStarted = Stopwatch.GetTimestamp();
 
         SqliteException error = Assert.ThrowsExactly<SqliteException>(() =>
             Sql.BeginTransaction(contender, operation: "CompetingWriter")
         );
+        TimeSpan acquisitionElapsed = Stopwatch.GetElapsedTime(acquisitionStarted);
         DateTimeOffset after = DateTimeOffset.UtcNow;
         JsonObject incident = ReadIncident(error);
         JsonObject failure = incident["failure"]!.AsObject();
@@ -42,6 +57,32 @@ public sealed class SqliteIncidentSpecs
             Active(incident)
                 .Where(activity => activity["transaction"]?.GetValue<string>() == held.Id)
         );
+        JsonObject holderSource = Assert.ContainsSingle(
+            incident["sources"]!.AsArray().OfType<JsonObject>()
+                .Where(source =>
+                    source["snapshot"]?["active"]?.AsArray().OfType<JsonObject>()
+                        .Any(activity =>
+                            activity["transaction"]?.GetValue<string>() == held.Id
+                        ) == true
+                )
+        );
+        Assert.AreEqual("available", holderSource["status"]!.GetValue<string>());
+        foreach (JsonObject identity in new[] { incident, holderSource["snapshot"]!.AsObject() })
+        {
+            Assert.AreEqual(ownProcess.Id, identity["processId"]!.GetValue<int>());
+            Assert.IsTrue(identity.ContainsKey("processBirthUtc"));
+            if (ownBirth is { } expectedBirth)
+            {
+                Assert.AreEqual(
+                    expectedBirth,
+                    identity["processBirthUtc"]!.GetValue<DateTimeOffset>()
+                );
+            }
+            else
+            {
+                Assert.IsNull(identity["processBirthUtc"]);
+            }
+        }
 
         Assert.AreEqual(5, writer.DefaultTimeout);
         Assert.AreEqual(5, contender.DefaultTimeout);
@@ -61,7 +102,9 @@ public sealed class SqliteIncidentSpecs
             failure["connection"]!.GetValue<string>(),
             holder["connection"]!.GetValue<string>()
         );
-        Assert.IsTrue(failure["elapsedMilliseconds"]!.GetValue<double>() >= 0);
+        double reportedElapsed = failure["elapsedMilliseconds"]!.GetValue<double>();
+        Assert.IsGreaterThan(100d, reportedElapsed);
+        Assert.IsTrue(reportedElapsed <= acquisitionElapsed.TotalMilliseconds);
         Assert.IsTrue(failure["monotonicTimestamp"]!.GetValue<long>() > 0);
         DateTimeOffset observed = failure["observedAtUtc"]!.GetValue<DateTimeOffset>();
         DateTimeOffset collectionStart = incident[
@@ -88,15 +131,60 @@ public sealed class SqliteIncidentSpecs
     }
 
     [TestMethod]
+    public void FailedParameterizedWriteAutomaticallyRetainsSanitizedStatementIncident()
+    {
+        using SqliteScenarioState state = new();
+        using SqliteConnection writer = state.Open("owner");
+        using SqliteConnection contender = state.Open("worker1");
+        contender.DefaultTimeout = 1;
+        using SqliteTransactionScope held = Sql.BeginTransaction(
+            writer, operation: "HeldStatementWriter"
+        );
+        Sql.Execute(writer, "INSERT INTO entries VALUES('writer','uncommitted');", held);
+        const string privateSql = "private-statement-marker";
+        const string privateValue = "private-statement-value";
+
+        SqliteException error = Assert.ThrowsExactly<SqliteException>(() =>
+            Sql.Execute(
+                contender,
+                "INSERT INTO entries VALUES($id,$value); -- " + privateSql,
+                null,
+                ("$id", "contender"),
+                ("$value", privateValue)
+            )
+        );
+        JsonObject incident = ReadIncident(error);
+        JsonObject failure = incident["failure"]!.AsObject();
+
+        Assert.AreEqual(5, error.SqliteErrorCode);
+        Assert.AreEqual(error.SqliteErrorCode, failure["primaryCode"]!.GetValue<int>());
+        Assert.AreEqual(error.SqliteExtendedErrorCode, failure["extendedCode"]!.GetValue<int>());
+        Assert.AreEqual("statement-failed", failure["phase"]!.GetValue<string>());
+        Assert.AreEqual("Execute", failure["boundary"]!.GetValue<string>());
+        Assert.AreEqual("Execute", failure["operation"]!.GetValue<string>());
+        string retained = incident.ToJsonString() + string.Join(
+            '\n',
+            Directory.EnumerateFiles(state.DiagnosticsPath, "activity-*.json")
+                .Select(File.ReadAllText)
+        );
+        Assert.DoesNotContain("INSERT INTO", retained);
+        Assert.DoesNotContain(privateSql, retained);
+        Assert.DoesNotContain(privateValue, retained);
+        held.Rollback();
+        Assert.AreEqual(0L, Sql.Scalar(contender, "SELECT COUNT(*) FROM entries;"));
+    }
+
+    [TestMethod]
     [DataRow(true)]
     [DataRow(false)]
-    public void TransactionCompletedAndDisposedDoesNotAttributeLaterFailureToRetiredWork(
+    public void TransactionCompletionRetiresAttributionBeforeScopeDisposal(
         bool commit
     )
     {
         using SqliteScenarioState state = new();
         using SqliteConnection connection = state.Open();
         string retired;
+        SqliteException error;
         using (
             SqliteTransactionScope transaction = Sql.BeginTransaction(
                 connection,
@@ -106,6 +194,15 @@ public sealed class SqliteIncidentSpecs
         {
             retired = transaction.Id;
             Sql.Execute(connection, "INSERT INTO entries VALUES('retired','value');", transaction);
+            string activityPath = Assert.ContainsSingle(
+                Directory.GetFiles(state.DiagnosticsPath, "activity-*.json")
+            );
+            JsonObject before = JsonNode.Parse(File.ReadAllText(activityPath))!.AsObject();
+            Assert.AreEqual(
+                retired,
+                Assert.ContainsSingle(before["active"]!.AsArray())!["transaction"]!
+                    .GetValue<string>()
+            );
             if (commit)
             {
                 transaction.Commit();
@@ -114,9 +211,19 @@ public sealed class SqliteIncidentSpecs
             {
                 transaction.Rollback();
             }
+            JsonObject after = JsonNode.Parse(File.ReadAllText(activityPath))!.AsObject();
+            Assert.IsEmpty(after["active"]!.AsArray());
+            Assert.Contains(
+                commit ? "commit-succeeded" : "rollback-succeeded",
+                after["recent"]!.AsArray()
+                    .Where(activity =>
+                        activity!["transaction"]?.GetValue<string>() == retired
+                    )
+                    .Select(activity => activity!["phase"]!.GetValue<string>())
+            );
+            error = ObserveIoFailure(connection, "AfterRetirement");
         }
 
-        SqliteException error = ObserveIoFailure(connection, "AfterRetirement");
         JsonObject incident = ReadIncident(error);
         JsonObject failure = incident["failure"]!.AsObject();
 
@@ -128,9 +235,56 @@ public sealed class SqliteIncidentSpecs
                 .Select(activity => activity["phase"]!.GetValue<string>())
         );
         Assert.AreEqual(commit ? 1L : 0L, Sql.Scalar(connection, "SELECT COUNT(*) FROM entries;"));
-        // Outside a completed/disposed transaction, a new operation must not inherit its identity.
         Assert.IsNull(failure["transaction"]);
         Assert.AreEqual("AfterRetirement", failure["operation"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public void RejectedCommitRetainsWriterAttributionUntilSuccessfulRollback()
+    {
+        using SqliteScenarioState state = new();
+        using SqliteConnection connection = state.Open();
+        using SqliteConnection observer = state.Open("observer");
+        Sql.Execute(
+            connection,
+            """
+            PRAGMA foreign_keys=ON;
+            CREATE TABLE parents(id INTEGER PRIMARY KEY);
+            CREATE TABLE children(
+                parent_id INTEGER REFERENCES parents(id) DEFERRABLE INITIALLY DEFERRED);
+            """
+        );
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(
+            connection, operation: "RejectedCommitWriter"
+        );
+        Sql.Execute(connection, "INSERT INTO children VALUES(1);", transaction);
+
+        SqliteException rejected = Assert.ThrowsExactly<SqliteException>(transaction.Commit);
+        Assert.AreEqual(19, rejected.SqliteErrorCode);
+        JsonObject retained = ReadIncident(ObserveIoFailure(observer, "AfterRejectedCommit"));
+        JsonObject writer = Assert.ContainsSingle(Active(retained));
+        Assert.AreEqual(transaction.Id, writer["transaction"]!.GetValue<string>());
+        JsonObject completion = Assert.ContainsSingle(
+            Recent(retained).Where(activity =>
+                activity["transaction"]?.GetValue<string>() == transaction.Id
+                && activity["phase"]?.GetValue<string>() == "commit-failed"
+            )
+        );
+        Assert.AreEqual(rejected.SqliteErrorCode, completion["primaryCode"]!.GetValue<int>());
+        Assert.AreEqual(
+            rejected.SqliteExtendedErrorCode, completion["extendedCode"]!.GetValue<int>()
+        );
+
+        transaction.Rollback();
+        JsonObject retired = ReadIncident(ObserveIoFailure(observer, "AfterRejectedRollback"));
+        Assert.IsEmpty(Active(retired));
+        Assert.Contains(
+            "rollback-succeeded",
+            Recent(retired)
+                .Where(activity => activity["transaction"]?.GetValue<string>() == transaction.Id)
+                .Select(activity => activity["phase"]!.GetValue<string>())
+        );
+        Assert.AreEqual(0L, Sql.Scalar(observer, "SELECT COUNT(*) FROM children;"));
     }
 
     [TestMethod]
@@ -361,10 +515,24 @@ public sealed class SqliteIncidentSpecs
         original.Data["origin"] = "original-operation";
         TextWriter previous = Console.Error;
         using StringWriter stderr = new(CultureInfo.InvariantCulture);
+        List<Activity> activities = [];
+        using ActivityListener listener = new()
+        {
+            ShouldListenTo = source => source.Name == "LiteAgensh",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activities.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+        string transactionId;
         SqliteException error;
         try
         {
             Console.SetError(stderr);
+            using SqliteTransactionScope transaction = Sql.BeginTransaction(
+                connection, operation: "StderrWriter"
+            );
+            transactionId = transaction.Id;
             error = Assert.ThrowsExactly<SqliteException>(() =>
                 SqliteDiagnostics.Observe<int>(
                     connection,
@@ -386,7 +554,23 @@ public sealed class SqliteIncidentSpecs
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Where(line => line.StartsWith(prefix, StringComparison.Ordinal))
         );
-        JsonObject failure = JsonNode.Parse(summary[prefix.Length..])!["failure"]!.AsObject();
+        JsonObject structuredSummary = JsonNode.Parse(summary[prefix.Length..])!.AsObject();
+        JsonObject failure = structuredSummary["failure"]!.AsObject();
+        Activity acquisition = Assert.ContainsSingle(
+            activities.Where(activity => activity.OperationName == "sqlite.acquisition")
+        );
+        string databaseId = Assert.IsInstanceOfType<string>(
+            acquisition.GetTagItem("liteagensh.sqlite.database_id")
+        );
+        string connectionId = Assert.IsInstanceOfType<string>(
+            acquisition.GetTagItem("liteagensh.sqlite.connection_id")
+        );
+        Assert.IsNotEmpty(databaseId);
+        Assert.IsNotEmpty(connectionId);
+        Assert.AreEqual(databaseId, structuredSummary["database"]!.GetValue<string>());
+        Assert.AreEqual(Environment.ProcessId, structuredSummary["processId"]!.GetValue<int>());
+        Assert.AreEqual(connectionId, failure["connection"]!.GetValue<string>());
+        Assert.AreEqual(transactionId, failure["transaction"]!.GetValue<string>());
 
         Assert.AreSame(original, error);
         Assert.AreEqual(10, error.SqliteErrorCode);
@@ -405,13 +589,28 @@ public sealed class SqliteIncidentSpecs
         Assert.Contains("original database error preserved.", output);
         Assert.DoesNotContain(secret, output);
         Assert.DoesNotContain(state.DiagnosticsPath, output);
-        Assert.AreEqual("UnknownOperation", failure["operation"]!.GetValue<string>());
+        foreach (string text in SummaryStrings(structuredSummary))
+        {
+            Assert.DoesNotContain(secret, text);
+            Assert.DoesNotContain(state.DiagnosticsPath, text);
+        }
+        Assert.AreEqual("StderrWriter", failure["operation"]!.GetValue<string>());
+        Assert.AreEqual("UnknownOperation", failure["boundary"]!.GetValue<string>());
         Assert.IsNull(failure["actor"]);
         Assert.AreEqual("statement-failed", failure["phase"]!.GetValue<string>());
         Assert.AreEqual(10, failure["primaryCode"]!.GetValue<int>());
         Assert.AreEqual(522, failure["extendedCode"]!.GetValue<int>());
         Assert.AreEqual("owned-path-blocker", File.ReadAllText(state.DiagnosticsPath));
         Assert.AreEqual(0L, Sql.Scalar(connection, "SELECT COUNT(*) FROM entries;"));
+
+        static IEnumerable<string> SummaryStrings(JsonNode? node) => node switch
+        {
+            JsonObject item => item.SelectMany(property => SummaryStrings(property.Value)),
+            JsonArray items => items.SelectMany(SummaryStrings),
+            JsonValue value when value.GetValueKind() == JsonValueKind.String =>
+                [value.GetValue<string>()],
+            _ => [],
+        };
     }
 
     [TestMethod]
@@ -444,7 +643,12 @@ public sealed class SqliteIncidentSpecs
     }
 
     [TestMethod]
-    public void RetainedIncidentExcludesSqlParametersMessagesAndInvalidActor()
+    [DataRow(10, 522)]
+    [DataRow(6, 262)]
+    public void RetainedIncidentExcludesSqlParametersMessagesAndInvalidActor(
+        int primaryCode,
+        int extendedCode
+    )
     {
         using SqliteScenarioState state = new();
         const string secret = "confidential-goal-token";
@@ -456,11 +660,27 @@ public sealed class SqliteIncidentSpecs
             ("$id", "private"),
             ("$value", secret)
         );
-        SqliteException error = ObserveIoFailure(
-            connection,
-            "Unsafe operation " + secret,
-            "disk error " + secret
-        );
+        SqliteException original = new("Storage failure " + secret, primaryCode, extendedCode);
+        TextWriter previous = Console.Error;
+        using StringWriter stderr = new(CultureInfo.InvariantCulture);
+        SqliteException error;
+        try
+        {
+            Console.SetError(stderr);
+            error = Assert.ThrowsExactly<SqliteException>(() =>
+                SqliteDiagnostics.Observe<int>(
+                    connection,
+                    "Unsafe operation " + secret,
+                    "statement",
+                    () => throw original
+                )
+            );
+        }
+        finally
+        {
+            Console.SetError(previous);
+        }
+        Assert.AreSame(original, error);
         string path = Assert.IsInstanceOfType<string>(error.Data["LiteAgensh.SqliteIncident"]);
         string artifact = File.ReadAllText(path);
         JsonObject incident = JsonNode.Parse(artifact)!.AsObject();
@@ -475,13 +695,110 @@ public sealed class SqliteIncidentSpecs
         Assert.DoesNotContain(secret, activity);
         Assert.DoesNotContain("INSERT INTO", artifact);
         Assert.DoesNotContain("INSERT INTO", activity);
-        Assert.IsNull(incident["failure"]!["actor"]);
-        Assert.AreEqual("UnknownOperation", incident["failure"]!["boundary"]!.GetValue<string>());
-        Assert.AreEqual(522, incident["failure"]!["extendedCode"]!.GetValue<int>());
+        string output = stderr.ToString();
+        Assert.Contains(
+            primaryCode == 10
+                ? "SQLite I/O evidence retained locally"
+                : "SQLite contention evidence",
+            output
+        );
+        Assert.DoesNotContain(secret, output);
+        Assert.DoesNotContain("INSERT INTO", output);
+        JsonObject failure = incident["failure"]!.AsObject();
+        Assert.IsNull(failure["actor"]);
+        Assert.AreEqual("UnknownOperation", failure["boundary"]!.GetValue<string>());
+        Assert.AreEqual("statement-failed", failure["phase"]!.GetValue<string>());
+        Assert.AreEqual(primaryCode, failure["primaryCode"]!.GetValue<int>());
+        Assert.AreEqual(extendedCode, failure["extendedCode"]!.GetValue<int>());
         Assert.AreEqual(
             secret,
             Sql.Scalar(connection, "SELECT value FROM entries WHERE id='private';")
         );
+    }
+
+    [TestMethod]
+    public void AggregateActivityCollectionRetainsUsableEvidenceAndReportsExhaustion()
+    {
+        using SqliteScenarioState state = new();
+        using SqliteConnection connection = state.Open();
+        using (
+            SqliteTransactionScope seed = Sql.BeginTransaction(
+                connection, operation: "AggregateSeed"
+            )
+        )
+        {
+            for (int index = 0; index < 56; index++)
+            {
+                SqliteDiagnostics.Observe(connection, "ReadEntry", "statement", () => 1);
+            }
+
+            seed.Commit();
+        }
+
+        string seedPath = Assert.ContainsSingle(
+            Directory.EnumerateFiles(state.DiagnosticsPath, "activity-*.json")
+        );
+        JsonObject seedSnapshot = JsonNode.Parse(File.ReadAllText(seedPath))!.AsObject();
+        int seedProcessId = seedSnapshot["processId"]!.GetValue<int>();
+        List<string> stagedConnections = [];
+
+        // The distinct near-full rings fit individually but exceed
+        // the collection allowance together.
+        IEnumerable<string> targetPaths = Enumerable
+            .Range(0, 32)
+            .Select(slot => Path.Combine(state.DiagnosticsPath, $"activity-{slot:D2}.json"))
+            .Where(path => !File.Exists(path))
+            .Take(16);
+        foreach (string path in targetPaths)
+        {
+            int writer = stagedConnections.Count + 1;
+            string actor = "worker" + writer.ToString(CultureInfo.InvariantCulture);
+            string connectionId = Guid.NewGuid().ToString("N");
+            string transactionId = Guid.NewGuid().ToString("N");
+            JsonObject snapshot = seedSnapshot.DeepClone().AsObject();
+            snapshot["processId"] = seedProcessId + writer;
+            foreach (JsonObject activity in snapshot["recent"]!.AsArray().OfType<JsonObject>())
+            {
+                activity["connection"] = connectionId;
+                activity["actor"] = actor;
+                if (activity["transaction"] is not null)
+                {
+                    activity["transaction"] = transactionId;
+                }
+            }
+            File.WriteAllText(path, snapshot.ToJsonString());
+            stagedConnections.Add(connectionId);
+        }
+
+        SqliteException error = ObserveIoFailure(connection, "AggregateCoverage");
+        JsonObject incident = ReadIncident(error);
+        HashSet<string> retainedConnections = Recent(incident)
+            .Select(activity => activity["connection"]!.GetValue<string>())
+            .ToHashSet(StringComparer.Ordinal);
+        JsonObject[] exhausted = incident["sources"]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .Where(source => source["status"]!.GetValue<string>() == "collection-budget-exhausted")
+            .ToArray();
+
+        Assert.AreEqual("AggregateCoverage", incident["failure"]!["operation"]!.GetValue<string>());
+        Assert.Contains(
+            "Partial application observations",
+            incident["coverage"]!.GetValue<string>()
+        );
+        Assert.IsNotEmpty(stagedConnections.Intersect(retainedConnections));
+        Assert.IsNotEmpty(exhausted);
+        foreach (JsonObject source in exhausted)
+        {
+            Assert.IsNull(source["snapshot"]);
+            int slot = source["slot"]!.GetValue<int>();
+            string path = Path.Combine(state.DiagnosticsPath, $"activity-{slot:D2}.json");
+            JsonNode omitted = JsonNode.Parse(File.ReadAllText(path))!;
+            Assert.DoesNotContain(
+                omitted["recent"]![0]!["connection"]!.GetValue<string>(),
+                retainedConnections
+            );
+        }
     }
 
     [TestMethod]
@@ -579,21 +896,75 @@ public sealed class SqliteIncidentSpecs
     }
 
     [TestMethod]
-    [DataRow(false, "unavailable-or-malformed")]
-    [DataRow(true, "truncated")]
-    public void ForeignActivityMalformedOrOversizedRemainsExplicitlyUnavailable(
-        bool oversized,
+    [DataRow("malformed", "unavailable-or-malformed")]
+    [DataRow("oversized", "truncated")]
+    [DataRow("foreign", "malformed-or-foreign")]
+    [DataRow("stale", "stale")]
+    public void MalformedOversizedForeignOrStaleActivityIsExplicitlyQualified(
+        string input,
         string expectedStatus
     )
     {
         using SqliteScenarioState state = new();
         using SqliteConnection connection = state.Open();
-        Directory.CreateDirectory(state.DiagnosticsPath);
-        const string secret = "foreign-confidential-content";
-        File.WriteAllText(
-            Path.Combine(state.DiagnosticsPath, "activity-31.json"),
-            oversized ? new string('x', 128 * 1024 + 1) : secret
+        JsonObject? heldSnapshot = null;
+        using (
+            SqliteTransactionScope localWriter = Sql.BeginTransaction(
+                connection, operation: "LocalCoverage"
+            )
+        )
+        {
+            if (input == "stale")
+            {
+                string path = Assert.ContainsSingle(
+                    Directory.EnumerateFiles(state.DiagnosticsPath, "activity-*.json")
+                );
+                heldSnapshot = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+                Assert.IsTrue(heldSnapshot["active"]!.AsArray().Any(activity =>
+                    activity?["transaction"]?.GetValue<string>() == localWriter.Id
+                ));
+                heldSnapshot["observedAtUtc"] = DateTimeOffset.UtcNow.AddDays(-1);
+            }
+            localWriter.Commit();
+        }
+        int sourceSlot = Enumerable.Range(0, 32).First(slot =>
+            !File.Exists(Path.Combine(state.DiagnosticsPath, $"activity-{slot:D2}.json"))
         );
+        string sourcePath = Path.Combine(state.DiagnosticsPath, $"activity-{sourceSlot:D2}.json");
+        const string secret = "foreign-confidential-content";
+        string? foreignTransaction = null;
+        if (input == "stale")
+        {
+            Assert.IsNotNull(heldSnapshot);
+            File.WriteAllText(sourcePath, heldSnapshot.ToJsonString());
+        }
+        else if (input == "foreign")
+        {
+            using SqliteScenarioState foreign = new();
+            using SqliteConnection other = foreign.Open("foreign-worker");
+            using SqliteTransactionScope foreignWriter = Sql.BeginTransaction(
+                other, operation: "ForeignWriter"
+            );
+            foreignTransaction = foreignWriter.Id;
+            string snapshot = Assert.ContainsSingle(
+                Directory.EnumerateFiles(foreign.DiagnosticsPath, "activity-*.json")
+            );
+            string local = Assert.ContainsSingle(
+                Directory.EnumerateFiles(state.DiagnosticsPath, "activity-*.json")
+            );
+            Assert.AreNotEqual(
+                JsonNode.Parse(File.ReadAllText(local))!["database"]!.GetValue<string>(),
+                JsonNode.Parse(File.ReadAllText(snapshot))!["database"]!.GetValue<string>()
+            );
+            File.Copy(snapshot, sourcePath);
+        }
+        else
+        {
+            File.WriteAllText(
+                sourcePath,
+                input == "oversized" ? new string('x', 128 * 1024 + 1) : secret
+            );
+        }
 
         SqliteException error = ObserveIoFailure(connection, "ForeignCoverage");
         JsonObject incident = ReadIncident(error);
@@ -601,11 +972,20 @@ public sealed class SqliteIncidentSpecs
             incident["sources"]!
                 .AsArray()
                 .Select(node => node!.AsObject())
-                .Where(item => item["slot"]!.GetValue<int>() == 31)
+                .Where(item => item["slot"]!.GetValue<int>() == sourceSlot)
         );
 
         Assert.AreEqual(expectedStatus, source["status"]!.GetValue<string>());
-        Assert.IsNull(source["snapshot"]);
+        if (input != "stale")
+        {
+            Assert.IsNull(source["snapshot"]);
+        }
+        if (foreignTransaction is not null)
+        {
+            Assert.IsFalse(Active(incident).Any(activity =>
+                activity["transaction"]?.GetValue<string>() == foreignTransaction
+            ));
+        }
         Assert.Contains("remain unknown", incident["coverage"]!.GetValue<string>());
         Assert.DoesNotContain(secret, incident.ToJsonString());
         Assert.AreEqual("ForeignCoverage", incident["failure"]!["operation"]!.GetValue<string>());

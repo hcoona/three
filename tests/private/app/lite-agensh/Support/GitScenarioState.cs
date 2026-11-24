@@ -24,6 +24,7 @@ internal sealed class GitScenarioState : IDisposable
         {
             AssertEnvironmentUnchanged();
             Directory.CreateDirectory(PathFor("hooks"));
+            Directory.CreateDirectory(PathFor("git-template"));
             Directory.CreateDirectory(Repository);
             RunConfiguration configuration = new()
             {
@@ -31,6 +32,8 @@ internal sealed class GitScenarioState : IDisposable
                 StatePath = PathFor("run"),
                 CampaignLedgerPath = PathFor("campaign.sqlite"),
                 Goal = "Integrate two independent changes without touching the initial checkout.",
+                // A failed native-receipt gate must not reach an installed CLI.
+                NativeExecutable = PathFor("unavailable-native", "copilot"),
                 CandidateChecks = candidateChecks ?? [ExitCheck(0)],
                 IntegrationChecks = integrationChecks ?? [],
                 FinalChecks = finalChecks ?? [ExitCheck(0)],
@@ -94,7 +97,14 @@ internal sealed class GitScenarioState : IDisposable
         try
         {
             await state
-                .GitAsync(state.Repository, token, "init", "--quiet", "--initial-branch=main")
+                .GitAsync(
+                    state.Repository,
+                    token,
+                    "init",
+                    "--quiet",
+                    "--initial-branch=main",
+                    "--template=" + state.PathFor("git-template")
+                )
                 .ConfigureAwait(false);
             await state
                 .GitAsync(
