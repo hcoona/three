@@ -188,7 +188,15 @@ accepted [Delivery Wave](../../../../docs/delivery-wave.md) entry. W6 Slice A
 bulk crop packaging, clean training-stack smoke verification and offline
 per-system `copista-28m` baseline rules are specified in the
 [training, bulk-packaging and page-detector protocol](docs/training-protocol.md)
-(planned CLI commands are added with the Slice A implementation).
+and exposed through:
+
+```shell
+uv run --package sheet-music-omr python -m sheet_music_omr.training --help
+```
+
+Use `setup-w6-slice-a`, `smoke-w6-stack`, `package-w6-crops`,
+`run-copista-per-system`, and `scan-public-report` as specified in the
+[training, bulk-packaging and page-detector protocol](docs/training-protocol.md).
 
 Each worker call has one 300-second bound, which includes starting a fresh
 worker. Some calls hold more than one of the protocol's steps: the content

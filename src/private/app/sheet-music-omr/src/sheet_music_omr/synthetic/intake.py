@@ -109,12 +109,51 @@ _STOP_WORDS = frozenset(
     ]
 )
 _PLACEHOLDERS = frozenset(
-    {"untitled", "piano solo", "unknown", "unknown composer", "anonymous"}
+    {
+        "untitled",
+        "piano solo",
+        "unknown",
+        "unknown composer",
+        "anonymous",
+        "traditional",
+        "various",
+        "various artists",
+    }
+)
+COMPOSER_TRANSLITERATION_ALIASES: dict[str, str] = {
+    "tschaikowsky": "tchaikovsky",
+    "tschaikovsky": "tchaikovsky",
+    "chaikovsky": "tchaikovsky",
+    "tchaikowsky": "tchaikovsky",
+    "rakhmaninov": "rachmaninoff",
+    "rachmaninov": "rachmaninoff",
+    "scriabine": "scriabin",
+    "skryabin": "scriabin",
+    "moussorgsky": "mussorgsky",
+    "musorgsky": "mussorgsky",
+    "prokofieff": "prokofiev",
+    "schostakowitsch": "shostakovich",
+    "haendel": "han" + "del",
+}
+_SINGLE_COMPOSER_CATALOGUE_AUTHORITIES: dict[str, str] = {
+    "bwv": "bach",
+    "buxwv": "buxtehude",
+    "kv": "mozart",
+    "hob": "haydn",
+    "sz": "bartok",
+    "rv": "vivaldi",
+    "hwv": "han" + "del",
+}
+_SLASH_CATALOGUE_SUB = re.compile(
+    r"\b(bwv|buxwv|woo|op(?:us)?|kv?|hob|hwv|rv|sz|l|h|d|s)\.?\s*"
+    r"((?:[ivxlcdm]+[:.\s/-]+)?\d+[a-z]?)\s*/\s*(\d+[a-z]?)\b",
+    re.IGNORECASE,
 )
 _CATALOGUES = re.compile(
-    r"\b(bwv|buxwv|woo|op(?:us)?|kv?|hob|hwv|rv|d|s)\s*"
-    r"(?:[ivxlcdm]+\s+)?(\d+[a-z]?)(?:\s+(?:no|nr)\s+(\d+[a-z]?))?\b"
+    r"\b(bwv|buxwv|woo|op(?:us)?|kv?|hob|hwv|rv|sz|l|h|d|s)\s*"
+    r"(?:([ivxlcdm]+)\s+)?(\d+[a-z]?)(?:\s+(?:no|nr)\s+(\d+[a-z]?))?\b"
 )
+_STANDALONE_NO = re.compile(r"\b(?:no|nr)\s+(\d+[a-z]?)\b")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _STATUS_NAME = re.compile(
     r"^\s*(?:(\d+)\s*[-\u2013\u2014]\s*)?"
@@ -164,6 +203,43 @@ def _informative(value: str) -> bool:
     )
 
 
+def _ordinal_sets(
+    tokens: frozenset[str],
+) -> tuple[set[str], set[str], set[str]]:
+    standalone = {
+        tok.removeprefix("no:") for tok in tokens if tok.startswith("no:")
+    }
+    subs = {tok.partition("#")[2] for tok in tokens if "#" in tok}
+    systems = {
+        tok.split(":", 1)[0] for tok in tokens if not tok.startswith("no:")
+    }
+    return standalone, standalone | subs, systems
+
+
+def _bases_and_subs(
+    tokens: frozenset[str],
+) -> dict[str, set[str]]:
+    by_base: dict[str, set[str]] = {}
+    for tok in tokens:
+        if tok.startswith("no:"):
+            continue
+        base, _, sub = tok.partition("#")
+        by_base.setdefault(base, set())
+        if sub:
+            by_base[base].add(sub)
+    return by_base
+
+
+def _compatible_catalogue(left: frozenset[str], right: frozenset[str]) -> bool:
+    l_bases = _bases_and_subs(left)
+    r_bases = _bases_and_subs(right)
+    for base in l_bases.keys() & r_bases.keys():
+        l_subs, r_subs = l_bases[base], r_bases[base]
+        if not l_subs or not r_subs or (l_subs & r_subs):
+            return True
+    return False
+
+
 @dataclass(frozen=True, slots=True)
 class WorkIdentity:
     """Normalized composer surname, distinctive title and catalogue tokens."""
@@ -172,11 +248,48 @@ class WorkIdentity:
     title_tokens: frozenset[str]
     catalogue_tokens: frozenset[str]
 
-    def matches(self, other: WorkIdentity) -> bool:
+    def conflicts_with(
+        self, other: WorkIdentity, *, conservative_exclusion: bool = False
+    ) -> bool:
+        """Return whether work numbers or same-system catalogues clash."""
+        if self.composer_surname != other.composer_surname:
+            return True
+        if not (self.catalogue_tokens and other.catalogue_tokens):
+            return False
+        l_no, l_all, l_sys = _ordinal_sets(self.catalogue_tokens)
+        r_no, r_all, r_sys = _ordinal_sets(other.catalogue_tokens)
+        compatible_cat = _compatible_catalogue(
+            self.catalogue_tokens, other.catalogue_tokens
+        )
+        if (
+            l_no
+            and r_no
+            and not (l_no & r_no)
+            and not (conservative_exclusion and compatible_cat)
+        ):
+            return True
+        if (
+            not conservative_exclusion
+            and l_all
+            and r_all
+            and not (l_all & r_all)
+        ):
+            return True
+        if compatible_cat:
+            return False
+        return bool(l_sys & r_sys)
+
+    def matches(
+        self, other: WorkIdentity, *, conservative_exclusion: bool = False
+    ) -> bool:
         """Find the same composer and work by title or catalogue."""
         if self.composer_surname != other.composer_surname:
             return False
-        if self.catalogue_tokens & other.catalogue_tokens:
+        if self.conflicts_with(
+            other, conservative_exclusion=conservative_exclusion
+        ):
+            return False
+        if _compatible_catalogue(self.catalogue_tokens, other.catalogue_tokens):
             return True
         return bool(
             self.title_tokens
@@ -188,8 +301,14 @@ class WorkIdentity:
         )
 
 
+def canonicalize_composer_surname(raw_surname: str) -> str:
+    """Map known classical transliteration variants to one canonical surname."""
+    norm = _words(raw_surname)
+    return COMPOSER_TRANSLITERATION_ALIASES.get(norm, norm)
+
+
 def normalize_work_identity(composer: str, title: str) -> WorkIdentity | None:
-    """Return a comparable work identity, or None for uninformative metadata."""
+    """Return a work identity, or None for invalid/conflicting metadata."""
     if not (_informative(composer) and _informative(title)):
         return None
     cleaned_composer = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", composer)
@@ -200,15 +319,32 @@ def normalize_work_identity(composer: str, title: str) -> WorkIdentity | None:
     ]
     if not surname_parts or len(surname_parts[-1]) < 2:  # noqa: PLR2004
         return None
-    surname = surname_parts[-1]
-    title_text = _words(title)
+    surname = canonicalize_composer_surname(surname_parts[-1])
+    if surname in _PLACEHOLDERS:
+        return None
+    title_text = _words(_SLASH_CATALOGUE_SUB.sub(r"\1 \2 no \3", title))
+    cat_matches = _CATALOGUES.findall(title_text)
+    for raw_prefix, _, _, _ in cat_matches:
+        authority = _SINGLE_COMPOSER_CATALOGUE_AUTHORITIES.get(raw_prefix)
+        if authority is not None and surname != authority:
+            return None
+    stripped_title = _CATALOGUES.sub("", title_text)
+    standalone_numbers = _STANDALONE_NO.findall(stripped_title)
     catalogues = frozenset(
-        f"{ {'kv': 'k', 'opus': 'op'}.get(prefix, prefix) }:{number}"
-        for prefix, number, _ in _CATALOGUES.findall(title_text)
+        [
+            *(
+                f"{ {'kv': 'k', 'opus': 'op'}.get(prefix, prefix) }:"
+                + (f"{series}/" if series else "")
+                + number
+                + (f"#{sub}" if sub else "")
+                for prefix, series, number, sub in cat_matches
+            ),
+            *(f"no:{num}" for num in standalone_numbers),
+        ]
     )
     tokens = frozenset(
         token
-        for token in _CATALOGUES.sub("", title_text).split()
+        for token in _STANDALONE_NO.sub("", stripped_title).split()
         if token not in _STOP_WORDS
         and token.isalpha()
         and len(token) >= _MIN_LETTERS
@@ -402,7 +538,10 @@ class TestExclusionGate:
         identity = normalize_work_identity(composer, title)
         if identity is None:
             return "excluded_missing_metadata"
-        if any(identity.matches(test) for test in self._identities):
+        if any(
+            identity.matches(test, conservative_exclusion=True)
+            for test in self._identities
+        ):
             return "excluded_test_match"
         return None
 
