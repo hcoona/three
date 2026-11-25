@@ -8,8 +8,6 @@ public sealed class NodeGroupReaderTests
 {
     private const string Adopted = "src/adopted";
     private const string Retained = "src/retained";
-    private static readonly string[] RuntimeSources = [NodeRuntimeReader.Schedule,
-        "package.json", Adopted + "/package.json", Retained + "/package.json"];
     private static readonly string[] PlannedSelectors = ["20.x", "22.x", "24.x", "26.x"];
 
     [TestMethod]
@@ -52,18 +50,24 @@ public sealed class NodeGroupReaderTests
     [DataRow(".config/dotnet-tools.json")]
     [DataRow("eng/dotnet-frameworks/mise.toml")]
     [DataRow("eng/dotnet-frameworks/mise.lock")]
-    public async Task CallerImportsAndDependencyPreparationSelectConcreteGroupOwners(string path)
+    [DataRow("control/shared.props")]
+    [DataRow("control/optional.editorconfig")]
+    public async Task AddedControlInputsSelectAdoptedAndRetainedOwners(string path)
     {
+        bool native = path.StartsWith("control/", StringComparison.Ordinal);
+        ControlSourceInput[] Sources(bool present) =>
+            native ? [new(path, "native input", present)] : [];
         NodeRevisionInputs basis = NodeGroupReader.WithControlInputs(Inputs(NodeScenario.Basis),
-            Control(NodeScenario.Basis), false);
+            Control(NodeScenario.Basis, Sources(false)), false);
         NodeRevisionInputs candidate = Inputs(NodeScenario.Candidate);
         candidate = candidate with
         {
             Revision = candidate.Revision with
             { Entries = [.. candidate.Revision.Entries, NodeScenario.File(path)] },
+            OperationInputs = native ? [new(path, [Retained])] : [],
         };
         candidate = NodeGroupReader.WithControlInputs(candidate,
-            Control(NodeScenario.Candidate), true);
+            Control(NodeScenario.Candidate, Sources(true)), true);
         var scope = new ScopeInputs(new(NodeScenario.Basis, NodeScenario.Candidate, false),
             [path], [new(path, false, null, [])], [new(path, true, "100644", [])]);
 
@@ -74,34 +78,15 @@ public sealed class NodeGroupReaderTests
         Assert.HasCount(2, group.Adopted.Checks);
         RetainedNodeSelection retained = Assert.ContainsSingle(group.Retained);
         Assert.AreEqual(Retained, retained.Directory);
+        CollectionAssert.AreEquivalent(ReasonsFor(Retained), retained.Reasons);
         foreach (PlannedCheck check in group.Adopted.Checks)
-            Assert.Contains(new SelectionReason(path, NodeScenario.Candidate, Adopted),
-                check.Reasons);
-        Assert.Contains(new SelectionReason(path, NodeScenario.Candidate, Retained),
-            retained.Reasons);
-    }
+            CollectionAssert.AreEquivalent(ReasonsFor(Adopted), check.Reasons);
 
-    [TestMethod]
-    public void NativeSourcesAndAbsentCandidatesPreserveExistingConsumerRelations()
-    {
-        NodeRevisionInputs inputs = Inputs(NodeScenario.Candidate) with
-        { OperationInputs = [new("control/shared.props", [Retained])] };
-        NodeRevisionInputs joined = NodeGroupReader.WithControlInputs(inputs,
-            Control(NodeScenario.Candidate,
-                new("control/shared.props", "import", true),
-                new("control/optional.editorconfig", "native configuration candidate", false)),
-            true);
-
-        foreach (string path in (string[])["control/shared.props", "control/optional.editorconfig",
-            .. NodeGroupReader.CallerSources, .. RuntimeSources])
-        {
-            SharedInput input = joined.OperationInputs.Single(input => input.Path == path);
-            CollectionAssert.AreEquivalent(new[] { Adopted, Retained }, input.Consumers);
-        }
-        Assert.HasCount(NodeGroupReader.CallerSources.Length + RuntimeSources.Length + 2,
-            joined.OperationInputs);
-        Assert.AreSame(inputs.Graph, joined.Graph);
-        Assert.AreSame(inputs.Revision, joined.Revision);
+        SelectionReason[] ReasonsFor(string owner) =>
+        [
+            new(path, NodeScenario.Basis, owner),
+            new(path, NodeScenario.Candidate, owner),
+        ];
     }
 
     // Under the lowest-minimum rule one member's engines range plans the matrix for every

@@ -171,25 +171,84 @@ public sealed class NodeGroupPlanningTests
     [TestMethod]
     [DataRow("missing")]
     [DataRow("unsupported")]
-    [DataRow("script")]
+    [DataRow("foreign")]
+    [DataRow("no-scripts")]
+    [DataRow("build-only")]
+    [DataRow("test-only")]
+    [DataRow("wrong-build-case")]
+    [DataRow("wrong-test-case")]
     public async Task SelectedAdoptedContractCannotTurnIntoRetainedExecution(string defect)
     {
         NodeRevisionInputs candidate = Inputs(NodeScenario.Candidate);
-        if (defect != "script")
+        if (defect is "missing" or "unsupported" or "foreign")
             candidate = candidate with
             {
                 Quality = new Dictionary<string, QualitySelection?>(candidate.Quality)
                 {
                     [Adopted] = defect == "missing" ? null
-                        : new("node/unsupported-v1", Adopted + "/workflow-delivery.quality.yml"),
+                        : new(defect == "foreign" ? "python/hcoona-release-smoke-python-v1" :
+                            "node/unsupported-v1", Adopted + "/workflow-delivery.quality.yml"),
                 },
             };
+        string[] scriptNames = defect switch
+        {
+            "no-scripts" => [],
+            "build-only" => ["build"],
+            "test-only" => ["test"],
+            "wrong-build-case" => ["Build", "test"],
+            "wrong-test-case" => ["build", "Test"],
+            _ => ["build", "test"]
+        };
 
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => Plan(
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => Plan(
             Inputs(NodeScenario.Basis), candidate, [Adopted + "/index.js"],
-            scripts: (project, _) => Task.FromResult(defect == "script"
-                ? new PnpmScripts(project.Directory, new Dictionary<string, string>())
-                : NodeScenario.Scripts(project))));
+            scripts: (project, _) => Task.FromResult(new PnpmScripts(project.Directory,
+                scriptNames.ToDictionary(name => name, _ => "opaque", StringComparer.Ordinal)))));
+        if (defect is "no-scripts" or "test-only" or "wrong-build-case")
+            Assert.Contains("'build'", failure.Message);
+        if (defect is "build-only" or "wrong-test-case")
+            Assert.Contains("'test'", failure.Message);
+    }
+
+    [TestMethod]
+    [DataRow("", "node/project-test-v1")]
+    [DataRow("echo 'opaque'; exit 5 && $(unknown)\necho λ", "node/project-build-v1")]
+    public async Task AdoptedScriptsSelectRequiredWorkWithoutInterpretingBodies(string body,
+        string missing)
+    {
+        const string changed = Adopted + "/index.js";
+        NodeGroupPlan group = await Plan(Inputs(NodeScenario.Basis),
+            Inputs(NodeScenario.Candidate), [changed],
+            scripts: (project, _) => Task.FromResult(new PnpmScripts(project.Directory,
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                { ["build"] = body, ["test"] = body })));
+
+        CiPlan plan = group.Adopted;
+        Assert.IsEmpty(group.Retained);
+        CheckKey[] expected = AdoptedChecks.Select(check => new CheckKey(Adopted, check,
+            "default")).ToArray();
+        CollectionAssert.AreEquivalent(expected, plan.Checks.Select(check => check.Work.Key)
+            .ToArray());
+        foreach (PlannedCheck check in plan.Checks)
+        {
+            Assert.AreEqual(NodeScenario.Preset, Assert.ContainsSingle(check.QualityPresets));
+            Assert.AreEqual("ubuntu-latest", check.Work.Runner);
+            Assert.IsTrue(check.Work.Required);
+            Assert.IsEmpty(check.Work.Dimensions);
+            Assert.IsEmpty(check.Work.Prerequisites);
+            Assert.Contains(new SelectionReason(changed, NodeScenario.Candidate, Adopted),
+                check.Reasons);
+        }
+
+        CheckResult[] passed = plan.Checks.Select(check =>
+            new CheckResult(plan.Candidate, check.Work.Key, CheckStatus.Passed)).ToArray();
+        CiOutcome incomplete = ResultCollector.Collect(plan,
+            passed.Where(result => result.Key.Check != missing).ToArray());
+        Assert.IsFalse(incomplete.Satisfied);
+        Assert.Contains(new CheckOutcome(new(Adopted, missing, "default"), true, "missing"),
+            incomplete.Checks);
+        Assert.IsTrue(ResultCollector.Collect(plan, passed).Satisfied);
     }
 
     [TestMethod]

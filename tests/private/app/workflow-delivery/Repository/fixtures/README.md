@@ -56,3 +56,16 @@ controlled null layout settings, empty metadata for unqueried projects and
 singleton selections for unqueried closures. Recorded closures predate the
 explicit legacy-filter override. These are adapter replay tests, not complete
 native reader or installation qualification. They execute no PNPM operation.
+
+## Ruby RSpec
+
+The four `ruby-rspec-*.json` fixtures retain RSpec 3.13.6 JSON formatter output:
+one passing example (`passed`), one failed expectation with its exception
+(`failed`), one pending example (`pending`), and a load error outside examples
+with no examples run (`outside`).
+
+`RubyRSpecResultTests` verifies the native counts, original report, and status
+mapping: pending alone does not fail a check; failed examples or outside errors
+do. `RubyRSpecExecutionTests` replays the formatter output through the
+whole-project execution adapter. This does not launch RSpec or replace native
+process termination evidence.

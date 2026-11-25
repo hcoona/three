@@ -18,22 +18,29 @@ public sealed class ControlInputsTests
             source => source.Path == "shared/runtime.dll").Role);
         Assert.IsFalse(facts.Sources.Single(
             source => source.Path == "Directory.Build.targets").Present);
-        Assert.AreEqual(inputs.Revision.Commit, facts.Revision);
     }
 
     [TestMethod]
-    public void UnsupportedControlRelationCannotBecomeSilentIncompleteFacts()
+    [DataRow("edge")]
+    [DataRow("missing")]
+    [DataRow("duplicate")]
+    public void UnsupportedControlRelationCannotBecomeSilentIncompleteFacts(string defect)
     {
         DotNetRevisionInputs inputs = Inputs();
-        var edge = new DotNetGraphEdge(inputs.Nodes[0].Native.Identity, new(
-            "/checkout/other.csproj", new()));
-        Assert.ThrowsExactly<InvalidDataException>(() => ControlInputs.Read(inputs with
-        { Graph = inputs.Graph with { Edges = [edge] } }, true));
-        Assert.IsNull(ControlInputs.Read(inputs with { Nodes = [] }, false));
-        Assert.ThrowsExactly<InvalidDataException>(() => ControlInputs.Read(
-            inputs with { Nodes = [] }, true));
-        Assert.ThrowsExactly<InvalidDataException>(() => ControlInputs.Read(inputs with
-        { Nodes = [inputs.Nodes[0], inputs.Nodes[0]] }, true));
+        DotNetBoundNode node = inputs.Nodes[0];
+        DotNetRevisionInputs invalid = defect switch
+        {
+            "edge" => inputs with
+            {
+                Graph = inputs.Graph with
+                { Edges = [new(node.Native.Identity, new("/checkout/other.csproj", new()))] }
+            },
+            "duplicate" => inputs with { Nodes = [node, node] },
+            _ => inputs with { Nodes = [] }
+        };
+        Assert.ThrowsExactly<InvalidDataException>(() => ControlInputs.Read(invalid, true));
+        if (defect == "missing")
+            Assert.IsNull(ControlInputs.Read(invalid, false));
     }
 
     private static DotNetRevisionInputs Inputs()

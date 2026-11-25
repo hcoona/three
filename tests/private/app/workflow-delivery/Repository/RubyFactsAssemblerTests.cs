@@ -30,6 +30,46 @@ public sealed class RubyFactsAssemblerTests
         ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
 
     [TestMethod]
+    [DataRow(".")]
+    [DataRow("../product")]
+    [DataRow("/product")]
+    [DataRow("src\\product")]
+    public void WholeProjectWorkCannotUseANoncanonicalSourceDirectory(string directory)
+    {
+        const string changed = "src/product/lib.rb";
+        ProjectFacts owner = Owner("src/product") with { Directory = directory };
+        RubyFactsEndpoint endpoint = Endpoint("candidate", [Producer("src/product")], [owner]);
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            Plan(RubyFactsAssembler.Assemble(endpoint, endpoint, [changed], false)));
+    }
+
+    [TestMethod]
+    [DataRow("symlink", "committed regular files")]
+    [DataRow("gitlink", "committed regular files")]
+    [DataRow("escape", "normalized repository-relative path")]
+    [DataRow("competing-gemspecs", "Ambiguous source gemspec directory")]
+    [DataRow("competing-bundles", "Ambiguous bundle directory")]
+    public void InvalidNativeEntryPointsCannotBecomeAnEmptyPlan(string defect, string detail)
+    {
+        GitEntry[] entries = defect switch
+        {
+            "symlink" => [new("src/gem/native.gemspec", "120000", "blob")],
+            "gitlink" => [new("node/client/Gemfile", "160000", "commit")],
+            "escape" => [new("../native.gemspec", "100644", "blob")],
+            "competing-gemspecs" => [new("src/gem/first.gemspec", "100644", "blob"),
+                new("src/gem/second.gemspec", "100644", "blob")],
+            _ => [new("node/client/Gemfile", "100644", "blob"),
+                new("node/client/gems.rb", "100644", "blob")]
+        };
+        var endpoint = new RubyFactsEndpoint(new("candidate", entries), new(new([], []), []),
+            [], []);
+        InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+            Plan(RubyFactsAssembler.Assemble(endpoint, endpoint, [], false)));
+        Assert.Contains(detail, failure.Message);
+    }
+
+    [TestMethod]
     [DataRow("src/private/app/workflow-delivery/Native/Ruby/source.rb", true)]
     [DataRow("src/private/app/workflow-delivery/Native/contracts/ruby-source.schema.json", true)]
     [DataRow("tests/native-ruby/contexts/bundler/Gemfile.lock", true)]

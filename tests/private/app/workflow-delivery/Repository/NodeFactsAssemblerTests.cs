@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Repository;
 
@@ -348,17 +347,50 @@ public sealed class NodeFactsAssemblerTests
     [TestMethod]
     public async Task PlanSelectedPackageRetainsEveryBuildAndRejectsMissingNativeVersionInputs()
     {
+        ReleaseUnitDeclaration unit = NodeScenario.Unit("product", ("first", "src/a"),
+            ("second", "src/a"));
         NodeRevisionInputs basis = NodeScenario.Inputs(NodeScenario.Basis,
             NodeScenario.Project("src/a"));
-        NodeRevisionInputs candidate = NodeScenario.Units(
-            NodeScenario.Inputs(NodeScenario.Candidate,
-                NodeScenario.Project("src/a")), NodeScenario.Unit("product",
-            ("first", "src/a"), ("second", "src/a")));
+        NodeRevisionInputs candidate = NodeScenario.Units(NodeScenario.Inputs(
+            NodeScenario.Candidate, NodeScenario.Project("src/a")), unit);
 
         CiPlan plan = await NodeScenario.Plan(basis, candidate, "src/a/index.js");
 
         Assert.HasCount(8, plan.Checks);
-        Assert.HasCount(6, plan.Checks.Where(check => check.Work.Package is not null).ToArray());
+        CheckSpec[] packages = plan.Checks.Select(check => check.Work)
+            .Where(work => work.Package is not null).ToArray();
+        Assert.HasCount(6, packages);
+        foreach (ReleaseBuild build in unit.Builds)
+        {
+            CheckSpec[] work = packages.Where(check => check.Package!.Build == build.Id).ToArray();
+            Assert.HasCount(3, work);
+            CheckSpec pack = work.Single(check => check.Key.Check == "node/npm-artifact-v1");
+            CheckSpec contents = work.Single(check =>
+                check.Key.Check == "node/npm-artifact-contents-v1");
+            CheckSpec consumer = work.Single(check =>
+                check.Key.Check == "node/npm-install-import-v1");
+            Assert.AreEqual(new CheckKey("src/a", "node/project-build-v1", "default"),
+                Assert.ContainsSingle(pack.Prerequisites));
+            Assert.AreEqual(pack.Key, Assert.ContainsSingle(contents.Prerequisites));
+            Assert.AreEqual(pack.Key, Assert.ContainsSingle(consumer.Prerequisites));
+            foreach (CheckSpec check in work)
+            {
+                Assert.AreEqual("release/product/" + build.Id, check.Key.Target);
+                Assert.AreEqual("default", check.Key.Variant);
+                Assert.AreEqual("ubuntu-latest", check.Runner);
+                Assert.IsEmpty(check.Dimensions);
+                PackageTarget subject = check.Package!;
+                Assert.AreEqual(unit.Id, subject.Unit);
+                Assert.AreEqual(unit.SourcePath, subject.Declaration);
+                Assert.AreEqual(build.Definition, subject.Definition);
+                Assert.AreEqual("src/a", subject.Directory);
+                Assert.AreEqual("src/a/package.json", subject.EntryPoint);
+                Assert.IsNull(subject.PublishDirectory);
+                Assert.AreEqual("1.2.3", subject.ExpectedVersion);
+                Assert.AreEqual(new PackageOutput(build.Id + "-package", "primary-package",
+                    "npm-tarball"), Assert.ContainsSingle(subject.Outputs));
+            }
+        }
         PlannedCheck sourceTest = plan.Checks.Single(check =>
             check.Work.Key.Check == "node/project-test-v1");
         Assert.IsEmpty(sourceTest.Work.Prerequisites);

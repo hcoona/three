@@ -1,3 +1,4 @@
+using System.Text.Json;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -12,6 +13,188 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     private static readonly string[] Owned = ["product/A.csproj", "product/code.cs"];
     private static readonly string[] VersionDirectories = [".", "product"];
     private static readonly string[] NativeFrameworks = ["net10.0", "net9.0"];
+    private const string Declaration = "product/workflow-delivery.release-unit.yml";
+    private const string LinkedInput = "linked/data.txt";
+    private static DotNetEndpointFixture? shared;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext) =>
+        shared = await DotNetEndpointFixture.CreateAsync(classContext.CancellationToken);
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    private CiPlan Plan(DotNetRevisionInputs basis, DotNetRevisionInputs candidate,
+        params string[] changed) => DotNetFactsAssembler.Complete(
+            DotNetFactsAssembler.Select(basis, candidate, changed, false, [], []),
+            context.CancellationToken);
+
+    [TestMethod]
+    public async Task ImportedInputSelectsOnlyItsConsumersAndTransfersNativeVariants()
+    {
+        DotNetEndpointFixture fixture = shared!;
+        DotNetGraphResponse graph = fixture.Response();
+        const string nativeValue = "space %3B percent%25 equals=tail";
+        DotNetGraphNode[] nodes = graph.Nodes.Select(node =>
+        {
+            if (node.Identity.Project != fixture.PathOf("product/A.csproj") || node.OuterBuild)
+                return node;
+            node.Identity.Globals.Add("IsGraphBuild", "true");
+            node.Identity.Globals.Add("NativeDetail", nativeValue);
+            return node with { TestCapability = "MTP" };
+        }).ToArray();
+        DotNetGraphInput input = new(fixture.PathOf(LinkedInput), "Import", "Evaluation",
+            nodes[2].Identity);
+        DotNetRevisionInputs native = await fixture.BindAsync(graph with
+        { Nodes = nodes, Inputs = [.. graph.Inputs.Where(item => item.Path != input.Path), input] },
+            context.CancellationToken);
+        RepositoryFacts facts = DotNetFactsAssembler.Assemble(native, ["docs/guide.md"]);
+        var request = new PlanRequest(facts, facts, [LinkedInput, "docs/guide.md"], false);
+        CiPlan plan = DotNetFactsAssembler.Complete(DotNetFactsAssembler.Select(request, native),
+            context.CancellationToken);
+        CiPlan transferred = JsonSerializer.Deserialize(JsonSerializer.Serialize(plan,
+            TransferJson.Default.CiPlan), TransferJson.Default.CiPlan)!;
+
+        Assert.AreEqual(native.Revision.Commit, transferred.Candidate);
+        string[] expected =
+        [
+            "net10.0:" + DotNetChecks.Build, "net9.0:" + DotNetChecks.Build,
+            "net10.0:" + DotNetChecks.Test, "net9.0:" + DotNetChecks.Test
+        ];
+        var variants = new List<string>();
+        foreach (PlannedCheck item in transferred.Checks)
+        {
+            Assert.AreEqual("product/A.csproj", item.Work.Key.Target);
+            Assert.AreEqual(CheckOrigin.NativeRetained, Assert.ContainsSingle(item.Origins));
+            Assert.IsEmpty(item.QualityPresets);
+            Assert.AreEqual(new SelectionReason(LinkedInput, native.Revision.Commit,
+                "product/A.csproj"), Assert.ContainsSingle(item.Reasons));
+            DotNetGraphNode restored = DotNetChecks.Read(item.Work, fixture.Root);
+            variants.Add(restored.Dimension.TargetFramework + ":" + item.Work.Key.Check);
+            Assert.AreEqual("true", restored.Identity.Globals["IsGraphBuild"]);
+            Assert.AreEqual(nativeValue, restored.Identity.Globals["NativeDetail"]);
+            Assert.AreEqual(restored.Dimension.TargetFramework,
+                restored.Identity.Globals["TargetFramework"]);
+            Assert.AreEqual("", restored.Dimension.RuntimeIdentifier);
+            Assert.IsFalse(restored.OuterBuild);
+            if (item.Work.Key.Check == DotNetChecks.Test)
+                Assert.AreEqual(item.Work.Key with { Check = DotNetChecks.Build },
+                    Assert.ContainsSingle(item.Work.Prerequisites));
+        }
+        CollectionAssert.AreEquivalent(expected, variants.ToArray());
+    }
+
+    [TestMethod]
+    [DataRow("missing", "Dangling/substituted complete native identity")]
+    [DataRow("outer-only", "no native inner identity")]
+    [DataRow("duplicate", "Duplicate complete native identity")]
+    public async Task IncompleteNativeIdentitiesCannotProduceAPlan(string defect, string detail)
+    {
+        DotNetEndpointFixture fixture = shared!;
+        DotNetGraphResponse graph = fixture.Response();
+        string project = fixture.PathOf("product/A.csproj");
+        if (defect == "outer-only")
+        {
+            bool Keep(DotNetNodeIdentity identity) =>
+                identity.Project != project || !identity.Globals.ContainsKey("TargetFramework");
+            DotNetNodeIdentity outer = graph.Nodes.Single(node =>
+                node.Identity.Project == project && node.OuterBuild).Identity;
+            graph = graph with
+            {
+                Nodes = graph.Nodes.Where(node => Keep(node.Identity)).ToArray(),
+                Edges = graph.Edges.Where(edge => Keep(edge.Consumer) && Keep(edge.Dependency))
+                    .ToArray(),
+                Inputs = graph.Inputs.Select(input => input.Path == fixture.PathOf(LinkedInput)
+                    ? input with { Consumer = outer } : input)
+                    .Where(input => Keep(input.Consumer)).ToArray()
+            };
+        }
+        else
+        {
+            graph = graph with
+            {
+                Nodes = defect == "duplicate" ? [.. graph.Nodes, graph.Nodes[2]] :
+                    graph.Nodes.Where(node => node.Identity.Project != project).ToArray()
+            };
+        }
+
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            async () =>
+            {
+                DotNetRevisionInputs native = await fixture.BindAsync(graph,
+                    context.CancellationToken);
+                Plan(native, native, LinkedInput);
+            });
+        Assert.Contains(detail, failure.Message);
+    }
+
+    [TestMethod]
+    public async Task AdoptedCheckCannotSilentlyBecomeRetainedBuildWork()
+    {
+        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+        await fixture.Repo.SetAsync("product/workflow-delivery.quality.yml", """
+            schema: workflow-delivery/v3/quality-selection
+            ecosystems:
+              dotnet:
+                preset: dotnet/package-quality
+            """);
+        await fixture.CommitAsync();
+        DotNetRevisionInputs native = await fixture.BindAsync(fixture.Response());
+
+        InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+            Plan(native, native, LinkedInput));
+        Assert.Contains("native package adapter", failure.Message);
+        Assert.Contains("product/A.csproj", failure.Message);
+    }
+
+    [TestMethod]
+    public async Task DeletedReleaseDeclarationStillSelectsEveryBasisMember()
+    {
+        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+        await fixture.Repo.SetAsync(Declaration, Unit("product", "A.csproj", "B.csproj"));
+        await fixture.CommitAsync();
+        DotNetRevisionInputs basis = await fixture.BindAsync(fixture.Response());
+        foreach (string path in new[] { "product/A.csproj", Declaration })
+            CollectionAssert.AreEquivalent(Projects, Plan(basis, basis, path).Checks
+                .Select(check => check.Work.Key.Target).Distinct().ToArray());
+
+        await fixture.Repo.RemoveAsync(Declaration);
+        File.Delete(fixture.PathOf(Declaration));
+        await fixture.CommitAsync();
+        DotNetRevisionInputs candidate = await fixture.BindAsync(fixture.Response());
+        CiPlan plan = Plan(basis, candidate, Declaration);
+
+        CollectionAssert.AreEquivalent(Projects, plan.Checks.Select(check => check.Work.Key.Target)
+            .Distinct().ToArray());
+        Assert.IsTrue(plan.Checks.All(check => check.Work.Key.Check == DotNetChecks.Build &&
+            check.Work.Package is null && check.Reasons.Any(reason =>
+                reason.Path == Declaration && reason.Revision == basis.Revision.Commit)));
+    }
+
+    [TestMethod]
+    [DataRow("missing")]
+    [DataRow("multiple")]
+    [DataRow("duplicate-unit")]
+    public async Task InvalidReleaseAssociationCannotProduceAnyPlan(string defect)
+    {
+        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+        await fixture.Repo.SetAsync(Declaration,
+            Unit("product", defect == "missing" ? "Absent.csproj" : "A.csproj"));
+        if (defect != "missing")
+            await fixture.Repo.SetAsync("workflow-delivery.release-unit.yml",
+                Unit(defect == "multiple" ? "other" : "product", "product/A.csproj"));
+        await fixture.CommitAsync();
+        DotNetRevisionInputs inputs = await fixture.BindAsync(fixture.Response());
+
+        Assert.ThrowsExactly<InvalidDataException>(() => Plan(inputs, inputs, Declaration));
+    }
+
+    private static string Unit(string id, params string[] entries) =>
+        "schema: workflow-delivery/v3/release-unit\nrelease-unit: " + id + "\nbuilds:\n" +
+        string.Concat(entries.Select((entry, index) => "  - id: package-" + index +
+            "\n    definition: dotnet/nuget-package-v1\n    entry-point: " + entry +
+            "\n    outputs:\n      - id: archive-" + index +
+            "\n        role: primary-package\n        kind: nuget-package\n"));
 
     [TestMethod]
     [DataRow(false)]
@@ -239,8 +422,9 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     [TestMethod]
     public async Task SelectionUsesExactOwnershipAndExplicitConsumers()
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        DotNetRevisionInputs inputs = await fixture.BindAsync();
+        DotNetEndpointFixture fixture = shared!;
+        DotNetRevisionInputs inputs = await fixture.BindAsync(fixture.Response(),
+            context.CancellationToken);
         DotNetSelection linked = DotNetFactsAssembler.Select(inputs, inputs,
             ["linked/data.txt"], false, [], []);
         Assert.AreEqual("product/A.csproj", Assert.ContainsSingle(linked.Reasons.Keys));
@@ -261,8 +445,9 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     [TestMethod]
     public async Task SelectionPreservesTraversalConsumersAndSameDirectoryProjects()
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        DotNetRevisionInputs inputs = await fixture.BindAsync();
+        DotNetEndpointFixture fixture = shared!;
+        DotNetRevisionInputs inputs = await fixture.BindAsync(fixture.Response(),
+            context.CancellationToken);
         DotNetSelection selection = DotNetFactsAssembler.Select(inputs, inputs,
             ["dirs.proj"], false, [], []);
         CollectionAssert.AreEquivalent(Projects,
@@ -334,15 +519,18 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
         await fixture.CommitAsync();
         fixture.Graph = fixture.Response(includeB: false);
         DotNetRevisionInputs candidate = await fixture.BindAsync();
-        DotNetSelection selected = DotNetFactsAssembler.Select(basis, candidate,
-            ["product/B.csproj"], false, [], []);
+        CiPlan plan = Plan(basis, candidate, "product/B.csproj");
 
-        Assert.Contains("product/A.csproj", selected.Reasons.Keys);
-        Assert.IsFalse(selected.CandidateNodes.ContainsKey("product/B.csproj"));
-        Assert.HasCount(3, selected.CandidateNodes["product/A.csproj"]);
-        Assert.IsEmpty(selected.Request.Candidate.Projects.Single().Dependencies);
-        Assert.IsTrue(selected.Reasons["product/A.csproj"].Any(reason =>
-            reason.Project == "product/B.csproj" && reason.Revision == basis.Revision.Commit));
+        CollectionAssert.AreEquivalent(NativeFrameworks, plan.Checks.Select(check =>
+            DotNetChecks.Read(check.Work, fixture.Root).Dimension.TargetFramework).ToArray());
+        foreach (PlannedCheck check in plan.Checks)
+        {
+            Assert.AreEqual("product/A.csproj", check.Work.Key.Target);
+            Assert.AreEqual(DotNetChecks.Build, check.Work.Key.Check);
+            Assert.IsEmpty(check.Work.Prerequisites);
+            Assert.Contains(new SelectionReason("product/B.csproj", basis.Revision.Commit,
+                "product/B.csproj"), check.Reasons);
+        }
     }
 
     [TestMethod]
@@ -350,8 +538,9 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     [DataRow(true)]
     public async Task SelectionRejectsUnknownRequiredFactsEvenInFullMode(bool full)
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        DotNetRevisionInputs inputs = await fixture.BindAsync();
+        DotNetEndpointFixture fixture = shared!;
+        DotNetRevisionInputs inputs = await fixture.BindAsync(fixture.Response(),
+            context.CancellationToken);
         InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
             DotNetFactsAssembler.Select(inputs, inputs, ["unowned/unknown.txt"], full, [], []));
         Assert.Contains("Unresolved changed path", failure.Message);

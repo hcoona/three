@@ -1,4 +1,3 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Repository;
 
@@ -7,14 +6,9 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class PythonRepositoryInputsTests
 {
-    // An exact retained special workflow input and its standalone pytest owner.
-    private static readonly (string Target, string Path) Workflow = (
-        "tests/eng/test_general_ci_workflow.py",
-        ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml");
-    private static readonly bool[] PairedInputPresence = [true, false];
-    private static readonly string[] PairedRevisions = ["before", "after"];
-    private static readonly (bool Before, bool After)[] QualityPresence =
-        [(true, true), (true, false), (false, true)];
+    private const string AzureAuthPytest = "src/private/app/azureauth-credprovider/python/tests";
+    private const string NbgvPytest = "src/public/lib/nbgv-python/tests";
+    private const string RuntimePytest = "tests/eng/test_python_runtime.py";
     private static PythonProjectDependencies Member(string path) => new(path, path, [], []);
 
     private static (GitRevision Revision, PythonProjectDependencies[] Projects,
@@ -53,131 +47,91 @@ public sealed class PythonRepositoryInputsTests
         Assert.IsEmpty(binding.Members);
     }
 
+    private static CiPlan Plan(PythonFactsEndpoint basis, PythonFactsEndpoint candidate,
+        string path, bool full = false)
+    {
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], full, PythonRepositoryInputs.Pair(basis, candidate, [path]));
+        return ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+    }
+
     [TestMethod]
     public void AttributesSelectOnlyConfiguredDotnetDependentChecks()
     {
         const string path = ".gitattributes";
-        string[] targets = ["src/public/lib/nbgv-python/tests",
-            "src/private/app/azureauth-credprovider/python/tests"];
-        foreach ((bool before, bool after) in QualityPresence)
+        string[] targets = [NbgvPytest, AzureAuthPytest, "tests/unrelated.py"];
+        CiPlan plan = Plan(Facts(Endpoint(targets, [path], "before")),
+            Facts(Endpoint(targets, [path], "after")), path);
+
+        CheckKey[] expected =
+        [
+            new("pytest:" + NbgvPytest, "python/pytest-v1", "default"),
+            new("pytest:" + AzureAuthPytest, "python/pytest-v1", "default")
+        ];
+        CollectionAssert.AreEquivalent(expected, plan.Checks.Select(check => check.Work.Key)
+            .ToArray());
+        foreach (PlannedCheck check in plan.Checks)
         {
-            PythonFactsEndpoint basis = Facts(Endpoint([.. targets, "tests/unrelated.py"],
-                before ? [path] : [], "before"));
-            PythonFactsEndpoint candidate = Facts(Endpoint([.. targets, "tests/unrelated.py"],
-                after ? [path] : [], "after"));
-            SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
-            SelectionReason[] expected = targets.SelectMany(target => PairedRevisions
-                .Where(revision => revision == "before" ? before : after)
-                .Select(revision => new SelectionReason(path, revision, "pytest:" + target)))
-                .ToArray();
-            CollectionAssert.AreEquivalent(expected, paired);
-            PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
-                [path], false, paired);
-            CiPlan plan = ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
-            CollectionAssert.AreEquivalent(targets.Select(target =>
-                new CheckKey("pytest:" + target, "python/pytest-v1", "default")).ToArray(),
-                plan.Checks.Select(check => check.Work.Key).ToArray());
-            foreach (PlannedCheck check in plan.Checks)
-            {
-                Assert.IsTrue(check.Work.Required);
-                CollectionAssert.AreEquivalent(expected.Where(reason =>
-                    reason.Project == check.Work.Key.Target).ToArray(), check.Reasons);
-            }
+            Assert.IsTrue(check.Work.Required);
+            string owner = check.Work.Key.Target;
+            CollectionAssert.AreEquivalent(
+                (SelectionReason[])[new(path, "before", owner), new(path, "after", owner)],
+                check.Reasons);
         }
     }
 
     [TestMethod]
-    [DataRow("src/.gitattributes",
-        "src/private/app/azureauth-credprovider/python/tests", true)]
-    [DataRow("src/private/.gitattributes",
-        "src/private/app/azureauth-credprovider/python/tests", true)]
-    [DataRow("tests/.gitattributes", "src/private/app/azureauth-credprovider/python/tests", true)]
-    [DataRow("src/private/app/.gitattributes",
-        "src/private/app/azureauth-credprovider/python/tests", true)]
-    [DataRow("unrelated/.gitattributes",
-        "src/private/app/azureauth-credprovider/python/tests", false)]
-    [DataRow("src/public/.gitattributes",
-        "src/private/app/azureauth-credprovider/python/tests", false)]
-    [DataRow("src/private/app/workflow-delivery-other/.gitattributes",
-        "src/private/app/azureauth-credprovider/python/tests", false)]
-    public void AncestorAttributesRespectActualConsumerRoots(string path, string target,
-        bool consumed)
+    [DataRow("src/.gitattributes", true)]
+    [DataRow("src/private/.gitattributes", true)]
+    [DataRow("tests/.gitattributes", true)]
+    [DataRow("src/private/app/.gitattributes", true)]
+    [DataRow("unrelated/.gitattributes", false)]
+    [DataRow("src/public/.gitattributes", false)]
+    [DataRow("src/private/app/workflow-delivery-other/.gitattributes", false)]
+    public void AncestorAttributesRespectActualConsumerRoots(string path, bool consumed)
     {
-        foreach ((bool before, bool after) in QualityPresence)
-        {
-            PythonFactsEndpoint basis = Facts(Endpoint([target, "tests/unrelated.py"],
-                before ? [path] : [], "before"));
-            PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"],
-                after ? [path] : [], "after"));
-            SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
-            if (!consumed)
-            {
-                Assert.IsEmpty(paired);
-                Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
-                    basis, candidate, [path], false, paired));
-                continue;
-            }
-            SelectionReason[] expected = PairedRevisions.Where(revision =>
-                revision == "before" ? before : after).Select(revision =>
-                    new SelectionReason(path, revision, "pytest:" + target)).ToArray();
-            CollectionAssert.AreEquivalent(expected, paired);
-            PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
-                [path], false, paired);
-            PlannedCheck check = Assert.ContainsSingle(
-                ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
-            Assert.AreEqual(new CheckKey("pytest:" + target, "python/pytest-v1", "default"),
-                check.Work.Key);
-            CollectionAssert.AreEquivalent(expected, check.Reasons);
-        }
+        PythonFactsEndpoint endpoint = Facts(Endpoint([AzureAuthPytest, "tests/unrelated.py"],
+            [path]));
+        if (consumed)
+            Owners(endpoint.Inputs, path, "pytest:" + AzureAuthPytest);
+        else
+            Assert.DoesNotContain(path, endpoint.Inputs.Select(input => input.Path));
     }
 
     [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
-    public void AttributesKeepIntroducedCheckAndOriginalInputReason(bool inputAtBasis)
+    [DataRow(".gitattributes", AzureAuthPytest, true)]
+    [DataRow(".gitattributes", AzureAuthPytest, false)]
+    [DataRow("renovate.json", RuntimePytest, true)]
+    [DataRow("src/public/lib/nbgv-python/src/removed.py",
+        "tests/private/app/workflow-delivery/Native/Python", true)]
+    public void OneSidedInputSelectsIntroducedCheckWithItsOriginalRevision(string path,
+        string target, bool inputAtBasis)
     {
-        const string path = ".gitattributes";
-        const string target = "src/private/app/azureauth-credprovider/python/tests";
         PythonFactsEndpoint basis = Facts(Endpoint(["tests/unrelated.py"],
             inputAtBasis ? [path] : [], "before"));
         PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"],
             inputAtBasis ? [] : [path], "after"));
-        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
-        var expected = new SelectionReason(path, inputAtBasis ? "before" : "after",
-            "pytest:" + target);
-        Assert.AreEqual(expected, Assert.ContainsSingle(paired));
-        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
-            [path], false, paired);
-        PlannedCheck check = Assert.ContainsSingle(
-            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
-        Assert.AreEqual("pytest:" + target, check.Work.Key.Target);
-        Assert.AreEqual(expected, Assert.ContainsSingle(check.Reasons));
-        Assert.DoesNotContain("pytest:" + target,
-            assembly.Request.Basis.Projects.Select(project => project.Id));
+        PlannedCheck check = Assert.ContainsSingle(Plan(basis, candidate, path).Checks);
+        Assert.AreEqual(new CheckKey("pytest:" + target, "python/pytest-v1", "default"),
+            check.Work.Key);
+        Assert.AreEqual(new SelectionReason(path, inputAtBasis ? "before" : "after",
+            "pytest:" + target),
+            Assert.ContainsSingle(check.Reasons));
     }
 
     [TestMethod]
-    [DataRow(".github/workflows/workflow-delivery-v3-python-release.yml")]
-    public void PythonReleaseCallerInputsSelectTheirDeclaredPytestTarget(string path)
+    public void PythonReleaseCallerSelectsBothOfItsDeclaredPytestTargets()
     {
-        const string target = "tests/eng/test_python_release_caller.py";
+        const string path = ".github/workflows/workflow-delivery-v3-python-release.yml";
+        const string callerTarget = "tests/eng/test_python_release_caller.py";
+        string[] targets = [callerTarget, RuntimePytest, "tests/unrelated.py"];
         PythonFactsEndpoint basis = Facts(Endpoint(
-            [target, "tests/unrelated.py"], [path], "before"));
-        PythonFactsEndpoint candidate = Facts(Endpoint(
-            [target, "tests/unrelated.py"], [path], "after"));
-        SelectionReason[] reasons = PythonRepositoryInputs.Pair(basis, candidate, [path]);
-        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
-            [path], false, reasons);
-        PlannedCheck selected = Assert.ContainsSingle(
-            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
-        Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
-        CollectionAssert.AreEquivalent(PairedRevisions,
-            selected.Reasons.Select(reason => reason.Revision).Distinct().ToArray());
-        foreach (SelectionReason reason in selected.Reasons)
-        {
-            Assert.AreEqual(path, reason.Path);
-            Assert.AreEqual("pytest:" + target, reason.Project);
-        }
+            targets, [path], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint(targets, [path], "after"));
+
+        CollectionAssert.AreEquivalent(
+            new[] { "pytest:" + callerTarget, "pytest:" + RuntimePytest },
+            Plan(basis, candidate, path).Checks.Select(check => check.Work.Key.Target).ToArray());
     }
 
     [TestMethod]
@@ -186,8 +140,7 @@ public sealed class PythonRepositoryInputsTests
         const string path = "eng/scripts/unknown_producer.py";
         PythonFactsEndpoint basis = Facts(Endpoint(["tests/unrelated.py"], [path], "before"));
         PythonFactsEndpoint candidate = Facts(Endpoint(["tests/unrelated.py"], [], "after"));
-        Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(basis,
-            candidate, [path], false, PythonRepositoryInputs.Pair(basis, candidate, [path])));
+        Assert.ThrowsExactly<InvalidDataException>(() => Plan(basis, candidate, path));
     }
 
     [TestMethod]
@@ -256,6 +209,7 @@ public sealed class PythonRepositoryInputsTests
         ".github/workflows/workflow-delivery-v3-python-release.yml")]
     [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/renovate.yml")]
     [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/codeql.yml")]
+    [DataRow("tests/eng/test_python_runtime.py", "renovate.json")]
     [DataRow("tests/eng/test_python_runtime.py",
         ".github/workflows/workflow-delivery-v3-ruby-release.yml")]
     [DataRow("tests/eng/test_general_ci_workflow.py", "eng/scripts/hk_scope_drift.py")]
@@ -296,48 +250,20 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
-    public void DeletedEngineeringScriptSelectsTheEngineeringTestsAtItsBasis()
+    [DataRow("eng/scripts/update_node_mise_lock.py", RuntimePytest)]
+    [DataRow("eng/scripts/release_batch_dispatch.py", "tests/eng/test_release_batch_dispatch.py")]
+    [DataRow(".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml",
+        "tests/eng/test_general_ci_workflow.py")]
+    public void DeletedInputStillSelectsSurvivingPytestTargetAtItsBasis(string path, string target)
     {
-        const string path = "eng/scripts/update_node_mise_lock.py";
-        const string target = "tests/eng/test_python_runtime.py";
         PythonFactsEndpoint basis = Facts(Endpoint([target, "tests/unrelated.py"], [path],
             "before"));
         PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"], [],
             "after"));
-        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        PlannedCheck selected = Assert.ContainsSingle(Plan(basis, candidate, path).Checks);
+        Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
         Assert.AreEqual(new SelectionReason(path, "before", "pytest:" + target),
-            Assert.ContainsSingle(paired));
-        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
-            [path], false, paired);
-        PlannedCheck selected = Assert.ContainsSingle(
-            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
-        Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
-    }
-
-    [TestMethod]
-    [DataRow(true, true)]
-    [DataRow(true, false)]
-    [DataRow(false, true)]
-    public void RuntimeRenovateChangesSelectOnlyCompleteConfiguredCheck(bool before, bool after)
-    {
-        const string path = "renovate.json";
-        const string target = "tests/eng/test_python_runtime.py";
-        PythonFactsEndpoint basis = Facts(Endpoint([target, "tests/unrelated.py"],
-            before ? [path] : [], "before"));
-        PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"],
-            after ? [path] : [], "after"));
-        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
-        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
-            [path], false, paired);
-        PlannedCheck selected = Assert.ContainsSingle(
-            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
-        Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
-        string[] expected = PairedRevisions.Where(revision =>
-            revision == "before" ? before : after).ToArray();
-        CollectionAssert.AreEquivalent(expected,
-            selected.Reasons.Select(reason => reason.Revision).ToArray());
-        foreach (SelectionReason reason in selected.Reasons)
-            Assert.AreEqual(new SelectionReason(path, reason.Revision, "pytest:" + target), reason);
+            Assert.ContainsSingle(selected.Reasons));
     }
 
     [TestMethod]
@@ -354,10 +280,7 @@ public sealed class PythonRepositoryInputsTests
     public void FiniteInputsWithoutConfiguredConsumersRemainUnresolved(string path)
     {
         PythonFactsEndpoint endpoint = Facts(Endpoint(["tests/unrelated.py"], [path]));
-        Assert.IsEmpty(PythonRepositoryInputs.Pair(endpoint, endpoint, [path]));
-        foreach (bool full in PairedInputPresence)
-            Assert.ThrowsExactly<InvalidDataException>(() =>
-                PythonFactsAssembler.Assemble(endpoint, endpoint, [path], full, []));
+        Assert.ThrowsExactly<InvalidDataException>(() => Plan(endpoint, endpoint, path));
     }
 
     [TestMethod]
@@ -452,97 +375,13 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
-    public void PairedDeletedInputRetainsOriginalRevisionAndSurvivingOwner()
+    public void NewWorkflowInputDoesNotReviveARemovedPytestTarget()
     {
-        var basis = Endpoint([Workflow.Target], [Workflow.Path], "before");
-        var candidate = Endpoint([Workflow.Target], [], "after");
-        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(Facts(basis), Facts(candidate),
-            [Workflow.Path], false);
-        PlannedCheck check = Assert.ContainsSingle(ImpactPlanner.Plan(assembly.Request,
-            assembly.PairedReasons).Checks);
-        Assert.AreEqual("pytest:" + Workflow.Target, check.Work.Key.Target);
-        Assert.AreEqual(new SelectionReason(Workflow.Path, "before", "pytest:" + Workflow.Target),
-            Assert.ContainsSingle(check.Reasons));
-        Assert.IsEmpty(assembly.Request.Basis.UnaffectedPaths);
-    }
-
-    [TestMethod]
-    [DataRow(true, true)]
-    [DataRow(true, false)]
-    [DataRow(false, true)]
-    [DataRow(false, false)]
-    public void PairedSpecialInputsReachOppositeEndpointOwners(bool plugin, bool inputAtBasis)
-    {
-        string path = plugin ? "src/public/lib/nbgv-python/src/removed.py" : Workflow.Path;
-        string target = plugin ? "tests/private/app/workflow-delivery/Native/Python" :
-            Workflow.Target;
-        PythonProjectDependencies[] members = plugin ?
-            [Member("."), Member("src/public/lib/nbgv-python")] : [Member(".")];
-        PythonFactsEndpoint basis = Facts(Endpoint(inputAtBasis ? ["tests/unrelated.py"] :
-            [target, "tests/unrelated.py"], inputAtBasis ? [path] : [], "before", members));
-        PythonFactsEndpoint candidate = Facts(Endpoint(inputAtBasis ?
-            [target, "tests/unrelated.py"] : ["tests/unrelated.py"],
-            inputAtBasis ? [] : [path], "after", members));
-        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
-        var expected = new SelectionReason(path, inputAtBasis ? "before" : "after",
-            "pytest:" + target);
-        Assert.AreEqual(expected, Assert.ContainsSingle(paired));
-        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
-            [path], false, paired);
-        Assert.AreEqual(expected, Assert.ContainsSingle(assembly.PairedReasons));
-        Assert.IsEmpty(assembly.Request.Basis.UnaffectedPaths);
-        Assert.IsEmpty(assembly.Request.Candidate.UnaffectedPaths);
-        CiPlan plan = ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
-        if (inputAtBasis)
-        {
-            PlannedCheck selected = Assert.ContainsSingle(plan.Checks);
-            Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
-            Assert.AreEqual(expected, Assert.ContainsSingle(selected.Reasons));
-            Assert.DoesNotContain("pytest:" + target,
-                assembly.Request.Basis.Projects.Select(project => project.Id));
-        }
-        else
-        {
-            Assert.IsEmpty(plan.Checks);
-            Assert.DoesNotContain("pytest:" + target,
-                assembly.Request.Candidate.Projects.Select(project => project.Id));
-        }
-    }
-
-    [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
-    public void RuntimeInputSelectsNewCandidateTargetWithOriginalReason(bool inputAtBasis)
-    {
-        const string path = "renovate.json";
-        const string target = "tests/eng/test_python_runtime.py";
-        PythonFactsEndpoint basis = Facts(Endpoint(["tests/unrelated.py"],
-            inputAtBasis ? [path] : [], "before"));
-        PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"],
-            inputAtBasis ? [] : [path], "after"));
-        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
-        var expected = new SelectionReason(path, inputAtBasis ? "before" : "after",
-            "pytest:" + target);
-        Assert.AreEqual(expected, Assert.ContainsSingle(paired));
-        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
-            [path], false, paired);
-        PlannedCheck selected = Assert.ContainsSingle(
-            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
-        Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
-        Assert.AreEqual(expected, Assert.ContainsSingle(selected.Reasons));
-        Assert.DoesNotContain("pytest:" + target,
-            assembly.Request.Basis.Projects.Select(project => project.Id));
-    }
-
-    [TestMethod]
-    public void RuntimeInputWithoutActualTargetRemainsUnresolved()
-    {
-        const string path = "renovate.json";
-        PythonFactsEndpoint endpoint = Facts(Endpoint(["tests/unrelated.py"], [path]));
-        SelectionReason[] paired = PythonRepositoryInputs.Pair(endpoint, endpoint, [path]);
-        Assert.IsEmpty(paired);
-        Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
-            endpoint, endpoint, [path], false, paired));
+        const string path = ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml";
+        const string target = "tests/eng/test_general_ci_workflow.py";
+        PythonFactsEndpoint basis = Facts(Endpoint([target, "tests/unrelated.py"], [], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint(["tests/unrelated.py"], [path], "after"));
+        Assert.IsEmpty(Plan(basis, candidate, path).Checks);
     }
 
     [TestMethod]
@@ -559,10 +398,7 @@ public sealed class PythonRepositoryInputsTests
         };
         PythonFactsEndpoint candidate = Facts(Endpoint(["tests/after.py"], [], "after",
             [Member("."), Member("src/pkg")]), [package]);
-        SelectionReason[] reasons = PythonRepositoryInputs.Pair(basis, candidate, ["uv.lock"]);
-        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
-            ["uv.lock"], false, reasons);
-        CiPlan plan = ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+        CiPlan plan = Plan(basis, candidate, "uv.lock");
         Assert.HasCount(3, plan.Checks);
         PlannedCheck[] distribution = plan.Checks.Where(check =>
             check.Work.Key.Target == "distribution").ToArray();
@@ -572,8 +408,6 @@ public sealed class PythonRepositoryInputsTests
         foreach (PlannedCheck check in distribution)
             Assert.AreEqual(new SelectionReason("uv.lock", "before", "distribution"),
                 Assert.ContainsSingle(check.Reasons));
-        Assert.DoesNotContain("distribution", assembly.Request.Basis.Projects.Select(p => p.Id));
-        Assert.IsEmpty(assembly.Request.Basis.UnaffectedPaths);
     }
 
     [TestMethod]
@@ -582,17 +416,9 @@ public sealed class PythonRepositoryInputsTests
         string path = "src/input/source.py";
         PythonFactsEndpoint endpoint = Facts(Endpoint(["tests/standalone.py"],
             [path, "docs/unknown.md"], members: [Member("."), Member("src/input")]));
-        SelectionReason[] reasons = PythonRepositoryInputs.Pair(endpoint, endpoint, [path]);
-        Assert.IsEmpty(reasons);
-        PythonFactAssembly known = PythonFactsAssembler.Assemble(endpoint, endpoint,
-            [path], false, reasons);
-        Assert.AreEqual(path, Assert.ContainsSingle(known.Request.Basis.UnaffectedPaths));
-        Assert.IsEmpty(ImpactPlanner.Plan(known.Request, known.PairedReasons).Checks);
-        SelectionReason[] unknown = PythonRepositoryInputs.Pair(endpoint, endpoint,
-            [path, "docs/unknown.md"]);
-        Assert.IsEmpty(unknown);
-        Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
-            endpoint, endpoint, [path, "docs/unknown.md"], false, unknown));
+        Assert.IsEmpty(Plan(endpoint, endpoint, path).Checks);
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            Plan(endpoint, endpoint, "docs/unknown.md", full: true));
     }
 
     [TestMethod]
@@ -659,24 +485,11 @@ public sealed class PythonRepositoryInputsTests
     [TestMethod]
     [DataRow("src/private/app/workflow-delivery/README.md")]
     [DataRow("src/private/app/workflow-delivery/docs/high-level-design.md")]
-    public void InertControlDocumentsRetainExplicitPairedNonconsumerFacts(string path)
+    public void InertControlDocumentsDoNotSelectPythonWork(string path)
     {
-        foreach ((bool before, bool after) in QualityPresence)
-        {
-            PythonFactsEndpoint basis = Facts(Endpoint(["tests/unrelated.py"],
-                before ? [path] : [], "before"));
-            PythonFactsEndpoint candidate = Facts(Endpoint(["tests/unrelated.py"],
-                after ? [path] : [], "after"));
-            if (before) Owners(basis.Inputs, path);
-            if (after) Owners(candidate.Inputs, path);
-            SelectionReason[] reasons = PythonRepositoryInputs.Pair(basis, candidate, [path]);
-            Assert.IsEmpty(reasons);
-            PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
-                [path], false, reasons);
-            Assert.IsEmpty(ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
-            if (before) Assert.Contains(path, assembly.Request.Basis.UnaffectedPaths);
-            if (after) Assert.Contains(path, assembly.Request.Candidate.UnaffectedPaths);
-        }
+        PythonFactsEndpoint basis = Facts(Endpoint(["tests/unrelated.py"], [path], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint(["tests/unrelated.py"], [], "after"));
+        Assert.IsEmpty(Plan(basis, candidate, path).Checks);
     }
 
     [TestMethod]
@@ -690,12 +503,8 @@ public sealed class PythonRepositoryInputsTests
         {
             Inputs = [.. candidate.Inputs, new(path, [], ["pytest:" + target])]
         };
-        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
-            [path], false, PythonRepositoryInputs.Pair(basis, candidate, [path]));
-        PlannedCheck check = Assert.ContainsSingle(
-            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+        PlannedCheck check = Assert.ContainsSingle(Plan(basis, candidate, path).Checks);
         Assert.AreEqual("pytest:" + target, check.Work.Key.Target);
-        Assert.DoesNotContain(path, assembly.Request.Candidate.UnaffectedPaths);
     }
 
     [TestMethod]
@@ -704,19 +513,6 @@ public sealed class PythonRepositoryInputsTests
     public void DocumentationExclusionCannotCertifyNearbyUnmappedInputs(string path)
     {
         PythonFactsEndpoint endpoint = Facts(Endpoint(["tests/unrelated.py"], [path]));
-        Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
-            endpoint, endpoint, [path], false));
-    }
-
-    [TestMethod]
-    public void UnassociatedPathRemainsUnresolved()
-    {
-        var endpoint = Endpoint(["tests/standalone.py"], ["docs/unknown.md"]);
-        PythonInputBinding[] inputs = PythonRepositoryInputs.Map(endpoint.Revision,
-            endpoint.Projects, endpoint.Targets, []);
-        var owner = new PythonOwnerEndpoint(endpoint.Revision, endpoint.Projects,
-            [new("pytest:tests/standalone.py", null, ["tests/standalone.py"])], inputs);
-        Assert.ThrowsExactly<InvalidDataException>(() => PythonOwnerProjection.Project(owner,
-            owner, ["docs/unknown.md"]));
+        Assert.ThrowsExactly<InvalidDataException>(() => Plan(endpoint, endpoint, path));
     }
 }

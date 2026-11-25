@@ -10,7 +10,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     private static readonly string[] DotnetToolArguments = ["tool", "restore"];
 
     // Rows that vary only the request, owned scratch or controlled native answers read one
-    // class-owned endpoint pair. Rows that edit or fetch into an endpoint keep private ones.
+    // class-owned endpoint pair. A row that dirties a checkout owns that endpoint.
     private static GitFixture? sharedBasis;
     private static GitFixture? sharedCandidate;
     private static MaterializedEndpoint? sharedBasisEndpoint;
@@ -54,9 +54,8 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [DataRow(true)]
     public async Task PreparedEndpointsRetainExactNativeToolAndSourceContexts(bool full)
     {
-        // The full row needs one endpoint for both sides, so only it owns a repository.
-        using var fixture = full ? await Fixture.CreateAsync(full, context.CancellationToken)
-            : Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!);
+        using var fixture = Fixture.Shared(full ? sharedCandidateEndpoint! : sharedBasisEndpoint!,
+            sharedCandidateEndpoint!, full);
         PythonGroupPreparationResult prepared = await fixture.PrepareAsync(
             context.CancellationToken);
         PythonGroupRequest result = prepared.Request;
@@ -243,23 +242,17 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [DataRow("candidate", "nonrepository")]
     public async Task InvalidEndpointStopsBeforeNativePreparation(string side, string defect)
     {
-        // Mismatch fetches into and dirty edits the endpoint, so only those rows own one.
-        using var fixture = defect == "nonrepository"
-            ? Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!)
-            : await Fixture.CreateAsync(false, context.CancellationToken);
+        using var fixture = Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!);
         MaterializedEndpoint endpoint = side == "basis"
             ? fixture.Request.Basis : fixture.Request.Candidate;
         if (defect == "mismatch")
         {
-            using var other = await GitFixture.CreateAsync(context.CancellationToken);
-            string foreign = await other.CommitAsync();
-            await NativeProcess.RunAsync("git", endpoint.Directory,
-                ["fetch", other.Directory, foreign], context.CancellationToken);
-            endpoint = endpoint with { Reference = foreign };
+            string wrongHead = side == "basis" ? sharedCandidateEndpoint!.Reference :
+                sharedBasisEndpoint!.Reference;
+            endpoint = endpoint with { Reference = wrongHead };
         }
         else if (defect == "dirty")
-            await File.WriteAllTextAsync(Path.Combine(endpoint.Directory, "input.txt"),
-                "modified", context.CancellationToken);
+            endpoint = await fixture.DirtyAsync(side, context.CancellationToken);
         else endpoint = endpoint with { Directory = fixture.Request.ControlSources };
         fixture.Request = side == "basis" ? fixture.Request with { Basis = endpoint }
             : fixture.Request with { Candidate = endpoint };
@@ -279,8 +272,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
         internal string? Failure { get; set; }
         internal CancellationTokenSource? Cancel { get; set; }
 
-        private GitFixture? basisRepository;
-        private GitFixture? candidateRepository;
+        private GitFixture? dirtyRepository;
 
         private Fixture(bool full)
         {
@@ -305,29 +297,21 @@ public sealed class PythonGroupPreparationTests(TestContext context)
                 { ["python"] = "3.14", ["platform"] = "linux" }), 600);
         }
 
-        internal static async Task<Fixture> CreateAsync(bool full, CancellationToken token)
+        internal async Task<MaterializedEndpoint> DirtyAsync(string side,
+            CancellationToken token)
         {
-            var fixture = new Fixture(full);
-            try
-            {
-                fixture.basisRepository = await GitFixture.CreateAsync(token);
-                MaterializedEndpoint basis = await EndpointAsync(fixture.basisRepository, "basis");
-                MaterializedEndpoint candidate = basis;
-                if (!full)
-                {
-                    fixture.candidateRepository = await GitFixture.CreateAsync(token);
-                    candidate = await EndpointAsync(fixture.candidateRepository, "candidate");
-                }
-                fixture.Request = fixture.Request with { Basis = basis, Candidate = candidate };
-                return fixture;
-            }
-            catch { fixture.Dispose(); throw; }
+            dirtyRepository = await GitFixture.CreateAsync(token);
+            MaterializedEndpoint endpoint = await EndpointAsync(dirtyRepository, side);
+            await File.WriteAllTextAsync(Path.Combine(endpoint.Directory, "input.txt"),
+                "modified", token);
+            return endpoint;
         }
 
         // Reads class-owned endpoints; the row owns only its control sources and scratch.
-        internal static Fixture Shared(MaterializedEndpoint basis, MaterializedEndpoint candidate)
+        internal static Fixture Shared(MaterializedEndpoint basis, MaterializedEndpoint candidate,
+            bool full = false)
         {
-            var fixture = new Fixture(false);
+            var fixture = new Fixture(full);
             fixture.Request = fixture.Request with { Basis = basis, Candidate = candidate };
             return fixture;
         }
@@ -373,8 +357,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
 
         public void Dispose()
         {
-            candidateRepository?.Dispose();
-            basisRepository?.Dispose();
+            dirtyRepository?.Dispose();
             Directory.Delete(directory, recursive: true);
         }
     }

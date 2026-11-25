@@ -9,28 +9,66 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class RubyBundlePreparationTests(TestContext context)
 {
-    private static RubyBundleTools Tools(string root) => new(new(Path.Combine(root, "ruby"),
-        Path.Combine(root, "facts.rb"), root,
-        new Dictionary<string, string?> { ["GEM_HOME"] = Path.Combine(root, "owned-gems") }, 30),
-        Path.Combine(root, "gem"), Path.Combine(root, "bundle"), "2.7.2");
-    private static NativeCommandResult Success => new(NativeTermination.Exited, 0, "", "", 0, null);
-    private async Task<GitMaterialization> BindAsync(GitFixture repo)
+    private const string Gemfile = "src/a/Gemfile";
+    private static GitFixture? shared;
+    private static GitMaterialization? empty;
+    private static GitMaterialization? unlocked;
+    private static GitMaterialization? locked;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
     {
-        string head = await repo.CommitAsync();
-        await repo.GitAsync("reset", "--hard", head);
-        return await GitMaterialization.BindAsync(repo.Directory,
-            await new GitReader(repo.Directory).ReadAsync(head, context.CancellationToken),
-            context.CancellationToken);
+        CancellationToken token = classContext.CancellationToken;
+        GitFixture repo = await GitFixture.CreateAsync(token);
+        try
+        {
+            string parent = Path.GetDirectoryName(repo.Directory)!;
+            await repo.SetAsync("docs/guide.md");
+            empty = await CommitCheckoutAsync("empty");
+            await repo.SetAsync(Gemfile, "original declaration");
+            unlocked = await CommitCheckoutAsync("unlocked");
+            await repo.SetAsync(Gemfile + ".lock", "original lock");
+            locked = await CommitCheckoutAsync("locked");
+            shared = repo;
+
+            async Task<GitMaterialization> CommitCheckoutAsync(string name)
+            {
+                string commit = await repo.CommitAsync();
+                string checkout = Path.Combine(parent, name);
+                await repo.GitAsync("worktree", "add", "--detach", checkout, commit);
+                return await GitMaterialization.BindAsync(checkout, commit, token);
+            }
+        }
+        catch
+        {
+            repo.Dispose();
+            throw;
+        }
     }
 
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    private sealed class ToolsScratch : IDisposable
+    {
+        private readonly string root = Directory.CreateTempSubdirectory(
+            "ruby-bundle-preparation-").FullName;
+
+        internal RubyBundleTools Tools => new(new(Path.Combine(root, "ruby"),
+            Path.Combine(root, "facts.rb"), root,
+            new Dictionary<string, string?> { ["GEM_HOME"] = Path.Combine(root, "gems") }, 30),
+            Path.Combine(root, "gem"), Path.Combine(root, "bundle"), "2.7.2");
+
+        public void Dispose() => Directory.Delete(root, recursive: true);
+    }
+
+    private static NativeCommandResult Success => new(NativeTermination.Exited, 0, "", "", 0, null);
     [TestMethod]
     public async Task PlanningPreparationActivatesLockedBundlerWithoutInstallingTheBundle()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        await repo.SetAsync("src/a/Gemfile", "original declaration");
-        await repo.SetAsync("src/a/Gemfile.lock", "original lock");
-        GitMaterialization checkout = await BindAsync(repo);
-        RubyBundleTools tools = Tools(repo.Directory);
+        GitMaterialization checkout = locked!;
+        using var scratch = new ToolsScratch();
+        RubyBundleTools tools = scratch.Tools;
         RubyPreparedBundles result = await RubyBundlePreparation.PrepareAsync(checkout, tools,
             async (command, token) =>
             {
@@ -38,7 +76,7 @@ public sealed class RubyBundlePreparationTests(TestContext context)
                 Assert.AreEqual(tools.Facts.Environment["GEM_HOME"],
                     command.Environment!["GEM_HOME"]);
                 if (command.Arguments[0] == tools.Gem) return Success;
-                string gemfile = Path.Combine(repo.Directory, "src/a/Gemfile");
+                string gemfile = Path.Combine(checkout.Root, Gemfile);
                 Assert.AreNotEqual(tools.Bundle, command.Arguments[0],
                     "Planning reads the lock; only selected execution installs the bundle.");
                 using JsonDocument request = JsonDocument.Parse(
@@ -61,20 +99,19 @@ public sealed class RubyBundlePreparationTests(TestContext context)
         Assert.AreEqual("2.4.20", result.Commands[1].Command.Arguments[4]);
         Assert.AreEqual("2.4.20", Assert.ContainsSingle(result.Contexts).LockedBundlerVersion);
         Assert.AreEqual("original lock", await File.ReadAllTextAsync(
-            Path.Combine(repo.Directory, "src/a/Gemfile.lock"), context.CancellationToken));
+            Path.Combine(checkout.Root, Gemfile + ".lock"), context.CancellationToken));
     }
 
     [TestMethod]
     public async Task FailedDependencyInstallationRetainsNativeDiagnostics()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        await repo.SetAsync("src/a/Gemfile");
-        GitMaterialization checkout = await BindAsync(repo);
+        GitMaterialization checkout = unlocked!;
+        using var scratch = new ToolsScratch();
         string stderr = "native installation head " + new string('x', NativeDiagnostic.TailLength) +
             " native installation error";
         RubyBundlePreparationException error = await Assert.ThrowsExactlyAsync<
             RubyBundlePreparationException>(() => RubyBundlePreparation.PrepareAsync(checkout,
-                Tools(repo.Directory), (_, _) => Task.FromResult(Success with
+                scratch.Tools, (_, _) => Task.FromResult(Success with
                 { ExitCode = 7, Stderr = stderr }),
                 context.CancellationToken));
         RubyPreparationCommand command = Assert.ContainsSingle(error.Commands);
@@ -90,20 +127,15 @@ public sealed class RubyBundlePreparationTests(TestContext context)
     [TestMethod]
     public async Task MissingOriginalLockCannotCompletePreparation()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        await repo.SetAsync("src/a/Gemfile");
-        GitMaterialization checkout = await BindAsync(repo);
-        RubyBundleTools tools = Tools(repo.Directory);
-        async Task<RubyPreparedBundles> RunAsync() => await RubyBundlePreparation.PrepareAsync(
-            checkout, tools, async (command, token) =>
+        GitMaterialization checkout = unlocked!;
+        using var scratch = new ToolsScratch();
+        RubyBundleTools tools = scratch.Tools;
+        Task<RubyPreparedBundles> RunAsync() => RubyBundlePreparation.PrepareAsync(
+            checkout, tools, (command, _) =>
             {
-                if (command.Arguments[0] == tools.Gem) return Success;
-                string gemfile = Path.Combine(repo.Directory, "src/a/Gemfile");
-                using JsonDocument request = JsonDocument.Parse(
-                    await File.ReadAllTextAsync(command.Arguments[^1], token));
-                Assert.AreEqual("bundle-context",
-                    request.RootElement.GetProperty("operation").GetString());
-                return Success with
+                if (command.Arguments[0] == tools.Gem) return Task.FromResult(Success);
+                string gemfile = Path.Combine(checkout.Root, Gemfile);
+                return Task.FromResult(Success with
                 {
                     Stdout = JsonSerializer.Serialize(new
                     {
@@ -112,9 +144,11 @@ public sealed class RubyBundlePreparationTests(TestContext context)
                         bundler_version = "2.7.2",
                         locked_bundler_version = "2.7.2"
                     })
-                };
+                });
             }, context.CancellationToken);
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(RunAsync);
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            RunAsync);
+        Assert.Contains("lock is not committed", failure.Message);
     }
 
     [TestMethod]
@@ -122,13 +156,12 @@ public sealed class RubyBundlePreparationTests(TestContext context)
     [DataRow(true)]
     public async Task EmptyOrCancelledPreparationCannotLaunchTools(bool cancelled)
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        await repo.SetAsync("docs/guide.md");
-        GitMaterialization checkout = await BindAsync(repo);
+        GitMaterialization checkout = empty!;
+        using var scratch = new ToolsScratch();
         using var cancellation = new CancellationTokenSource();
         if (cancelled) cancellation.Cancel();
         Task<RubyPreparedBundles> RunAsync() => RubyBundlePreparation.PrepareAsync(checkout,
-            Tools(repo.Directory), (_, _) =>
+            scratch.Tools, (_, _) =>
             {
                 Assert.Fail("Empty/cancelled collection cannot install tools or dependencies.");
                 return Task.FromResult(Success);

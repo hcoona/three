@@ -24,11 +24,19 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
     private static readonly string[] RetainedVariants = ["node20", "node22", "node24", "node26"];
     private static readonly string[] BuildAndTestChecks =
         ["node/project-build-v1", "node/project-test-v1"];
+    private static GitFixture? shared;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext) =>
+        shared = await RuntimeCheckoutAsync("", classContext.CancellationToken);
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
 
     [TestMethod]
     public async Task ReadPlansFromCommittedDataAndNativeMiseToolIdentities()
     {
-        using var repo = await RuntimeCheckoutAsync();
+        GitFixture repo = shared!;
         GitMaterialization checkout = await BindAsync(repo);
         var commands = new List<string>();
         NodeRuntimeInputs inputs = await new NodeRuntimeReader(checkout, (args, _) =>
@@ -246,7 +254,9 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
     public async Task UnsupportedRuntimeFactsStopTheReader(string defect, int queries,
         string message)
     {
-        using var repo = await RuntimeCheckoutAsync(defect);
+        using GitFixture? privateCheckout = defect is "tool-inactive" or "pnpm-floating" ? null :
+            await RuntimeCheckoutAsync(defect, context.CancellationToken);
+        GitFixture repo = privateCheckout ?? shared!;
         GitMaterialization checkout = await BindAsync(repo);
         var commands = new List<string>();
         var reader = new NodeRuntimeReader(checkout, (args, _) =>
@@ -507,19 +517,28 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
             Source + "/index.js");
     }
 
-    private async Task<GitFixture> RuntimeCheckoutAsync(string defect = "")
+    private static async Task<GitFixture> RuntimeCheckoutAsync(string defect,
+        CancellationToken token)
     {
-        GitFixture repo = await GitFixture.CreateAsync(context.CancellationToken);
-        await repo.SetAsync(NodeRuntimeReader.Workflow, WorkflowFor(defect));
-        if (defect != "missing-schedule")
-            await repo.SetAsync(NodeRuntimeReader.Schedule, ScheduleFor(defect));
-        if (defect != "missing-mise") await repo.SetAsync("mise.toml", Mise);
-        await repo.SetAsync("mise.lock", MiseLock);
-        foreach (NodeEnginesManifest manifest in Manifests(defect, ">=22", ">=22.6.0"))
-            if (manifest.Text is not null) await repo.SetAsync(manifest.Path, manifest.Text);
-        string commit = await repo.CommitAsync();
-        await repo.GitAsync("reset", "--hard", commit);
-        return repo;
+        GitFixture repo = await GitFixture.CreateAsync(token);
+        try
+        {
+            await repo.SetAsync(NodeRuntimeReader.Workflow, WorkflowFor(defect));
+            if (defect != "missing-schedule")
+                await repo.SetAsync(NodeRuntimeReader.Schedule, ScheduleFor(defect));
+            if (defect != "missing-mise") await repo.SetAsync("mise.toml", Mise);
+            await repo.SetAsync("mise.lock", MiseLock);
+            foreach (NodeEnginesManifest manifest in Manifests(defect, ">=22", ">=22.6.0"))
+                if (manifest.Text is not null) await repo.SetAsync(manifest.Path, manifest.Text);
+            string commit = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", commit);
+            return repo;
+        }
+        catch
+        {
+            repo.Dispose();
+            throw;
+        }
     }
 
     private async Task<GitMaterialization> BindAsync(GitFixture repo) =>

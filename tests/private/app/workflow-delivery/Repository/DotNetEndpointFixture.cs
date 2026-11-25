@@ -115,7 +115,12 @@ internal sealed class DotNetEndpointFixture : IDisposable
             Path.Combine(Scratch, prefix + ".response.json"), 30));
     }
 
-    internal Task<DotNetRevisionInputs> BindAsync() => Reader().BindAsync(Graph, token);
+    internal Task<DotNetRevisionInputs> BindAsync() => BindAsync(Graph);
+
+    internal Task<DotNetRevisionInputs> BindAsync(DotNetGraphResponse graph,
+        CancellationToken cancellationToken = default) =>
+        Reader().BindAsync(graph, cancellationToken.CanBeCanceled ?
+            cancellationToken : token);
 
     public void Dispose()
     {
