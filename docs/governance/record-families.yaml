@@ -665,6 +665,22 @@ bindings:
     path: src/public/lib/Memoization/*.md
     format: markdown
     purpose: Memoization package usage and release notes; generator is a build component
+  - id: src-public-lib-nanopass-interfaces
+    family: project-interfaces
+    namespace: src/public/lib/Nanopass
+    state: current
+    carrier: repository-files
+    path: src/public/lib/Nanopass/*.md
+    format: markdown
+    purpose: Nanopass package usage, scope boundary, release notes and project-record routing; generator is a build component
+  - id: src-public-lib-nanopass-notice
+    family: project-interfaces
+    namespace: src/public/lib/Nanopass
+    state: current
+    carrier: repository-file
+    path: src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt
+    format: text
+    purpose: Nanopass Compiler Framework copyright and MIT attribution retained for derived material
   - id: src-public-lib-microsoftextensions-logging-mstest-interfaces
     family: project-interfaces
     namespace: src/public/lib/MicrosoftExtensions.Logging.MSTest
@@ -833,6 +849,14 @@ bindings:
     path: src/public/lib/asciidoctor-latexmath/docs/**/*.md
     format: markdown
     purpose: Renderer architecture, quality constraints and source research
+  - id: src-public-lib-nanopass-records
+    family: project-concern-records
+    namespace: src/public/lib/Nanopass
+    state: current
+    carrier: repository-files
+    path: src/public/lib/Nanopass/docs/**/*.md
+    format: markdown
+    purpose: Nanopass C# 15 architecture invariants, diagnostic contracts and validation strategy
   - id: azureauth-python-interface
     family: azureauth-python-interface
     namespace: src/private/app/azureauth-credprovider

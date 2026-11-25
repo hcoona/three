@@ -53,3 +53,11 @@ Within the migrated public/test inventory above, the intentionally remaining loc
 - `MicrosoftExtensions.Options.DedupChangeExtensions` still keeps `NoWarn+=SYSLIB0011` on `net8.0`/`net9.0`.
 - The public test tree still keeps its local analyzer suppressions and remains outside the restored `StyleCop.Analyzers` scope.
 - Package-validation baselines and the tracked `.editorconfig-checker.json` / `.typos.toml` carve-outs remain local until their dedicated cleanup work lands.
+
+## Project-local API design suppressions (`Hcoona.Nanopass`)
+
+Both `src/public/lib/Nanopass/Hcoona.Nanopass.csproj` and `src/public/lib/Nanopass.Generators/Hcoona.Nanopass.Generators.csproj` compile under the full `src/public/lib/Directory.Build.props` analyzer and StyleCop profile with zero project-level `NoWarn` settings. Narrow member/generated-file suppressions are retained only for intentional public API shapes:
+
+- `src/public/lib/Nanopass/SExpr.cs`: `[SuppressMessage]` for `CA1716` / `CA1720` on the closed-hierarchy datum cases `SExpr.Int`, `SExpr.Float`, and `SExpr.Char`, preserving concise algebraic case names alongside `SExpr.Bool`, `SExpr.Str`, and `SExpr.Sym`.
+- `src/public/lib/Nanopass/Seq{T}.cs`: `[SuppressMessage]` for `CA1000` on `Seq<T>.Empty`, matching the BCL `ImmutableArray<T>.Empty` pattern.
+- `src/public/lib/Nanopass.Generators/LanguageEmitter.cs`: `#pragma warning disable CA1716, CA1720, CS1591` in generated `.Nanopass.g.cs` files so user-chosen compiler grammar names (such as `If`, `Sub`, or `Int`) compile cleanly without forcing verbose prefixes onto IR definitions.

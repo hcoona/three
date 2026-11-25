@@ -7,12 +7,27 @@
     <PackageId>Hcoona.Nanopass</PackageId>
     <AssemblyName>Hcoona.Nanopass</AssemblyName>
     <RootNamespace>Hcoona.Nanopass</RootNamespace>
-    <PackageDescription>Strongly typed Nanopass compiler framework for C# 15 and .NET 11 with incremental grammar definitions, automatic pass synthesis, and S-expression tooling.</PackageDescription>
+    <PackageDescription>Strongly typed Nanopass intermediate-representation grammar framework for C# 15 and .NET 11 with incremental language definitions, C# 15 union code generation, and S-expression tooling.</PackageDescription>
     <PackageTags>compiler nanopass ir ast csharp15 union source-generator roslyn</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
     <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackNanopassGenerator</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
+
+  <Target Name="SetPackageReleaseNotes" BeforeTargets="GenerateNuspec">
+    <ReadLinesFromFile File="$(MSBuildProjectDirectory)/ReleaseNotes.md">
+      <Output TaskParameter="Lines" ItemName="ReleaseNotesLines" />
+    </ReadLinesFromFile>
+    <PropertyGroup>
+      <PackageReleaseNotes>@(ReleaseNotesLines, '%0A')</PackageReleaseNotes>
+    </PropertyGroup>
+  </Target>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="\" />
+    <None Include="ReleaseNotes.md" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../Nanopass.Generators/Hcoona.Nanopass.Generators.csproj"
