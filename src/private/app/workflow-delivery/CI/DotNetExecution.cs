@@ -28,24 +28,9 @@ internal static class DotNetExecution
     internal static Task<DotNetRunResult> RunAsync(CiPlan plan, DotNetRunRequest request,
         CancellationToken token) => RunAsync(plan, request, NativeProcess.ExecuteAsync, token);
 
-    internal static Task<DotNetRunResult> RunAsync(CiPlan plan, DotNetRunRequest request,
+    internal static async Task<DotNetRunResult> RunAsync(CiPlan plan, DotNetRunRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        CancellationToken token) => RunAsync(plan, request, null, execute, token);
-
-    // The group has already bound this exact checkout for the original plan.
-    internal static Task<DotNetRunResult> RunBoundAsync(CiPlan plan, DotNetRunRequest request,
-        GitMaterialization bound, CancellationToken token) =>
-        RunAsync(plan, request, bound, NativeProcess.ExecuteAsync, token);
-
-    internal static Task<DotNetRunResult> RunBoundAsync(CiPlan plan, DotNetRunRequest request,
-        GitMaterialization bound,
-        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        CancellationToken token) => RunAsync(plan, request, bound, execute, token);
-
-    private static async Task<DotNetRunResult> RunAsync(CiPlan plan, DotNetRunRequest request,
-        GitMaterialization? bound,
-        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        CancellationToken token)
+        CancellationToken token, GitMaterialization? bound = null)
     {
         string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
         string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);

@@ -68,11 +68,11 @@ internal static class DotNetGroupExecution
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> scoped =
             DotNetToolEnvironment.Scoped(path, execute);
         retained ??= (partition, partitionRequest, cancellation) =>
-            DotNetExecution.RunBoundAsync(partition, partitionRequest, materialization,
-                scoped, cancellation);
+            DotNetExecution.RunAsync(partition, partitionRequest, scoped, cancellation,
+                materialization);
         packages ??= (partition, partitionRequest, cancellation) =>
-            DotNetPackageExecution.RunBoundAsync(partition, partitionRequest, materialization,
-                scoped, cancellation);
+            DotNetPackageExecution.RunAsync(partition, partitionRequest, scoped, cancellation,
+                materialization);
         DotNetRunResult native = await retained(nativePlan, request with
         { Scratch = Directory.CreateDirectory(Path.Combine(scratch, "retained")).FullName }, token);
         DotNetPackageRunResult package;

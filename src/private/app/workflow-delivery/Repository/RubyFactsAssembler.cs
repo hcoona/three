@@ -14,19 +14,22 @@ internal static class RubyFactsAssembler
     internal static RubyFactAssembly Assemble(RubyFactsEndpoint basis,
         RubyFactsEndpoint candidate, string[] changedPaths, bool full)
     {
-        RepositoryFacts before = Validate(basis), after = Validate(candidate);
+        var before = Validate(basis);
+        var after = Validate(candidate);
+        var endpoints = new[] { (Endpoint: basis, Index: before),
+            (Endpoint: candidate, Index: after) };
         // Only the candidate must claim each bundle, so a basis bundle can still be removed.
         if (candidate.Native.Graph.Bundles.Any(bundle =>
-                !NativeDirectories(candidate).Contains(bundle.Directory, StringComparer.Ordinal) &&
+                !after.NativeDirectories.Contains(bundle.Directory, StringComparer.Ordinal) &&
                 !candidate.Owners.Any(owner => Governs(owner.Directory, bundle.Directory,
-                    NativeDirectories(candidate)))))
+                    after.NativeDirectories))))
             throw new InvalidDataException(
                 "A Ruby bundle has no Ruby producer or quality owner.");
         if (changedPaths.Distinct(StringComparer.Ordinal).Count() != changedPaths.Length)
             throw new InvalidDataException("Duplicate Ruby changed coordinate.");
         var downstream = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         var owners = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        foreach (RubyFactsEndpoint endpoint in new[] { basis, candidate })
+        foreach (var (endpoint, index) in endpoints)
         {
             foreach (RubyProjectDependencies producer in endpoint.Native.Graph.Projects)
                 foreach (string dependency in producer.Ordinary)
@@ -36,7 +39,7 @@ internal static class RubyFactsAssembler
                 Add(owners, owner.Directory, owner.Id);
                 foreach (RubyBundleConsumption bundle in endpoint.Native.Graph.Bundles.Where(
                              bundle => Governs(owner.Directory, bundle.Directory,
-                                 NativeDirectories(endpoint))))
+                                 index.NativeDirectories)))
                     foreach (string producer in bundle.Producers)
                         Add(downstream, producer, owner.Directory);
             }
@@ -47,31 +50,25 @@ internal static class RubyFactsAssembler
         {
             ImpactPlanner.ValidatePath(path);
             bool present = false, affected = false;
-            foreach (RubyFactsEndpoint endpoint in new[] { basis, candidate })
+            foreach (var (endpoint, index) in endpoints)
             {
-                GitEntry? entry = endpoint.Revision.Entries
-                    .SingleOrDefault(row => row.Path == path);
-                if (entry is null) continue;
+                if (!index.Entries.TryGetValue(path, out GitEntry? entry)) continue;
                 present = true;
                 RubyRepositoryInventory.RequireFile(entry);
                 var producers = new HashSet<string>(StringComparer.Ordinal);
                 var targets = new HashSet<string>(StringComparer.Ordinal);
-                string? nearest = Nearest(endpoint, path);
+                string? nearest = GitPathOwnership.NearestDirectory(path, index.NativeDirectories);
                 if (nearest is not null) producers.Add(nearest);
-                SharedInput[] inputs = endpoint.Native.Inputs.Where(input => input.Path == path)
-                    .ToArray();
-                foreach (SharedInput input in inputs) producers.UnionWith(input.Consumers);
-                SharedInput[] operations = endpoint.OperationInputs
-                    .Where(input => input.Path == path)
-                    .ToArray();
-                foreach (SharedInput input in operations) targets.UnionWith(input.Consumers);
+                foreach (SharedInput input in index.Inputs[path])
+                    producers.UnionWith(input.Consumers);
+                foreach (SharedInput input in index.Operations[path])
+                    targets.UnionWith(input.Consumers);
                 foreach (ProjectFacts owner in endpoint.Owners.Where(owner =>
                              owner.OwnedPaths?.Contains(path, StringComparer.Ordinal) == true))
                     targets.Add(owner.Id);
-                bool bundleInput = endpoint.Native.Graph.Bundles.Any(bundle =>
-                    bundle.Inputs.Contains(path, StringComparer.Ordinal));
-                if (nearest is null && inputs.Length == 0 && operations.Length == 0 &&
-                    targets.Count == 0 && !bundleInput)
+                if (nearest is null && !index.Inputs.Contains(path) &&
+                    !index.Operations.Contains(path) && targets.Count == 0 &&
+                    !index.BundleInputs.Contains(path))
                     throw new InvalidDataException($"Unresolved Ruby input: {path}");
                 var pending = new Queue<string>(producers);
                 while (pending.TryDequeue(out string? producer))
@@ -90,14 +87,18 @@ internal static class RubyFactsAssembler
                 throw new InvalidDataException($"Ruby input absent at both endpoints: {path}");
             if (!affected) unaffected.Add(path);
         }
-        return new(new(before with { UnaffectedPaths = Present(basis, unaffected) },
-            after with { UnaffectedPaths = Present(candidate, unaffected) }, changedPaths, full),
+        return new(new(before.Facts with { UnaffectedPaths = Present(before.Entries, unaffected) },
+            after.Facts with { UnaffectedPaths = Present(after.Entries, unaffected) },
+            changedPaths, full),
             reasons.OrderBy(reason => reason.Path, StringComparer.Ordinal)
                 .ThenBy(reason => reason.Revision, StringComparer.Ordinal)
                 .ThenBy(reason => reason.Project, StringComparer.Ordinal).ToArray());
     }
 
-    private static RepositoryFacts Validate(RubyFactsEndpoint endpoint)
+    private static (RepositoryFacts Facts, Dictionary<string, GitEntry> Entries,
+        ILookup<string, SharedInput> Inputs, ILookup<string, SharedInput> Operations,
+        HashSet<string> BundleInputs, string[] NativeDirectories) Validate(
+            RubyFactsEndpoint endpoint)
     {
         ImpactPlanner.RequireText(endpoint.Revision.Commit, "Ruby revision");
         var entries = endpoint.Revision.Entries.ToDictionary(entry => entry.Path,
@@ -122,11 +123,16 @@ internal static class RubyFactsAssembler
             !bundles.Order(StringComparer.Ordinal).SequenceEqual(inventory.Bundles
                 .Select(bundle => bundle.Gemfile).Order(StringComparer.Ordinal)))
             throw new InvalidDataException("Incomplete Ruby bundle consumer graph.");
+        var bundleInputs = new HashSet<string>(StringComparer.Ordinal);
         foreach (RubyBundleConsumption bundle in endpoint.Native.Graph.Bundles)
         {
             if (bundle.Producers.Any(producer => !producers.Contains(producer)))
                 throw new InvalidDataException("Unresolved Ruby bundle producer.");
-            foreach (string path in bundle.Inputs) Require(path);
+            foreach (string path in bundle.Inputs)
+            {
+                Require(path);
+                bundleInputs.Add(path);
+            }
         }
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var owned = new HashSet<string>(StringComparer.Ordinal);
@@ -143,8 +149,8 @@ internal static class RubyFactsAssembler
             foreach (string path in owner.OwnedPaths ?? []) Require(path);
             string[] paths = endpoint.Revision.Entries.Select(entry => entry.Path)
                 .Where(path => bundleOnly ? path != owner.Directory &&
-                    Governs(owner.Directory, path, NativeDirectories(endpoint)) :
-                    Nearest(endpoint, path) == owner.Directory)
+                    Governs(owner.Directory, path, directories) :
+                    GitPathOwnership.NearestDirectory(path, directories) == owner.Directory)
                 .Concat(owner.OwnedPaths ?? []).Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal).ToArray();
             foreach (string path in paths) Require(path);
@@ -168,7 +174,10 @@ internal static class RubyFactsAssembler
             quality.ToArray(), [], [], []);
         // Validate complete available obligations, including unselected and basis-only owners.
         _ = ImpactPlanner.Plan(new(facts, facts, [], true));
-        return facts;
+        return (facts, entries,
+            endpoint.Native.Inputs.ToLookup(input => input.Path, StringComparer.Ordinal),
+            endpoint.OperationInputs.ToLookup(input => input.Path, StringComparer.Ordinal),
+            bundleInputs, directories);
 
         void Require(string path)
         {
@@ -186,16 +195,8 @@ internal static class RubyFactsAssembler
             directory.StartsWith(owner + "/", StringComparison.Ordinal) &&
             (path == directory || path.StartsWith(directory + "/", StringComparison.Ordinal)));
 
-    private static IEnumerable<string> NativeDirectories(RubyFactsEndpoint endpoint) =>
-        endpoint.Native.Graph.Projects.Select(project => project.Directory);
-
-    private static string? Nearest(RubyFactsEndpoint endpoint, string path) =>
-        endpoint.Native.Graph.Projects.Select(project => project.Directory)
-            .Where(directory => path.StartsWith(directory + "/", StringComparison.Ordinal))
-            .OrderByDescending(directory => directory.Length).FirstOrDefault();
-
-    private static string[] Present(RubyFactsEndpoint endpoint, IEnumerable<string> paths) =>
-        paths.Where(path => endpoint.Revision.Entries.Any(entry => entry.Path == path))
+    private static string[] Present(Dictionary<string, GitEntry> entries,
+        IEnumerable<string> paths) => paths.Where(entries.ContainsKey)
             .Order(StringComparer.Ordinal).ToArray();
 
     private static void Add(Dictionary<string, HashSet<string>> graph, string from, string to)

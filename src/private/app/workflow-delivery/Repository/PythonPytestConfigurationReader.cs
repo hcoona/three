@@ -33,7 +33,7 @@ internal sealed class PythonPytestConfigurationReader
             ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
         };
         NativeCommandResult result = await execute(new(helperPython, directory,
-            [queryScript, directory], 30, child), token);
+            [queryScript, directory], 30, child, InheritEnvironment: false), token);
         if (!result.Succeeded || result.Error is not null)
             throw new InvalidDataException("Native pytest configuration extraction failed: " +
                 NativeDiagnostic.Describe(result));

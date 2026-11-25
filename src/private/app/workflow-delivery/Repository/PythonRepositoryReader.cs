@@ -135,7 +135,7 @@ internal sealed class PythonRepositoryReader
             checkout.Root,
             ["-I", request.PackageHelper, "identity",
                 Path.Combine(checkout.Root, member.Directory)],
-            30, environment), token);
+            30, environment, InheritEnvironment: false), token);
         if (!result.Succeeded || result.Error is not null)
             throw new InvalidDataException("Native Python distribution identity failed: " +
                 NativeDiagnostic.Describe(result));

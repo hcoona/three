@@ -8,7 +8,11 @@ internal sealed record RubyGroupPreparationRequest(MaterializedEndpoint Basis,
     MaterializedEndpoint Candidate, bool Full, string ScopePath, string Helper, string Scratch,
     RubyQueryTools Tools, string BundlerProbeVersion, int DeadlineSeconds);
 internal sealed record RubyGroupPreparationResult(RubyGroupRequest Request,
-    RubyPreparationCommand[] Commands);
+    RubyPreparationCommand[] Commands)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal (GitComparison Comparison, ScopeInputs Scope)? ValidatedScope { get; init; }
+}
 
 // Native tools own versioning and installation; this finite caller owns disposable state.
 internal static class RubyGroupPreparation
@@ -40,8 +44,8 @@ internal static class RubyGroupPreparation
             comparison.Basis, token);
         GitMaterialization after = await GitMaterialization.BindAsync(request.Candidate.Directory,
             comparison.Candidate, token);
-        _ = ScopeInputs.Read(await File.ReadAllTextAsync(request.ScopePath, token), comparison,
-            request.Full);
+        ScopeInputs scope = ScopeInputs.Read(await File.ReadAllTextAsync(request.ScopePath, token),
+            comparison, request.Full);
         string version = await PinAsync(after, token);
         var commands = new List<RubyPreparationCommand>();
         string native = Directory.CreateDirectory(Path.Combine(scratch, "native")).FullName;
@@ -55,7 +59,8 @@ internal static class RubyGroupPreparation
         RubyGroupEndpoint basis = await EndpointAsync(before, request.Basis, "basis");
         RubyGroupEndpoint candidate = await EndpointAsync(after, request.Candidate, "candidate");
         token.ThrowIfCancellationRequested();
-        return new(new(basis, candidate, request.Full, request.ScopePath), commands.ToArray());
+        return new(new(basis, candidate, request.Full, request.ScopePath), commands.ToArray())
+        { ValidatedScope = (comparison, scope) };
 
         async Task<RubyGroupEndpoint> EndpointAsync(GitMaterialization checkout,
             MaterializedEndpoint endpoint, string name)

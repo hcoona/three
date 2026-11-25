@@ -46,7 +46,8 @@ internal static class RubyCiCaller
             TransferJson.Default.RubyGroupPreparationResult);
         CiCallerTransfer.Write(Path.Combine(directory, "group-request.json"), preparation.Request,
             TransferJson.Default.RubyGroupRequest);
-        RubyGroupReadback readback = await RubyGroupReader.ReadAsync(preparation.Request, token);
+        RubyGroupReadback readback = await RubyGroupReader.ReadAsync(preparation.Request, token,
+            preparation.ValidatedScope);
         CiCallerTransfer.Plan(readback.Plan, context.Basis.Reference,
             context.Candidate.Reference, Scope);
         if (readback.Basis.Facts.Revision.Commit != context.Basis.Reference ||

@@ -22,7 +22,8 @@ internal sealed class GitReader(string directory, string executable = "git")
         CancellationToken token)
     {
         string basisCommit = await ResolveAsync(basis, token);
-        string candidateCommit = await ResolveAsync(candidate, token);
+        string candidateCommit = basis == candidate ? basisCommit :
+            await ResolveAsync(candidate, token);
         GitRevision before = await ReadCommitAsync(basisCommit, token);
         // One commit has one tree and no changes; Git need not list or diff it twice.
         if (candidateCommit == basisCommit)

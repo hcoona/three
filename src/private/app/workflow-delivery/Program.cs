@@ -19,22 +19,7 @@ internal static class Program
     }
 
     internal static int Run(string[] args, TextWriter output, TextWriter error,
-        Func<CiPlan, NodeRunRequest, CancellationToken, Task<NodeRunResult>>? runNode = null,
-        Func<CiPlan, DotNetRunRequest, CancellationToken, Task<DotNetGroupRunResult>>?
-            runDotNet = null,
-        Func<CiPlan, PythonPackageRunRequest, CancellationToken, Task<PythonPackageRunResult>>?
-            runPythonPackage = null,
-        Func<CiPlan, PythonGroupRunRequest, CancellationToken, Task<PythonGroupRunResult>>?
-            runPythonGroup = null,
-        Func<PythonGroupRequest, CancellationToken, Task<PythonGroupReadback>>?
-            planPythonGroup = null,
-        Func<PythonGroupPreparationRequest, CancellationToken, Task<PythonGroupPreparationResult>>?
-            preparePythonGroup = null,
-        Func<RubyGroupPreparationRequest, CancellationToken, Task<RubyGroupPreparationResult>>?
-            prepareRubyGroup = null,
-        Func<RubyGroupRequest, CancellationToken, Task<RubyGroupReadback>>? planRubyGroup = null,
-        Func<CiPlan, RubyGroupRunRequest, CancellationToken, Task<RubyGroupRun>>?
-            runRubyGroup = null)
+        CiCliOverrides? overrides = null)
     {
         try
         {
@@ -44,240 +29,25 @@ internal static class Program
                 return 0;
             }
             if (ReleaseCli.Run(args, output) is { } releaseStatus) return releaseStatus;
-            if (NativePreparationQualification.Run(args, output) is { } nativeStatus)
-                return nativeStatus;
-            if (ControlCiCaller.Run(args, output) is { } controlStatus) return controlStatus;
-            if (LocalPythonCiCaller.Run(args, output, error) is { } localStatus)
-                return localStatus;
-            if (CiCallerCli.Run(args, output, error) is { } callerStatus) return callerStatus;
-            if (args is ["ci", "prepare-ruby-group", var rubyPreparationPath])
-            {
-                RubyGroupPreparationRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(rubyPreparationPath),
-                    TransferJson.Default.RubyGroupPreparationRequest)
-                    ?? throw new InvalidDataException("Missing native Ruby preparation request.");
-                RubyGroupPreparationResult result = (prepareRubyGroup ??
-                    RubyGroupPreparation.PrepareAsync)(request, CancellationToken.None)
-                    .GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(result,
-                    TransferJson.Default.RubyGroupPreparationResult));
-                return 0;
-            }
-            if (args is ["ci", "plan-ruby-group", var rubyGroupPath])
-            {
-                RubyGroupRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(rubyGroupPath), TransferJson.Default.RubyGroupRequest)
-                    ?? throw new InvalidDataException("Missing native Ruby group request.");
-                RubyGroupReadback result = (planRubyGroup ?? RubyGroupReader.ReadAsync)(request,
-                    CancellationToken.None).GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(result,
-                    TransferJson.Default.RubyGroupReadback));
-                return 0;
-            }
-            if (args is ["ci", "run-ruby-group", var rubyPlanPath, var rubyRequestPath])
-            {
-                CiPlan plan = JsonSerializer.Deserialize(File.ReadAllText(rubyPlanPath),
-                    TransferJson.Default.CiPlan)
-                    ?? throw new InvalidDataException("Missing native Ruby group plan.");
-                RubyGroupRunRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(rubyRequestPath), TransferJson.Default.RubyGroupRunRequest)
-                    ?? throw new InvalidDataException("Missing native Ruby execution request.");
-                RubyGroupRun result = (runRubyGroup ?? RubyGroupExecution.RunAsync)(plan, request,
-                    CancellationToken.None).GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(result,
-                    TransferJson.Default.RubyGroupRun));
-                return GroupExit(plan, result.Outcome);
-            }
-            if (args is ["ci", "prepare-python-group", var preparationPath])
-            {
-                PythonGroupPreparationRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(preparationPath),
-                    TransferJson.Default.PythonGroupPreparationRequest)
-                    ?? throw new InvalidDataException("Missing native Python preparation request.");
-                PythonGroupPreparationResult result = (preparePythonGroup ??
-                    PythonGroupPreparation.PrepareAsync)(request, CancellationToken.None)
-                    .GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(result,
-                    TransferJson.Default.PythonGroupPreparationResult));
-                return 0;
-            }
-            if (args is ["ci", "plan-python-group", var pythonGroupPath])
-            {
-                PythonGroupRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(pythonGroupPath), TransferJson.Default.PythonGroupRequest)
-                    ?? throw new InvalidDataException("Missing native Python group request.");
-                PythonGroupReadback result = (planPythonGroup ?? PythonGroupReader.ReadAsync)(
-                    request, CancellationToken.None).GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(result,
-                    TransferJson.Default.PythonGroupReadback));
-                return 0;
-            }
-            if (args is ["ci", "run-python-group", var pythonGroupPlanPath,
-                var pythonGroupRequestPath])
-            {
-                CiPlan plan = JsonSerializer.Deserialize(File.ReadAllText(pythonGroupPlanPath),
-                    TransferJson.Default.CiPlan) ??
-                    throw new InvalidDataException("Missing native Python group plan.");
-                PythonGroupRunRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(pythonGroupRequestPath),
-                    TransferJson.Default.PythonGroupRunRequest)
-                    ?? throw new InvalidDataException("Missing native Python group request.");
-                PythonGroupRunResult result = (runPythonGroup ?? PythonGroupExecution.RunAsync)(
-                    plan, request, CancellationToken.None).GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(result,
-                    TransferJson.Default.PythonGroupRunResult));
-                return result.Candidate == plan.Candidate &&
-                    GroupExit(plan, result.Outcome) == 0 ? 0 : 1;
-            }
-            if (args is ["ci", "run-python-package", var pythonPlanPath, var pythonRequestPath])
-            {
-                CiPlan plan = JsonSerializer.Deserialize(File.ReadAllText(pythonPlanPath),
-                    TransferJson.Default.CiPlan) ??
-                    throw new InvalidDataException("Missing native Python package plan.");
-                PythonPackageRunRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(pythonRequestPath),
-                        TransferJson.Default.PythonPackageRunRequest)
-                    ?? throw new InvalidDataException("Missing native Python package request.");
-                PythonPackageRunResult result =
-                    (runPythonPackage ?? PythonPackageExecution.RunAsync)(
-                    plan, request, CancellationToken.None).GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(result,
-                    TransferJson.Default.PythonPackageRunResult));
-                return result.Candidate == plan.Candidate &&
-                    ResultCollector.Collect(plan, result.Results).Satisfied ? 0 : 1;
-            }
-            if (args is ["ci", "run-dotnet", var dotnetPlanPath, var dotnetRequestPath])
-            {
-                CiPlan plan = JsonSerializer.Deserialize(File.ReadAllText(dotnetPlanPath),
-                    TransferJson.Default.CiPlan) ??
-                    throw new InvalidDataException("Missing native .NET execution plan.");
-                DotNetRunRequest request =
-                    JsonSerializer.Deserialize(File.ReadAllText(dotnetRequestPath),
-                    TransferJson.Default.DotNetRunRequest) ??
-                    throw new InvalidDataException("Missing native .NET execution request.");
-                DotNetGroupRunResult result = (runDotNet ?? DotNetGroupExecution.RunAsync)(plan,
-                    request, CancellationToken.None).GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(result,
-                    TransferJson.Default.DotNetGroupRunResult));
-                return result.Candidate == plan.Candidate &&
-                    GroupExit(plan, result.Outcome) == 0 ? 0 : 1;
-            }
-            if (args is ["ci", "comparison", var eventName, var eventPath, var testedCandidate])
-            {
-                using JsonDocument payload = JsonDocument.Parse(File.ReadAllText(eventPath,
-                    new System.Text.UTF8Encoding(false, true)));
-                CiComparison comparison = GitHubComparison.Resolve(eventName, payload.RootElement,
-                    testedCandidate);
-                output.WriteLine(JsonSerializer.Serialize(comparison,
-                    TransferJson.Default.CiComparison));
-                return 0;
-            }
-            if (args is ["ci", "control-inputs", var controlInputPath])
-            {
-                ControlTestInputRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(controlInputPath, new System.Text.UTF8Encoding(false, true)),
-                    TransferJson.Default.ControlTestInputRequest
-                ) ?? throw new InvalidDataException("Missing control input request.");
-                ControlTestInputResponse result = ControlTestInputs.ReadAsync(request,
-                    CancellationToken.None).GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(result,
-                    TransferJson.Default.ControlTestInputResponse));
-                return 0;
-            }
-            if (args is ["ci", "run-node", var executionPlanPath, var executionRequestPath])
-            {
-                CiPlan plan = JsonSerializer.Deserialize(
-                    File.ReadAllText(executionPlanPath), TransferJson.Default.CiPlan
-                ) ?? throw new InvalidDataException("Missing Node execution plan.");
-                NodeRunRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(executionRequestPath), TransferJson.Default.NodeRunRequest
-                ) ?? throw new InvalidDataException("Missing Node execution request.");
-                CiPlan selected = NodeExecution.SelectRuntime(plan, request.Runtime);
-                NodeRunResult result = (runNode ?? NodeExecution.RunAsync)(plan, request,
-                    CancellationToken.None).GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(result,
-                    TransferJson.Default.NodeRunResult));
-                return result.Candidate == plan.Candidate && result.Runtime == request.Runtime &&
-                    ResultCollector.Collect(selected, result.Results).Satisfied ? 0 : 1;
-            }
-            if (args is ["ci", "plan-node-group", var groupRequestPath])
-            {
-                NodeGroupRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(groupRequestPath), TransferJson.Default.NodeGroupRequest
-                ) ?? throw new InvalidDataException("Missing Node group request.");
-                NodeGroupReadback result = NodeGroupReader.ReadAsync(request,
-                    CancellationToken.None).GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(result,
-                    TransferJson.Default.NodeGroupReadback));
-                return 0;
-            }
-            if (args is ["ci", "plan-node", var nodeRequestPath])
-            {
-                NodePlanRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(nodeRequestPath), TransferJson.Default.NodePlanRequest
-                ) ?? throw new InvalidDataException("Missing Node planning request.");
-                CiPlan plan = NodePlanning.PlanAsync(request, CancellationToken.None)
-                    .GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(plan, TransferJson.Default.CiPlan));
-                return 0;
-            }
-            if (args is ["ci", "plan", var requestPath])
-            {
-                PlanRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(requestPath), TransferJson.Default.PlanRequest
-                ) ?? throw new InvalidDataException("Missing planning request.");
-                output.WriteLine(JsonSerializer.Serialize(ImpactPlanner.Plan(request),
-                    TransferJson.Default.CiPlan));
-                return 0;
-            }
-            if (args is ["ci", "result", var planPath, var resultsPath])
-            {
-                CiPlan plan = JsonSerializer.Deserialize(
-                    File.ReadAllText(planPath), TransferJson.Default.CiPlan
-                ) ?? throw new InvalidDataException("Missing CI plan.");
-                CheckResult[] results = JsonSerializer.Deserialize(
-                    File.ReadAllText(resultsPath), TransferJson.Default.CheckResultArray
-                ) ?? throw new InvalidDataException("Missing CI results.");
-                CiOutcome result = ResultCollector.Collect(plan, results);
-                output.WriteLine(JsonSerializer.Serialize(result, TransferJson.Default.CiOutcome));
-                return result.Satisfied ? 0 : 1;
-            }
+            if (CiCli.Run(args, output, error, overrides) is { } ciStatus) return ciStatus;
             error.WriteLine(
                 "Usage: WorkflowDelivery ci plan <request.json>"
-                    + " | release prepare-npm <request.json>"
-                    + " | release observe-npmjs <preparation.json> <original-directory>"
-                    + " | release describe-npmjs <preparation.json> <observation.json>"
-                    + " | release prepare-browser-store <request.json>"
+                    + " | ci caller-<control|dotnet|node|python|ruby|local-python> ..."
+                    + " | ci native-preparation-plan <root> <scope.json>"
                     + " | ci comparison <event-name> <native-event.json> <tested-candidate>"
                     + " | ci control-inputs <request.json>"
-                    + " | ci plan-node <request.json>"
-                    + " | ci plan-node-group <request.json>"
-                    + " | ci plan-python-group <request.json>"
-                    + " | ci prepare-python-group <request.json>"
-                    + " | ci prepare-ruby-group <request.json>"
-                    + " | ci plan-ruby-group <request.json>"
-                    + " | ci run-ruby-group <plan.json> <request.json>"
-                    + " | ci run-dotnet <plan.json> <request.json>"
-                    + " | ci run-python-package <plan.json> <request.json>"
-                    + " | ci run-python-group <plan.json> <request.json>"
-                    + " | ci run-node <plan.json> <request.json>"
+                    + " | ci <prepare|plan|run>-<node|python|ruby>-group ..."
+                    + " | ci run-<dotnet|node|python-package> <plan.json> <request.json>"
                     + " | ci result <plan.json> <results.json>"
+                    + " | release job-inputs <ecosystem> <operation>"
+                    + " | release <prepare|observe|describe|publish|complete>-<target> ..."
+                    + " | native-message-schemas <directory>"
             );
             return 2;
         }
         catch (PythonGroupPreparationException exception)
         {
-            RunnerLog.Write(error, exception.Message, CiCallerTransfer.MessagePrefix);
-            try
-            {
-                using var diagnostics = new FileStream(exception.DiagnosticsPath,
-                    FileMode.CreateNew, FileAccess.Write, FileShare.None);
-                JsonSerializer.Serialize(diagnostics, exception.Commands,
-                    TransferJson.Default.PythonPreparationCommandArray);
-                error.WriteLine($"Original diagnostics: {exception.DiagnosticsPath}");
-            }
-            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
-            { error.WriteLine("Original preparation diagnostics could not be retained."); }
+            exception.WriteDiagnostics(error);
             return 2;
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or
@@ -287,13 +57,6 @@ internal static class Program
             RunnerLog.Write(error, exception.Message, CiCallerTransfer.MessagePrefix);
             return 2;
         }
-    }
-    private static int GroupExit(CiPlan plan, CiOutcome outcome)
-    {
-        if (outcome.Comparison != plan.Comparison || outcome.Candidate != plan.Candidate ||
-            outcome.Scope != plan.Scope)
-            throw new InvalidDataException("Group outcome differs from its original plan.");
-        return outcome.Satisfied ? 0 : 1;
     }
 
 }

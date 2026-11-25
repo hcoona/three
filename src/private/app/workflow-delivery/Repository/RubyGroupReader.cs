@@ -14,17 +14,23 @@ internal sealed record RubyGroupReadback(CiPlan Plan, RubyRevisionInputs Basis,
 internal static class RubyGroupReader
 {
     internal static Task<RubyGroupReadback> ReadAsync(RubyGroupRequest request,
-        CancellationToken token) => ReadAsync(request, NativeProcess.ExecuteAsync, token);
+        CancellationToken token) => ReadAsync(request, token, null);
+
+    internal static Task<RubyGroupReadback> ReadAsync(RubyGroupRequest request,
+        CancellationToken token, (GitComparison Comparison, ScopeInputs Scope)? prevalidated = null)
+        => ReadAsync(request, NativeProcess.ExecuteAsync, token, prevalidated);
 
     internal static Task<RubyGroupReadback> ReadAsync(RubyGroupRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        CancellationToken token) => ReadAsync(request, (checkout, endpoint, cancellation) =>
+        CancellationToken token, (GitComparison Comparison, ScopeInputs Scope)? prevalidated = null)
+        => ReadAsync(request, (checkout, endpoint, cancellation) =>
             RubyRepositoryReader.ReadAsync(checkout, endpoint.Collection, execute, cancellation),
-            token);
+            token, prevalidated);
 
     internal static async Task<RubyGroupReadback> ReadAsync(RubyGroupRequest request,
         Func<GitMaterialization, RubyGroupEndpoint, CancellationToken,
-            Task<RubyRevisionInputs>> collect, CancellationToken token)
+            Task<RubyRevisionInputs>> collect, CancellationToken token,
+        (GitComparison Comparison, ScopeInputs Scope)? prevalidated = null)
     {
         token.ThrowIfCancellationRequested();
         RubyRepositoryRequest beforeRequest = request.Basis.Collection;
@@ -34,15 +40,16 @@ internal static class RubyGroupReader
             beforeRequest.Nbgv != afterRequest.Nbgv ||
             beforeRequest.BundlerProbeVersion != afterRequest.BundlerProbeVersion)
             throw new InvalidDataException("Ruby endpoints require one actual control runtime.");
-        GitComparison comparison = await new GitReader(request.Candidate.Checkout.Directory)
-            .CompareAsync(request.Basis.Checkout.Reference, request.Candidate.Checkout.Reference,
-                token);
+        GitComparison comparison = prevalidated?.Comparison ??
+            await new GitReader(request.Candidate.Checkout.Directory).CompareAsync(
+                request.Basis.Checkout.Reference, request.Candidate.Checkout.Reference, token);
         GitMaterialization basis = await GitMaterialization.BindAsync(
             request.Basis.Checkout.Directory, comparison.Basis, token);
         GitMaterialization candidate = await GitMaterialization.BindAsync(
             request.Candidate.Checkout.Directory, comparison.Candidate, token);
-        ScopeInputs scope = ScopeInputs.Read(await File.ReadAllTextAsync(request.ScopePath, token),
-            comparison, request.Full);
+        ScopeInputs scope = prevalidated?.Scope ??
+            ScopeInputs.Read(await File.ReadAllTextAsync(request.ScopePath, token),
+                comparison, request.Full);
         RubyRevisionInputs before = await collect(basis, request.Basis, token);
         token.ThrowIfCancellationRequested();
         RubyRevisionInputs after = await collect(candidate, request.Candidate, token);

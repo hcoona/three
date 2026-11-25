@@ -30,8 +30,8 @@ internal sealed class PythonMetadataReader
         Absolute(root);
         Absolute(interpreter);
         NativeCommandResult result = await execute(new(uv, root,
-            ["workspace", "metadata", "--frozen", "--python", interpreter], 30, environment),
-            token);
+            ["workspace", "metadata", "--frozen", "--python", interpreter], 30, environment,
+            InheritEnvironment: false), token);
         if (!result.Succeeded || result.Error is not null)
             throw new InvalidDataException("Python metadata extraction failed: " +
                 NativeDiagnostic.Describe(result));

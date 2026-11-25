@@ -16,14 +16,16 @@ internal static class PythonCiCaller
     internal const string Scope = "python/native-paired-facts-v1";
 
     internal static async Task<PythonCiCallerContext> MaterializeAsync(string root,
-        string scopePath, string transfer, string directory, CancellationToken token)
+        string scopePath, string transfer, string directory, CancellationToken token,
+        (GitComparison Comparison, bool Full)? prevalidated = null)
     {
         string application = CiCallerTransfer.Application(transfer);
         string archive = Path.Combine(transfer, "python-control.zip");
         if (!File.Exists(archive)) throw new
             InvalidDataException("Candidate Python helper archive is missing.");
-        CiCallerEndpoints endpoints = await CiCallerTransfer.MaterializeAsync(root, scopePath,
-            directory, false, token);
+        CiCallerEndpoints endpoints = prevalidated is { } validated
+            ? await CiCallerTransfer.MaterializeAsync(root, directory, false, validated, token)
+            : await CiCallerTransfer.MaterializeAsync(root, scopePath, directory, false, token);
         string sources = CiCallerTransfer.Fresh(Path.Combine(directory, "control-source"));
         ZipFile.ExtractToDirectory(archive, sources);
         var context = new PythonCiCallerContext(endpoints.Basis, endpoints.Candidate,
@@ -40,7 +42,8 @@ internal static class PythonCiCaller
     }
 
     internal static async Task<PythonGroupReadback> PlanAsync(string directory, string scopePath,
-        PythonQueryTools tools, CancellationToken token)
+        PythonQueryTools tools, CancellationToken token,
+        (GitComparison Comparison, ScopeInputs Scope)? prevalidated = null)
     {
         PythonCiCallerContext context = Context(directory);
         GitMaterialization candidate = await GitMaterialization.BindAsync(
@@ -62,7 +65,7 @@ internal static class PythonCiCaller
         CiCallerTransfer.Write(Path.Combine(directory, "group-request.json"), preparation.Request,
             TransferJson.Default.PythonGroupRequest);
         PythonGroupReadback readback = await PythonGroupReader.ReadAsync(preparation.Request,
-            token);
+            token, prevalidated);
         CiCallerTransfer.Plan(readback.Plan, context.Basis.Reference,
             context.Candidate.Reference, Scope);
         CiCallerTransfer.Write(Path.Combine(directory, "readback.json"),

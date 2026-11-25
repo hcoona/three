@@ -44,8 +44,11 @@ internal static class LocalPythonCiCaller
         };
         File.WriteAllText(scopePath, scope.ToJsonString() + "\n");
         string state = Path.Combine(directory, "group");
-        await PythonCiCaller.MaterializeAsync(root, scopePath, transfer, state, token);
-        await PythonCiCaller.PlanAsync(state, scopePath, tools, token);
+        var comparison = new GitComparison(head, head, []);
+        await PythonCiCaller.MaterializeAsync(root, scopePath, transfer, state, token,
+            (comparison, Full: true));
+        await PythonCiCaller.PlanAsync(state, scopePath, tools, token,
+            (comparison, new(new(head.Commit, head.Commit, true), [], [], [])));
         CiOutcome outcome = await PythonCiCaller.ExecuteAsync(state,
             pwsh == "-" ? null : pwsh, token, diagnostics: diagnostics);
         output.WriteLine(JsonSerializer.Serialize(outcome, TransferJson.Default.CiOutcome));

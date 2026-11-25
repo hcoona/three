@@ -110,7 +110,7 @@ internal static class NodeFactsAssembler
         }
 
         var membership = new Dictionary<string, string>(StringComparer.Ordinal);
-        var shared = new List<SharedInput>(NodeInputConsumers.Map(inputs.Revision, directories,
+        var shared = new List<SharedInput>(MapInputs(inputs.Revision, directories,
             inputs.Versions, inputs.Quality, inputs.Graph.LocalInputs));
         foreach (SharedInput input in inputs.OperationInputs)
             if (entries.ContainsKey(input.Path))
@@ -141,9 +141,8 @@ internal static class NodeFactsAssembler
                 string parent = NodePackageChecks.Parent(unit.SourcePath);
                 string entry = build.EntryPoint == "." ? parent :
                     parent.Length == 0 ? build.EntryPoint : parent + "/" + build.EntryPoint;
-                string? source = directories.Where(directory => entry == directory ||
-                    entry.StartsWith(directory + "/", StringComparison.Ordinal))
-                    .OrderByDescending(directory => directory.Length).FirstOrDefault();
+                string? source = native.ContainsKey(entry) && entry != "." ? entry :
+                    GitPathOwnership.NearestDirectory(entry, directories);
                 string[] owners = native.Values.Where(project => project.Directory != "." &&
                     project.PublishDirectory is { } output &&
                     (entry == output || entry.StartsWith(output + "/", StringComparison.Ordinal)))
@@ -199,5 +198,111 @@ internal static class NodeFactsAssembler
                 throw new InvalidDataException(
                     $"Required Node input is not a committed file: {path}");
         }
+    }
+
+    private static SharedInput[] MapInputs(GitRevision revision, string[] directories,
+        NbgvInputs[] versions,
+        IReadOnlyDictionary<string, QualitySelection?> quality, PnpmLocalInput[] localInputs)
+    {
+        var entries = revision.Entries.ToDictionary(entry => entry.Path, StringComparer.Ordinal);
+        var consumers = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string directory in directories)
+        {
+            ValidatePath(directory);
+            if (!consumers.Add(directory))
+                throw new InvalidDataException(
+                    "Duplicate native input consumer.");
+        }
+        if (quality.Count != consumers.Count || quality.Keys.Any(key => !consumers.Contains(key)))
+            throw new InvalidDataException(
+                "Quality input consumers do not match the source projects.");
+
+        var inputs = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var versionConsumers = new HashSet<string>(StringComparer.Ordinal);
+        foreach (NbgvInputs project in versions)
+        {
+            if (project.Commit != revision.Commit || !consumers.Contains(project.Directory) ||
+                !versionConsumers.Add(project.Directory))
+                throw new InvalidDataException("Unresolved native version consumer or revision.");
+            foreach (string path in project.Paths)
+            {
+                if (!entries.TryGetValue(path, out GitEntry? entry))
+                    throw new InvalidDataException("A native version input is not committed.");
+                RequireFile(entry);
+                Add(path, project.Directory);
+            }
+            foreach (string path in project.ConfigurationCandidates)
+                Add(path, project.Directory);
+        }
+        foreach (string consumer in directories)
+        {
+            QualitySelection? selection = quality[consumer];
+            if (selection is not null && !entries.ContainsKey(selection.SourcePath))
+                throw new InvalidDataException(
+                    "The effective quality declaration is not committed.");
+            string directory = consumer;
+            while (true)
+            {
+                string path = (directory.Length == 0 ? "" : directory + "/") +
+                    "workflow-delivery.quality.yml";
+                if (entries.TryGetValue(path, out GitEntry? entry))
+                    RequireFile(entry);
+                Add(path, consumer);
+                if (selection?.SourcePath == path)
+                    break;
+                if (directory.Length == 0)
+                {
+                    if (selection is not null)
+                        throw new InvalidDataException(
+                            "The effective quality declaration is outside the ancestor search.");
+                    break;
+                }
+                int separator = directory.LastIndexOf('/');
+                directory = separator < 0 ? "" : directory[..separator];
+            }
+        }
+
+        foreach (PnpmLocalInput input in localInputs)
+        {
+            ValidatePath(input.Path);
+            if (input.Consumers.Length == 0 || input.Consumers.Any(id => !consumers.Contains(id)))
+                throw new InvalidDataException("Unresolved local input consumer.");
+            GitEntry[] files = input.IsDirectory
+                ? revision.Entries.Where(entry => entry.Path.StartsWith(input.Path + "/",
+                    StringComparison.Ordinal)).ToArray()
+                : entries.TryGetValue(input.Path, out GitEntry? localFile) ? [localFile] : [];
+            if (files.Length == 0)
+                throw new InvalidDataException("A required local input has no committed source.");
+            foreach (GitEntry file in files)
+            {
+                RequireFile(file);
+                foreach (string consumer in input.Consumers)
+                    Add(file.Path, consumer);
+            }
+        }
+
+        return GitPathOwnership.GroupSharedInputs(inputs);
+
+        void Add(string path, string consumer)
+        {
+            ValidatePath(path);
+            if (!inputs.TryGetValue(path, out HashSet<string>? owners))
+                inputs.Add(path, owners = new(StringComparer.Ordinal));
+            owners.Add(consumer);
+        }
+    }
+
+    private static void ValidatePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path.Contains('\\') || path.Contains(':') ||
+            path.Split('/').Any(part => part is "" or "." or ".."))
+            throw new InvalidDataException("A required input coordinate is not representable.");
+    }
+
+    private static void RequireFile(GitEntry entry)
+    {
+        if (entry.ObjectType != "blob" || entry.Mode is not ("100644" or "100755"))
+            throw new InvalidDataException(
+                "Required input coverage needs a regular Git file.");
     }
 }

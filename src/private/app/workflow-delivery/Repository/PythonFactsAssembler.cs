@@ -42,6 +42,7 @@ internal static class PythonFactsAssembler
         var owners = new List<ProjectFacts>();
         var quality = new List<PythonQualityBinding>();
         var inputs = new List<PythonInputBinding>(endpoint.Inputs);
+        string[] directories = endpoint.Projects.Select(project => project.Directory).ToArray();
         foreach ((PythonPytestTarget target, CheckSpec check) in targets.Targets.Zip(checks))
         {
             string id = "pytest:" + target.Target;
@@ -64,7 +65,8 @@ internal static class PythonFactsAssembler
             }
             // Resolve over all native members, including nested input-only producers.
             string[] paths = endpoint.Revision.Entries.Select(entry => entry.Path)
-                .Where(path => package.Directory != "." && Nearest(path) == package.Directory)
+                .Where(path => package.Directory != "." &&
+                    GitPathOwnership.NearestDirectory(path, directories) == package.Directory)
                 .Concat(package.OwnedPaths ?? []).Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal).ToArray();
             string[] committed = Present(endpoint, paths);
@@ -84,11 +86,6 @@ internal static class PythonFactsAssembler
         ImpactPlanner.Plan(new(facts, facts, [], false));
         return (facts, new(endpoint.Revision, endpoint.Projects, quality.ToArray(),
             inputs.ToArray()));
-
-        string? Nearest(string path) => endpoint.Projects.Select(project => project.Directory)
-            .Where(directory => directory != "." &&
-                path.StartsWith(directory + "/", StringComparison.Ordinal))
-            .OrderByDescending(directory => directory.Length).FirstOrDefault();
     }
 
     private static string[] Present(PythonFactsEndpoint endpoint, string[] paths)

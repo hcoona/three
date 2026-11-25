@@ -1,3 +1,5 @@
+using System.Text.Json;
+using WorkflowDelivery.CI.Callers;
 using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Repository;
@@ -20,6 +22,25 @@ internal sealed class PythonGroupPreparationException(string scratch,
 {
     internal string DiagnosticsPath { get; } = Path.Combine(scratch, "preparation-failure.json");
     internal PythonPreparationCommand[] Commands { get; } = commands;
+
+    internal void WriteDiagnostics(TextWriter error)
+    {
+        RunnerLog.Write(error, Message, CiCallerTransfer.MessagePrefix);
+        try
+        {
+            using var diagnostics = new FileStream(DiagnosticsPath,
+                FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            JsonSerializer.Serialize(diagnostics, Commands,
+                TransferJson.Default.PythonPreparationCommandArray);
+            RunnerLog.Write(error, $"Original diagnostics: {DiagnosticsPath}",
+                CiCallerTransfer.MessagePrefix);
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            RunnerLog.Write(error, "Original preparation diagnostics could not be retained.",
+                CiCallerTransfer.MessagePrefix);
+        }
+    }
 }
 
 // Prepare native tools only. The existing group reader selects work and the executor runs it.

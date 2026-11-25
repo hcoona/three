@@ -1,7 +1,13 @@
 using System.Collections.Concurrent;
+using System.Reflection;
+using System.Runtime.ExceptionServices;
+using System.Text.Json;
 using Microsoft.Build.Evaluation;
 using Microsoft.Build.Execution;
+using Microsoft.Build.Framework;
+using Microsoft.Build.Globbing;
 using Microsoft.Build.Graph;
+using NuGet.Versioning;
 
 namespace WorkflowDelivery.Repository;
 
@@ -79,7 +85,7 @@ internal static class DotNetGraph
             node => Identity(node.ProjectInstance));
         var ownership = new DotNetOwnership(root, retained.Select(node =>
             node.ProjectInstance), request.CommittedPaths);
-        var producers = new DotNetRepositoryTargets(root, request.CommittedPaths);
+        var validateTargets = DotNetRepositoryTargets.Bind(root, request.CommittedPaths);
         var restored = retained.ToDictionary(node => node, RestoreInputs);
         foreach (ProjectGraphNode helper in helpers)
             foreach (ProjectGraphNode consumer in helper.ReferencingProjects)
@@ -91,7 +97,7 @@ internal static class DotNetGraph
                 {
                     throw Unavailable(identities[consumer], "NbgvCachingHelper", error.Message);
                 }
-                producers.Validate(helper.ProjectInstance, reason => Unavailable(
+                validateTargets(helper.ProjectInstance, reason => Unavailable(
                     identities[consumer], "RepositoryTarget", reason));
             }
         Func<string[]>[] owned = ownership.Read(retained.Select(node =>
@@ -99,7 +105,7 @@ internal static class DotNetGraph
         DotNetGraphNode[] nodes = retained.Select((node, index) =>
         {
             ProjectInstance project = node.ProjectInstance;
-            producers.Validate(project, reason => Unavailable(identities[node],
+            validateTargets(project, reason => Unavailable(identities[node],
                 "RepositoryTarget", reason));
             string outer = project.GetPropertyValue("IsCrossTargetingBuild");
             if (outer != "" && !bool.TryParse(outer, out _))
@@ -282,4 +288,270 @@ internal static class DotNetGraph
             throw new InvalidDataException("Native graph coordinates must be absolute.");
         return Path.GetFullPath(path);
     }
+
+    // These concrete repository operations are adapted; SDK/package targets remain native.
+    private static class DotNetRepositoryTargets
+    {
+        private static readonly StringComparer PhysicalPaths = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        private static readonly (string Origin, string Name)[] Supported =
+        [
+            ("src/public/lib/CircularList/CircularList.csproj", "SetPackageReleaseNotes"),
+            ("src/public/lib/Hjg.Pngcs/Hjg.Pngcs.csproj", "SetPackageReleaseNotes"),
+            ("src/public/lib/Memoization/Memoization.csproj", "SetPackageReleaseNotes"),
+            ("src/public/lib/MicrosoftExtensions.Logging.MSTest/" +
+                "MicrosoftExtensions.Logging.MSTest.csproj", "SetPackageReleaseNotes"),
+            ("src/public/lib/MicrosoftExtensions.Logging.Xunit/" +
+                "MicrosoftExtensions.Logging.Xunit.csproj", "SetPackageReleaseNotes"),
+            ("src/public/lib/MicrosoftExtensions.Options.DedupChangeExtensions/" +
+                "MicrosoftExtensions.Options.DedupChangeExtensions.csproj",
+                "SetPackageReleaseNotes"),
+            ("src/public/lib/PhiFailureDetector/PhiFailureDetector.csproj",
+                "SetPackageReleaseNotes"),
+            ("src/public/lib/WebHdfs.Extensions.FileProviders/" +
+                "WebHdfs.Extensions.FileProviders.csproj", "SetPackageReleaseNotes"),
+            ("src/private/app/workflow-delivery/WorkflowDelivery.csproj", "ReferenceOfficialNbgv"),
+            ("tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj",
+                "ReferenceOfficialNbgv"),
+            ("tests/public/lib/WebHdfs.Extensions.FileProviders.UnitTest/" +
+                "WebHdfs.Extensions.FileProviders.UnitTest.csproj", "PreBuild"),
+            ("dirs.proj", "RestoreWindowsOnlyProjectsOnNonWindows"),
+        ];
+
+        internal static Action<ProjectInstance, Func<string, InvalidDataException>> Bind(
+            string root, string[] committedPaths)
+        {
+            var committed = new HashSet<string>(committedPaths.Select(Path.GetFullPath),
+                PhysicalPaths);
+            var supported = Supported.Select(pair => (Origin: Path.GetFullPath(Path.Combine(root,
+                pair.Origin.Replace('/', Path.DirectorySeparatorChar))), pair.Name)).ToArray();
+            return Validate;
+
+            void Validate(ProjectInstance project, Func<string, InvalidDataException> unavailable)
+            {
+                foreach (ProjectTargetInstance target in project.Targets.Values)
+                {
+                    string origin = target.Location.File;
+                    if (!Path.IsPathFullyQualified(origin))
+                        throw unavailable(
+                            $"Target {target.Name} has no absolute native definition origin.");
+                    origin = Path.GetFullPath(origin);
+                    // Being under the endpoint (including obj) does not imply ownership.
+                    if (!committed.Contains(origin)) continue;
+                    if (!supported.Any(pair => PhysicalPaths.Equals(pair.Origin, origin) &&
+                        StringComparer.OrdinalIgnoreCase.Equals(pair.Name, target.Name)))
+                        throw unavailable($"Unsupported effective repository producer " +
+                            $"{target.Name}, origin {origin}; a reviewed operation adapter " +
+                            "is required.");
+                }
+            }
+        }
+    }
+
+    // A finite projection of NBGV's native tool dependency, not a helper-node framework.
+    private static class DotNetNbgvCaching
+    {
+        private const string Package = "Nerdbank.GitVersioning";
+        private static readonly StringComparer Paths = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
+        internal static HashSet<ProjectGraphNode> Helpers(ProjectGraph graph) =>
+            graph.ProjectNodes.Where(helper => helper.ReferencingProjects.Any(consumer =>
+                References(consumer, helper).Any(reference =>
+                    reference.GetMetadataValue("NBGV_InnerProject") == "true"))).ToHashSet();
+
+        internal static void Validate(ProjectGraphNode helper, ProjectGraphNode consumer,
+            DotNetRestoreInputs[] restore)
+        {
+            ProjectItemInstance[] references = References(consumer, helper);
+            if (helper.ProjectReferences.Count != 0 || references.Length == 0 ||
+                references.Any(reference => reference.GetMetadataValue("NBGV_InnerProject") !=
+                    "true") || consumer.ProjectInstance.GetPropertyValue("NBGV_CacheMode") !=
+                    "MSBuildTargetCaching")
+                throw new InvalidDataException("Unsupported native NBGV helper relation.");
+            string path = Path.GetFullPath(helper.ProjectInstance.FullPath);
+            DotNetInputProvider[] suppliers = restore.SelectMany(value => value.Packages)
+                .Where(package => package.Identity.Equals(Package,
+                        StringComparison.OrdinalIgnoreCase) && Paths.Equals(path,
+                        Path.GetFullPath(Path.Combine(package.Root, "build",
+                            "PrivateP2PCaching.proj"))))
+                .ToArray();
+            if (suppliers.Length == 0)
+                throw new InvalidDataException(
+                    "Native NBGV helper is not supplied by the consumer's restored package.");
+            string declared = Declared(consumer.ProjectInstance);
+            // The consumer's own evaluated declaration is the pin; the restore must supply it.
+            if (!VersionRange.TryParse(declared, out VersionRange? range) ||
+                range.MinVersion is null || !range.IsMinInclusive ||
+                suppliers.Any(package => !NuGetVersion.TryParse(package.Version,
+                    out NuGetVersion? restored) || restored != range.MinVersion))
+                throw new InvalidDataException(
+                    "Native NBGV helper package differs from the consumer's declared pin: " +
+                    "declared " + declared + ", restored " +
+                    string.Join(", ", suppliers.Select(package => package.Version).Distinct()) +
+                    ".");
+        }
+
+        // NuGet's central management projects GlobalPackageReference into PackageVersion items;
+        // an explicit PackageReference version or VersionOverride takes precedence.
+        private static string Declared(ProjectInstance consumer)
+        {
+            string[] Values(string type, string metadata) => consumer.GetItems(type)
+                .Where(item => item.EvaluatedInclude.Equals(Package,
+                    StringComparison.OrdinalIgnoreCase))
+                .Select(item => item.GetMetadataValue(metadata))
+                .Where(value => value.Length != 0).Distinct(StringComparer.Ordinal).ToArray();
+            string[] declared = Values("PackageReference", "VersionOverride");
+            if (declared.Length == 0) declared = Values("PackageReference", "Version");
+            if (declared.Length == 0) declared = Values("PackageVersion", "Version");
+            return declared.Length == 1 ? declared[0] : throw new InvalidDataException(
+                "Native NBGV helper consumer declares " + (declared.Length == 0 ? "no" :
+                    "ambiguous (" + string.Join(", ", declared) + ")") +
+                " Nerdbank.GitVersioning version.");
+        }
+
+        private static ProjectItemInstance[] References(ProjectGraphNode consumer,
+            ProjectGraphNode helper) => consumer.ProjectInstance.GetItems("ProjectReference")
+            .Where(reference => Paths.Equals(
+                Path.GetFullPath(reference.GetMetadataValue("FullPath")),
+                Path.GetFullPath(helper.ProjectInstance.FullPath))).ToArray();
+    }
+}
+
+// The existing application supplies this entry; ordinary MSBuild loads its dependencies.
+public sealed class DotNetGraphTask : ITask
+{
+    public IBuildEngine BuildEngine { get; set; } = null!;
+    public ITaskHost HostObject { get; set; } = null!;
+
+    [Required]
+    public string RequestFile { get; set; } = "";
+
+    public bool Execute()
+    {
+        DotNetGraphRequest request = JsonSerializer.Deserialize(File.ReadAllText(RequestFile),
+            TransferJson.Default.DotNetGraphRequest)
+            ?? throw new InvalidDataException("Missing native graph request.");
+        DotNetGraphResponse response = DotNetGraph.Read(request);
+        using var output = new FileStream(request.Destination, FileMode.CreateNew,
+            FileAccess.Write, FileShare.None);
+        JsonSerializer.Serialize(output, response, TransferJson.Default.DotNetGraphResponse);
+        using var diagnostics = new StreamWriter(new FileStream(
+            request.Destination + ".host.log", FileMode.CreateNew, FileAccess.Write,
+            FileShare.None));
+        diagnostics.WriteLine($"Revision: {response.Revision}");
+        diagnostics.WriteLine($"Root: {response.Root}");
+        diagnostics.WriteLine($"Entry: {response.Entry}");
+        foreach (Assembly assembly in new[] { typeof(ProjectGraph).Assembly,
+            typeof(ITask).Assembly, typeof(Microsoft.Build.Utilities.Task).Assembly })
+            diagnostics.WriteLine($"Assembly: {assembly.FullName}; FileVersion: " +
+                $"{assembly.GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version}; " +
+                $"Location: {assembly.Location}");
+        return true;
+    }
+}
+
+// Git supplies committed entries; the selected MSBuild supplies region exclusions.
+internal sealed class DotNetOwnership
+{
+    private static readonly StringComparison PathComparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+    private readonly string[] _regions;
+    private readonly string[] _paths;
+    // Request-local: graph nodes often share a directory and the same exclusion specs.
+    private readonly ConcurrentDictionary<(string Directory, string Spec), MSBuildGlob> _globs =
+        new();
+
+    internal DotNetOwnership(string root, IEnumerable<ProjectInstance> projects,
+        string[] committedPaths)
+    {
+        _regions = projects.Where(IsManagedProject).Select(project =>
+                Path.GetDirectoryName(project.FullPath)!)
+            .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase :
+                StringComparer.Ordinal).OrderByDescending(path => path.Length).ToArray();
+        _paths = committedPaths.Select(path =>
+        {
+            if (!Path.IsPathFullyQualified(path))
+                throw new InvalidDataException(
+                    "Committed ownership coordinates must be absolute.");
+            string full = Path.GetFullPath(path);
+            if (!Inside(root, full))
+                throw new InvalidDataException(
+                    "Committed ownership entry is outside its endpoint.");
+            return full;
+        }).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+    }
+
+    // Returns one deferred result per project, in order. Invoking a result returns its paths or
+    // rethrows its failure, so callers keep the serial failure order.
+    internal Func<string[]>[] Read(IReadOnlyList<ProjectInstance> projects)
+    {
+        // ProjectInstance documents no concurrent-read contract; read its inputs serially.
+        (string? Directory, (string Name, string Spec)[] Specs)[] requests = projects.Select(
+            project => IsManagedProject(project) ? (Path.GetDirectoryName(project.FullPath)!,
+                [.. Specs(project, "DefaultItemExcludes"),
+                    .. Specs(project, "DefaultExcludesInProjectFolder")]) :
+                ((string?)null, Array.Empty<(string, string)>())).ToArray();
+        var results = new Func<string[]>[requests.Length];
+        // MSBuild parses and matches these globs concurrently during its own evaluation.
+        Parallel.For(0, requests.Length, index =>
+        {
+            try
+            {
+                string[] owned = Read(requests[index].Directory, requests[index].Specs);
+                results[index] = () => owned;
+            }
+            catch (Exception error)
+            {
+                var failure = ExceptionDispatchInfo.Capture(error);
+                results[index] = () =>
+                {
+                    failure.Throw();
+                    return [];
+                };
+            }
+        });
+        return results;
+
+        static IEnumerable<(string, string)> Specs(ProjectInstance project, string name)
+        {
+            ProjectPropertyInstance? property = project.GetProperty(name);
+            if (property is null) return [];
+            // Split while escaped so a literal semicolon cannot become a list separator.
+            return ProjectInstance.GetPropertyValueEscaped(property).Split(';',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(spec => (name, spec));
+        }
+    }
+
+    private string[] Read(string? directory, (string Name, string Spec)[] specs)
+    {
+        if (directory is null) return [];
+        MSBuildGlob[] excludes = specs.Select(entry =>
+        {
+            if (entry.Spec.Contains("%2a", StringComparison.OrdinalIgnoreCase) ||
+                entry.Spec.Contains("%3f", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Unsupported escaped native ownership wildcard.");
+            MSBuildGlob glob = _globs.GetOrAdd((directory, entry.Spec), key =>
+                MSBuildGlob.Parse(key.Directory, ProjectCollection.Unescape(key.Spec)));
+            if (!glob.IsLegal)
+                throw new InvalidDataException("Illegal native ownership filespec: " +
+                    entry.Name);
+            return glob;
+        }).ToArray();
+        return _paths.Where(path =>
+            string.Equals(_regions.FirstOrDefault(region => Inside(region, path)), directory,
+                PathComparison) && !excludes.Any(glob => glob.IsMatch(path))).ToArray();
+    }
+
+    internal static bool IsManagedProject(ProjectInstance project)
+    {
+        string extension = Path.GetExtension(project.FullPath);
+        return extension.Equals(".csproj", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".fsproj", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".vbproj", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool Inside(string directory, string path) => path.StartsWith(
+        Path.TrimEndingDirectorySeparator(directory) + Path.DirectorySeparatorChar, PathComparison);
 }

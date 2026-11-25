@@ -54,20 +54,21 @@ internal static class DotNetGroupReader
         if (scope.Comparison != new CiComparison(comparison.Basis.Commit,
                 comparison.Candidate.Commit, request.Full))
             throw new InvalidDataException("Scope has a different native comparison.");
+        bool sameEndpoint = comparison.Basis.Commit == comparison.Candidate.Commit &&
+            string.Equals(basis.Root, candidate.Root, OwnedPath.Comparison);
         DotNetRevisionInputs before = await new DotNetRepositoryReader(basis,
             request.BasisFiles).ReadAsync(token);
-        DotNetRevisionInputs after = comparison.Basis.Commit == comparison.Candidate.Commit &&
-            basis.Root == candidate.Root && request.BasisFiles == request.CandidateFiles ? before :
+        DotNetRevisionInputs after = sameEndpoint && request.BasisFiles == request.CandidateFiles
+            ? before :
             await new DotNetRepositoryReader(candidate, request.CandidateFiles).ReadAsync(token);
         ControlInputFacts? controlBasis = ControlInputs.Read(before, false);
         ControlInputFacts controlCandidate = ControlInputs.Read(after, true) ??
             throw new InvalidDataException("Missing candidate control inputs.");
-        NodeRepositoryReader basisNode = await NodeReaderAsync(basis, token);
-        (GroupEndpointFacts first, _) = Facts(before, await basisNode.ReadAsync(token),
-            controlBasis, false);
-        NodeRepositoryReader candidateNode = await NodeReaderAsync(candidate, token);
-        (GroupEndpointFacts second, after) = Facts(after, await candidateNode.ReadAsync(token),
-            controlCandidate, true);
+        NodeRevisionInputs basisNode = await (await NodeReaderAsync(basis, token)).ReadAsync(token);
+        (GroupEndpointFacts first, _) = Facts(before, basisNode, controlBasis, false);
+        NodeRevisionInputs candidateNode = sameEndpoint ? basisNode :
+            await (await NodeReaderAsync(candidate, token)).ReadAsync(token);
+        (GroupEndpointFacts second, after) = Facts(after, candidateNode, controlCandidate, true);
         ScopeInputs joined = Join(scope, comparison, first, second);
         PlanRequest bound = joined.Bind(first.DotNet, second.DotNet);
         CiPlan plan = await DotNetFactsAssembler.CompleteAsync(
@@ -167,30 +168,19 @@ internal static class DotNetGroupReader
         string[] consumers = inputs.Nodes.Where(node => node.Project != "dirs.proj")
             .Select(node => node.Project).Distinct(StringComparer.Ordinal).ToArray();
         var shared = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        foreach (SharedInput input in inputs.SelectionInputs) Add(input.Path, input.Consumers);
-        foreach (ControlSourceInput input in control?.Sources ?? []) Add(input.Path, consumers);
+        foreach (SharedInput input in inputs.SelectionInputs)
+            GitPathOwnership.AddSharedInput(shared, input.Path, input.Consumers);
+        foreach (ControlSourceInput input in control?.Sources ?? [])
+            GitPathOwnership.AddSharedInput(shared, input.Path, consumers);
         foreach (string path in CallerSources)
         {
             GitEntry? entry = inputs.Revision.Entries.SingleOrDefault(entry => entry.Path == path);
             if (entry is not null && (entry.ObjectType != "blob" ||
                 entry.Mode is not ("100644" or "100755")))
                 throw new InvalidDataException("Unsupported .NET group caller input: " + path);
-            Add(path, consumers);
+            GitPathOwnership.AddSharedInput(shared, path, consumers);
         }
-        return inputs with
-        {
-            SelectionInputs = shared.OrderBy(pair => pair.Key,
-            StringComparer.Ordinal).Select(pair => new SharedInput(pair.Key,
-                pair.Value.Order(StringComparer.Ordinal).ToArray())).ToArray()
-        };
-
-        void Add(string path, string[] owners)
-        {
-            ImpactPlanner.ValidatePath(path);
-            if (!shared.TryGetValue(path, out HashSet<string>? values))
-                shared.Add(path, values = new(StringComparer.Ordinal));
-            values.UnionWith(owners);
-        }
+        return inputs with { SelectionInputs = GitPathOwnership.GroupSharedInputs(shared) };
     }
 
 }
