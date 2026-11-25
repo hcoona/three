@@ -10,86 +10,68 @@ namespace WorkflowDelivery.Tests.CI;
 public sealed class NodePackageArchiveTests(TestContext context)
 {
     [TestMethod]
-    [DataRow("missing-manifest")]
-    [DataRow("missing-payload")]
-    [DataRow("duplicate-manifest")]
-    [DataRow("duplicate-payload")]
-    [DataRow("linked-manifest")]
-    [DataRow("directory-payload")]
-    [DataRow("empty-manifest")]
-    [DataRow("empty-payload")]
-    [DataRow("binding-gyp")]
-    [DataRow("hooks")]
-    [DataRow("hook-child")]
-    public async Task ReadRejectsMissingAmbiguousOrUnsupportedRequiredMember(string defect)
+    [DataRow("package/package.json")]
+    [DataRow("package/dist/index.js")]
+    public async Task ReadRequiresExactlyOneNonemptyRegularEntryPerRequiredMember(string path)
+    {
+        ArchiveMember[] required = PackageArchiveFixture.Required();
+        ArchiveMember member = required.Single(item => item.Name == path);
+        ArchiveMember other = required.Single(item => item.Name != path);
+
+        await AssertRejectedAsync("lacks its required manifest/ESM payload", [other]);
+        await AssertRejectedAsync(path, [.. required, member]);
+        await AssertRejectedAsync(path, [other, member with { Bytes = [] }]);
+    }
+
+    [TestMethod]
+    [DataRow("package/package.json", TarEntryType.SymbolicLink)]
+    [DataRow("package/dist/index.js", TarEntryType.Directory)]
+    public Task ReadRejectsNonFileRequiredMembers(string path, TarEntryType kind) =>
+        AssertRejectedAsync(path, PackageArchiveFixture.Required()
+            .Select(member => member.Name == path ? member with { Kind = kind } : member));
+
+    [TestMethod]
+    [DataRow("package/binding.gyp", TarEntryType.RegularFile)]
+    [DataRow("package/.hooks", TarEntryType.Directory)]
+    [DataRow("package/.hooks/install", TarEntryType.RegularFile)]
+    public Task ReadRejectsNativeBuildMembers(string path, TarEntryType kind) =>
+        AssertRejectedAsync("Unsupported npm native-build member",
+            [.. PackageArchiveFixture.Required(), new(path, [1], kind)]);
+
+    [TestMethod]
+    public Task ReadRejectsOversizedManifest()
+    {
+        ArchiveMember[] required = PackageArchiveFixture.Required();
+        required[0] = required[0] with { Bytes = new byte[NodePackageArchive.ManifestLimit + 1] };
+        return AssertRejectedAsync("unsupported npm member: package/package.json", required);
+    }
+
+    [TestMethod]
+    public Task ReadBoundsExpandedMember() =>
+        AssertRejectedAsync("expanded size bound",
+            [.. PackageArchiveFixture.Required(),
+                new("package/expanded.bin", new byte[NodePackageArchive.ExpandedLimit])]);
+
+    private async Task AssertRejectedAsync(string diagnostic, IEnumerable<ArchiveMember> members)
     {
         using var files = new ArchiveFiles();
-        var members = PackageArchiveFixture.Required().ToList();
-        switch (defect)
-        {
-            case "missing-manifest": members.RemoveAt(0); break;
-            case "missing-payload": members.RemoveAt(1); break;
-            case "duplicate-manifest": members.Add(members[0]); break;
-            case "duplicate-payload": members.Add(members[1]); break;
-            case "linked-manifest":
-                members[0] = members[0] with
-                { Kind = TarEntryType.SymbolicLink }; break;
-            case "directory-payload":
-                members[1] = members[1] with
-                { Kind = TarEntryType.Directory }; break;
-            case "empty-manifest": members[0] = members[0] with { Bytes = [] }; break;
-            case "empty-payload": members[1] = members[1] with { Bytes = [] }; break;
-            case "binding-gyp": members.Add(new("package/binding.gyp", [1])); break;
-            case "hooks": members.Add(new("package/.hooks", [], TarEntryType.Directory)); break;
-            case "hook-child": members.Add(new("package/.hooks/install", [1])); break;
-        }
         PackageArchiveFixture.Write(files.Archive, members);
 
-        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() =>
-            NodePackageArchive.ReadAsync(files.Archive, files.Metadata, context.CancellationToken));
-
-        Assert.IsNotEmpty(error.Message);
+        InvalidDataException error = await RejectAsync(files);
+        Assert.Contains(diagnostic, error.Message);
         Assert.IsFalse(File.Exists(Path.Combine(files.Metadata, "dist", "index.js")));
     }
 
     [TestMethod]
-    [DataRow("manifest", "member")]
-    [DataRow("expanded", "expanded")]
-    public async Task ReadEnforcesArchiveBounds(string bound, string diagnostic)
-    {
-        using var files = new ArchiveFiles();
-        ArchiveMember[] required = PackageArchiveFixture.Required();
-        IEnumerable<ArchiveMember> members = required;
-        switch (bound)
-        {
-            case "manifest":
-                required[0] = required[0] with
-                { Bytes = new byte[NodePackageArchive.ManifestLimit + 1] };
-                break;
-            case "expanded":
-                members = required.Append(new ArchiveMember("package/expanded.bin",
-                    new byte[NodePackageArchive.ExpandedLimit]));
-                break;
-        }
-        PackageArchiveFixture.Write(files.Archive, members);
-
-        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() =>
-            NodePackageArchive.ReadAsync(files.Archive, files.Metadata, context.CancellationToken));
-
-        Assert.Contains(diagnostic, error.Message);
-    }
-
-    [TestMethod]
-    [DataRow("Pax")]
-    [DataRow("Ustar")]
-    [DataRow("V7")]
-    public async Task ReadAcceptsNativeFormatsAndConsumesRequiredStreams(string format)
+    [DataRow(TarEntryFormat.Pax)]
+    [DataRow(TarEntryFormat.Ustar)]
+    [DataRow(TarEntryFormat.V7)]
+    public async Task ReadAcceptsNativeFormatsAndConsumesRequiredStreams(TarEntryFormat format)
     {
         using var files = new ArchiveFiles();
         ArchiveMember[] required = PackageArchiveFixture.Required();
         required[1] = required[1] with { Bytes = new byte[NodePackageArchive.ManifestLimit] };
-        PackageArchiveFixture.Write(files.Archive, required.Reverse(),
-            Enum.Parse<TarEntryFormat>(format));
+        PackageArchiveFixture.Write(files.Archive, required.Reverse(), format);
 
         await NodePackageArchive.ReadAsync(files.Archive, files.Metadata,
             context.CancellationToken);
@@ -189,36 +171,47 @@ public sealed class NodePackageArchiveTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("nonempty")]
-    [DataRow("missing")]
-    [DataRow("empty-archive")]
-    [DataRow("directory-archive")]
-    [DataRow("not-gzip")]
-    public async Task ReadRejectsInvalidInputWithoutOverwritingExistingMetadata(string defect)
+    public async Task ReadRejectsExistingMetadataWithoutOverwritingIt()
     {
         using var files = new ArchiveFiles();
         PackageArchiveFixture.Write(files.Archive, PackageArchiveFixture.Required());
         string existing = Path.Combine(files.Metadata, "package.json");
-        if (defect == "nonempty")
-            File.WriteAllText(existing, "previous");
-        if (defect == "missing")
-            Directory.Delete(files.Metadata);
-        if (defect == "empty-archive")
-            File.WriteAllBytes(files.Archive, []);
-        if (defect == "directory-archive")
-        {
-            File.Delete(files.Archive);
-            Directory.CreateDirectory(files.Archive);
-        }
-        if (defect == "not-gzip")
-            File.WriteAllText(files.Archive, "not an archive");
+        File.WriteAllText(existing, "previous");
 
-        await Assert.ThrowsAsync<InvalidDataException>(() => NodePackageArchive.ReadAsync(
-            files.Archive, files.Metadata, context.CancellationToken));
-
-        if (defect == "nonempty")
-            Assert.AreEqual("previous", File.ReadAllText(existing));
+        Assert.Contains("fresh empty directory", (await RejectAsync(files)).Message);
+        Assert.AreEqual("previous", File.ReadAllText(existing));
     }
+
+    [TestMethod]
+    public async Task ReadRequiresAnExistingMetadataDirectory()
+    {
+        using var files = new ArchiveFiles();
+        PackageArchiveFixture.Write(files.Archive, PackageArchiveFixture.Required());
+        Directory.Delete(files.Metadata);
+        Assert.Contains("fresh empty directory", (await RejectAsync(files)).Message);
+    }
+
+    [TestMethod]
+    [DataRow("")]
+    [DataRow("not an archive")]
+    public async Task ReadRejectsNonArchiveContent(string contents)
+    {
+        using var files = new ArchiveFiles();
+        File.WriteAllText(files.Archive, contents);
+        await RejectAsync(files);
+    }
+
+    [TestMethod]
+    public async Task ReadRejectsDirectoryInPlaceOfArchive()
+    {
+        using var files = new ArchiveFiles();
+        Directory.CreateDirectory(files.Archive);
+        Assert.Contains("missing or not a file", (await RejectAsync(files)).Message);
+    }
+
+    private Task<InvalidDataException> RejectAsync(ArchiveFiles files) =>
+        Assert.ThrowsAsync<InvalidDataException>(() =>
+            NodePackageArchive.ReadAsync(files.Archive, files.Metadata, context.CancellationToken));
 
     private sealed class ArchiveFiles : IDisposable
     {

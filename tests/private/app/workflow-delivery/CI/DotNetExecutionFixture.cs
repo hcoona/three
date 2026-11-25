@@ -10,6 +10,8 @@ namespace WorkflowDelivery.Tests.CI;
 internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan,
     bool ownsRepository = true) : IDisposable
 {
+    private static readonly string[] NativeTargets =
+        ["Build", "GetTargetPath", "InvokeTestingPlatform", "VSTest"];
     internal GitFixture Repo { get; } = repo;
     internal CiPlan Plan { get; } = plan;
     internal string Scratch { get; } =
@@ -82,8 +84,7 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan,
         await File.WriteAllTextAsync(Output, "native output", token);
         bool batch = command.Arguments.Contains("-target:BuildSelected");
         var targets = new JsonObject();
-        foreach (string name in new[] { "Build", "GetTargetPath", "InvokeTestingPlatform",
-                     "VSTest" })
+        foreach (string name in NativeTargets)
             targets[name] = new JsonObject
             {
                 ["Result"] = "Success",
@@ -92,10 +93,11 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan,
             };
         var response = new JsonObject { ["TargetResults"] = targets };
         ModifyResponse?.Invoke(response);
+        string wrapperDirectory = Path.GetDirectoryName(command.Arguments[2])!;
         if (batch)
         {
             DotNetBuildRequest request = JsonSerializer.Deserialize(await File.ReadAllTextAsync(
-                Path.Combine(Scratch, "build-request.json"), token),
+                Path.Combine(wrapperDirectory, "build-request.json"), token),
                 TransferJson.Default.DotNetBuildRequest)!;
             var entries = new JsonArray();
             foreach (DotNetNodeIdentity identity in request.Entries)
@@ -113,7 +115,7 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan,
             return new(NativeTermination.Exited, 0, "native batch stdout", "", 0.1, null);
         }
         DotNetTestRequest tests = JsonSerializer.Deserialize(await File.ReadAllTextAsync(
-            Path.Combine(Scratch, "test-request.json"), token),
+            Path.Combine(wrapperDirectory, "test-request.json"), token),
             TransferJson.Default.DotNetTestRequest)!;
         Directory.CreateDirectory(tests.Destination);
         for (int index = 0; index < tests.Entries.Length; index++)

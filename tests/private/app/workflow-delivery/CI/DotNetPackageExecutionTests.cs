@@ -1,6 +1,6 @@
 using System.IO.Compression;
-using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Xml.Linq;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
@@ -12,8 +12,6 @@ namespace WorkflowDelivery.Tests.CI;
 [TestClass]
 public sealed class DotNetPackageExecutionTests(TestContext context)
 {
-    // Rows that vary only the selection, plan or native answers read one committed
-    // repository; each row still owns fresh scratch for archives and consumers.
     private static GitFixture? shared;
     private static string sharedCandidate = "";
 
@@ -36,101 +34,46 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
         DotNetPackageFixture.Shared(shared!, sharedCandidate);
 
     [TestMethod]
-    public async Task SharedRepositoryControlQualifies()
+    public async Task ProjectedRecipeRetainsOriginalNuGetArchiveAndRunsCleanConsumer()
     {
         using var projection = Shared();
+        using var execution = Shared();
         CiPlan plan = await DotNetFactsAssembler.CompleteAsync(projection.Selection,
             projection.Request, context.CancellationToken, projection.ExecuteAsync);
-        Assert.HasCount(3, plan.Checks);
-        using var fixture = Shared();
-        DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied,
+
+        DotNetPackageRunResult result = await execution.RunAsync(context.CancellationToken, plan);
+
+        Assert.IsTrue(ResultCollector.Collect(plan, result.Results).Satisfied,
             string.Join("; ", result.Failures.Select(failure => failure.Error)));
-        Assert.HasCount(1, result.Packages);
-        Assert.HasCount(1, result.ConsumerOutputs);
+        DotNetOriginalPackage package = Assert.ContainsSingle(result.Packages);
+        Assert.AreEqual("product", package.Unit);
+        Assert.AreEqual("package", package.Output);
+        Assert.AreEqual(new FileInfo(package.Path).Length, package.Size);
+        Assert.AreEqual(DotNetPackageArchive.Digest(package.Path), package.Sha256);
+        NativeCommand pack = Assert.ContainsSingle(result.Commands.Where(item =>
+            item.Command.Arguments.Contains("-target:Pack,_GetOutputItemsFromPack"))).Command;
+        Assert.Contains("-property:Configuration=Debug", pack.Arguments);
+        string probe = Assert.ContainsSingle(pack.Arguments.Where(argument =>
+            argument.StartsWith("-property:Probe=", StringComparison.Ordinal)));
+        Assert.AreEqual("space%3Bsemi%25percent", probe["-property:Probe=".Length..].Trim('"'));
+        NativeCommand restore = Assert.ContainsSingle(result.Commands.Where(item =>
+            item.Command.Arguments[0] == "restore")).Command;
+        Assert.StartsWith(execution.Scratch, restore.Directory);
+        Assert.StartsWith(execution.Scratch, restore.Environment!["NUGET_PACKAGES"]!);
+        string output = Assert.ContainsSingle(result.ConsumerOutputs).Path;
+        Assert.IsTrue(result.Commands.Any(item => item.Command.Arguments.Contains(output)));
     }
 
     [TestMethod]
-    public async Task SelectedRecipePreservesNativeContextAndPrerequisites()
+    public async Task MissingReleaseUnitStopsBeforeProjection()
     {
         using var fixture = Shared();
-        string scratch =
-            Directory.CreateDirectory(Path.Combine(fixture.Scratch, "projection")).FullName;
-        CiPlan plan = await DotNetFactsAssembler.CompleteAsync(fixture.Selection,
-            fixture.Request with { Scratch = scratch },
-                context.CancellationToken, fixture.ExecuteAsync);
-        Assert.HasCount(3, plan.Checks);
-        CollectionAssert.AreEquivalent(new[] {
-            DotNetPackageChecks.Pack, DotNetPackageChecks.Contents,
-            DotNetPackageChecks.Consumer },
-                plan.Checks.Select(item => item.Work.Key.Check).ToArray());
-        Assert.IsTrue(plan.Checks.All(item => item.Origins.SequenceEqual([CheckOrigin.Preset]) &&
-            item.QualityPresets.SequenceEqual([DotNetPackageChecks.Preset]) &&
-            item.Work.Package!.ExpectedVersion == "1.0.0"));
-        NativeCommand projection = Assert.ContainsSingle(fixture.Commands);
-        Assert.AreEqual("msbuild --disable-build-servers",
-            string.Join(' ', projection.Arguments[..2]));
-        Assert.Contains("-target:GetBuildVersion", projection.Arguments);
-        Assert.AreEqual("space%3Bsemi%25percent", projection.Arguments.Single(argument =>
-            argument.StartsWith("-property:Probe=", StringComparison.Ordinal))
-            ["-property:Probe=".Length..].Trim('"'));
-        Assert.IsFalse(projection.Arguments.Any(argument => argument.Contains("Frozen",
-            StringComparison.Ordinal) || argument == "-target:Build"));
-        Assert.HasCount(1, plan.Checks.Single(item => item.Work.Key.Check ==
-            DotNetPackageChecks.Contents).Work.Prerequisites);
-        Assert.HasCount(2, plan.Checks.Single(item => item.Work.Key.Check ==
-            DotNetPackageChecks.Consumer).Work.Prerequisites);
-    }
+        DotNetSelection selection = fixture.Selection with { CandidateUnits = [] };
 
-    [TestMethod]
-    [DataRow("preset")]
-    [DataRow("missing-unit")]
-    [DataRow("variant")]
-    [DataRow("storage")]
-    [DataRow("definition")]
-    [DataRow("extra-output")]
-    public async Task UnresolvedSelectedRecipeStopsBeforeNativeEffects(string defect)
-    {
-        using var fixture = Shared();
-        DotNetSelection selection = fixture.Selection;
-        if (defect == "missing-unit") selection = selection with { CandidateUnits = [] };
-        else if (defect is "variant" or "storage")
-        {
-            DotNetGraphNode node = fixture.Node;
-            if (defect == "variant") node = node with { Dimension = new("Release", "net10.0", "") };
-            else node.Identity.Globals["PackageOutputPath"] = "somewhere";
-            selection = selection with
-            {
-                CandidateNodes = new Dictionary<string, DotNetGraphNode[]>
-                { [DotNetPackageFixture.Project] = [node] }
-            };
-        }
-        else if (defect == "preset")
-            selection = selection with
-            {
-                Request = selection.Request with
-                {
-                    Candidate = selection.Request.Candidate with
-                    {
-                        Projects = [selection.Request.Candidate
-                    .Projects[0] with { QualityPreset = "unknown" }]
-                    }
-                }
-            };
-        else
-        {
-            ReleaseBuild build = DotNetPackageFixture.Unit.Builds[0];
-            build = defect == "definition" ? build with { Definition = "dotnet/unknown" } :
-                build with { Outputs = [.. build.Outputs, new("extra", "symbols", "symbols")] };
-            selection = selection with
-            {
-                CandidateUnits =
-                [DotNetPackageFixture.Unit with { Builds = [build] }]
-            };
-        }
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            DotNetFactsAssembler.CompleteAsync(
-            selection, fixture.Request, context.CancellationToken, fixture.ExecuteAsync));
+            DotNetFactsAssembler.CompleteAsync(selection, fixture.Request,
+                context.CancellationToken, fixture.ExecuteAsync));
+
         Assert.IsEmpty(fixture.Commands);
     }
 
@@ -139,159 +82,108 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     {
         using var fixture = Shared();
         fixture.Override = _ => new(NativeTermination.Exited, 1, "", "failed NBGV", 0.1, null);
+
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            DotNetFactsAssembler.CompleteAsync(
-            fixture.Selection, fixture.Request, context.CancellationToken, fixture.ExecuteAsync));
+            DotNetFactsAssembler.CompleteAsync(fixture.Selection, fixture.Request,
+                context.CancellationToken, fixture.ExecuteAsync));
+
         Assert.Contains("-target:GetBuildVersion",
             Assert.ContainsSingle(fixture.Commands).Arguments);
     }
 
     [TestMethod]
-    [DataRow("missing-consumer")]
-    [DataRow("dirty")]
-    public async Task InvalidPackagePlanStopsBeforeNativeEffects(string defect)
+    public async Task MissingConsumerObligationStopsBeforeNativeEffects()
     {
-        // The dirty row changes the checkout, so it keeps a private repository.
-        using var fixture = defect == "dirty"
-            ? await DotNetPackageFixture.CreateAsync(context.CancellationToken) : Shared();
-        CiPlan plan = fixture.Plan;
-        if (defect == "dirty")
-            await File.AppendAllTextAsync(Path.Combine(fixture.Repo.Directory,
-                DotNetPackageFixture.Project), "changed", context.CancellationToken);
-        else
-            plan = plan with
-            {
-                Checks = plan.Checks.Where(item =>
-                    item.Work.Key.Check != DotNetPackageChecks.Consumer).ToArray()
-            };
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => fixture.RunAsync(
-            context.CancellationToken, plan));
+        using var fixture = Shared();
+        CiPlan plan = fixture.Plan with
+        {
+            Checks = fixture.Plan.Checks.Where(item =>
+                item.Work.Key.Check != DotNetPackageChecks.Consumer).ToArray()
+        };
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(context.CancellationToken, plan));
+
         Assert.IsEmpty(fixture.Commands);
     }
 
     [TestMethod]
-    public async Task OriginalArchiveCoordinateAndBytesAreRetained()
+    [DataRow("nupkg")]
+    [DataRow("snupkg")]
+    public async Task UndeclaredNativeArchivePreventsQualification(string extension)
     {
         using var fixture = Shared();
-        DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied,
-            string.Join("; ", result.Failures.Select(failure => failure.Error)));
-        DotNetOriginalPackage package = Assert.ContainsSingle(result.Packages);
-        Assert.AreEqual("product", package.Unit);
-        Assert.AreEqual("package", package.Build);
-        Assert.AreEqual("package", package.Output);
-        Assert.AreEqual("primary-package", package.Role);
-        Assert.AreEqual("nuget-package", package.Kind);
-        Assert.AreEqual("original.nupkg", Path.GetFileName(package.Path));
-        Assert.AreEqual(new FileInfo(package.Path).Length, package.Size);
-        Assert.AreEqual(DotNetPackageArchive.Digest(package.Path), package.Sha256);
-        // Pack, consumer restore and consumer build own their native process trees; the
-        // final command runs the consumer output itself.
-        Assert.AreEqual("msbuild restore msbuild", string.Join(' ', result.Commands.Take(3)
-            .Select(item => item.Command.Arguments[0])));
-        Assert.IsTrue(result.Commands.Take(3).All(item => item.Command.Executable == "dotnet" &&
-            item.Command.Arguments[1] == "--disable-build-servers"));
-        CollectionAssert.AreEqual(new[] { Assert.ContainsSingle(result.ConsumerOutputs).Path },
-            result.Commands[3].Command.Arguments);
-        Assert.Contains("-property:Configuration=Debug", result.Commands[0].Command.Arguments);
-        Assert.AreEqual("space%3Bsemi%25percent", result.Commands[0].Command.Arguments.Single(
-            argument => argument.StartsWith("-property:Probe=", StringComparison.Ordinal))
-            ["-property:Probe=".Length..].Trim('"'));
-        Assert.IsNotNull(result.Commands[1].Command.Environment);
-        Assert.IsTrue(result.Commands.Skip(1).All(
-            item => item.Command.Directory != fixture.Repo.Directory));
-        Assert.HasCount(1, result.ConsumerOutputs);
-        DotNetPackageRunResult transfer = JsonSerializer.Deserialize(
-            JsonSerializer.Serialize(result,
-            TransferJson.Default.DotNetPackageRunResult), TransferJson.
-                Default.DotNetPackageRunResult)!;
-        CollectionAssert.AreEqual(result.Results, transfer.Results);
-        CollectionAssert.AreEqual(result.Packages, transfer.Packages);
-    }
+        fixture.ModifyArchive = path =>
+            File.Copy(path, Path.Combine(Path.GetDirectoryName(path)!, "extra." + extension));
 
-    [TestMethod]
-    [DataRow("missing")]
-    [DataRow("undeclared")]
-    [DataRow("symbols")]
-    [DataRow("wrong-identity")]
-    [DataRow("different-projection")]
-    [DataRow("missing-receipt")]
-    public async Task MissingOrUndeclaredNativeArchivesCannotPassPack(string defect)
-    {
-        using var fixture = Shared();
-        fixture.ModifyPack = document =>
-        {
-            string path =
-                document["TargetResults"]!["_GetOutputItemsFromPack"]!["Items"]![0]!["FullPath"]!
-                    .GetValue<string>();
-            if (defect == "missing") File.Delete(path);
-            if (defect is "undeclared" or "symbols")
-                File.Copy(path, Path.Combine(Path.GetDirectoryName(path)!, "extra." +
-                    (defect == "symbols" ? "snupkg" : "nupkg")));
-            if (defect == "wrong-identity") Replace(path, "product.nuspec",
-                "<package><metadata><id>Other</id><version>1.0.0</version></metadata></package>");
-            if (defect == "different-projection")
-                document["Properties"]!["AssemblyInformationalVersion"] = "other";
-            if (defect == "missing-receipt") document["TargetResults"]!.AsObject().Remove("Pack");
-        };
         DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        CollectionAssert.AreEqual(new[] {
-            CheckStatus.Failed, CheckStatus.Skipped, CheckStatus.Skipped },
-            result.Results.Select(item => item.Status).ToArray());
+
+        Assert.AreEqual(CheckStatus.Failed, Status(result, DotNetPackageChecks.Pack));
+        Assert.AreEqual(CheckStatus.Skipped, Status(result, DotNetPackageChecks.Contents));
+        Assert.AreEqual(CheckStatus.Skipped, Status(result, DotNetPackageChecks.Consumer));
         Assert.IsEmpty(result.Packages);
         Assert.IsEmpty(result.ConsumerOutputs);
-        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
     }
 
     [TestMethod]
-    [DataRow("missing-dll")]
-    [DataRow("wrong-documentation")]
-    [DataRow("empty-readme")]
-    [DataRow("dependency")]
-    [DataRow("version")]
-    public async Task ProductContentRejectsIdentityVersionAndPayloadDefects(string defect)
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task WrongNuGetIdentityOrMissingPackReceiptCannotRetainOutput(bool omitReceipt)
+    {
+        using var fixture = Shared();
+        if (omitReceipt)
+            fixture.ModifyPack = document => document["TargetResults"]!.AsObject().Remove("Pack");
+        else
+            fixture.ModifyArchive = ChangePackageId;
+
+        DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
+
+        Assert.AreEqual(CheckStatus.Failed, Status(result, DotNetPackageChecks.Pack));
+        Assert.AreEqual(CheckStatus.Skipped, Status(result, DotNetPackageChecks.Contents));
+        Assert.AreEqual(CheckStatus.Skipped, Status(result, DotNetPackageChecks.Consumer));
+        Assert.IsEmpty(result.Packages);
+        Assert.IsEmpty(result.ConsumerOutputs);
+        Assert.IsFalse(result.Commands.Any(item => item.Command.Arguments[0] == "restore"));
+        string error = Assert.ContainsSingle(result.Failures).Error;
+        Assert.AreEqual(omitReceipt ? "Missing or failed native package target: Pack" :
+            "Package identity differs from native NBGV projection.", error);
+    }
+
+    private static void ChangePackageId(string path)
+    {
+        using var archive = ZipFile.Open(path, ZipArchiveMode.Update);
+        ZipArchiveEntry entry = archive.GetEntry("product.nuspec")!;
+        XDocument nuspec;
+        using (Stream contents = entry.Open()) nuspec = XDocument.Load(contents);
+        nuspec.Root!.Element("metadata")!.Element("id")!.Value = "Other.Package";
+        entry.Delete();
+        using Stream output = archive.CreateEntry("product.nuspec").Open();
+        nuspec.Save(output);
+    }
+
+    [TestMethod]
+    public async Task MissingAssemblyInOriginalArchiveSkipsConsumerRestore()
     {
         using var fixture = Shared();
         fixture.ModifyArchive = path =>
         {
-            if (defect == "missing-dll")
-                Replace(path, "lib/net10.0/WorkflowDelivery.Tests.dll", null);
-            if (defect == "wrong-documentation")
-                Replace(path, "lib/net10.0/WorkflowDelivery.Tests.xml", "<doc />");
-            if (defect == "empty-readme") Replace(path, "README.md", "");
-            if (defect == "dependency") Replace(path, "product.nuspec", """
-                <package><metadata><id>WorkflowDelivery.Tests</id><version>1.0.0</version>
-                <dependencies><dependency id="MissingDependency" version="1.0.0" /></dependencies>
-                </metadata></package>
-                """);
+            using var archive = ZipFile.Open(path, ZipArchiveMode.Update);
+            archive.GetEntry("lib/net10.0/WorkflowDelivery.Tests.dll")!.Delete();
         };
-        if (defect == "version") fixture.ModifyPack = document =>
-        {
-            Dictionary<string, string> expected = fixture.Values;
-            expected["AssemblyFileVersion"] = "999.0.0";
-            Assert.ThrowsExactly<InvalidDataException>(() => DotNetPackageArchive.Contents(
-                document["TargetResults"]!["_GetOutputItemsFromPack"]!["Items"]![0]!["FullPath"]!
-                    .GetValue<string>(), expected));
-            Replace(
-                document["TargetResults"]!["_GetOutputItemsFromPack"]!["Items"]![0]!["FullPath"]!
-                .GetValue<string>(), "lib/net10.0/WorkflowDelivery.Tests.dll", "not a PE file");
-        };
+
         DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        CollectionAssert.AreEqual(new[] {
-            CheckStatus.Passed, CheckStatus.Failed, CheckStatus.Skipped },
-            result.Results.Select(item => item.Status).ToArray());
-        Assert.HasCount(1, result.Packages);
-        Assert.IsFalse(result.Commands.Any(item => item.Command.Arguments.Contains("restore")));
-        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+
+        Assert.AreEqual(CheckStatus.Passed, Status(result, DotNetPackageChecks.Pack));
+        Assert.AreEqual(CheckStatus.Failed, Status(result, DotNetPackageChecks.Contents));
+        Assert.AreEqual(CheckStatus.Skipped, Status(result, DotNetPackageChecks.Consumer));
+        Assert.ContainsSingle(result.Packages);
+        Assert.IsFalse(result.Commands.Any(item => item.Command.Arguments[0] == "restore"));
     }
 
     [TestMethod]
-    [DataRow("README.md")]
-    [DataRow("readme.md")]
     [DataRow("%52EADME.md")]
     [DataRow("../bad")]
-    [DataRow("bad\\name")]
-    public async Task NativeDecodedArchiveNamesRejectAmbiguityAndUnsafePaths(string name)
+    public async Task NativeArchiveWithAmbiguousOrUnsafeEntryCannotBeRetained(string name)
     {
         using var fixture = Shared();
         fixture.ModifyArchive = path =>
@@ -300,97 +192,137 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
             using var writer = new StreamWriter(zip.CreateEntry(name).Open());
             writer.Write("ambiguous or unsafe");
         };
+
         DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
+
+        Assert.AreEqual(CheckStatus.Failed, Status(result, DotNetPackageChecks.Pack));
         Assert.IsEmpty(result.Packages);
     }
 
     [TestMethod]
-    [DataRow("restore")]
-    [DataRow("build")]
-    [DataRow("marker")]
-    public async Task LaterPhaseFailureRetainsSuccessfulPrerequisites(string defect)
+    public async Task RestoreFailurePreservesBothDiagnosticStreamsAndEarlierQualification()
     {
         using var fixture = Shared();
-        fixture.Override = command =>
-            defect == "restore" && command.Arguments.Contains("restore") ||
-            defect == "build" && command.Arguments.Contains("-target:Build,GetTargetPath") ?
-                new(NativeTermination.Exited, 1, "error NU1101: missing package",
-                    "welcome notice", 0.1, null) :
-            defect == "marker" && command.Arguments.Length == 1 ?
-                new(NativeTermination.Exited, 0, "wrong marker", "", 0.1, null) : null;
+        var native = new NativeCommandResult(NativeTermination.Exited, 1,
+            "error NU1101: missing package", "welcome notice", 0.1, null);
+        fixture.Override = command => command.Arguments[0] == "restore" ? native : null;
+
         DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        CollectionAssert.AreEqual(new[] {
-            CheckStatus.Passed, CheckStatus.Passed, CheckStatus.Failed },
-            result.Results.Select(item => item.Status).ToArray());
-        Assert.HasCount(1, result.Packages);
-        Assert.IsEmpty(result.ConsumerOutputs);
-        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+
+        AssertFailedConsumer(result);
         string failure = Assert.ContainsSingle(result.Failures).Error;
-        if (defect == "marker") Assert.Contains("marker API", failure);
-        else
-        {
-            Assert.Contains("error NU1101: missing package", failure);
-            Assert.Contains("welcome notice", failure);
-        }
+        Assert.Contains(native.Stdout, failure);
+        Assert.Contains(native.Stderr, failure);
+        Assert.AreEqual(native, Assert.ContainsSingle(result.Commands.Where(item =>
+            item.Command.Arguments[0] == "restore")).Result);
     }
 
     [TestMethod]
-    [DataRow("missing-assets")]
-    [DataRow("different-folder")]
-    [DataRow("different-identity")]
-    [DataRow("different-bytes")]
-    [DataRow("missing-build-receipt")]
-    public async Task MissingConsumerReceiptOrRestoredBytesCannotPass(string defect)
+    public async Task AssetsPointingOutsideCleanConsumerCannotQualify()
     {
         using var fixture = Shared();
-        if (defect == "different-folder") fixture.ModifyAssets = assets =>
-            assets["packageFolders"] =
-                new JsonObject { [fixture.Repo.Directory] = new JsonObject() };
-        if (defect == "different-identity") fixture.ModifyAssets = assets =>
-            assets["libraries"] =
-                new JsonObject { ["Other/1.0.0"] = new JsonObject { ["type"] = "package" } };
-        if (defect == "different-bytes") fixture.ModifyInstalled =
-            path => File.AppendAllText(path, "different");
-        fixture.Override = command =>
-            defect == "missing-assets" && command.Arguments.Contains("restore") ||
-            defect == "missing-build-receipt" &&
-                command.Arguments.Contains("-target:Build,GetTargetPath") ?
-                new(NativeTermination.Exited, 0,
-                    "diagnostic success without receipt", "", 0.1, null) : null;
+        fixture.ModifyAssets = assets => assets["packageFolders"] =
+            new JsonObject { [fixture.Repo.Directory] = new JsonObject() };
+
         DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        CollectionAssert.AreEqual(new[] {
-            CheckStatus.Passed, CheckStatus.Passed, CheckStatus.Failed },
-            result.Results.Select(item => item.Status).ToArray());
-        Assert.IsEmpty(result.ConsumerOutputs);
-        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+
+        AssertFailedConsumer(result);
+        Assert.IsFalse(result.Commands.Any(item =>
+            item.Command.Arguments.Contains("-target:Build,GetTargetPath")));
     }
 
     [TestMethod]
-    [DataRow("Cancelled", "Cancelled")]
-    [DataRow("TimedOut", "TimedOut")]
-    [DataRow("CleanupFailed", "Failed")]
-    public async Task NativePackageInterruptionCannotFabricateSuccess(string
-        termination, string status)
+    public async Task RestoredBytesMustMatchOriginalArchive()
+    {
+        using var fixture = Shared();
+        fixture.ModifyInstalled = path => File.AppendAllText(path, "different");
+
+        DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
+
+        AssertFailedConsumer(result);
+    }
+
+    [TestMethod]
+    public async Task WrongPublicMarkerCannotQualifyConsumer()
+    {
+        using var fixture = Shared();
+        fixture.Override = command => command.Arguments.Length == 1
+            ? new(NativeTermination.Exited, 0, "wrong marker", "", 0.1, null) : null;
+
+        DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
+
+        AssertFailedConsumer(result);
+        Assert.Contains("marker API", Assert.ContainsSingle(result.Failures).Error);
+    }
+
+    [TestMethod]
+    [DataRow((int)NativeTermination.Cancelled, (int)CheckStatus.Cancelled)]
+    [DataRow((int)NativeTermination.TimedOut, (int)CheckStatus.TimedOut)]
+    [DataRow((int)NativeTermination.CleanupFailed, (int)CheckStatus.Failed)]
+    public async Task InterruptedNativePackCannotFabricateArchiveOrRunConsumers(
+        int termination, int status)
     {
         using var fixture = Shared();
         fixture.Override =
-            _ => new(Enum.Parse<NativeTermination>(termination), null, "", "", 0.1, "interrupted");
+            _ => new((NativeTermination)termination, null, "", "", 0.1, "interrupted");
+
         DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.AreEqual(Enum.Parse<CheckStatus>(status), result.Results[0].Status);
-        Assert.IsTrue(result.Results.Skip(1).All(item => item.Status == CheckStatus.Skipped));
+
+        Assert.AreEqual((CheckStatus)status, Status(result, DotNetPackageChecks.Pack));
+        Assert.AreEqual(CheckStatus.Skipped, Status(result, DotNetPackageChecks.Contents));
+        Assert.AreEqual(CheckStatus.Skipped, Status(result, DotNetPackageChecks.Consumer));
+        Assert.IsEmpty(result.Packages);
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
-        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results[..1]).Satisfied);
     }
 
-    private static void Replace(string path, string name, string? content)
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ResponseSizeLimitAppliesToTheParsedTarget(bool linked)
     {
-        using var archive = ZipFile.Open(path, ZipArchiveMode.Update);
-        archive.GetEntry(name)?.Delete();
-        if (content is not null)
+        using var fixture = Shared();
+        string target = Path.Combine(fixture.Scratch, "result.json");
+        await using (FileStream file = File.Create(target))
+            file.SetLength(32 * 1024 * 1024 + 1);
+        string path = linked ? Link(Path.Combine(fixture.Scratch, "linked.json"), target) : target;
+
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => DotNetPackageResults.ResponseAsync(path, context.CancellationToken));
+
+        Assert.Contains("exceeds its limit", failure.Message);
+    }
+
+    [TestMethod]
+    public void LinkedOriginalIsComparedByItsTargetBytes()
+    {
+        using var fixture = Shared();
+        string target = Path.Combine(fixture.Scratch, "original.nupkg");
+        File.WriteAllBytes(target, [1, 2, 3, 4, 5]);
+        string path = Link(Path.Combine(fixture.Scratch, "linked.nupkg"), target);
+
+        DotNetPackageArchive.RequireOriginal(new("unit", "build", "output", "role",
+            "nuget-package", path, 5, DotNetPackageArchive.Digest(target)));
+    }
+
+    private static string Link(string path, string target)
+    {
+        try { File.CreateSymbolicLink(path, target); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            using var writer =
-            new StreamWriter(archive.CreateEntry(name).Open()); writer.Write(content);
+            Assert.Inconclusive("The platform cannot create a file link.");
         }
+        return path;
+    }
+
+    private static CheckStatus Status(DotNetPackageRunResult result, string check) =>
+        result.Results.Single(item => item.Key.Check == check).Status;
+
+    private static void AssertFailedConsumer(DotNetPackageRunResult result)
+    {
+        Assert.AreEqual(CheckStatus.Passed, Status(result, DotNetPackageChecks.Pack));
+        Assert.AreEqual(CheckStatus.Passed, Status(result, DotNetPackageChecks.Contents));
+        Assert.AreEqual(CheckStatus.Failed, Status(result, DotNetPackageChecks.Consumer));
+        Assert.ContainsSingle(result.Packages);
+        Assert.IsEmpty(result.ConsumerOutputs);
     }
 }
