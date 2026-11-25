@@ -151,3 +151,16 @@ Install the repository-managed Git hooks after installing the toolchain:
 ```bash
 mise exec -- hk install --mise
 ```
+
+### MCP Browser Attachment on WSL2
+
+The `playwright-mcp` task in [`mise.toml`](../../mise.toml) connects to an
+existing Microsoft Edge profile through the Playwright browser extension. When
+launched inside WSL2 without `PLAYWRIGHT_MCP_EXECUTABLE_PATH`, the task probes
+the standard Windows host `msedge.exe` locations under `/mnt/c` so the relay
+opens the connect tab in host Edge rather than looking for a Linux browser
+profile; WSL2 mirrored networking lets the extension connect back to the local
+relay port. Native Windows and non-WSL Linux keep Playwright's default channel
+lookup, and an explicit `PLAYWRIGHT_MCP_EXECUTABLE_PATH` overrides discovery on
+any platform. Reload active CLI MCP sessions (`/mcp reload`) after changing the
+launcher task.

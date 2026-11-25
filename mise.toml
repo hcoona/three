@@ -126,7 +126,21 @@ run = "mise install --monorepo --locked --jobs 1 dotnet"
 # redact = true does not mask credentials emitted by the server or launcher.
 [tasks.playwright-mcp]
 description = "Run Playwright MCP with the browser extension token from gopass"
-run = "pnpm exec playwright-mcp --extension"
+run = '''
+{%- if os() == "linux" -%}
+if [ -z "${PLAYWRIGHT_MCP_EXECUTABLE_PATH+x}" ] && grep -qiE 'microsoft-(standard|.*wsl2)' /proc/sys/kernel/osrelease 2>/dev/null; then
+  for edge in '/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' '/mnt/c/Program Files/Microsoft/Edge/Application/msedge.exe'; do
+    if [ -f "$edge" ] && [ -x "$edge" ]; then
+      export PLAYWRIGHT_MCP_EXECUTABLE_PATH="$edge"
+      break
+    fi
+  done
+fi
+exec pnpm exec playwright-mcp --extension
+{%- else -%}
+pnpm exec playwright-mcp --extension
+{%- endif -%}
+'''
 raw = true
 env = { PLAYWRIGHT_MCP_EXTENSION_TOKEN = { value = "{{ exec(command='gopass show -o infra/playwright-mcp/token') }}", tools = true, redact = true }, PLAYWRIGHT_MCP_BROWSER = "msedge" }
 
