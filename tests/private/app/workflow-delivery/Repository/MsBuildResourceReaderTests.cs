@@ -90,23 +90,21 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("frameworks")]
-    [DataRow("rids")]
-    [DataRow("missing-frameworks")]
-    [DataRow("empty-framework")]
-    [DataRow("framework-list")]
-    [DataRow("rid-list")]
-    public async Task DefaultQueryRejectsUnsupportedRequiredShapes(string defect)
+    [DataRow("TargetFrameworks", "net9.0;net10.0")]
+    [DataRow("RuntimeIdentifiers", "linux-x64;win-x64")]
+    [DataRow("TargetFrameworks", null)]
+    [DataRow("TargetFramework", "")]
+    [DataRow("TargetFramework", "net9.0;net10.0")]
+    [DataRow("RuntimeIdentifier", "linux-x64;win-x64")]
+    public async Task DefaultQueryRejectsUnsupportedRequiredShapes(string property, string? value)
     {
         GitMaterialization checkout = sharedCheckout!;
         JsonNode native = JsonNode.Parse(Output(checkout, new("Debug", "net10.0")))!;
         JsonObject properties = native["Properties"]!.AsObject();
-        properties["TargetFrameworks"] = defect == "frameworks" ? "net9.0;net10.0" : "";
-        properties["RuntimeIdentifiers"] = defect == "rids" ? "linux-x64;win-x64" : "";
-        if (defect == "missing-frameworks") properties.Remove("TargetFrameworks");
-        if (defect == "empty-framework") properties["TargetFramework"] = "";
-        if (defect == "framework-list") properties["TargetFramework"] = "net9.0;net10.0";
-        if (defect == "rid-list") properties["RuntimeIdentifier"] = "linux-x64;win-x64";
+        properties["TargetFrameworks"] = "";
+        properties["RuntimeIdentifiers"] = "";
+        if (value is null) properties.Remove(property);
+        else properties[property] = value;
         var reader = new MsBuildResourceReader(checkout,
             (_, _) => Task.FromResult(native.ToJsonString()));
 
@@ -196,31 +194,74 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task ReadRejectsInvalidRequiredNativeResults()
-    {
-        using var repo = await FixtureAsync();
-        GitMaterialization checkout = await BindAsync(repo);
-        foreach (string defect in new[]
-        {
-            "root-array", "properties-missing", "properties-null",
-            "items-missing", "items-array", "resources-missing",
-            "resources-null", "resources-object", "item-null",
-            "fullpath-missing", "fullpath-null", "fullpath-number",
-            "fullpath-empty", "project-missing", "project-null",
-            "configuration-null", "framework-empty", "rid-missing",
-            "rid-null", "rid-number", "duplicate-properties",
-            "duplicate-items", "duplicate-project", "duplicate-resources",
-            "duplicate-fullpath"
-        })
-        {
-            context.WriteLine("Native result case: " + defect);
-            string output = Defective(Output(checkout, Release, "shared/Version 雪.json"), defect);
-            var reader = new MsBuildResourceReader(checkout, (_, _) => Task.FromResult(output));
+    public Task ReadRejectsNativeArrayRoot() => RejectNativeAsync("[]");
 
-            await Assert.ThrowsExactlyAsync<InvalidDataException>(() => reader.ReadAsync(Project,
-                Release, context.CancellationToken), defect);
-        }
+    [TestMethod]
+    [DataRow("Properties", null)]
+    [DataRow("Properties", "null")]
+    [DataRow("Items", null)]
+    [DataRow("Items", "[]")]
+    public Task ReadRejectsInvalidNativeEnvelope(string name, string? json) =>
+        RejectEditedOutputAsync(root => SetOrRemove(root, name, json));
+
+    [TestMethod]
+    [DataRow("MSBuildProjectFullPath", null)]
+    [DataRow("MSBuildProjectFullPath", "null")]
+    [DataRow("Configuration", "null")]
+    [DataRow("TargetFramework", "\"\"")]
+    [DataRow("RuntimeIdentifier", null)]
+    [DataRow("RuntimeIdentifier", "null")]
+    [DataRow("RuntimeIdentifier", "42")]
+    public Task ReadRejectsInvalidNativeProperties(string name, string? json) =>
+        RejectEditedOutputAsync(root => SetOrRemove(root["Properties"]!, name, json));
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("null")]
+    [DataRow("{}")]
+    [DataRow("[null]")]
+    public Task ReadRejectsInvalidNativeResourceList(string? json) =>
+        RejectEditedOutputAsync(root => SetOrRemove(root["Items"]!, "EmbeddedResource", json));
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("null")]
+    [DataRow("42")]
+    [DataRow("\"\"")]
+    public Task ReadRejectsInvalidNativeResourceFullPath(string? json) =>
+        RejectEditedOutputAsync(root =>
+            SetOrRemove(root["Items"]!["EmbeddedResource"]![0]!, "FullPath", json));
+
+    [TestMethod]
+    [DataRow("Properties", "{}")]
+    [DataRow("Items", "{}")]
+    [DataRow("MSBuildProjectFullPath", "null")]
+    [DataRow("EmbeddedResource", "[]")]
+    [DataRow("FullPath", "null")]
+    public Task ReadRejectsDuplicateNativeField(string name, string json) =>
+        RejectNativeAsync(ValidNativeOutput().Replace($"\"{name}\":",
+            $"\"{name}\":{json},\"{name}\":", StringComparison.Ordinal));
+
+    private static void SetOrRemove(JsonNode target, string name, string? json)
+    {
+        if (json is null) target.AsObject().Remove(name);
+        else target[name] = JsonNode.Parse(json);
     }
+
+    private Task<InvalidDataException> RejectEditedOutputAsync(Action<JsonNode> edit)
+    {
+        JsonNode output = JsonNode.Parse(ValidNativeOutput())!;
+        edit(output);
+        return RejectNativeAsync(output.ToJsonString());
+    }
+
+    private static string ValidNativeOutput() =>
+        Output(sharedCheckout!, Release, "shared/Version 雪.json");
+
+    private Task<InvalidDataException> RejectNativeAsync(string output) =>
+        Assert.ThrowsExactlyAsync<InvalidDataException>(() => new MsBuildResourceReader(
+            sharedCheckout!, (_, _) => Task.FromResult(output))
+            .ReadAsync(Project, Release, context.CancellationToken));
 
     [TestMethod]
     public async Task ReadRejectsInvalidJson()
@@ -234,23 +275,18 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("project")]
-    [DataRow("configuration")]
-    [DataRow("framework")]
-    [DataRow("rid")]
+    [DataRow("MSBuildProjectFullPath")]
+    [DataRow("Configuration")]
+    [DataRow("TargetFramework")]
+    [DataRow("RuntimeIdentifier")]
     public async Task ReadRejectsConflictingNativeIdentityAndDimensions(string field)
     {
         using var repo = await FixtureAsync();
         GitMaterialization checkout = await BindAsync(repo);
         JsonNode root = JsonNode.Parse(Output(checkout, Release))!;
         JsonNode properties = root["Properties"]!;
-        properties[field switch
-        {
-            "project" => "MSBuildProjectFullPath",
-            "configuration" => "Configuration",
-            "framework" => "TargetFramework",
-            _ => "RuntimeIdentifier",
-        }] = field == "project" ? Path.Combine(checkout.Root, "shared/executable.txt") : "other";
+        properties[field] = field == "MSBuildProjectFullPath"
+            ? Path.Combine(checkout.Root, "shared/executable.txt") : "other";
         var reader = new MsBuildResourceReader(checkout, (_, _) =>
             Task.FromResult(root.ToJsonString()));
 
@@ -261,31 +297,44 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("relative")]
-    [DataRow("outside")]
-    [DataRow("sibling-root")]
-    [DataRow("untracked")]
-    [DataRow("missing")]
-    [DataRow("directory")]
-    public async Task ReadRejectsUnavailableResourceCoordinates(string defect)
+    public Task ReadRejectsRelativeResource() =>
+        RejectResourceAsync(sharedCheckout!, "shared/Version 雪.json");
+
+    [TestMethod]
+    public Task ReadRejectsResourceOutsideCheckout() =>
+        RejectResourceAsync(sharedCheckout!,
+            Path.GetFullPath("../outside.txt", sharedCheckout!.Root));
+
+    [TestMethod]
+    public Task ReadRejectsResourceUnderSiblingRoot() =>
+        RejectResourceAsync(sharedCheckout!, sharedCheckout!.Root + "-sibling/input.txt");
+
+    [TestMethod]
+    public Task ReadRejectsResourceDirectory() =>
+        RejectResourceAsync(sharedCheckout!, Path.Combine(sharedCheckout!.Root, "shared"));
+
+    [TestMethod]
+    public async Task ReadRejectsUntrackedResource()
     {
-        // Rows that change the checkout keep a private repository.
-        using GitFixture? repo = defect is "untracked" or "missing" ? await FixtureAsync() : null;
-        GitMaterialization checkout = repo is null ? sharedCheckout! : await BindAsync(repo);
-        if (defect == "untracked")
-            await File.WriteAllTextAsync(Path.Combine(checkout.Root, "extra.txt"), "untracked",
-                context.CancellationToken);
-        if (defect == "missing")
-            File.Delete(Path.Combine(checkout.Root, "shared/Version 雪.json"));
-        string native = defect switch
-        {
-            "relative" => "shared/Version 雪.json",
-            "outside" => Path.GetFullPath("../outside.txt", checkout.Root),
-            "sibling-root" => checkout.Root + "-sibling/input.txt",
-            "untracked" => Path.Combine(checkout.Root, "extra.txt"),
-            "missing" => Path.Combine(checkout.Root, "shared/Version 雪.json"),
-            _ => Path.Combine(checkout.Root, "shared"),
-        };
+        using var repo = await FixtureAsync();
+        GitMaterialization checkout = await BindAsync(repo);
+        string path = Path.Combine(checkout.Root, "extra.txt");
+        await File.WriteAllTextAsync(path, "untracked", context.CancellationToken);
+        await RejectResourceAsync(checkout, path);
+    }
+
+    [TestMethod]
+    public async Task ReadRejectsMissingTrackedResource()
+    {
+        using var repo = await FixtureAsync();
+        GitMaterialization checkout = await BindAsync(repo);
+        string path = Path.Combine(checkout.Root, "shared/Version 雪.json");
+        File.Delete(path);
+        await RejectResourceAsync(checkout, path);
+    }
+
+    private async Task RejectResourceAsync(GitMaterialization checkout, string native)
+    {
         JsonNode root = JsonNode.Parse(Output(checkout, Release, "shared/Version 雪.json"))!;
         root["Items"]!["EmbeddedResource"]![0]!["FullPath"] = native;
         var reader = new MsBuildResourceReader(checkout, (_, _) =>
@@ -318,41 +367,31 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("project-parent")]
-    [DataRow("project-backslash")]
-    [DataRow("project-uncommitted")]
-    [DataRow("configuration-empty")]
-    [DataRow("configuration-list")]
-    [DataRow("configuration-quote")]
-    [DataRow("framework-empty")]
-    [DataRow("framework-escape")]
-    [DataRow("rid-list")]
-    [DataRow("rid-control")]
-    public async Task ReadRejectsUnsupportedRequestsBeforeNativeQuery(string defect)
+    [DataRow("../Control.csproj")]
+    [DataRow("tests\\Control\\Control.csproj")]
+    [DataRow("extra.csproj")]
+    public Task ReadRejectsUnsupportedProjectBeforeNativeQuery(string project) =>
+        RejectRequestAsync(project, Release);
+
+    [TestMethod]
+    [DataRow("", "net10.0", "linux-x64")]
+    [DataRow("Release;Other=1", "net10.0", "linux-x64")]
+    [DataRow("Release\"", "net10.0", "linux-x64")]
+    [DataRow("Release", "", "linux-x64")]
+    [DataRow("Release", "net10%2e0", "linux-x64")]
+    [DataRow("Release", "net10.0", "linux-x64,Other=1")]
+    [DataRow("Release", "net10.0", "linux-x64\n")]
+    public Task ReadRejectsUnsupportedDimensionsBeforeNativeQuery(string configuration,
+        string framework, string rid) =>
+        RejectRequestAsync(Project, new(configuration, framework, rid));
+
+    private Task<InvalidDataException> RejectRequestAsync(string project,
+        MsBuildDimension dimension)
     {
-        GitMaterialization checkout = sharedCheckout!;
-        string project = defect switch
-        {
-            "project-parent" => "../Control.csproj",
-            "project-backslash" => "tests\\Control\\Control.csproj",
-            "project-uncommitted" => "extra.csproj",
-            _ => Project,
-        };
-        MsBuildDimension dimension = defect switch
-        {
-            "configuration-empty" => Release with { Configuration = "" },
-            "configuration-list" => Release with { Configuration = "Release;Other=1" },
-            "configuration-quote" => Release with { Configuration = "Release\"" },
-            "framework-empty" => Release with { TargetFramework = "" },
-            "framework-escape" => Release with { TargetFramework = "net10%2e0" },
-            "rid-list" => Release with { RuntimeIdentifier = "linux-x64,Other=1" },
-            "rid-control" => Release with { RuntimeIdentifier = "linux-x64\n" },
-            _ => Release,
-        };
-        var reader = new MsBuildResourceReader(checkout, (_, _) =>
+        var reader = new MsBuildResourceReader(sharedCheckout!, (_, _) =>
             throw new AssertFailedException("Unsupported requests must not invoke MSBuild."));
 
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => reader.ReadAsync(project,
+        return Assert.ThrowsExactlyAsync<InvalidDataException>(() => reader.ReadAsync(project,
             dimension, context.CancellationToken));
     }
 
@@ -565,49 +604,4 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
             },
         });
 
-    private static string Defective(string output, string defect)
-    {
-        JsonNode root = JsonNode.Parse(output)!;
-        JsonNode properties = root["Properties"]!;
-        JsonNode items = root["Items"]!;
-        JsonNode resources = items["EmbeddedResource"]!;
-        JsonNode item = resources[0]!;
-        switch (defect)
-        {
-            case "root-array": return "[]";
-            case "properties-missing": root.AsObject().Remove("Properties"); break;
-            case "properties-null": root["Properties"] = null; break;
-            case "items-missing": root.AsObject().Remove("Items"); break;
-            case "items-array": root["Items"] = new JsonArray(); break;
-            case "resources-missing": items.AsObject().Remove("EmbeddedResource"); break;
-            case "resources-null": items["EmbeddedResource"] = null; break;
-            case "resources-object": items["EmbeddedResource"] = new JsonObject(); break;
-            case "item-null": resources[0] = null; break;
-            case "fullpath-missing": item.AsObject().Remove("FullPath"); break;
-            case "fullpath-null": item["FullPath"] = null; break;
-            case "fullpath-number": item["FullPath"] = 42; break;
-            case "fullpath-empty": item["FullPath"] = ""; break;
-            case "project-missing": properties.AsObject().Remove("MSBuildProjectFullPath"); break;
-            case "project-null": properties["MSBuildProjectFullPath"] = null; break;
-            case "configuration-null": properties["Configuration"] = null; break;
-            case "framework-empty": properties["TargetFramework"] = ""; break;
-            case "rid-missing": properties.AsObject().Remove("RuntimeIdentifier"); break;
-            case "rid-null": properties["RuntimeIdentifier"] = null; break;
-            case "rid-number": properties["RuntimeIdentifier"] = 42; break;
-            case "duplicate-properties": return "{\"Properties\":{}," + output[1..];
-            case "duplicate-items": return "{\"Items\":{}," + output[1..];
-            case "duplicate-project":
-                return output.Replace("\"MSBuildProjectFullPath\":",
-                "\"MSBuildProjectFullPath\":null,\"MSBuildProjectFullPath\":",
-                StringComparison.Ordinal);
-            case "duplicate-resources":
-                return output.Replace("\"EmbeddedResource\":",
-                "\"EmbeddedResource\":[],\"EmbeddedResource\":", StringComparison.Ordinal);
-            case "duplicate-fullpath":
-                return output.Replace("\"FullPath\":",
-                "\"FullPath\":null,\"FullPath\":", StringComparison.Ordinal);
-            default: throw new AssertFailedException("Unknown invalid native result case.");
-        }
-        return root.ToJsonString();
-    }
 }

@@ -50,63 +50,83 @@ public sealed class GitMaterializationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("wrong-head")]
-    [DataRow("missing-head")]
-    [DataRow("modified")]
-    [DataRow("staged")]
-    [DataRow("missing")]
-    [DataRow("renamed")]
-    public async Task BindRejectsWrongMissingOrDirtyCheckout(string defect)
+    public async Task BindRejectsUnbornHead()
     {
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        if (defect == "missing-head")
-        {
-            await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-                GitMaterialization.BindAsync(repo.Directory,
-                    new GitRevision(NodeScenario.Basis, []), context.CancellationToken));
-            return;
-        }
-        await repo.SetAsync("content.txt", "original");
-        string commit = await repo.CommitAsync();
-        await repo.GitAsync("reset", "--hard", commit);
-        GitRevision revision = await new GitReader(repo.Directory).ReadAsync(commit,
-            context.CancellationToken);
-        switch (defect)
-        {
-            case "wrong-head":
-                await repo.SetAsync("content.txt", "new revision");
-                string next = await repo.CommitAsync(commit);
-                await repo.GitAsync("reset", "--hard", next);
-                break;
-            case "modified":
-                await File.WriteAllTextAsync(Path.Combine(repo.Directory, "content.txt"), "dirty",
-                    context.CancellationToken);
-                break;
-            case "staged":
-                await repo.SetAsync("content.txt", "staged change");
-                await repo.FlushAsync();
-                break;
-            case "missing":
-                File.Delete(Path.Combine(repo.Directory, "content.txt"));
-                break;
-            case "renamed":
-                await repo.GitAsync("mv", "--", "content.txt", "renamed file.txt");
-                break;
-        }
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            GitMaterialization.BindAsync(repo.Directory,
+                new GitRevision(NodeScenario.Basis, []), context.CancellationToken));
+    }
 
+    [TestMethod]
+    public async Task BindRejectsDifferentHead()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        string commit = await CommitContentAsync(repo, "content.txt");
+        GitRevision revision = await ReadRevisionAsync(repo, commit);
+        await AdvanceHeadAsync(repo, "content.txt", commit);
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            GitMaterialization.BindAsync(repo.Directory, revision, context.CancellationToken));
+    }
+
+    [TestMethod]
+    public Task BindRejectsModifiedTrackedContent() => RejectDirtyCheckoutAsync(repo =>
+        File.WriteAllTextAsync(Path.Combine(repo.Directory, "content.txt"), "dirty",
+            context.CancellationToken));
+
+    [TestMethod]
+    public Task BindRejectsStagedContent() => RejectDirtyCheckoutAsync(async repo =>
+    {
+        await repo.SetAsync("content.txt", "staged change");
+        await repo.FlushAsync();
+    });
+
+    [TestMethod]
+    public Task BindRejectsDeletedContent() => RejectDirtyCheckoutAsync(repo =>
+    {
+        File.Delete(Path.Combine(repo.Directory, "content.txt"));
+        return Task.CompletedTask;
+    });
+
+    [TestMethod]
+    public async Task BindRejectsRenameAndEscapesBothStatusPaths()
+    {
+        string status = await RejectDirtyCheckoutAsync(repo =>
+            repo.GitAsync("mv", "--", "content.txt", "renamed file.txt"));
+        Assert.AreEqual("R  renamed file.txt\0content.txt\0", status);
+    }
+
+    private async Task<string> RejectDirtyCheckoutAsync(Func<GitFixture, Task> arrange)
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        string commit = await CommitContentAsync(repo, "content.txt");
+        GitRevision revision = await ReadRevisionAsync(repo, commit);
+        await arrange(repo);
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             GitMaterialization.BindAsync(repo.Directory, revision, context.CancellationToken));
-        if (defect != "wrong-head")
-        {
-            string status = await repo.GitAsync("status", "--porcelain=v1", "-z",
-                "--untracked-files=no", "--ignore-submodules=none");
-            Assert.Contains(JsonSerializer.Serialize(Path.GetFullPath(repo.Directory)),
-                error.Message);
-            Assert.Contains(JsonSerializer.Serialize(status), error.Message);
-            Assert.DoesNotContain('\0', error.Message);
-            if (defect == "renamed")
-                Assert.AreEqual("R  renamed file.txt\0content.txt\0", status);
-        }
+        string status = await repo.GitAsync("status", "--porcelain=v1", "-z",
+            "--untracked-files=no", "--ignore-submodules=none");
+        Assert.Contains(JsonSerializer.Serialize(Path.GetFullPath(repo.Directory)), error.Message);
+        Assert.Contains(JsonSerializer.Serialize(status), error.Message);
+        Assert.DoesNotContain('\0', error.Message);
+        return status;
+    }
+
+    private Task<GitRevision> ReadRevisionAsync(GitFixture repo, string commit) =>
+        new GitReader(repo.Directory).ReadAsync(commit, context.CancellationToken);
+
+    private static async Task<string> CommitContentAsync(GitFixture repo, string path)
+    {
+        await repo.SetAsync(path, "original");
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+        return commit;
+    }
+
+    private static async Task AdvanceHeadAsync(GitFixture repo, string path, string commit)
+    {
+        await repo.SetAsync(path, "next");
+        await repo.GitAsync("reset", "--hard", await repo.CommitAsync(commit));
     }
 
     [TestMethod]
@@ -208,31 +228,47 @@ public sealed class GitMaterializationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("wrong-head")]
-    [DataRow("missing")]
-    [DataRow("modified")]
-    [DataRow("subdirectory")]
-    public async Task BindReferenceRejectsWrongOrDirtyCheckout(string defect)
+    public async Task BindReferenceRejectsDifferentHead()
     {
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        await repo.SetAsync("nested/content.txt", "original");
-        string commit = await repo.CommitAsync();
-        await repo.SetAsync("nested/content.txt", "next");
-        string next = await repo.CommitAsync(commit);
-        await repo.GitAsync("reset", "--hard", defect == "wrong-head" ? next : commit);
-        if (defect == "modified")
-            await File.WriteAllTextAsync(Path.Combine(repo.Directory, "nested", "content.txt"),
-                "dirty", context.CancellationToken);
-        string directory = defect == "subdirectory"
-            ? Path.Combine(repo.Directory, "nested") : repo.Directory;
-
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            GitMaterialization.BindAsync(directory, defect == "missing"
-                ? "missing-ref" : commit, context.CancellationToken));
-        if (defect == "modified")
-            await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-                GitMaterialization.BindHeadAsync(directory, context.CancellationToken));
+        const string path = "nested/content.txt";
+        string commit = await CommitContentAsync(repo, path);
+        await AdvanceHeadAsync(repo, path, commit);
+        await RejectReferenceAsync(repo.Directory, commit);
     }
+
+    [TestMethod]
+    public async Task BindReferenceRejectsMissingReference()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        await CommitContentAsync(repo, "nested/content.txt");
+        await RejectReferenceAsync(repo.Directory, "missing-ref");
+    }
+
+    [TestMethod]
+    public async Task BindReferenceRejectsCheckoutSubdirectory()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        string commit = await CommitContentAsync(repo, "nested/content.txt");
+        await RejectReferenceAsync(Path.Combine(repo.Directory, "nested"), commit);
+    }
+
+    [TestMethod]
+    public async Task BindReferenceAndHeadRejectModifiedTrackedContent()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        const string path = "nested/content.txt";
+        string commit = await CommitContentAsync(repo, path);
+        await File.WriteAllTextAsync(Path.Combine(repo.Directory, path), "dirty",
+            context.CancellationToken);
+        await RejectReferenceAsync(repo.Directory, commit);
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            GitMaterialization.BindHeadAsync(repo.Directory, context.CancellationToken));
+    }
+
+    private Task<InvalidDataException> RejectReferenceAsync(string path, string reference) =>
+        Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            GitMaterialization.BindAsync(path, reference, context.CancellationToken));
 
     [TestMethod]
     public async Task BindRejectsTagObjectIdNamingTheCheckedOutCommit()

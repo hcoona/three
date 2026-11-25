@@ -236,20 +236,12 @@ public sealed class PythonGroupReaderTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("comparison")]
-    [DataRow("omitted-change")]
-    [DataRow("full-mode")]
-    [DataRow("entry-mode")]
-    public async Task BadScopeTransferStopsBeforeNativeCollection(string defect)
+    public async Task ScopeForAnotherCandidateStopsBeforeNativeCollection()
     {
         using var fixture = await Fixture.SharedAsync(SharedPair, context.CancellationToken);
         var text = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(
             fixture.Request.ScopePath, context.CancellationToken))!;
-        if (defect == "comparison") text["candidate"] = new string('a', 40);
-        else if (defect == "omitted-change") text["changed_paths"] = new
-            System.Text.Json.Nodes.JsonArray();
-        else if (defect == "full-mode") text["full"] = true;
-        else text["endpoint_owners"]!["candidate"]!["paths"]![0]!["mode"] = "120000";
+        text["candidate"] = new string('a', 40);
         await File.WriteAllTextAsync(fixture.Request.ScopePath, text.ToJsonString(),
             context.CancellationToken);
 
@@ -259,28 +251,39 @@ public sealed class PythonGroupReaderTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("interpreter")]
-    [DataRow("passive")]
-    [DataRow("helper")]
-    [DataRow("operation")]
-    public async Task EndpointsCannotSubstituteAnotherControlRuntime(string defect)
+    public Task EndpointsCannotSubstituteAnotherInterpreter() =>
+        RejectCandidateCollectionAsync(candidate => candidate with
+        { Graph = candidate.Graph with { Interpreter = "/other/python" } });
+
+    [TestMethod]
+    public Task EndpointsCannotSubstituteAnotherPassiveHelper() =>
+        RejectCandidateCollectionAsync(candidate => candidate with
+        { Graph = candidate.Graph with { PassiveScript = "/other/passive.py" } });
+
+    [TestMethod]
+    public Task EndpointsCannotSubstituteAnotherPackageHelper() =>
+        RejectCandidateCollectionAsync(candidate => candidate with
+        { PackageHelper = "/other/packages.py" });
+
+    [TestMethod]
+    public Task EndpointsCannotSubstituteAnotherOperationVariant() =>
+        RejectCandidateCollectionAsync(candidate => candidate with
+        { Operation = candidate.Operation with { Variant = "other" } });
+
+    private async Task RejectCandidateCollectionAsync(
+        Func<PythonRepositoryRequest, PythonRepositoryRequest> substitute)
     {
         using var fixture = await Fixture.SharedAsync(SharedPair, context.CancellationToken);
-        PythonRepositoryRequest candidate = fixture.Request.Candidate.Collection;
-        candidate = defect switch
-        {
-            "interpreter" => candidate with
-            { Graph = candidate.Graph with { Interpreter = "/other/python" } },
-            "passive" => candidate with
-            { Graph = candidate.Graph with { PassiveScript = "/other/passive.py" } },
-            "helper" => candidate with { PackageHelper = "/other/packages.py" },
-            _ => candidate with { Operation = candidate.Operation with { Variant = "other" } }
-        };
+        PythonGroupEndpoint candidate = fixture.Request.Candidate;
         fixture.Request = fixture.Request with
-        { Candidate = fixture.Request.Candidate with { Collection = candidate } };
+        {
+            Candidate = candidate with
+            { Collection = substitute(candidate.Collection) },
+        };
 
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
+        Assert.Contains("Python endpoints require one actual control runtime.", failure.Message);
         Assert.IsEmpty(fixture.Collected);
     }
 

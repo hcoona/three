@@ -1,3 +1,5 @@
+using System.Text.Json;
+using WorkflowDelivery.Platform;
 using System.Text.Json.Nodes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Repository;
@@ -311,37 +313,276 @@ public sealed class RubyNativeFactsReaderTests
     }
 
     [TestMethod]
-    [DataRow("truncated")]
-    [DataRow("missing-specifications")]
-    [DataRow("missing-dependencies")]
-    [DataRow("wrong-array-type")]
-    [DataRow("unknown-source")]
-    [DataRow("relative-local-source")]
-    public void IncompleteOrUnsupportedNativeAnswersFail(string scenario)
+    public void TruncatedNativeBundleCannotSupplyFacts() => RejectBundle("{");
+
+    [TestMethod]
+    [DataRow("specifications", null)]
+    [DataRow("direct_dependencies", "3")]
+    public void IncompleteNativeBundleCannotSupplyFacts(string field, string? json)
     {
         JsonObject value = Bundle("path");
-        JsonObject specification = value["specifications"]![0]!.AsObject();
-        switch (scenario)
-        {
-            case "missing-specifications":
-                value.Remove("specifications");
-                break;
-            case "missing-dependencies":
-                specification.Remove("runtime_dependencies");
-                break;
-            case "wrong-array-type":
-                value["direct_dependencies"] = 3;
-                break;
-            case "unknown-source":
-                specification["source"]!["kind"] = "unknown";
-                break;
-            case "relative-local-source":
-                specification["source"]!["path"] = "relative";
-                break;
-        }
-        string text = scenario == "truncated" ? "{" : value.ToJsonString();
+        if (json is null) value.Remove(field);
+        else value[field] = JsonNode.Parse(json);
+        RejectBundle(value.ToJsonString());
+    }
+
+    [TestMethod]
+    public void SpecificationWithoutRuntimeDependenciesCannotSupplyFacts()
+    {
+        JsonObject value = Bundle("path");
+        value["specifications"]![0]!.AsObject().Remove("runtime_dependencies");
+        RejectBundle(value.ToJsonString());
+    }
+
+    [TestMethod]
+    [DataRow("kind", "unknown")]
+    [DataRow("path", "relative")]
+    public void UnsupportedNativeBundleSourceCannotSupplyFacts(string field, string value)
+    {
+        JsonObject bundle = Bundle("path");
+        bundle["specifications"]![0]!["source"]![field] = value;
+        RejectBundle(bundle.ToJsonString());
+    }
+
+    private static void RejectBundle(string json) =>
         Assert.ThrowsExactly<InvalidDataException>(() =>
-            RubyNativeFactsReader.ParseBundle(text, NativePath("bundle/gems.rb"), "2.7.2")
-        );
+            RubyNativeFactsReader.ParseBundle(json, NativePath("bundle/gems.rb"), "2.7.2"));
+
+    private static RubyFactTools Tools(string root) => new(Path.Combine(root, "ruby"),
+        Path.Combine(root, "facts.rb"), root,
+        new Dictionary<string, string?>
+        {
+            ["GEM_HOME"] = Path.Combine(root, "gems"),
+            ["BUNDLE_FROZEN"] = "0",
+            ["BUNDLE_GEMFILE"] = "old context"
+        }, 30);
+
+    private static JsonObject CollectorGem() => JsonNode.Parse("""
+        {"name":"native-gem","version":"1.2.3","platform":"ruby",
+         "require_paths":["lib"],"files":["lib/native.rb"],"runtime_dependencies":[]}
+        """)!.AsObject();
+
+    private static NativeCommandResult Answer(JsonObject value) => new(
+        NativeTermination.Exited, 0, value.ToJsonString(), "", 0, null);
+
+    [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task NativeRequestsWorkWithReflectionDisabled()
+    {
+        const string marker = "WORKFLOW_RUBY_JSON_TEST_CHILD";
+        if (Environment.GetEnvironmentVariable(marker) == "1")
+        {
+            Assert.IsFalse(JsonSerializer.IsReflectionEnabledByDefault);
+            await SourceAndArchiveUseNativeAnswersBoundToRequestedPath(false);
+            await SourceAndArchiveUseNativeAnswersBoundToRequestedPath(true);
+            return;
+        }
+        using var scratch = new CollectorScratch();
+        string root = scratch.Root;
+        string assembly = typeof(RubyNativeFactsReaderTests).Assembly.Location;
+        JsonNode configuration = JsonNode.Parse(await File.ReadAllTextAsync(
+            Path.ChangeExtension(assembly, ".runtimeconfig.json")))!;
+        configuration["runtimeOptions"]!["configProperties"]![
+            "System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault"] = false;
+        string runtime = Path.Combine(root, "reflection-disabled.runtimeconfig.json");
+        await File.WriteAllTextAsync(runtime, configuration.ToJsonString());
+        NativeCommandResult result = await NativeProcess.ExecuteAsync(new("dotnet", root,
+            ["exec", "--runtimeconfig", runtime, assembly, "--filter",
+                "FullyQualifiedName=WorkflowDelivery.Tests.Repository." +
+                nameof(RubyNativeFactsReaderTests) + "." +
+                nameof(NativeRequestsWorkWithReflectionDisabled),
+                "--minimum-expected-tests", "1"], 45,
+            new Dictionary<string, string?> { [marker] = "1" }), CancellationToken.None);
+        Assert.IsTrue(result.Succeeded, result.Stdout + result.Stderr + result.Error);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task SourceAndArchiveUseNativeAnswersBoundToRequestedPath(bool archive)
+    {
+        using var scratch = new CollectorScratch();
+        string root = scratch.Root;
+        RubyFactTools tools = Tools(root);
+        string path = Path.Combine(root, archive ? "native.gem" : "native.gemspec");
+        var collector = new RubyNativeFactCollector(tools, async (command, token) =>
+        {
+            Assert.AreEqual(tools.Ruby, command.Executable);
+            Assert.AreEqual(root, command.Directory);
+            Assert.AreEqual(30, command.DeadlineSeconds);
+            Assert.IsFalse(command.InheritEnvironment);
+            Assert.AreEqual(tools.Helper, command.Arguments[0]);
+            using JsonDocument request = JsonDocument.Parse(await File.ReadAllTextAsync(
+                command.Arguments[1], token));
+            Assert.AreEqual(archive ? "archive" : "gemspec",
+                request.RootElement.GetProperty("operation").GetString());
+            Assert.AreEqual(path, request.RootElement.GetProperty("path").GetString());
+            JsonObject value = CollectorGem();
+            value[archive ? "archive" : "gemspec"] = path;
+            if (archive) value["contents"] = new JsonArray("lib/native.rb");
+            return Answer(value);
+        });
+        if (archive)
+        {
+            RubyArchiveFacts result = await collector.ArchiveAsync(path, CancellationToken.None);
+            Assert.AreEqual(path, result.Archive);
+            Assert.AreEqual("native-gem", result.Gem.Name);
+            Assert.AreEqual("lib/native.rb", Assert.ContainsSingle(result.Contents));
+        }
+        else
+        {
+            RubySourceGemFacts result = await collector.SourceAsync(path, CancellationToken.None);
+            Assert.AreEqual(path, result.Gemspec);
+            Assert.AreEqual("1.2.3", result.Gem.Version);
+            Assert.AreEqual("lib/native.rb", Assert.ContainsSingle(result.Gem.Files));
+        }
+    }
+
+    [TestMethod]
+    [DataRow("2.4.20")]
+    [DataRow("2.7.2")]
+    public async Task BundleUsesSelectedNativeActivationAndFrozenOriginalContext(string version)
+    {
+        using var scratch = new CollectorScratch();
+        string root = scratch.Root;
+        RubyFactTools tools = Tools(root);
+        string path = Path.Combine(root, "gems.rb");
+        var collector = new RubyNativeFactCollector(tools, async (command, token) =>
+        {
+            Assert.AreEqual(version, command.Arguments[2]);
+            Assert.Contains("gem \"bundler\", ARGV.shift", command.Arguments[1]);
+            Assert.AreEqual(tools.Helper, command.Arguments[3]);
+            Assert.IsFalse(command.InheritEnvironment);
+            Assert.AreEqual(path, command.Environment!["BUNDLE_GEMFILE"]);
+            Assert.AreEqual("1", command.Environment["BUNDLE_FROZEN"]);
+            Assert.AreEqual(tools.Environment["GEM_HOME"], command.Environment["GEM_HOME"]);
+            using JsonDocument request = JsonDocument.Parse(await File.ReadAllTextAsync(
+                command.Arguments[4], token));
+            Assert.AreEqual("bundle", request.RootElement.GetProperty("operation").GetString());
+            Assert.AreEqual(path, request.RootElement.GetProperty("path").GetString());
+            return Answer(new JsonObject
+            {
+                ["gemfile"] = path,
+                ["lockfile"] = Path.Combine(root, "gems.locked"),
+                ["bundler_version"] = version,
+                ["locked_bundler_version"] = version,
+                ["gemfiles"] = new JsonArray(path),
+                ["direct_dependencies"] = new JsonArray(),
+                ["specifications"] = new JsonArray()
+            });
+        });
+        RubyBundleFacts result = await collector.BundleAsync(path, version, CancellationToken.None);
+        Assert.AreEqual(version, result.BundlerVersion);
+        Assert.AreEqual(path, result.Gemfile);
+        Assert.IsEmpty(result.Specifications);
+        Assert.AreEqual("0", tools.Environment["BUNDLE_FROZEN"]);
+        Assert.AreEqual("old context", tools.Environment["BUNDLE_GEMFILE"]);
+    }
+
+    [TestMethod]
+    [DataRow("Exited")]
+    [DataRow("StartFailed")]
+    [DataRow("Cancelled")]
+    [DataRow("TimedOut")]
+    [DataRow("InvalidOutput")]
+    [DataRow("CleanupFailed")]
+    public async Task FailedNativeCommandsCannotSupplyFacts(string termination)
+    {
+        using var scratch = new CollectorScratch();
+        string root = scratch.Root;
+        string path = Path.Combine(root, "native.gemspec");
+        JsonObject value = CollectorGem();
+        value["gemspec"] = path;
+        var collector = new RubyNativeFactCollector(Tools(root), (_, _) => Task.FromResult(
+            new NativeCommandResult(Enum.Parse<NativeTermination>(termination),
+                termination == "Exited" ? 1 : 0,
+                value.ToJsonString(), "failed", 0, null)));
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            collector.SourceAsync(path, CancellationToken.None));
+        Assert.Contains(termination, error.Message);
+        Assert.Contains(termination == "Exited" ? "exit 1" : "exit 0", error.Message);
+        Assert.Contains("failed", error.Message);
+        Assert.IsEmpty(Directory.GetFiles(root));
+    }
+
+    [TestMethod]
+    public async Task NativeErrorCannotBeHiddenBySuccessfulExitAndWellFormedFacts()
+    {
+        using var scratch = new CollectorScratch();
+        string root = scratch.Root;
+        string path = Path.Combine(root, "native.gemspec");
+        JsonObject value = CollectorGem();
+        value["gemspec"] = path;
+        var collector = new RubyNativeFactCollector(Tools(root), (_, _) => Task.FromResult(
+            Answer(value) with { Error = "incomplete capture" }));
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            collector.SourceAsync(path, CancellationToken.None));
+        Assert.Contains("incomplete capture", error.Message);
+        Assert.Contains("exit 0", error.Message);
+        Assert.IsEmpty(Directory.GetFiles(root));
+    }
+
+    [TestMethod]
+    public async Task FailedNativeStartupKeepsItsAvailableDiagnostics()
+    {
+        using var scratch = new CollectorScratch();
+        string root = scratch.Root;
+        string path = Path.Combine(root, "native.gemspec");
+        var collector = new RubyNativeFactCollector(Tools(root), (_, _) => Task.FromResult(
+            new NativeCommandResult(NativeTermination.StartFailed, null, "", "native detail",
+                0, "Ruby executable missing")));
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            collector.SourceAsync(path, CancellationToken.None));
+        Assert.Contains("StartFailed", error.Message);
+        Assert.Contains("exit unknown", error.Message);
+        Assert.Contains("Ruby executable missing", error.Message);
+        Assert.Contains("native detail", error.Message);
+        Assert.IsEmpty(Directory.GetFiles(root));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task CancellationCannotBecomeFactCollectionSuccess(bool duringProcess)
+    {
+        using var scratch = new CollectorScratch();
+        string root = scratch.Root;
+        using var cancellation = new CancellationTokenSource();
+        string path = Path.Combine(root, "native.gemspec");
+        var collector = new RubyNativeFactCollector(Tools(root), (_, _) =>
+        {
+            Assert.IsTrue(duringProcess, "Pre-cancelled collection must not launch Ruby.");
+            cancellation.Cancel();
+            JsonObject value = CollectorGem();
+            value["gemspec"] = path;
+            return Task.FromResult(Answer(value));
+        });
+        if (!duringProcess) cancellation.Cancel();
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            collector.SourceAsync(path, cancellation.Token));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task SuccessfulExitStillRequiresCompleteCorrectlyBoundFacts(bool substituted)
+    {
+        using var scratch = new CollectorScratch();
+        string root = scratch.Root;
+        string path = Path.Combine(root, "native.gemspec");
+        JsonObject value = CollectorGem();
+        value["gemspec"] = Path.Combine(root, "other.gemspec");
+        var collector = new RubyNativeFactCollector(Tools(root), (_, _) => Task.FromResult(
+            substituted ? Answer(value) : new NativeCommandResult(NativeTermination.Exited, 0,
+                "{", "", 0, null)));
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            collector.SourceAsync(path, CancellationToken.None));
+    }
+
+    private sealed class CollectorScratch : IDisposable
+    {
+        internal string Root { get; } = Directory.CreateTempSubdirectory("ruby-facts-").FullName;
+
+        public void Dispose() => Directory.Delete(Root, recursive: true);
     }
 }

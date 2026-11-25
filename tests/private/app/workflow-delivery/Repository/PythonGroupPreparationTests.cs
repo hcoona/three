@@ -208,55 +208,66 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("reused")]
-    [DataRow("source-overlap")]
-    [DataRow("missing-source")]
-    [DataRow("relative-tool")]
-    [DataRow("full-mismatch")]
-    [DataRow("deadline")]
-    public async Task ReusedOrInvalidOwnedScratchStopsBeforePreparation(string defect)
+    public async Task ReusedScratchCannotBePreparedOrOverwritten()
     {
         using var fixture = Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!);
-        if (defect == "reused")
-            File.WriteAllText(Path.Combine(fixture.Request.Scratch, "old-state"), "old");
-        else if (defect == "source-overlap") fixture.Request = fixture.Request with
-        { Scratch = fixture.Request.Basis.Directory };
-        else if (defect == "missing-source")
-            Directory.Delete(fixture.Request.ControlSources, recursive: true);
-        else if (defect == "relative-tool") fixture.Request = fixture.Request with
-        { Tools = fixture.Request.Tools with { Uv = "uv" } };
-        else if (defect == "deadline")
-            fixture.Request = fixture.Request with { DeadlineSeconds = 0 };
-        else fixture.Request = fixture.Request with { Full = true };
+        string state = Path.Combine(fixture.Request.Scratch, "old-state");
+        await File.WriteAllTextAsync(state, "old", context.CancellationToken);
+
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.PrepareAsync(context.CancellationToken));
+
         Assert.IsEmpty(fixture.Commands);
+        Assert.AreEqual("old", await File.ReadAllTextAsync(state, context.CancellationToken));
     }
 
     [TestMethod]
-    [DataRow("basis", "mismatch")]
-    [DataRow("candidate", "mismatch")]
-    [DataRow("basis", "dirty")]
-    [DataRow("candidate", "dirty")]
-    [DataRow("basis", "nonrepository")]
-    [DataRow("candidate", "nonrepository")]
-    public async Task InvalidEndpointStopsBeforeNativePreparation(string side, string defect)
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task FreshScratchCannotOverlapOwnedInputs(bool controlSources)
     {
         using var fixture = Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!);
-        MaterializedEndpoint endpoint = side == "basis"
-            ? fixture.Request.Basis : fixture.Request.Candidate;
-        if (defect == "mismatch")
-        {
-            string wrongHead = side == "basis" ? sharedCandidateEndpoint!.Reference :
-                sharedBasisEndpoint!.Reference;
-            endpoint = endpoint with { Reference = wrongHead };
-        }
-        else if (defect == "dirty")
-            endpoint = await fixture.DirtyAsync(side, context.CancellationToken);
-        else endpoint = endpoint with { Directory = fixture.Request.ControlSources };
-        fixture.Request = side == "basis" ? fixture.Request with { Basis = endpoint }
-            : fixture.Request with { Candidate = endpoint };
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        MaterializedEndpoint basis = await Fixture.EndpointAsync(repo, "row-owned basis");
+        string scratch = Path.Combine(
+            controlSources ? fixture.Request.ControlSources : basis.Directory, "scratch");
+        Directory.CreateDirectory(scratch);
+        fixture.Request = fixture.Request with { Basis = basis, Scratch = scratch };
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(scratch));
 
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.PrepareAsync(context.CancellationToken));
+
+        Assert.Contains("fresh external state", failure.Message);
+        Assert.IsEmpty(fixture.Commands);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(scratch));
+    }
+
+    [TestMethod]
+    public async Task CandidateMustMaterializeTheRequestedRevision()
+    {
+        using var fixture = Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!);
+        fixture.Request = fixture.Request with
+        {
+            Candidate = fixture.Request.Candidate with
+            { Reference = fixture.Request.Basis.Reference },
+        };
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.PrepareAsync(context.CancellationToken));
+        Assert.IsEmpty(fixture.Commands);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Request.Scratch));
+    }
+
+    [TestMethod]
+    [DataRow("basis")]
+    [DataRow("candidate")]
+    public async Task DirtyEndpointStopsBeforeNativePreparation(string side)
+    {
+        using var fixture = Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!);
+        MaterializedEndpoint dirty = await fixture.DirtyAsync(side, context.CancellationToken);
+        fixture.Request = side == "basis" ? fixture.Request with { Basis = dirty }
+            : fixture.Request with { Candidate = dirty };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.PrepareAsync(context.CancellationToken));
         Assert.IsEmpty(fixture.Commands);

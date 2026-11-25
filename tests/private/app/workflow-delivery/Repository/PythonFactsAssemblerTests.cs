@@ -4,6 +4,18 @@ using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Tests.Repository;
 
+// Shared package subject for the CI execution fixtures.
+internal static class PythonPackageChecksTests
+{
+    internal static readonly ReleaseUnitDeclaration Unit = new(
+        "product/workflow-delivery.release-unit.yml", "product",
+        [new("distributions", PythonPackageChecks.Build, "pyproject.toml",
+            [new("wheel", "primary-package", "python-wheel"),
+                new("source", "source-package", "python-sdist")])]);
+    internal static readonly PythonMetadataMember[] Members =
+        [new("hcoona-release-smoke-python", "product", "native-id")];
+}
+
 [TestClass]
 public sealed class PythonFactsAssemblerTests
 {
@@ -250,77 +262,318 @@ public sealed class PythonFactsAssemblerTests
     }
 
     [TestMethod]
-    [DataRow("checks", false)]
-    [DataRow("checks", true)]
-    [DataRow("preset", false)]
-    [DataRow("preset", true)]
-    [DataRow("origin", false)]
-    [DataRow("origin", true)]
-    [DataRow("member", false)]
-    [DataRow("member", true)]
-    [DataRow("relation", false)]
-    [DataRow("relation", true)]
-    [DataRow("prerequisite", false)]
-    [DataRow("prerequisite", true)]
-    [DataRow("duplicate-input", false)]
-    [DataRow("duplicate-input", true)]
-    public void EitherMalformedActualOwnerFailsBeforeScopeCertification(string fault,
-        bool invalidBasis)
+    [DataRow(false)]
+    [DataRow(true)]
+    public void EitherMalformedActualOwnerFailsBeforeScopeCertification(bool invalidBasis)
     {
         var package = Package("src/package");
-        ProjectFacts invalid = fault switch
-        {
-            "checks" => package with { Checks = [] },
-            "preset" => package with { QualityPreset = null },
-            "origin" => package with { Origin = CheckOrigin.NativeRetained },
-            "member" => package with { Directory = "src/missing" },
-            "relation" => package with { Dependencies = ["src/input"] },
-            "prerequisite" => package with
-            { Checks = [Check("src/package", prerequisites: [Check("missing").Key])] },
-            "duplicate-input" => package with
-            { OwnedPaths = ["src/package/pyproject.toml", "src/package/pyproject.toml"] },
-            _ => throw new ArgumentException("Unknown fault.", nameof(fault)),
-        };
         var valid = Endpoint("valid", [Member("."), Member("src/package"),
             Member("src/input")], ["tests/standalone.py"], [package]);
-        var malformed = valid with { Packages = [invalid] };
-        Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
-            invalidBasis ? malformed : valid, invalidBasis ? valid : malformed, [], false));
+        Reject(package with { Checks = [] }, "missing checks");
+        Reject(package with { QualityPreset = null }, "missing preset");
+        Reject(package with { Origin = CheckOrigin.NativeRetained }, "wrong origin");
+        Reject(package with { Directory = "src/missing" }, "unknown member");
+        Reject(package with { Dependencies = ["src/input"] }, "unexpected relation");
+        Reject(package with
+        { Checks = [Check("src/package", prerequisites: [Check("missing").Key])] },
+            "unknown prerequisite");
+        Reject(package with
+        { OwnedPaths = ["src/package/pyproject.toml", "src/package/pyproject.toml"] },
+            "duplicate input");
+
+        void Reject(ProjectFacts invalid, string scenario)
+        {
+            var malformed = valid with { Packages = [invalid] };
+            Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
+                invalidBasis ? malformed : valid, invalidBasis ? valid : malformed, [], false),
+                scenario);
+        }
     }
 
     [TestMethod]
-    [DataRow("options")]
-    [DataRow("target")]
-    [DataRow("member-manifest")]
-    [DataRow("input-member")]
-    [DataRow("dimension")]
-    public void InvalidNativeScopeCannotBecomeRunnableFacts(string fault)
+    public void InvalidNativeScopeCannotBecomeRunnableFacts()
     {
         var endpoint = Endpoint("same", [Member("."), Member("src/member")],
             ["src/member/tests"], paths: ["shared.json"]);
-        endpoint = fault switch
+        Reject(endpoint with
+        { Configuration = endpoint.Configuration with { Options = ["-p", "plugin"] } },
+            "unsupported option");
+        Reject(endpoint with
+        { Configuration = endpoint.Configuration with { TestPaths = ["tests/missing.py"] } },
+            "missing target");
+        Reject(endpoint with
         {
-            "options" => endpoint with
-            { Configuration = endpoint.Configuration with { Options = ["-p", "plugin"] } },
-            "target" => endpoint with
-            { Configuration = endpoint.Configuration with { TestPaths = ["tests/missing.py"] } },
-            "member-manifest" => endpoint with
+            Revision = endpoint.Revision with
             {
-                Revision = endpoint.Revision with
-                {
-                    Entries = endpoint.Revision.Entries.Where(entry =>
-                    entry.Path != "src/member/pyproject.toml").ToArray()
-                }
-            },
-            "input-member" => endpoint with { Inputs = [new("shared.json", ["missing"], [])] },
-            "dimension" => endpoint with
+                Entries = endpoint.Revision.Entries.Where(entry =>
+                entry.Path != "src/member/pyproject.toml").ToArray()
+            }
+        }, "missing member manifest");
+        Reject(endpoint with { Inputs = [new("shared.json", ["missing"], [])] }, "unknown member");
+        Reject(endpoint with
+        { Operation = endpoint.Operation with { Dimensions = new() { ["testPath"] = "other" } } },
+            "wrong dimension");
+
+        static void Reject(PythonFactsEndpoint endpoint, string scenario) =>
+            Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
+                endpoint, endpoint, [], false), scenario);
+    }
+
+    private static readonly string[] C = ["pytest:c"];
+    private static readonly string[] Parent = ["pytest:parent"];
+    private static readonly string[] Revisions = ["before", "after"];
+    private static readonly string[] Eng = ["pytest:eng"];
+    private static readonly string[] RootConsumers = ["pytest:eng", "pytest:package"];
+    private static readonly string[] CycleConsumers = ["package:a", "pytest:a", "pytest:b"];
+    private static PythonProjectDependencies OwnerMember(string path, string[]? ordinary = null,
+        string[]? build = null) => new(path, path, ordinary ?? [], build ?? []);
+
+    private static PythonOwnerEndpoint OwnerEndpoint(string revision,
+        PythonProjectDependencies[] projects, PythonQualityBinding[] quality,
+        string[] paths, PythonInputBinding[]? inputs = null) => new(
+            new(revision, projects.Select(project => project.Directory == "." ?
+                "pyproject.toml" : project.Directory + "/pyproject.toml")
+                .Concat(paths).Distinct(StringComparer.Ordinal)
+                .Select(path => new GitEntry(path, "100644", "blob")).ToArray()),
+            projects, quality, inputs ?? []);
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void MixedEndpointClosureKeepsInputOnlyIntermediary(bool buildEdge)
+    {
+        var basis = OwnerEndpoint("before", [OwnerMember("."), OwnerMember("src/a"),
+            OwnerMember("src/b", buildEdge ? [] : ["src/a"], buildEdge ? ["src/a"] : []),
+            OwnerMember("src/c")], [new("pytest:c", "src/c", [])], ["src/a/source.py"]);
+        var candidate = OwnerEndpoint("after",
+            [OwnerMember("."), OwnerMember("src/a"), OwnerMember("src/b"),
+            OwnerMember("src/c", ["src/b"])], [new("pytest:c", "src/c", [])],
+            ["src/a/source.py"]);
+
+        PythonOwnerImpact[] result = PythonOwnerProjection.Project(basis, candidate,
+            ["src/a/source.py"]);
+
+        Assert.HasCount(2, result);
+        foreach (PythonOwnerImpact impact in result)
+        {
+            Assert.AreEqual("src/a/source.py", impact.Path);
+            CollectionAssert.AreEqual(C, impact.Owners);
+        }
+        CollectionAssert.AreEqual(Revisions, result.Select(impact =>
+            impact.Revision).ToArray());
+    }
+
+    [TestMethod]
+    public void NestedInputOnlyMemberDoesNotInheritParentChecks()
+    {
+        var endpoint = OwnerEndpoint("same", [OwnerMember("."), OwnerMember("src/parent"),
+            OwnerMember("src/parent/input")], [new("pytest:parent", "src/parent", [])],
+            ["src/parent/input/data.py", "src/parent/source.py", "src/parent-other/data.py"],
+            [new("src/parent-other/data.py", [], [])]);
+        PythonOwnerImpact[] result = PythonOwnerProjection.Project(endpoint, endpoint,
+            ["src/parent/input/data.py", "src/parent/source.py", "src/parent-other/data.py"]);
+        Assert.HasCount(6, result);
+        foreach (PythonOwnerImpact impact in result)
+            if (impact.Path is "src/parent/input/data.py" or "src/parent-other/data.py")
+                Assert.IsEmpty(impact.Owners);
+            else CollectionAssert.AreEqual(Parent, impact.Owners);
+    }
+
+    [TestMethod]
+    public void DeletedProducerPreservesOldPathAndRevisionConsumers()
+    {
+        var basis = OwnerEndpoint("before", [OwnerMember("."), OwnerMember("src/a"),
+            OwnerMember("src/c", ["src/a"])], [new("pytest:c", "src/c", [])],
+            ["src/a/removed.py"]);
+        var candidate = OwnerEndpoint("after", [OwnerMember("."), OwnerMember("src/c")],
+            [new("pytest:c", "src/c", [])], []);
+        PythonOwnerImpact impact = Assert.ContainsSingle(PythonOwnerProjection.Project(
+            basis, candidate, ["src/a/removed.py"]));
+        Assert.AreEqual("before", impact.Revision);
+        Assert.AreEqual("src/a/removed.py", impact.Path);
+        CollectionAssert.AreEqual(C, impact.Owners);
+    }
+
+    [TestMethod]
+    public void StandaloneTargetsAndRootInputsHaveOnlyExplicitConsumers()
+    {
+        var endpoint = OwnerEndpoint("same", [OwnerMember("."), OwnerMember("src/package")],
+            [new("pytest:eng", null, ["tests/eng/test_scope.py"]),
+                new("pytest:package", "src/package", [])],
+            ["tests/eng/test_scope.py", "uv.lock", "docs/unrelated.md"],
+            [new("uv.lock", [], ["pytest:eng", "pytest:package"]),
+                new("docs/unrelated.md", [], [])]);
+        PythonOwnerImpact[] result = PythonOwnerProjection.Project(endpoint, endpoint,
+            ["uv.lock", "tests/eng/test_scope.py", "docs/unrelated.md"]);
+        foreach (PythonOwnerImpact impact in result)
+            switch (impact.Path)
             {
-                Operation = endpoint.Operation with
-                { Dimensions = new() { ["testPath"] = "other" } }
-            },
-            _ => throw new ArgumentException("Unknown fault.", nameof(fault)),
+                case "uv.lock":
+                    CollectionAssert.AreEqual(RootConsumers, impact.Owners);
+                    break;
+                case "tests/eng/test_scope.py":
+                    CollectionAssert.AreEqual(Eng, impact.Owners);
+                    break;
+                default:
+                    Assert.IsEmpty(impact.Owners);
+                    break;
+            }
+    }
+
+    [TestMethod]
+    public void CyclesAndMultipleQualityConsumersKeepFiniteCompleteUnion()
+    {
+        var endpoint = OwnerEndpoint("same", [OwnerMember("."), OwnerMember("src/a", ["src/b"]),
+            OwnerMember("src/b", ["src/a"])], [new("pytest:a", "src/a", []),
+                new("package:a", "src/a", []), new("pytest:b", "src/b", [])],
+            ["src/a/source.py"]);
+        foreach (PythonOwnerImpact impact in PythonOwnerProjection.Project(endpoint, endpoint,
+            ["src/a/source.py"]))
+            CollectionAssert.AreEqual(CycleConsumers, impact.Owners);
+    }
+
+    [TestMethod]
+    public void PackageNamesDoNotAssociateDifferentRepositoryCoordinates()
+    {
+        var basis = OwnerEndpoint("before", [OwnerMember("."), new("src/old", "same-name", [], [])],
+            [], ["src/old/source.py"]);
+        var candidate = OwnerEndpoint("after",
+            [OwnerMember("."), new("src/new", "same-name", [], [])],
+            [new("pytest:new", "src/new", [])], ["src/new/source.py"]);
+        PythonOwnerImpact[] result = PythonOwnerProjection.Project(basis, candidate,
+            ["src/old/source.py", "src/new/source.py"]);
+        Assert.HasCount(2, result);
+        PythonOwnerImpact removed = result.Single(impact => impact.Revision == "before");
+        Assert.AreEqual("src/old/source.py", removed.Path);
+        Assert.IsEmpty(removed.Owners);
+        PythonOwnerImpact added = result.Single(impact => impact.Revision == "after");
+        Assert.AreEqual("src/new/source.py", added.Path);
+        Assert.AreEqual("pytest:new", Assert.ContainsSingle(added.Owners));
+    }
+
+    [TestMethod]
+    public void QualityBindingChangesKeepBothEndpointConsumers()
+    {
+        var basis = OwnerEndpoint("before", [OwnerMember("."), OwnerMember("src/a")],
+            [new("pytest:old", "src/a", [])], ["src/a/source.py"]);
+        var candidate = OwnerEndpoint("after", [OwnerMember("."), OwnerMember("src/a")],
+            [new("pytest:new", "src/a", [])], ["src/a/source.py"]);
+        foreach (PythonOwnerImpact impact in PythonOwnerProjection.Project(basis, candidate,
+            ["src/a/source.py"]))
+        {
+            Assert.HasCount(2, impact.Owners);
+            Assert.Contains("pytest:old", impact.Owners);
+            Assert.Contains("pytest:new", impact.Owners);
+        }
+    }
+
+    [TestMethod]
+    public void PositiveOtherEndpointDoesNotHideUnknownPresentInput()
+    {
+        var basis = OwnerEndpoint("before", [OwnerMember("."), OwnerMember("src/a")], [],
+            ["shared.py"], [new("shared.py", [], [])]);
+        var candidate = OwnerEndpoint("after", [OwnerMember("."), OwnerMember("src/a")], [],
+            ["shared.py"]);
+        Assert.ThrowsExactly<InvalidDataException>(() => PythonOwnerProjection.Project(
+            basis, candidate, ["shared.py"]));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void EitherIncompleteEndpointFailsDespiteValidOtherEndpoint(bool invalidBasis)
+    {
+        var valid = OwnerEndpoint("valid", [OwnerMember("."), OwnerMember("src/a")],
+            [new("pytest:a", "src/a", [])], ["src/a/source.py"]);
+        Reject(valid with { Projects = [OwnerMember("src/a")] }, "missing root member");
+        Reject(valid with { Revision = valid.Revision with { Commit = " " } }, "missing commit");
+        Reject(valid with
+        {
+            Revision = valid.Revision with
+            {
+                Entries = valid.Revision.Entries.Where(entry =>
+                    entry.Path != "src/a/pyproject.toml").ToArray()
+            }
+        }, "missing member manifest");
+
+        void Reject(PythonOwnerEndpoint invalid, string scenario) =>
+            Assert.ThrowsExactly<InvalidDataException>(() => PythonOwnerProjection.Project(
+                invalidBasis ? invalid : valid, invalidBasis ? valid : invalid,
+                ["src/a/source.py"]), scenario);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void UnknownSharedInputMemberFailsWithValidOppositeEndpoint(bool invalidBasis)
+    {
+        var valid = OwnerEndpoint("valid", [OwnerMember("."), OwnerMember("src/a")],
+            [new("pytest:a", "src/a", [])], ["shared.json"],
+            [new("shared.json", [], [])]);
+        var invalid = valid with
+        {
+            Inputs = [new("shared.json", ["missing"], [])]
         };
-        Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
-            endpoint, endpoint, [], false));
+
+        Assert.ThrowsExactly<InvalidDataException>(() => PythonOwnerProjection.Project(
+            invalidBasis ? invalid : valid, invalidBasis ? valid : invalid,
+            ["shared.json"]));
+    }
+
+    [TestMethod]
+    public void MemberOnlySharedInputReachesIndirectQualityOwner()
+    {
+        var basis = OwnerEndpoint("before",
+            [OwnerMember("."), OwnerMember("src/a"), OwnerMember("src/b"),
+            OwnerMember("src/unrelated")], [new("pytest:b", "src/b", []),
+                new("pytest:unrelated", "src/unrelated", [])], ["shared.json"],
+            [new("shared.json", ["src/a"], [])]);
+        var candidate = OwnerEndpoint("after", [OwnerMember("."), OwnerMember("src/a"),
+            OwnerMember("src/b", ["src/a"]), OwnerMember("src/unrelated")],
+            [new("pytest:b", "src/b", []), new("pytest:unrelated", "src/unrelated", [])],
+            []);
+
+        PythonOwnerImpact impact = Assert.ContainsSingle(PythonOwnerProjection.Project(
+            basis, candidate, ["shared.json"]));
+
+        Assert.AreEqual("shared.json", impact.Path);
+        Assert.AreEqual("before", impact.Revision);
+        Assert.AreEqual("pytest:b", Assert.ContainsSingle(impact.Owners));
+    }
+
+    [TestMethod]
+    public void IncompleteOwnershipCannotBecomeKnownNonselection()
+    {
+        var endpoint = OwnerEndpoint("same", [OwnerMember("."), OwnerMember("src/a")],
+            [new("pytest:a", "src/a", [])], ["src/a/source.py", "unknown.py"]);
+        const string path = "src/a/source.py";
+        Reject(endpoint, "unknown file", "unknown.py");
+        Reject(endpoint, "absent file", "absent.py");
+        Reject(endpoint, "path escape", "../outside.py");
+        Reject(endpoint, "duplicate path", path, path);
+        Reject(endpoint with { Projects = [OwnerMember("."), OwnerMember("src/a", ["src/b"])] },
+            "dangling dependency", path);
+        Reject(endpoint with { Projects = [OwnerMember("src/a")] }, "missing root", path);
+        Reject(endpoint with { Inputs = [new(path, [], ["missing"])] }, "unknown owner", path);
+        Reject(endpoint with { Quality = [new("pytest:a", "missing", [])] },
+            "unknown member", path);
+        Reject(endpoint with { Quality = [new("pytest:a", "src/a", ["absent"])] },
+            "missing target", path);
+        Reject(endpoint with
+        {
+            Projects = [OwnerMember("."), OwnerMember("src/a"), OwnerMember("src/a")]
+        }, "duplicate member", path);
+        Reject(endpoint with
+        {
+            Revision = endpoint.Revision with
+            {
+                Entries = endpoint.Revision.Entries.Select(entry => entry.Path == path ?
+                    entry with { Mode = "120000" } : entry).ToArray()
+            }
+        }, "symlink", path);
+
+        static void Reject(PythonOwnerEndpoint edited, string scenario, params string[] changed) =>
+            Assert.ThrowsExactly<InvalidDataException>(() => PythonOwnerProjection.Project(
+                edited, edited, changed), scenario);
     }
 }

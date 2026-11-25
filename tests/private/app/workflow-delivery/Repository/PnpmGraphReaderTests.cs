@@ -5,7 +5,7 @@ using WorkflowDelivery.Repository;
 namespace WorkflowDelivery.Tests.Repository;
 
 [TestClass]
-public sealed class PnpmGraphReaderTests
+public sealed class PnpmGraphReaderTests(TestContext context)
 {
     private static readonly string[] LocalConsumers = ["packages/app", "packages/top"];
     private static readonly string[] NestedConsumers = ["packages/one", "packages/two"];
@@ -225,61 +225,67 @@ public sealed class PnpmGraphReaderTests
     }
 
     [TestMethod]
-    [DataRow("ambiguous-output")]
-    [DataRow("outside-input")]
-    [DataRow("patch-qualified-file")]
-    [DataRow("aliased-file")]
-    [DataRow("unknown-closure")]
-    [DataRow("missing-project")]
-    [DataRow("extra-full-project")]
-    [DataRow("missing-root")]
-    [DataRow("selector-pattern")]
-    [DataRow("dedicated-lock")]
-    [DataRow("relocated-lock")]
-    [DataRow("pnpmfile")]
-    [DataRow("global-pnpmfile")]
-    [DataRow("config-dependencies")]
-    [DataRow("hoisted-linker")]
-    public async Task ReadRejectsUnsupportedOrIncompleteNativeScope(string defect)
+    [DataRow("file:packages/library", "../library", DisplayName = "Ambiguous output")]
+    [DataRow("file:../external", null, DisplayName = "Outside input")]
+    [DataRow("file:packages/library(patch_hash=0123456789abcdef)", null)]
+    [DataRow("local-library@file:packages/library", null)]
+    public async Task ReadRejectsUnsupportedFileDependency(string version, string? output)
     {
-        var native = new NativeQueries(".", "packages/library", "packages/app");
-        switch (defect)
-        {
-            case "ambiguous-output":
-                native.Outputs["packages/app"] = "../library";
-                native.Nodes["packages/app"] = [native.Node("file:packages/library",
-                    "node_modules/copy")];
-                break;
-            case "outside-input":
-                native.Nodes["packages/app"] = [native.Node("file:../external",
-                    "node_modules/copy")];
-                break;
-            case "patch-qualified-file":
-                native.Nodes["packages/app"] = [native.Node(
-                    "file:packages/library(patch_hash=0123456789abcdef)", "node_modules/copy")];
-                break;
-            case "aliased-file":
-                native.Nodes["packages/app"] = [native.Node("local-library@file:packages/library",
-                    "node_modules/copy")];
-                break;
-            case "unknown-closure":
-                native.Closures["packages/app"] = ["packages/app", "unknown"]; break;
-            case "missing-project": native.OmitFullProject = "packages/library"; break;
-            case "extra-full-project": native.ExtraFullProject = "packages/library"; break;
-            case "missing-root": native.Directories.Remove("."); break;
-            case "selector-pattern": native.Directories.Add("packages/[pattern]"); break;
-            case "dedicated-lock": native.SharedLock = "false"; break;
-            case "relocated-lock": native.LockDirectory = "\"elsewhere\""; break;
-            case "pnpmfile": native.Settings["pnpmfile"] = "\"hooks.cjs\""; break;
-            case "global-pnpmfile": native.Settings["global-pnpmfile"] = "\"/g.cjs\""; break;
-            case "config-dependencies":
-                native.Settings["config-dependencies"] = "{\"hooks\":\"1.0.0\"}"; break;
-            case "hoisted-linker": native.Settings["node-linker"] = "\"hoisted\""; break;
-        }
-
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(
-            () => native.Reader.ReadAsync(CancellationToken.None));
+        var native = Workspace();
+        if (output is not null) native.Outputs["packages/app"] = output;
+        native.Nodes["packages/app"] = [native.Node(version, "node_modules/copy")];
+        await RejectAsync(native);
     }
+
+    [TestMethod]
+    public async Task ReadRejectsUnknownClosureMember()
+    {
+        var native = Workspace();
+        native.Closures["packages/app"] = ["packages/app", "unknown"];
+        await RejectAsync(native);
+    }
+
+    [TestMethod]
+    [DataRow("packages/library", null, DisplayName = "Missing from full listing")]
+    [DataRow(null, "packages/library", DisplayName = "Extra in full listing")]
+    public async Task ReadRejectsDisagreementBetweenMembershipAndFullListing(
+        string? omittedProject, string? extraProject) =>
+        await RejectAsync(new NativeQueries(".", "packages/library", "packages/app")
+        {
+            OmitFullProject = omittedProject,
+            ExtraFullProject = extraProject,
+        });
+
+    [TestMethod]
+    [DataRow("packages/app", DisplayName = "Missing root")]
+    [DataRow(".", "packages/[pattern]", DisplayName = "Selector pattern")]
+    public async Task ReadRejectsInvalidWorkspaceMembership(params string[] projects) =>
+        await RejectAsync(new NativeQueries(projects));
+
+    [TestMethod]
+    [DataRow("false", "null", DisplayName = "Dedicated lockfile")]
+    [DataRow("null", "\"elsewhere\"", DisplayName = "Relocated lockfile")]
+    public async Task ReadRejectsUnsupportedLockfile(string shared, string directory) =>
+        await RejectAsync(new NativeQueries(".")
+        { SharedLock = shared, LockDirectory = directory });
+
+    [TestMethod]
+    [DataRow("pnpmfile", "\"hooks.cjs\"")]
+    [DataRow("global-pnpmfile", "\"/g.cjs\"")]
+    [DataRow("config-dependencies", "{\"hooks\":\"1.0.0\"}")]
+    [DataRow("node-linker", "\"hoisted\"")]
+    public async Task ReadRejectsUnsupportedSettings(string setting, string json)
+    {
+        var native = Workspace();
+        native.Settings[setting] = json;
+        await RejectAsync(native);
+    }
+
+    private static NativeQueries Workspace() => new(".", "packages/library", "packages/app");
+
+    private static Task<InvalidDataException> RejectAsync(NativeQueries native) =>
+        Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => native.Reader.ReadAsync(CancellationToken.None));
 
     [TestMethod]
     [DataRow("null")]
@@ -419,5 +425,76 @@ public sealed class PnpmGraphReaderTests
         private static Dictionary<string, object> Group(object[] nodes) =>
             nodes.Select((node, index) => (node, index)).ToDictionary(p => "alias-" + p.index,
                 p => p.node, StringComparer.Ordinal);
+    }
+
+    [TestMethod]
+    [DataRow("base", "dist output", 27, true)]
+    [DataRow("candidate", "build output", 26, false)]
+    public async Task ReadRecordedNativeIdentitiesPreservesRelationsAcrossRevisions(
+        string revision, string publishDirectory, int projectCount, bool topConsumesPublisher)
+    {
+        using Stream resource = typeof(PnpmGraphReaderTests).Assembly.GetManifestResourceStream(
+            $"WorkflowDelivery.Tests.Repository.fixtures.{revision}.json")!;
+        using var text = new StreamReader(resource);
+        string root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "recorded pnpm workspace"));
+        string escapedRoot = JsonSerializer.Serialize(root)[1..^1];
+        using JsonDocument fixture = JsonDocument.Parse((await text.ReadToEndAsync(
+            context.CancellationToken))
+            .Replace("__WORKSPACE__", escapedRoot, StringComparison.Ordinal));
+        JsonElement recorded = fixture.RootElement;
+        var reader = new PnpmGraphReader(root, Query);
+
+        PnpmGraph graph = await reader.ReadAsync(context.CancellationToken);
+
+        Assert.HasCount(projectCount, graph.Projects);
+        Assert.AreEqual("packages/publisher/" + publishDirectory,
+            graph.Projects.Single(p => p.Directory == "packages/publisher").PublishDirectory);
+        foreach (string consumer in new[] { "publish-link", "publish-workspace", "publish-alias" })
+            Assert.Contains("packages/publisher", graph.Projects.Single(
+                p => p.Directory == "packages/" + consumer).Dependencies);
+        foreach (string consumer in new[] { "peer-consumer-one", "peer-consumer-two" })
+            Assert.Contains("packages/peer-lib", graph.Projects.Single(
+                p => p.Directory == "packages/" + consumer).Dependencies);
+        Assert.AreEqual(topConsumesPublisher, graph.Projects.Single(
+            p => p.Directory == "packages/top").Dependencies.Contains("packages/publisher"));
+        Assert.AreEqual(topConsumesPublisher, graph.Projects.Any(p => p.Directory ==
+            "packages/deleted"));
+        Assert.IsEmpty(graph.Projects.Single(p => p.Directory ==
+            "packages/unrelated").Dependencies);
+        Assert.DoesNotContain("packages/publisher", graph.Projects.Single(
+            p => p.Directory == "packages/tarball-consumer").Dependencies);
+        PnpmLocalInput archive = graph.LocalInputs.Single(p => p.Path == "fixtures/publisher.tgz");
+        Assert.IsFalse(archive.IsDirectory);
+        Assert.AreEqual("packages/tarball-consumer", Assert.ContainsSingle(archive.Consumers));
+        Assert.IsTrue(graph.LocalInputs.Single(p => p.Path == "fixtures/peer-one").IsDirectory);
+
+        Task<string> Query(string[] arguments, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            // Unrecorded settings, metadata and selectors use controlled substitutes.
+            if (arguments[0] == "config") return Task.FromResult("null");
+            if (arguments[0] == "--dir")
+            {
+                string identity = Path.GetRelativePath(root, arguments[1])
+                    .Replace(Path.DirectorySeparatorChar, '/');
+                return Task.FromResult(recorded.GetProperty("publishMetadata")
+                    .TryGetProperty(identity, out JsonElement metadata)
+                    ? metadata.GetString()! : "");
+            }
+            if (arguments.Contains("--filter"))
+            {
+                string selector = arguments[Array.IndexOf(arguments, "--filter") + 1];
+                bool isClosure = selector.EndsWith("...", StringComparison.Ordinal);
+                string identity = isClosure ? selector[3..^4] : selector[3..^1];
+                if (isClosure && recorded.GetProperty("closures").TryGetProperty(identity,
+                    out JsonElement closure))
+                    return Task.FromResult(closure.GetRawText());
+                JsonElement project = recorded.GetProperty("listing").EnumerateArray().Single(p =>
+                    Path.GetRelativePath(root, p.GetProperty("path").GetString()!)
+                        .Replace(Path.DirectorySeparatorChar, '/') == identity);
+                return Task.FromResult("[" + project.GetRawText() + "]");
+            }
+            return Task.FromResult(recorded.GetProperty("listing").GetRawText());
+        }
     }
 }

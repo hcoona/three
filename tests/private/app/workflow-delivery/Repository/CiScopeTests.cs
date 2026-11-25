@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using WorkflowDelivery.CI;
 using WorkflowDelivery.CI.Callers;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
@@ -9,6 +11,255 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class CiScopeTests
 {
+    private const string Codeowners = ".github/CODEOWNERS";
+
+    [TestMethod]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    public void PlatformRoutingAtThePresentEndpointKeepsNativeWorkEmpty(
+        bool basisPresent, bool candidatePresent)
+    {
+        GitComparison comparison = RoutingComparison(basisPresent, candidatePresent);
+        JsonObject payload = RoutingTransfer(comparison);
+        ScopeInputs scope = ScopeInputs.Read(payload.ToJsonString(), comparison, false);
+
+        CiPlan plan = ImpactPlanner.Plan(scope.Bind(
+            RoutedFacts(comparison.Basis), RoutedFacts(comparison.Candidate)));
+
+        Assert.IsEmpty(plan.Checks);
+        Assert.AreEqual(comparison.Basis.Commit, plan.Comparison);
+        Assert.AreEqual(comparison.Candidate.Commit, plan.Candidate);
+    }
+
+    [TestMethod]
+    [DataRow("basis")]
+    [DataRow("candidate")]
+    public void AcknowledgedPlatformRoutingCannotMaskAnUnresolvedEndpoint(string endpoint)
+    {
+        GitComparison comparison = RoutingComparison();
+        JsonObject payload = RoutingTransfer(comparison);
+        payload["endpoint_owners"]![endpoint]!["paths"]![0]!["reasons"] = new JsonArray();
+        ScopeInputs scope = ScopeInputs.Read(payload.ToJsonString(), comparison, false);
+
+        InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+            scope.Bind(RoutedFacts(comparison.Basis), RoutedFacts(comparison.Candidate)));
+
+        Assert.Contains(Codeowners, failure.Message);
+    }
+
+    [TestMethod]
+    public void RoutingTransferCannotSuppressRemovedNativeConsumption()
+    {
+        GitComparison comparison = RoutingComparison(candidatePresent: false);
+        ScopeInputs scope = ScopeInputs.Read(RoutingTransfer(comparison).ToJsonString(),
+            comparison, false);
+        RepositoryFacts basis = RoutedFacts(comparison.Basis);
+        basis = basis with { SharedInputs = [.. basis.SharedInputs, new(Codeowners, ["src/a"])] };
+
+        CiPlan plan = ImpactPlanner.Plan(scope.Bind(basis, RoutedFacts(comparison.Candidate)));
+
+        Assert.IsNotEmpty(plan.Checks);
+        foreach (PlannedCheck check in plan.Checks)
+            Assert.AreEqual(new SelectionReason(Codeowners, comparison.Basis.Commit, "src/a"),
+                Assert.ContainsSingle(check.Reasons));
+    }
+
+    [TestMethod]
+    [DataRow("basis", "100755")]
+    [DataRow("candidate", "120000")]
+    public void TransferCannotRewriteTheModeOfAnExactGitCoordinate(string endpoint, string mode)
+    {
+        GitComparison comparison = RoutingComparison();
+        JsonObject payload = RoutingTransfer(comparison);
+        payload["endpoint_owners"]![endpoint]!["paths"]![0]!["mode"] = mode;
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ScopeInputs.Read(payload.ToJsonString(), comparison, false));
+    }
+
+    [TestMethod]
+    [DataRow("base", "another-commit")]
+    [DataRow("candidate", "another-commit")]
+    public void TransferCannotSubstituteEitherComparisonCommit(string field, string revision)
+    {
+        GitComparison comparison = RoutingComparison();
+        JsonObject payload = RoutingTransfer(comparison);
+        payload[field] = revision;
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ScopeInputs.Read(payload.ToJsonString(), comparison, false));
+    }
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow(Codeowners)]
+    [DataRow(".github/extra.yml")]
+    public void TransferRequiresTheExactSetOfChangedPaths(string? extraPath)
+    {
+        GitComparison comparison = RoutingComparison();
+        JsonObject payload = RoutingTransfer(comparison);
+        payload["changed_paths"] = extraPath is null ? new JsonArray() :
+            new JsonArray(Codeowners, extraPath);
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ScopeInputs.Read(payload.ToJsonString(), comparison, false));
+    }
+
+    [TestMethod]
+    [DataRow(null, "Scope endpoint omitted or added changed coordinates.")]
+    [DataRow("src/a/index.js", "Scope endpoint omitted or added changed coordinates.")]
+    [DataRow(Codeowners, "Scope repeated a changed coordinate.")]
+    public void TransferRequiresOneEndpointRowPerChangedPath(string? additionalPath,
+        string diagnostic)
+    {
+        GitComparison comparison = RoutingComparison();
+        JsonObject payload = RoutingTransfer(comparison);
+        var rows = payload["endpoint_owners"]!["basis"]!["paths"]!.AsArray();
+        if (additionalPath is null)
+            rows.Clear();
+        else
+            rows.Add(Coordinate(comparison.Basis, additionalPath));
+
+        RejectTransfer(payload.ToJsonString(), comparison, diagnostic);
+    }
+
+    [TestMethod]
+    [DataRow("basis", NodeScenario.Candidate)]
+    [DataRow("candidate", NodeScenario.Basis)]
+    public void TransferCannotSubstituteEndpointRevisions(string endpoint, string revision)
+    {
+        GitComparison comparison = RoutingComparison();
+        JsonObject payload = RoutingTransfer(comparison);
+        payload["endpoint_owners"]![endpoint]!["revision"] = revision;
+
+        RejectTransfer(payload.ToJsonString(), comparison,
+            "Scope responsibility has a different endpoint.");
+    }
+
+    [TestMethod]
+    public void TransferCannotAssignResponsibilityAtAnAbsentEndpoint()
+    {
+        GitComparison comparison = RoutingComparison(basisPresent: false);
+        JsonObject payload = RoutingTransfer(comparison);
+        JsonNode owners = payload["endpoint_owners"]!;
+        owners["basis"]!["paths"]![0]!["reasons"] =
+            owners["candidate"]!["paths"]![0]!["reasons"]!.DeepClone();
+
+        RejectTransfer(payload.ToJsonString(), comparison,
+            "An absent coordinate has no responsibility.");
+    }
+
+    [TestMethod]
+    [DataRow("\"mode\":\"100644\",", "", "Missing or duplicate scope field: mode")]
+    [DataRow("\"full\":false", "\"full\":false,\"full\":false",
+        "Missing or duplicate scope field: full")]
+    [DataRow("\"full\":false", "\"full\":\"false\"", "Invalid scope Boolean.")]
+    [DataRow("\"full\":false", "\"full\":true", "Scope has a different native comparison.")]
+    [DataRow("\"changed_paths\":[\".github/CODEOWNERS\"]",
+        "\"changed_paths\":[\"../CODEOWNERS\"]", "Expected a normalized repository-relative path")]
+    public void TransferRejectsMalformedJsonFields(string original, string replacement,
+        string diagnostic)
+    {
+        GitComparison comparison = RoutingComparison(candidatePresent: false);
+        string payload = RoutingTransfer(comparison).ToJsonString();
+        Assert.Contains(original, payload);
+
+        RejectTransfer(payload.Replace(original, replacement, StringComparison.Ordinal),
+            comparison, diagnostic);
+    }
+
+    private static void RejectTransfer(string payload, GitComparison comparison, string diagnostic)
+    {
+        InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+            ScopeInputs.Read(payload, comparison, false));
+        Assert.Contains(diagnostic, failure.Message);
+    }
+
+    [TestMethod]
+    [DataRow(false, NodeScenario.Basis, 0)]
+    [DataRow(true, NodeScenario.Candidate, 2)]
+    public void EmptyAndExplicitFullTransfersKeepTheirComparison(
+        bool full, string basisCommit, int expectedChecks)
+    {
+        var comparison = new GitComparison(RoutedRevision(basisCommit, false),
+            RoutedRevision(NodeScenario.Candidate, false), []);
+        ScopeInputs scope = ScopeInputs.Read(RoutingTransfer(comparison, full).ToJsonString(),
+            comparison, full);
+
+        CiPlan plan = ImpactPlanner.Plan(scope.Bind(
+            RoutedFacts(comparison.Basis), RoutedFacts(comparison.Candidate)));
+
+        Assert.AreEqual(basisCommit, plan.Comparison);
+        Assert.AreEqual(NodeScenario.Candidate, plan.Candidate);
+        Assert.HasCount(expectedChecks, plan.Checks);
+    }
+
+    private static GitRevision RoutedRevision(string revision, bool present)
+    {
+        GitRevision native = NodeScenario.Inputs(revision, NodeScenario.Project("src/a")).Revision;
+        if (!present) return native;
+        return native with { Entries = [.. native.Entries, NodeScenario.File(Codeowners)] };
+    }
+
+    private static GitComparison RoutingComparison(bool basisPresent = true,
+        bool candidatePresent = true) => new(RoutedRevision(NodeScenario.Basis, basisPresent),
+        RoutedRevision(NodeScenario.Candidate, candidatePresent), [Codeowners]);
+
+    private static RepositoryFacts RoutedFacts(GitRevision revision)
+    {
+        PnpmProject project = NodeScenario.Project("src/a");
+        NodeRevisionInputs inputs = NodeScenario.Inputs(revision.Commit, project) with
+        { Revision = revision };
+        RepositoryFacts facts = NodeFactsAssembler.Assemble(inputs);
+        return facts with
+        {
+            Projects = [facts.Projects.Single() with
+            {
+                Checks = NodeQualityChecks.Expand(inputs.Quality["src/a"],
+                    NodeScenario.Scripts(project)),
+            }],
+        };
+    }
+
+    private static JsonObject RoutingTransfer(GitComparison comparison, bool full = false) => new()
+    {
+        ["base"] = comparison.Basis.Commit,
+        ["candidate"] = comparison.Candidate.Commit,
+        ["full"] = full,
+        ["changed_paths"] = new JsonArray(comparison.ChangedPaths.Select(path =>
+            (JsonNode?)JsonValue.Create(path)).ToArray()),
+        ["endpoint_owners"] = new JsonObject
+        {
+            ["basis"] = Endpoint(comparison.Basis, comparison.ChangedPaths),
+            ["candidate"] = Endpoint(comparison.Candidate, comparison.ChangedPaths),
+        },
+    };
+
+    private static JsonObject Endpoint(GitRevision revision, string[] paths) => new()
+    {
+        ["revision"] = revision.Commit,
+        ["paths"] = new JsonArray(paths.Select(path => (JsonNode)Coordinate(revision, path))
+            .ToArray()),
+    };
+
+    private static JsonObject Coordinate(GitRevision revision, string path)
+    {
+        bool present = revision.Entries.Any(entry => entry.Path == path);
+        return new()
+        {
+            ["path"] = path,
+            ["present"] = present,
+            ["mode"] = present ? "100644" : null,
+            ["reasons"] = present ? new JsonArray(new JsonObject
+            {
+                ["owner"] = "github",
+                ["target"] = path,
+                ["rule"] = "native-codeowners-routing",
+                ["sources"] = new JsonArray(path),
+            }) : new JsonArray(),
+        };
+    }
+
     private const string Basis = "1111111111111111111111111111111111111111";
 
     // Pinned against eng/scripts/repository_path_patterns.py over every current binding.
