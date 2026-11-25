@@ -42,6 +42,35 @@ internal static class OwnedCreatorProcess
         }
     }
 
+    // Windows signals process termination slightly before kernel handle-table rundown releases
+    // exclusive file locks; wait until coordinator.lock is observable as released.
+    internal static async Task WaitForLockReleaseAsync(string statePath, CancellationToken token)
+    {
+        string lockPath = Path.Combine(statePath, "coordinator.lock");
+        Stopwatch elapsed = Stopwatch.StartNew();
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            try
+            {
+                using FileStream probe = new(
+                    lockPath,
+                    FileMode.Open,
+                    FileAccess.ReadWrite,
+                    FileShare.None
+                );
+                return;
+            }
+            catch (IOException error) when (
+                error is not FileNotFoundException and not DirectoryNotFoundException
+                && elapsed.Elapsed < TimeSpan.FromSeconds(5)
+            )
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(5), token).ConfigureAwait(false);
+            }
+        }
+    }
+
     internal static async Task<JsonObject> ReceiveStageAsync(
         StreamReader reader,
         string nonce,

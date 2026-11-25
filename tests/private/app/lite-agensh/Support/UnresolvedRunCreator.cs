@@ -178,6 +178,9 @@ internal sealed class UnresolvedRunCreator : IAsyncDisposable
         await OwnedCreatorProcess.WaitForExitAsync(creator, token).ConfigureAwait(false);
         exitObserved = true;
         Assert.AreEqual(0, creator.ExitCode, "The original creator did not exit normally.");
+        await OwnedCreatorProcess
+            .WaitForLockReleaseAsync(Database.StatePath, token)
+            .ConfigureAwait(false);
         normalExitObserved = true;
     }
 
@@ -187,6 +190,9 @@ internal sealed class UnresolvedRunCreator : IAsyncDisposable
         process.Kill(entireProcessTree: true);
         await OwnedCreatorProcess.WaitForExitAsync(process, token).ConfigureAwait(false);
         exitObserved = true;
+        await OwnedCreatorProcess
+            .WaitForLockReleaseAsync(Database.StatePath, token)
+            .ConfigureAwait(false);
         await new ProcessRunner(Database).ResolveSurvivorsAsync(token).ConfigureAwait(false);
         registeredDescendantSweepCompleted = true;
     }
