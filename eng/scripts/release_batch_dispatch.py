@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["PyYAML==6.0.2"]
+# dependencies = ["PyYAML==6.0.4"]
 # ///
 """Dispatch one ordinary per-unit Release caller run per entry and await them.
 

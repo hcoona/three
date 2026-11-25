@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.13"
 # dependencies = [
-#   "PyYAML==6.0.2", "jsonschema==4.25.1", "markdown-it-py==4.0.0",
+#   "PyYAML==6.0.4", "jsonschema==4.25.1", "markdown-it-py==4.0.0",
 #   "pytest==8.3.4",
 # ]
 # ///
