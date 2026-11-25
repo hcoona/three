@@ -439,11 +439,46 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             "Integration fails at " + integratedHead,
             ReadAndCompleteEvents(state, "worker1")
         );
+        _ = ReadAndCompleteEvents(state, "worker2");
+
+        // Exercise the idle ProcessPendingAsync guard directly across the 15- and 60-minute
+        // thresholds without calling EvaluateHealthAsync first.
+        Assert.AreEqual(
+            0L,
+            state.Number(
+                "SELECT COUNT(*) FROM integration_requests WHERE state IN ('pending','running');"
+            )
+        );
+        long leasesBeforePreAlert = state.Number("SELECT COUNT(*) FROM process_leases;");
+        state.Clock.Advance(TimeSpan.FromMinutes(15) - TimeSpan.FromTicks(1));
+        await state.Operations.ProcessPendingAsync(token);
+        Assert.AreEqual(leasesBeforePreAlert, state.Number("SELECT COUNT(*) FROM process_leases;"));
+        Assert.IsNull(state.Collaboration.ClaimBatch("worker1", bootstrap: false));
+
         state.Clock.Advance(TimeSpan.FromTicks(1));
+        await state.Operations.ProcessPendingAsync(token);
+        Assert.Contains(
+            "Integration has failed for at least 15 minutes",
+            ReadAndCompleteEvents(state, "worker1")
+        );
+        _ = ReadAndCompleteEvents(state, "worker2");
+
+        long leasesBeforePreLift = state.Number("SELECT COUNT(*) FROM process_leases;");
+        state.Clock.Advance(TimeSpan.FromMinutes(45) - TimeSpan.FromTicks(1));
+        await state.Operations.ProcessPendingAsync(token);
+        Assert.AreEqual(leasesBeforePreLift, state.Number("SELECT COUNT(*) FROM process_leases;"));
+        Assert.IsNull(state.Collaboration.ClaimBatch("worker1", bootstrap: false));
+
+        state.Clock.Advance(TimeSpan.FromTicks(1));
+        await state.Operations.ProcessPendingAsync(token);
+        Assert.Contains(
+            "restriction lifted after 60 minutes",
+            ReadAndCompleteEvents(state, "worker1")
+        );
         health = GitScenarioState.Data(await state.Operations.EvaluateHealthAsync(token));
         Assert.AreEqual(integratedHead, health["commit"]!.GetValue<string>());
         Assert.AreEqual(integratedHead, health["brokenCommit"]!.GetValue<string>());
-        AssertHealth(health, restricted: true, alerted: false, lifted: false, postCrashRed);
+        AssertHealth(health, restricted: false, alerted: true, lifted: true, postCrashRed);
     }
 
     [TestMethod]
