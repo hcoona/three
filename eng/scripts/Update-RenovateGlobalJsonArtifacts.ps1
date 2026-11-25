@@ -85,23 +85,18 @@ function Invoke-DotNetRestoreWithoutSensitiveEnvironment {
 
     Test-RequiredCommand -Name "mise"
     mise install --locked dotnet
-    $dotNetInstallDir = (& mise where dotnet).Trim()
-    $dotNetExecutableName = if ($IsWindows) { "dotnet.exe" } else { "dotnet" }
-    $dotNetExecutable = Join-Path $dotNetInstallDir $dotNetExecutableName
 
     $miseLockContentAfterInstall = Get-Content -Path $MiseLockPath -Raw
     if ($miseLockContentAfterInstall -ne $ExpectedMiseLockContent) {
         throw "Installing exact .NET SDK '$ExpectedSdkVersion' changed '$MiseLockPath'."
     }
 
-    $actualSdkVersion = (& $dotNetExecutable --version).Trim()
+    $actualSdkVersion = (& mise exec --locked dotnet -- dotnet --version | Out-String).Trim()
     if ($actualSdkVersion -ne $ExpectedSdkVersion) {
         throw "Expected dotnet SDK version '$ExpectedSdkVersion', but found '$actualSdkVersion'."
     }
 
-    $env:DOTNET_ROOT = $dotNetInstallDir
-    $env:DOTNET_MULTILEVEL_LOOKUP = "0"
-    & $dotNetExecutable restore $Project --force-evaluate -p:RestoreLockedMode=false
+    & mise exec --locked dotnet -- dotnet restore $Project --force-evaluate -p:RestoreLockedMode=false
     $miseLockContentAfterRestore = Get-Content -Path $MiseLockPath -Raw
     if ($miseLockContentAfterRestore -ne $ExpectedMiseLockContent) {
         throw "dotnet restore changed '$MiseLockPath' after installing exact .NET SDK '$ExpectedSdkVersion'."
