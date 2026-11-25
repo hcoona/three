@@ -303,7 +303,7 @@ jobs:
 
   conformance:
     name: Source conformance
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     env:
       MISE_DISABLE_TOOLS: dotnet,java,node,powershell,python,ruby,gopass
 
@@ -602,7 +602,7 @@ jobs:
             run-host-tests: false
             run-deployment-validation: true
           - build-os: Linux
-            build-runner: ubuntu-24.04
+            build-runner: ubuntu-latest
             target-os: Linux
             target-rid: linux-x64
             run-host-tests: true
@@ -1130,7 +1130,7 @@ jobs:
 
   python-tests:
     name: Test (Python)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: scope
     if: ${{ !cancelled() }}
     permissions:
