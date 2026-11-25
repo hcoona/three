@@ -74,7 +74,7 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         var suite = new RubySourceGemFacts(PathFor(Suite + "/asciidoctor-latexmath.gemspec"),
             new("asciidoctor-latexmath", "1.2.3", "ruby", RequirePaths, [], []));
         var unit = new ReleaseUnitDeclaration(Gem + "/workflow-delivery.release-unit.yml",
-            "smoke", [new("gem", RubyPackageChecks.Build,
+            WorkflowDelivery.Ecosystems.RubyReleaseUnits.Smoke, [new("gem", RubyPackageChecks.Build,
                 "hcoona-release-smoke-ruby.gemspec", [new("gem", "primary-package", "ruby-gem")])]);
         CheckSpec[] gemChecks = RubyPackageChecks.Expand(unit, repo.Directory,
             new Dictionary<string, RubySourceGemFacts> { [Gem] = source });

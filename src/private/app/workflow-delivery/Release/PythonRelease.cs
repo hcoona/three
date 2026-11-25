@@ -31,7 +31,7 @@ internal static class PythonRelease
             prepared.Files.Any(file => file.Name != unit.Id ||
                 file.Version != prepared.Files[0].Version) ||
             !prepared.RequiredChecks.SequenceEqual(PythonPreparation.RequiredFor(unit)) ||
-            !Qualified(prepared.RequiredChecks, prepared.Checks) ||
+            !ReleasePolicy.Qualified(prepared.RequiredChecks, prepared.Checks) ||
             preparation.Errors.Length != 0 || preparation.Commands.Length == 0 ||
             preparation.Commands.Any(command => !command.Result.Succeeded ||
                 command.Result.Error is not null) ||
@@ -50,16 +50,12 @@ internal static class PythonRelease
 
     internal static void Originals(PythonPreparationResult preparation, string directory)
     {
-        if (!Path.IsPathFullyQualified(directory))
-            throw new InvalidDataException("Original Python directory must be absolute.");
-        string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
         foreach (ReleaseFile file in preparation.Prepared.Files)
         {
-            string path = Path.GetFullPath(Path.Combine(root, file.Path));
-            if (path == root || !OwnedPath.Within(path, root))
-                throw new InvalidDataException("Original Python path leaves its transfer root.");
-            PythonSmokePackageOperations.RequireOriginal(new(file.Kind, path, file.Size,
-                file.Sha256));
+            string path = OwnedPath.ResolveWithin(directory, file.Path,
+                "Original Python directory must be absolute.",
+                "Original Python path leaves its transfer root.");
+            PythonPackageOperations.RequireOriginal(new(file.Kind, path, file.Size, file.Sha256));
         }
     }
 
@@ -67,7 +63,8 @@ internal static class PythonRelease
         PythonIndexObservationResult observation)
     {
         ValidateObservation(prepared, observation);
-        if (!Qualified(observation.Observation.RequiredChecks, observation.Observation.Checks) ||
+        if (!ReleasePolicy.Qualified(observation.Observation.RequiredChecks,
+                observation.Observation.Checks) ||
             observation.Observation.Files.Any(file => file.State is not
                 (ReleaseFileState.Exact or ReleaseFileState.Absent)))
             throw new InvalidDataException("Current Python state cannot permit creation.");
@@ -82,11 +79,7 @@ internal static class PythonRelease
     {
         if (!result.Observation.RequiredChecks.SequenceEqual(["public-index-files"]))
             throw new InvalidDataException("Incomplete Python index observation.");
-        if (prepared.Subject.DryRun)
-            _ = ReleaseCompletion.Describe(prepared, result.Observation,
-                result.Observation.Files.Where(file => file.State == ReleaseFileState.Absent)
-                    .Select(file => file.Output).ToArray());
-        else _ = ReleaseCompletion.Evaluate(prepared, result.Observation, []);
+        ReleaseCompletion.ValidateObservation(prepared, result.Observation);
     }
 
     internal static async Task<PythonPublicationResult> PublishAsync(
@@ -172,8 +165,8 @@ internal static class PythonRelease
         string[] acknowledged = publication?.Invocations.Where(Acknowledged)
             .Select(value => value.Upload.Output).ToArray() ?? [];
         ReleaseFileObservation[] files = final.Observation.Files;
-        bool visibilityOnly = Qualified(prepared.RequiredChecks, prepared.Checks) &&
-            Qualified(final.Observation.RequiredChecks, final.Observation.Checks) &&
+        bool visibilityOnly = ReleasePolicy.Qualified(prepared.RequiredChecks, prepared.Checks) &&
+            ReleasePolicy.Qualified(final.Observation.RequiredChecks, final.Observation.Checks) &&
             files.All(file => file.State == ReleaseFileState.Exact ||
                 file.State == ReleaseFileState.Absent &&
                     acknowledged.Contains(file.Output, StringComparer.Ordinal));
@@ -205,8 +198,4 @@ internal static class PythonRelease
     private static bool Acknowledged(PythonPublishResult result) =>
         result.Upload.Command.Succeeded && result.Upload.Command.Error is null &&
             !result.MaskForwardingFailed;
-
-    private static bool Qualified(string[] required, ReleaseCheck[] results) =>
-        required.All(id => results.Any(check => check.Id == id &&
-            check.Status == ReleaseCheckStatus.Passed));
 }

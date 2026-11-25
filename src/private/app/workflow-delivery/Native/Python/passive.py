@@ -76,27 +76,30 @@ def _parse_build_requirements(strings: set[str]) -> list[dict[str, object]]:
     return requirements
 
 
+def _load_manifest(directory: Path) -> tuple[Path, dict, dict]:
+    root = directory.resolve(strict=True)
+    with (root / "pyproject.toml").open("rb") as stream:
+        document = tomllib.load(stream)
+    return root, document, _guard_uv_configuration(document)
+
+
 def inspect_configuration(directories: list[Path]) -> dict[str, object]:
     """Preflight supplied contexts without native extraction."""
     inputs = []
     for directory in directories:
-        root = directory.resolve(strict=True)
+        root, _, _ = _load_manifest(directory)
         manifest = root / "pyproject.toml"
         if str(manifest) in inputs:
             message = "Configuration contexts must be distinct."
             raise UnsupportedContextError(message)
-        with manifest.open("rb") as stream:
-            _guard_uv_configuration(tomllib.load(stream))
         inputs.append(str(manifest))
     return {"configuration_inputs": inputs}
 
 
 def inspect_project(directory: Path) -> dict[str, object]:
     """Extract build requirements without backend or generator hooks."""
-    root = directory.resolve(strict=True)
-    with (root / "pyproject.toml").open("rb") as stream:
-        document = tomllib.load(stream)
-    sources = _source_kinds(_guard_uv_configuration(document))
+    root, document, uv = _load_manifest(directory)
+    sources = _source_kinds(uv)
     tool = document.get("tool", {})
 
     requirements = None

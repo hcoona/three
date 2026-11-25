@@ -205,10 +205,8 @@ internal static class DotNetPackageConsumer
         string installed = new VersionFolderPathResolver(folder.Path)
             .GetPackageFilePath(identity.Id, identity.Version);
         RequireFile(installed);
-        if (OwnedFile.Length(installed) != original.Size ||
-            DotNetPackageArchive.Digest(installed) != original.Sha256)
-            throw new InvalidDataException(
-                "The restored package bytes differ from the original archive.");
+        OwnedFile.Verify(installed, original.Size, original.Sha256,
+            "The restored package bytes differ from the original archive.");
     }
 
     private static InvalidDataException AssetsMismatch(string field, object expected,
@@ -221,12 +219,7 @@ internal static class DotNetPackageConsumer
 
     private static bool SamePath(string left, string right) => Path.IsPathFullyQualified(left) &&
         Path.TrimEndingDirectorySeparator(Path.GetFullPath(left)).Equals(
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)), OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)), OwnedPath.Comparison);
 
-    internal static void RequireFile(string path)
-    {
-        if (!File.Exists(path))
-            throw new InvalidDataException("Required native output is missing or not a file.");
-    }
+    internal static void RequireFile(string path) => OwnedFile.RequireExists(path);
 }

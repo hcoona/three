@@ -14,6 +14,16 @@ internal static class OwnedPath
             ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path))
             : throw new InvalidDataException(message);
 
+    internal static string ResolveWithin(string rootDirectory, string relativePath,
+        string rootMessage, string escapeMessage)
+    {
+        string root = Absolute(rootDirectory, rootMessage);
+        string full = Path.GetFullPath(Path.Combine(root, relativePath));
+        return !full.Equals(root, Comparison) && Within(full, root)
+            ? full
+            : throw new InvalidDataException(escapeMessage);
+    }
+
     // True when child equals parent or lies below it; parent may be a filesystem root.
     internal static bool Within(string child, string parent) =>
         child.Equals(parent, Comparison) || child.StartsWith(

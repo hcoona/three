@@ -10,6 +10,8 @@ internal sealed record ReleaseFile(string Build, string Output, string Kind, str
 
 internal enum ReleaseCheckStatus { Passed, Failed, Missing, Cancelled, Skipped, TimedOut }
 internal sealed record ReleaseCheck(string Id, ReleaseCheckStatus Status);
+internal sealed record ReleaseCommand(string Check, NativeCommand Command,
+    NativeCommandResult Result);
 internal sealed record PreparedRelease(ReleaseSubject Subject, ReleaseFile[] Files,
     string[] RequiredChecks, ReleaseCheck[] Checks);
 
@@ -44,11 +46,93 @@ internal static class ReleasePolicy
             throw new InvalidDataException("Unsupported live Release channel ref.");
     }
 
+    internal static bool Qualified(string[] required, ReleaseCheck[] results) =>
+        required.All(id => results.Any(check => check.Id == id &&
+            check.Status == ReleaseCheckStatus.Passed));
+
     internal static void RequireQualified(PreparedRelease prepared)
     {
-        if (prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&
-                check.Status == ReleaseCheckStatus.Passed)))
+        if (!Qualified(prepared.RequiredChecks, prepared.Checks))
             throw new InvalidDataException("Release preparation is not qualified.");
+    }
+}
+
+internal sealed class ReleaseQualification(
+    Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+    CancellationToken token)
+{
+    private readonly List<ReleaseCheck> checks = [];
+    private readonly List<ReleaseCommand> commands = [];
+    private readonly List<string> errors = [];
+    private string current = "native-input";
+
+    internal ReleaseCheck[] Checks => [.. checks];
+    internal ReleaseCommand[] Commands => [.. commands];
+    internal string[] Errors => [.. errors];
+
+    internal static (string Checkout, string Scratch) RequireFreshScratch(
+        string checkoutPath, string scratchPath, string pathMessage, string scratchMessage)
+    {
+        string checkout = OwnedPath.Absolute(checkoutPath, pathMessage);
+        string scratch = OwnedPath.Absolute(scratchPath, pathMessage);
+        if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
+            OwnedPath.Overlap(scratch, checkout) ||
+            Directory.EnumerateFileSystemEntries(scratch).Any())
+            throw new InvalidDataException(scratchMessage);
+        return (checkout, scratch);
+    }
+
+    internal async Task CheckAsync(string id, Func<Task> action)
+    {
+        current = id;
+        if (checks.Any(check => check.Status != ReleaseCheckStatus.Passed))
+        {
+            checks.Add(new(id, ReleaseCheckStatus.Skipped));
+            return;
+        }
+        try
+        {
+            token.ThrowIfCancellationRequested();
+            await action();
+            token.ThrowIfCancellationRequested();
+            checks.Add(new(id, ReleaseCheckStatus.Passed));
+        }
+        catch (OperationCanceledException)
+        {
+            checks.Add(new(id, ReleaseCheckStatus.Cancelled));
+            errors.Add(id + " cancelled.");
+        }
+        catch (TimeoutException)
+        {
+            checks.Add(new(id, ReleaseCheckStatus.TimedOut));
+            errors.Add(id + " timed out.");
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException or
+            InvalidDataException or System.Text.Json.JsonException or KeyNotFoundException or
+            InvalidOperationException or ArgumentException or FormatException or
+            BadImageFormatException or System.Xml.XmlException)
+        {
+            checks.Add(new(id, ReleaseCheckStatus.Failed));
+            errors.Add(failure.Message);
+        }
+    }
+
+    internal async Task<NativeCommandResult> RunAsync(NativeCommand command,
+        CancellationToken? cancellation = null, string? check = null,
+        bool requireNullError = true)
+    {
+        string stage = check ?? current;
+        CancellationToken effectiveToken = cancellation ?? token;
+        NativeCommandResult result = await execute(command, effectiveToken);
+        commands.Add(new(stage, command, result));
+        if (result.Termination == NativeTermination.Cancelled)
+            throw new OperationCanceledException(token);
+        if (result.Termination == NativeTermination.TimedOut)
+            throw new TimeoutException($"Native {stage} timed out.");
+        if (!result.Succeeded || (requireNullError && result.Error is not null))
+            throw new InvalidDataException($"Native {stage} failed: {result.Termination}.");
+        effectiveToken.ThrowIfCancellationRequested();
+        return result;
     }
 }
 
@@ -122,6 +206,13 @@ internal static class ReleaseCompletion
         ValidateChecks(prepared.RequiredChecks, prepared.Checks);
     }
 
+    internal static void ValidateObservation(PreparedRelease prepared,
+        ReleaseObservation observation)
+    {
+        Validate(prepared);
+        _ = AssessObservation(prepared, observation);
+    }
+
     private static (ReleaseBusinessState, string[]) Assess(PreparedRelease prepared,
         ReleaseObservation? observation)
     {
@@ -131,10 +222,21 @@ internal static class ReleaseCompletion
             reasons.Add("Required destination observation is missing; effects remain unknown.");
             return (ReleaseBusinessState.Unknown, [.. reasons]);
         }
+        (bool unknown, bool absent, List<string> observedReasons) =
+            AssessObservation(prepared, observation);
+        reasons.AddRange(observedReasons);
+        if (unknown) return (ReleaseBusinessState.Unknown, [.. reasons]);
+        if (reasons.Count != 0 || absent) return (ReleaseBusinessState.Unsatisfied, [.. reasons]);
+        return (ReleaseBusinessState.Satisfied, []);
+    }
+
+    private static (bool Unknown, bool Absent, List<string> Reasons) AssessObservation(
+        PreparedRelease prepared, ReleaseObservation observation)
+    {
         if (observation.Subject != prepared.Subject)
             throw new InvalidDataException("Destination observation belongs to another request.");
         ValidateChecks(observation.RequiredChecks, observation.Checks);
-        reasons.AddRange(CheckFailures(observation.RequiredChecks, observation.Checks));
+        List<string> reasons = CheckFailures(observation.RequiredChecks, observation.Checks);
         if (observation.Files.Length != prepared.Files.Length ||
             observation.Files.Select(file => file.Output).Distinct(StringComparer.Ordinal).Count()
                 != observation.Files.Length)
@@ -174,9 +276,7 @@ internal static class ReleaseCompletion
                     break;
             }
         }
-        if (unknown) return (ReleaseBusinessState.Unknown, [.. reasons]);
-        if (reasons.Count != 0 || absent) return (ReleaseBusinessState.Unsatisfied, [.. reasons]);
-        return (ReleaseBusinessState.Satisfied, []);
+        return (unknown, absent, reasons);
     }
 
     private static void ValidateUploads(PreparedRelease prepared, ReleaseUpload[] uploads)

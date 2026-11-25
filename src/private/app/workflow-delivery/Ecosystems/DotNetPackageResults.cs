@@ -144,7 +144,7 @@ internal static class DotNetPackageResults
             throw new InvalidDataException(
                 "The complete original native archive set is missing or undeclared.");
         DotNetPackageArchive.RequireIdentity(DotNetPackageArchive.Identity(archive), expected);
-        return new(unit, build, output, role, kind, archive,
-            OwnedFile.Length(archive), DotNetPackageArchive.Digest(archive));
+        (long size, string sha256) = OwnedFile.Measure(archive);
+        return new(unit, build, output, role, kind, archive, size, sha256);
     }
 }

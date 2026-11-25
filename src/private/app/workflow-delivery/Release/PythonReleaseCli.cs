@@ -1,7 +1,4 @@
-using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
 using WorkflowDelivery.Destinations;
-using WorkflowDelivery.Ecosystems;
 
 namespace WorkflowDelivery.Release;
 
@@ -20,7 +17,7 @@ internal static class PythonReleaseCli
             PythonIndexToolResult result = PythonIndexToolPreparation.PrepareAsync(
                 ReleaseCli.Read(toolRequest, TransferJson.Default.PythonIndexToolRequest),
                 CancellationToken.None).GetAwaiter().GetResult();
-            Write(result, TransferJson.Default.PythonIndexToolResult);
+            ReleaseCli.Write(output, result, TransferJson.Default.PythonIndexToolResult);
             return result.Errors.Length == 0 ? 0 : 1;
         }
         if (args is ["release", "prepare-python", var requestPath])
@@ -28,7 +25,7 @@ internal static class PythonReleaseCli
             PythonPreparationResult result = (prepare ?? PythonPreparation.PrepareAsync)(
                 ReleaseCli.Read(requestPath, TransferJson.Default.PythonPreparationRequest),
                 CancellationToken.None).GetAwaiter().GetResult();
-            Write(result, TransferJson.Default.PythonPreparationResult);
+            ReleaseCli.Write(output, result, TransferJson.Default.PythonPreparationResult);
             if (result.Errors.Length != 0 || result.Prepared.Files.Length == 0) return 1;
             PythonRelease.Validate(result);
             return 0;
@@ -42,7 +39,7 @@ internal static class PythonReleaseCli
                 ReleaseCli.Read(indexToolsPath, TransferJson.Default.PythonIndexTools),
                 CancellationToken.None).GetAwaiter().GetResult();
             PythonRelease.ValidateObservation(preparation.Prepared, result);
-            Write(result, TransferJson.Default.PythonIndexObservationResult);
+            ReleaseCli.Write(output, result, TransferJson.Default.PythonIndexObservationResult);
             return result.Observation.Files.All(file => file.State is ReleaseFileState.Exact or
                 ReleaseFileState.Absent) && result.Observation.Checks.All(check =>
                     check.Status == ReleaseCheckStatus.Passed) ? 0 : 1;
@@ -55,7 +52,7 @@ internal static class PythonReleaseCli
             PythonRelease.ValidateObservation(prepared, observed);
             ReleaseDryRun result = ReleaseCompletion.Describe(prepared, observed.Observation,
                 PythonRelease.Missing(prepared, observed));
-            Write(result, TransferJson.Default.ReleaseDryRun);
+            ReleaseCli.Write(output, result, TransferJson.Default.ReleaseDryRun);
             return result.Ready ? 0 : 1;
         }
         if (args is ["release", "publish-python", var publishPreparation,
@@ -71,14 +68,16 @@ internal static class PythonReleaseCli
                 publishOriginals, Observation(initialPath),
                 (prepared, token) => Observe(prepared, indexTools with
                 {
-                    Scratch = Fresh(indexTools.Scratch),
+                    Scratch = ReleaseCli.FreshScratch(indexTools.Scratch,
+                        "Python phase scratch parent must be absolute."),
                 }, token),
                 (prepared, directory, selected, token) => (publish ?? Publish)(prepared,
                     directory, selected, publisherTools with
                     {
-                        Scratch = Fresh(publisherTools.Scratch),
+                        Scratch = ReleaseCli.FreshScratch(publisherTools.Scratch,
+                            "Python phase scratch parent must be absolute."),
                     }, token), CancellationToken.None).GetAwaiter().GetResult();
-            Write(result, TransferJson.Default.PythonPublicationResult);
+            ReleaseCli.Write(output, result, TransferJson.Default.PythonPublicationResult);
             // The required separate verification retains actual abnormal invocations.
             return result.Errors.Length == 0 ? 0 : 1;
         }
@@ -87,15 +86,12 @@ internal static class PythonReleaseCli
         {
             PythonCompletionResult result = PythonRelease.Complete(
                 Preparation(completePreparation).Prepared, Observation(initialObservation),
-                Observation(finalObservation), publicationPath == "-" ? null :
-                    ReleaseCli.Read(publicationPath, TransferJson.Default.PythonPublicationResult));
-            Write(result, TransferJson.Default.PythonCompletionResult);
+                Observation(finalObservation), ReleaseCli.ReadOptional(publicationPath,
+                    TransferJson.Default.PythonPublicationResult));
+            ReleaseCli.Write(output, result, TransferJson.Default.PythonCompletionResult);
             return result.Outcome.State == ReleaseBusinessState.Satisfied ? 0 : 1;
         }
         return null;
-
-        void Write<T>(T value, JsonTypeInfo<T> type) =>
-            output.WriteLine(JsonSerializer.Serialize(value, type));
 
         async Task<PythonIndexObservationResult> Observe(PreparedRelease prepared,
             PythonIndexTools tools, CancellationToken token)
@@ -122,13 +118,5 @@ internal static class PythonReleaseCli
             platform[name] = Environment.GetEnvironmentVariable(name);
         return PythonNativePublisher.PublishAsync(prepared, originals, selected, tools,
             platform, Console.Error, token);
-    }
-
-    private static string Fresh(string parent)
-    {
-        if (!Path.IsPathFullyQualified(parent) || !Directory.Exists(parent))
-            throw new InvalidDataException("Python phase scratch parent must be absolute.");
-        return Directory.CreateDirectory(Path.Combine(parent, Guid.NewGuid().ToString("N")))
-            .FullName;
     }
 }

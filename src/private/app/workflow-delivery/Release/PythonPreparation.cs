@@ -37,32 +37,30 @@ internal static class PythonPreparation
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
         lifetime.CancelAfter(TimeSpan.FromMinutes(15));
         token = lifetime.Token;
-        string checkout = Absolute(request.Checkout), scratch = Absolute(request.Scratch);
+        (string checkout, string scratch) = ReleaseQualification.RequireFreshScratch(
+            request.Checkout, request.Scratch, "Python Release paths must be absolute.",
+            "Python package execution requires fresh external scratch.");
         string helper = Path.Combine(checkout,
             "src/private/app/workflow-delivery/Native/Python/packages.py");
-        // Validate before creating any owned execution state.
-        PythonSmokePackageOperations.Validate(new(checkout, scratch, "uv", helper, helper, 300,
-            new Dictionary<string, string?>(), false));
-        var commands = new List<ReleaseCommand>();
-        var checks = new List<ReleaseCheck>();
-        var errors = new List<string>();
+        // Validate Git-free scratch before creating any owned execution state.
+        PythonPackageOperations.RequireGitFreeScratch(scratch);
+        var qualification = new ReleaseQualification(execute, token);
         var files = new List<ReleaseFile>();
         var native = new Dictionary<string, string>(StringComparer.Ordinal);
         Dictionary<string, string?> environment = EnvironmentFor(scratch, checkout,
             request.Subject);
         // The caller supplies the platform's existing tool installation resource.
         environment["MISE_DATA_DIR"] = Absolute(request.MiseDataDirectory);
-        PythonSmokePackageOperations? operations = null;
-        PythonReleaseUnit? unit = null;
+        PythonPackageOperations? operations = null;
         string[] required = Required;
         ReleaseBuild? build = null;
         PythonDistribution[] originals = [];
-        string name = "", version = "", current = "native-input";
+        string name = "", version = "";
 
-        await CheckAsync("native-input", async () =>
+        await qualification.CheckAsync("native-input", async () =>
         {
             ReleaseSubject subject = request.Subject;
-            (unit, bool official) = Admit(subject);
+            (PythonReleaseUnit unit, bool official) = Admit(subject);
             required = RequiredFor(unit);
             GitMaterialization bound = await GitMaterialization.BindAsync(checkout,
                 subject.Revision, token);
@@ -97,22 +95,23 @@ internal static class PythonPreparation
             native.Add("python", pythonVersion);
             native.Add("uv", uvVersion);
         });
-        await CheckAsync("build", async () => originals = await operations!.BuildAsync(name,
-            version, ExecuteAsync, token));
-        await CheckAsync("contents", () => operations!.ContentsAsync(originals, name, version,
-            ExecuteAsync, token));
-        await CheckAsync("wheel-consumer", () => operations!.ConsumeAsync("python-wheel",
-            originals, name, version, ExecuteAsync, token));
-        await CheckAsync("sdist-consumer", () => operations!.ConsumeAsync("python-sdist",
-            originals, name, version, ExecuteAsync, token));
+        await qualification.CheckAsync("build", async () => originals =
+            await operations!.BuildAsync(name, version, ExecuteAsync, token));
+        await qualification.CheckAsync("contents", () =>
+            operations!.ContentsAsync(originals, name, version, ExecuteAsync, token));
+        await qualification.CheckAsync("wheel-consumer", () =>
+            operations!.ConsumeAsync("python-wheel", originals, name, version, ExecuteAsync,
+                token));
+        await qualification.CheckAsync("sdist-consumer", () =>
+            operations!.ConsumeAsync("python-sdist", originals, name, version, ExecuteAsync,
+                token));
         if (required.Contains("tests"))
-            await CheckAsync("tests", () => operations is PythonNbgvPackageOperations suite
-                ? suite.TestReleaseAsync(unit!.Tests!, ExecuteAsync, token)
-                : throw new InvalidDataException("Python Release unit has no adopted suite."));
-        await CheckAsync("original-bytes", () =>
+            await qualification.CheckAsync("tests", () =>
+                operations!.TestReleaseAsync(ExecuteAsync, token));
+        await qualification.CheckAsync("original-bytes", () =>
         {
             foreach (PythonDistribution original in originals)
-                PythonSmokePackageOperations.RequireOriginal(original);
+                PythonPackageOperations.RequireOriginal(original);
             foreach (PythonDistribution original in originals)
             {
                 ReleaseOutput output = build!.Outputs.Single(value => value.Kind == original.Kind);
@@ -122,53 +121,24 @@ internal static class PythonPreparation
             }
             return Task.CompletedTask;
         });
-        return new(new(request.Subject, [.. files], required.ToArray(), [.. checks]), native,
-            [.. commands], [.. errors]);
+        return new(new(request.Subject, [.. files], required.ToArray(), qualification.Checks),
+            native, qualification.Commands, qualification.Errors);
 
         Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
             CancellationToken cancellation)
             => RunAsync(command, cancellation);
 
-        async Task<NativeCommandResult> RunAsync(NativeCommand command,
+        Task<NativeCommandResult> RunAsync(NativeCommand command,
             CancellationToken? cancellation = null)
         {
             var effective = new Dictionary<string, string?>(environment, StringComparer.Ordinal);
             if (command.Environment is not null)
                 foreach (var pair in command.Environment) effective[pair.Key] = pair.Value;
-            command = command with { Environment = effective, InheritEnvironment = false };
-            NativeCommandResult result = await execute(command, cancellation ?? token);
-            commands.Add(new(current, command, result));
-            if (result.Termination == NativeTermination.Cancelled)
-                throw new OperationCanceledException(token);
-            if (result.Termination == NativeTermination.TimedOut)
-                throw new TimeoutException("Native " + current + " timed out.");
-            if (!result.Succeeded || result.Error is not null)
-                throw new InvalidDataException("Native " + current + " failed: " +
-                    result.Termination + ".");
-            (cancellation ?? token).ThrowIfCancellationRequested();
-            return result;
-        }
-
-        async Task CheckAsync(string id, Func<Task> action)
-        {
-            current = id;
-            if (checks.Any(check => check.Status != ReleaseCheckStatus.Passed))
-            { checks.Add(new(id, ReleaseCheckStatus.Skipped)); return; }
-            try
+            return qualification.RunAsync(command with
             {
-                token.ThrowIfCancellationRequested(); await action();
-                token.ThrowIfCancellationRequested();
-                checks.Add(new(id, ReleaseCheckStatus.Passed));
-            }
-            catch (OperationCanceledException)
-            { checks.Add(new(id, ReleaseCheckStatus.Cancelled)); errors.Add(id + " cancelled."); }
-            catch (TimeoutException)
-            { checks.Add(new(id, ReleaseCheckStatus.TimedOut)); errors.Add(id + " timed out."); }
-            catch (Exception failure) when (failure is IOException or InvalidDataException or
-                UnauthorizedAccessException or
-                JsonException or KeyNotFoundException or InvalidOperationException or
-                ArgumentException or FormatException)
-            { checks.Add(new(id, ReleaseCheckStatus.Failed)); errors.Add(failure.Message); }
+                Environment = effective,
+                InheritEnvironment = false,
+            }, cancellation, requireNullError: true);
         }
 
         async Task<string> ToolAsync(string tool) => LockedToolSelection.Selected(tool,
@@ -214,7 +184,7 @@ internal static class PythonPreparation
             throw new InvalidDataException("Missing committed native Python entry.");
         QualitySelection? quality = await new QualitySelectionReader(root, read).ReadAsync(
             directory.Length == 0 ? "." : directory, "python", token);
-        if (quality?.Preset != PythonSmokePackageOperations.Preset)
+        if (quality?.Preset != PythonPackageOperations.Preset)
             throw new InvalidDataException("Unsupported complete Python quality selection.");
         foreach (string input in Inputs)
             if (await read(input, token) is null)

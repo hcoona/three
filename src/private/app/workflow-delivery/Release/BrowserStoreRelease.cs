@@ -36,18 +36,14 @@ internal static class BrowserStoreRelease
     internal static async Task<StoreFile[]> OriginalsAsync(
         BrowserStorePreparationResult preparation, string directory, CancellationToken token)
     {
-        if (!Path.IsPathFullyQualified(directory))
-            throw new InvalidDataException("Original extension directory must be absolute.");
-        string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
         var files = new List<StoreFile>();
         foreach (ReleaseFile file in preparation.Prepared.Files)
         {
-            string path = Path.GetFullPath(Path.Combine(root, file.Path));
-            if (path == root || !Platform.OwnedPath.Within(path, root))
-                throw new InvalidDataException("Original extension path leaves its root.");
-            (long size, string sha256) = await NpmPackageOperations.OriginalAsync(path, token);
-            if (size != file.Size || sha256 != file.Sha256)
-                throw new InvalidDataException("Transferred original differs from preparation.");
+            string path = Platform.OwnedPath.ResolveWithin(directory, file.Path,
+                "Original extension directory must be absolute.",
+                "Original extension path leaves its root.");
+            await Platform.OwnedFile.VerifyAsync(path, file.Size, file.Sha256,
+                "Transferred original differs from preparation.", token);
             files.Add(new(file.Output, path));
         }
         return [.. files];
@@ -156,22 +152,33 @@ internal static class BrowserStoreRelease
             throw new InvalidDataException("Dry run cannot produce a live completion result.");
         if (publication is not null && publication.Subject != subject)
             throw new InvalidDataException("Publication is not for this request.");
-        final ??= publication is null ? initial : publication.Final;
-        if (final is not null) ValidateObservation(preparation, final);
-        StoreState state = final?.State ?? StoreState.Unknown;
+        bool chrome = preparation.Target.Store == BrowserStorePreparation.ChromeWebStore;
+        if (!chrome && final is not null)
+            throw new InvalidDataException(
+                "Store has no verification observation outside its publisher.");
+        StoreObservation? verified = chrome ? final : publication?.Final;
+        if (verified is not null) ValidateObservation(preparation, verified);
+        StoreState state = verified?.State ?? StoreState.Unknown;
+        bool? attempted = publication is null ? (Satisfied(initial.State) ? false : null)
+            : publication.Operations.Length > 0;
+        if (chrome && verified is null)
+            return new(new(subject, ReleaseBusinessState.Unknown, [],
+                [.. publication?.Errors ?? [], attempted == false
+                    ? "Required Chrome Web Store verification observation is missing."
+                    : "Required Chrome Web Store verification observation is missing; " +
+                        "effects remain unknown."]), state, attempted, publication);
         // A request that needed a write but has no publisher result cannot attribute a later
         // store state to itself: whether it mutated the store stays unknown.
         if (publication is null && !Satisfied(initial.State))
             return new(new(subject, ReleaseBusinessState.Unknown, [],
-                [.. final?.Reasons ?? [], "Store state: " + state + ".",
+                [.. verified?.Reasons ?? [], "Store state: " + state + ".",
                     "Required browser-store publication result is missing; effects remain " +
                     "unknown."]), state, null, null);
-        bool attempted = publication?.Operations.Length > 0;
         ReleaseBusinessState business = Satisfied(state) ? ReleaseBusinessState.Satisfied
             : state is StoreState.Unknown or StoreState.Unobserved
                 ? ReleaseBusinessState.Unknown : ReleaseBusinessState.Unsatisfied;
         string[] reasons = business == ReleaseBusinessState.Satisfied ? [] :
-            [.. final?.Reasons ?? [], .. publication?.Errors ?? [],
+            [.. verified?.Reasons ?? [], .. publication?.Errors ?? [],
                 "Store state: " + state + "."];
         return new(new(subject, business, [], reasons), state, attempted, publication);
     }

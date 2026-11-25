@@ -549,7 +549,7 @@ Changes to this configuration or shared preparation require qualification of
 the exact changed source and affected CI/Release version and identity boundaries
 before delivery; they supply no new native experiment or live-operation authority.
 
-Shared `Ecosystems/PythonSmokePackageOperations` owns the explicitly registered
+Shared `Ecosystems/PythonPackageOperations` owns the explicitly registered
 smoke product recipe and native package operations
 inside the private application. `CI/PythonPackageExecution` and
 `Release/PythonPreparation` consume those operations while retaining distinct

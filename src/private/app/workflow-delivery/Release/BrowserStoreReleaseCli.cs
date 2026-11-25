@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
 using WorkflowDelivery.Destinations;
 
 namespace WorkflowDelivery.Release;
@@ -14,7 +12,6 @@ internal static class BrowserStoreReleaseCli
         Func<BrowserStorePreparationResult, bool, HttpClient, IBrowserStore>? store = null,
         Func<string, string?>? environment = null)
     {
-        environment ??= Environment.GetEnvironmentVariable;
         store ??= Store;
         if (args is ["release", "prepare-browser-store", var requestPath])
         {
@@ -22,7 +19,7 @@ internal static class BrowserStoreReleaseCli
                 BrowserStorePreparation.PrepareAsync)(ReleaseCli.Read(requestPath,
                     TransferJson.Default.BrowserStorePreparationRequest),
                 CancellationToken.None).GetAwaiter().GetResult();
-            Write(result, TransferJson.Default.BrowserStorePreparationResult);
+            ReleaseCli.Write(output, result, TransferJson.Default.BrowserStorePreparationResult);
             if (result.Errors.Length != 0 || result.Prepared.Files.Length == 0) return 1;
             BrowserStoreRelease.Validate(result);
             return 0;
@@ -43,7 +40,7 @@ internal static class BrowserStoreReleaseCli
             }
             else result = BrowserStoreRelease.Unobserved(preparation);
             BrowserStoreRelease.ValidateObservation(preparation, result);
-            Write(result, TransferJson.Default.StoreObservation);
+            ReleaseCli.Write(output, result, TransferJson.Default.StoreObservation);
             return result.State is StoreState.Conflict or StoreState.Unknown ? 1 : 0;
         }
         if (args is ["release", "describe-browser-store", var describePreparation,
@@ -51,7 +48,7 @@ internal static class BrowserStoreReleaseCli
         {
             ReleaseDryRun result = BrowserStoreRelease.Describe(Preparation(describePreparation),
                 Observation(describeObservation));
-            Write(result, TransferJson.Default.ReleaseDryRun);
+            ReleaseCli.Write(output, result, TransferJson.Default.ReleaseDryRun);
             return result.Ready ? 0 : 1;
         }
         if (args is ["release", "publish-browser-store", var publishPreparation,
@@ -64,7 +61,7 @@ internal static class BrowserStoreReleaseCli
             BrowserStorePublicationResult result = BrowserStoreRelease.PublishAsync(
                 preparation, files, Observation(initialPath), store(preparation, true, client),
                 CancellationToken.None).GetAwaiter().GetResult();
-            Write(result, TransferJson.Default.BrowserStorePublicationResult);
+            ReleaseCli.Write(output, result, TransferJson.Default.BrowserStorePublicationResult);
             // The required separate verification retains abnormal submissions.
             return result.Errors.Length == 0 ? 0 : 1;
         }
@@ -73,19 +70,13 @@ internal static class BrowserStoreReleaseCli
         {
             BrowserStoreCompletionResult result = BrowserStoreRelease.Complete(
                 Preparation(completePreparation), Observation(initialObservation),
-                finalObservation == "-" ? null : Observation(finalObservation),
-                publicationPath == "-" ? null : ReleaseCli.Read(publicationPath,
+                ReleaseCli.ReadOptional(finalObservation, TransferJson.Default.StoreObservation),
+                ReleaseCli.ReadOptional(publicationPath,
                     TransferJson.Default.BrowserStorePublicationResult));
-            Write(result, TransferJson.Default.BrowserStoreCompletionResult);
+            ReleaseCli.Write(output, result, TransferJson.Default.BrowserStoreCompletionResult);
             return result.Outcome.State == ReleaseBusinessState.Satisfied ? 0 : 1;
         }
         return null;
-
-        void Write<T>(T value, JsonTypeInfo<T> type) =>
-            output.WriteLine(JsonSerializer.Serialize(value, type));
-
-        string Secret(string name) => environment(name) is { Length: > 0 } value ? value :
-            throw new InvalidDataException("Missing store credential: " + name);
 
         IBrowserStore Store(BrowserStorePreparationResult preparation, bool write,
             HttpClient client)
@@ -95,13 +86,18 @@ internal static class BrowserStoreReleaseCli
             return preparation.Target.Store switch
             {
                 BrowserStorePreparation.ChromeWebStore => new ChromeWebStore(client, subject,
-                    preparation.Target, version, Secret("CWS_ACCESS_TOKEN")),
+                    preparation.Target, version, ReleaseCli.RequiredEnv("CWS_ACCESS_TOKEN",
+                        "Missing store credential: CWS_ACCESS_TOKEN", environment)),
                 BrowserStorePreparation.FirefoxAmo when write => new FirefoxAmo(client,
-                    subject, preparation.Target, version, Secret("AMO_JWT_ISSUER"),
-                    Secret("AMO_JWT_SECRET")),
+                    subject, preparation.Target, version, ReleaseCli.RequiredEnv("AMO_JWT_ISSUER",
+                        "Missing store credential: AMO_JWT_ISSUER", environment),
+                    ReleaseCli.RequiredEnv("AMO_JWT_SECRET",
+                        "Missing store credential: AMO_JWT_SECRET", environment)),
                 BrowserStorePreparation.EdgeAddons when write => new EdgeAddons(client,
-                    subject, preparation.Target, version, Secret("EDGE_API_KEY"),
-                    Secret("EDGE_CLIENT_ID")),
+                    subject, preparation.Target, version, ReleaseCli.RequiredEnv("EDGE_API_KEY",
+                        "Missing store credential: EDGE_API_KEY", environment),
+                    ReleaseCli.RequiredEnv("EDGE_CLIENT_ID",
+                        "Missing store credential: EDGE_CLIENT_ID", environment)),
                 _ => throw new InvalidDataException("Store has no read outside its publisher."),
             };
         }

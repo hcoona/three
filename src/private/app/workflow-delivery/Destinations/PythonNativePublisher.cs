@@ -59,8 +59,7 @@ internal static class PythonNativePublisher
             string path = Path.GetFullPath(Path.Combine(root, file.Path));
             if (!OwnedPath.Within(path, root) || path == root)
                 throw new InvalidDataException("Original Python path leaves its root.");
-            PythonSmokePackageOperations.RequireOriginal(new(file.Kind, path, file.Size,
-                file.Sha256));
+            PythonPackageOperations.RequireOriginal(new(file.Kind, path, file.Size, file.Sha256));
         }
         var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
         {

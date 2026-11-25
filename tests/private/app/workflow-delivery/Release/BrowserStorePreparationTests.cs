@@ -86,7 +86,24 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task StoreManifestReferencingDirectoryCannotQualify()
+    {
+        using Fixture fixture = new("chrome-web-store");
+        fixture.ChangeArchive = (target, entries) =>
+        {
+            if (target != "chrome") return;
+            entries["content-scripts/dir/"] = "";
+            entries["manifest.json"] = $$"""
+                {"manifest_version":3,"name":"{{BrowserStorePreparation.ManifestName}}",
+                 "version":"1.2.0.7","content_scripts":[{"js":["content-scripts/dir/"]}]}
+                """;
+        };
+        await AssertUnqualifiedAsync(fixture, "consumer");
+    }
+
+    [TestMethod]
     [DataRow("firefox", "../escape", "x")]
+    [DataRow("firefox", "content-scripts", "x")]
     [DataRow("sources", BrowserStorePreparation.Product + "/.output/old.zip", "x")]
     [DataRow("sources", "pnpm-lock.yaml", null)]
     public async Task UnacceptableArchiveEntriesCannotQualify(string archive, string entry,

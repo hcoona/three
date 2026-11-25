@@ -72,17 +72,12 @@ internal static class BrowserStorePreparation
         lifetime.CancelAfter(TimeSpan.FromMinutes(15));
         token = lifetime.Token;
         RequireRequest(request.Subject, request.Target);
-        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
-        string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
-        if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            OwnedPath.Overlap(scratch, checkout) ||
-            Directory.EnumerateFileSystemEntries(scratch).Any())
-            throw new InvalidDataException("Release requires fresh external scratch.");
+        (string checkout, string scratch) = ReleaseQualification.RequireFreshScratch(
+            request.Checkout, request.Scratch, PathMessage,
+            "Release requires fresh external scratch.");
         if (!GitReader.IsCommitId(request.Subject.Revision))
             throw new InvalidDataException("Unsupported selected browser-store revision.");
-        var commands = new List<ReleaseCommand>();
-        var checks = new List<ReleaseCheck>();
-        var errors = new List<string>();
+        var qualification = new ReleaseQualification(execute, token);
         var files = new List<ReleaseFile>();
         string home = Path.Combine(scratch, "home");
         Directory.CreateDirectory(home);
@@ -122,7 +117,7 @@ internal static class BrowserStorePreparation
         string product = Path.Combine(checkout, Product);
         string output = Path.Combine(product, ".output");
         BrowserExtensionVersion projected = new("", "");
-        await CheckAsync("native-input", async () =>
+        await qualification.CheckAsync("native-input", async () =>
         {
             projected = version(checkout, bound.Revision, Product, token);
             if (string.IsNullOrWhiteSpace(projected.Manifest) ||
@@ -137,7 +132,7 @@ internal static class BrowserStorePreparation
         });
         string originals = Path.Combine(scratch, "original");
         Directory.CreateDirectory(originals);
-        await CheckAsync("build", async () =>
+        await qualification.CheckAsync("build", async () =>
         {
             foreach (var target in Outputs.Where(target => target.Script.Length != 0))
                 await RunAsync("build", new("pnpm", checkout, ["--dir", product,
@@ -146,29 +141,31 @@ internal static class BrowserStorePreparation
             {
                 string name = $"{Unit}-{projected.Npm}-{target.Suffix}.zip";
                 string source = Path.Combine(output, name);
-                NodePackageArchive.RequireRegularFile(source);
+                OwnedFile.RequireExists(source, "Required npm output is missing or not a file: "
+                    + source);
                 File.Copy(source, Path.Combine(originals, name), overwrite: false);
             }
         });
         var originalsByOutput = new Dictionary<string, (string Path, long Size, string Sha256)>(
             StringComparer.Ordinal);
-        await CheckAsync("contents", async () =>
+        await qualification.CheckAsync("contents", async () =>
         {
             foreach (var target in Outputs)
             {
                 string relative = $"original/{Unit}-{projected.Npm}-{target.Suffix}.zip";
                 string path = Path.Combine(scratch, relative);
-                (long size, string sha256) = await NpmPackageOperations.OriginalAsync(path,
-                    token);
+                (long size, string sha256) = await OwnedFile.MeasureAsync(path, token,
+                    emptyMessage: "Native browser extension output is empty.");
                 originalsByOutput.Add(target.Output, (relative, size, sha256));
-                BrowserExtensionArchive.ValidateMembers(path);
                 if (target.Manifest == 0)
                     BrowserExtensionArchive.ValidateSources(path, Product);
+                else
+                    BrowserExtensionArchive.ValidateMembers(path);
             }
         });
         // A store loads the zip root as an unpacked extension: its manifest must carry the
         // NBGV projection and resolve every declared file without the source checkout.
-        await CheckAsync("consumer", () =>
+        await qualification.CheckAsync("consumer", () =>
         {
             var expected = new BrowserExtensionExpectation(ManifestName, projected.Manifest,
                 projected.Npm);
@@ -177,54 +174,30 @@ internal static class BrowserStorePreparation
                     originalsByOutput[target.Output].Path), target.Manifest, expected);
             return Task.CompletedTask;
         });
-        await CheckAsync("original-bytes", async () =>
+        await qualification.CheckAsync("original-bytes", async () =>
         {
             foreach (string selected in StoreOutputs(request.Subject.Destination))
             {
                 (string path, long size, string sha256) = originalsByOutput[selected];
-                (long actualSize, string actualDigest) = await NpmPackageOperations
-                    .OriginalAsync(Path.Combine(scratch, path), token);
-                if (actualSize != size || actualDigest != sha256)
-                    throw new InvalidDataException("Qualified original changed during checks.");
+                await OwnedFile.VerifyAsync(Path.Combine(scratch, path), size, sha256,
+                    "Qualified original changed during checks.", token);
                 files.Add(new(build.Id, selected, Outputs.Single(target =>
                     target.Output == selected).Kind, Unit, projected.Manifest, path, size,
                     sha256));
             }
         });
-        return new(new(request.Subject, [.. files], Required.ToArray(), [.. checks]),
-            request.Target, [.. commands], [.. errors]);
+        return new(new(request.Subject, [.. files], Required.ToArray(), qualification.Checks),
+            request.Target, qualification.Commands, qualification.Errors);
 
-        async Task<NativeCommandResult> RunAsync(string check, NativeCommand command)
-        {
-            command = command with { Environment = environment, InheritEnvironment = false };
-            NativeCommandResult result = await execute(command, token);
-            commands.Add(new(check, command, result));
-            if (result.Termination == NativeTermination.Cancelled)
-                throw new OperationCanceledException(token);
-            if (result.Termination == NativeTermination.TimedOut)
-                throw new TimeoutException($"Native {check} timed out.");
-            if (!result.Succeeded)
-                throw new InvalidDataException($"Native {check} failed: {result.Termination}.");
-            return result;
-        }
+        Task<NativeCommandResult> RunAsync(string check, NativeCommand command) =>
+            qualification.RunAsync(command with
+            {
+                Environment = environment,
+                InheritEnvironment = false,
+            }, check: check, requireNullError: false);
 
         async Task<string> QueryAsync(NativeCommand command) =>
             (await RunAsync("native-input", command)).Stdout.Trim();
-
-        async Task CheckAsync(string id, Func<Task> action)
-        {
-            if (checks.Any(check => check.Status != ReleaseCheckStatus.Passed))
-            { checks.Add(new(id, ReleaseCheckStatus.Skipped)); return; }
-            try { await action(); checks.Add(new(id, ReleaseCheckStatus.Passed)); }
-            catch (OperationCanceledException)
-            { checks.Add(new(id, ReleaseCheckStatus.Cancelled)); errors.Add(id + " cancelled."); }
-            catch (TimeoutException)
-            { checks.Add(new(id, ReleaseCheckStatus.TimedOut)); errors.Add(id + " timed out."); }
-            catch (Exception failure) when (failure is IOException or JsonException or
-                UnauthorizedAccessException or InvalidDataException or KeyNotFoundException or
-                InvalidOperationException)
-            { checks.Add(new(id, ReleaseCheckStatus.Failed)); errors.Add(failure.Message); }
-        }
 
         async Task<string> ToolAsync(string tool) => LockedToolSelection.Selected(tool,
             checkout, await QueryAsync(new("mise", checkout, LockedToolSelection.Query(tool),

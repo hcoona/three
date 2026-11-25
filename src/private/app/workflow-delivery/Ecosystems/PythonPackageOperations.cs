@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text.Json;
 using WorkflowDelivery.Platform;
 
@@ -9,16 +8,14 @@ internal sealed record PythonPackageTools(string Checkout, string Scratch, strin
     IReadOnlyDictionary<string, string?> Environment, bool InheritEnvironment = true);
 internal sealed record PythonDistribution(string Kind, string Path, long Length, string Sha256);
 
-// Concrete registered Python smoke recipe using native package operations; no CI planning or
-// Release completion. Other registered recipes extend its native operations.
-internal class PythonSmokePackageOperations(PythonPackageTools tools, string root)
+// Native operations for registered Python distributions; no CI planning or Release completion.
+internal sealed class PythonPackageOperations(PythonReleaseUnit unit, PythonPackageTools tools,
+    string root)
 {
     internal const string Preset = "python/hcoona-release-smoke-python-v1";
     private readonly string archives = Path.Combine(root, "archives");
-    private protected readonly PythonPackageTools tools = tools;
-    private protected readonly string root = root;
     private readonly string python = Python(Path.Combine(root, "tools"));
-    private protected readonly Dictionary<string, string?> environment = new(tools.Environment,
+    private readonly Dictionary<string, string?> environment = new(tools.Environment,
         StringComparer.Ordinal)
     {
         ["UV_PROJECT_ENVIRONMENT"] = Path.Combine(root, "tools"),
@@ -39,10 +36,16 @@ internal class PythonSmokePackageOperations(PythonPackageTools tools, string roo
             Directory.EnumerateFileSystemEntries(scratch).Any() || tools.DeadlineSeconds <= 0)
             throw new InvalidDataException(
                 "Python package execution requires fresh external scratch.");
+        RequireGitFreeScratch(scratch);
+    }
+
+    internal static void RequireGitFreeScratch(string scratch,
+        string message = "Python consumers require Git-free scratch.")
+    {
         for (DirectoryInfo? parent = new(scratch); parent is not null; parent = parent.Parent)
             if (File.Exists(Path.Combine(parent.FullName, ".git")) ||
                 Directory.Exists(Path.Combine(parent.FullName, ".git")))
-                throw new InvalidDataException("Python consumers require Git-free scratch.");
+                throw new InvalidDataException(message);
     }
 
     // The caller records each command and stops on its actual unsuccessful result.
@@ -88,21 +91,19 @@ internal class PythonSmokePackageOperations(PythonPackageTools tools, string roo
         return [.. originals];
     }
 
-    internal virtual async Task<JsonDocument> VersionFactsAsync(string directory,
+    internal async Task<JsonDocument> VersionFactsAsync(string directory,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token) => JsonDocument.Parse((await execute(Helper(python,
-            tools.Checkout, ["version-facts", Path.Combine(tools.Checkout, directory)]), token))
-                .Stdout);
+            tools.Checkout, [unit.StaticVersion ? "static-version-facts" : "version-facts",
+                Path.Combine(tools.Checkout, directory)]), token)).Stdout);
 
-    internal string ToolInterpreter => python;
-
-    internal Task<NativeCommandResult> PrepareToolsAsync(
+    private Task<NativeCommandResult> PrepareToolsAsync(
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token) => execute(Uv(tools.Checkout,
             ["sync", "--frozen", "--only-group", "dev", "--only-group",
                 "workflow-delivery-python", "--python", tools.Interpreter]), token);
 
-    internal Task<NativeCommandResult> PrepareNoneditableToolsAsync(
+    private Task<NativeCommandResult> PrepareNoneditableToolsAsync(
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token) => execute(Uv(tools.Checkout,
             ["sync", "--frozen", "--only-group", "dev", "--only-group",
@@ -159,35 +160,65 @@ internal class PythonSmokePackageOperations(PythonPackageTools tools, string roo
         string venv = Path.Combine(consumer, "venv");
         await execute(Uv(consumer, ["venv", venv, "--python", tools.Interpreter, "--no-project"]),
             token);
-        await InstallRuntimeAsync(name, consumer, Python(venv), execute, token);
+        if (unit.RuntimeClosure)
+            await InstallRuntimeAsync(consumer, Python(venv), execute, token);
         await execute(Uv(consumer, ["pip", "install", "--python", Python(venv), "--no-deps",
             "--no-cache", "--offline", install]), token);
         await execute(Helper(Python(venv), consumer, ["consume", name, version, Preset]), token);
         RequireOriginal(original);
     }
 
-    // The smoke distribution declares no runtime dependencies.
-    private protected virtual Task InstallRuntimeAsync(string name, string consumer,
+    // Hash-checked locked runtime closure; the original itself is still installed alone.
+    private async Task InstallRuntimeAsync(string consumer,
         string venv, Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        CancellationToken token) => Task.CompletedTask;
-
-    internal static void RequireOriginal(PythonDistribution original)
+        CancellationToken token)
     {
-        if (!File.Exists(original.Path))
-            throw new InvalidDataException("Original Python distribution changed.");
-        using FileStream stream = File.OpenRead(original.Path);
-        if (stream.Length != original.Length)
-            throw new InvalidDataException("Original Python distribution changed.");
-        if (Convert.ToHexStringLower(SHA256.HashData(stream)) != original.Sha256)
-            throw new InvalidDataException("Original Python distribution bytes changed.");
+        string locked = Path.Combine(consumer, "runtime-requirements.txt");
+        await execute(Uv(tools.Checkout, ["export", "--frozen", "--package", unit.Id,
+            "--no-dev", "--no-emit-workspace", "--no-header", "--output-file", locked]), token);
+        await execute(Uv(consumer, ["pip", "install", "--python", venv, "--require-hashes",
+            "--no-deps", "-r", locked]), token);
     }
 
-    private protected NativeCommand Uv(string directory, string[] arguments) => new(tools.Uv,
+    // The adopted python/pytest-v1 suite runs from the exact checkout.
+    internal async Task TestReleaseAsync(
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token)
+    {
+        string tests = unit.Tests ??
+            throw new InvalidDataException("Python Release unit has no adopted suite.");
+        string testEnvironment = Path.Combine(root, "test-environment");
+        var synced = new Dictionary<string, string?>(environment, StringComparer.Ordinal)
+        {
+            ["UV_PROJECT_ENVIRONMENT"] = testEnvironment,
+        };
+        await execute(new(tools.Uv, tools.Checkout, ["sync", "--frozen", "--python",
+            tools.Interpreter, "--package", "hcoona-three-monorepo", "--package", unit.Id],
+            tools.DeadlineSeconds, synced, tools.InheritEnvironment), token);
+        var run = new Dictionary<string, string?>(environment, StringComparer.Ordinal)
+        {
+            ["UV_PROJECT_ENVIRONMENT"] = null,
+            ["PYTHONSAFEPATH"] = null,
+            ["PYTEST_ADDOPTS"] = null,
+            ["PYTEST_PLUGINS"] = null,
+            ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = null,
+        };
+        await execute(new(tools.Uv, tools.Checkout, ["run", "--no-project", "--python",
+            testEnvironment, "python", "-m", "pytest", "-c", "pyproject.toml",
+            "--junitxml=" + Path.Combine(root, "tests.xml"), tests],
+            tools.DeadlineSeconds, run, tools.InheritEnvironment), token);
+    }
+
+    internal static void RequireOriginal(PythonDistribution original) =>
+        OwnedFile.Verify(original.Path, original.Length, original.Sha256,
+            "Original Python distribution bytes changed.");
+
+    private NativeCommand Uv(string directory, string[] arguments) => new(tools.Uv,
         directory, arguments, tools.DeadlineSeconds, environment, tools.InheritEnvironment);
-    private protected NativeCommand Helper(string executable, string directory,
+    private NativeCommand Helper(string executable, string directory,
         string[] arguments) => new(executable, directory, ["-I", tools.Helper, .. arguments],
             tools.DeadlineSeconds, environment, tools.InheritEnvironment);
-    private protected static string Python(string venv) => Path.Combine(venv,
+    private static string Python(string venv) => Path.Combine(venv,
         OperatingSystem.IsWindows() ? "Scripts/python.exe" : "bin/python");
     private static string Absolute(string path) =>
         OwnedPath.Absolute(path, "Python package paths must be absolute.");

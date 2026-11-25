@@ -14,7 +14,7 @@ internal static class BrowserExtensionArchive
         BrowserExtensionExpectation expected)
     {
         using ZipArchive zip = ZipFile.OpenRead(archive);
-        HashSet<string> names = Names(zip);
+        var (_, files) = Members(zip);
         ZipArchiveEntry entry = zip.GetEntry("manifest.json") ??
             throw new InvalidDataException("Extension zip has no root manifest.json.");
         if (entry.Length > ManifestLimit)
@@ -34,7 +34,7 @@ internal static class BrowserExtensionArchive
             (label.ValueKind != JsonValueKind.String || label.GetString() != expected.Label))
             throw new InvalidDataException("Extension version_name differs from NBGV.");
         foreach (string path in References(manifest))
-            if (!names.Contains(path.TrimStart('/')))
+            if (!files.Contains(path.TrimStart('/')))
                 throw new InvalidDataException("Extension manifest references a missing file: "
                     + path);
     }
@@ -42,31 +42,42 @@ internal static class BrowserExtensionArchive
     internal static void ValidateMembers(string archive)
     {
         using ZipArchive zip = ZipFile.OpenRead(archive);
-        _ = Names(zip);
+        _ = Members(zip);
     }
 
     // The sources zip is rooted at the workspace so a reviewer installs from its lockfile.
     internal static void ValidateSources(string archive, string product)
     {
         using ZipArchive zip = ZipFile.OpenRead(archive);
-        HashSet<string> names = Names(zip);
+        var (all, files) = Members(zip);
         foreach (string required in new[] { "pnpm-lock.yaml", "pnpm-workspace.yaml",
             product + "/package.json", product + "/wxt.config.ts" })
-            if (!names.Contains(required))
+            if (!files.Contains(required))
                 throw new InvalidDataException("Source zip omits " + required + ".");
-        if (names.Any(name => name.Split('/').Any(part => part is "node_modules" or ".output")))
+        if (all.Any(name => name.Split('/').Any(part => part is "node_modules" or ".output")))
             throw new InvalidDataException("Source zip contains build or dependency output.");
     }
 
-    private static HashSet<string> Names(ZipArchive zip)
+    private static (HashSet<string> All, HashSet<string> Files) Members(ZipArchive zip)
     {
-        var names = new HashSet<string>(StringComparer.Ordinal);
+        var all = new HashSet<string>(StringComparer.Ordinal);
+        var files = new HashSet<string>(StringComparer.Ordinal);
+        var directories = new HashSet<string>(StringComparer.Ordinal);
         foreach (ZipArchiveEntry entry in zip.Entries)
+        {
+            string trimmed = entry.FullName.TrimEnd('/');
+            string[] parts = trimmed.Split('/');
             if (entry.FullName.Contains('\\') || entry.FullName.StartsWith('/') ||
-                entry.FullName.Split('/').Any(part => part is "." or "..") ||
-                !names.Add(entry.FullName))
+                parts.Any(part => part is "" or "." or "..") || !all.Add(entry.FullName))
                 throw new InvalidDataException("Unsupported or duplicate zip member path.");
-        return names;
+            for (int i = 1; i < parts.Length; i++)
+                directories.Add(string.Join('/', parts[..i]));
+            if (entry.FullName.EndsWith('/')) directories.Add(trimmed);
+            else files.Add(entry.FullName);
+        }
+        if (files.Overlaps(directories))
+            throw new InvalidDataException("Unsupported or duplicate zip member path.");
+        return (all, files);
     }
 
     private static IEnumerable<string> References(JsonElement manifest)

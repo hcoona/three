@@ -52,7 +52,7 @@ public sealed class RubyPackageExecutionTests(TestContext context)
             Path.Combine(checkout, directory, "hcoona-release-smoke-ruby.gemspec"),
             new("hcoona-release-smoke-ruby", "1.2.3", "ruby", RequirePaths, Files, []));
         var unit = new ReleaseUnitDeclaration(
-            directory + "/workflow-delivery.release-unit.yml", "native-smoke",
+            directory + "/workflow-delivery.release-unit.yml", "hcoona-release-smoke-ruby",
             [new("gem", RubyPackageChecks.Build, "hcoona-release-smoke-ruby.gemspec",
                 [new("gem", "primary-package", "ruby-gem")])]);
         CheckSpec[] checks = RubyPackageChecks.Expand(unit, checkout,

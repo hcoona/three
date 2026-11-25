@@ -1,5 +1,6 @@
 using System.Formats.Tar;
 using System.IO.Compression;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Ecosystems;
 
@@ -15,7 +16,8 @@ internal static class NodePackageArchive
     internal static async Task ReadAsync(string archive, string metadataDirectory,
         CancellationToken token)
     {
-        RequireRegularFile(archive);
+        OwnedFile.RequireExists(archive, "Required npm output is missing or not a file: "
+            + archive);
         if (!Directory.Exists(metadataDirectory) ||
             Directory.EnumerateFileSystemEntries(metadataDirectory).Any())
             throw new InvalidDataException("Packed metadata requires a fresh empty directory.");
@@ -60,12 +62,6 @@ internal static class NodePackageArchive
         if (!manifest || !payload)
             throw new InvalidDataException(
                 "The npm archive lacks its required manifest/ESM payload.");
-    }
-
-    internal static void RequireRegularFile(string path)
-    {
-        if (!File.Exists(path))
-            throw new InvalidDataException("Required npm output is missing or not a file: " + path);
     }
 
     private sealed class BoundedReadStream(Stream input, long limit) : Stream

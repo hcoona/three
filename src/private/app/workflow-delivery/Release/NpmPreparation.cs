@@ -7,8 +7,6 @@ namespace WorkflowDelivery.Release;
 
 internal sealed record NpmPreparationRequest(ReleaseSubject Subject, string Checkout,
     string Scratch);
-internal sealed record ReleaseCommand(string Check, NativeCommand Command,
-    NativeCommandResult Result);
 internal sealed record NpmPreparationResult(PreparedRelease Prepared,
     ReleaseCommand[] Commands, string[] Errors);
 
@@ -27,20 +25,15 @@ internal static class NpmPreparation
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
         lifetime.CancelAfter(TimeSpan.FromMinutes(15));
         token = lifetime.Token;
-        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
-        string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
-        if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            OwnedPath.Overlap(scratch, checkout) ||
-            Directory.EnumerateFileSystemEntries(scratch).Any())
-            throw new InvalidDataException("Release requires fresh external scratch.");
+        (string checkout, string scratch) = ReleaseQualification.RequireFreshScratch(
+            request.Checkout, request.Scratch, PathMessage,
+            "Release requires fresh external scratch.");
         if (scratch.Contains("%s", StringComparison.Ordinal) ||
             scratch.Contains("%v", StringComparison.Ordinal))
             throw new InvalidDataException("Scratch cannot contain native pack output markers.");
         // Admission precedes every scratch write.
         NpmReleaseUnit recipe = NpmReleaseUnits.Admit(request.Subject);
-        var commands = new List<ReleaseCommand>();
-        var checks = new List<ReleaseCheck>();
-        var errors = new List<string>();
+        var qualification = new ReleaseQualification(execute, token);
         var files = new List<ReleaseFile>();
         string home = Path.Combine(scratch, "home");
         Directory.CreateDirectory(home);
@@ -93,7 +86,7 @@ internal static class NpmPreparation
             if (await bound.ReadOptionalTextAsync(input, token) is null)
                 throw new InvalidDataException("Missing committed native input: " + input);
         string nativeVersion = "";
-        await CheckAsync("native-input", async () =>
+        await qualification.CheckAsync("native-input", async () =>
         {
             nativeVersion = version(checkout, bound.Revision, product, token);
             if (string.IsNullOrWhiteSpace(nativeVersion))
@@ -174,41 +167,20 @@ internal static class NpmPreparation
                     nativeVersion, "original/package.tgz", size, sha256!));
             },
         };
-        foreach (string id in recipe.Required.Skip(1)) await CheckAsync(id, actions[id]);
-        return new(new(request.Subject, [.. files], [.. recipe.Required], [.. checks]),
-            [.. commands], [.. errors]);
+        foreach (string id in recipe.Required.Skip(1))
+            await qualification.CheckAsync(id, actions[id]);
+        return new(new(request.Subject, [.. files], [.. recipe.Required], qualification.Checks),
+            qualification.Commands, qualification.Errors);
 
-        async Task<NativeCommandResult> RunAsync(string check, NativeCommand command)
-        {
-            command = command with { Environment = environment, InheritEnvironment = false };
-            NativeCommandResult result = await execute(command, token);
-            commands.Add(new(check, command, result));
-            if (result.Termination == NativeTermination.Cancelled)
-                throw new OperationCanceledException(token);
-            if (result.Termination == NativeTermination.TimedOut)
-                throw new TimeoutException($"Native {check} timed out.");
-            if (!result.Succeeded)
-                throw new InvalidDataException($"Native {check} failed: {result.Termination}.");
-            return result;
-        }
+        Task<NativeCommandResult> RunAsync(string check, NativeCommand command) =>
+            qualification.RunAsync(command with
+            {
+                Environment = environment,
+                InheritEnvironment = false,
+            }, check: check, requireNullError: false);
 
         async Task<string> QueryAsync(NativeCommand command) =>
             (await RunAsync("native-input", command)).Stdout.Trim();
-
-        async Task CheckAsync(string id, Func<Task> action)
-        {
-            if (checks.Any(check => check.Status != ReleaseCheckStatus.Passed))
-            { checks.Add(new(id, ReleaseCheckStatus.Skipped)); return; }
-            try { await action(); checks.Add(new(id, ReleaseCheckStatus.Passed)); }
-            catch (OperationCanceledException)
-            { checks.Add(new(id, ReleaseCheckStatus.Cancelled)); errors.Add(id + " cancelled."); }
-            catch (TimeoutException)
-            { checks.Add(new(id, ReleaseCheckStatus.TimedOut)); errors.Add(id + " timed out."); }
-            catch (Exception failure) when (failure is IOException or JsonException or
-                UnauthorizedAccessException or InvalidDataException or KeyNotFoundException or
-                InvalidOperationException)
-            { checks.Add(new(id, ReleaseCheckStatus.Failed)); errors.Add(failure.Message); }
-        }
 
         async Task<string> ToolAsync(string tool) => LockedToolSelection.Selected(tool,
             checkout, await QueryAsync(new("mise", checkout, LockedToolSelection.Query(tool),

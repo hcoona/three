@@ -33,6 +33,7 @@ internal static class RubyPackageChecks
                 !Path.IsPathFullyQualified(source.Gemspec) ||
                 !PathComparison.Equals(Path.GetFullPath(Path.Combine(root, entry)),
                     Path.GetFullPath(source.Gemspec)) ||
+                unit.Id != source.Gem.Name ||
                 !RubyReleaseUnits.Registered(source.Gem.Name) ||
                 string.IsNullOrWhiteSpace(source.Gem.Version) || source.Gem.Platform != "ruby")
                 throw new InvalidDataException("Unresolved adopted native Ruby gem subject.");

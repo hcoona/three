@@ -1,11 +1,10 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
-using WorkflowDelivery.Release;
 using WorkflowDelivery.Repository;
 
-namespace WorkflowDelivery.Ecosystems;
+namespace WorkflowDelivery.Destinations;
 
 internal sealed record RubySourceTools(string Ruby, string Helper, string Scratch);
 internal sealed record RubyReadCredential(string User, string Token);
@@ -99,9 +98,7 @@ internal static class RubySourceReader
                         // The directory itself fails the regular-file check below.
                         !OwnedPath.Within(Path.GetFullPath(path), download) ||
                         size <= 0 ||
-                        !File.Exists(path) ||
-                        OwnedFile.Length(path) != size ||
-                        Digest(path) != digest)
+                        !OwnedFile.Matches(path, size, digest))
                         return Unknown("Native Ruby original or identity is inconsistent.");
                     return new(RubySourceState.Present,
                         new(path, name, version, "ruby", size, digest),
@@ -117,11 +114,5 @@ internal static class RubySourceReader
 
         RubySourceReadResult Unknown(string error) => new(RubySourceState.Unknown, null,
             command, [error]);
-    }
-
-    private static string Digest(string path)
-    {
-        using FileStream file = File.OpenRead(path);
-        return Convert.ToHexStringLower(SHA256.HashData(file));
     }
 }

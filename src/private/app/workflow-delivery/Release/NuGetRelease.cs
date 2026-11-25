@@ -67,10 +67,12 @@ internal static class NuGetRelease
             throw new InvalidDataException("Dry run cannot invoke NuGet publication.");
         NuGetObservationResult before = await observe(prepared, credential, token);
         ValidateObservation(prepared, before);
-        if (Present(before.Observation) && Qualified(before.Observation))
+        bool qualified = ReleasePolicy.Qualified(before.Observation.RequiredChecks,
+            before.Observation.Checks);
+        if (Present(before.Observation) && qualified)
             return new(prepared.Subject, before, null, before, []);
         if (before.Observation.Files[0].State != ReleaseFileState.Absent ||
-            !Qualified(before.Observation))
+            !qualified)
             return new(prepared.Subject, before, null, before,
                 ["Current destination state does not permit native creation."]);
         _ = Original(preparation, originals);
@@ -131,7 +133,8 @@ internal static class NuGetRelease
         // Completion is the registry observation of the exact coordinate and original bytes,
         // or for nuget.org of the exact coordinate available (WD-REL-009).
         ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, final.Observation, []);
-        if (!Qualified(initial.Observation) || !Present(initial.Observation) &&
+        if (!ReleasePolicy.Qualified(initial.Observation.RequiredChecks, initial.Observation.Checks)
+            || !Present(initial.Observation) &&
                 initial.Observation.Files[0].State != ReleaseFileState.Absent)
             throw new InvalidDataException("Initial NuGet observation could not proceed.");
         if (published is null)
@@ -156,7 +159,8 @@ internal static class NuGetRelease
             throw new InvalidDataException("Unsupported or incomplete NuGet invocation result.");
         ValidateObservation(prepared, published.Before);
         ValidateObservation(prepared, published.After);
-        bool allowed = Qualified(published.Before.Observation) &&
+        bool allowed = ReleasePolicy.Qualified(published.Before.Observation.RequiredChecks,
+            published.Before.Observation.Checks) &&
             (published.Invocation is null ? Present(published.Before.Observation)
                 : published.Before.Observation.Files[0].State == ReleaseFileState.Absent);
         if (!allowed || published.Errors.Length != 0)
@@ -188,21 +192,13 @@ internal static class NuGetRelease
                 ? GithubNuGetObservation.RequiredChecks : NuGetOrgObservation.RequiredChecks) ||
             result.Resources is { } resources && resources.PackagePublish != (github
                 ? NuGetPublisher.GithubEndpoint : NuGetPublisher.NuGetOrgEndpoint) ||
-            Qualified(result.Observation) && result.Resources is null)
+            ReleasePolicy.Qualified(result.Observation.RequiredChecks, result.Observation.Checks)
+                && result.Resources is null)
             throw new InvalidDataException("Incomplete native NuGet observation.");
-        // Reuse the common complete-set and exact-byte validation in either mode.
-        if (prepared.Subject.DryRun)
-            _ = ReleaseCompletion.Describe(prepared, result.Observation,
-                result.Observation.Files.Where(file => file.State == ReleaseFileState.Absent)
-                    .Select(file => file.Output).ToArray());
-        else _ = ReleaseCompletion.Evaluate(prepared, result.Observation, []);
+        ReleaseCompletion.ValidateObservation(prepared, result.Observation);
     }
 
     // A present coordinate is never created again; nuget.org reports it without byte proof.
     internal static bool Present(ReleaseObservation observation) =>
         observation.Files[0].State is ReleaseFileState.Exact or ReleaseFileState.Available;
-
-    private static bool Qualified(ReleaseObservation observation) =>
-        observation.RequiredChecks.All(id => observation.Checks.Any(check => check.Id == id &&
-            check.Status == ReleaseCheckStatus.Passed));
 }

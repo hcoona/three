@@ -316,6 +316,12 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         Assert.AreEqual(0, store.Publications);
         Assert.IsEmpty(result.Errors);
         Assert.AreEqual(StoreState.InReview, result.Final!.State);
+        BrowserStoreCompletionResult missingFinal = BrowserStoreRelease.Complete(preparation,
+            Observation(preparation, StoreState.Absent), final: null, result);
+        Assert.AreEqual(ReleaseBusinessState.Unknown, missingFinal.Outcome.State);
+        Assert.AreEqual(false, missingFinal.MutationAttempted);
+        Assert.DoesNotContain("effects remain unknown",
+            string.Join(";", missingFinal.Outcome.Reasons));
     }
 
     [TestMethod]
@@ -358,6 +364,23 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         Assert.AreEqual(ReleaseBusinessState.Satisfied, BrowserStoreRelease.Complete(
             preparation, Observation(preparation, StoreState.Published),
             Observation(preparation, StoreState.Published), null).Outcome.State);
+        Assert.AreEqual(ReleaseBusinessState.Unknown, BrowserStoreRelease.Complete(
+            preparation, Observation(preparation, StoreState.Published),
+            final: null, publication: null).Outcome.State);
+    }
+
+    [TestMethod]
+    [DataRow("firefox-amo")]
+    [DataRow("edge-addons")]
+    public void CompletePublisherOnlyStoreRejectsExternalFinalObservation(string store)
+    {
+        using var files = new Originals(BrowserStorePreparation.StoreOutputs(store));
+        BrowserStorePreparationResult preparation = files.Preparation(store, live: true);
+        StoreObservation initial = BrowserStoreRelease.Unobserved(preparation);
+        StoreObservation final = Observation(preparation, StoreState.Received);
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            BrowserStoreRelease.Complete(preparation, initial, final, publication: null));
     }
 
     [TestMethod]

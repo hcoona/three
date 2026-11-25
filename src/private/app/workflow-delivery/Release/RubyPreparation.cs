@@ -36,28 +36,24 @@ internal static class RubyPreparation
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
         lifetime.CancelAfter(TimeSpan.FromMinutes(15));
         token = lifetime.Token;
-        string checkout = Absolute(request.Checkout), scratch = Absolute(request.Scratch);
+        (string checkout, string scratch) = ReleaseQualification.RequireFreshScratch(
+            request.Checkout, request.Scratch, "Ruby Release requires absolute prepared paths.",
+            "Ruby Release requires fresh external state.");
         foreach (string path in new[] { request.Tools.Ruby, request.Tools.Gem,
                      request.Tools.Dotnet, request.Tools.Mise, request.MiseDataDirectory })
             _ = Absolute(path);
-        if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            OwnedPath.Overlap(scratch, checkout) ||
-            Directory.EnumerateFileSystemEntries(scratch).Any())
-            throw new InvalidDataException("Ruby Release requires fresh external state.");
-        var commands = new List<ReleaseCommand>();
-        var checks = new List<ReleaseCheck>();
-        var errors = new List<string>();
+        var qualification = new ReleaseQualification(execute, token);
         var files = new List<ReleaseFile>();
         var native = new Dictionary<string, string>(StringComparer.Ordinal);
         Dictionary<string, string?> environment = EnvironmentFor(scratch, request);
         GitMaterialization? bound = null;
-        IRubyReleasePackage? operations = null;
+        RubyPackageOperations? operations = null;
         RubyGemArchive? original = null;
         ReleaseBuild? build = null;
         string[] required = Required;
-        string entry = "", directory = "", version = "", current = "native-input";
+        string entry = "", directory = "", projectDirectory = "", version = "";
 
-        await CheckAsync("native-input", async () =>
+        await qualification.CheckAsync("native-input", async () =>
         {
             ReleaseSubject subject = request.Subject;
             (RubyReleaseUnit unit, bool official) = Admit(subject);
@@ -66,6 +62,7 @@ internal static class RubyPreparation
             RubyReleaseRecipe recipe = await ReadRecipeAsync(subject, bound.Root,
                 bound.ReadOptionalTextAsync, token);
             (build, entry, directory) = (recipe.Build, recipe.Entry, recipe.Directory);
+            projectDirectory = Path.Combine(checkout, directory);
             // The runtime selection query reads the checkout; the revision must commit it.
             foreach (string input in ToolConfiguration)
                 if (await bound.ReadOptionalTextAsync(input, token) is null)
@@ -116,7 +113,7 @@ internal static class RubyPreparation
                 Directory.CreateDirectory(Path.Combine(scratch, "queries")).FullName,
                 environment, 180);
             using JsonDocument projection = JsonDocument.Parse((await RunAsync(new(nbgv,
-                Path.Combine(checkout, directory), ["get-version", "--format", "json"], 180)))
+                projectDirectory, ["get-version", "--format", "json"], 180)))
                 .Stdout);
             (string raw, bool publicRelease) = QualifyNative(subject, official,
                 projection.RootElement);
@@ -136,75 +133,42 @@ internal static class RubyPreparation
             native.Add("rubygems", rubygems);
             native.Add("nbgv", pin);
             operations = RubyReleaseUnits.Package(unit, facts, request.Tools.Gem, nbgv,
-                Directory.CreateDirectory(Path.Combine(scratch, "package")).FullName,
-                Path.Combine(checkout, directory));
+                Directory.CreateDirectory(Path.Combine(scratch, "package")).FullName);
         });
-        await CheckAsync("build", async () => original = await operations!.BuildAsync(bound!,
-            directory, entry, version, ExecuteAsync, token));
-        await CheckAsync("contents", async () =>
-            _ = await operations!.InspectReleaseAsync(original!, version, ExecuteAsync, token));
-        await CheckAsync("consumer", () => operations!.ConsumeReleaseAsync(original!, version,
-            ExecuteAsync, token));
+        await qualification.CheckAsync("build", async () => original =
+            await operations!.BuildAsync(bound!, directory, entry, version, ExecuteAsync, token));
+        await qualification.CheckAsync("contents", async () =>
+            _ = await operations!.InspectAsync(bound!, directory, original!, version,
+                release: true, ExecuteAsync, token));
+        await qualification.CheckAsync("consumer", () =>
+            operations!.ConsumeAsync(projectDirectory, original!, version, release: true,
+                ExecuteAsync, token));
         if (required.Contains("tests"))
-            await CheckAsync("tests", () => operations is RubyLatexmathPackageOperations suite
-                ? suite.TestReleaseAsync(ExecuteAsync, token)
-                : throw new InvalidDataException("Ruby Release unit has no adopted suite."));
-        await CheckAsync("original-bytes", () =>
+            await qualification.CheckAsync("tests", () =>
+                operations!.TestReleaseAsync(bound!, directory, projectDirectory, ExecuteAsync,
+                    token));
+        await qualification.CheckAsync("original-bytes", () =>
         {
-            RubySmokePackageOperations.RequireOriginal(original!);
+            RubyPackageOperations.RequireOriginal(original!);
             files.Add(new(build!.Id, build.Outputs[0].Id, "ruby-gem", native["name"], version,
                 Path.GetRelativePath(scratch, original!.Path).Replace('\\', '/'), original.Length,
                 original.Sha256));
             return Task.CompletedTask;
         });
-        return new(new(request.Subject, [.. files], required.ToArray(), [.. checks]), native,
-            [.. commands], [.. errors]);
+        return new(new(request.Subject, [.. files], required.ToArray(), qualification.Checks),
+            native, qualification.Commands, qualification.Errors);
 
         Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
             CancellationToken cancellation) => RunAsync(command, cancellation);
 
-        async Task<NativeCommandResult> RunAsync(NativeCommand command,
-            CancellationToken? cancellation = null)
-        {
-            command = command with
+        Task<NativeCommandResult> RunAsync(NativeCommand command,
+            CancellationToken? cancellation = null) =>
+            qualification.RunAsync(command with
             {
                 Environment = command.Environment ?? environment,
                 InheritEnvironment = false,
-                CloseStandardInput = true
-            };
-            NativeCommandResult result = await execute(command, cancellation ?? token);
-            commands.Add(new(current, command, result));
-            if (result.Termination == NativeTermination.Cancelled)
-                throw new OperationCanceledException(token);
-            if (result.Termination == NativeTermination.TimedOut)
-                throw new TimeoutException("Native " + current + " timed out.");
-            if (!result.Succeeded || result.Error is not null)
-                throw new InvalidDataException("Native " + current + " failed: " +
-                    result.Termination + ".");
-            (cancellation ?? token).ThrowIfCancellationRequested();
-            return result;
-        }
-
-        async Task CheckAsync(string id, Func<Task> action)
-        {
-            current = id;
-            if (checks.Any(check => check.Status != ReleaseCheckStatus.Passed))
-            { checks.Add(new(id, ReleaseCheckStatus.Skipped)); return; }
-            try
-            {
-                token.ThrowIfCancellationRequested(); await action();
-                token.ThrowIfCancellationRequested();
-                checks.Add(new(id, ReleaseCheckStatus.Passed));
-            }
-            catch (OperationCanceledException)
-            { checks.Add(new(id, ReleaseCheckStatus.Cancelled)); errors.Add(id + " cancelled."); }
-            catch (TimeoutException)
-            { checks.Add(new(id, ReleaseCheckStatus.TimedOut)); errors.Add(id + " timed out."); }
-            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException or
-                InvalidDataException or JsonException or KeyNotFoundException or
-                InvalidOperationException or ArgumentException or FormatException)
-            { checks.Add(new(id, ReleaseCheckStatus.Failed)); errors.Add(failure.Message); }
-        }
+                CloseStandardInput = true,
+            }, cancellation, requireNullError: true);
     }
 
     // Pure subject admission, before any Git or native work.

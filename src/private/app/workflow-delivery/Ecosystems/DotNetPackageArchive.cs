@@ -96,18 +96,11 @@ internal static class DotNetPackageArchive
             throw new InvalidDataException("Package identity differs from native NBGV projection.");
     }
 
-    internal static string Digest(string path)
-    {
-        using var file = File.OpenRead(path);
-        return Convert.ToHexStringLower(SHA256.HashData(file));
-    }
+    internal static string Digest(string path) => OwnedFile.Digest(path);
 
-    internal static void RequireOriginal(DotNetOriginalPackage original)
-    {
-        if (!File.Exists(original.Path) || OwnedFile.Length(original.Path) != original.Size ||
-            Digest(original.Path) != original.Sha256)
-            throw new InvalidDataException("The original native package bytes are unavailable.");
-    }
+    internal static void RequireOriginal(DotNetOriginalPackage original) =>
+        OwnedFile.Verify(original.Path, original.Size, original.Sha256,
+            "The original native package bytes are unavailable.");
 
     private static void Names(PackageArchiveReader reader)
     {

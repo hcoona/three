@@ -48,7 +48,6 @@ def read_selected_source(request)
   selected = (released + prerelease).select do |tuple|
     tuple.name == name && requirement.satisfied_by?(tuple.version) && tuple.platform == "ruby"
   end
-  raise "Ambiguous native Ruby inventory" if selected.length > 64 || selected.uniq.length != selected.length
   return { "state" => "absent" } if selected.empty?
   raise "Ambiguous native Ruby identity" unless selected.length == 1
 

@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Platform;
 
@@ -18,7 +16,7 @@ internal static class GithubReleaseCli
                 GithubReleasePreparation.PrepareAsync)(ReleaseCli.Read(requestPath,
                     TransferJson.Default.GithubReleasePreparationRequest),
                 CancellationToken.None).GetAwaiter().GetResult();
-            Write(result, TransferJson.Default.GithubReleasePreparationResult);
+            ReleaseCli.Write(output, result, TransferJson.Default.GithubReleasePreparationResult);
             if (result.Errors.Length != 0 || result.Prepared.Files.Length == 0) return 1;
             GithubRelease.Validate(result);
             return 0;
@@ -30,7 +28,7 @@ internal static class GithubReleaseCli
             GithubReleaseObservationResult result = Destination(destination =>
                 destination.ObserveAsync(preparation.Prepared, CancellationToken.None));
             GithubRelease.ValidateObservation(preparation.Prepared, result);
-            Write(result, TransferJson.Default.GithubReleaseObservationResult);
+            ReleaseCli.Write(output, result, TransferJson.Default.GithubReleaseObservationResult);
             return result.Observation.Files.All(file => file.State is ReleaseFileState.Exact or
                 ReleaseFileState.Absent) && result.Observation.Checks.All(check =>
                     check.Status == ReleaseCheckStatus.Passed) ? 0 : 1;
@@ -43,7 +41,7 @@ internal static class GithubReleaseCli
             GithubRelease.ValidateObservation(prepared, observed);
             ReleaseDryRun result = ReleaseCompletion.Describe(prepared, observed.Observation,
                 GithubRelease.Missing(prepared, observed));
-            Write(result, TransferJson.Default.ReleaseDryRun);
+            ReleaseCli.Write(output, result, TransferJson.Default.ReleaseDryRun);
             return result.Ready ? 0 : 1;
         }
         if (args is ["release", "publish-github-release", var publishPreparation,
@@ -55,7 +53,7 @@ internal static class GithubReleaseCli
                 GithubRelease.PublishAsync(preparation, publishOriginals, initial,
                     destination.ObserveAsync, destination.CreateAsync, destination.UploadAsync,
                     CancellationToken.None));
-            Write(result, TransferJson.Default.GithubReleasePublicationResult);
+            ReleaseCli.Write(output, result, TransferJson.Default.GithubReleasePublicationResult);
             // The required separate verification retains actual abnormal invocations.
             return result.Errors.Length == 0 ? 0 : 1;
         }
@@ -64,21 +62,19 @@ internal static class GithubReleaseCli
         {
             GithubReleaseCompletionResult result = GithubRelease.Complete(
                 Preparation(completePreparation).Prepared, Observation(initialObservation),
-                Observation(finalObservation), publicationPath == "-" ? null :
-                    ReleaseCli.Read(publicationPath,
-                        TransferJson.Default.GithubReleasePublicationResult));
-            Write(result, TransferJson.Default.GithubReleaseCompletionResult);
+                Observation(finalObservation), ReleaseCli.ReadOptional(publicationPath,
+                    TransferJson.Default.GithubReleasePublicationResult));
+            ReleaseCli.Write(output, result, TransferJson.Default.GithubReleaseCompletionResult);
             return result.Outcome.State == ReleaseBusinessState.Satisfied ? 0 : 1;
         }
         return null;
 
-        void Write<T>(T value, JsonTypeInfo<T> type) =>
-            output.WriteLine(JsonSerializer.Serialize(value, type));
-
         T Destination<T>(Func<GithubReleaseDestination, Task<T>> action)
         {
             using HttpClient http = client?.Invoke() ?? RegistryHttpClient.Create();
-            return action(new(http, Credential())).GetAwaiter().GetResult();
+            // The job's GITHUB_TOKEN has contents:read to observe, contents:write to publish.
+            return action(new(http, ReleaseCli.RequiredEnv("GITHUB_TOKEN",
+                "GitHub Release requires GITHUB_TOKEN."))).GetAwaiter().GetResult();
         }
     }
 
@@ -88,9 +84,4 @@ internal static class GithubReleaseCli
 
     private static GithubReleaseObservationResult Observation(string path) =>
         ReleaseCli.Read(path, TransferJson.Default.GithubReleaseObservationResult);
-
-    // The job's own GITHUB_TOKEN: contents:read to observe, contents:write only to publish.
-    private static string Credential() =>
-        Environment.GetEnvironmentVariable("GITHUB_TOKEN") is { Length: > 0 } token
-            ? token : throw new InvalidDataException("GitHub Release requires GITHUB_TOKEN.");
 }

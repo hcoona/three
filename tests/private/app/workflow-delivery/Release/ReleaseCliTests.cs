@@ -64,6 +64,98 @@ public sealed class ReleaseCliTests
     }
 
     [TestMethod]
+    [DataRow("npmjs")]
+    [DataRow("github-npm")]
+    public void CompleteNpmValidatesPublicationBeforeAndRetainsRefusalDiagnostics(string registry)
+    {
+        using var files = new Files();
+        bool github = registry == "github-npm";
+        PreparedRelease prepared = files.Prepared with
+        {
+            Subject = files.Prepared.Subject with
+            {
+                SelectedRef = "refs/heads/main",
+                Channel = github ? "buddy" : "official",
+                Destination = github ? "github-packages-npm" : "npmjs",
+                DryRun = false
+            }
+        };
+        ReleaseFile file = prepared.Files[0];
+        string preparation = files.Write("prepared.json", JsonSerializer.Serialize(
+            new NpmPreparationResult(prepared, [], []), TransferJson.Default.NpmPreparationResult));
+        ReleaseObservation absent = Observe(ReleaseFileState.Absent);
+        ReleaseObservation before = Observe(ReleaseFileState.Conflict);
+        ReleaseObservation exact = Observe(ReleaseFileState.Exact);
+        string initial = WriteObservation("initial.json", absent);
+        string finalAbsent = WriteObservation("final-absent.json", absent);
+        string finalExact = WriteObservation("final-exact.json", exact);
+        const string blocked = "Refreshed registry state does not permit publication.";
+        string publication = files.Write("published.json", github
+            ? JsonSerializer.Serialize(new GithubNpmPublicationResult(prepared.Subject,
+                new(before, []), [], new(before, []), [blocked]),
+                TransferJson.Default.GithubNpmPublicationResult)
+            : JsonSerializer.Serialize(new NpmjsPublicationResult(prepared.Subject,
+                new(before, []), [], new(before, []), [blocked]),
+                TransferJson.Default.NpmjsPublicationResult));
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        Assert.AreEqual(1, Program.Run(["release", "complete-" + registry, preparation,
+            initial, finalAbsent, publication], output, error), error.ToString());
+        ReleaseOutcome refused = JsonSerializer.Deserialize(output.ToString(),
+            TransferJson.Default.ReleaseOutcome)!;
+        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, refused.State);
+        Assert.IsEmpty(refused.Uploads);
+        Assert.Contains(blocked, refused.Reasons);
+
+        output.GetStringBuilder().Clear();
+        Assert.AreEqual(0, Program.Run(["release", "complete-" + registry, preparation,
+            initial, finalExact, publication], output, error), error.ToString());
+        ReleaseOutcome observed = JsonSerializer.Deserialize(output.ToString(),
+            TransferJson.Default.ReleaseOutcome)!;
+        Assert.AreEqual(ReleaseBusinessState.Satisfied, observed.State);
+        Assert.IsEmpty(observed.Uploads);
+
+        var badUpload = new ReleaseUpload(file.Output,
+            new(WorkflowDelivery.Platform.NativeTermination.Exited, 0, "", "", 0.1, null));
+        string illegalWrite = files.Write("illegal-write.json", github
+            ? JsonSerializer.Serialize(new GithubNpmPublicationResult(prepared.Subject,
+                new(before, []), [badUpload], new(exact, []), []),
+                TransferJson.Default.GithubNpmPublicationResult)
+            : JsonSerializer.Serialize(new NpmjsPublicationResult(prepared.Subject,
+                new(before, []), [badUpload], new(exact, []), []),
+                TransferJson.Default.NpmjsPublicationResult));
+        output.GetStringBuilder().Clear();
+        Assert.AreEqual(2, Program.Run(["release", "complete-" + registry, preparation,
+            initial, finalExact, illegalWrite], output, error));
+        Assert.Contains("Unsupported npm write result.", error.ToString());
+
+        output.GetStringBuilder().Clear();
+        error.GetStringBuilder().Clear();
+        Assert.AreEqual(2, Program.Run(["release", "complete-" + registry, preparation,
+            finalExact, finalExact, publication], output, error));
+        Assert.AreEqual("", output.ToString());
+        Assert.Contains("Mismatched or unnecessary npm publication result.", error.ToString());
+
+        ReleaseObservation Observe(ReleaseFileState state)
+        {
+            string check = github ? "visibility" : "metadata";
+            return new(prepared.Subject,
+                [new(file.Output, file.Name, file.Version, state,
+                    state == ReleaseFileState.Exact ? file.Size : null,
+                    state == ReleaseFileState.Exact ? file.Sha256 : null)],
+                [check], [new(check, ReleaseCheckStatus.Passed)]);
+        }
+
+        string WriteObservation(string path, ReleaseObservation observation) =>
+            files.Write(path, github
+                ? JsonSerializer.Serialize(new GithubNpmObservationResult(observation, []),
+                    TransferJson.Default.GithubNpmObservationResult)
+                : JsonSerializer.Serialize(new NpmjsObservationResult(observation, []),
+                    TransferJson.Default.NpmjsObservationResult));
+    }
+
+    [TestMethod]
     [DataRow("Absent", 0, 1)]
     [DataRow("Conflict", 1, 0)]
     public void ActualDryRunCommandReportsHypotheticalWorkAndFailure(string stateName,

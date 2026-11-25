@@ -4,7 +4,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using WorkflowDelivery.Ecosystems;
+using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
