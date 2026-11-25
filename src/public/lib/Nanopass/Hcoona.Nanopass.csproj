@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <PackageId>Hcoona.Nanopass</PackageId>
+    <AssemblyName>Hcoona.Nanopass</AssemblyName>
+    <RootNamespace>Hcoona.Nanopass</RootNamespace>
+    <PackageDescription>Strongly typed Nanopass compiler framework for C# 15 and .NET 11 with incremental grammar definitions, automatic pass synthesis, and S-expression tooling.</PackageDescription>
+    <PackageTags>compiler nanopass ir ast csharp15 union source-generator roslyn</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackNanopassGenerator</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Nanopass.Generators/Hcoona.Nanopass.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false"
+                      PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="PackNanopassGenerator" DependsOnTargets="ResolveProjectReferences">
+    <ItemGroup>
+      <_NanopassGenerator Include="@(Analyzer->WithMetadataValue('Filename', 'Hcoona.Nanopass.Generators'))" />
+      <TfmSpecificPackageFile Include="@(_NanopassGenerator)" PackagePath="analyzers/dotnet/cs" />
+    </ItemGroup>
+    <Error Condition="'@(_NanopassGenerator)' == ''" Text="The Nanopass generator was not resolved for packaging." />
+  </Target>
+
+</Project>
