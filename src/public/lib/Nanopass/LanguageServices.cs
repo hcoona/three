@@ -135,6 +135,24 @@ public static class LanguageServices
             reachableNonTerminals.Push(current);
             foreach (ProductionDescriptor production in current.Productions)
             {
+                if (production.ReferencedTerminals is { } terminalNames
+                    && production.ReferencedNonTerminals is { } nonTerminalNames)
+                {
+                    foreach (Symbol terminalName in terminalNames)
+                    {
+                        ScheduleTerminal(language.Terminals.First(
+                            item => item.Name == terminalName));
+                    }
+
+                    foreach (Symbol nonTerminalName in nonTerminalNames)
+                    {
+                        ScheduleNonTerminal(language.NonTerminals.First(
+                            item => item.Name == nonTerminalName));
+                    }
+
+                    continue;
+                }
+
                 SExpr fields = production.Syntax;
                 if (fields is SExpr.Pair pair)
                 {
@@ -152,15 +170,11 @@ public static class LanguageServices
                     Symbol name = RawMetaVariable(field);
                     if (terminalMetaVars.TryGetValue(name, out TerminalDescriptor? terminal))
                     {
-                        if (seenTerminals.Add(terminal.Name))
-                        {
-                            reachableTerminals.Push(terminal);
-                        }
+                        ScheduleTerminal(terminal);
                     }
-                    else if (nonTerminalMetaVars.TryGetValue(name, out var nonTerminal)
-                        && scheduled.Add(nonTerminal.Name))
+                    else if (nonTerminalMetaVars.TryGetValue(name, out var nonTerminal))
                     {
-                        pending.Push(nonTerminal);
+                        ScheduleNonTerminal(nonTerminal);
                     }
                 }
             }
@@ -171,6 +185,22 @@ public static class LanguageServices
             Terminals = [.. reachableTerminals],
             NonTerminals = [.. reachableNonTerminals],
         };
+
+        void ScheduleTerminal(TerminalDescriptor terminal)
+        {
+            if (seenTerminals.Add(terminal.Name))
+            {
+                reachableTerminals.Push(terminal);
+            }
+        }
+
+        void ScheduleNonTerminal(NonTerminalDescriptor nonTerminal)
+        {
+            if (scheduled.Add(nonTerminal.Name))
+            {
+                pending.Push(nonTerminal);
+            }
+        }
     }
 
     private static SExpr RenderLanguage(

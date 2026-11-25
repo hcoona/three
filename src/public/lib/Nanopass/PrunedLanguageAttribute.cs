@@ -20,7 +20,7 @@ using System;
 
 namespace Hcoona.Nanopass;
 
-[AttributeUsage(AttributeTargets.Class, Inherited = false)]
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class PrunedLanguageAttribute(Type sourceLanguage) : Attribute
 {
     public Type SourceLanguage { get; } = sourceLanguage;

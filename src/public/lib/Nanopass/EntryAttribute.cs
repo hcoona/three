@@ -20,7 +20,8 @@ using System;
 
 namespace Hcoona.Nanopass;
 
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, Inherited = false)]
+[AttributeUsage(
+    AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = true, Inherited = false)]
 public sealed class EntryAttribute : Attribute
 {
     public EntryAttribute()

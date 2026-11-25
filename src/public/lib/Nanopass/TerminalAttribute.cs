@@ -27,6 +27,8 @@ public sealed class TerminalAttribute(Type clrType, params string[] metaVars) : 
 
     public string[] MetaVars { get; } = metaVars;
 
+    public string? Name { get; set; }
+
     public string? Predicate { get; set; }
 
     public string? Prettifier { get; set; }

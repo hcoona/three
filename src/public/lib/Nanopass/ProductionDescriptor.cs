@@ -18,4 +18,9 @@
 
 namespace Hcoona.Nanopass;
 
-public sealed record ProductionDescriptor(SExpr Syntax, string? Name = null, SExpr? Pretty = null);
+public sealed record ProductionDescriptor(SExpr Syntax, string? Name = null, SExpr? Pretty = null)
+{
+    public Seq<Symbol>? ReferencedTerminals { get; init; }
+
+    public Seq<Symbol>? ReferencedNonTerminals { get; init; }
+}

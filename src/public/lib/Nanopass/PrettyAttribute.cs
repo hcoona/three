@@ -25,5 +25,9 @@ public sealed class PrettyAttribute(string? template = null) : Attribute
 {
     public string? Template { get; } = template;
 
+    /// <summary>
+    /// Gets or sets the static handler that transforms the production's S-expression.
+    /// The handler takes one <see cref="SExpr"/> with recursively prettified fields.
+    /// </summary>
     public string? PrettyHandler { get; set; }
 }
