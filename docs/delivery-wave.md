@@ -1044,11 +1044,13 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
       packed as an analyzer in `Hcoona.Nanopass`), and test project under
       `tests/public/lib/Nanopass.Tests/` (`Hcoona.Nanopass.Tests.csproj`,
       targeting `net11.0`).
-    - Upgrade `Microsoft.CodeAnalysis.CSharp` and directly required
-      `Microsoft.CodeAnalysis.*` analyzer/workspace/testing packages in
+    - Upgrade `Microsoft.CodeAnalysis.CSharp` and any directly required
+      `Microsoft.CodeAnalysis.*` compiler/workspace packages in
       `Directory.Packages.props` to `5.12.0` (matching the `.NET 11.0.100` SDK
       in `global.json` so Roslyn parses C# 15 `union` and `closed` syntax),
-      refreshing affected NuGet lockfiles. Record any empirically required
+      using compatible published versions if any independently versioned
+      analyzer/code-fix testing package is needed, and refresh affected NuGet
+      lockfiles. Record any empirically required
       project-local analyzer carve-out (such as `StyleCop.Analyzers` on C# 15
       syntax or `netstandard2.0` generator rules) in
       [`dotnet-compatibility.md`](engineering/dotnet-compatibility.md).
