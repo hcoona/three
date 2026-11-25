@@ -96,6 +96,19 @@ public sealed class PrettyLanguageTests
         Assert.Contains("same length", error.Message);
     }
 
+    [TestMethod]
+    public void PrettyTemplates_BroadcastOpaqueArraysAcrossNestedRepetitions()
+    {
+        var array = SExpr.FromValue(new object[] { 1, 2 });
+        var raw = SExpr.List(new SExpr.Sym("entries"), array, SExpr.Parse("((3 4 5))"));
+        var term = ArrayTerminalPrettyLanguage.Parse(raw);
+
+        Assert.AreEqual(raw, ArrayTerminalPrettyLanguage.Unparse(term, raw: true));
+        Assert.AreEqual(
+            SExpr.Parse("((((1 2) 3) ((1 2) 4) ((1 2) 5)))"),
+            ArrayTerminalPrettyLanguage.Unparse(term));
+    }
+
     private static SExpr BoxVariables(SExpr datum) => datum switch
     {
         SExpr.Sym symbol when symbol.Value.Name.Contains('.') =>
@@ -113,3 +126,13 @@ public sealed class PrettyLanguageTests
     @"(delimiters) => (#\( #\) #\  #\\ #\newline)",
     """(constants) => (#true 9223372036854775807 -.5 "line\n" |1/2| |#unknown|)""")]
 internal static partial class CharacterPrettyLanguage;
+
+[Language]
+[Terminal(typeof(object[]), "a", Name = "array", Prettifier = nameof(PrintArray))]
+[Terminal(typeof(int), "x")]
+[NonTerminalDef("Expr", ["e"], "(entries a ((x ...) ...)) => (((a x) ...) ...)")]
+internal static partial class ArrayTerminalPrettyLanguage
+{
+    private static SExpr PrintArray(object[] values) =>
+        SExpr.List([.. values.Select(SExpr.FromValue)]);
+}

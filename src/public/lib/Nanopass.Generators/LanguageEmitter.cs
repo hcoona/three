@@ -109,8 +109,17 @@ internal sealed class LanguageEmitter(LanguageModel model)
 
     private static string Flag(bool value) => value ? "true" : "false";
 
-    private static string UnionValue(LanguageModel.NonTerminal nonTerminal) =>
-        UsesCustomUnion(nonTerminal) ? "RawValue" : "Value";
+    private static string UnionValue(
+        LanguageModel.NonTerminal nonTerminal, string receiver, bool boxed = false)
+    {
+        string name = Id(nonTerminal.Name);
+        if (UsesCustomUnion(nonTerminal))
+        {
+            return $"(({name}.IUnionMembers){receiver}).Value";
+        }
+
+        return boxed ? $"(({name}){receiver}).Value" : $"{receiver}.Value";
+    }
 
     private static bool UsesCustomUnion(LanguageModel.NonTerminal nonTerminal) =>
         nonTerminal.Declared == LanguageModel.Declaration.Struct
@@ -219,9 +228,9 @@ internal sealed class LanguageEmitter(LanguageModel model)
         foreach (var nonTerminal in model.NonTerminals)
         {
             string name = Id(nonTerminal.Name);
-            var value = UnionValue(nonTerminal);
+            var value = UnionValue(nonTerminal, "ir", boxed: true);
             this.Line($"new({Literal(nonTerminal.Name)}, typeof({name}), "
-                + $"static ir => (({name})ir).{value},");
+                + $"static ir => {value},");
             this.Open("[", null);
             foreach (var rule in this.OrderRules(nonTerminal))
             {
@@ -356,12 +365,12 @@ internal sealed class LanguageEmitter(LanguageModel model)
             this.Open($"public partial union {name}{cases} : {SystemNamespace}IEquatable<{name}>");
         }
 
-        var value = UnionValue(nonTerminal);
+        var value = UnionValue(nonTerminal, "this");
         this.Line($"public bool Equals({name} other) "
-            + $"=> object.Equals(this.{value}, other.{value});");
+            + $"=> object.Equals({value}, {UnionValue(nonTerminal, "other")});");
         this.Line("public override bool Equals(object? other) "
             + $"=> other is {name} value && this.Equals(value);");
-        this.Line($"public override int GetHashCode() => this.{value}?.GetHashCode() ?? 0;");
+        this.Line($"public override int GetHashCode() => {value}?.GetHashCode() ?? 0;");
         this.Line($"public static bool operator ==({name} left, {name} right) "
             + "=> left.Equals(right);");
         this.Line($"public static bool operator !=({name} left, {name} right) "
@@ -383,7 +392,6 @@ internal sealed class LanguageEmitter(LanguageModel model)
         var types = CaseTypes(model, nonTerminal).ToArray();
         this.Line("private readonly object? storedValue;");
         this.Line($"private {name}(object? value) => this.storedValue = value;");
-        this.Line("public object? RawValue => this.storedValue;");
         this.Line("object? IUnionMembers.Value => this.storedValue;");
         this.Line("bool IUnionMembers.HasValue => this.storedValue is not null;");
         foreach (var type in types)

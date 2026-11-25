@@ -73,8 +73,8 @@ internal sealed class GrammarPattern
 
     private static object? Normalize(object? value, int depth) => depth == 0
         ? value
-        : ((IEnumerable)value!).Cast<object?>()
-            .Select(item => Normalize(item, depth - 1)).ToArray();
+        : new SequenceColumn(((IEnumerable)value!).Cast<object?>()
+            .Select(item => Normalize(item, depth - 1)).ToArray());
 
     private SExpr StripMaybe(SExpr pattern) =>
         pattern is SExpr.Pair { Cdr: SExpr.Pair { Car: SExpr.Sym leaf, Cdr: SExpr.Nil } } pair
@@ -185,15 +185,15 @@ internal sealed class GrammarPattern
         int[] columns =
         [
             .. this.CaptureIndices(pair.Car).Distinct()
-                .Where(index => captures[index] is object?[]),
+                .Where(index => captures[index] is SequenceColumn),
         ];
         if (columns.Length == 0)
         {
             throw new NanopassException("No sequence field supplies values for an ellipsis.");
         }
 
-        int count = ((object?[])captures[columns[0]]!).Length;
-        if (columns.Any(i => ((object?[])captures[i]!).Length != count))
+        int count = ((SequenceColumn)captures[columns[0]]!).Items.Length;
+        if (columns.Any(i => ((SequenceColumn)captures[i]!).Items.Length != count))
         {
             throw new NanopassException("Parallel sequence fields must have the same length.");
         }
@@ -204,7 +204,7 @@ internal sealed class GrammarPattern
         {
             foreach (int column in columns)
             {
-                row[column] = ((object?[])captures[column]!)[i];
+                row[column] = ((SequenceColumn)captures[column]!).Items[i];
             }
 
             tail = new SExpr.Pair(this.Render(pair.Car, row, print), tail);
@@ -228,4 +228,6 @@ internal sealed class GrammarPattern
             }
         }
     }
+
+    private sealed record SequenceColumn(object?[] Items);
 }

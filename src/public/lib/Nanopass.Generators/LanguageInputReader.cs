@@ -392,6 +392,7 @@ internal static class LanguageInputReader
         return new(
             type.Name,
             prefix + type.Name,
+            TypeName(type),
             Text(syntax, 0),
             NamedText(syntax, "Name"),
             Text(pretty, 0),

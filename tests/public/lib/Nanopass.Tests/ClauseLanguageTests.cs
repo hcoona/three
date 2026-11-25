@@ -13,7 +13,8 @@ public sealed class ClauseLanguageTests
         var single = BooleanLanguage.Parse(text);
         var value = BooleanLambdaLanguage.ParseValue(text);
         Assert.AreEqual(expected, Assert.IsInstanceOfType<bool>(single.Value));
-        Assert.AreEqual(expected, Assert.IsInstanceOfType<bool>(value.RawValue));
+        Assert.IsTrue(value.TryGetValue(out bool actual));
+        Assert.AreEqual(expected, actual);
         Assert.AreEqual(text, BooleanLambdaLanguage.UnparseToString(value));
         Assert.ThrowsExactly<NanopassParseException>(() => BooleanLanguage.Parse("a"));
     }

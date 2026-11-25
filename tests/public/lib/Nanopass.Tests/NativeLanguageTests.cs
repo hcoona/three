@@ -51,7 +51,8 @@ public sealed class NativeLanguageTests
 
         Assert.AreEqual(expected, NativeBaseLanguage.Parse(input));
         Assert.AreEqual(input, NativeBaseLanguage.UnparseToString(expected));
-        Assert.IsFalse(Assert.IsInstanceOfType<bool>(NativeBaseLanguage.ParseValue("#f").RawValue));
+        Assert.IsTrue(NativeBaseLanguage.ParseValue("#f").TryGetValue(out bool value));
+        Assert.IsFalse(value);
         Assert.IsTrue(NativeBaseLanguage.IsExpr(NativeBaseLanguage.ParseValue("#f")));
     }
 

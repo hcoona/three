@@ -187,6 +187,18 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
         }
         """)]
     [DataRow("NP0105", """
+        [Language, Terminal(typeof(bool), "b"), NonTerminalDef("IUnionMembers", ["u"], "b")]
+        public static partial class Broken;
+        """)]
+    [DataRow("NP0105", """
+        [Language]
+        public static partial class Broken
+        {
+            [NonTerminal("u"), Cases(typeof(bool))]
+            public readonly partial struct IUnionMembers;
+        }
+        """)]
+    [DataRow("NP0105", """
         [Language, NonTerminalDef("Expr", ["e"], "(unit)")]
         public static partial class Source;
 
@@ -467,6 +479,16 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
     }
 
     [TestMethod]
+    public void CustomUnion_NamedRawValueRoundTripsAndUsesValueEquality()
+    {
+        var parsed = CustomUnionNamesLanguage.Parse("#f");
+        CustomUnionNamesLanguage.RawValue expected = false;
+        Assert.AreEqual(expected, parsed);
+        Assert.AreEqual(expected.GetHashCode(), parsed.GetHashCode());
+        Assert.AreEqual("#f", CustomUnionNamesLanguage.UnparseToString(parsed));
+    }
+
+    [TestMethod]
     public void ProductionFields_ReserveFinalRecordNameAndSynthesizedMemberNames()
     {
         const string input = """
@@ -696,6 +718,20 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
     }
 
     [TestMethod]
+    public void NativeCases_UseExplicitRecordTerminalsInsteadOfInferringProductions()
+    {
+        var datum = SExpr.FromValue(new RecordTerminalLanguage.Token(42));
+        var term = RecordTerminalLanguage.ParseExpr(datum);
+        Assert.AreEqual(datum, RecordTerminalLanguage.Unparse(term, raw: true));
+        Assert.AreEqual("42", RecordTerminalLanguage.UnparseToString(term));
+        var nonTerminals = RecordTerminalLanguage.Descriptor.NonTerminals;
+        var expr = nonTerminals.Single(item => item.Name == "Expr");
+        var entry = nonTerminals.Single(item => item.Name == "EntryPoint");
+        Assert.AreEqual(SExpr.Parse("t"), Assert.ContainsSingle(expr.Productions).Syntax);
+        Assert.AreEqual(SExpr.Parse("(unit)"), Assert.ContainsSingle(entry.Productions).Syntax);
+    }
+
+    [TestMethod]
     public void NativeRecords_ReadPositionalFieldsFromThePartialDeclarationWithParameters()
     {
         const string input = """
@@ -798,4 +834,25 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
 
     private static string Describe(IEnumerable<Diagnostic> diagnostics) =>
         string.Join(Environment.NewLine, diagnostics);
+}
+
+[Language]
+internal static partial class CustomUnionNamesLanguage
+{
+    [NonTerminal("v"), Cases(typeof(bool))]
+    public readonly partial struct RawValue;
+}
+
+[Language, Entry("EntryPoint"), NonTerminalDef("EntryPoint", ["p"], "(unit)")]
+[Terminal(typeof(RecordTerminalLanguage.Token), "t", Prettifier = nameof(PrintToken))]
+[Terminal(typeof(RecordTerminalLanguage.@class), "c")]
+internal static partial class RecordTerminalLanguage
+{
+    public partial union Expr(Token);
+
+    public sealed record Token(int Number);
+
+    public sealed record @class(int Number);
+
+    private static int PrintToken(Token token) => token.Number;
 }

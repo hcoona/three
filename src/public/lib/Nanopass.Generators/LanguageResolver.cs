@@ -311,6 +311,8 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
         string? nativeEntry)
     {
         var seenRecords = new HashSet<string>(StringComparer.Ordinal);
+        var declaredTerminalTypes = new HashSet<string>(
+            terminals.Select(static terminal => terminal.Type), StringComparer.Ordinal);
         foreach (var native in input.NativeNonTerminals)
         {
             var target = nonTerminals.First(item => Equal(item.Name, native.Name));
@@ -321,8 +323,10 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
                     throw new Failure(5, $"Union case '{alternative.Type}' cannot be nullable.");
                 }
 
-                var record = input.NativeRecords.FirstOrDefault(item =>
-                    Equal(input.QualifiedName + "." + item.Path, alternative.Type));
+                var record = declaredTerminalTypes.Contains(alternative.Type)
+                    ? null
+                    : input.NativeRecords.FirstOrDefault(item =>
+                        Equal(item.Type, alternative.Type));
                 if (record is not null)
                 {
                     AddProduction(target, ReadNativeRecord(record));
@@ -355,8 +359,7 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
         foreach (var record in input.NativeRecords)
         {
             if (seenRecords.Contains(record.Path)
-                || terminals.Any(terminal =>
-                    Equal(terminal.Type, input.QualifiedName + "." + record.Path)))
+                || terminals.Any(terminal => Equal(terminal.Type, record.Type)))
             {
                 continue;
             }
@@ -814,7 +817,7 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
         claimedTypes.UnionWith(input.NativeNonTerminals.SelectMany(static item => item.Cases)
             .Select(static type => type.Type));
         bool hasUnclaimedRecord = input.NativeRecords.Any(record => record.Path.IndexOf('.') < 0
-            && !claimedTypes.Contains(input.QualifiedName + "." + record.Path));
+            && !claimedTypes.Contains(record.Type));
         var nativeEntry = hasUnclaimedRecord
             ? (input.Entries.Count == 1 ? input.Entries[0] : inherited?.Entry)
             : null;
@@ -839,6 +842,12 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
 
         foreach (var nonTerminal in nonTerminals)
         {
+            if (Equal(nonTerminal.Name, "IUnionMembers"))
+            {
+                throw new Failure(
+                    5, "Nonterminal name 'IUnionMembers' is reserved for union members.");
+            }
+
             if (nonTerminal.MetaVars.Count == 0)
             {
                 throw new Failure(5, $"Expected metavariables for '{nonTerminal.Name}'.");

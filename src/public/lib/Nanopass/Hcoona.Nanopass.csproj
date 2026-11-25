@@ -12,13 +12,15 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageReleaseNotes>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/ReleaseNotes.md'))</PackageReleaseNotes>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);ResolveProjectReferences</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
     <None Include="THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="\" />
     <None Include="ReleaseNotes.md" />
-    <None Include="$(MSBuildProjectDirectory)/../Nanopass.Generators/bin/$(Configuration)/netstandard2.0/Hcoona.Nanopass.Generators.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <TfmSpecificPackageFile Include="$(MSBuildProjectDirectory)/../Nanopass.Generators/bin/$(Configuration)/netstandard2.0/Hcoona.Nanopass.Generators.dll"
+                            PackagePath="analyzers/dotnet/cs/" />
   </ItemGroup>
 
   <ItemGroup>

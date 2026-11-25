@@ -57,6 +57,7 @@ internal sealed record LanguageInput(
     internal sealed record NativeRecord(
         string Name,
         string Path,
+        string Type,
         string? Syntax,
         string? SyntaxName,
         string? Pretty,
