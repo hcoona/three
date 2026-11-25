@@ -15,7 +15,7 @@ public sealed class Coordinator
     private const int DeadlineDrainSeconds = 30;
     private readonly RunDatabase database;
     private readonly CollaborationOperations collaboration;
-    private readonly GitOperations git;
+    private readonly IGitWorkspace git;
     private readonly ProcessRunner processes;
     private readonly CreditLedger credits;
     private readonly INativeWorkerFactory nativeWorkers;
@@ -38,12 +38,28 @@ public sealed class Coordinator
         CollaborationOperations collaboration,
         GitOperations git
     )
-        : this(database, collaboration, git, null) { }
+        : this(database, collaboration, (IGitWorkspace)git, null) { }
 
     internal Coordinator(
         RunDatabase database,
         CollaborationOperations collaboration,
         GitOperations git,
+        Func<RunDatabase, ProcessRunner, CreditLedger, INativeWorkerFactory>? nativeWorkerFactory,
+        Action<IReadOnlyList<Task>>? observeWorkerCompletion = null
+    )
+        : this(
+            database,
+            collaboration,
+            (IGitWorkspace)git,
+            nativeWorkerFactory,
+            observeWorkerCompletion
+        )
+    { }
+
+    internal Coordinator(
+        RunDatabase database,
+        CollaborationOperations collaboration,
+        IGitWorkspace git,
         Func<RunDatabase, ProcessRunner, CreditLedger, INativeWorkerFactory>? nativeWorkerFactory,
         Action<IReadOnlyList<Task>>? observeWorkerCompletion = null
     )

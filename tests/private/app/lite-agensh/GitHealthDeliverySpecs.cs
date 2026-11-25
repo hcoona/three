@@ -397,6 +397,53 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             "failed for at least 15 minutes",
             ReadAndCompleteEvents(state, "worker2")
         );
+
+        // Simulate an interrupted process between advancing integration and updating git_health:
+        // an idle ProcessPendingAsync pass must detect the stale health commit and evaluate the
+        // new integrated head rather than returning stale green health.
+        long healthTask = health["taskId"]!.GetValue<long>();
+        _ = await state.InvokeAsync(
+            "worker1",
+            "change_write",
+            new()
+            {
+                ["action"] = "update",
+                ["id"] = change["id"]!.GetValue<long>(),
+                ["taskIds"] = new JsonArray(healthTask),
+            },
+            token
+        );
+        checkExitCode = 0;
+        await state.QueueAsync(change, token);
+        await state.Operations.ProcessPendingAsync(token);
+        string integratedHead = await state.ResolveAsync(state.IntegrationRef, token);
+        Assert.AreNotEqual(state.BaseCommit, integratedHead);
+        using (Microsoft.Data.Sqlite.SqliteConnection connection = state.Database.Open())
+        {
+            Sql.Execute(
+                connection,
+                """
+                UPDATE git_health SET commit_hash=$stale,passed=1,red_since=NULL,
+                    broken_commit='',alerted=0,lifted=0 WHERE singleton=1;
+                """,
+                null,
+                ("$stale", state.BaseCommit)
+            );
+        }
+
+        checkExitCode = 17;
+        state.Clock.Advance(TimeSpan.FromTicks(1));
+        DateTimeOffset postCrashRed = state.Clock.GetUtcNow();
+        await state.Operations.ProcessPendingAsync(token);
+        Assert.Contains(
+            "Integration fails at " + integratedHead,
+            ReadAndCompleteEvents(state, "worker1")
+        );
+        state.Clock.Advance(TimeSpan.FromTicks(1));
+        health = GitScenarioState.Data(await state.Operations.EvaluateHealthAsync(token));
+        Assert.AreEqual(integratedHead, health["commit"]!.GetValue<string>());
+        Assert.AreEqual(integratedHead, health["brokenCommit"]!.GetValue<string>());
+        AssertHealth(health, restricted: true, alerted: false, lifted: false, postCrashRed);
     }
 
     [TestMethod]
