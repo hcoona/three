@@ -2245,3 +2245,35 @@ def test_musescore_output_bound_preconditions_block_dispatch(
             )
         )
     assert not called
+
+
+def test_volta_ending_and_restated_midscore_clef_route_to_musescore():
+    """Volta <ending> and restated mid-score <clef> route to MuseScore."""
+    score = _score(2)
+    base_xml = to_musicxml_text(score)
+    volta_xml = base_xml.replace(
+        '<measure number="2">',
+        '<measure number="2"><barline location="left">'
+        '<ending number="1" type="start"/></barline>',
+    )
+    assert (
+        packaging.choose_engine_for_score(
+            score, volta_xml, preferred_engine="verovio"
+        )
+        == "musescore"
+    )
+    restated_clef_xml = base_xml.replace(
+        '<measure number="2">',
+        '<measure number="2"><attributes><clef number="2">'
+        "<sign>F</sign><line>4</line></clef></attributes>",
+    )
+    assert (
+        packaging.choose_engine_for_score(
+            score, restated_clef_xml, preferred_engine="verovio"
+        )
+        == "musescore"
+    )
+    empty_meter = packaging._PageMeter(100, min_verovio_cohort=250)  # noqa: SLF001
+    empty_meter.validate_verovio_cohort(formal=False)
+    with pytest.raises(StopConditionError, match="minimum Verovio cohort"):
+        empty_meter.validate_verovio_cohort(formal=True)

@@ -1038,6 +1038,7 @@ def _reject_unchecked_facets(root: ET.Element) -> set[str]:  # noqa: C901, PLR09
         "other-dynamics": "dynamic",
         "tremolo": "tremolo",
         "non-arpeggiate": "arpeggio",
+        "ending": "repeat_ending",
     }
     categories = {
         unchecked[node.tag] for node in root.iter() if node.tag in unchecked

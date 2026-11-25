@@ -1135,20 +1135,22 @@ def _record_intake(
 @dataclass(slots=True)
 class _PageMeter:
     planned: int
+    min_verovio_cohort: int = 30
     actual: int = 0
     uncounted_worker: bool = False
     crop_counts: Counter[str] = field(default_factory=Counter)
     disk: _DatasetSink | None = None
-    gates: dict[str, renderers.RenderGateLedger] = field(
-        default_factory=lambda: {
+    gates: dict[str, renderers.RenderGateLedger] = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.gates = {
             "musescore": renderers.RenderGateLedger("musescore"),
             "verovio": renderers.RenderGateLedger(
                 "verovio",
-                min_cohort_before_disable=30,
+                min_cohort_before_disable=self.min_verovio_cohort,
                 disabled_categories=set(VEROVIO_DISABLED_CATEGORIES),
             ),
         }
-    )
 
     def add(self, pages: int) -> None:
         self.actual += pages
@@ -1176,6 +1178,9 @@ class _PageMeter:
     def validate_verovio_cohort(self, *, formal: bool) -> None:
         gate = self.gates["verovio"]
         evaluated = gate.outcomes["passed"] + gate.outcomes["dropped"]
+        if formal and evaluated < gate.min_cohort_before_disable:
+            msg = "formal Slice A run did not reach the minimum Verovio cohort"
+            raise _VerovioCohortError(msg)
         if not evaluated:
             return
         if any(
@@ -1184,9 +1189,6 @@ class _PageMeter:
             if name not in VEROVIO_DISABLED_CATEGORIES
         ):
             msg = "unmasked Verovio category exceeded the 5% drop gate"
-            raise _VerovioCohortError(msg)
-        if formal and evaluated < gate.min_cohort_before_disable:
-            msg = "formal Slice A run did not reach the minimum Verovio cohort"
             raise _VerovioCohortError(msg)
 
 
@@ -1662,7 +1664,7 @@ def run_expanded_w4a_and_package(  # noqa: PLR0913, PLR0915
         planned_pages=planned_pages,
         runs_parent=run.parent,
     )
-    meter = _PageMeter(planned_pages)
+    meter = _PageMeter(planned_pages, min_verovio_cohort=250 if formal else 30)
     status = "failed"
     try:
         environment = verify_w6_training_assets(downloads)
