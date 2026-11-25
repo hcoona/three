@@ -379,6 +379,30 @@ public sealed class ReleaseJobInputsTests
             Assert.AreEqual(original, File.ReadAllText(fixture.At("output")));
             fixture.Env["GITHUB_SHA"] = subject.Revision;
         }
+        if (ecosystem is "python" or "github-release")
+            foreach ((ReleaseFileState first, ReleaseFileState second, string expected) in new[]
+            {
+                (ReleaseFileState.Absent, ReleaseFileState.Absent, "true"),
+                (ReleaseFileState.Exact, ReleaseFileState.Absent, "true"),
+                (ReleaseFileState.Absent, ReleaseFileState.Exact, "true"),
+                (ReleaseFileState.Exact, ReleaseFileState.Exact, "false"),
+            })
+            {
+                var mixed = new ReleaseObservation(subject,
+                    [new("first", "fixture", "1.0", first, null, null),
+                     new("second", "fixture", "1.0", second, null, null)],
+                    ["check"], [new("check", ReleaseCheckStatus.Passed)]);
+                string json = ecosystem == "python"
+                    ? JsonSerializer.Serialize(new PythonIndexObservationResult(mixed, []),
+                        TransferJson.Default.PythonIndexObservationResult)
+                    : JsonSerializer.Serialize(new GithubReleaseObservationResult(mixed, null, []),
+                        TransferJson.Default.GithubReleaseObservationResult);
+                File.WriteAllText(fixture.At("observation/observation.json"), json);
+                File.WriteAllText(fixture.At("output"), "");
+                fixture.Run("state");
+                Assert.AreEqual($"write-needed={expected}\n",
+                    File.ReadAllText(fixture.At("output")));
+            }
     }
 
     [TestMethod]

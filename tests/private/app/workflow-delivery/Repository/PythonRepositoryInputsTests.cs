@@ -263,6 +263,12 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_python_release_caller.py", "global.json")]
     [DataRow("tests/eng/test_browser_store_release_caller.py",
         ".github/workflows/workflow-delivery-v3-browser-store-release.yml")]
+    [DataRow("tests/eng/test_release_batch_dispatch.py",
+        "eng/scripts/release_batch_dispatch.py")]
+    [DataRow("tests/eng/test_release_batch_dispatch.py",
+        ".github/workflows/workflow-delivery-v3-ruby-release.yml")]
+    [DataRow("tests/eng/test_release_batch_dispatch.py",
+        ".github/workflows/workflow-delivery-v3-nuget-release.yml")]
     public void SpecialInputsReachTheirActualTargets(string target, string path)
     {
         var endpoint = Endpoint([target, "tests/unrelated.py"], [path, "docs/unrelated.md"]);

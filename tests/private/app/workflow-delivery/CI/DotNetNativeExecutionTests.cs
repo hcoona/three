@@ -76,7 +76,8 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         CiPlan first = DotNetExecutionFixture.CreatePlan(fixture.Root, candidate, "MTP",
             DotNetNativeFixture.Globals(), DotNetNativeFixture.Project);
         CiPlan second = DotNetExecutionFixture.CreatePlan(fixture.Root, candidate, "MTP",
-            DotNetNativeFixture.Globals("net8.0", false), DotNetNativeFixture.Project);
+            DotNetNativeFixture.Globals(DotNetNativeFixture.SecondaryFramework, false),
+            DotNetNativeFixture.Project);
         CiPlan broken = DotNetExecutionFixture.CreatePlan(fixture.Root, candidate, "None",
             project: "broken/Broken.csproj");
         CiPlan plan = first with { Checks = [.. first.Checks, .. broken.Checks, .. second.Checks] };
@@ -105,11 +106,12 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
     public async Task NativeTestBatchKeepsEachEntryResultWhenAnotherEntryFails(string capability)
     {
         using var fixture = await DotNetNativeFixture.CreateAsync(capability,
-            context.CancellationToken, failNet8Test: true);
+            context.CancellationToken, failSecondaryTest: true);
         CiPlan passing = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate,
             capability, DotNetNativeFixture.Globals(), DotNetNativeFixture.Project);
         CiPlan failing = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate,
-            capability, DotNetNativeFixture.Globals("net8.0", false), DotNetNativeFixture.Project);
+            capability, DotNetNativeFixture.Globals(DotNetNativeFixture.SecondaryFramework, false),
+            DotNetNativeFixture.Project);
         CiPlan plan = failing with { Checks = [.. failing.Checks, .. passing.Checks] };
         DotNetRunResult result = await DotNetExecution.RunAsync(plan,
             new(fixture.Root, fixture.RunScratch, NativeCommandDeadlineSeconds),
@@ -122,7 +124,7 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         Assert.IsTrue(result.Outputs.All(output => File.Exists(output.Path) &&
             output.Path.Contains("native-bin", StringComparison.Ordinal)), Diagnostics(result));
         XElement[] tests = XDocument.Load(Path.Combine(fixture.Root, "tests", "receipts",
-            "net10.0", "native.trx")).Descendants().Where(element =>
+            DotNetNativeFixture.PrimaryFramework, "native.trx")).Descendants().Where(element =>
                 element.Name.LocalName == "UnitTestResult").ToArray();
         Assert.HasCount(2, tests);
         Assert.AreEqual("Passed", tests.Single(test => test.Attribute("testName")!.Value ==
@@ -144,8 +146,10 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         Assert.AreEqual("Failure", result.Tests.Single(test => test.Key == failed).Test);
         Assert.AreEqual("Success", result.Tests.Single(test => test.Key == passed).Test);
         // Both runners report through MSBuild diagnostics attributed to their own submission.
-        Assert.Contains("Intentional native net8.0 test failure", result.Failures[0].Error);
-        Assert.DoesNotContain("Intentional native net8.0 test failure",
+        string expectedFailure =
+            $"Intentional native {DotNetNativeFixture.SecondaryFramework} test failure";
+        Assert.Contains(expectedFailure, result.Failures[0].Error);
+        Assert.DoesNotContain(expectedFailure,
             result.Tests.Single(test => test.Key == passed).Log);
         Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
         using JsonDocument first = await ReadProgressAsync(fixture, 0, context.CancellationToken);

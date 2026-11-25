@@ -93,8 +93,9 @@ internal sealed class GitMaterialization
     private static async Task RequireCleanAsync(string root, CancellationToken token)
     {
         string status = await NativeProcess.RunAsync("git", root,
-            ["--no-lazy-fetch", "--no-replace-objects", "status", "--porcelain=v1", "-z",
-                "--untracked-files=no", "--ignore-submodules=none"], token);
+            ["--no-optional-locks", "--no-lazy-fetch", "--no-replace-objects", "status",
+                "--porcelain=v1", "-z", "--untracked-files=no", "--ignore-submodules=none"],
+            token);
         if (status.Length != 0)
             throw new InvalidDataException("Planning requires a clean tracked checkout. " +
                 $"Root: \"{JsonEncodedText.Encode(root)}\"; " +

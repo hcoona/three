@@ -23,6 +23,9 @@ internal static partial class RepositoryToolSelection
     internal static string DotNetSdkVersion =>
         GlobalJsonNode()["sdk"]!["version"]!.GetValue<string>();
 
+    internal static string DotNetFrameworkProfileVersion => Requested(File.ReadAllText(
+        Path.Combine(SourceRoot, "eng", "dotnet-frameworks", "mise.toml")), "dotnet");
+
     // The root SDK selection with only the named root MSBuild SDK versions.
     internal static string GlobalJson(params string[] msbuildSdks)
     {

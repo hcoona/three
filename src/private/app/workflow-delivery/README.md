@@ -314,12 +314,12 @@ The project's native MTP default excludes `NuGetNativePreparation`,
 `NuGetNativeScenarios` and `GithubReleaseNativePreparation`; the Windows jobs
 named above and in the
 [GitHub Release integration](docs/integration/github-release.md#caller) own
-them. It also excludes
-`PythonNativeContract`, which the Linux native-preparation job runs under
-`mise exec --locked dotnet python uv` with
-`--filter 'TestCategory=PythonNativeContract'`, and `PnpmNativeContract` and
-`BrowserStoreNativePreparation`, which the same job runs under
-`mise exec --locked dotnet node pnpm`. To run them locally,
+them. It also excludes `PythonNativePreparation` and `PythonNativeContract`
+(which the Linux native-preparation job runs under
+`mise exec --locked dotnet python uv`), `RubyNativePreparation` and
+`RubyNativeContract` (`mise exec --locked dotnet ruby`), and
+`PnpmNativeContract` and `BrowserStoreNativePreparation`
+(`mise exec --locked dotnet node pnpm`). To run them locally,
 override the default with `--filter 'TestCategory=NuGetNativePreparation'
 --minimum-expected-tests 10` or `--filter 'TestCategory=NuGetNativeScenarios'
 --minimum-expected-tests 3`. An explicit filter replaces the default, so an

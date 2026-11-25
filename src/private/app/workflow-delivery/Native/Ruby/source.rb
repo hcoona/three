@@ -59,7 +59,9 @@ def read_selected_source(request)
   end
   # Keep the caller's directory spelling; the caller compares it lexically.
   path = File.expand_path(source.download(spec, directory))
-  unless path.start_with?(directory + File::SEPARATOR) && File.file?(path)
+  unless path.start_with?(directory + File::SEPARATOR) && !File.symlink?(path) &&
+         File.file?(path) &&
+         File.realpath(path).start_with?(File.realpath(directory) + File::SEPARATOR)
     raise "Native Ruby download leaves owned state"
   end
   size = File.size(path)

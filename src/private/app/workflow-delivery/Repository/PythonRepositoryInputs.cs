@@ -147,6 +147,8 @@ internal static class PythonRepositoryInputs
                 "global.json") ||
         (target == "tests/eng/test_browser_store_release_caller.py" &&
             path == ".github/workflows/workflow-delivery-v3-browser-store-release.yml") ||
+        (target == "tests/eng/test_release_batch_dispatch.py" &&
+            (path == "eng/scripts/release_batch_dispatch.py" || IsReleaseCallerWorkflow(path))) ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
             path is "eng/scripts/sync_python_version.py" or
                 "eng/scripts/workflow_delivery_v3_hk.py" or
@@ -160,6 +162,11 @@ internal static class PythonRepositoryInputs
         path.StartsWith(".github/workflows/", StringComparison.Ordinal) &&
         path.IndexOf('/', ".github/workflows/".Length) < 0 &&
         path.EndsWith(".yml", StringComparison.Ordinal);
+
+    private static bool IsReleaseCallerWorkflow(string path) =>
+        IsWorkflow(path) &&
+        path.StartsWith(".github/workflows/workflow-delivery-v3-", StringComparison.Ordinal) &&
+        path.EndsWith("-release.yml", StringComparison.Ordinal);
 
     private static bool Azure(string path) =>
         DotNetInheritedInputs.Consumes(path, AzureRoots) ||

@@ -337,7 +337,8 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
         fixture.Override = command =>
             defect == "restore" && command.Arguments.Contains("restore") ||
             defect == "build" && command.Arguments.Contains("-target:Build,GetTargetPath") ?
-                new(NativeTermination.Exited, 1, "", "native failure", 0.1, null) :
+                new(NativeTermination.Exited, 1, "error NU1101: missing package",
+                    "welcome notice", 0.1, null) :
             defect == "marker" && command.Arguments.Length == 1 ?
                 new(NativeTermination.Exited, 0, "wrong marker", "", 0.1, null) : null;
         DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
@@ -347,8 +348,13 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
         Assert.HasCount(1, result.Packages);
         Assert.IsEmpty(result.ConsumerOutputs);
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
-        if (defect == "marker")
-            Assert.Contains("marker API", Assert.ContainsSingle(result.Failures).Error);
+        string failure = Assert.ContainsSingle(result.Failures).Error;
+        if (defect == "marker") Assert.Contains("marker API", failure);
+        else
+        {
+            Assert.Contains("error NU1101: missing package", failure);
+            Assert.Contains("welcome notice", failure);
+        }
     }
 
     [TestMethod]

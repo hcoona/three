@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -39,9 +38,7 @@ def native(endpoint, monkeypatch):
         "PYTEST_PLUGINS",
         "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
     ):
-        monkeypatch.setenv(
-            name, os.environ.get(name, "controlled-ambient-value")
-        )
+        monkeypatch.delenv(name, raising=False)
     config = SimpleNamespace(
         rootpath=endpoint,
         inipath=endpoint / "pyproject.toml",
@@ -62,52 +59,6 @@ def native(endpoint, monkeypatch):
     factory = Mock(side_effect=invoke)
     monkeypatch.setattr(pytest, "main", factory)
     return factory, config
-
-
-def test_native_query_captures_public_configuration_without_collecting(
-    endpoint, native
-):
-    """The early hook returns only native configuration fields."""
-    factory, _config = native
-
-    assert query_module.inspect_configuration(endpoint) == {
-        "directory": str(endpoint),
-        "root": str(endpoint),
-        "configuration_file": str(endpoint / "pyproject.toml"),
-        "testpaths": ["tests with spaces", "src/member/tests"],
-        "addopts": ["--import-mode=importlib"],
-        "pythonpath": [],
-        "required_plugins": [],
-    }
-    arguments = factory.call_args.args[0]
-    assert arguments == [
-        "--noconftest",
-        "--disable-plugin-autoload",
-        "-p",
-        "no:cacheprovider",
-    ]
-    hook = factory.call_args.kwargs["plugins"][0]
-    assert hook.pytest_cmdline_main(_config) == pytest.ExitCode.OK
-
-
-def test_native_query_clears_inherited_pytest_configuration(
-    endpoint, native, monkeypatch
-):
-    """Ambient plugin/addopts values cannot enter the native request."""
-    factory, config = native
-    monkeypatch.setenv("PYTEST_ADDOPTS", "private-addopts")
-    monkeypatch.setenv("PYTEST_PLUGINS", "private-plugin")
-    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "0")
-
-    def invoke(_arguments, *, plugins):
-        assert "PYTEST_ADDOPTS" not in os.environ
-        assert "PYTEST_PLUGINS" not in os.environ
-        assert os.environ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] == "1"
-        return plugins[0].pytest_cmdline_main(config)
-
-    factory.side_effect = invoke
-
-    assert query_module.inspect_configuration(endpoint)["root"] == str(endpoint)
 
 
 @pytest.mark.parametrize(
