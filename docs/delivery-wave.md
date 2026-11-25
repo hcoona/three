@@ -1208,3 +1208,96 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
   `contents: read`, `deployments: read`, and `issues: write` in
   `.github/workflows/release-triage.yml`, and no changes to `WorkflowDelivery`
   release semantics or public library contracts.
+
+### Admit retired-projects index and retire superseded Python/Node projects
+
+- **Work carrier:** [Issue #1831](https://github.com/hcoona/three/issues/1831)
+  and [Issue #1832](https://github.com/hcoona/three/issues/1832), and their
+  linked authorization and implementation pull requests.
+- **Accepted inputs:** the [governance policy](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [engineering principles](engineering/engineering-principles.md),
+  [documentation portal](README.md),
+  [family catalog](governance/record-families.yaml), root [README.md](../README.md),
+  [`mise.toml`](../mise.toml), [`pyproject.toml`](../pyproject.toml),
+  [`uv.lock`](../uv.lock), [`pnpm-workspace.yaml`](../pnpm-workspace.yaml),
+  [`pnpm-lock.yaml`](../pnpm-lock.yaml), [`.gitattributes`](../.gitattributes),
+  Workflow Delivery's [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md)
+  and [`CiScopeTests.cs`](../tests/private/app/workflow-delivery/Repository/CiScopeTests.cs),
+  the [IM/ACP gateway docs](../src/private/app/im-acp-gateway/docs/README.md)
+  and [Qidian technical notes](../src/private/app/qidian-novel-downloader/docs/technical-notes.md),
+  and the retiring projects' manifests and records:
+  [factorio-cycle-calculator](../src/private/app/factorio-cycle-calculator/README.md),
+  [markdown-hybrid-search-mcp](../src/public/app/markdown-hybrid-search-mcp/README.md),
+  [azure-document-intelligence-lab](../src/lab/azure-document-intelligence-lab/README.md),
+  [Qidian lab](../src/lab/qidian-novel-downloader/README.md),
+  [git-commit-heatmap](../src/private/app/git-commit-heatmap/README.md),
+  [llm-text-splitter](../src/private/app/llm-text-splitter/README.md),
+  [music-flash-card-generator](../src/private/app/music-flash-card-generator/README.md),
+  [rag-postgresql-openai](../src/private/app/rag-postgresql-openai/README.md),
+  [transcribe](../src/private/app/transcribe/README.md), and the IM/ACP prototype
+  READMEs for
+  [telegram-bot-verifier](../src/private/app/im-acp-gateway/poc/telegram-bot-verifier/README.md),
+  [telegram-topic-session-bridge](../src/private/app/im-acp-gateway/poc/telegram-topic-session-bridge/README.md),
+  and [wechat-ilink-verifier](../src/private/app/im-acp-gateway/poc/wechat-ilink-verifier/README.md).
+- **Owner decisions and boundaries:**
+    - Admit `docs/retired-projects.md` as the single repository-level index for
+      retired projects, labs, and prototypes. Give maintainers concise project
+      summaries, retirement rationale, recommended alternatives or successors
+      where applicable, former paths, last-intact Git tree URLs pinned to full
+      commit SHAs, and retirement commits or PRs. Git retains the contents; the
+      index is not a dead-file archive or document supersession graph. Backfill
+      historical `OnePython` packages, the #1803 `.NET` retirements, superseded
+      Workflow Delivery v1/early-v3 components, and pre-monorepo deprecated
+      `hcoona` NuGet packages, as well as the retirements below.
+    - Retire only these 10 sets: `src/lab/qidian-novel-downloader/`,
+      `src/lab/azure-document-intelligence-lab/`,
+      `src/private/app/rag-postgresql-openai/`, `src/private/app/git-commit-heatmap/`,
+      `src/private/app/transcribe/`, `src/private/app/llm-text-splitter/`,
+      `src/private/app/music-flash-card-generator/`,
+      `src/public/app/markdown-hybrid-search-mcp/`, `src/private/app/im-acp-gateway/poc/*`
+      (the three prototypes named above), and `src/private/app/factorio-cycle-calculator/`.
+    - Retain `src/private/app/html-sm-processor/`, `src/sample/nbgv-hatch-demo/`
+      (#1830), `src/private/app/im-acp-gateway/docs/`, and all public libraries
+      (`nbgv-python`, `hexo-renderer-asciidoc`, `steam-account-history-to-csv`,
+      `asciidoctor-latexmath`). Retain private applications `sheet-music-omr`,
+      `azureauth-credprovider/python`, and `supermemo-mcp`, and private
+      plugins/libraries `hk`, `scholarly-publication`, `scan-restoration`, and
+      `enterprise-translation-team`.
+    - Keep the existing `im-acp-gateway/poc/*` script-scope allowlist in
+      `NodeRepositoryReader.cs` through the workspace removal PR so CI can
+      evaluate the `origin/main` basis. Optional cleanup of those unused
+      entries may follow only after `poc/*` is absent from `main`.
+- **Advancement and outcome:** refine the record policy's
+  [Authority by Concern](governance/record-system.md#authority-by-concern)
+  and [Deletion and Replacement](governance/record-system.md#deletion-and-replacement)
+  to distinguish the index from a prohibited archive or supersession graph.
+  Author the index, register its family and binding in the catalog, and route
+  to it from the documentation portal and root README. Remove the 10 sets and
+  reconcile `mise.toml`, `pyproject.toml`, `uv.lock`, `pnpm-workspace.yaml`,
+  `pnpm-lock.yaml`, `.gitattributes`, and affected `CiScopeTests` rows. In the
+  same PR as each removal, add its index entry and migrate surviving references
+  to immutable Git URLs, including any links in this Wave if it remains open
+  and the IM/ACP docs' `../poc/...` links. Update present-tense lab phrasing in
+  the retained Qidian technical notes.
+- **Ordering and gates:** merge this authorization before substantive work.
+  Keep implementation, workspace manifests and lockfiles, governance policy,
+  and owning records and routing self-consistent at each merge into `main`.
+  Retain applicable independent `engineering-guidance`, Workflow Delivery
+  `open-code-review-delegate` (OCR), and `record-system-review` gates,
+  [GOV-011](governance/governance-system.md#gov-011-separate-findings-from-disposition)
+  finding disposition, explicit repository-owner disposition on the record
+  policy amendment, explicit-base `records:check` and `records:test`, HK
+  conformance, and `Validate` CI. Return material scope or feasibility tradeoffs
+  to the repository owner.
+- **Acceptance and closure:** the index is admitted, routed, and populated with
+  verified immutable Git links for historical and newly retired projects. All
+  10 targets are removed, `uv.lock` and `pnpm-lock.yaml` match the retained
+  workspace members, and the portal and catalog match the resulting tree.
+  Local validation and `Validate` CI pass with no unresolved material findings.
+  Delete this entry in the final implementation pull request or an explicit
+  Wave-only closure pull request.
+- **Exclusions:** no package publication, deprecation, unlisting, or external
+  registry or storefront operation; no Workflow Delivery release or proving
+  dispatch or credential, authentication, ruleset, or access change; no
+  retirement or behavior change to retained projects.
