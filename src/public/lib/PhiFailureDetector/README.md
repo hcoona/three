@@ -4,7 +4,7 @@ A high-performance implementation of the phi accrual failure detector for distri
 
 ## Overview
 
-The Phi Failure Detector is an adaptive failure detection algorithm that provides more accurate and flexible failure detection compared to traditional timeout-based approaches. It uses statistical analysis of heartbeat intervals to calculate a phi value that represents the suspicion level of a node failure.
+The Phi Failure Detector is an adaptive failure detection algorithm that provides more accurate and flexible failure detection compared to traditional timeout-based approaches. It uses statistical analysis of heartbeat intervals to calculate a phi value that represents the suspicion level of a node failure, applicable to cluster node failure detection, periodic heartbeat monitoring, network partition detection, and load-balancer health routing.
 
 ## Features
 
@@ -25,14 +25,15 @@ dotnet add package PhiFailureDetector
 ## Quick Start
 
 ```csharp
-using PhiFailureDetector;
+using System;
+using Detector = PhiFailureDetector.PhiFailureDetector;
 
-// Create a failure detector with exponential distribution model
-var detector = new PhiFailureDetector(
-    capacity: 100,                           // Number of samples to keep
-    initialHeartbeatInterval: 1000,          // Initial interval in milliseconds
-    timeProvider: TimeProvider.System,       // Time provider
-    phiFunc: PhiFailureDetector.Exponential  // Distribution model
+var timeProvider = TimeProvider.System;
+var detector = new Detector(
+    capacity: 100,
+    initialHeartbeatInterval: timeProvider.TimestampFrequency / 10, // 100 ms in timestamp ticks
+    timeProvider: timeProvider,
+    phiFunc: Detector.Exponential
 );
 
 // Record heartbeats when they arrive
@@ -42,72 +43,26 @@ detector.Report();
 double phi = detector.Phi();
 
 // A phi value above your threshold indicates suspected failure
-// Common thresholds: 3.0 (99.9% confidence), 8.0 (99.999% confidence)
 bool isSuspected = phi > 8.0;
 ```
 
-## Advanced Usage
+The detector uses high-resolution timestamps from `TimeProvider.GetTimestamp()`.
+Set `initialHeartbeatInterval` in the same timestamp ticks, using the provider's
+`TimestampFrequency` to convert a duration. This also applies to custom time
+providers used for tests or simulations. Choose a conservatively long startup
+interval for your cluster to trade slower initial detection for fewer false
+positives and avoid flapping before real samples accumulate.
 
-### Using Normal Distribution Model
+## Architecture Overview
 
-```csharp
-// For more regular heartbeat patterns, use normal distribution
-var detector = new PhiFailureDetector(
-    capacity: 100,
-    initialHeartbeatInterval: 1000,
-    timeProvider: TimeProvider.System,
-    phiFunc: PhiFailureDetector.Normal
-);
-```
-
-### Custom Time Provider
-
-```csharp
-// Use a custom time provider for testing or specific scenarios
-var customTimeProvider = new MockTimeProvider();
-var detector = new PhiFailureDetector(
-    capacity: 100,
-    initialHeartbeatInterval: 1000,
-    timeProvider: customTimeProvider,
-    phiFunc: PhiFailureDetector.Exponential
-);
-```
-
-### Monitoring Node Health
-
-```csharp
-// Example of monitoring a distributed node
-class NodeMonitor
-{
-    private readonly PhiFailureDetector detector;
-    private readonly double failureThreshold = 8.0; // 99.999% confidence
-
-    public NodeMonitor()
-    {
-        detector = new PhiFailureDetector(
-            capacity: 200,
-            initialHeartbeatInterval: 5000, // 5 seconds
-            timeProvider: TimeProvider.System,
-            phiFunc: PhiFailureDetector.Exponential
-        );
-    }
-
-    public void OnHeartbeatReceived()
-    {
-        detector.Report();
-    }
-
-    public bool IsNodeSuspected()
-    {
-        return detector.Phi() > failureThreshold;
-    }
-
-    public double GetSuspicionLevel()
-    {
-        return detector.Phi();
-    }
-}
-```
+1. **Monitoring:** Record heartbeat intervals in a bounded arrival window. Use
+   a throttler alongside the window when you need to limit the sampling rate.
+2. **Interpretation:** Choose `Exponential` for Poisson gossip arrivals and
+   `Normal` (Gaussian) for regular heartbeats with jitter. See
+   [CASSANDRA-2597](https://issues.apache.org/jira/browse/CASSANDRA-2597) for
+   why the distribution matters.
+3. **Action:** The caller compares the phi value with its threshold and decides
+   how to respond, such as marking a peer as suspected.
 
 ## Phi Value Interpretation
 
@@ -125,19 +80,16 @@ Common threshold values:
 
 ## Performance Considerations
 
-- The detector maintains a sliding window of heartbeat intervals for statistical analysis
 - Memory usage is proportional to the configured capacity
 - Calculation complexity is O(1) for both reporting heartbeats and calculating phi values
 - Thread-safe operations allow concurrent access from multiple threads
 
 ## Algorithm Reference
 
-Based on the paper: "The φ accrual failure detector" by N. Hayashibara, X. Defago, R. Yared, and T. Katayama, published in Proceedings of the 23rd IEEE International Symposium on Reliable Distributed Systems, 2004.
-
-The implementation provides two distribution models:
-
-1. **Exponential Distribution**: Suitable for Poisson processes (random message intervals)
-2. **Normal Distribution**: Suitable for regular heartbeat patterns with typical jitter
+Based on ["The φ accrual failure detector"](https://ieeexplore.ieee.org/abstract/document/1353004/)
+by N. Hayashibara, X. Defago, R. Yared, and T. Katayama, published in Proceedings
+of the 23rd IEEE International Symposium on Reliable Distributed Systems, 2004
+([open PDF](https://dspace.jaist.ac.jp/dspace/bitstream/10119/4784/1/IS-RR-2004-010.pdf)).
 
 ## Releasing
 

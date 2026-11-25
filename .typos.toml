@@ -8,7 +8,6 @@ extend-exclude = [
   'apm.lock.yaml',
   '**/apm.lock.yaml',
   'packages.lock.json',
-  "src/private/app/OxfordWordlistExtractor/*.html",
   "src/public/lib/Hjg.Pngcs/FilterType.cs",
   "src/public/lib/Hjg.Pngcs/FilterWriteStrategy.cs",
   "src/public/lib/Hjg.Pngcs/ImageInfo.cs",
@@ -37,7 +36,6 @@ extend-exclude = [
   "src/public/lib/Hjg.Pngcs/Zlib/AZlibOutputStream.cs",
   "src/public/lib/Hjg.Pngcs/Zlib/ZlibStreamFactory.cs",
   "src/private/app/supermemo-mcp/references/Gdip_All.ahk",
-  "tests/private/app/OxfordDictExtractor.Tests/**/*.html",
   "**/generated/**/*",
 ]
 

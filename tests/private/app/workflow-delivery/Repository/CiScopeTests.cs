@@ -284,7 +284,7 @@ public sealed class CiScopeTests
         "workflow-delivery.release-unit.yml", true)]
     [DataRow("src/public/lib/Memoization.Generators/MemoizationGenerator.cs", true)]
     [DataRow("src/public/lib/CircularList/README.md", true)]
-    [DataRow("src/public/app/PhiFailureDetector.Console/Program.cs", false)]
+    [DataRow("src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/App.xaml.cs", false)]
     [DataRow("src/public/lib/nbgv-python/nbgv.py", false)]
     [DataRow("global.json", true)]
     [DataRow("eng/dotnet-frameworks/mise.toml", true)]
