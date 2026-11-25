@@ -1052,12 +1052,17 @@ def _expanded_intake(
     gate: MetadataOnlyTestExclusion,
     max_pdmx: int,
 ) -> tuple[list[Row], Row]:
-    rows = _read_sources(lieder_manifest)
-    if len(rows) != _LIEDER_COUNT or any(
-        row.get("corpus") != "OpenScore Lieder"
+    all_rows = _read_sources(lieder_manifest)
+    if any(
+        row.get("corpus") not in {"OpenScore Lieder", "PDMX"}
         or row.get("rights_variant") != "permissive"
-        or row.get("license_url") != "CC0-1.0"
-        for row in rows
+        for row in all_rows
+    ):
+        msg = "expected permissive W4a source manifest rows"
+        raise StopConditionError(msg)
+    rows = [row for row in all_rows if row.get("corpus") == "OpenScore Lieder"]
+    if len(rows) != _LIEDER_COUNT or any(
+        row.get("license_url") != "CC0-1.0" for row in rows
     ):
         msg = "expected the already-admitted 60 permissive Lieder scores"
         raise StopConditionError(msg)

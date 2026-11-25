@@ -2054,10 +2054,17 @@ def test_standalone_number_does_not_conflate_distinct_genres():
     assert not etude_5.matches(etude_3)
     op25_13 = intake.normalize_work_identity("Chopin", "Étude No. 13, Op. 25")
     op25_1 = intake.normalize_work_identity("Chopin", "Étude Op. 25 No. 1")
+    op25_1_reordered = intake.normalize_work_identity(
+        "Chopin", "Étude No. 1, Op. 25"
+    )
     assert op25_13 is not None
     assert op25_1 is not None
+    assert op25_1_reordered is not None
     assert op25_13.matches(op25_1, conservative_exclusion=True)
     assert op25_1.matches(op25_13, conservative_exclusion=True)
+    assert op25_13.matches(op25_1_reordered, conservative_exclusion=True)
+    assert op25_1_reordered.matches(op25_13, conservative_exclusion=True)
+    assert not op25_13.matches(op25_1_reordered)
     op10_3 = intake.normalize_work_identity("Chopin", "Étude Op. 10 No. 3")
     assert op10_3 is not None
     op10_3_with_set = intake.normalize_work_identity(

@@ -258,7 +258,15 @@ class WorkIdentity:
             return False
         l_no, l_all, l_sys = _ordinal_sets(self.catalogue_tokens)
         r_no, r_all, r_sys = _ordinal_sets(other.catalogue_tokens)
-        if l_no and r_no and not (l_no & r_no):
+        compatible_cat = _compatible_catalogue(
+            self.catalogue_tokens, other.catalogue_tokens
+        )
+        if (
+            l_no
+            and r_no
+            and not (l_no & r_no)
+            and not (conservative_exclusion and compatible_cat)
+        ):
             return True
         if (
             not conservative_exclusion
@@ -267,7 +275,7 @@ class WorkIdentity:
             and not (l_all & r_all)
         ):
             return True
-        if _compatible_catalogue(self.catalogue_tokens, other.catalogue_tokens):
+        if compatible_cat:
             return False
         return bool(l_sys & r_sys)
 
