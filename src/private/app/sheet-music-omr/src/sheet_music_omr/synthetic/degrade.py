@@ -94,12 +94,20 @@ def render_warped_overlay(page: TierRPage) -> Image.Image:
     return overlay
 
 
-def _resample(image: Image.Image, field: Displacement) -> Image.Image:
-    if "A" in image.getbands() or "transparency" in image.info:
-        paper = Image.new("RGBA", image.size, "white")
-        image = Image.alpha_composite(paper, image.convert("RGBA"))
-    source = np.asarray(image.convert("RGB"), dtype=np.float32)
-    result = np.empty(source.shape, dtype=np.uint8)
+def _resample_images(
+    images: Sequence[Image.Image], field: Displacement
+) -> list[Image.Image]:
+    sources = []
+    for raw_im in images:
+        composited = (
+            Image.alpha_composite(
+                Image.new("RGBA", raw_im.size, "white"), raw_im.convert("RGBA")
+            )
+            if "A" in raw_im.getbands() or "transparency" in raw_im.info
+            else raw_im
+        )
+        sources.append(np.asarray(composited.convert("RGB"), dtype=np.float32))
+    results = [np.empty(sources[0].shape, dtype=np.uint8) for _ in sources]
     for row in range(0, field.height, 128):
         y, x = np.mgrid[row : min(row + 128, field.height), : field.width]
         xf, yf = x + 0.5, y + 0.5
@@ -112,7 +120,7 @@ def _resample(image: Image.Image, field: Displacement) -> Image.Image:
         sx, sy = sx - 0.5, sy - 0.5
         x_int, y_int = np.floor(sx).astype(int), np.floor(sy).astype(int)
         wx, wy = sx - x_int, sy - y_int
-        strip = np.zeros((*x.shape, 3), dtype=np.float32)
+        strips = [np.zeros((*x.shape, 3), dtype=np.float32) for _ in sources]
         for ox, w_x in ((0, 1 - wx), (1, wx)):
             for oy, w_y in ((0, 1 - wy), (1, wy)):
                 cx, cy = x_int + ox, y_int + oy
@@ -121,17 +129,23 @@ def _resample(image: Image.Image, field: Displacement) -> Image.Image:
                     & (cy >= 0)
                     & (cx < field.width)
                     & (cy < field.height)
-                )
-                pixels = source[
-                    np.clip(cy, 0, field.height - 1),
-                    np.clip(cx, 0, field.width - 1),
-                ]
-                strip += (
-                    np.where(valid[..., None], pixels, 255)
-                    * (w_x * w_y)[..., None]
-                )
-        result[row : row + len(strip)] = np.rint(strip).astype(np.uint8)
-    return Image.fromarray(result)
+                )[..., None]
+                cy_c = np.clip(cy, 0, field.height - 1)
+                cx_c = np.clip(cx, 0, field.width - 1)
+                weight = (w_x * w_y)[..., None]
+                for source, acc in zip(sources, strips, strict=True):
+                    np.add(
+                        acc,
+                        np.where(valid, source[cy_c, cx_c], 255) * weight,
+                        out=acc,
+                    )
+        for result, strip in zip(results, strips, strict=True):
+            result[row : row + len(strip)] = np.rint(strip).astype(np.uint8)
+    return [Image.fromarray(result) for result in results]
+
+
+def _resample(image: Image.Image, field: Displacement) -> Image.Image:
+    return _resample_images((image,), field)[0]
 
 
 def _warp_box(box: Box, field: Displacement) -> PixelBox:
@@ -240,6 +254,8 @@ def _paper(
     mirror_im: Image.Image | None,
     field: Displacement,
     rng: np.random.Generator,
+    *,
+    warped_mirror: Image.Image | None = None,
 ) -> Image.Image:
     blurred = warped.filter(ImageFilter.GaussianBlur(rng.uniform(0.55, 1.0)))
     optical = blurred.filter(ImageFilter.UnsharpMask(1.1, 10, 2))
@@ -250,10 +266,14 @@ def _paper(
     margin = x if rng.integers(2) == 0 else 1 - x
     paper -= rng.uniform(6, 16) * np.exp(-margin / rng.uniform(0.015, 0.045))
     show = (
-        warped
-        if mirror_im is None
-        else _resample(
-            mirror_im.resize((w, h), Image.Resampling.BICUBIC), field
+        warped_mirror
+        if warped_mirror is not None
+        else (
+            warped
+            if mirror_im is None
+            else _resample(
+                mirror_im.resize((w, h), Image.Resampling.BICUBIC), field
+            )
         )
     )
     ghost = show.transpose(Image.Transpose.FLIP_LEFT_RIGHT).convert("L")
@@ -340,7 +360,15 @@ def apply_tier_r_degradation(  # noqa: PLR0913
     yolo = tuple(_yolo_row(0, b, w, h) for b in systems) + tuple(
         _yolo_row(1, b, w, h) for b in measures
     )
-    page = _paper(_resample(page_im, field), mirror_im, field, rng)
+    if mirror_im is None:
+        warped = _resample(page_im, field)
+        warped_mirror = None
+    else:
+        warped, warped_mirror = _resample_images(
+            (page_im, mirror_im.resize((w, h), Image.Resampling.BICUBIC)),
+            field,
+        )
+    page = _paper(warped, mirror_im, field, rng, warped_mirror=warped_mirror)
     quality = int(rng.integers(78, 96))
     with io.BytesIO() as buffer:
         page.save(buffer, "JPEG", quality=quality)

@@ -923,6 +923,18 @@ def _candidate_metadata(
     return composer, title
 
 
+def _preflight_candidate(
+    candidate: SourceCandidate, gate: TestExclusionGate
+) -> tuple[bytes, dict[str, str], str, str]:
+    try:
+        xml, digests = _candidate_xml(candidate, gate)
+        composer, title = _candidate_metadata(candidate, xml, gate)
+    except (MusicXmlError, TextScoreError, ReviewRequiredError) as error:
+        msg = "normalization_failed"
+        raise _CandidateExcludedError(msg) from error
+    return xml, digests, composer, title
+
+
 def normalize_and_profile_candidate(  # noqa: PLR0913
     candidate: SourceCandidate,
     *,
@@ -937,28 +949,53 @@ def normalize_and_profile_candidate(  # noqa: PLR0913
         message = "synthetic intake requires at least four measures"
         raise ValueError(message)
     try:
-        xml, digests = _candidate_xml(candidate, gate)
-        composer, title = _candidate_metadata(candidate, xml, gate)
-        score = _screen_score(xml, min_measures)
-        canonical = write_document(score)
-        digest = _sha(canonical.encode("utf-8"))
-        if digest in seen_canonical:
-            counts["duplicate_canonical"] += 1
-            return None
-        musicxml = to_musicxml(score)
+        checked = _preflight_candidate(candidate, gate)
     except _CandidateExcludedError as error:
         counts[str(error)] += 1
         return None
-    except MusicXmlError, TextScoreError, ReviewRequiredError:
-        counts["normalization_failed"] += 1
+    _, profile = _profile_candidate(
+        candidate,
+        checked,
+        seen_canonical=seen_canonical,
+        min_measures=min_measures,
+        reference_rates=reference_rates,
+    )
+    if isinstance(profile, str):
+        counts[profile] += 1
         return None
+    gate.audit_admitted_manifest((profile.manifest_row,))
+    seen_canonical.add(str(profile.manifest_row["canonical_v2_sha256"]))
+    counts["admitted"] += 1
+    return profile
+
+
+def _profile_candidate(
+    candidate: SourceCandidate,
+    checked: tuple[bytes, dict[str, str], str, str],
+    *,
+    seen_canonical: set[str] | None = None,
+    min_measures: int = 8,
+    reference_rates: Mapping[str, float] | None = None,
+) -> tuple[str | None, ProfiledSource | str]:
+    xml, digests, composer, title = checked
+    digest = None
+    try:
+        score = _screen_score(xml, min_measures)
+        canonical = write_document(score)
+        digest = _sha(canonical.encode("utf-8"))
+        if seen_canonical is not None and digest in seen_canonical:
+            return digest, "duplicate_canonical"
+        musicxml = to_musicxml(score)
+    except _CandidateExcludedError as error:
+        return digest, str(error)
+    except MusicXmlError, TextScoreError, ReviewRequiredError:
+        return digest, "normalization_failed"
     try:
         converter.parse(
             musicxml.decode("utf-8"), format="musicxml", forceSource=True
         )
     except Exception:  # noqa: BLE001 - music21 exposes varied exception types
-        counts["music21_parse_failed"] += 1
-        return None
+        return digest, "music21_parse_failed"
 
     densities, gaps, weight = _coverage(score, reference_rates)
     row: dict[str, object] = {
@@ -977,10 +1014,7 @@ def normalize_and_profile_candidate(  # noqa: PLR0913
         "coverage_shortfalls": gaps,
         "sampling_weight": weight,
     }
-    gate.audit_admitted_manifest((row,))
-    seen_canonical.add(digest)
-    counts["admitted"] += 1
-    return ProfiledSource(row, score, canonical, musicxml)
+    return digest, ProfiledSource(row, score, canonical, musicxml)
 
 
 def _screen_score(xml: bytes, min_measures: int) -> AssembledScore:

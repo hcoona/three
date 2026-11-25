@@ -6,9 +6,12 @@ import hashlib
 import inspect
 import io
 import json
+import multiprocessing
 import os
 import shutil
 import sys
+import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -1310,6 +1313,219 @@ def _rendered_fixture(variant_id, split):
     )
 
 
+def _stage_verovio_fixture(
+    xml, _style, _downloads, _scratch, _ledger, *, count_rasters, **_options
+):
+    assert xml.count("<measure ") == 3  # noqa: PLR2004
+    count_rasters(1)
+    return renderers.StagedVerovio(
+        xml, ("m1", "m2", "m3"), frozenset(), "<mei/>", ()
+    )
+
+
+def _verify_verovio_fixture(_staged, _ledger):
+    return replace(
+        _rendered_fixture("forkserver", "synth_train").render, engine="verovio"
+    )
+
+
+def _render_verovio_fixture(*args, count_rasters, **options):
+    staged = _stage_verovio_fixture(
+        *args, count_rasters=count_rasters, **options
+    )
+    return _verify_verovio_fixture(staged, args[4])
+
+
+def _init_forkserver_verovio_fixture():
+    packaging._offline_worker()  # noqa: SLF001
+    assert multiprocessing.get_start_method() == "forkserver"
+    assert all(
+        os.environ[key] == value
+        for key, value in ledgers.W6_OFFLINE_ENV.items()
+    )
+    pytest.MonkeyPatch().setattr(
+        renderers, "verify_verovio_outputs", _verify_verovio_fixture
+    )
+
+
+@pytest.mark.parametrize("musescore_page_cap", [0, None])
+def test_forkserver_render_variants_match_serial_artifacts(
+    tmp_path, monkeypatch, request, musescore_page_cap
+):
+    """Round-trip variant plans and packaged crops across forkserver IPC."""
+    # Pytest's importlib mode does not put its root on the child import path.
+    monkeypatch.syspath_prepend(str(request.config.rootpath))
+    tremolo = parse_document(
+        _HEADER + "m 1\n1.1: C5/1[tremolo=single:3]\n2.1: C3/1\n"
+    )
+    assert isinstance(tremolo, AssembledScore)
+    rows = []
+    for source_id, score in (
+        ("musescore-only", tremolo),
+        ("verovio-safe", _score(3, changed_meter=True)),
+    ):
+        path = tmp_path / f"{source_id}.txt"
+        raw = write_document(score).encode()
+        path.write_bytes(raw)
+        rows.append(
+            {
+                "source_id": source_id,
+                "work_group_id": source_id,
+                "canonical_composer": "fixture",
+                "canonical_root": str(tmp_path),
+                "canonical_v2_path": path.name,
+                "canonical_v2_sha256": _sha(raw),
+                "measure_count": len(score.blocks),
+                "rights_variant": "permissive",
+                "split": "synth_train",
+            }
+        )
+
+    def drop_musescore(*_args, count_rasters, **_options):
+        count_rasters(1)
+        return renderers.RenderResult(
+            "musescore", renderers.RenderGate("dropped")
+        )
+
+    monkeypatch.setattr(renderers, "render_musescore", drop_musescore)
+
+    def render(workers):
+        run = tmp_path / f"workers-{workers}"
+        meter = packaging._PageMeter(16)  # noqa: SLF001
+        meter.disk = packaging._DatasetSink(run)  # noqa: SLF001
+        variants = []
+        for variant in packaging._render_variants(  # noqa: SLF001
+            rows,
+            run=run,
+            downloads=tmp_path / "downloads",
+            musescore=_UNUSED_MUSESCORE,
+            meter=meter,
+            calibrated_identity=None,
+            targets={"synth_train": 2},
+            verovio_workers=workers,
+            musescore_page_cap=musescore_page_cap,
+        ):
+            variants.append(variant)
+            # The dataset consumer advances the crop quota after each yield.
+            meter.crop_counts["synth_train"] += 2
+        (variant,) = variants
+        assert variant.source["source_id"] == "verovio-safe"
+        assert meter.actual == (1 if musescore_page_cap == 0 else 2)
+        assert meter.gates["verovio"].outcomes == {"passed": 1}
+        assert meter.gates["musescore"].outcomes == (
+            {} if musescore_page_cap == 0 else {"dropped": 1}
+        )
+        return variant
+
+    with monkeypatch.context() as serial:
+        serial.setattr(renderers, "render_verovio", _render_verovio_fixture)
+        expected = packaging._variant_rows(render(1))  # noqa: SLF001
+
+    def forbid_native(*_args, **_options):
+        pytest.fail("the fixture must not run native Verovio")
+
+    # Keep parent render_verovio identity intact so production selects its pool.
+    monkeypatch.setattr(renderers, "_run_verovio", forbid_native)
+    monkeypatch.setattr(
+        renderers, "stage_verovio_subprocess", _stage_verovio_fixture
+    )
+
+    def fixture_pool(workers):
+        return ProcessPoolExecutor(
+            max_workers=workers,
+            mp_context=multiprocessing.get_context("forkserver"),
+            initializer=_init_forkserver_verovio_fixture,
+        )
+
+    monkeypatch.setattr(packaging, "_process_pool", fixture_pool)
+    variant = render(2)
+    assert variant.render.pages == ()
+    assert variant.render.system_texts == ()
+    assert variant.prepackaged is not None
+    crops, pages, pngs = variant.prepackaged
+    serial_crops, serial_pages, serial_pngs = expected
+    assert [row["source_measure_ordinals"] for row in crops] == [(1, 2), (3, 3)]
+    assert len(pages) == 1
+    assert len(pngs) == 3  # noqa: PLR2004
+    assert pngs == serial_pngs
+    jsonl = packaging._jsonl  # noqa: SLF001
+    assert jsonl(crops) == jsonl(serial_crops)
+    assert jsonl(pages) == jsonl(serial_pages)
+
+
+def test_forkserver_intake_stops_at_same_archive_entry_as_serial(
+    tmp_path, monkeypatch
+):
+    """Archive-order exclusions and dedup do not count prefetched entries."""
+    gate, _ = _metadata_gate(tmp_path, monkeypatch)
+    run = tmp_path / "w6-slice-a-intake"
+    manifest = tmp_path / "lieder.jsonl"
+    manifest.write_text("")
+    monkeypatch.setattr(packaging, "_LIEDER_COUNT", 0)
+    checked_after_cutoff = []
+
+    def candidate(name, raw, *, decode=None):
+        return intake.SourceCandidate(
+            f"{name}.mxl",
+            "PDMX",
+            "permissive",
+            "CC0-1.0",
+            raw,
+            composer="Fixture Composer",
+            title=f"Fixture {name}",
+            decode=decode,
+        )
+
+    def delayed(raw):
+        checked_after_cutoff.append(True)
+        return raw
+
+    def forbidden(_raw):
+        pytest.fail("the raw TEST digest must be rejected before decoding")
+
+    first = to_musicxml_text(_score(8)).encode()
+    second = to_musicxml_text(_score(9)).encode()
+    candidates = [
+        candidate("excluded", b"xml-gold-01", decode=forbidden),
+        candidate("first", first),
+        candidate("duplicate", first + b"\n"),
+        candidate("unreadable", b"not XML"),
+        candidate("second", second),
+        candidate("cutoff", second, decode=delayed),
+    ]
+    monkeypatch.setattr(
+        intake, "iter_pdmx_candidates", lambda _downloads: iter(candidates)
+    )
+
+    def artifacts(workers):
+        rows, summary = packaging._expanded_intake(  # noqa: SLF001
+            run, tmp_path, manifest, gate, 2, workers=workers
+        )
+        packaging._record_intake(  # noqa: SLF001
+            run, tmp_path, rows, summary, formal=False
+        )
+        return {
+            path.relative_to(run): path.read_bytes()
+            for path in run.rglob("*")
+            if path.is_file()
+        }
+
+    serial = artifacts(1)
+    assert not checked_after_cutoff
+    assert artifacts(2) == serial
+    assert checked_after_cutoff == [True]
+    summary = json.loads(
+        serial[Path("synthetic/permissive/intake-summary.json")]
+    )
+    assert summary["pdmx"] == {
+        "eligible_pdmx_candidates_seen": 5,
+        "excluded_test_match": 1,
+        "admitted": 2,
+        "duplicate_canonical": 1,
+        "unreadable_xml": 1,
+    }
+
+
 def test_packaging_writes_crops_and_cowarped_boxes_with_prior_header(
     tmp_path, monkeypatch
 ):
@@ -1496,7 +1712,7 @@ def packaging_run(tmp_path, monkeypatch):
         monkeypatch.setattr(
             packaging,
             "_expanded_intake",
-            lambda *_: (
+            lambda *_, **_options: (
                 rows,
                 {"pdmx_admission_limit_reached": admission_limit_reached},
             ),
@@ -2277,3 +2493,323 @@ def test_volta_ending_and_restated_midscore_clef_route_to_musescore():
     empty_meter.validate_verovio_cohort(formal=False)
     with pytest.raises(StopConditionError, match="minimum Verovio cohort"):
         empty_meter.validate_verovio_cohort(formal=True)
+
+
+class _BrokenUnpicklableError(Exception):
+    def __init__(self, a: int, b: int) -> None:
+        super().__init__(a, b)
+        self.pair = (a, b)
+
+    def __reduce__(self):
+        msg = "cannot pickle"
+        raise TypeError(msg)
+
+    def __str__(self) -> str:
+        msg = "broken __str__"
+        raise RuntimeError(msg)
+
+
+def _stalled_forkserver_job(pid_file: str) -> int:
+    Path(pid_file).write_text(f"{os.getpid()}\n", encoding="utf-8")
+    time.sleep(30)
+    return 1
+
+
+def _prep_fail_first_stall_second(plan, _preferred):
+    marker = Path(str(plan.row["canonical_root"])) / "sibling.pid"
+    if plan.row["source_id"] == "fail-first":
+        deadline = time.monotonic() + 5.0
+        while not marker.is_file() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        return packaging._WorkerError("stop", "first prep failed")  # noqa: SLF001
+    marker.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    time.sleep(30)
+    return packaging._WorkerError("stop", "unreachable")  # noqa: SLF001
+
+
+def _init_prep_abort_fixture():
+    packaging._offline_worker()  # noqa: SLF001
+    pytest.MonkeyPatch().setattr(
+        packaging, "_prepare_variant_worker", _prep_fail_first_stall_second
+    )
+
+
+def test_worker_ipc_errors_timeout_reaping_and_verovio_scratch_bound(
+    tmp_path, monkeypatch, request
+):
+    """IPC errors stay primitive, stalled pools reap, and scratch is bounded."""
+    monkeypatch.syspath_prepend(str(request.config.rootpath))
+    err = packaging._worker_error(_BrokenUnpicklableError(1, 2))  # noqa: SLF001
+    assert err == packaging._WorkerError("stop", "_BrokenUnpicklableError")  # noqa: SLF001
+    assert isinstance(packaging._to_exception(err), StopConditionError)  # noqa: SLF001
+    val_err = packaging._worker_error(ValueError("bad overlay"))  # noqa: SLF001
+    assert isinstance(packaging._to_exception(val_err), ValueError)  # noqa: SLF001
+
+    pid_file = tmp_path / "worker.pid"
+    pool = packaging._process_pool(1)  # noqa: SLF001
+    fut = pool.submit(_stalled_forkserver_job, str(pid_file))
+    deadline = time.monotonic() + 5.0
+    while not pid_file.is_file() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    worker_pid = int(pid_file.read_text(encoding="utf-8").strip())
+    with pytest.raises(StopConditionError, match="deadline"):
+        packaging._await_futures(pool, (fut,), timeout=0.15)  # noqa: SLF001
+    packaging._shutdown_pool(pool)  # noqa: SLF001
+    with pytest.raises(ProcessLookupError):
+        os.kill(worker_pid, 0)
+
+    # Preparation failure aborts and reaps an already-running lookahead sibling.
+    prep_rows = [
+        _source(sid, "Beethoven", "Sonata")
+        | {"canonical_root": str(tmp_path), "split": "synth_train"}
+        for sid in ("fail-first", "stall-second")
+    ]
+    monkeypatch.setattr(
+        packaging,
+        "_process_pool",
+        lambda n: ProcessPoolExecutor(
+            max_workers=n,
+            mp_context=multiprocessing.get_context("forkserver"),
+            initializer=_init_prep_abort_fixture,
+        ),
+    )
+    meter = packaging._PageMeter(16)  # noqa: SLF001
+    meter.disk = packaging._DatasetSink(tmp_path / "prep-abort")  # noqa: SLF001
+    t0 = time.monotonic()
+    with pytest.raises(StopConditionError, match="first prep failed"):
+        list(
+            packaging._render_variants(  # noqa: SLF001
+                prep_rows,
+                run=tmp_path / "prep-abort",
+                downloads=tmp_path / "dl",
+                musescore=_UNUSED_MUSESCORE,
+                meter=meter,
+                calibrated_identity=None,
+                targets={"synth_train": 2},
+                verovio_workers=2,
+                musescore_page_cap=0,
+            )
+        )
+    assert time.monotonic() - t0 < 6.0  # noqa: PLR2004
+    sibling_pid = int((tmp_path / "sibling.pid").read_text(encoding="utf-8"))
+    with pytest.raises(ProcessLookupError):
+        os.kill(sibling_pid, 0)
+
+    # Pre-dispatch Verovio byte ceiling rejects insufficient budget and exit 93
+    # even when score.mei was already written and zero PNGs exist.
+    style = renderers.sample_layout_and_style(1, 2)
+    xml = to_musicxml_text(_score(2))
+    prepared = packaging._PreparedVariant(  # noqa: SLF001
+        {"source_id": "s1"}, "seed", 1, style, 2, "verovio", xml
+    )
+    bound = packaging._verovio_worst_case_bytes(prepared)  # noqa: SLF001
+    assert bound > packaging.WORKER_SCRATCH_HEADROOM_BYTES
+    monkeypatch.setattr(renderers, "verify_loopback_only_unshare", lambda: None)
+    with pytest.raises(StopConditionError, match="exhausted before subprocess"):
+        renderers._run_verovio(  # noqa: SLF001
+            xml,
+            style,
+            tmp_path,
+            tmp_path / "scratch",
+            max_pages=2,
+            count_rasters=None,
+            max_scratch_bytes=1024,
+        )
+
+    def mei_only_exit_93(*_a, scratch_root, on_before_cleanup, **_kw):
+        scratch_dir = scratch_root / "fake-iso"
+        scratch_dir.mkdir(parents=True, exist_ok=True)
+        (scratch_dir / "score-1.svg").write_text("<svg/>", encoding="utf-8")
+        (scratch_dir / "score.mei").write_text("<mei/>", encoding="utf-8")
+        on_before_cleanup(scratch_dir)
+        return SimpleNamespace(
+            returncode=93, stdout_sanitized="", stderr_sanitized=""
+        )
+
+    monkeypatch.setattr(
+        renderers, "run_offline_isolated_subprocess", mei_only_exit_93
+    )
+    rasters_seen: list[int] = []
+    ledger = renderers.RenderGateLedger("verovio")
+    with pytest.raises(StopConditionError, match="pre-dispatch byte bound"):
+        renderers.render_verovio(
+            xml,
+            style,
+            tmp_path,
+            tmp_path / "scratch2",
+            ledger,
+            max_pages=2,
+            count_rasters=rasters_seen.append,
+            max_scratch_bytes=bound,
+        )
+    assert rasters_seen == [0]
+
+
+def _verify_fail_fixture(_staged, _ledger):
+    msg = "verifier exploded after staging"
+    raise StopConditionError(msg)
+
+
+def _init_verify_fail_fixture():
+    packaging._offline_worker()  # noqa: SLF001
+    pytest.MonkeyPatch().setattr(
+        renderers, "verify_verovio_outputs", _verify_fail_fixture
+    )
+
+
+def test_exact_headroom_scratch_reservation_metadata_charges_max_not_sum(
+    tmp_path, monkeypatch
+):
+    """Scratch reservation metadata charges max(reserved, actual), not sum."""
+    style = renderers.sample_layout_and_style(1, 3)
+    xml = to_musicxml_text(_score(3))
+    prepared = packaging._PreparedVariant(  # noqa: SLF001
+        {"source_id": "s1"}, "seed", 1, style, 3, "verovio", xml
+    )
+    bound = packaging._verovio_worst_case_bytes(prepared)  # noqa: SLF001
+
+    def unconfirmed_wrapper_exit(*_a, scratch_root, **_kw):
+        # Neither timeout nor signal-killed (-9) unshare runs on_before_cleanup.
+        retained = scratch_root / "w4w5-iso-uncollected"
+        retained.mkdir(parents=True, exist_ok=True)
+        (retained / "partial.svg").write_bytes(b"x" * 4096)
+        msg = "unshare wrapper exited abnormally (-9); retaining scratch"
+        raise StopConditionError(msg)
+
+    monkeypatch.setattr(renderers, "verify_loopback_only_unshare", lambda: None)
+    runs_root = tmp_path / "exact-runs"
+    run_retained = runs_root / "w6-slice-a-retained"
+    monkeypatch.setattr(ledgers, "W6_DISK_CAP_BYTES", bound)
+    monkeypatch.setattr(packaging, "W6_DISK_CAP_BYTES", bound)
+    assert ledgers._check_w6_disk_cap(runs_root, additional_bytes=bound) == 0  # noqa: SLF001
+
+    def clean_exact_headroom(*_a, scratch_root, on_before_cleanup, **_kw):
+        iso = scratch_root / "w4w5-iso-clean"
+        iso.mkdir(parents=True, exist_ok=True)
+        (iso / "score-1.svg").write_text("<svg/>", encoding="utf-8")
+        (iso / "score.mei").write_text("<mei/>", encoding="utf-8")
+        (iso / "score-1.png").write_bytes(b"png" * 512)
+        on_before_cleanup(iso)
+        shutil.rmtree(iso)
+        return SimpleNamespace(
+            returncode=0, stdout_sanitized="", stderr_sanitized=""
+        )
+
+    monkeypatch.setattr(
+        renderers, "run_offline_isolated_subprocess", clean_exact_headroom
+    )
+    _, clean_staged, clean_pages, clean_charged = (
+        packaging._stage_verovio_parent_job(  # noqa: SLF001
+            prepared,
+            run=run_retained,
+            downloads=tmp_path / "dl",
+            max_pages=3,
+            max_scratch_bytes=bound,
+        )
+    )
+    assert isinstance(clean_staged, renderers.StagedVerovio)
+    assert clean_pages == 1
+    assert clean_charged < bound
+    assert ledgers._check_w6_disk_cap(runs_root, additional_bytes=bound) == 0  # noqa: SLF001
+
+    monkeypatch.setattr(
+        renderers, "run_offline_isolated_subprocess", unconfirmed_wrapper_exit
+    )
+    _, err_out, _, charged = packaging._stage_verovio_parent_job(  # noqa: SLF001
+        prepared,
+        run=run_retained,
+        downloads=tmp_path / "dl",
+        max_pages=3,
+        max_scratch_bytes=bound,
+    )
+    assert isinstance(err_out, StopConditionError)
+    assert charged == bound
+    assert ledgers._check_w6_disk_cap(runs_root) == bound  # noqa: SLF001
+    with pytest.raises(StopConditionError, match="generated disk cap"):
+        ledgers._check_w6_disk_cap(runs_root, additional_bytes=1)  # noqa: SLF001
+
+    # Growth inside a retained scratch directory during _w6_run_bytes never
+    # subtracts or hides reserved bytes.
+    (uncollected_dir,) = run_retained.rglob("w4w5-iso-uncollected")
+    orig_dir_bytes = ledgers.directory_bytes
+
+    def grow_on_non_tmp_scan(path):
+        result = orig_dir_bytes(path)
+        (uncollected_dir / "late-growth.svg").write_bytes(b"g" * 4096)
+        return result
+
+    (run_retained / "report").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(ledgers, "directory_bytes", grow_on_non_tmp_scan)
+    assert ledgers._check_w6_disk_cap(runs_root) == bound  # noqa: SLF001
+    with pytest.raises(StopConditionError, match="generated disk cap"):
+        ledgers._check_w6_disk_cap(runs_root, additional_bytes=1)  # noqa: SLF001
+
+
+def test_idle_pool_fallback_and_post_stage_verifier_meter(
+    tmp_path, monkeypatch, request
+):
+    """Idle fallback kills saved handles and verifier keeps counted pages."""
+    monkeypatch.syspath_prepend(str(request.config.rootpath))
+
+    # Idle shutdown fallback still SIGKILLs a live worker after shutdown clears
+    # pool._processes in Python 3.14.
+    idle_pid_file = tmp_path / "idle_worker.pid"
+    idle_pool = packaging._process_pool(1)  # noqa: SLF001
+    _ = idle_pool.submit(_stalled_forkserver_job, str(idle_pid_file))
+    deadline = time.monotonic() + 5.0
+    while not idle_pid_file.is_file() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    idle_pid = int(idle_pid_file.read_text(encoding="utf-8").strip())
+    packaging._shutdown_pool(idle_pool, clean_idle=True)  # noqa: SLF001
+    with pytest.raises(ProcessLookupError):
+        os.kill(idle_pid, 0)
+
+    # Verifier failure after staging records actual rendered pages (not full
+    # planned reservation).
+    score = _score(3)
+    v_path = tmp_path / "v.txt"
+    v_raw = write_document(score).encode()
+    v_path.write_bytes(v_raw)
+    v_rows = [
+        {
+            "source_id": "v1",
+            "work_group_id": "v1",
+            "canonical_composer": "fixture",
+            "canonical_root": str(tmp_path),
+            "canonical_v2_path": v_path.name,
+            "canonical_v2_sha256": _sha(v_raw),
+            "measure_count": 3,
+            "rights_variant": "permissive",
+            "split": "synth_train",
+        }
+    ]
+    monkeypatch.setattr(
+        renderers, "stage_verovio_subprocess", _stage_verovio_fixture
+    )
+    monkeypatch.setattr(
+        packaging,
+        "_process_pool",
+        lambda n: ProcessPoolExecutor(
+            max_workers=n,
+            mp_context=multiprocessing.get_context("forkserver"),
+            initializer=_init_verify_fail_fixture,
+        ),
+    )
+    meter = packaging._PageMeter(500)  # noqa: SLF001
+    meter.disk = packaging._DatasetSink(tmp_path / "verify-fail")  # noqa: SLF001
+    with pytest.raises(StopConditionError, match="verifier exploded"):
+        list(
+            packaging._render_variants(  # noqa: SLF001
+                v_rows,
+                run=tmp_path / "verify-fail",
+                downloads=tmp_path / "dl",
+                musescore=_UNUSED_MUSESCORE,
+                meter=meter,
+                calibrated_identity=None,
+                targets={"synth_train": 2},
+                verovio_workers=2,
+                musescore_page_cap=0,
+            )
+        )
+    assert meter.actual == 1
+    assert meter.uncounted_worker is False
