@@ -595,14 +595,6 @@ bindings:
     path: src/private/app/lite-agensh/THIRD-PARTY-NOTICES.txt
     format: text
     purpose: Microsoft Agensh copyright and MIT attribution retained for derived material
-  - id: src-private-app-oxforddictextractor-interfaces
-    family: project-interfaces
-    namespace: src/private/app/OxfordDictExtractor
-    state: current
-    carrier: repository-files
-    path: src/private/app/OxfordDictExtractor/*.md
-    format: markdown
-    purpose: Oxford dictionary extraction usage
   - id: src-private-app-git-commit-heatmap-interfaces
     family: project-interfaces
     namespace: src/private/app/git-commit-heatmap
@@ -699,14 +691,6 @@ bindings:
     path: src/public/app/ImageOcclusionEditor/*.md
     format: markdown
     purpose: Image occlusion usage, attribution and packaging navigation
-  - id: src-public-app-phifailuredetector-console-interfaces
-    family: project-interfaces
-    namespace: src/public/app/PhiFailureDetector.Console
-    state: current
-    carrier: repository-files
-    path: src/public/app/PhiFailureDetector.Console/*.md
-    format: markdown
-    purpose: Console-source reader interface and library routing
   - id: src-public-app-markdown-hybrid-search-mcp-interfaces
     family: project-interfaces
     namespace: src/public/app/markdown-hybrid-search-mcp

@@ -83,6 +83,28 @@ namespace PhiFailureDetector.UnitTest
             Assert.IsGreaterThan(15, Phi(3000, 1000, 250));
         }
 
+        [TestMethod]
+        public void Test_PhiWithTwoHeartbeatIntervals()
+        {
+            const long lastTimestamp = 5000;
+            var arrivalWindow = new LongIntervalHistoryCollection(1000);
+            arrivalWindow.Enqueue(750);
+            arrivalWindow.Enqueue(1250);
+
+            Assert.AreEqual(
+                0.301,
+                PhiFailureDetector.Normal(lastTimestamp + 1000, lastTimestamp, arrivalWindow),
+                0.001);
+            Assert.AreEqual(
+                4.737,
+                PhiFailureDetector.Normal(lastTimestamp + 2000, lastTimestamp, arrivalWindow),
+                0.001);
+            Assert.AreEqual(
+                21.242,
+                PhiFailureDetector.Normal(lastTimestamp + 3000, lastTimestamp, arrivalWindow),
+                0.001);
+        }
+
         internal static double CDF(double phi)
         {
             return 1 - Math.Pow(10, -phi);

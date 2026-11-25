@@ -424,12 +424,6 @@
       "enabled": false
     },
     {
-      "description": "Group Semantic Kernel updates.",
-      "matchManagers": ["nuget"],
-      "matchPackageNames": ["/^Microsoft\\.SemanticKernel/"],
-      "groupName": "Microsoft Semantic Kernel Packages"
-    },
-    {
       "description": "Keep directly referenced NuGet client libraries on a compatible release.",
       "matchManagers": ["nuget"],
       "matchFileNames": ["Directory.Packages.props"],
