@@ -1016,3 +1016,82 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
       implementation.
     - No release, proving or campaign dispatch, publication, Environment,
       account, publisher or upstream feature request.
+
+### Port the Nanopass compiler framework to C# 15 / .NET 11
+
+- **Work carrier:** [Issue #1779](https://github.com/hcoona/three/issues/1779)
+  and its linked authorization, design, and stacked implementation pull
+  requests.
+- **Accepted inputs:** the [governance policy](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [engineering principles](engineering/engineering-principles.md),
+  [documentation portal](README.md),
+  [family catalog](governance/record-families.yaml),
+  [.NET compatibility rationale](engineering/dotnet-compatibility.md), root
+  `global.json`, `dirs.proj`, `Directory.Build.props`,
+  `Directory.Packages.props`, `src/public/lib/Directory.Build.props`, and the
+  MIT-licensed upstream
+  [`nanopass/nanopass-framework-racket`](https://github.com/nanopass/nanopass-framework-racket)
+  specification and test suite (retaining upstream copyright and MIT license
+  notices for ported test and reference-compiler material).
+- **Owner decisions and boundaries:**
+    - Create the public library under `src/public/lib/Nanopass/`
+      (`Hcoona.Nanopass.csproj`, targeting `net11.0` / C# 15, with `PackageId`,
+      `AssemblyName`, and `RootNamespace` set to `Hcoona.Nanopass`), companion
+      Roslyn incremental generator, diagnostic analyzer, and code-fix project
+      under `src/public/lib/Nanopass.Generators/`
+      (`Hcoona.Nanopass.Generators.csproj`, targeting `netstandard2.0` and
+      packed as an analyzer in `Hcoona.Nanopass`), and test project under
+      `tests/public/lib/Nanopass.Tests/` (`Hcoona.Nanopass.Tests.csproj`,
+      targeting `net11.0`).
+    - Upgrade `Microsoft.CodeAnalysis.CSharp` and directly required
+      `Microsoft.CodeAnalysis.*` analyzer/workspace/testing packages in
+      `Directory.Packages.props` to `5.12.0` (matching the `.NET 11.0.100` SDK
+      in `global.json` so Roslyn parses C# 15 `union` and `closed` syntax),
+      refreshing affected NuGet lockfiles. Record any empirically required
+      project-local analyzer carve-out (such as `StyleCop.Analyzers` on C# 15
+      syntax or `netstandard2.0` generator rules) in
+      [`dotnet-compatibility.md`](engineering/dotnet-compatibility.md).
+    - Use an immutable Grammar Metamodel as the single source of truth with
+      generated C# 15 `union` nonterminals and `sealed record` productions; do
+      not emulate Racket hygienic macros, `quasiquote`/`unquote` AST templates,
+      `with-output-language`/`in-context` lexical capture, or custom non-C#
+      host syntax (`with-output-language-tests.rkt`).
+- **Advancement and outcome:**
+    - Admit concise project records (`src/public/lib/Nanopass/README.md`,
+      `ReleaseNotes.md`, and admitted `docs/` architecture/validation records
+      where distinct consumers exist) and reconcile `docs/README.md` and
+      `docs/governance/record-families.yaml`.
+    - Implement language definition and incremental grammar algebra (`Extends`,
+      terminal/nonterminal/production additions and removals, `maybe` optional
+      fields, variadic and nested sequence fields, improper/dotted tails,
+      `Diff`, `Prune`, `ToSExpression`, `NodeCounter`), generated C# 15 `union`
+      and `sealed record` IR types, S-expression parser and raw/pretty
+      unparser, pass synthesis (`Pass`, `Rewrite`, catamorphisms,
+      multi-nonterminal processor resolution and conditional auto-generation,
+      context parameters, extra return values, guards, raw `*` endpoints,
+      `TracePass`, strongly typed `IPass<TIn, TOut>` and `Pipeline`),
+      compile-time diagnostics (`NPxxxx`), and `CodeFixProvider` stub
+      generation.
+    - Port and pass the applicable upstream `nanopass-framework-racket` test
+      suites (`unit-tests.rkt`, `coresheme-to-javascript-compiler.rkt`, and the
+      20-language / 20-pass `compiler.rkt` + `alltests.rkt` suite), iterating
+      independent review and contraction until clean convergence.
+- **Ordering and gates:** merge this authorization before substantive
+  implementation. Keep implementation, lockfiles, and owning records/routing
+  self-consistent at each merge into `main` across stacked pull requests.
+  Retain applicable independent `engineering-guidance`, `record-system-review`,
+  code review, `GOV-011` finding disposition, explicit-base `records:check`, HK
+  conformance, and `Validate` CI. Material scope or feasibility tradeoffs
+  return to the repository owner.
+- **Acceptance and closure:** all declared capabilities, compile-time
+  diagnostics, code fixes, and ported test suites pass local validation and
+  `Validate` CI with no unresolved material findings after final review and
+  contraction. Close this entry by deleting it in the final implementation pull
+  request (or an explicit Wave-only closure pull request).
+- **Exclusions:** no Lisp/Racket hygienic macro, `quasiquote`/`unquote`, or
+  custom host-syntax DSL emulation (`with-output-language` / `in-context` /
+  `with-output-language-tests.rkt`); no Workflow Delivery NuGet release-unit
+  registration, live package/release publication, release/proving dispatch,
+  ruleset, credential, authentication, or access change; no change to
+  `CurrentTargetFramework` (`net10.0`) for unrelated projects.
