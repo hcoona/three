@@ -312,6 +312,9 @@ internal sealed class InterruptedRunCreator : IAsyncDisposable
         observedExitCode = process.ExitCode;
         Assert.AreNotEqual(0, observedExitCode);
         Evidence.Process("creator-crash", "joined", process.Id, birthTicks, observedExitCode);
+        await OwnedCreatorProcess
+            .WaitForLockReleaseAsync(Configuration.StatePath, token)
+            .ConfigureAwait(false);
     }
 
     private long VerifyCreatorIdentity(Process creator)
