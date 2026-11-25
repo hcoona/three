@@ -721,6 +721,183 @@ def concat_page_predictions(  # noqa: C901, PLR0912, PLR0915
     )
 
 
+@dataclass(frozen=True, slots=True)
+class SystemCropAssemblyResult:
+    """Whole-piece MusicXML assembled from ordered per-system crop outputs."""
+
+    xml_text: str | None
+    parse_valid: bool
+    failed_crops: tuple[int, ...]
+    pred_measure_crop_indices: tuple[int, ...]
+    pred_measure_pages: tuple[int, ...]
+    pred_measure_systems: tuple[int, ...]
+    pred_measure_raw_conf: tuple[float, ...]
+    error_reasons: dict[int, str]
+
+
+def concat_system_predictions(  # noqa: C901, PLR0912, PLR0915
+    crop_specs: Sequence[tuple[int, int, Path | str | bytes | None]],
+    *,
+    crop_raw_confs: Mapping[int, Sequence[float]] | None = None,
+) -> SystemCropAssemblyResult:
+    """Concatenate ordered ``(page_idx, page_sys_idx, xml)`` system crops."""
+    valid_crops: list[
+        tuple[int, int, int, ET.Element, list[ET.Element], int]
+    ] = []
+    failed_crops: list[int] = []
+    error_reasons: dict[int, str] = {}
+
+    for crop_idx, (page_idx, sys_idx, item) in enumerate(crop_specs):
+        if item is None:
+            failed_crops.append(crop_idx)
+            error_reasons[crop_idx] = "missing crop MusicXML"
+            continue
+        exp_len = (
+            len(crop_raw_confs[crop_idx])
+            if (crop_raw_confs is not None and crop_idx in crop_raw_confs)
+            else None
+        )
+        try:
+            root, measures, crop_lcm = _parse_normalized_page(item, exp_len)
+            valid_crops.append(
+                (crop_idx, page_idx, sys_idx, root, measures, crop_lcm)
+            )
+        except (
+            CandidateNormalizationError,
+            ScoreParseError,
+            ProtocolDefectError,
+            MusicXmlError,
+            ET.ParseError,
+        ) as exc:
+            failed_crops.append(crop_idx)
+            error_reasons[crop_idx] = str(exc)
+
+    if not valid_crops:
+        return SystemCropAssemblyResult(
+            xml_text=None,
+            parse_valid=False,
+            failed_crops=tuple(failed_crops),
+            pred_measure_crop_indices=(),
+            pred_measure_pages=(),
+            pred_measure_systems=(),
+            pred_measure_raw_conf=(),
+            error_reasons=error_reasons,
+        )
+
+    global_div = math.lcm(*(c_div for *_, c_div in valid_crops))
+    out_root = ET.Element("score-partwise", {"version": "4.0"})
+    first_root = valid_crops[0][3]
+    for child in first_root:
+        if child.tag in {"part-list", "part"}:
+            continue
+        out_root.append(copy.deepcopy(child))
+    part_list = ET.SubElement(out_root, "part-list")
+    sp = ET.SubElement(part_list, "score-part", {"id": "P1"})
+    part_name = ET.SubElement(sp, "part-name")
+    part_name.text = "Piano"
+    out_part = ET.SubElement(out_root, "part", {"id": "P1"})
+
+    pred_crops: list[int] = []
+    pred_pages: list[int] = []
+    pred_systems: list[int] = []
+    pred_confs: list[float] = []
+    span_offset = 0
+    measure_no = 0
+    prev_page: int | None = None
+
+    for valid_ord, (crop_idx, page_idx, sys_idx, _, measures, _) in enumerate(
+        valid_crops
+    ):
+        cloned = [copy.deepcopy(m) for m in measures]
+        span_offset = _renumber_spanners(cloned, span_offset) + 10
+        cur_div = 1
+        raw_seq = (
+            list(crop_raw_confs.get(crop_idx, ()))
+            if crop_raw_confs is not None
+            else []
+        )
+        for m_i, meas in enumerate(cloned):
+            d_txt = meas.findtext("./attributes/divisions")
+            if d_txt and d_txt.strip().isdigit() and int(d_txt.strip()) > 0:
+                cur_div = int(d_txt.strip())
+            _scale_measure_divisions(meas, cur_div, global_div)
+            if valid_ord == 0 and m_i == 0:
+                attrs = meas.find("attributes")
+                if attrs is None:
+                    attrs = ET.Element("attributes")
+                    meas.insert(0, attrs)
+                if attrs.find("divisions") is None:
+                    div_el = ET.Element("divisions")
+                    div_el.text = str(global_div)
+                    attrs.insert(0, div_el)
+                if attrs.find("staves") is None:
+                    st_el = ET.SubElement(attrs, "staves")
+                    st_el.text = "2"
+            if valid_ord > 0 and m_i == 0:
+                new_page = prev_page is not None and page_idx != prev_page
+                pr = meas.find("print")
+                if pr is None:
+                    pr = ET.Element(
+                        "print",
+                        {"new-page": "yes"}
+                        if new_page
+                        else {"new-system": "yes"},
+                    )
+                    meas.insert(0, pr)
+                elif new_page:
+                    pr.set("new-page", "yes")
+                    pr.attrib.pop("new-system", None)
+                else:
+                    pr.set("new-system", "yes")
+                    pr.attrib.pop("new-page", None)
+                attrs = meas.find("attributes")
+                if attrs is not None:
+                    for st_el in list(attrs.findall("staves")):
+                        attrs.remove(st_el)
+            measure_no += 1
+            meas.set("number", str(measure_no))
+            out_part.append(meas)
+            pred_crops.append(crop_idx)
+            pred_pages.append(page_idx)
+            pred_systems.append(sys_idx)
+            conf = float(raw_seq[m_i]) if m_i < len(raw_seq) else 0.0
+            pred_confs.append(conf)
+        prev_page = page_idx
+
+    assembled_xml = _serialize_xml(out_root)
+    try:
+        _ = validate_candidate_score(assembled_xml)
+    except (
+        CandidateNormalizationError,
+        ScoreParseError,
+        ProtocolDefectError,
+        MusicXmlError,
+        ET.ParseError,
+    ) as exc:
+        error_reasons[-1] = f"assembled piece validation failed: {exc}"
+        return SystemCropAssemblyResult(
+            xml_text=None,
+            parse_valid=False,
+            failed_crops=tuple(failed_crops),
+            pred_measure_crop_indices=(),
+            pred_measure_pages=(),
+            pred_measure_systems=(),
+            pred_measure_raw_conf=(),
+            error_reasons=error_reasons,
+        )
+
+    return SystemCropAssemblyResult(
+        xml_text=assembled_xml,
+        parse_valid=True,
+        failed_crops=tuple(failed_crops),
+        pred_measure_crop_indices=tuple(pred_crops),
+        pred_measure_pages=tuple(pred_pages),
+        pred_measure_systems=tuple(pred_systems),
+        pred_measure_raw_conf=tuple(pred_confs),
+        error_reasons=error_reasons,
+    )
+
+
 def _serialize_xml(root: ET.Element) -> str:
     ET.indent(root)
     return (

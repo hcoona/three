@@ -674,12 +674,12 @@ def summarize_page_matches(rows: Sequence[PageMatchReport]) -> PageMatchReport:
     )
 
 
-def match_page_boxes(  # noqa: C901
+def match_page_boxes_with_pairs(  # noqa: C901
     pred_boxes: Sequence[PredictedBox],
     gold_boxes: Sequence[Box],
     page_gray: Image.Image | np.ndarray | None = None,
-) -> PageMatchReport:
-    """Classify each oracle exactly once using the W5 association precedence."""
+) -> tuple[PageMatchReport, dict[int, int]]:
+    """Return W5 counts and exact 1:1 two-staff ``{gold: pred}`` pairs."""
     pred_coords = [(p[0], p[1], p[2], p[3]) for p in pred_boxes]
     for box in (*pred_coords, *gold_boxes):
         _validate_box(box)
@@ -698,7 +698,10 @@ def match_page_boxes(  # noqa: C901
         else page_gray
     )
     missed = merged = split = two = wrong = clipped = 0
-    for gold, predictions in zip(gold_boxes, by_gold, strict=True):
+    exact_pairs: dict[int, int] = {}
+    for g_idx, (gold, predictions) in enumerate(
+        zip(gold_boxes, by_gold, strict=True)
+    ):
         if not predictions:
             missed += 1
         elif any(by_pred[p_idx] > 1 for p_idx, _ in predictions):
@@ -709,22 +712,35 @@ def match_page_boxes(  # noqa: C901
             p_idx = predictions[0][0]
             if pred_boxes[p_idx][4] == 2:  # noqa: PLR2004
                 two += 1
+                exact_pairs[g_idx] = p_idx
             else:
                 wrong += 1
             if gray is not None:
                 clipped += _clips_ink(pred_coords[p_idx], gold, gray)
-    return PageMatchReport(
-        len(gold_boxes),
-        len(pred_boxes),
-        missed,
-        merged,
-        split,
-        two,
-        wrong,
-        by_pred.count(0),
-        sum(n > 1 for n in by_pred),
-        clipped if gray is not None else None,
+    return (
+        PageMatchReport(
+            len(gold_boxes),
+            len(pred_boxes),
+            missed,
+            merged,
+            split,
+            two,
+            wrong,
+            by_pred.count(0),
+            sum(n > 1 for n in by_pred),
+            clipped if gray is not None else None,
+        ),
+        exact_pairs,
     )
+
+
+def match_page_boxes(
+    pred_boxes: Sequence[PredictedBox],
+    gold_boxes: Sequence[Box],
+    page_gray: Image.Image | np.ndarray | None = None,
+) -> PageMatchReport:
+    """Classify each oracle exactly once using the W5 association precedence."""
+    return match_page_boxes_with_pairs(pred_boxes, gold_boxes, page_gray)[0]
 
 
 _TRAIN_DEV_GOLD = 323

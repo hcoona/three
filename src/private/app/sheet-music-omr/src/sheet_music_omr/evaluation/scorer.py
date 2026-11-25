@@ -168,6 +168,7 @@ def score_prediction(
     reference_xml: Path | str,
     *,
     forbidden_ref_ordinals: frozenset[int] = frozenset(),
+    allowed_ref_ordinals_by_cand: Mapping[int, frozenset[int]] | None = None,
 ) -> PredictionScore:
     """Score ``candidate_xml`` against ``reference_xml`` under W2 rules.
 
@@ -223,8 +224,22 @@ def score_prediction(
     forbidden_0 = frozenset(
         m - 1 for m in forbidden_ref_ordinals if 1 <= m <= ref_m_count
     )
+    allowed_0: dict[int, frozenset[int]] | None = None
+    if allowed_ref_ordinals_by_cand is not None:
+        allowed_0 = {
+            c_ord - 1: frozenset(
+                r_ord - 1 for r_ord in ref_set if 1 <= r_ord <= ref_m_count
+            )
+            for c_ord, ref_set in allowed_ref_ordinals_by_cand.items()
+            if 1 <= c_ord <= cand_m_count
+        }
     alignment = _align_grand_staff_bars(
-        t_raw, y_score, cand_m_count, ref_m_count, forbidden_0
+        t_raw,
+        y_score,
+        cand_m_count,
+        ref_m_count,
+        forbidden_0,
+        allowed_ref_0_by_cand=allowed_0,
     )
 
     try:
@@ -444,12 +459,14 @@ def _pair_bar_cost(  # noqa: PLR0913, PLR0917
     return int(cost)
 
 
-def _align_grand_staff_bars(  # noqa: C901, PLR0912
+def _align_grand_staff_bars(  # noqa: C901, PLR0912, PLR0913
     t_score: AnnotatedScore,
     y_score: AnnotatedScore,
     m_cand: int,
     m_ref: int,
     forbidden_ref_0: frozenset[int],
+    *,
+    allowed_ref_0_by_cand: Mapping[int, frozenset[int]] | None = None,
 ) -> BarAlignment:
     """Joint 2-staff Needleman-Wunsch DP alignment over measures."""
     t_bars = tuple(_indexed_bars(p) for p in t_score.annotated.part_list)
@@ -491,7 +508,10 @@ def _align_grand_staff_bars(  # noqa: C901, PLR0912
             yj = j - 1
             c_del = dp[i - 1][j] + del_costs[ti]
             c_ins = dp[i][j - 1] + ins_costs[yj]
-            if yj in forbidden_ref_0:
+            if yj in forbidden_ref_0 or (
+                allowed_ref_0_by_cand is not None
+                and yj not in allowed_ref_0_by_cand.get(ti, frozenset())
+            ):
                 c_sub = inf
             else:
                 c_sub = dp[i - 1][j - 1] + sum(

@@ -252,6 +252,23 @@ def assemble(
     Raises:
         ValueError: No document is given, or the names do not match.
     """
+    return _assemble_impl(
+        documents,
+        names=names,
+        title=title,
+        composer=composer,
+        allow_open_prefix=False,
+    )
+
+
+def _assemble_impl(
+    documents: Sequence[Document],
+    *,
+    names: Sequence[str] | None = None,
+    title: str | None = None,
+    composer: str | None = None,
+    allow_open_prefix: bool = False,
+) -> AssemblyResult:
     if not documents:
         message = "assembly needs at least one system document"
         raise ValueError(message)
@@ -264,10 +281,59 @@ def assemble(
         return _failed(found)
     sources, found = _order(labels, documents)
     if not found:
-        found = list(_check_links(sources))
+        found = list(_check_links(sources, allow_open_prefix=allow_open_prefix))
     if found:
         return _failed(found)
-    return _Assembler(sources, title, composer).run()
+    return _Assembler(
+        sources, title, composer, allow_open_prefix=allow_open_prefix
+    ).run()
+
+
+def header_state_after(
+    document: SystemDocument,
+) -> tuple[int, Meter, tuple[Clef, Clef]]:
+    """Return the ``(key, meter, clefs)`` state at the end of ``document``."""
+    return _state_after(_Source(0, "#1", document, analyze(document)))
+
+
+def validate_system_prefix(
+    prior_systems: Sequence[SystemDocument],
+    candidate: SystemDocument,
+    *,
+    expected_page_system: tuple[int, int] | None = None,
+    is_final_system: bool = False,
+) -> AssemblyResult:
+    """Validate ``[*prior_systems, candidate]`` as a score prefix."""
+    cand_name = f"#{len(prior_systems) + 1}"
+    if (
+        expected_page_system is not None
+        and (candidate.page, candidate.system) != expected_page_system
+    ):
+        exp_p, exp_s = expected_page_system
+        diag = assembly(
+            "order",
+            f"expected page {exp_p} system {exp_s}, got page"
+            f" {candidate.page} system {candidate.system}",
+            candidate.page_location,
+        )
+        return _failed([SourceDiagnostic(cand_name, diag)])
+    if prior_systems:
+        prev = prior_systems[-1]
+        if (candidate.page, candidate.system) <= (prev.page, prev.system):
+            diag = assembly(
+                "order",
+                f"page {candidate.page} system {candidate.system} does not"
+                f" advance past page {prev.page} system {prev.system}",
+                candidate.page_location,
+            )
+            return _failed([SourceDiagnostic(cand_name, diag)])
+    all_docs = (*prior_systems, candidate)
+    names = tuple(f"#{i + 1}" for i in range(len(all_docs)))
+    return _assemble_impl(
+        all_docs,
+        names=names,
+        allow_open_prefix=not is_final_system,
+    )
 
 
 # Input checks and order.
@@ -330,11 +396,15 @@ def _carry_out(source: _Source) -> CarryState:
     )
 
 
-def _check_links(sources: Sequence[_Source]) -> Iterator[SourceDiagnostic]:
+def _check_links(
+    sources: Sequence[_Source], *, allow_open_prefix: bool = False
+) -> Iterator[SourceDiagnostic]:
     yield from _check_initial(sources[0])
     for previous, current in pairwise(sources):
         yield from _check_carry(previous, current)
         yield from _check_state(previous, current)
+    if allow_open_prefix:
+        return
     last = sources[-1]
     for relation in last.analysis.relations.relations.values():
         if relation.is_open:
@@ -457,11 +527,23 @@ class _Chains:
             chains.ids.append(mapping)
         return chains
 
-    def arcs(self) -> Iterator[tuple[int, Point, Point]]:
+    def arcs(
+        self, *, skip_unresolved: bool = False
+    ) -> Iterator[tuple[int, Point, Point]]:
         """Yield each arc with its start and its end in a later document."""
         for chain, (_, start) in self.starts.items():
             if start.kind == ARC:
+                if skip_unresolved and chain not in self.ends:
+                    continue
                 yield chain, start, self.ends[chain][1]
+
+    def unresolved_arc_chains(self) -> frozenset[int]:
+        """Return global chain IDs of open arcs without a resolved endpoint."""
+        return frozenset(
+            chain
+            for chain, (_, start) in self.starts.items()
+            if start.kind == ARC and chain not in self.ends
+        )
 
     def trills(self) -> Iterator[TrillReview]:
         """Yield each extended trill that ends on ``<trill)>``."""
@@ -514,6 +596,7 @@ class _Rewrite:
     labels: Mapping[int, int]
     ties: Mapping[int, int]
     slurs: Mapping[int, tuple[SlurRelation, ...]]
+    unresolved_arcs: frozenset[int] = frozenset()
 
     def __call__(self, original: object, node: object) -> object:
         if isinstance(node, Location):
@@ -532,11 +615,16 @@ class _Rewrite:
         if tie is None and pitch.tie_start is not None:
             tie = self.labels[pitch.tie_start]
         end = pitch.tie_end
+        kept_arcs = tuple(
+            self.labels[arc]
+            for arc in pitch.arc_starts
+            if self.labels[arc] in self.unresolved_arcs
+        )
         return replace(
             pitch,
             tie_end=None if end is None else self.labels[end],
             tie_start=tie,
-            arc_starts=(),
+            arc_starts=kept_arcs,
         )
 
     def blocks(
@@ -594,7 +682,10 @@ def _check_len(group: Sequence[_Fragment]) -> Iterator[SourceDiagnostic]:
 
 
 def _gaps(
-    group: Sequence[_Fragment], key: tuple[int, int]
+    group: Sequence[_Fragment],
+    key: tuple[int, int],
+    *,
+    allow_tail_unfilled: bool = False,
 ) -> list[tuple[Fraction, Fraction, _Fragment]]:
     gaps: list[tuple[Fraction, Fraction, _Fragment]] = []
     for fragment in group:
@@ -607,7 +698,7 @@ def _gaps(
             gaps.append((frame.start, frame.end, fragment))
     last = group[-1]
     end, length = last.frame.end, last.frame.length
-    if end < length:
+    if end < length and not allow_tail_unfilled:
         if gaps and gaps[-1][1] == end:
             gaps[-1] = (gaps[-1][0], length, gaps[-1][2])
         else:
@@ -615,10 +706,14 @@ def _gaps(
     return gaps
 
 
-def _check_fill(group: Sequence[_Fragment]) -> Iterator[SourceDiagnostic]:
+def _check_fill(
+    group: Sequence[_Fragment], *, allow_tail_unfilled: bool = False
+) -> Iterator[SourceDiagnostic]:
     keys = sorted(set().union(*(fragment.keys for fragment in group)))
     for staff, voice in keys:
-        for start, end, fragment in _gaps(group, (staff, voice)):
+        for start, end, fragment in _gaps(
+            group, (staff, voice), allow_tail_unfilled=allow_tail_unfilled
+        ):
             yield fragment.source.at(
                 "measure_fill",
                 f"voice line {staff}.{voice} of measure"
@@ -628,13 +723,17 @@ def _check_fill(group: Sequence[_Fragment]) -> Iterator[SourceDiagnostic]:
             )
 
 
-def _join(group: Sequence[_Fragment]) -> MeasureBlock:
+def _join(
+    group: Sequence[_Fragment], *, keep_trailing_to: bool = False
+) -> MeasureBlock:
     first, last = group[0].block, group[-1].block
     options: list[MeasureOption] = [
         option
         for option in first.options
         if not isinstance(option, (FromOption, ToOption, RightOption))
     ]
+    if keep_trailing_to:
+        options.extend(o for o in last.options if isinstance(o, ToOption))
     options.extend(o for o in last.options if isinstance(o, RightOption))
     voices: list[VoiceLine] = []
     for staff, voice in sorted(set().union(*(f.keys for f in group))):
@@ -684,12 +783,16 @@ class _Assembler:
         sources: Sequence[_Source],
         title: str | None,
         composer: str | None,
+        *,
+        allow_open_prefix: bool = False,
     ) -> None:
         self.sources = sources
         self.title = title
         self.composer = composer
+        self.allow_open_prefix = allow_open_prefix
         self.chains = _Chains.build(sources)
         self.found: list[SourceDiagnostic] = []
+        self._trailing_incomplete = False
 
     def run(self) -> AssemblyResult:
         rewrites = self._rewrites()
@@ -703,18 +806,38 @@ class _Assembler:
             )
         ]
         groups = _groups(fragments)
-        for group in groups:
+        for g_idx, group in enumerate(groups):
+            is_last_group = g_idx == len(groups) - 1
             self.found.extend(_check_len(group))
-            self.found.extend(_check_fill(group))
+            self.found.extend(
+                _check_fill(
+                    group,
+                    allow_tail_unfilled=(
+                        self.allow_open_prefix and is_last_group
+                    ),
+                )
+            )
         if self.found:
             return _failed(self.found)
+        self._trailing_incomplete = bool(
+            self.allow_open_prefix
+            and groups
+            and groups[-1][-1].frame.end < groups[-1][-1].frame.length
+        )
         score = self._renumber(self._score(groups, rewrites))
         return self._finish(score)
 
     def _rewrites(self) -> list[_Rewrite]:
         ties: dict[int, int] = {}
         slurs: dict[int, list[SlurRelation]] = {}
-        for chain, start, end in self.chains.arcs():
+        unresolved = (
+            self.chains.unresolved_arc_chains()
+            if self.allow_open_prefix
+            else frozenset()
+        )
+        for chain, start, end in self.chains.arcs(
+            skip_unresolved=self.allow_open_prefix
+        ):
             source = self.chains.starts[chain][0]
             if end.kind != TIE:
                 location = _moved(start.location, source.shift)
@@ -736,7 +859,11 @@ class _Assembler:
         frozen = {key: tuple(value) for key, value in slurs.items()}
         return [
             _Rewrite(
-                source.shift, self.chains.ids[source.position], ties, frozen
+                source.shift,
+                self.chains.ids[source.position],
+                ties,
+                frozen,
+                unresolved_arcs=unresolved,
             )
             for source in self.sources
         ]
@@ -747,7 +874,17 @@ class _Assembler:
         rewrites: Sequence[_Rewrite],
     ) -> AssembledScore:
         ends = {source.document.blocks[-1].number for source in self.sources}
-        blocks = [_join(group) for group in groups]
+        blocks = [
+            _join(
+                group,
+                keep_trailing_to=(
+                    self.allow_open_prefix
+                    and idx == len(groups) - 1
+                    and group[-1].frame.end < group[-1].frame.length
+                ),
+            )
+            for idx, group in enumerate(groups)
+        ]
         headed: list[HeadedBlock] = []
         for index, (group, block) in enumerate(
             zip(groups, blocks, strict=True)
@@ -756,6 +893,7 @@ class _Assembler:
             closed = (
                 _close_bracket(block, following)
                 if block.number in ends
+                and (not self.allow_open_prefix or following is not None)
                 else block
             )
             headings: tuple[Heading, ...] = ()
@@ -781,7 +919,12 @@ class _Assembler:
         relations = analyze_relations(score, build_timeline(score)).relations
         ordered = sorted(relations.values(), key=new_order)
         labels = {r.label: n for n, r in enumerate(ordered, 1)}
-        rewrite = _Rewrite(0, labels, {}, {})
+        unresolved = frozenset(
+            labels[r.label]
+            for r in ordered
+            if r.is_open and r.points and r.points[0].kind == ARC
+        )
+        rewrite = _Rewrite(0, labels, {}, {}, unresolved_arcs=unresolved)
         renamed = rewrite.blocks([item.block for item in score.blocks])
         blocks = tuple(
             HeadedBlock(item.headings, block)
@@ -796,11 +939,26 @@ class _Assembler:
             for source, end in self.chains.ends.values()
             if isinstance(end.placed.event, TrillEnd)
         }
+        last_block_loc = (
+            score.blocks[-1].block.location if score.blocks else None
+        )
         for diagnostic in validate_document(score):
             if diagnostic.code == "semantic/ornament" and (
                 diagnostic.location in trill_ends
             ):
                 continue
+            if self.allow_open_prefix:
+                if diagnostic.code in {
+                    "semantic/relation_open",
+                    "semantic/arc",
+                }:
+                    continue
+                if (
+                    self._trailing_incomplete
+                    and diagnostic.code == "semantic/fragment"
+                    and diagnostic.location == last_block_loc
+                ):
+                    continue
             self.found.append(self._locate(diagnostic))
         markers = tuple(
             MarkerReview(source.name, marker)
@@ -809,6 +967,8 @@ class _Assembler:
         )
         if self.found:
             return _failed(self.found)
+        if self.allow_open_prefix:
+            return AssemblyResult(score, None, (), trills, markers)
         if trills:
             return AssemblyResult(None, None, (), trills, markers)
         text = write_document(score)

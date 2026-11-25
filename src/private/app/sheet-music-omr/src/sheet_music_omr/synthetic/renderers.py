@@ -1279,6 +1279,7 @@ def render_musescore(  # noqa: PLR0913
     *,
     rights_variant: str,
     calibrated_identity: tuple[str, str] | None = None,
+    max_pages: int = 5_000,
     count_rasters: Callable[[int], None] | None = None,
 ) -> RenderResult:
     """Render a public sample through the settings-guarded host job driver."""
@@ -1307,8 +1308,12 @@ def render_musescore(  # noqa: PLR0913
         try:
             _musescore_job(musescore, output_dir, encoded, style)
         finally:
+            observed = _rendered_raster_count(output_dir)
             if count_rasters is not None:
-                count_rasters(_rendered_raster_count(output_dir))
+                count_rasters(observed)
+        if observed > max_pages:
+            msg = "MuseScore exceeded its per-job page ceiling"
+            raise StopConditionError(msg)
         round_trip = (output_dir / "score.musicxml").read_text(encoding="utf-8")
         if not (output_dir / "score.spos").is_file():
             msg = "MuseScore did not write the segment-position sidecar"
