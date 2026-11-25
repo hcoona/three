@@ -18,10 +18,6 @@ def inspect_configuration(directory: Path) -> dict[str, object]:
     if Path.cwd() != root:
         message = "The query must run at its requested endpoint."
         raise ValueError(message)
-    # Ambient pytest settings (options, plugins, tracing) are not inputs.
-    for name in [name for name in os.environ if name.startswith("PYTEST_")]:
-        del os.environ[name]
-    os.environ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     import pytest  # noqa: PLC0415
 
     class ConfigurationQuery:
@@ -72,6 +68,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     arguments = parser.parse_args()
+    # Ambient pytest settings (options, plugins, tracing) are not inputs.
+    for name in [key for key in os.environ if key.startswith("PYTEST_")]:
+        del os.environ[name]
+    os.environ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     try:
         response = inspect_configuration(arguments.directory)
     except Exception as error:  # noqa: BLE001

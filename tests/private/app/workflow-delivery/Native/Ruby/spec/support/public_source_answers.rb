@@ -102,6 +102,11 @@ Gem::Source.prepend(Module.new do
     elsif scenario == "directory-original"
       Dir.mkdir(path)
       return path
+    elsif scenario == "symlink-original"
+      outside = File.join(File.dirname(directory), "outside-secret.gem")
+      File.binwrite(outside, bytes)
+      File.symlink(outside, path)
+      return path
     elsif scenario == "invalid-original"
       return nil
     end

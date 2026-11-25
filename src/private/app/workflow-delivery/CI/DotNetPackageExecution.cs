@@ -140,7 +140,7 @@ internal static class DotNetPackageExecution
                             NativeTermination.TimedOut => CheckStatus.TimedOut,
                             _ => CheckStatus.Failed,
                         }, $"Native command {NativeDiagnostic.Operation(command)} failed: " +
-                            NativeDiagnostic.Describe(result));
+                            NativeDiagnostic.Describe(result, includeStdout: true));
                     return result;
                 }
             }

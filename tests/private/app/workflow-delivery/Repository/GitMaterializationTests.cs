@@ -28,6 +28,25 @@ public sealed class GitMaterializationTests(TestContext context)
             context.CancellationToken));
         Assert.AreEqual("executable content", await bound.ReadOptionalTextAsync("executable.sh",
             context.CancellationToken));
+
+        // Read-only binding must not rewrite .git/index when stat metadata differs.
+        File.SetLastWriteTimeUtc(Path.Combine(repo.Directory, "regular.txt"),
+            DateTime.UtcNow.AddMinutes(-2));
+        string indexPath = Path.Combine(repo.Directory, ".git", "index");
+        byte[] before = await File.ReadAllBytesAsync(indexPath, context.CancellationToken);
+        GitMaterialization concurrent = await GitMaterialization.BindAsync(repo.Directory,
+            revision, context.CancellationToken);
+        Assert.AreEqual(commit, concurrent.Revision.Commit);
+        CollectionAssert.AreEqual(before,
+            await File.ReadAllBytesAsync(indexPath, context.CancellationToken));
+        WorkflowDelivery.Platform.NativeCommandResult control =
+            await WorkflowDelivery.Platform.NativeProcess.ExecuteAsync(
+                new("git", repo.Directory, ["status", "--porcelain=v1"], 30,
+                    new Dictionary<string, string?> { ["GIT_OPTIONAL_LOCKS"] = "1" }),
+                context.CancellationToken);
+        Assert.IsTrue(control.Succeeded, control.Stderr);
+        CollectionAssert.AreNotEqual(before,
+            await File.ReadAllBytesAsync(indexPath, context.CancellationToken));
     }
 
     [TestMethod]

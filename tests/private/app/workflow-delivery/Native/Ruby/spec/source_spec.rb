@@ -96,7 +96,7 @@ module NativeHelpers
     failures = {
       "load_specs" => %w[fail-released fail-prerelease too-many duplicate],
       "fetch_spec" => %w[fail-spec spec-name spec-version spec-platform],
-      "download" => %w[fail-download outside-original prefix-sibling missing-original directory-original invalid-original empty-original]
+      "download" => %w[fail-download outside-original prefix-sibling missing-original directory-original symlink-original invalid-original empty-original]
     }
     failures.each do |last_method, scenarios|
       scenarios.each do |scenario|

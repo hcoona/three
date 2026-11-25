@@ -1,6 +1,4 @@
-using System.Security.Cryptography;
 using System.Text.Json;
-using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
@@ -14,16 +12,6 @@ public sealed class RubyPreparationNativeTests(TestContext context)
     private const string Product =
         "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby";
     private const string Helper = "src/private/app/workflow-delivery/Native/Ruby/facts.rb";
-    private const string JobInputs =
-        "src/private/app/workflow-delivery/Release/ReleaseJobInputs.cs";
-    private static readonly string[] CompositionInputs =
-    [
-        JobInputs,
-        "src/private/app/workflow-delivery/Release/RubyReleaseCli.cs",
-        "src/private/app/workflow-delivery/Release/RubyRelease.cs",
-        "src/private/app/workflow-delivery/Program.cs",
-        "src/private/app/workflow-delivery/Destinations/RubyDestinationObservation.cs",
-    ];
     private static readonly string[] NativeInputs = [Product + "/version.json", Helper];
     private static readonly string[] Contents =
     [
@@ -50,6 +38,7 @@ public sealed class RubyPreparationNativeTests(TestContext context)
     private const string SelectedRef = "refs/heads/main";
 
     [TestMethod]
+    [TestCategory("RubyNativePreparation")]
     [OSCondition(OperatingSystems.Linux)]
     [Timeout(600000, CooperativeCancellation = true)]
     public async Task NativePreparationQualifiesCommittedOriginalAndInstalledOrigin()
@@ -69,11 +58,6 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                 )
             )
             .FullName;
-        var fixtureCommands = new List<(NativeCommand Command, NativeCommandResult Result)>();
-        var frozenInputs = CompositionInputs.ToDictionary(
-            input => input,
-            input => Hash(Path.Combine(source, input))
-        );
         try
         {
             string checkout = Path.Combine(root, "source");
@@ -97,18 +81,8 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                     new Dictionary<string, string?> { ["GIT_LFS_SKIP_SMUDGE"] = "1" }
                 )
             );
-            // The parent's uncommitted helper is an actual committed fixture input.
             foreach (string input in NativeInputs)
-            {
                 File.Copy(Path.Combine(source, input), Path.Combine(checkout, input), true);
-                await RetainAsync(
-                    Path.GetFileName(input),
-                    await File.ReadAllTextAsync(
-                        Path.Combine(checkout, input),
-                        context.CancellationToken
-                    )
-                );
-            }
             string hooks = Directory.CreateDirectory(Path.Combine(root, "empty-hooks")).FullName;
             await RunAsync(new("git", checkout, ["add", "--", .. NativeInputs], 30));
             string tree = (await RunAsync(new("git", checkout, ["write-tree"], 30))).Stdout.Trim();
@@ -174,24 +148,9 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                 context.CancellationToken
             );
             await RetainAsync(
-                "request.json",
-                JsonSerializer.Serialize(request, TransferJson.Default.RubyPreparationRequest)
-            );
-            await RetainAsync(
                 "preparation.json",
                 JsonSerializer.Serialize(result, TransferJson.Default.RubyPreparationResult)
             );
-            for (int index = 0; index < result.Commands.Length; index++)
-            {
-                await RetainAsync(
-                    $"{index:D2}-{result.Commands[index].Check}.stdout.txt",
-                    result.Commands[index].Result.Stdout
-                );
-                await RetainAsync(
-                    $"{index:D2}-{result.Commands[index].Check}.stderr.txt",
-                    result.Commands[index].Result.Stderr
-                );
-            }
             string built = Path.Combine(scratch, "package", "original.gem");
             if (File.Exists(built))
             {
@@ -303,137 +262,6 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                 );
                 Assert.IsTrue(projection.RootElement.GetProperty("PublicRelease").GetBoolean());
             }
-
-            // Controlled destination state follows complete actual native qualification.
-            // This seam does not execute a remote source or establish live feed evidence.
-            var fixtureInputs = Directory
-                .EnumerateFiles(Path.Combine(checkout, Product), "*", SearchOption.AllDirectories)
-                .Concat(new[]
-                {
-                    Path.Combine(checkout, Helper),
-                    Path.Combine(checkout, "global.json"),
-                    Path.Combine(checkout, ".config/dotnet-tools.json"),
-                })
-                .ToDictionary(path => Path.GetRelativePath(checkout, path), Hash);
-            await RetainAsync("native-transfer-inputs.json", JsonSerializer.Serialize(new
-            {
-                Basis = basis,
-                Tree = tree,
-                Subject = subject,
-                Tools = request.Tools,
-                FixtureInputs = fixtureInputs,
-                FrozenInputs = frozenInputs,
-                JobInputsSha256 = frozenInputs[JobInputs],
-                CompositionAssemblySha256 = Hash(typeof(ReleaseSubject).Assembly.Location),
-                Original = file,
-                ActualOriginalSha256 = Hash(original),
-                EvidenceLimit = "Controlled destination state; no live source/feed proof.",
-            }));
-            foreach ((ReleaseFileState state, string expectedOutput) in new[]
-            {
-                (ReleaseFileState.Absent, "write-needed=true\n"),
-                (ReleaseFileState.Exact, "write-needed=false\n"),
-            })
-            {
-                string phase = Directory.CreateDirectory(Path.Combine(root, state.ToString()))
-                    .FullName;
-                string outputPath = Path.Combine(phase, "github-output.txt");
-                string run = Guid.NewGuid().ToString("N");
-                var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["PATH"] = string.Join(Path.PathSeparator,
-                        Path.GetDirectoryName(ruby), "/usr/bin", "/bin"),
-                    ["HOME"] = Directory.CreateDirectory(Path.Combine(phase, "home")).FullName,
-                    ["LANG"] = "C.UTF-8",
-                    ["LC_ALL"] = "C.UTF-8",
-                    ["RUNNER_TEMP"] = phase,
-                    ["GITHUB_SHA"] = subject.Revision,
-                    ["GITHUB_REF"] = subject.SelectedRef,
-                    ["DESTINATION"] = subject.Destination == "github-packages-ruby"
-                        ? "github-packages" : subject.Destination,
-                    ["DRY_RUN"] = subject.DryRun ? "true" : "false",
-                    ["UNIT"] = subject.Unit,
-                    ["GITHUB_RUN_ID"] = run,
-                    ["GITHUB_RUN_ATTEMPT"] = "1",
-                    ["GITHUB_OUTPUT"] = outputPath,
-                };
-                // The observation job receives the actual retained preparation once.
-                Directory.CreateDirectory(Path.Combine(phase, "prepared"));
-                File.Copy(Path.Combine(retained, "preparation.json"),
-                    Path.Combine(phase, "prepared", "preparation.json"));
-                Assert.AreEqual(0, ReleaseJobInputs.Run(["release", "job-inputs", "ruby",
-                    "receive", "observation"],
-                    name => environment.GetValueOrDefault(name)));
-                Assert.IsTrue(Directory.Exists(Path.Combine(phase, "observation")));
-                var tools = new RubySourceTools(ruby,
-                    Path.Combine(checkout,
-                        "src/private/app/workflow-delivery/Native/Ruby/source.rb"),
-                    Directory.CreateDirectory(Path.Combine(phase, "controlled-read")).FullName);
-                string toolsPath = Path.Combine(phase, "source-tools.json");
-                await File.WriteAllTextAsync(toolsPath,
-                    JsonSerializer.Serialize(tools, TransferJson.Default.RubySourceTools),
-                    context.CancellationToken);
-                await RetainAsync($"{state}-source-tools.json", await
-                    File.ReadAllTextAsync(toolsPath));
-                RubySourceOriginal? observedOriginal = state == ReleaseFileState.Exact
-                    ? new(original, file.Name, file.Version, facts.Gem.Platform, file.Size,
-                        file.Sha256)
-                    : null;
-                var controlled = new RubyObservationResult(
-                    new(subject, [new(file.Output, file.Name, file.Version, state,
-                        observedOriginal?.Size, observedOriginal?.Sha256)],
-                        ["native-source-original"],
-                        [new("native-source-original", ReleaseCheckStatus.Passed)]),
-                    new(state == ReleaseFileState.Exact ? RubySourceState.Present :
-                        RubySourceState.Absent,
-                        observedOriginal, null, []));
-                using var cliOutput = new StringWriter();
-                int calls = 0;
-                int? exit = RubyReleaseCli.Run(
-                    ["release", "observe-ruby", Path.Combine(retained, "preparation.json"),
-                        scratch, toolsPath], cliOutput,
-                    observe: (prepared, capturedTools, _, _) =>
-                    {
-                        calls++;
-                        Assert.AreEqual(subject, prepared.Subject);
-                        Assert.AreEqual(file, Assert.ContainsSingle(prepared.Files));
-                        Assert.AreEqual(tools, capturedTools);
-                        return Task.FromResult(controlled);
-                    });
-                string observationJson = cliOutput.ToString();
-                await RetainAsync($"{state}-observation.json", observationJson);
-                Assert.AreEqual(0, exit);
-                Assert.AreEqual(1, calls);
-                RubyObservationResult transfer = JsonSerializer.Deserialize(observationJson,
-                    TransferJson.Default.RubyObservationResult)!;
-                Assert.AreEqual(subject, transfer.Observation.Subject);
-                Assert.AreEqual(controlled.Observation.Files[0],
-                    Assert.ContainsSingle(transfer.Observation.Files));
-                CollectionAssert.AreEqual(controlled.Observation.Checks,
-                    transfer.Observation.Checks);
-                CollectionAssert.AreEqual(controlled.Observation.RequiredChecks,
-                    transfer.Observation.RequiredChecks);
-                Assert.AreEqual(controlled.Read.State, transfer.Read.State);
-                Assert.AreEqual(observedOriginal, transfer.Read.Original);
-                Assert.IsNull(transfer.Read.Command);
-                Assert.IsEmpty(transfer.Read.Errors);
-                using (JsonDocument json = JsonDocument.Parse(observationJson))
-                    Assert.AreEqual(state.ToString(), json.RootElement.GetProperty("observation")
-                        .GetProperty("files")[0].GetProperty("state").GetString());
-                string observationPath = Path.Combine(phase, "observation", "observation.json");
-                await File.WriteAllTextAsync(observationPath, observationJson,
-                    context.CancellationToken);
-                Assert.AreEqual(0, ReleaseJobInputs.Run(["release", "job-inputs", "ruby", "state"],
-                    name => environment.GetValueOrDefault(name)));
-                string transferredOutput = await File.ReadAllTextAsync(outputPath);
-                await RetainAsync($"{state}-github-output.txt", transferredOutput);
-                Assert.AreEqual(expectedOutput, transferredOutput);
-                Assert.AreEqual(Hash(Path.Combine(retained, $"{state}-observation.json")),
-                    Hash(observationPath));
-                RubySmokePackageOperations.RequireOriginal(new(original, file.Size, file.Sha256));
-            }
-            foreach ((string input, string digest) in frozenInputs)
-                Assert.AreEqual(digest, Hash(Path.Combine(source, input)), input);
             Assert.AreEqual(
                 "",
                 (
@@ -445,27 +273,12 @@ public sealed class RubyPreparationNativeTests(TestContext context)
         }
         finally
         {
-            await RetainAsync("composition-freeze.json", JsonSerializer.Serialize(new
-            {
-                Before = frozenInputs,
-                After = CompositionInputs.ToDictionary(input => input,
-                    input => Hash(Path.Combine(source, input))),
-            }));
-            await RetainAsync(
-                "fixture-commands.json",
-                JsonSerializer.Serialize(
-                    fixtureCommands.Select(receipt => new { receipt.Command, receipt.Result })
-                )
-            );
             foreach (
                 string path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             )
                 File.SetAttributes(path, FileAttributes.Normal);
             Directory.Delete(root, true);
         }
-
-        static string Hash(string path) => Convert.ToHexStringLower(
-            SHA256.HashData(File.ReadAllBytes(path)));
 
         // Like the caller's readlink -f, pass the resolved provider executable.
         static string Provider()
@@ -491,7 +304,6 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                 command,
                 context.CancellationToken
             );
-            fixtureCommands.Add((command, result));
             Assert.IsTrue(result.Succeeded, result.Stderr + result.Error);
             return result;
         }

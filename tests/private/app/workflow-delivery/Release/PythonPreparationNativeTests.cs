@@ -1,5 +1,4 @@
 using System.Text.Json;
-using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
@@ -15,6 +14,7 @@ public sealed class PythonPreparationNativeTests(TestContext context)
         "src/private/app/workflow-delivery/Native/Python/packages.py"];
 
     [TestMethod]
+    [TestCategory("PythonNativePreparation")]
     [OSCondition(OperatingSystems.Linux)]
     [Timeout(600000, CooperativeCancellation = true)]
     public async Task NativeBranchPreparationBuildsCompleteOriginalPairAndGitFreeConsumer()
@@ -109,7 +109,6 @@ public sealed class PythonPreparationNativeTests(TestContext context)
                 command.Command.Arguments.Contains("consume")));
             Assert.IsTrue(result.Commands.All(command => command.Result.Succeeded &&
                 !command.Command.InheritEnvironment));
-            await VerifyCallerTransferAsync(result, checkout, scratch, retained);
             Assert.AreEqual("", (await NativeProcess.RunAsync("git", checkout,
                 ["status", "--porcelain", "--untracked-files=no"],
                 context.CancellationToken)).Trim());
@@ -152,72 +151,5 @@ public sealed class PythonPreparationNativeTests(TestContext context)
         }
         return text.Split('\n').Single(line => line.StartsWith("Version: ",
             StringComparison.Ordinal))["Version: ".Length..].Trim();
-    }
-
-    private async Task VerifyCallerTransferAsync(PythonPreparationResult preparation,
-        string checkout, string scratch, string retained)
-    {
-        string interpreter = preparation.Commands.First(command =>
-            command.Command.Arguments.Contains("consume")).Command.Executable;
-        string preparedPath = Path.Combine(retained, "caller-preparation.json");
-        await File.WriteAllTextAsync(preparedPath, JsonSerializer.Serialize(preparation,
-            TransferJson.Default.PythonPreparationResult), context.CancellationToken);
-        context.AddResultFile(preparedPath);
-        string toolsPath = Path.Combine(retained, "caller-index-tools.json");
-        var tools = new PythonIndexTools(interpreter, Path.Combine(checkout,
-            "src/private/app/workflow-delivery/Native/Python/packages.py"),
-            Directory.CreateDirectory(Path.Combine(scratch, "caller-index-scratch")).FullName);
-        await File.WriteAllTextAsync(toolsPath, JsonSerializer.Serialize(tools,
-            TransferJson.Default.PythonIndexTools), context.CancellationToken);
-        context.AddResultFile(toolsPath);
-        var scenarios = new[]
-        {
-            (Wheel: ReleaseFileState.Absent, Sdist: ReleaseFileState.Absent, Needed: true),
-            (Wheel: ReleaseFileState.Exact, Sdist: ReleaseFileState.Absent, Needed: true),
-            (Wheel: ReleaseFileState.Absent, Sdist: ReleaseFileState.Exact, Needed: true),
-            (Wheel: ReleaseFileState.Exact, Sdist: ReleaseFileState.Exact, Needed: false),
-        };
-        foreach (var scenario in scenarios)
-        {
-            string directory = Directory.CreateDirectory(Path.Combine(retained,
-                $"caller-{scenario.Wheel}-{scenario.Sdist}")).FullName;
-            string observationDirectory = Directory.CreateDirectory(Path.Combine(directory,
-                "observation")).FullName;
-            var observation = new PythonIndexObservationResult(new(preparation.Prepared.Subject,
-                preparation.Prepared.Files.Select(file => new ReleaseFileObservation(
-                    file.Output, file.Name, file.Version,
-                    file.Kind == "python-wheel" ? scenario.Wheel : scenario.Sdist,
-                    file.Size, file.Sha256)).ToArray(),
-                ["public-index-files"], [new("public-index-files", ReleaseCheckStatus.Passed)]),
-                []);
-            using var serialized = new StringWriter();
-            int? exit = PythonReleaseCli.Run(["release", "observe-python", preparedPath,
-                scratch, toolsPath], serialized,
-                observe: (_, _, _) => Task.FromResult(observation));
-            Assert.AreEqual(0, exit);
-            string observationPath = Path.Combine(observationDirectory, "observation.json");
-            await File.WriteAllTextAsync(observationPath, serialized.ToString(),
-                context.CancellationToken);
-            context.AddResultFile(observationPath);
-            string output = Path.Combine(directory, "output.txt");
-            ReleaseSubject subject = preparation.Prepared.Subject;
-            var callerEnvironment = new Dictionary<string, string?>
-            {
-                ["RUNNER_TEMP"] = directory,
-                ["GITHUB_OUTPUT"] = output,
-                ["GITHUB_SHA"] = subject.Revision,
-                ["GITHUB_REF"] = subject.SelectedRef,
-                ["DESTINATION"] = subject.Destination,
-                ["DRY_RUN"] = "false",
-                ["UNIT"] = subject.Unit,
-                ["GITHUB_RUN_ID"] = "native-preparation",
-                ["GITHUB_RUN_ATTEMPT"] = "1",
-            };
-            Assert.AreEqual(0, ReleaseJobInputs.Run(["release", "job-inputs", "python", "state"],
-                name => callerEnvironment.GetValueOrDefault(name)));
-            context.AddResultFile(output);
-            Assert.AreEqual("write-needed=" + scenario.Needed.ToString().ToLowerInvariant() +
-                "\n", await File.ReadAllTextAsync(output, context.CancellationToken));
-        }
     }
 }

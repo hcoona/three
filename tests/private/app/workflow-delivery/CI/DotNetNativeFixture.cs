@@ -15,6 +15,10 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
     internal string RunScratch => Directory.CreateDirectory(Path.Combine(Scratch, "run")).FullName;
     internal const string Project = "tests/NativeTests.csproj";
     internal static string SdkSelection => RepositoryToolSelection.GlobalJson("MSTest.Sdk");
+    internal static string PrimaryFramework { get; } =
+        "net" + Version.Parse(RepositoryToolSelection.DotNetSdkVersion).Major + ".0";
+    internal static string SecondaryFramework { get; } =
+        "net" + Version.Parse(RepositoryToolSelection.DotNetFrameworkProfileVersion).Major + ".0";
 
     // The named test target is a controlled substitute, not MTP interoperability evidence.
     internal static async Task<DotNetNativeFixture> CreatePhaseObservationAsync(
@@ -77,7 +81,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
     }
 
     internal static async Task<DotNetNativeFixture> CreateAsync(string capability,
-        CancellationToken token, bool nbgv = false, bool failNet8Test = false)
+        CancellationToken token, bool nbgv = false, bool failSecondaryTest = false)
     {
         GitFixture repo = await GitFixture.CreateAsync(token);
         try
@@ -139,9 +143,9 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                                     "{ public const int Answer = 7; }"));
                     }
                     """,
-                ["library/Dependency.csproj"] = """
+                ["library/Dependency.csproj"] = $$"""
                     <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
-                      <TargetFramework>net8.0</TargetFramework>
+                      <TargetFramework>{{SecondaryFramework}}</TargetFramework>
                     </PropertyGroup><ItemGroup>
                       <ProjectReference Include="../analyzer/Generator.csproj"
                         OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
@@ -204,15 +208,19 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                       Version="{version}" PrivateAssets="all" /></ItemGroup></Project>
                     """, StringComparison.Ordinal);
             }
-            // A genuine assertion failure in the net8.0 inner variant only.
-            if (failNet8Test)
+            // A genuine assertion failure in the secondary inner variant only.
+            if (failSecondaryTest)
+            {
+                string symbol = SecondaryFramework.ToUpperInvariant()
+                    .Replace('.', '_');
                 files["tests/NativeTests.cs"] = files["tests/NativeTests.cs"].Replace(
-                    "Assert.AreEqual(42, DependencyValue.Answer);", """
+                    "Assert.AreEqual(42, DependencyValue.Answer);", $$"""
                     Assert.AreEqual(42, DependencyValue.Answer);
-                    #if !NET10_0_OR_GREATER
-                            Assert.Fail("Intentional native net8.0 test failure");
+                    #if {{symbol}}
+                            Assert.Fail("Intentional native {{SecondaryFramework}} test failure");
                     #endif
                     """, StringComparison.Ordinal);
+            }
             foreach ((string path, string content) in files)
                 await repo.SetAsync(path, content);
             string initial = await repo.CommitAsync();
@@ -233,14 +241,14 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
         catch { repo.Dispose(); throw; }
     }
 
-    internal static Dictionary<string, string> Globals(string framework = "net10.0",
+    internal static Dictionary<string, string> Globals(string? framework = null,
         bool appHost = true)
         => new(StringComparer.Ordinal)
         {
             ["Configuration"] = "Debug",
             ["ContinuousIntegrationBuild"] = "true",
             ["RestoreLockedMode"] = "true",
-            ["TargetFramework"] = framework,
+            ["TargetFramework"] = framework ?? PrimaryFramework,
             ["IsGraphBuild"] = "true",
             ["UseAppHost"] = appHost ? "true" : "false",
         };
@@ -281,7 +289,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
             """;
         return $$"""
             <Project Sdk="{{sdk}}"><PropertyGroup>
-              <TargetFrameworks>net10.0;net8.0</TargetFrameworks>
+              <TargetFrameworks>{{PrimaryFramework}};{{SecondaryFramework}}</TargetFrameworks>
               <IsTestProject>true</IsTestProject>
               <EnableMSTestRunner>{{(capability == "MTP" ? "true" : "false")}}</EnableMSTestRunner>
               <UseAppHost>true</UseAppHost>
