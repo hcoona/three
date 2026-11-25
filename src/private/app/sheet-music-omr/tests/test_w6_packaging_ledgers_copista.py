@@ -687,7 +687,7 @@ def sealed(tmp_path, monkeypatch):
     worktree.mkdir()
     root = tmp_path / "outside" / "sealed"
     root.mkdir(parents=True)
-    rels: list[tuple[str | None, str]] = [(None, _MANIFEST)]
+    rels: list[tuple[str | None, str]] = [("TRAIN_DEV", _MANIFEST)]
     for i, gid in enumerate(sorted(ledgers.TRAINDEV_GOLD_IDS)):
         rels.extend(
             (gid, f"pages/{gid}-p{page:02d}.png")
@@ -706,7 +706,7 @@ def sealed(tmp_path, monkeypatch):
         leaf.write_bytes(data)
         leaf.chmod(0o400)
         observed = leaf.stat()
-        portable.append((gid or "", rel, _sha(data)))
+        portable.append((rel, gid or "", _sha(data)))
         leaves.append(
             {
                 "gold_id": gid,
@@ -721,7 +721,11 @@ def sealed(tmp_path, monkeypatch):
     stat_root = root.stat()
     packed = json.dumps(
         {
-            "leaves": sorted(portable),
+            "schema": "omr-w6-traindev-portable-v1",
+            "leaves": [
+                {"gold_id": g, "relpath": rel, "expected_sha256": sha}
+                for rel, g, sha in sorted(portable)
+            ],
             "traindev_manifest_sha256": _sha(data),
         },
         sort_keys=True,

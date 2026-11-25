@@ -1141,13 +1141,13 @@ def _attested_leaves(  # noqa: C901
             pages[match[1]].append(int(match[2]))
         elif rel != _MANIFEST and gid != rel.split("/")[1]:
             _stop("TRAIN_DEV leaf Gold identity mismatch")
-        elif rel == _MANIFEST and gid not in {None, ""}:
+        elif rel == _MANIFEST and gid not in {None, "", "TRAIN_DEV"}:
             _stop("unexpected Gold identity on TRAIN_DEV manifest")
         sha256 = _digest(row.get("expected_sha256"))
         for number in ("st_dev", "st_ino", "st_size", "st_mtime_ns"):
             _integer(row.get(number))
         leaves[rel] = row
-        portable.append((str(gid or ""), rel, sha256))
+        portable.append((rel, str(gid or ""), sha256))
     if (
         not expected <= leaves.keys()
         or sum(map(len, pages.values())) != _PAGE_COUNT
@@ -1158,16 +1158,17 @@ def _attested_leaves(  # noqa: C901
     ):
         _stop("incomplete TRAIN_DEV attested leaf inventory")
     manifest_sha = _digest(data.get("traindev_manifest_sha256"))
+    portable_payload = {
+        "schema": "omr-w6-traindev-portable-v1",
+        "leaves": [
+            {"gold_id": g, "relpath": rel, "expected_sha256": sha}
+            for rel, g, sha in sorted(portable)
+        ],
+        "traindev_manifest_sha256": manifest_sha,
+    }
     if (
         leaves[_MANIFEST]["expected_sha256"] != manifest_sha
-        or hashlib.sha256(
-            _json_bytes(
-                {
-                    "leaves": sorted(portable),
-                    "traindev_manifest_sha256": manifest_sha,
-                }
-            )
-        ).hexdigest()
+        or hashlib.sha256(_json_bytes(portable_payload)).hexdigest()
         != EXPECTED_TRAINDEV_PORTABLE_SHA256
     ):
         _stop("TRAIN_DEV portable attestation digest drift")
@@ -1262,10 +1263,12 @@ def open_verified_traindev_root(
 ) -> VerifiedTrainDevRoot:
     """Authenticate the staging seal before opening any payload leaf.
 
-    The portable seal is canonical compact JSON: sorted ``leaves`` triples
-    of Gold ID (empty for the manifest), path and SHA-256, alongside
-    ``traindev_manifest_sha256``. The external anchor additionally binds the
-    exact attestation bytes and root inode.
+    The portable seal is canonical compact JSON
+    (``omr-w6-traindev-portable-v1``) containing ``leaves`` objects
+    (``gold_id``, ``relpath``, ``expected_sha256``; ``TRAIN_DEV`` or empty on
+    the manifest) sorted by ``relpath``, alongside ``traindev_manifest_sha256``.
+    The external anchor additionally binds the exact attestation bytes and root
+    inode.
     """
     _validate_anchor(anchor)
     path = traindev_root.absolute()
