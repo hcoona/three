@@ -46,7 +46,7 @@
     <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104</WarningsNotAsErrors>
   </PropertyGroup>
 
-  <Import Project="../../../../../eng/msbuild/WinUI.NonWindowsDesignTime.props" Condition="'$(DesignTimeBuild)' == 'true'" />
+  <Import Project="../../../../../eng/msbuild/WinUI.NonWindowsDesignTime.props" />
 
   <ItemGroup>
     <PackageReference Include="FileSignatures" />
