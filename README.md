@@ -39,6 +39,10 @@ The current repository contract is:
 | Steam Account History to CSV  | `src/public/lib/steam-account-history-to-csv/` | [Repo][steamhist-upstream]   | [b759a52][steamhist-commit]   |
 | Hexo Renderer AsciiDoc        | `src/public/lib/hexo-renderer-asciidoc/`       | [Repo][hexo-upstream]        | [d98f8d5][hexo-commit]        |
 
+For retired monorepo projects, prototypes, and pre-monorepo deprecated packages
+(with immutable links to their last intact Git trees and replacement guidance),
+see [docs/retired-projects.md](docs/retired-projects.md).
+
 ## Repository toolchain
 
 Use the [workspace and toolchain setup guide](docs/engineering/workspaces.md)

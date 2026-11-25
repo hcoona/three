@@ -26,13 +26,13 @@ It is not the place for gateway design decisions or broader product planning.
 
 ## Validation artifact used so far
 
-The current validation helper is the dedicated POC at:
+The validation helper used for these runs was the retired POC at:
 
-- `src/private/app/im-acp-gateway/poc/wechat-ilink-verifier`
+- [`src/private/app/im-acp-gateway/poc/wechat-ilink-verifier`](https://github.com/hcoona/three/tree/61336a7af93d1eb3b907fb3ce8b700cdb0a14dad/src/private/app/im-acp-gateway/poc/wechat-ilink-verifier)
 
-That POC talks directly to the documented iLink HTTP endpoints and is designed
-to validate transport primitives before any broader gateway assumptions are
-treated as confirmed.
+That POC talked directly to the documented iLink HTTP endpoints to validate
+transport primitives before any broader gateway assumptions were treated as
+confirmed.
 
 ## Run log
 

@@ -17,11 +17,11 @@ domain reviewers.
   analysis input while preserving the permission, cancellation, group, and
   webhook limitations recorded there.
 
-The [WeChat verifier](../poc/wechat-ilink-verifier/README.md),
-[Telegram verifier](../poc/telegram-bot-verifier/README.md), and
-[topic/session bridge](../poc/telegram-topic-session-bridge/README.md) retain
-their own experimental usage interfaces. Their existence and past observations
-do not extend the working scope into supported product behavior.
+The retired [WeChat verifier](https://github.com/hcoona/three/blob/61336a7af93d1eb3b907fb3ce8b700cdb0a14dad/src/private/app/im-acp-gateway/poc/wechat-ilink-verifier/README.md),
+[Telegram verifier](https://github.com/hcoona/three/blob/61336a7af93d1eb3b907fb3ce8b700cdb0a14dad/src/private/app/im-acp-gateway/poc/telegram-bot-verifier/README.md), and
+[topic/session bridge](https://github.com/hcoona/three/blob/61336a7af93d1eb3b907fb3ce8b700cdb0a14dad/src/private/app/im-acp-gateway/poc/telegram-topic-session-bridge/README.md)
+retain their experimental usage interfaces in Git history. Their past
+observations do not establish supported product behavior.
 
 Research recommendations and run-log next actions are evidence context.
 Current work authorization and generic review procedure follow the

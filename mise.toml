@@ -10,7 +10,6 @@ idiomatic_version_file_enable_tools = ["dotnet"]
 [monorepo]
 config_roots = [
   "eng/dotnet-frameworks",
-  "src/private/app/factorio-cycle-calculator",
   "src/public/lib/hexo-renderer-asciidoc",
 ]
 

@@ -58,6 +58,15 @@ families:
     creation_trigger: Current work must be explicitly selected without allowing an Issue, Milestone, branch, or pull request to authorize itself.
     failure_mode: Work begins without a current bounded grant, or progress and historical status become a second authorization ledger.
     review_point: Every pull request that adds, changes, deletes, or replaces a Delivery Wave entry
+  - id: retired-projects-index
+    concern: Retired project, lab, and prototype provenance, retirement rationale, alternatives, and last-intact Git tree links
+    producer: Repository owner and project authors
+    maintainer: Repository owner
+    consumers:
+      - Repository owner and contributors locating retired projects, historical source trees, and replacement guidance
+    creation_trigger: Projects, labs, or prototypes are retired from the repository tree.
+    failure_mode: Maintainers cannot locate deleted project trees, understand why a capability was retired, or identify its intended replacement without manual Git history archaeology.
+    review_point: Pull requests that retire a project or change retired-project provenance
   - id: record-family-catalog
     concern: Active and scheduled record-family routing
     producer: Record-system maintainer
@@ -280,15 +289,6 @@ families:
     creation_trigger: The named consumers require this existing concern at its use or review point.
     failure_mode: The adapter acquires a conflicting product boundary or loses its usage interface.
     review_point: Changes to the retained concern or its consumers
-  - id: im-acp-proof-interfaces
-    concern: Bounded proof-of-concept instructions and evidence limits
-    producer: Project authors
-    maintainer: Repository owner
-    consumers:
-      - Gateway researchers reproducing each separately scoped proof
-    creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: A proof recipe is lost or mistaken for a product support commitment.
-    review_point: Changes to the retained concern or its consumers
   - id: supermemo-knowledge
     concern: Retained Windows observations and captured source context
     producer: Project authors
@@ -306,15 +306,6 @@ families:
       - Maintainers interpreting menu diagnostics and source advice
     creation_trigger: The named consumers require this existing concern at its use or review point.
     failure_mode: Diagnostic use loses provenance or suggestions become verified behavior.
-    review_point: Changes to the retained concern or its consumers
-  - id: search-clarification-inputs
-    concern: Immutable supplied design answers retained under their original input paths
-    producer: Project authors
-    maintainer: Repository owner
-    consumers:
-      - Design reviewers tracing decisions and open questions to supplied answers
-    creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: A synthesis replaces its human-source evidence or fabricates an unanswered decision.
     review_point: Changes to the retained concern or its consumers
   - id: latexmath-contracts-and-evidence
     concern: Retained requirements, contracts, rationale, historical validation and audit inputs
@@ -386,6 +377,13 @@ bindings:
     state: current
     carrier: repository-file
     path: docs/delivery-wave.md
+    format: markdown
+  - id: retired-projects-index
+    family: retired-projects-index
+    namespace: repository
+    state: current
+    carrier: repository-file
+    path: docs/retired-projects.md
     format: markdown
   - id: record-family-catalog
     family: record-family-catalog
@@ -595,14 +593,6 @@ bindings:
     path: src/private/app/lite-agensh/THIRD-PARTY-NOTICES.txt
     format: text
     purpose: Microsoft Agensh copyright and MIT attribution retained for derived material
-  - id: src-private-app-git-commit-heatmap-interfaces
-    family: project-interfaces
-    namespace: src/private/app/git-commit-heatmap
-    state: current
-    carrier: repository-files
-    path: src/private/app/git-commit-heatmap/*.md
-    format: markdown
-    purpose: Git history visualization usage
   - id: src-private-app-html-sm-processor-interfaces
     family: project-interfaces
     namespace: src/private/app/html-sm-processor
@@ -611,46 +601,6 @@ bindings:
     path: src/private/app/html-sm-processor/*.md
     format: markdown
     purpose: HTML processing for SuperMemo usage
-  - id: src-private-app-llm-text-splitter-interfaces
-    family: project-interfaces
-    namespace: src/private/app/llm-text-splitter
-    state: current
-    carrier: repository-files
-    path: src/private/app/llm-text-splitter/*.md
-    format: markdown
-    purpose: Text splitting usage
-  - id: src-private-app-music-flash-card-generator-interfaces
-    family: project-interfaces
-    namespace: src/private/app/music-flash-card-generator
-    state: current
-    carrier: repository-files
-    path: src/private/app/music-flash-card-generator/*.md
-    format: markdown
-    purpose: Music flashcard generation usage
-  - id: src-private-app-rag-postgresql-openai-interfaces
-    family: project-interfaces
-    namespace: src/private/app/rag-postgresql-openai
-    state: current
-    carrier: repository-files
-    path: src/private/app/rag-postgresql-openai/*.md
-    format: markdown
-    purpose: Retrieval and ingestion example usage
-  - id: src-private-app-transcribe-interfaces
-    family: project-interfaces
-    namespace: src/private/app/transcribe
-    state: current
-    carrier: repository-files
-    path: src/private/app/transcribe/*.md
-    format: markdown
-    purpose: Transcription usage
-  - id: src-private-app-factorio-cycle-calculator-interfaces
-    family: project-interfaces
-    namespace: src/private/app/factorio-cycle-calculator
-    state: current
-    carrier: repository-files
-    path: src/private/app/factorio-cycle-calculator/*.md
-    format: markdown
-    purpose: Factorio planner usage
   - id: src-private-app-qidian-novel-downloader-interfaces
     family: project-interfaces
     namespace: src/private/app/qidian-novel-downloader
@@ -691,30 +641,6 @@ bindings:
     path: src/public/app/ImageOcclusionEditor/*.md
     format: markdown
     purpose: Image occlusion usage, attribution and packaging navigation
-  - id: src-public-app-markdown-hybrid-search-mcp-interfaces
-    family: project-interfaces
-    namespace: src/public/app/markdown-hybrid-search-mcp
-    state: current
-    carrier: repository-files
-    path: src/public/app/markdown-hybrid-search-mcp/*.md
-    format: markdown
-    purpose: Search scaffold purpose and design routing
-  - id: src-lab-azure-document-intelligence-lab-interfaces
-    family: project-interfaces
-    namespace: src/lab/azure-document-intelligence-lab
-    state: current
-    carrier: repository-files
-    path: src/lab/azure-document-intelligence-lab/*.md
-    format: markdown
-    purpose: Document Intelligence experiment guidance
-  - id: src-lab-qidian-novel-downloader-interfaces
-    family: project-interfaces
-    namespace: src/lab/qidian-novel-downloader
-    state: current
-    carrier: repository-files
-    path: src/lab/qidian-novel-downloader/*.md
-    format: markdown
-    purpose: Qidian lab guidance independent of application support
   - id: src-public-lib-circularlist-interfaces
     family: project-interfaces
     namespace: src/public/lib/CircularList
@@ -851,14 +777,6 @@ bindings:
     path: src/private/app/document-translator-cli/docs/**/*.md
     format: markdown
     purpose: Translation capability requirements, architecture and implementation rationale
-  - id: src-private-app-factorio-cycle-calculator-records
-    family: project-concern-records
-    namespace: src/private/app/factorio-cycle-calculator
-    state: current
-    carrier: repository-files
-    path: src/private/app/factorio-cycle-calculator/docs/**/*.md
-    format: markdown
-    purpose: Planner architecture and source research with unresolved future scope retained
   - id: src-private-app-im-acp-gateway-records
     family: project-concern-records
     namespace: src/private/app/im-acp-gateway
@@ -899,14 +817,6 @@ bindings:
     path: src/private/app/vscode-copilot-telegram-hook/docs/**/*.md
     format: markdown
     purpose: Human-source requirement lineage, behavior requirements and research
-  - id: src-public-app-markdown-hybrid-search-mcp-records
-    family: project-concern-records
-    namespace: src/public/app/markdown-hybrid-search-mcp
-    state: current
-    carrier: repository-files
-    path: src/public/app/markdown-hybrid-search-mcp/docs/**/*.md
-    format: markdown
-    purpose: Search design, source provenance and unresolved design questions
   - id: src-public-app-imageocclusioneditor-records
     family: project-concern-records
     namespace: src/public/app/ImageOcclusionEditor
@@ -930,13 +840,6 @@ bindings:
     carrier: repository-file
     path: src/private/app/azureauth-credprovider/python/README.md
     format: markdown
-  - id: im-acp-proof-interfaces
-    family: im-acp-proof-interfaces
-    namespace: src/private/app/im-acp-gateway
-    state: current
-    carrier: repository-files
-    path: src/private/app/im-acp-gateway/poc/*/README.md
-    format: markdown
   - id: supermemo-knowledge
     family: supermemo-knowledge
     namespace: src/private/app/supermemo-mcp
@@ -950,13 +853,6 @@ bindings:
     state: current
     carrier: repository-files
     path: src/private/app/supermemo-mcp/scripts/*.md
-    format: markdown
-  - id: search-clarification-inputs
-    family: search-clarification-inputs
-    namespace: src/public/app/markdown-hybrid-search-mcp
-    state: current
-    carrier: repository-files
-    path: src/public/app/markdown-hybrid-search-mcp/.AGENTS/DESIGN/CLARIFY*.md
     format: markdown
   - id: latexmath-contracts-and-evidence
     family: latexmath-contracts-and-evidence

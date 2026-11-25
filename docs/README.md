@@ -12,6 +12,7 @@ project, and a README is sufficient when it serves the actual reader.
 | Authority, admission, lifecycle and project namespaces         | [Repository record system](governance/record-system.md)                                                                                                  |
 | User goals, story admission and requirement/validation routing | [User Stories](governance/record-system.md#user-stories)                                                                                                 |
 | Current bounded work authorization                             | [Delivery Wave](delivery-wave.md)                                                                                                                        |
+| Retired projects, rationale and historical Git trees           | [Retired projects](retired-projects.md)                                                                                                                  |
 | Canonical record routing                                       | [Family catalog](governance/record-families.yaml)                                                                                                        |
 | Policy-backed checks and reviews                               | [Control catalog](governance/controls.yaml)                                                                                                              |
 | Validation inputs, reference checks and coverage               | [Checker contract](governance/checker-contract.md)                                                                                                       |
@@ -67,26 +68,19 @@ as history, not a current route.
 
 ## Applications
 
-| Project concern                     | Reader entry                                                                                                                                                                                                                                |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AzureAuth credential provider       | [Product records and acceptance](../src/private/app/azureauth-credprovider/docs/project-breakdown.md); C# and Python share this product's authorities                                                                                       |
-| Cloudflare dynamic DNS              | [Requirements](../src/private/app/cf-ddns-updater/docs/requirements.md), [high-level design](../src/private/app/cf-ddns-updater/docs/high-level-design.md), [low-level design](../src/private/app/cf-ddns-updater/docs/low-level-design.md) |
-| Document translation                | [Capability records](../src/private/app/document-translator-cli/docs/README.md)                                                                                                                                                             |
-| Factorio planner                    | [Usage and design/research routing](../src/private/app/factorio-cycle-calculator/README.md)                                                                                                                                                 |
-| IM/ACP gateway                      | [Source, research and verification](../src/private/app/im-acp-gateway/docs/README.md)                                                                                                                                                       |
-| LiteAgensh                          | [Project purpose and record routing](../src/private/app/lite-agensh/README.md)                                                                                                                                                              |
-| Qidian downloader                   | [Application](../src/private/app/qidian-novel-downloader/README.md), [requirements](../src/private/app/qidian-novel-downloader/docs/requirements.md), [technical notes](../src/private/app/qidian-novel-downloader/docs/technical-notes.md) |
-| Sheet music recognition             | [Project purpose and record routing](../src/private/app/sheet-music-omr/README.md), [agent handoff](../src/private/app/sheet-music-omr/docs/agent-handoff.md)                                                                               |
-| SuperMemo MCP                       | [Automation knowledge and sources](../src/private/app/supermemo-mcp/README.md)                                                                                                                                                              |
-| Copilot Telegram notifications      | [Installation and operations](../src/private/app/vscode-copilot-telegram-hook/README.md), [requirements and human-source map](../src/private/app/vscode-copilot-telegram-hook/docs/README.md)                                               |
-| Markdown hybrid search MCP          | [Scaffold](../src/public/app/markdown-hybrid-search-mcp/README.md), [design and source map](../src/public/app/markdown-hybrid-search-mcp/docs/README.md)                                                                                    |
-| Image occlusion editor              | [Usage, licenses and packaging](../src/public/app/ImageOcclusionEditor/README.md)                                                                                                                                                           |
-| Git commit heatmap                  | [Usage](../src/private/app/git-commit-heatmap/README.md)                                                                                                                                                                                    |
-| HTML processing for SuperMemo       | [Usage](../src/private/app/html-sm-processor/README.md)                                                                                                                                                                                     |
-| Text splitting                      | [Usage](../src/private/app/llm-text-splitter/README.md)                                                                                                                                                                                     |
-| Music flashcards                    | [Usage](../src/private/app/music-flash-card-generator/README.md)                                                                                                                                                                            |
-| PostgreSQL/OpenAI retrieval example | [Usage](../src/private/app/rag-postgresql-openai/README.md)                                                                                                                                                                                 |
-| Transcription                       | [Usage](../src/private/app/transcribe/README.md)                                                                                                                                                                                            |
+| Project concern                | Reader entry                                                                                                                                                                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AzureAuth credential provider  | [Product records and acceptance](../src/private/app/azureauth-credprovider/docs/project-breakdown.md); C# and Python share this product's authorities                                                                                       |
+| Cloudflare dynamic DNS         | [Requirements](../src/private/app/cf-ddns-updater/docs/requirements.md), [high-level design](../src/private/app/cf-ddns-updater/docs/high-level-design.md), [low-level design](../src/private/app/cf-ddns-updater/docs/low-level-design.md) |
+| Document translation           | [Capability records](../src/private/app/document-translator-cli/docs/README.md)                                                                                                                                                             |
+| IM/ACP gateway                 | [Source, research and verification](../src/private/app/im-acp-gateway/docs/README.md)                                                                                                                                                       |
+| LiteAgensh                     | [Project purpose and record routing](../src/private/app/lite-agensh/README.md)                                                                                                                                                              |
+| Qidian downloader              | [Application](../src/private/app/qidian-novel-downloader/README.md), [requirements](../src/private/app/qidian-novel-downloader/docs/requirements.md), [technical notes](../src/private/app/qidian-novel-downloader/docs/technical-notes.md) |
+| Sheet music recognition        | [Project purpose and record routing](../src/private/app/sheet-music-omr/README.md), [agent handoff](../src/private/app/sheet-music-omr/docs/agent-handoff.md)                                                                               |
+| SuperMemo MCP                  | [Automation knowledge and sources](../src/private/app/supermemo-mcp/README.md)                                                                                                                                                              |
+| Copilot Telegram notifications | [Installation and operations](../src/private/app/vscode-copilot-telegram-hook/README.md), [requirements and human-source map](../src/private/app/vscode-copilot-telegram-hook/docs/README.md)                                               |
+| Image occlusion editor         | [Usage, licenses and packaging](../src/public/app/ImageOcclusionEditor/README.md)                                                                                                                                                           |
+| HTML processing for SuperMemo  | [Usage](../src/private/app/html-sm-processor/README.md)                                                                                                                                                                                     |
 
 ## Plugins and Experiments
 
@@ -96,9 +90,6 @@ as history, not a current route.
   own their plugin usage and source contracts. Root [APM configuration](../apm.yml)
   and [lock](../apm.lock.yaml) own deployed-interface provenance; generated copies
   are not editable canonical sources.
-- [Document Intelligence lab](../src/lab/azure-document-intelligence-lab/README.md)
-  and the [Qidian lab](../src/lab/qidian-novel-downloader/README.md) retain their
-  experimental scope separately from application support.
 
 Source/build-only roots do not need empty document hierarchies or inferred
 product requirements. Workspace membership remains in the manifests linked

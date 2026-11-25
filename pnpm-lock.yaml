@@ -42,42 +42,6 @@ importers:
         specifier: 3.10.1
         version: 3.10.1
 
-  src/private/app/im-acp-gateway/poc/telegram-bot-verifier:
-    devDependencies:
-      '@biomejs/biome':
-        specifier: 2.6.8
-        version: 2.6.8
-      '@types/node':
-        specifier: ^26.0.0
-        version: 26.6.6
-      '@typescript/native-preview':
-        specifier: ^7.0.0-dev.20260523.1
-        version: 7.0.0-dev.20260707.2
-
-  src/private/app/im-acp-gateway/poc/telegram-topic-session-bridge:
-    devDependencies:
-      '@biomejs/biome':
-        specifier: 2.6.8
-        version: 2.6.8
-      '@types/node':
-        specifier: ^26.0.0
-        version: 26.6.6
-      '@typescript/native-preview':
-        specifier: ^7.0.0-dev.20260523.1
-        version: 7.0.0-dev.20260707.2
-
-  src/private/app/im-acp-gateway/poc/wechat-ilink-verifier:
-    devDependencies:
-      '@biomejs/biome':
-        specifier: 2.6.8
-        version: 2.6.8
-      '@types/node':
-        specifier: ^26.0.0
-        version: 26.6.6
-      '@typescript/native-preview':
-        specifier: ^7.0.0-dev.20260523.1
-        version: 7.0.0-dev.20260707.2
-
   src/public/lib/hexo-renderer-asciidoc:
     dependencies:
       '@asciidoctor/core':
