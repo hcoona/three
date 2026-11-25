@@ -275,4 +275,138 @@ public sealed class NodeRepositoryReaderTests(TestContext context)
             dependencies = new Dictionary<string, object>(),
         }), NativeJsonOptions));
     }
+
+    private static GitFixture? scriptsRepo;
+    private static GitMaterialization? scriptsCheckout;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            string revision = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", revision);
+            scriptsCheckout = await GitMaterialization.BindAsync(repo.Directory, revision,
+                classContext.CancellationToken);
+            scriptsRepo = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => scriptsRepo?.Dispose();
+
+    [TestMethod]
+    [DataRow(".")]
+    [DataRow("packages/space project")]
+    public async Task ScriptsPreserveOpaqueCommandsAndDiscoveredIdentity(string directory)
+    {
+        const string command = "opaque $VALUE; pnpm run other && echo \"雪\"\nsecond line";
+        string root = scriptsCheckout!.Root;
+        string[]? actualArguments = null;
+        var reader = new NodeRepositoryReader(scriptsCheckout!, (arguments, token) =>
+        {
+            token.ThrowIfCancellationRequested();
+            actualArguments = arguments;
+            return Task.FromResult(JsonSerializer.Serialize(new Dictionary<string, string>
+            { ["build"] = command, ["test"] = "" }));
+        });
+
+        PnpmScripts value = await reader.ScriptsAsync(new(directory, null, []),
+            context.CancellationToken);
+
+        Assert.AreEqual(directory, value.Directory);
+        Assert.HasCount(2, value.Scripts);
+        Assert.AreEqual(command, value.Scripts["build"]);
+        Assert.AreEqual("", value.Scripts["test"]);
+        CollectionAssert.AreEqual(new[] { "--dir", Path.GetFullPath(directory, root),
+            "pkg", "get", "scripts", "--json" }, actualArguments);
+    }
+
+    [TestMethod]
+    [DataRow("")]
+    [DataRow(" \n")]
+    [DataRow("{}")]
+    public async Task ScriptsAcceptAbsentOrEmptyNativeOutput(string output)
+    {
+        var reader = new NodeRepositoryReader(scriptsCheckout!, (_, _) => Task.FromResult(output));
+
+        PnpmScripts value = await reader.ScriptsAsync(new(".", null, []),
+            context.CancellationToken);
+
+        Assert.AreEqual(".", value.Directory);
+        Assert.IsEmpty(value.Scripts);
+    }
+
+    [TestMethod]
+    [DataRow("null")]
+    [DataRow("[]")]
+    [DataRow("{\"build\":null}")]
+    [DataRow("{\"build\":42}")]
+    [DataRow("{\"build\":{},\"test\":\"opaque\"}")]
+    [DataRow("{\"build\":\"one\",\"build\":\"two\"}")]
+    public async Task ScriptsRejectMalformedOrAmbiguousNativeOutput(string output)
+    {
+        var reader = new NodeRepositoryReader(scriptsCheckout!, (_, _) => Task.FromResult(output));
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => reader.ScriptsAsync(
+            new("packages/project", null, []), context.CancellationToken));
+    }
+
+    [TestMethod]
+    public async Task ScriptsRejectInvalidNativeJson()
+    {
+        var reader = new NodeRepositoryReader(scriptsCheckout!, (_, _) => Task.FromResult("{"));
+
+        await Assert.ThrowsAsync<JsonException>(() => reader.ScriptsAsync(
+            new("packages/project", null, []), context.CancellationToken));
+    }
+
+    [TestMethod]
+    [DataRow("../outside")]
+    [DataRow("/outside")]
+    [DataRow("packages/../outside")]
+    [DataRow("packages\\outside")]
+    public async Task ScriptsRejectInvalidDiscoveredDirectory(string directory)
+    {
+        var reader = new NodeRepositoryReader(scriptsCheckout!, (_, _) =>
+            throw new AssertFailedException("Invalid scope must not reach the native query."));
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => reader.ScriptsAsync(
+            new(directory, null, []), context.CancellationToken));
+    }
+
+    [TestMethod]
+    public async Task ScriptsPropagateNativeFailureAndCancellation()
+    {
+        var failure = new InvalidDataException("native failure");
+        var reader = new NodeRepositoryReader(scriptsCheckout!,
+            (_, _) => Task.FromException<string>(failure));
+
+        InvalidDataException actual = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => reader.ScriptsAsync(new(".", null, []), context.CancellationToken));
+
+        Assert.AreSame(failure, actual);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken);
+        cancellation.Cancel();
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+            () => reader.ScriptsAsync(new(".", null, []), cancellation.Token));
+    }
+
+    [TestMethod]
+    public async Task ScriptsRejectCancellationAfterNativeQuery()
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken);
+        var reader = new NodeRepositoryReader(scriptsCheckout!, (_, _) =>
+        {
+            cancellation.Cancel();
+            return Task.FromResult("{}");
+        });
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+            () => reader.ScriptsAsync(new(".", null, []), cancellation.Token));
+    }
 }

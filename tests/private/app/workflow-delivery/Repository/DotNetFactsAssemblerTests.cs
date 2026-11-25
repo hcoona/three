@@ -1,4 +1,9 @@
 using System.Text.Json;
+using Microsoft.Build.Construction;
+using Microsoft.Build.Evaluation;
+using Microsoft.Build.Execution;
+using Microsoft.Build.Framework;
+using Microsoft.Build.ObjectModelRemoting;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -13,8 +18,10 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     private static readonly string[] Owned = ["product/A.csproj", "product/code.cs"];
     private static readonly string[] VersionDirectories = [".", "product"];
     private static readonly string[] NativeFrameworks = ["net10.0", "net9.0"];
+    private static readonly string[] ExternalTools = ["node", "npm", "python"];
     private const string Declaration = "product/workflow-delivery.release-unit.yml";
     private const string LinkedInput = "linked/data.txt";
+    private const string WorkloadLocator = "Microsoft.NET.SDK.WorkloadAutoImportPropsLocator";
     private static DotNetEndpointFixture? shared;
 
     [ClassInitialize]
@@ -85,38 +92,24 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("missing", "Dangling/substituted complete native identity")]
-    [DataRow("outer-only", "no native inner identity")]
-    [DataRow("duplicate", "Duplicate complete native identity")]
-    public async Task IncompleteNativeIdentitiesCannotProduceAPlan(string defect, string detail)
+    public async Task OuterBuildAloneCannotSupplyAnExecutablePlan()
     {
         DotNetEndpointFixture fixture = shared!;
         DotNetGraphResponse graph = fixture.Response();
         string project = fixture.PathOf("product/A.csproj");
-        if (defect == "outer-only")
+        bool Keep(DotNetNodeIdentity identity) =>
+            identity.Project != project || !identity.Globals.ContainsKey("TargetFramework");
+        DotNetNodeIdentity outer = graph.Nodes.Single(node =>
+            node.Identity.Project == project && node.OuterBuild).Identity;
+        graph = graph with
         {
-            bool Keep(DotNetNodeIdentity identity) =>
-                identity.Project != project || !identity.Globals.ContainsKey("TargetFramework");
-            DotNetNodeIdentity outer = graph.Nodes.Single(node =>
-                node.Identity.Project == project && node.OuterBuild).Identity;
-            graph = graph with
-            {
-                Nodes = graph.Nodes.Where(node => Keep(node.Identity)).ToArray(),
-                Edges = graph.Edges.Where(edge => Keep(edge.Consumer) && Keep(edge.Dependency))
-                    .ToArray(),
-                Inputs = graph.Inputs.Select(input => input.Path == fixture.PathOf(LinkedInput)
-                    ? input with { Consumer = outer } : input)
-                    .Where(input => Keep(input.Consumer)).ToArray()
-            };
-        }
-        else
-        {
-            graph = graph with
-            {
-                Nodes = defect == "duplicate" ? [.. graph.Nodes, graph.Nodes[2]] :
-                    graph.Nodes.Where(node => node.Identity.Project != project).ToArray()
-            };
-        }
+            Nodes = graph.Nodes.Where(node => Keep(node.Identity)).ToArray(),
+            Edges = graph.Edges.Where(edge => Keep(edge.Consumer) && Keep(edge.Dependency))
+                .ToArray(),
+            Inputs = graph.Inputs.Select(input => input.Path == fixture.PathOf(LinkedInput)
+                ? input with { Consumer = outer } : input)
+                .Where(input => Keep(input.Consumer)).ToArray(),
+        };
 
         InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
             async () =>
@@ -125,7 +118,162 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
                     context.CancellationToken);
                 Plan(native, native, LinkedInput);
             });
-        Assert.Contains(detail, failure.Message);
+        Assert.Contains("no native inner identity", failure.Message);
+    }
+
+    [TestMethod]
+    [DataRow(WorkloadLocator, "AutoImport.props", false, true)]
+    [DataRow("microsoft.net.sdk.workloadautoimportpropslocator", "AutoImport.props", true, true)]
+    [DataRow(WorkloadLocator, "Other.props", true, false)]
+    [DataRow("OtherSdk", "AutoImport.props", false, false)]
+    public async Task ObservedWorkloadImportAdmitsSiblingPackInputsButNotOtherSdkInputs(
+        string sdk, string importName, bool additionalRoot, bool supported)
+    {
+        DotNetEndpointFixture checkout = shared!;
+        using var scratch = new WorkloadFiles();
+        string sdkPath = Path.Combine(scratch.Root, "Sdk");
+        string importPath = Path.Combine(sdkPath, importName);
+        string sibling = scratch.FileAt("Sibling.props");
+        var observed = new ObservedSdk(sdk, additionalRoot
+            ? Path.Combine(sdkPath, "unrelated") : sdkPath, additionalRoot ? [sdkPath] : null);
+        DotNetNativeInputs provider = scratch.Inputs(importPath, observed);
+        DotNetGraphResponse graph = checkout.Response();
+        DotNetGraphInput input = provider.Classify(
+            new(sibling, "Import", "Evaluation", graph.Nodes[2].Identity));
+        graph = graph with { Inputs = [.. graph.Inputs, input] };
+
+        if (!supported)
+        {
+            InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+                () => checkout.BindAsync(graph, context.CancellationToken));
+            Assert.Contains(sibling, failure.Message);
+            return;
+        }
+
+        Assert.AreEqual(new DotNetInputProvider("Sdk", scratch.Root, sdk, "native-version"),
+            input.Provider);
+        DotNetRevisionInputs bound = await checkout.BindAsync(graph, context.CancellationToken);
+        CiPlan plan = Plan(bound, bound, LinkedInput);
+
+        Assert.IsNotEmpty(plan.Checks);
+        foreach (PlannedCheck check in plan.Checks)
+        {
+            Assert.AreEqual("product/A.csproj", check.Work.Key.Target);
+            Assert.AreEqual(LinkedInput, Assert.ContainsSingle(check.Reasons).Path);
+        }
+    }
+
+    [TestMethod]
+    [DataRow("additional/Sdk/Direct.props", true)]
+    [DataRow("additional/Sibling.props", false)]
+    [DataRow("pack-extra/Sibling.props", false)]
+    public void OnlyObservedWorkloadRootsExpandToTheirOwnPack(string path, bool supported)
+    {
+        using var scratch = new WorkloadFiles();
+        string sdkPath = Path.Combine(scratch.Root, "pack", "Sdk");
+        string additional = Path.Combine(scratch.Root, "additional", "Sdk");
+        var sdk = new ObservedSdk(WorkloadLocator, sdkPath, [additional]);
+        DotNetNativeInputs inputs = scratch.Inputs(Path.Combine(sdkPath, "AutoImport.props"), sdk);
+
+        DotNetInputProvider? expected = supported
+            ? new("Sdk", additional, WorkloadLocator, "native-version") : null;
+        Assert.AreEqual(expected, inputs.Classify(WorkloadInput(scratch.FileAt(path))).Provider);
+    }
+
+    [TestMethod]
+    [DataRow("Sdk", "AutoImport.props", false)]
+    [DataRow("sdk", "AutoImport.props", true)]
+    [DataRow("Sdk", "autoimport.props", true)]
+    public void WorkloadObservationHonorsSuccessAndNativePathCasing(
+        string folder, string import, bool success)
+    {
+        using var scratch = new WorkloadFiles();
+        string sdkPath = Path.Combine(scratch.Root, folder);
+        DotNetNativeInputs inputs = scratch.Inputs(Path.Combine(sdkPath, import),
+            new ObservedSdk(WorkloadLocator, sdkPath, success: success));
+
+        DotNetInputProvider? expected = success && OperatingSystem.IsWindows()
+            ? new("Sdk", scratch.Root, WorkloadLocator, "native-version") : null;
+        Assert.AreEqual(expected,
+            inputs.Classify(WorkloadInput(scratch.FileAt("Sibling.props"))).Provider);
+        if (!success)
+            Assert.IsNull(inputs.Classify(WorkloadInput(
+                scratch.FileAt(Path.Combine(folder, "Direct.props")))).Provider);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void WorkloadResolverRootsMustBeAbsolute(bool relativeAdditional)
+    {
+        using var scratch = new WorkloadFiles();
+        string sdkPath = Path.Combine(scratch.Root, "Sdk");
+        var sdk = new ObservedSdk(WorkloadLocator, relativeAdditional ? sdkPath : "relative/Sdk",
+            relativeAdditional ? ["relative/Sdk"] : null);
+
+        InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+            scratch.Inputs(Path.Combine(sdkPath, "AutoImport.props"), sdk));
+        Assert.Contains("Native resolved SDK path is unavailable.", failure.Message);
+    }
+
+    [TestMethod]
+    public void CommittedInputTakesPrecedenceOverAnAssignedProvider()
+    {
+        using var scratch = new WorkloadFiles();
+        string sdkPath = Path.Combine(scratch.Root, "Sdk");
+        string path = scratch.FileAt("Sibling.props");
+        var prior = new DotNetInputProvider("Sdk", scratch.Root, WorkloadLocator, "native-version");
+        DotNetGraphInput input = WorkloadInput(path) with { Provider = prior };
+        DotNetNativeInputs inputs = scratch.Inputs(Path.Combine(sdkPath, "AutoImport.props"),
+            new ObservedSdk(WorkloadLocator, sdkPath), [path]);
+
+        Assert.AreEqual(input with { Provider = null }, inputs.Classify(input));
+    }
+
+    private static DotNetGraphInput WorkloadInput(string path) =>
+        new(path, "Import", "Evaluation", new("consumer.proj", new()));
+
+    private sealed class ObservedSdk : SdkResult
+    {
+        internal ObservedSdk(string name, string root, string[]? additionalPaths = null,
+            bool success = true)
+        {
+            Success = success;
+            Path = root;
+            AdditionalPaths = additionalPaths;
+            Version = "native-version";
+            SdkReference = new(name, "", "");
+        }
+    }
+
+    private sealed class WorkloadFiles : IDisposable
+    {
+        internal string Root { get; } =
+            Directory.CreateTempSubdirectory("workflow-workload-inputs-").FullName;
+
+        internal string FileAt(string relative)
+        {
+            string path = Path.GetFullPath(Path.Combine(Root, relative));
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "<Project />");
+            return path;
+        }
+
+        internal DotNetNativeInputs Inputs(string importPath, SdkResult sdk,
+            string[]? committed = null)
+        {
+            using var collection = new ProjectCollection();
+            var project = ProjectRootElement.Create(collection);
+            project.FullPath = Path.Combine(Root, "consumer.proj");
+            var instance = new ProjectInstance(project);
+            var imported = ProjectRootElement.Create(collection);
+            imported.FullPath = importPath;
+            ResolvedImport import = LinkedObjectsFactory.Get(collection).Create(
+                project.AddImport(importPath), imported, 0, sdk, true);
+            return new(instance, [import], [], committed ?? []);
+        }
+
+        public void Dispose() => Directory.Delete(Root, recursive: true);
     }
 
     [TestMethod]
@@ -172,17 +320,16 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("missing")]
-    [DataRow("multiple")]
-    [DataRow("duplicate-unit")]
-    public async Task InvalidReleaseAssociationCannotProduceAnyPlan(string defect)
+    [DataRow("Absent.csproj", null)]
+    [DataRow("A.csproj", "other")]
+    [DataRow("A.csproj", "product")]
+    public async Task InvalidReleaseAssociationCannotProduceAnyPlan(string entry, string? other)
     {
         using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        await fixture.Repo.SetAsync(Declaration,
-            Unit("product", defect == "missing" ? "Absent.csproj" : "A.csproj"));
-        if (defect != "missing")
+        await fixture.Repo.SetAsync(Declaration, Unit("product", entry));
+        if (other is not null)
             await fixture.Repo.SetAsync("workflow-delivery.release-unit.yml",
-                Unit(defect == "multiple" ? "other" : "product", "product/A.csproj"));
+                Unit(other, "product/A.csproj"));
         await fixture.CommitAsync();
         DotNetRevisionInputs inputs = await fixture.BindAsync(fixture.Response());
 
@@ -255,55 +402,80 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("", "", "")]
-    [DataRow("python", "3.13", "Malformed planned python version")]
-    [DataRow("python", null, "Missing committed Python runtime selection.")]
-    [DataRow("node", "failed", "Native locked node query failed")]
-    [DataRow("node", "ambiguous", "no single locked selection")]
-    public async Task PlannedToolVersionsComeFromCommittedConfiguration(string defect,
-        string? value, string reason)
+    public async Task PlannedToolVersionsComeFromCommittedConfiguration()
     {
         using var repo = await GitReaderTests.GitFixture.CreateAsync(context.CancellationToken);
-        if (!(defect == "python" && value is null))
-            await repo.SetAsync(".python-version", defect == "python" ? value! : "3.13.1\n");
-        await repo.SetAsync("mise.toml", "[tools]\n");
-        string commit = await repo.CommitAsync();
-        await repo.GitAsync("reset", "--hard", commit);
-        GitMaterialization candidate = await GitMaterialization.BindAsync(repo.Directory,
-            commit, context.CancellationToken);
-        string selection =
-            """{"version":"24.1.0","active":true,"source":{"type":"mise.toml","path":""" +
-            System.Text.Json.JsonSerializer.Serialize(Path.Combine(repo.Directory, "mise.toml")) +
-            "}}";
+        GitMaterialization candidate = await ToolCheckoutAsync(repo, "3.13.1\n",
+            context.CancellationToken);
         var commands = new List<NativeCommand>();
         Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
             CancellationToken token)
         {
             commands.Add(command);
-            return Task.FromResult(new NativeCommandResult(
-                NativeTermination.Exited, defect == "node" && value == "failed" ? 1 : 0,
-                defect == "node" && value == "ambiguous" ? "[" + selection + "," + selection +
-                    "]" : "[" + selection + "]", "", 0, null));
+            return Task.FromResult(new NativeCommandResult(NativeTermination.Exited, 0,
+                "[" + NodeSelection(repo.Directory) + "]", "", 0, null));
         }
-        string[] tools = ["node", "npm", "python"];
-        if (defect.Length != 0)
-        {
-            InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(
-                () => DotNetFactsAssembler.VersionsAsync(tools, candidate, repo.Directory,
-                    ExecuteAsync, context.CancellationToken));
-            Assert.Contains(reason, error.Message);
-            return;
-        }
+
         Assert.IsEmpty(await DotNetFactsAssembler.VersionsAsync([], candidate, repo.Directory,
             ExecuteAsync, context.CancellationToken));
         Assert.IsEmpty(commands);
-        Dictionary<string, string> versions = await DotNetFactsAssembler.VersionsAsync(tools,
-            candidate, repo.Directory, ExecuteAsync, context.CancellationToken);
+        Dictionary<string, string> versions = await DotNetFactsAssembler.VersionsAsync(
+            ExternalTools, candidate, repo.Directory, ExecuteAsync, context.CancellationToken);
         Assert.AreEqual("""{"node":"24.1.0","npm":"bundled","python":"3.13.1"}""",
             DotNetTools.Serialize(versions));
-        Assert.AreEqual("mise ls --json --current --locked node", commands.Single().Executable +
-            " " + string.Join(' ', commands.Single().Arguments));
+        NativeCommand command = Assert.ContainsSingle(commands);
+        Assert.AreEqual("mise ls --json --current --locked node",
+            command.Executable + " " + string.Join(' ', command.Arguments));
     }
+
+    [TestMethod]
+    [DataRow(null, "Missing committed Python runtime selection.")]
+    [DataRow("3.13", "Malformed planned python version")]
+    public async Task PythonRuntimeMustBeAnExactCommittedVersion(string? version, string reason)
+    {
+        using var repo = await GitReaderTests.GitFixture.CreateAsync(context.CancellationToken);
+        GitMaterialization candidate = await ToolCheckoutAsync(repo, version,
+            context.CancellationToken);
+
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            DotNetFactsAssembler.VersionsAsync(["python"], candidate, repo.Directory,
+                (_, _) => throw new AssertFailedException("No native query is needed for Python."),
+                context.CancellationToken));
+        Assert.Contains(reason, error.Message);
+    }
+
+    [TestMethod]
+    [DataRow(1, "Native locked node query failed")]
+    [DataRow(0, "no single locked selection")]
+    public async Task FailedOrAmbiguousNativeToolQueryCannotSupplyAVersion(
+        int exitCode, string reason)
+    {
+        using var repo = await GitReaderTests.GitFixture.CreateAsync(context.CancellationToken);
+        GitMaterialization candidate = await ToolCheckoutAsync(repo, "3.13.1\n",
+            context.CancellationToken);
+        string selection = NodeSelection(repo.Directory);
+        var result = new NativeCommandResult(NativeTermination.Exited, exitCode,
+            "[" + selection + "," + selection + "]", "", 0, null);
+
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            DotNetFactsAssembler.VersionsAsync(ExternalTools, candidate, repo.Directory,
+                (_, _) => Task.FromResult(result), context.CancellationToken));
+        Assert.Contains(reason, error.Message);
+    }
+
+    private static async Task<GitMaterialization> ToolCheckoutAsync(
+        GitReaderTests.GitFixture repo, string? version, CancellationToken token)
+    {
+        if (version is not null) await repo.SetAsync(".python-version", version);
+        await repo.SetAsync("mise.toml", "[tools]\n");
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+        return await GitMaterialization.BindAsync(repo.Directory, commit, token);
+    }
+
+    private static string NodeSelection(string root) =>
+        """{"version":"24.1.0","active":true,"source":{"type":"mise.toml","path":""" +
+        JsonSerializer.Serialize(Path.Combine(root, "mise.toml")) + "}}";
 
     [TestMethod]
     public async Task TraversalSelfVersionDoesNotWidenBusinessSelection()
@@ -588,38 +760,4 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
         Assert.IsEmpty(excluded.Reasons);
     }
 
-    [TestMethod]
-    [DataRow("changed")]
-    [DataRow("owned")]
-    [DataRow("shared")]
-    [DataRow("unaffected")]
-    [DataRow("directory-segment")]
-    public async Task RootDirectoryAdmissionKeepsDotFileCoordinatesInvalid(string defect)
-    {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        DotNetRevisionInputs inputs = await fixture.BindAsync();
-        RepositoryFacts facts = DotNetFactsAssembler.Assemble(inputs, []);
-        facts = defect switch
-        {
-            "owned" => facts with
-            {
-                Projects = [facts.Projects[0] with { OwnedPaths = ["."] },
-                .. facts.Projects[1..]]
-            },
-            "shared" => facts with
-            {
-                SharedInputs = [.. facts.SharedInputs,
-                new(".", [facts.Projects[0].Id])]
-            },
-            "unaffected" => facts with { UnaffectedPaths = ["."] },
-            "directory-segment" => facts with
-            {
-                Projects = [facts.Projects[0] with
-                { Directory = "product/./nested" }, .. facts.Projects[1..]]
-            },
-            _ => facts,
-        };
-        Assert.ThrowsExactly<InvalidDataException>(() => ImpactPlanner.SelectProjects(
-            new(facts, facts, defect == "changed" ? ["."] : [], false)));
-    }
 }

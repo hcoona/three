@@ -49,7 +49,7 @@ inputs, environment, source and executable identities. The
 [research record](../../../../../../src/private/app/workflow-delivery/docs/research/pnpm-native-planning.md#directory-coordinate-adaptation-candidate)
 owns their conclusions and limitations.
 
-`PnpmRecordedOutputTests` reuses the full listing as membership input and extracts
+`PnpmGraphReaderTests` reuses the full listing as membership input and extracts
 controlled singleton full responses from it; the originals are global listings,
 not observations of singleton queries. It returns
 controlled null layout settings, empty metadata for unqueried projects and
@@ -66,6 +66,6 @@ with no examples run (`outside`).
 
 `RubyRSpecResultTests` verifies the native counts, original report, and status
 mapping: pending alone does not fail a check; failed examples or outside errors
-do. `RubyRSpecExecutionTests` replays the formatter output through the
+do. `RubyGroupExecutionTests` replays the formatter output through the
 whole-project execution adapter. This does not launch RSpec or replace native
 process termination evidence.

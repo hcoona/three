@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
@@ -11,11 +12,6 @@ public sealed class ControlTestInputsTests(TestContext context)
 {
     private const string Resource = "inputs/Version 雪.json";
 
-    // Request-only defects read one class-owned committed comparison with materialized
-    // endpoints. Defects that need different committed revisions keep private repositories.
-    private static readonly string[] RequestDefects = ["missing-basis-directory",
-        "wrong-materialization", "unavailable-basis", "nonexact-comparison",
-        "incoherent-full"];
     private static GitFixture? shared;
     private static ControlTestInputRequest? sharedRequest;
 
@@ -25,7 +21,8 @@ public sealed class ControlTestInputsTests(TestContext context)
         GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
         try
         {
-            (string basis, string candidate) = await CommitAsync(repo, "");
+            (string basis, string candidate) = await CommitPairAsync(
+                repo, Project(Resource), "100644");
             sharedRequest = new(new(basis, candidate, false), repo.Directory,
                 await MaterializeAsync(repo, "basis", basis),
                 await MaterializeAsync(repo, "candidate", candidate));
@@ -36,6 +33,106 @@ public sealed class ControlTestInputsTests(TestContext context)
 
     [ClassCleanup]
     public static void Cleanup() => shared?.Dispose();
+
+    [TestMethod]
+    [DataRow("control/Program.cs", true)]
+    [DataRow("shared/runtime.dll", true)]
+    [DataRow("control/Native/facts.rb", true)]
+    [DataRow("Directory.Build.targets", false)]
+    public async Task EvaluatedControlInputsFlowToNodeSelection(string path, bool committed)
+    {
+        DotNetRevisionInputs evaluated = EvaluatedControl();
+        NodeRevisionInputs candidate = NodeScenario.Inputs(NodeScenario.Candidate,
+            NodeScenario.Project("src/a"));
+        NodeRevisionInputs basis = NodeScenario.Inputs(NodeScenario.Basis,
+            NodeScenario.Project("src/a"));
+        candidate = candidate with
+        {
+            Revision = candidate.Revision with
+            { Entries = [.. candidate.Revision.Entries, .. evaluated.Revision.Entries] },
+        };
+        if (!committed)
+            basis = basis with
+            {
+                Revision = basis.Revision with
+                { Entries = [.. basis.Revision.Entries, NodeScenario.File(path)] },
+            };
+        var comparison = new CiComparison(NodeScenario.Basis, NodeScenario.Candidate, false);
+        var scope = new ScopeInputs(comparison, [path],
+            [new(path, !committed, committed ? null : "100644", committed ? [] :
+                [new("dotnet", path, "native-control", [path])])],
+            [new(path, committed, committed ? "100644" : null, [])]);
+
+        candidate = NodeGroupReader.WithControlInputs(candidate,
+            ControlInputs.Read(evaluated, true), true);
+        NodeGroupPlan plan = await NodeGroupPlanning.PlanAsync(basis, candidate, scope, "src/a",
+            (project, _) => Task.FromResult(NodeScenario.Scripts(project)),
+            (_, _) => Task.FromResult("1.2.3"), context.CancellationToken);
+
+        Assert.IsNotEmpty(plan.Adopted.Checks);
+        foreach (PlannedCheck check in plan.Adopted.Checks)
+            Assert.AreEqual(new SelectionReason(path, NodeScenario.Candidate, "src/a"),
+                Assert.ContainsSingle(check.Reasons));
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(2)]
+    public void EvaluatedControlRequiresOneInnerNodeUnlessAbsentAndOptional(int count)
+    {
+        DotNetRevisionInputs evaluated = EvaluatedControl();
+        DotNetBoundNode inner = Assert.ContainsSingle(evaluated.Nodes);
+        evaluated = evaluated with { Nodes = Enumerable.Repeat(inner, count).ToArray() };
+
+        InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+            ControlInputs.Read(evaluated, true));
+        Assert.Contains("The control requires one complete native dimension.", failure.Message);
+        if (count == 0)
+            Assert.IsNull(ControlInputs.Read(evaluated, false));
+        else
+        {
+            failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+                ControlInputs.Read(evaluated, false));
+            Assert.Contains("The control requires one complete native dimension.", failure.Message);
+        }
+    }
+
+    [TestMethod]
+    public void NativeControlProjectReferencesRequireAnAdapter()
+    {
+        DotNetRevisionInputs evaluated = EvaluatedControl();
+        DotNetGraphNode control = Assert.ContainsSingle(evaluated.Nodes).Native;
+        evaluated = evaluated with
+        {
+            Graph = evaluated.Graph with
+            {
+                Edges = [new(control.Identity, new("/checkout/other.csproj", new()))],
+            },
+        };
+
+        InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+            ControlInputs.Read(evaluated, true));
+
+        Assert.Contains("dependencies require a concrete adapter", failure.Message);
+    }
+
+    private static DotNetRevisionInputs EvaluatedControl()
+    {
+        string project = NodeGroupReader.ControlProject;
+        var identity = new DotNetNodeIdentity("/checkout/" + project, new());
+        var node = new DotNetGraphNode(identity, false, new("Debug", "net10.0"), "", "", [],
+            "None");
+        string[] paths = [project, "control/Program.cs", "shared/runtime.dll",
+            "control/Native/facts.rb"];
+        var revision = new GitRevision(NodeScenario.Candidate, paths.Select(
+            NodeScenario.File).ToArray());
+        return new(revision, new(revision.Commit, "/checkout", "/checkout/dirs.proj", [], [], []),
+            [new(project, node, [project, "control/Program.cs", "control/Native/facts.rb"])],
+            [new("shared/runtime.dll", new("/checkout/shared/runtime.dll", "ReferenceHintPath",
+                "Evaluation", identity))],
+            [], new Dictionary<string, QualitySelection?>(),
+            [new SharedInput("Directory.Build.targets", [project])], []);
+    }
 
     [TestMethod]
     public async Task NativeReceiptKeepsBothRevisionsAndRemovedAddedResources()
@@ -142,71 +239,80 @@ public sealed class ControlTestInputsTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("candidate-absent")]
-    [DataRow("candidate-link")]
-    [DataRow("missing-basis-directory")]
-    [DataRow("wrong-materialization")]
-    [DataRow("unavailable-basis")]
-    [DataRow("nonexact-comparison")]
-    [DataRow("incoherent-full")]
-    [DataRow("failed-basis-evaluation")]
-    public async Task InvalidNativeInputsDoNotBecomeAbsenceOrSuccessfulJson(string defect)
+    [DataRow(null)]
+    [DataRow("120000")]
+    public async Task CandidateMustCommitARegularControlProject(string? candidateMode)
     {
-        // Defects in committed revisions own a repository; request defects read the shared one.
-        using GitFixture? repo = RequestDefects.Contains(defect) ? null
-            : await GitFixture.CreateAsync(context.CancellationToken);
-        ControlTestInputRequest request;
-        if (repo is null) request = sharedRequest!;
-        else
-        {
-            (string basis, string candidate) = await CommitAsync(repo, defect);
-            string before = await MaterializeAsync(repo, "basis", basis);
-            string after = defect == "candidate-link" ? repo.Directory
-                : await MaterializeAsync(repo, "candidate", candidate);
-            request = new(new(basis, candidate, false), repo.Directory, before, after);
-        }
-        if (defect == "incoherent-full")
-            request = request with { Comparison = request.Comparison with { Full = true } };
-        if (defect == "missing-basis-directory")
-            request = request with { BasisDirectory = null };
-        if (defect == "wrong-materialization")
-            request = request with { CandidateDirectory = request.BasisDirectory! };
-        if (defect == "unavailable-basis")
-            request = request with
-            {
-                Comparison = request.Comparison with { Basis = new('f', 40) }
-            };
-        if (defect == "nonexact-comparison")
-            request = request with
-            {
-                Comparison = request.Comparison with { Candidate = "HEAD" }
-            };
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        (string basis, string candidate) = await CommitPairAsync(repo,
+            Project(Resource), candidateMode);
+        var request = new ControlTestInputRequest(new(basis, candidate, false), repo.Directory,
+            await MaterializeAsync(repo, "basis", basis), candidateMode == "120000"
+                ? repo.Directory : await MaterializeAsync(repo, "candidate", candidate));
 
+        string error = await AssertNoReceiptAsync(request);
+
+        Assert.Contains("The control test owner must be a committed regular project.", error);
+    }
+
+    [TestMethod]
+    public async Task ConfirmedBasisPresenceRequiresItsOwnMaterialization() =>
+        await AssertNoReceiptAsync(sharedRequest! with { BasisDirectory = null });
+
+    [TestMethod]
+    public async Task BasisCheckoutCannotSatisfyTheCandidateReceipt()
+    {
+        ControlTestInputRequest request = sharedRequest!;
+
+        await AssertNoReceiptAsync(request with { CandidateDirectory = request.BasisDirectory! });
+    }
+
+    [TestMethod]
+    public async Task InputReceiptRequiresExactComparisonRevisions()
+    {
+        ControlTestInputRequest request = sharedRequest!;
+
+        await AssertNoReceiptAsync(request with
+        { Comparison = request.Comparison with { Candidate = "HEAD" } });
+    }
+
+    [TestMethod]
+    public async Task FailedBasisEvaluationCannotBeReportedAsAbsence()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        (string basis, string candidate) = await CommitPairAsync(repo,
+            "<Project><Import Project=\"unavailable.props\" /></Project>", "100644");
+        var request = new ControlTestInputRequest(new(basis, candidate, false), repo.Directory,
+            await MaterializeAsync(repo, "basis", basis),
+            await MaterializeAsync(repo, "candidate", candidate));
+
+        string error = await AssertNoReceiptAsync(request);
+
+        Assert.Contains("Native query (dotnet msbuild) failed: Exited, exit 1.", error);
+        Assert.Contains("unavailable.props", error);
+    }
+
+    private async Task<string> AssertNoReceiptAsync(ControlTestInputRequest request)
+    {
         (int code, string output, string error) = await RunAsync(request,
             context.CancellationToken);
 
         Assert.AreEqual(2, code);
         Assert.AreEqual("", output);
         Assert.IsNotEmpty(error);
-        if (defect == "failed-basis-evaluation")
-        {
-            Assert.Contains("Native query (dotnet msbuild) failed: Exited, exit 1.", error);
-            Assert.Contains("unavailable.props", error);
-        }
+        return error;
     }
 
-    private static async Task<(string Basis, string Candidate)> CommitAsync(GitFixture repo,
-        string defect)
+    private static async Task<(string Basis, string Candidate)> CommitPairAsync(GitFixture repo,
+        string basisProject, string? candidateMode)
     {
-        await repo.SetAsync(ControlTestInputs.Project, defect == "failed-basis-evaluation"
-            ? "<Project><Import Project=\"unavailable.props\" /></Project>" : Project(Resource));
+        await repo.SetAsync(ControlTestInputs.Project, basisProject);
         await repo.SetAsync(Resource);
         string basis = await repo.CommitAsync();
         await repo.SetAsync("other.txt");
-        await repo.SetAsync(ControlTestInputs.Project, Project(Resource));
-        if (defect == "candidate-absent") await repo.RemoveAsync(ControlTestInputs.Project);
-        if (defect == "candidate-link")
-            await repo.SetAsync(ControlTestInputs.Project, "other.txt", "120000");
+        if (candidateMode is null) await repo.RemoveAsync(ControlTestInputs.Project);
+        else await repo.SetAsync(ControlTestInputs.Project,
+            candidateMode == "120000" ? "other.txt" : Project(Resource), candidateMode);
         return (basis, await repo.CommitAsync(basis));
     }
 

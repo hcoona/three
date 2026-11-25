@@ -9,6 +9,8 @@ namespace WorkflowDelivery.Tests.Repository;
 public sealed class RubyGroupPreparationTests(TestContext context)
 {
     private static readonly string[] RequirePaths = ["lib"];
+    private static readonly string[] InstalledBundlerVersions =
+        ["2.7.2", "2.4.20", "2.7.2", "2.4.20"];
     private static NativeCommandResult Answer(object value) => new(NativeTermination.Exited,
         0, JsonSerializer.Serialize(value), "", 0, null);
 
@@ -33,10 +35,11 @@ public sealed class RubyGroupPreparationTests(TestContext context)
     [ClassCleanup]
     public static void Cleanup() => shared?.Dispose();
 
-    private static async Task<string> CommitAsync(GitFixture repo, bool manifest)
+    private static async Task<string> CommitAsync(GitFixture repo, bool manifest,
+        bool gemfile = true, bool locked = true)
     {
-        await repo.SetAsync("node/Gemfile");
-        await repo.SetAsync("node/Gemfile.lock");
+        if (gemfile) await repo.SetAsync("node/Gemfile", "original declaration");
+        if (locked) await repo.SetAsync("node/Gemfile.lock", "original lock");
         if (manifest)
             await repo.SetAsync(".config/dotnet-tools.json",
                 "{\"tools\":{\"nbgv\":{\"version\":\"3.10.94\"}}}");
@@ -171,6 +174,13 @@ public sealed class RubyGroupPreparationTests(TestContext context)
         Assert.IsTrue(File.Exists(result.Request.Candidate.Collection.Nbgv));
         Assert.IsEmpty(Directory.GetFiles(before.Scratch));
         Assert.IsEmpty(Directory.GetFiles(after.Scratch));
+        RubyPreparationCommand[] installers = result.Commands.Where(command =>
+            command.Command.Arguments[0] == request.Tools.Gem).ToArray();
+        CollectionAssert.AreEqual(InstalledBundlerVersions,
+            installers.Select(command => command.Command.Arguments[4]).ToArray());
+        Assert.AreEqual("original lock", await File.ReadAllTextAsync(
+            Path.Combine(request.Candidate.Directory, "node/Gemfile.lock"),
+            context.CancellationToken));
     }
 
     [TestMethod]
@@ -236,6 +246,67 @@ public sealed class RubyGroupPreparationTests(TestContext context)
         Assert.AreEqual(request.Tools.Dotnet, observed.Command.Executable);
         Assert.AreEqual(17, observed.Result.ExitCode);
         Assert.Contains("native install rejected", error.Message);
+    }
+
+    [TestMethod]
+    public async Task FailedBundlerInstallationRetainsNativeDiagnostics()
+    {
+        using var state = new SharedState();
+        RubyGroupPreparationRequest request = await state.RequestAsync(context.CancellationToken);
+        string stderr = "native installation head " + new string('x', NativeDiagnostic.TailLength) +
+            " native installation error";
+        RubyBundlePreparationException error = await Assert.ThrowsExactlyAsync<
+            RubyBundlePreparationException>(() => RubyGroupPreparation.PrepareAsync(request,
+                (command, token) => command.Arguments[0] == request.Tools.Gem
+                    ? Task.FromResult(Answer(new { }) with { ExitCode = 7, Stderr = stderr })
+                    : NativeAsync(request, command, token), context.CancellationToken));
+        RubyPreparationCommand failed = Assert.ContainsSingle(error.Commands.Where(command =>
+            command.Command.Arguments[0] == request.Tools.Gem));
+        Assert.AreEqual(7, failed.Result.ExitCode);
+        Assert.AreEqual(stderr, failed.Result.Stderr);
+        Assert.StartsWith("Native Ruby dependency preparation failed: Exited, exit 7. " +
+            "stderr: [truncated] ", error.Message);
+        Assert.EndsWith(" native installation error", error.Message);
+        Assert.DoesNotContain("native installation head", error.Message);
+        Assert.IsLessThan(NativeDiagnostic.TailLength + 200, error.Message.Length);
+    }
+
+    [TestMethod]
+    public async Task MissingOriginalLockCannotCompletePreparation()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        string revision = await CommitAsync(repo, manifest: true, locked: false);
+        RubyGroupPreparationRequest request = await RequestAsync(repo, revision,
+            Path.GetDirectoryName(repo.Directory)!, context.CancellationToken);
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            RubyGroupPreparation.PrepareAsync(request,
+                (command, token) => NativeAsync(request, command, token),
+                context.CancellationToken));
+        Assert.Contains("lock is not committed", failure.Message);
+    }
+
+    [TestMethod]
+    public async Task EmptyBundleInventoryDoesNotInvokeRuby()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        string revision = await CommitAsync(repo, manifest: true, gemfile: false, locked: false);
+        RubyGroupPreparationRequest request = await RequestAsync(repo, revision,
+            Path.GetDirectoryName(repo.Directory)!, context.CancellationToken);
+        RubyGroupPreparationResult result = await RubyGroupPreparation.PrepareAsync(request,
+            (command, token) => NativeAsync(request, command, token), context.CancellationToken);
+        Assert.AreEqual(request.Tools.Dotnet,
+            Assert.ContainsSingle(result.Commands).Command.Executable);
+    }
+
+    [TestMethod]
+    public async Task PreCancelledPreparationDoesNotInvokeTools()
+    {
+        using var state = new SharedState();
+        RubyGroupPreparationRequest request = await state.RequestAsync(context.CancellationToken);
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            RubyGroupPreparation.PrepareAsync(request, (_, _) =>
+                throw new AssertFailedException("Pre-cancelled preparation must not launch tools."),
+                new CancellationToken(canceled: true)));
     }
 
     [TestMethod]

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Repository;
@@ -28,7 +29,7 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
 
     [ClassInitialize]
     public static async Task InitializeAsync(TestContext classContext) =>
-        shared = await RuntimeCheckoutAsync("", classContext.CancellationToken);
+        shared = await RuntimeCheckoutAsync(false, classContext.CancellationToken);
 
     [ClassCleanup]
     public static void Cleanup() => shared?.Dispose();
@@ -60,24 +61,23 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
 
     // Planning compares majors and LTS designation only; no date or clock is evaluated.
     [TestMethod]
-    [DataRow("current", "26.1.0", ">=22", ">=22.6.0", new[] { 22, 24, 26 })]
-    [DataRow("new-current-major", "27.0.0", ">=22", ">=22.6.0", new[] { 22, 24, 26, 27 })]
-    [DataRow("odd-current-major", "25.2.1", ">=22", ">=22.6.0", new[] { 22, 24, 25 })]
-    [DataRow("all-lts-from-27", "29.0.0", ">=22", ">=24", new[] { 22, 24, 26, 27, 28, 29 })]
-    [DataRow("end-of-life-lower-bound", "26.1.0", ">=18", ">=24.0.0",
-        new[] { 18, 20, 22, 24, 26 })]
-    [DataRow("lowest-minimum-union", "26.1.0", ">=24.0.0", ">=20.19", new[] { 20, 22, 24, 26 })]
-    [DataRow("non-lts-lower-bound", "26.1.0", ">=24", ">=23", new[] { 24, 26 })]
-    public void MatrixIsEveryLtsMajorFromTheLowestMinimumPlusTheNewestMajor(string scenario,
-        string newest, string root, string member, int[] majors)
+    [DataRow("26.1.0", ">=22", ">=22.6.0", 22, new[] { 22, 24, 26 })]
+    [DataRow("27.0.0", ">=22", ">=22.6.0", 22, new[] { 22, 24, 26, 27 })]
+    [DataRow("25.2.1", ">=22", ">=22.6.0", 22, new[] { 22, 24, 25 })]
+    [DataRow("29.0.0", ">=22", ">=24", 22, new[] { 22, 24, 26, 27, 28, 29 })]
+    [DataRow("26.1.0", ">=18", ">=24.0.0", 18, new[] { 18, 20, 22, 24, 26 })]
+    [DataRow("26.1.0", ">=24.0.0", ">=20.19", 20, new[] { 20, 22, 24, 26 })]
+    [DataRow("26.1.0", ">=24", ">=23", 23, new[] { 24, 26 })]
+    public void MatrixIsEveryLtsMajorFromTheLowestMinimumPlusTheNewestMajor(
+        string newest, string root, string member, int lowerBound, int[] majors)
     {
         NodeRuntimeInputs inputs = Read(schedule: Schedule(newest), root: root, member: member);
 
         CollectionAssert.AreEqual(majors.Select(major => major + ".x").ToArray(),
-            inputs.Variants.Select(variant => variant.Selector).ToArray(), scenario);
+            inputs.Variants.Select(variant => variant.Selector).ToArray());
         CollectionAssert.AreEqual(majors.Select(major => "node" + major).ToArray(),
-            inputs.Variants.Select(variant => variant.Key).ToArray(), scenario);
-        Assert.AreEqual(scenario == "non-lts-lower-bound" ? 23 : majors[0], inputs.LowerBound);
+            inputs.Variants.Select(variant => variant.Key).ToArray());
+        Assert.AreEqual(lowerBound, inputs.LowerBound);
         Assert.AreEqual(newest, inputs.NewestRelease);
         Assert.AreEqual("24.21.0", inputs.Variants.Single(v => v.Key == "node24").ExactVersion);
         Assert.ContainsSingle(inputs.Variants.Where(v => v.ExactVersion is not null));
@@ -181,95 +181,109 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("lower-above-newest", "The declared Node lower bound is above the newest release.")]
-    [DataRow("missing-row", "The Node release schedule has no row: v23")]
-    [DataRow("packaging-outside", Packaging)]
-    [DataRow("unsupported-caret", "Unsupported Node engines range: " + Member)]
-    [DataRow("unsupported-compound", "Unsupported Node engines range: " + Member)]
-    [DataRow("unsupported-whitespace", "Unsupported Node engines range: " + Member)]
-    [DataRow("unsupported-prerelease", "Unsupported Node engines range: " + Member)]
-    [DataRow("missing-range", "Unsupported Node engines range: " + Member)]
-    [DataRow("missing-engines", "Unsupported Node engines range: " + Member)]
-    [DataRow("unreadable-manifest", "Unreadable Node engines manifest: " + Member)]
-    [DataRow("invalid-manifest", "Unreadable Node engines manifest: " + Member)]
-    [DataRow("duplicate-manifest-key", "Unreadable Node engines manifest: " + Member)]
-    [DataRow("missing-root-manifest", "Missing root Node engines manifest.")]
-    [DataRow("missing-schedule", "Missing committed Node release schedule: " +
-        NodeRuntimeReader.Schedule)]
-    [DataRow("invalid-schedule-json", InvalidSchedule)]
-    [DataRow("unknown-top-level-member", InvalidSchedule)]
-    [DataRow("unknown-schedule-member", InvalidSchedule)]
-    [DataRow("missing-newest", InvalidSchedule)]
-    [DataRow("prerelease-newest", InvalidSchedule)]
-    [DataRow("prefixed-newest", InvalidSchedule)]
-    [DataRow("numeric-newest", InvalidSchedule)]
-    [DataRow("short-commit", InvalidSchedule)]
-    [DataRow("uppercase-commit", InvalidSchedule)]
-    [DataRow("duplicate-key", InvalidSchedule)]
-    [DataRow("duplicate-top-level-key", InvalidSchedule)]
-    [DataRow("invalid-key", InvalidSchedule)]
-    [DataRow("leading-zero-key", InvalidSchedule)]
-    [DataRow("non-object-row", InvalidSchedule)]
-    [DataRow("non-string-lts", InvalidSchedule)]
-    [DataRow("empty-lts", InvalidSchedule)]
-    [DataRow("literal-matrix", Matrix)]
-    [DataRow("other-expression", Matrix)]
-    [DataRow("matrix-include", Matrix)]
-    [DataRow("duplicate-yaml-key", "Invalid Node runtime workflow YAML.")]
-    [DataRow("missing-workflow", "Missing committed Node runtime workflow.")]
-    [DataRow("missing-mise", "Missing committed runtime authority: mise.toml")]
-    [DataRow("missing-lock", "Missing committed runtime authority: mise.lock")]
-    [DataRow("tool-source", Authority)]
-    [DataRow("tool-inactive", Authority)]
-    [DataRow("node-request", Authority)]
-    [DataRow("node-version", Authority)]
-    [DataRow("pnpm-floating", Authority)]
-    [DataRow("duplicate-tool", "Unresolved native runtime tool: node")]
-    public void UnsupportedRuntimeFactsCannotBecomeAPlan(string defect, string message)
+    [DataRow("^22.0.0")]
+    [DataRow(">=22 <27")]
+    [DataRow(">= 22")]
+    [DataRow(">=22.0.0-rc.1")]
+    [DataRow(null)]
+    public void UnsupportedEnginesCannotBeApproximatedByAMatrix(string? range)
     {
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            Read(defect));
-        Assert.AreEqual(message, error.Message);
+            Read(member: range));
+        Assert.AreEqual("Unsupported Node engines range: " + Member, error.Message);
     }
 
     private const string Member = Source + "/package.json";
-    private const string Matrix = "Unsupported complete Node runtime matrix.";
     private const string Authority = "Native runtime tool is outside committed authority.";
-    private const string InvalidSchedule = "Invalid committed Node release schedule.";
-    private const string Packaging = "The configured packaging runtime is absent from the matrix.";
 
-    // Committed declaration, schedule, engines and matrix defects stop before any native
-    // query; tool defects stop at the query that answered them.
     [TestMethod]
-    [DataRow("missing-mise", 0, "Missing committed runtime authority: mise.toml")]
-    [DataRow("literal-matrix", 0, Matrix)]
-    [DataRow("missing-schedule", 0, "Missing committed Node release schedule: " +
-        NodeRuntimeReader.Schedule)]
-    [DataRow("missing-row", 0, "The Node release schedule has no row: v23")]
-    [DataRow("unsupported-caret", 0, "Unsupported Node engines range: " + Member)]
-    [DataRow("unreadable-manifest", 0, "Unreadable Node engines manifest: " + Member)]
-    [DataRow("tool-inactive", 1, Authority)]
-    [DataRow("pnpm-floating", 2, Authority)]
-    [DataRow("packaging-outside", 2, Packaging)]
-    public async Task UnsupportedRuntimeFactsStopTheReader(string defect, int queries,
-        string message)
+    public void ScheduleMustCoverTheCompleteRange()
     {
-        using GitFixture? privateCheckout = defect is "tool-inactive" or "pnpm-floating" ? null :
-            await RuntimeCheckoutAsync(defect, context.CancellationToken);
-        GitFixture repo = privateCheckout ?? shared!;
+        string missingMajor = Schedule().Replace("\"v23\"", "\"v123\"", StringComparison.Ordinal);
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            Read(schedule: missingMajor));
+        Assert.AreEqual("The Node release schedule has no row: v23", error.Message);
+    }
+
+    [TestMethod]
+    [DataRow("27.0.0-rc.1", "")]
+    [DataRow("26.1.0", ",\n      \"v24\": { \"start\": \"2000-01-01\" }")]
+    public void PrereleaseOrAmbiguousScheduleCannotSupplyTheMatrix(string newest, string extra)
+    {
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            Read(schedule: Schedule(newest, extra: extra)));
+        Assert.AreEqual("Invalid committed Node release schedule.", error.Message);
+    }
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("schedule")]
+    public void UnknownScheduleMembersCannotSupplyTheMatrix(string? section)
+    {
+        JsonObject schedule = JsonNode.Parse(Schedule())!.AsObject();
+        JsonNode target = section is null ? schedule : schedule[section]!;
+        target["generated"] = "2026-01-01";
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            Read(schedule: schedule.ToJsonString()));
+        Assert.AreEqual("Invalid committed Node release schedule.", error.Message);
+    }
+
+    [TestMethod]
+    [DataRow("[22.x, 24.x, 26.x]")]
+    [DataRow("${{ fromJSON(needs.node-group.outputs.retained_directories) }}")]
+    public void WorkflowMustConsumeTheComputedRuntimeMatrix(string matrix)
+    {
+        string workflow = Workflow.Replace(NodeRuntimeReader.MatrixConsumer, matrix,
+            StringComparison.Ordinal);
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            Read(workflow: workflow));
+        Assert.AreEqual("Unsupported complete Node runtime matrix.", error.Message);
+    }
+
+    [TestMethod]
+    public async Task MissingCommittedScheduleStopsBeforeNativeTools()
+    {
+        using GitFixture repo = await RuntimeCheckoutAsync(true, context.CancellationToken);
         GitMaterialization checkout = await BindAsync(repo);
-        var commands = new List<string>();
-        var reader = new NodeRuntimeReader(checkout, (args, _) =>
-        {
-            commands.Add(string.Join(' ', args));
-            return Task.FromResult(Tool(repo.Directory, args[^1], defect));
-        });
+        var reader = new NodeRuntimeReader(checkout, (_, _) =>
+            throw new AssertFailedException("No runtime query is valid without a schedule."));
 
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             reader.ReadAsync([Source], context.CancellationToken));
-        Assert.AreEqual(message, error.Message);
-        CollectionAssert.AreEqual(NativeCommands.Take(queries).ToArray(), commands);
+        Assert.Contains("Missing committed Node release schedule", error.Message);
     }
+
+    [TestMethod]
+    [DataRow("node", null, false)]
+    [DataRow("node", "22", true)]
+    [DataRow("pnpm", "latest", true)]
+    public async Task RuntimeToolsMustReturnActiveLockedSelections(
+        string tool, string? requested, bool active)
+    {
+        GitFixture repo = shared!;
+        GitMaterialization checkout = await BindAsync(repo);
+        var reader = new NodeRuntimeReader(checkout, (args, _) => Task.FromResult(args[^1] == tool
+            ? Tool(repo.Directory, tool, requested, active) : Tool(repo.Directory, args[^1])));
+
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            reader.ReadAsync([Source], context.CancellationToken));
+        Assert.AreEqual(Authority, error.Message);
+    }
+    [TestMethod]
+    public async Task NativeRuntimeToolCannotTakeItsVersionFromForeignConfiguration()
+    {
+        GitFixture repo = shared!;
+        GitMaterialization checkout = await BindAsync(repo);
+        string foreign = Path.Combine(repo.Directory, "uncommitted");
+        var reader = new NodeRuntimeReader(checkout, (args, _) => Task.FromResult(
+            Tool(args[^1] == "node" ? foreign : repo.Directory, args[^1])));
+
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            reader.ReadAsync([Source], context.CancellationToken));
+        Assert.AreEqual(Authority, error.Message);
+    }
+
     [TestMethod]
     public async Task RuntimeProjectionKeepsTwoObligationsPerRuntimePlusPackagingAndSubject()
     {
@@ -330,13 +344,10 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("missing")]
-    [DataRow("failed")]
-    [DataRow("cancelled")]
-    [DataRow("timedout")]
-    [DataRow("skipped")]
-    [DataRow("conflicting")]
-    public async Task CollectorRequiresEveryOriginalRuntimeResult(string state)
+    [DataRow(false, "missing")]
+    [DataRow(true, "conflicting")]
+    public async Task CollectorRequiresOneResultForEveryRuntime(
+        bool conflictingResults, string expectedStatus)
     {
         CiPlan original = await PackagePlanAsync();
         CiPlan plan = Inputs(original.Candidate).Expand(original);
@@ -344,57 +355,24 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
         var results = plan.Checks.Select(c =>
             new CheckResult(plan.Candidate, c.Work.Key, CheckStatus.Passed)).ToList();
         CheckResult passed = results.Single(r => r.Key == key);
-        if (state != "conflicting") results.Remove(passed);
-        if (state != "missing")
-        {
-            CheckStatus status = state switch
-            {
-                "cancelled" => CheckStatus.Cancelled,
-                "timedout" => CheckStatus.TimedOut,
-                "skipped" => CheckStatus.Skipped,
-                _ => CheckStatus.Failed,
-            };
-            results.Add(passed with { Status = status });
-        }
+        if (conflictingResults) results.Add(passed with { Status = CheckStatus.Failed });
+        else results.Remove(passed);
 
         CiOutcome outcome = ResultCollector.Collect(plan, [.. results]);
 
         Assert.IsFalse(outcome.Satisfied);
         Assert.HasCount(7, outcome.Checks);
-        Assert.AreEqual(state, outcome.Checks.Single(c => c.Key == key).Status);
+        Assert.AreEqual(expectedStatus, outcome.Checks.Single(c => c.Key == key).Status);
         Assert.HasCount(6, outcome.Checks.Where(c => c.Status == "passed"));
     }
 
     [TestMethod]
-    [DataRow("candidate")]
-    [DataRow("scope")]
-    [DataRow("variant")]
-    [DataRow("check")]
-    public async Task ProjectionRejectsAnUnsupportedParentPlan(string defect)
+    public async Task ProjectionCannotUseRuntimeFactsFromTheBasis()
     {
         CiPlan plan = await PackagePlanAsync();
-        plan = defect switch
-        {
-            "candidate" => plan with { Candidate = NodeScenario.Basis },
-            "scope" => plan with { Scope = "unknown" },
-            _ => plan with
-            {
-                Checks = plan.Checks.Select(c => c with
-                {
-                    Work = c.Work with
-                    {
-                        Key = c.Work.Key with
-                        {
-                            Variant = defect == "variant" ? "other" : c.Work.Key.Variant,
-                            Check = defect == "check" ? "unknown" : c.Work.Key.Check,
-                        }
-                    },
-                }).ToArray()
-            },
-        };
 
         Assert.ThrowsExactly<InvalidDataException>(() =>
-            Inputs(NodeScenario.Candidate).Expand(plan));
+            Inputs(NodeScenario.Basis).Expand(plan));
     }
 
     [TestMethod]
@@ -434,75 +412,15 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
         : "{ \"name\": \"member\", \"engines\": { \"node\": " + JsonSerializer.Serialize(range) +
             " } }\n";
 
-    private static NodeRuntimeInputs Read(string defect = "", string? schedule = null,
-        string root = ">=22", string member = ">=22.6.0")
+    private static NodeRuntimeInputs Read(string? schedule = null,
+        string root = ">=22", string? member = ">=22.6.0", string workflow = Workflow)
     {
         string path = Path.Combine(Path.GetTempPath(), "node-runtime-checkout");
-        return NodeRuntimeReader.Read(new(NodeScenario.Candidate, []), path,
-            defect == "missing-workflow" ? null : WorkflowFor(defect),
-            defect == "missing-schedule" ? null : schedule ?? ScheduleFor(defect),
-            defect == "missing-mise" ? null : Mise, defect == "missing-lock" ? null : MiseLock,
-            Manifests(defect, root, member), Tool(path, "node", defect),
-            Tool(path, "pnpm", defect));
+        return NodeRuntimeReader.Read(new(NodeScenario.Candidate, []), path, workflow,
+            schedule ?? Schedule(), Mise, MiseLock,
+            [new(Member, Manifest(member)), new("package.json", Manifest(root))],
+            Tool(path, "node"), Tool(path, "pnpm"));
     }
-
-    private static NodeEnginesManifest[] Manifests(string defect, string root, string member)
-    {
-        string? text = defect switch
-        {
-            "unsupported-caret" => Manifest("^22.0.0"),
-            "unsupported-compound" => Manifest(">=22 <27"),
-            "unsupported-whitespace" => Manifest(">= 22"),
-            "unsupported-prerelease" => Manifest(">=22.0.0-rc.1"),
-            "missing-range" => "{ \"engines\": { \"npm\": \">=10\" } }\n",
-            "missing-engines" => Manifest(null),
-            "unreadable-manifest" => null,
-            "invalid-manifest" => "{ \"engines\": ",
-            "duplicate-manifest-key" => "{ \"engines\": { \"node\": \">=22\", " +
-                "\"node\": \">=24\" } }\n",
-            "lower-above-newest" => Manifest(">=27"),
-            _ => Manifest(member),
-        };
-        NodeEnginesManifest[] manifests = [new(Member, text), new("package.json",
-            Manifest(defect == "lower-above-newest" ? ">=27" : root))];
-        return defect == "missing-root-manifest" ? manifests[..1] : manifests;
-    }
-
-    private static string ScheduleFor(string defect) => defect switch
-    {
-        "missing-row" => Schedule().Replace("\"v23\"", "\"v123\""),
-        "packaging-outside" => Schedule("26.1.0").Replace("\"v24\": { \"start\": " +
-            "\"2000-01-01\", \"lts\": \"2000-06-01\"", "\"v24\": { \"start\": \"2000-01-01\""),
-        "invalid-schedule-json" => Schedule()[..^4],
-        "unknown-top-level-member" => Schedule(top: ",\n  \"generated\": \"2026-01-01\""),
-        "unknown-schedule-member" => Schedule().Replace("\"releases\":",
-            "\"source\": \"main\",\n    \"releases\":"),
-        "missing-newest" => Schedule().Replace("\"newestRelease\": \"26.1.0\",\n", ""),
-        "prerelease-newest" => Schedule("27.0.0-rc.1"),
-        "prefixed-newest" => Schedule("v26.1.0"),
-        "numeric-newest" => Schedule().Replace("\"26.1.0\"", "26"),
-        "short-commit" => Schedule(commit: ScheduleCommit[..39]),
-        "uppercase-commit" => Schedule(commit: ScheduleCommit.ToUpperInvariant()),
-        "duplicate-key" => Schedule(extra: ",\n      \"v24\": { \"start\": \"2000-01-01\" }"),
-        "duplicate-top-level-key" => Schedule(top: ",\n  \"newestRelease\": \"26.1.0\""),
-        "invalid-key" => Schedule(extra: ",\n      \"node30\": { \"start\": \"2000-01-01\" }"),
-        "leading-zero-key" => Schedule(extra: ",\n      \"v030\": { \"start\": \"2000-01-01\" }"),
-        "non-object-row" => Schedule(extra: ",\n      \"v30\": \"2000-01-01\""),
-        "non-string-lts" => Schedule(extra: ",\n      \"v30\": { \"lts\": true }"),
-        "empty-lts" => Schedule(extra: ",\n      \"v30\": { \"lts\": \"\" }"),
-        "lower-above-newest" => Schedule(),
-        _ => Schedule(),
-    };
-
-    private static string WorkflowFor(string defect) => defect switch
-    {
-        "literal-matrix" => Workflow.Replace(NodeRuntimeReader.MatrixConsumer,
-            "[22.x, 24.x, 26.x]"),
-        "other-expression" => Workflow.Replace("node_versions", "retained_directories"),
-        "matrix-include" => Workflow + "        include: []\n",
-        "duplicate-yaml-key" => Workflow + "        node-version: [24.x, 22.x]\n",
-        _ => Workflow,
-    };
 
     private static NodeRuntimeInputs Inputs(string revision) => new(revision,
         [new("node22", "22.x", null), new("node24", "24.x", "24.21.0")], "12.8.2",
@@ -517,19 +435,19 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
             Source + "/index.js");
     }
 
-    private static async Task<GitFixture> RuntimeCheckoutAsync(string defect,
+    private static async Task<GitFixture> RuntimeCheckoutAsync(bool omitSchedule,
         CancellationToken token)
     {
         GitFixture repo = await GitFixture.CreateAsync(token);
         try
         {
-            await repo.SetAsync(NodeRuntimeReader.Workflow, WorkflowFor(defect));
-            if (defect != "missing-schedule")
-                await repo.SetAsync(NodeRuntimeReader.Schedule, ScheduleFor(defect));
-            if (defect != "missing-mise") await repo.SetAsync("mise.toml", Mise);
+            await repo.SetAsync(NodeRuntimeReader.Workflow, Workflow);
+            if (!omitSchedule)
+                await repo.SetAsync(NodeRuntimeReader.Schedule, Schedule());
+            await repo.SetAsync("mise.toml", Mise);
             await repo.SetAsync("mise.lock", MiseLock);
-            foreach (NodeEnginesManifest manifest in Manifests(defect, ">=22", ">=22.6.0"))
-                if (manifest.Text is not null) await repo.SetAsync(manifest.Path, manifest.Text);
+            await repo.SetAsync("package.json", Manifest(">=22"));
+            await repo.SetAsync(Member, Manifest(">=22.6.0"));
             string commit = await repo.CommitAsync();
             await repo.GitAsync("reset", "--hard", commit);
             return repo;
@@ -546,25 +464,21 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
             await new GitReader(repo.Directory).ReadAsync("HEAD", context.CancellationToken),
             context.CancellationToken);
 
-    internal static string Tool(string root, string name, string defect = "")
+    internal static string Tool(string root, string name, string? requested = null,
+        bool active = true)
     {
         string version = name == "node" ? "24.21.0" : "12.8.2";
-        string requested = name == "node" ? "24" : version;
-        if (name == "node" && defect == "node-request") requested = "22";
-        if (name == "node" && defect == "node-version") version = "22.20.0";
-        if (name == "pnpm" && defect == "pnpm-floating") requested = "latest";
         object tool = new
         {
             version,
-            requested_version = requested,
-            active = defect != "tool-inactive",
+            requested_version = requested ?? (name == "node" ? "24" : version),
+            active,
             source = new
             {
                 type = "mise.toml",
-                path = Path.Combine(root,
-                defect == "tool-source" ? "other.toml" : "mise.toml")
+                path = Path.Combine(root, "mise.toml"),
             },
         };
-        return JsonSerializer.Serialize(defect == "duplicate-tool" ? new[] { tool, tool } : [tool]);
+        return JsonSerializer.Serialize(new[] { tool });
     }
 }

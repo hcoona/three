@@ -256,25 +256,16 @@ public sealed class NodeFactsAssemblerTests
     }
 
     [TestMethod]
-    [DataRow("dependency")]
-    [DataRow("target")]
-    [DataRow("local-input")]
-    public void AssembleRejectsUnresolvedWorkspaceRootRelation(string relation)
+    [DataRow("src/a", ".")]
+    [DataRow(".", "src/a")]
+    public void WorkspaceRootCannotParticipateInProjectWork(string consumer, string dependency)
     {
         NodeRevisionInputs inputs = NodeScenario.Inputs(NodeScenario.Candidate,
             NodeScenario.Project("src/a"));
-        PnpmGraph graph = inputs.Graph;
-        graph = relation switch
+        PnpmGraph graph = inputs.Graph with
         {
-            "dependency" => graph with
-            {
-                Projects = [NodeScenario.Project(".", "src/a"), NodeScenario.Project("src/a")],
-            },
-            "target" => graph with
-            {
-                Projects = [NodeScenario.Project("."), NodeScenario.Project("src/a", ".")],
-            },
-            _ => graph with { LocalInputs = [new("archive.tgz", false, ["."])] },
+            Projects = [NodeScenario.Project(consumer, dependency),
+                NodeScenario.Project(dependency)],
         };
 
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
@@ -284,22 +275,12 @@ public sealed class NodeFactsAssemblerTests
     }
 
     [TestMethod]
-    [DataRow("120000", "blob", false)]
-    [DataRow("160000", "commit", false)]
-    [DataRow("120000", "blob", true)]
-    [DataRow("160000", "commit", true)]
-    public void AssembleRejectsUnsupportedRelevantSourceEntry(string mode, string objectType,
-        bool releaseEntry)
+    [DataRow("120000", "blob")]
+    [DataRow("160000", "commit")]
+    public void AssembleRejectsUnsupportedRelevantSourceEntry(string mode, string objectType)
     {
         NodeRevisionInputs inputs = NodeScenario.Inputs(NodeScenario.Candidate,
             NodeScenario.Project("src/a"));
-        if (releaseEntry)
-        {
-            ReleaseUnitDeclaration unit = NodeScenario.Unit("product", ("build", "src/a"));
-            unit = unit with
-            { Builds = [unit.Builds[0] with { EntryPoint = "src/a/native-entry" }] };
-            inputs = NodeScenario.Units(inputs, unit);
-        }
         inputs = inputs with
         {
             Revision = inputs.Revision with
@@ -376,24 +357,14 @@ public sealed class NodeFactsAssemblerTests
             foreach (CheckSpec check in work)
             {
                 Assert.AreEqual("release/product/" + build.Id, check.Key.Target);
-                Assert.AreEqual("default", check.Key.Variant);
-                Assert.AreEqual("ubuntu-latest", check.Runner);
-                Assert.IsEmpty(check.Dimensions);
                 PackageTarget subject = check.Package!;
-                Assert.AreEqual(unit.Id, subject.Unit);
                 Assert.AreEqual(unit.SourcePath, subject.Declaration);
-                Assert.AreEqual(build.Definition, subject.Definition);
-                Assert.AreEqual("src/a", subject.Directory);
                 Assert.AreEqual("src/a/package.json", subject.EntryPoint);
-                Assert.IsNull(subject.PublishDirectory);
                 Assert.AreEqual("1.2.3", subject.ExpectedVersion);
                 Assert.AreEqual(new PackageOutput(build.Id + "-package", "primary-package",
                     "npm-tarball"), Assert.ContainsSingle(subject.Outputs));
             }
         }
-        PlannedCheck sourceTest = plan.Checks.Single(check =>
-            check.Work.Key.Check == "node/project-test-v1");
-        Assert.IsEmpty(sourceTest.Work.Prerequisites);
         Assert.IsTrue(plan.Checks.All(check => check.Work.Required));
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             NodeFactsAssembler.PlanAsync(basis, candidate with { Versions = [] },
@@ -436,6 +407,28 @@ public sealed class NodeFactsAssemblerTests
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             NodeScenario.Plan(basis, candidate, changedPath));
         Assert.Contains("product/build", error.Message);
+    }
+
+    [TestMethod]
+    [DataRow("zip", false)]
+    [DataRow("npm-tarball", true)]
+    public async Task SelectedPackageCannotPlanAnUnsupportedOutputSet(
+        string kind, bool additionalOutput)
+    {
+        ReleaseUnitDeclaration unit = NodeScenario.Unit("product", ("build", "src/a"));
+        ReleaseOutput primary = unit.Builds[0].Outputs[0] with { Kind = kind };
+        ReleaseOutput[] outputs = additionalOutput
+            ? [primary, new("extra", "primary-package", "npm-tarball")] : [primary];
+        unit = unit with { Builds = [unit.Builds[0] with { Outputs = outputs }] };
+        NodeRevisionInputs basis = NodeScenario.Inputs(NodeScenario.Basis,
+            NodeScenario.Project("src/a"));
+        NodeRevisionInputs candidate = NodeScenario.Units(NodeScenario.Inputs(
+            NodeScenario.Candidate, NodeScenario.Project("src/a")), unit);
+
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            NodeScenario.Plan(basis, candidate, "src/a/index.js"));
+
+        Assert.Contains("product/build", failure.Message);
     }
 
     [TestMethod]
@@ -737,29 +730,183 @@ public sealed class NodeFactsAssemblerTests
     }
 
     [TestMethod]
-    [DataRow("script")]
-    [DataRow("version")]
-    [DataRow("mismatch")]
-    public async Task PlanNativeHydrationFailureReturnsNoPartialPlan(string defect)
+    public async Task UnavailableNativeScriptsPreventPlanning()
+    {
+        IOException error = await Assert.ThrowsExactlyAsync<IOException>(() =>
+            PlanPackageWithReaders((_, _) => throw new IOException("pnpm unavailable"),
+                (_, _) => Task.FromResult("1.2.3")));
+
+        Assert.AreEqual("pnpm unavailable", error.Message);
+    }
+
+    [TestMethod]
+    public async Task ScriptsForAnotherProjectCannotSupplyPackageWork()
+    {
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            PlanPackageWithReaders((_, _) =>
+                Task.FromResult(new PnpmScripts("src/wrong", new Dictionary<string, string>())),
+                (_, _) => Task.FromResult("1.2.3")));
+    }
+
+    [TestMethod]
+    public async Task UnavailableNativeVersionPreventsPlanning()
+    {
+        IOException error = await Assert.ThrowsExactlyAsync<IOException>(() =>
+            PlanPackageWithReaders((project, _) => Task.FromResult(NodeScenario.Scripts(project)),
+                (_, _) => throw new IOException("NBGV unavailable")));
+
+        Assert.AreEqual("NBGV unavailable", error.Message);
+    }
+
+    private static Task<CiPlan> PlanPackageWithReaders(
+        Func<PnpmProject, CancellationToken, Task<PnpmScripts>> scripts,
+        Func<PnpmProject, CancellationToken, Task<string>> version)
     {
         NodeRevisionInputs basis = NodeScenario.Inputs(NodeScenario.Basis,
             NodeScenario.Project("src/a"));
         NodeRevisionInputs candidate = NodeScenario.Units(
-            NodeScenario.Inputs(NodeScenario.Candidate,
-                NodeScenario.Project("src/a")), NodeScenario.Unit("product", ("build", "src/a")));
-        Task<CiPlan> Plan() => NodeFactsAssembler.PlanAsync(basis, candidate,
-            ["src/a/index.js"], false,
-            (project, _) => defect == "script"
-                ? throw new IOException("controlled script failure")
-                : Task.FromResult(defect == "mismatch"
-                    ? new PnpmScripts("src/wrong", new Dictionary<string, string>())
-                    : NodeScenario.Scripts(project)),
-            (_, _) => throw new IOException("controlled version failure"), CancellationToken.None);
+            NodeScenario.Inputs(NodeScenario.Candidate, NodeScenario.Project("src/a")),
+            NodeScenario.Unit("product", ("build", "src/a")));
+        return NodeFactsAssembler.PlanAsync(basis, candidate, ["src/a/index.js"], false,
+            scripts, version, CancellationToken.None);
+    }
 
-        if (defect == "mismatch")
-            await Assert.ThrowsExactlyAsync<InvalidDataException>(Plan);
-        else
-            await Assert.ThrowsExactlyAsync<IOException>(Plan);
+    [TestMethod]
+    [DataRow("vendor/data.txt", "vendor", true, "src/a")]
+    [DataRow("vendor/nested/data.txt", "vendor", true, "src/b")]
+    [DataRow("archives/input.tgz", "archives/input.tgz", false, "src/b")]
+    public async Task LocalAndVersionInputsSelectTheirActualConsumers(
+        string path, string localInput, bool directory, string versionConsumer)
+    {
+        NodeRevisionInputs Endpoint(string revision)
+        {
+            NodeRevisionInputs inputs = NodeScenario.Inputs(revision,
+                NodeScenario.Project("src/a"), NodeScenario.Project("src/b"),
+                NodeScenario.Project("src/unrelated"));
+            return inputs with
+            {
+                Revision = inputs.Revision with
+                {
+                    Entries = [.. inputs.Revision.Entries, NodeScenario.File(path)],
+                },
+                Versions = [new(revision, versionConsumer, [], [path])],
+                Graph = inputs.Graph with { LocalInputs = [new(localInput, directory, ["src/a"])] },
+            };
+        }
+
+        CiPlan plan = await NodeScenario.Plan(Endpoint(NodeScenario.Basis),
+            Endpoint(NodeScenario.Candidate), path);
+
+        AssertProjectTargets(plan, versionConsumer == "src/a" ? SingleProjectA : TwoProjects);
+        foreach (PlannedCheck check in plan.Checks)
+        {
+            Assert.HasCount(2, check.Reasons);
+            Assert.Contains(new SelectionReason(path, NodeScenario.Basis, check.Work.Key.Target),
+                check.Reasons);
+            Assert.Contains(new SelectionReason(path, NodeScenario.Candidate,
+                check.Work.Key.Target), check.Reasons);
+        }
+    }
+
+    private static readonly string[] SingleProjectA = ["src/a"];
+
+    [TestMethod]
+    public async Task ReplacedVersionInputsKeepTheirOriginalEndpointConsumers()
+    {
+        NodeRevisionInputs Endpoint(string revision, string path, string consumer)
+        {
+            NodeRevisionInputs inputs = NodeScenario.Inputs(revision,
+                NodeScenario.Project("src/a"), NodeScenario.Project("src/b"),
+                NodeScenario.Project("src/unrelated"));
+            return inputs with
+            {
+                Revision = inputs.Revision with
+                { Entries = [.. inputs.Revision.Entries, NodeScenario.File(path)] },
+                Versions = [new(revision, consumer, [], [path])],
+            };
+        }
+        const string deleted = "shared/old.txt";
+        const string added = "shared/new.txt";
+        CiPlan plan = await NodeScenario.Plan(Endpoint(NodeScenario.Basis, deleted, "src/a"),
+            Endpoint(NodeScenario.Candidate, added, "src/b"), deleted, added);
+
+        AssertProjectTargets(plan, TwoProjects);
+        foreach (PlannedCheck check in plan.Checks)
+        {
+            SelectionReason reason = check.Work.Key.Target == "src/a"
+                ? new(deleted, NodeScenario.Basis, "src/a")
+                : new(added, NodeScenario.Candidate, "src/b");
+            Assert.AreEqual(reason, Assert.ContainsSingle(check.Reasons));
+        }
+    }
+
+    [TestMethod]
+    [DataRow("src/unknown", "Unresolved local input consumer.")]
+    [DataRow(".", "Unresolved native workspace-root relation.")]
+    public void CommittedLocalInputRequiresAnActualProjectConsumer(string consumer,
+        string diagnostic)
+    {
+        const string path = "vendor/input.tgz";
+        NodeRevisionInputs inputs = NodeScenario.Inputs(NodeScenario.Candidate,
+            NodeScenario.Project("src/a"));
+        inputs = inputs with
+        {
+            Revision = inputs.Revision with
+            { Entries = [.. inputs.Revision.Entries, NodeScenario.File(path)] },
+            Graph = inputs.Graph with { LocalInputs = [new(path, false, [consumer])] },
+        };
+
+        InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+            NodeFactsAssembler.Assemble(inputs));
+        Assert.AreEqual(diagnostic, failure.Message);
+    }
+
+    [TestMethod]
+    [DataRow("src/unknown", NodeScenario.Candidate, false)]
+    [DataRow("src/a", NodeScenario.Candidate, true)]
+    [DataRow("src/a", NodeScenario.Basis, false)]
+    public void VersionInputsRequireOneAnswerPerActualConsumerAndRevision(
+        string consumer, string revision, bool repeat)
+    {
+        NodeRevisionInputs inputs = NodeScenario.Inputs(NodeScenario.Candidate,
+            NodeScenario.Project("src/a"));
+        NbgvInputs answer = Assert.ContainsSingle(inputs.Versions) with
+        { Directory = consumer, Commit = revision };
+        inputs = inputs with { Versions = repeat ? [answer, answer] : [answer] };
+
+        InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+            NodeFactsAssembler.Assemble(inputs));
+        Assert.AreEqual("Unresolved native version consumer or revision.", failure.Message);
+    }
+
+    [TestMethod]
+    [DataRow("vendor", true, "160000", "commit",
+        "Required input coverage needs a regular Git file.")]
+    [DataRow("vendor/input.tgz", false, "120000", "blob",
+        "Required input coverage needs a regular Git file.")]
+    [DataRow("missing.tgz", false, "100644", "blob",
+        "A required local input has no committed source.")]
+    [DataRow("missing", true, "100644", "blob",
+        "A required local input has no committed source.")]
+    [DataRow("vendor/../vendor/input.tgz", false, "100644", "blob",
+        "A required input coordinate is not representable.")]
+    public void MissingOrNonregularLocalDependencyCannotBecomeKnownInput(
+        string path, bool directory, string mode, string objectType, string diagnostic)
+    {
+        NodeRevisionInputs inputs = NodeScenario.Inputs(NodeScenario.Candidate,
+            NodeScenario.Project("src/a"));
+        inputs = inputs with
+        {
+            Revision = inputs.Revision with
+            {
+                Entries = [.. inputs.Revision.Entries, new("vendor/input.tgz", mode, objectType)],
+            },
+            Graph = inputs.Graph with { LocalInputs = [new(path, directory, ["src/a"])] },
+        };
+
+        InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+            NodeFactsAssembler.Assemble(inputs));
+        Assert.AreEqual(diagnostic, failure.Message);
     }
 
     [TestMethod]

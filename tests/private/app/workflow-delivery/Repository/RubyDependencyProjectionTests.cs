@@ -108,61 +108,37 @@ public sealed class RubyDependencyProjectionTests
     }
 
     [TestMethod]
-    [DataRow("missing-owner")]
-    [DataRow("wrong-name")]
-    [DataRow("escaped-source")]
-    [DataRow("installed-as-source")]
-    [DataRow("path-mismatch")]
-    [DataRow("missing-direct")]
-    [DataRow("missing-edge")]
-    [DataRow("duplicate-spec")]
-    [DataRow("outside-gemfile")]
-    [DataRow("duplicate-bundle")]
-    [DataRow("duplicate-source")]
-    [DataRow("duplicate-name")]
-    public void IncompleteOrAmbiguousNativeOwnershipCannotProduceAGraph(string defect)
+    public void IncompleteOrAmbiguousNativeOwnershipCannotProduceAGraph()
     {
-        RubySourceGemFacts[] sources = [Source("a")];
+        RubySourceGemFacts source = Source("a");
         RubyBundleSpecification local = Local("a");
         RubyBundleFacts bundle = Bundle("node/client", ["a"], local);
-        switch (defect)
-        {
-            case "missing-owner": sources = []; break;
-            case "wrong-name": sources = [sources[0] with { Gem = Gem("other") }]; break;
-            case "escaped-source":
-                local = local with
-                {
-                    Source = local.Source with
-                    { Path = Path.GetFullPath(Path.Combine(Root, "..", "outside")) }
-                }; break;
-            case "installed-as-source":
-                local = local with
-                {
-                    Source = local.Source with
-                    { Gemspec = Absolute("cache/a/a.gemspec") }
-                }; break;
-            case "path-mismatch":
-                local = local with
-                {
-                    Source = local.Source with
-                    { Path = Absolute("src/unrelated") }
-                }; break;
-            case "missing-direct": bundle = bundle with { DirectDependencies = ["missing"] }; break;
-            case "missing-edge": local = local with { Gem = Locked("a", "missing") }; break;
-            case "duplicate-spec": bundle = bundle with { Specifications = [local, local] }; break;
-            case "outside-gemfile":
-                bundle = bundle with
-                { Gemfile = Path.GetFullPath(Path.Combine(Root, "..", "Gemfile")) }; break;
-            case "duplicate-source": sources = [sources[0], sources[0]]; break;
-            case "duplicate-name":
-                sources = [sources[0],
-                new(Absolute("src/other/a.gemspec"), Gem("a"))]; break;
-        }
-        if (defect is "escaped-source" or "installed-as-source" or "path-mismatch" or
-            "missing-edge")
-            bundle = bundle with { Specifications = [local] };
-        RubyBundleFacts[] bundles = defect == "duplicate-bundle" ? [bundle, bundle] : [bundle];
-        Assert.ThrowsExactly<InvalidDataException>(() =>
-            RubyDependencyProjection.Project(Root, sources, bundles));
+
+        Reject("missing owner", [], [bundle]);
+        Reject("wrong name", [source with { Gem = Gem("other") }], [bundle]);
+        Reject("duplicate source", [source, source], [bundle]);
+        Reject("duplicate name", [source, new(Absolute("src/other/a.gemspec"), Gem("a"))],
+            [bundle]);
+        Reject("duplicate bundle", [source], [bundle, bundle]);
+        Reject("outside Gemfile", [source], [bundle with
+        { Gemfile = Path.GetFullPath(Path.Combine(Root, "..", "Gemfile")) }]);
+        Reject("missing direct dependency", [source],
+            [bundle with { DirectDependencies = ["missing"] }]);
+        Reject("duplicate spec", [source], [bundle with { Specifications = [local, local] }]);
+        RejectSpec("missing dependency edge", local with { Gem = Locked("a", "missing") });
+        string outside = Path.GetFullPath(Path.Combine(Root, "..", "outside"));
+        RejectSpec("escaping source", local with
+        { Source = local.Source with { Path = outside } });
+        RejectSpec("installed as source", local with
+        { Source = local.Source with { Gemspec = Absolute("cache/a/a.gemspec") } });
+        RejectSpec("mismatched path", local with
+        { Source = local.Source with { Path = Absolute("src/unrelated") } });
+
+        void RejectSpec(string message, RubyBundleSpecification specification) =>
+            Reject(message, [source], [bundle with { Specifications = [specification] }]);
     }
+
+    private static void Reject(string message, RubySourceGemFacts[] sources,
+        RubyBundleFacts[] bundles) => Assert.ThrowsExactly<InvalidDataException>(() =>
+            RubyDependencyProjection.Project(Root, sources, bundles), message);
 }

@@ -214,6 +214,10 @@ public sealed class PythonRepositoryInputsTests
         ".github/workflows/workflow-delivery-v3-ruby-release.yml")]
     [DataRow("tests/eng/test_general_ci_workflow.py", "eng/scripts/hk_scope_drift.py")]
     [DataRow("tests/eng/test_python_runtime.py", "global.json")]
+    [DataRow("tests/eng/test_python_runtime.py", "tests/eng/ci_workflow_shell.py")]
+    [DataRow("tests/eng/test_node_release_schedule.py", "tests/eng/ci_workflow_shell.py")]
+    [DataRow("tests/eng/test_release_batch_dispatch.py", "tests/eng/ci_workflow_shell.py")]
+    [DataRow("tests/eng/test_workflow_delivery_v3_hk.py", "tests/eng/ci_workflow_shell.py")]
     [DataRow("tests/eng/test_python_release_caller.py", "global.json")]
     [DataRow("tests/eng/test_python_release_caller.py", "tests/eng/ci_workflow_shell.py")]
     [DataRow("tests/eng/test_browser_store_release_caller.py",
@@ -237,6 +241,7 @@ public sealed class PythonRepositoryInputsTests
 
     [TestMethod]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml.backup")]
+    [DataRow("tests/eng/test_typos_config.py", "tests/eng/ci_workflow_shell.py")]
     [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/README.md")]
     [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/nested/caller.yml")]
     [DataRow("tests/eng/test_general_ci_workflow.py",
@@ -333,49 +338,37 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
-    [DataRow("revision")]
-    [DataRow("target-member")]
-    [DataRow("target-inputs")]
-    [DataRow("duplicate-target")]
-    [DataRow("duplicate-package")]
-    [DataRow("foreign-package")]
-    [DataRow("unresolved-check")]
-    [DataRow("root-package")]
-    [DataRow("nonregular")]
-    public void InvalidSuppliedScopeFails(string scenario)
+    public void InvalidSuppliedScopeFails()
     {
         var endpoint = Endpoint(["src/pkg/tests"], ["uv.lock"],
             members: [Member("."), Member("src/pkg")]);
-        GitRevision revision = endpoint.Revision;
-        PythonPytestTargetSet targets = endpoint.Targets;
-        ProjectFacts[] packages = [];
-        switch (scenario)
-        {
-            case "revision": targets = targets with { Revision = "foreign" }; break;
-            case "target-member":
-                targets = targets with
-                { Targets = [targets.Targets[0] with { Member = null }] }; break;
-            case "target-inputs":
-                targets = targets with
-                { Targets = [targets.Targets[0] with { Inputs = ["uv.lock"] }] }; break;
-            case "duplicate-target":
-                targets = targets with
-                { Targets = [targets.Targets[0], targets.Targets[0]] }; break;
-            case "duplicate-package": packages = [Package(), Package()]; break;
-            case "foreign-package": packages = [Package(directory: "src/foreign")]; break;
-            case "unresolved-check": packages = [Package() with { Checks = [] }]; break;
-            case "root-package": packages = [Package(directory: ".")]; break;
-            case "nonregular":
-                revision = revision with
-                {
-                    Entries = revision.Entries.Select(entry =>
-                    entry.Path == "uv.lock" ? entry with { Mode = "120000" } : entry).ToArray()
-                }; break;
-            default: Assert.Fail("Unknown supplied scope case."); break;
-        }
-        Assert.ThrowsExactly<InvalidDataException>(() => PythonRepositoryInputs.Map(revision,
-            endpoint.Projects, targets, packages));
+        var target = Assert.ContainsSingle(endpoint.Targets.Targets);
+        Reject("foreign revision", targets: endpoint.Targets with { Revision = "foreign" });
+        Reject("missing target member",
+            targets: endpoint.Targets with { Targets = [target with { Member = null }] });
+        Reject("wrong target input",
+            targets: endpoint.Targets with { Targets = [target with { Inputs = ["uv.lock"] }] });
+        Reject("duplicate target", targets: endpoint.Targets with { Targets = [target, target] });
+        Reject("duplicate package", [Package(), Package()]);
+        Reject("foreign package", [Package(directory: "src/foreign")]);
+        Reject("unresolved check", [Package() with { Checks = [] }]);
+        Reject("root package", [Package(directory: ".")]);
+        Reject("nonregular lock", revision: ChangeEntry(endpoint.Revision, "uv.lock",
+            entry => entry with { Mode = "120000" }));
+
+        void Reject(string scenario, ProjectFacts[]? packages = null,
+            PythonPytestTargetSet? targets = null, GitRevision? revision = null) =>
+            Assert.ThrowsExactly<InvalidDataException>(() => PythonRepositoryInputs.Map(
+                revision ?? endpoint.Revision, endpoint.Projects, targets ?? endpoint.Targets,
+                packages ?? []), scenario);
     }
+
+    private static GitRevision ChangeEntry(GitRevision revision, string path,
+        Func<GitEntry, GitEntry> edit) => revision with
+        {
+            Entries = revision.Entries.Select(entry => entry.Path == path ? edit(entry) : entry)
+                .ToArray()
+        };
 
     [TestMethod]
     public void NewWorkflowInputDoesNotReviveARemovedPytestTarget()
@@ -425,64 +418,69 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
-    [DataRow("owner")]
-    [DataRow("revision")]
-    [DataRow("uncommitted-revision")]
-    [DataRow("unchanged-path")]
-    [DataRow("duplicate")]
-    [DataRow("nonregular")]
-    public void InvalidPairedReasonsCannotCertifyScope(string scenario)
+    [DataRow("docs/unknown.md", "before", "foreign")]
+    [DataRow("docs/unknown.md", "foreign", "pytest:tests/standalone.py")]
+    [DataRow("docs/unknown.md", "after", "pytest:tests/standalone.py")]
+    [DataRow("docs/unchanged.md", "before", "pytest:tests/standalone.py")]
+    public void InvalidPairedReasonsCannotCertifyScope(string path, string revision, string owner)
     {
-        PythonFactsEndpoint basis = Facts(Endpoint(["tests/standalone.py"],
-            ["docs/unknown.md", "docs/unchanged.md"], "before"));
-        PythonFactsEndpoint candidate = Facts(Endpoint(["tests/standalone.py"], [], "after"));
-        var reason = new SelectionReason("docs/unknown.md", "before", "pytest:tests/standalone.py");
-        reason = scenario switch
-        {
-            "owner" => reason with { Project = "foreign" },
-            "revision" => reason with { Revision = "foreign" },
-            "uncommitted-revision" => reason with { Revision = "after" },
-            "unchanged-path" => reason with { Path = "docs/unchanged.md" },
-            _ => reason
-        };
-        if (scenario == "nonregular") basis = basis with
-        {
-            Revision = basis.Revision with
-            {
-                Entries = basis.Revision.Entries.Select(entry => entry.Path == reason.Path ?
-                    entry with { Mode = "120000" } : entry).ToArray()
-            }
-        };
-        SelectionReason[] supplied = scenario == "duplicate" ? [reason, reason] : [reason];
-        Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
-            basis, candidate, ["docs/unknown.md"], false, supplied));
+        var (basis, candidate) = PairedEndpoints();
+        RejectReasons(basis, candidate, new SelectionReason(path, revision, owner));
     }
 
     [TestMethod]
-    [DataRow("absent")]
-    [DataRow("duplicate")]
-    [DataRow("escape")]
-    [DataRow("nonregular")]
-    public void InvalidPairCoordinatesFail(string scenario)
+    public void DuplicatePairedReasonsCannotCertifyScope()
+    {
+        var (basis, candidate) = PairedEndpoints();
+        var reason = new SelectionReason("docs/unknown.md", "before", "pytest:tests/standalone.py");
+        RejectReasons(basis, candidate, reason, reason);
+    }
+
+    [TestMethod]
+    public void NonregularPairedReasonCannotCertifyScope()
+    {
+        var (basis, candidate) = PairedEndpoints();
+        var reason = new SelectionReason("docs/unknown.md", "before", "pytest:tests/standalone.py");
+        RejectReasons(basis with
+        {
+            Revision = ChangeEntry(basis.Revision, reason.Path,
+                entry => entry with { Mode = "120000" })
+        }, candidate, reason);
+    }
+
+    private static (PythonFactsEndpoint Basis, PythonFactsEndpoint Candidate) PairedEndpoints() =>
+        (Facts(Endpoint(["tests/standalone.py"],
+             ["docs/unknown.md", "docs/unchanged.md"], "before")),
+         Facts(Endpoint(["tests/standalone.py"], [], "after")));
+
+    private static void RejectReasons(PythonFactsEndpoint basis, PythonFactsEndpoint candidate,
+        params SelectionReason[] reasons) =>
+        Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
+            basis, candidate, ["docs/unknown.md"], false, reasons));
+
+    [TestMethod]
+    [DataRow("missing.py")]
+    [DataRow(".typos.toml", ".typos.toml")]
+    [DataRow("../outside.py")]
+    public void InvalidPairCoordinatesFail(params string[] paths)
     {
         PythonFactsEndpoint endpoint = Facts(Endpoint(["tests/standalone.py"], [".typos.toml"]));
-        string[] paths = scenario switch
-        {
-            "absent" => ["missing.py"],
-            "duplicate" => [".typos.toml", ".typos.toml"],
-            "escape" => ["../outside.py"],
-            _ => [".typos.toml"]
-        };
-        if (scenario == "nonregular") endpoint = endpoint with
-        {
-            Revision = endpoint.Revision with
-            {
-                Entries = endpoint.Revision.Entries.Select(entry => entry.Path == ".typos.toml" ?
-                    entry with { ObjectType = "tree" } : entry).ToArray()
-            }
-        };
         Assert.ThrowsExactly<InvalidDataException>(() =>
             PythonRepositoryInputs.Pair(endpoint, endpoint, paths));
+    }
+
+    [TestMethod]
+    public void NonregularPairCoordinateFails()
+    {
+        const string path = ".typos.toml";
+        PythonFactsEndpoint endpoint = Facts(Endpoint(["tests/standalone.py"], [path]));
+        endpoint = endpoint with
+        {
+            Revision = ChangeEntry(endpoint.Revision, path,
+                entry => entry with { ObjectType = "tree" })
+        };
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            PythonRepositoryInputs.Pair(endpoint, endpoint, [path]));
     }
 
     [TestMethod]
@@ -518,4 +516,155 @@ public sealed class PythonRepositoryInputsTests
         PythonFactsEndpoint endpoint = Facts(Endpoint(["tests/unrelated.py"], [path]));
         Assert.ThrowsExactly<InvalidDataException>(() => Plan(endpoint, endpoint, path));
     }
+
+    private static readonly string[] Targets = ["src/member/tests", "tests/one.py"];
+    private static readonly string[] MemberInputs =
+        ["src/member/tests/data.json", "src/member/tests/test_one.py"];
+    private static readonly string[] FileInput = ["tests/one.py"];
+
+    private static GitEntry Entry(string path) => new(path, "100644", "blob");
+    private static PythonPytestConfiguration Configuration() => new("pyproject.toml",
+        Targets, []);
+    private static PythonProjectDependencies[] Projects() =>
+        [new(".", "root", [], []), new("src/member", "member", [], [])];
+    private static GitRevision Revision() => new("basis",
+        [Entry("pyproject.toml"), Entry("src/member/pyproject.toml"),
+        Entry("src/member/source.py"), Entry("src/member/tests/test_one.py"),
+        Entry("src/member/tests/data.json"), Entry("tests/one.py"), Entry("tests/one.pyc"),
+        Entry("tests/unrelated.py")]);
+
+    [TestMethod]
+    public void ConfiguredTargetsBindExactInputsAndNativeMembers()
+    {
+        RepositoryFacts result = TargetFacts();
+        Assert.AreEqual("basis", result.Revision);
+        Assert.AreEqual("pyproject.toml", Assert.ContainsSingle(result.SharedInputs).Path);
+        Assert.HasCount(2, result.Projects);
+        ProjectFacts member = Target(result, "src/member/tests");
+        Assert.AreEqual("src/member", member.Directory);
+        CollectionAssert.AreEqual(MemberInputs, member.OwnedPaths);
+        ProjectFacts standalone = Target(result, "tests/one.py");
+        Assert.AreEqual(".", standalone.Directory);
+        CollectionAssert.AreEqual(FileInput, standalone.OwnedPaths);
+    }
+
+    [TestMethod]
+    public void NearestMemberDoesNotTurnStandaloneTargetsIntoRootWork()
+    {
+        GitRevision revision = Revision() with
+        {
+            Entries = [.. Revision().Entries, Entry("src/member/nested/pyproject.toml"),
+                Entry("src/member/nested/tests/test_nested.py")]
+        };
+        PythonPytestConfiguration configuration = Configuration() with
+        {
+            TestPaths = ["src/member/nested/tests", "tests/one.py"]
+        };
+        RepositoryFacts result = TargetFacts(configuration, revision,
+            [.. Projects(), new("src/member/nested", "nested", [], [])]);
+        Assert.AreEqual("src/member/nested", Target(result, "src/member/nested/tests").Directory);
+        ProjectFacts standalone = Target(result, "tests/one.py");
+        Assert.AreEqual(".", standalone.Directory);
+        CollectionAssert.AreEqual(FileInput, standalone.OwnedPaths);
+    }
+
+    [TestMethod]
+    [DataRow("tests/missing.py")]
+    [DataRow]
+    [DataRow("tests/one.py", "tests/one.py")]
+    [DataRow("../tests")]
+    public void InvalidConfiguredTargetsCannotBecomeRunnableOwners(params string[] targets) =>
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            TargetFacts(Configuration() with { TestPaths = targets }));
+
+    [TestMethod]
+    public void UncommittedOrSymlinkedConfigurationCannotBecomeRunnableOwners()
+    {
+        GitRevision revision = Revision();
+        var missing = Configuration() with { ConfigurationFile = "pytest.ini" };
+        Assert.ThrowsExactly<InvalidDataException>(() => TargetFacts(missing));
+        var symlink = revision with
+        {
+            Entries = [.. revision.Entries, new("pytest.ini", "120000", "blob")]
+        };
+        Assert.ThrowsExactly<InvalidDataException>(() => TargetFacts(missing, symlink));
+    }
+
+    [TestMethod]
+    [DataRow("tests/one.py", "120000", "blob")]
+    [DataRow("src/member/tests/data.json", "120000", "blob")]
+    [DataRow("tests/one.py", "160000", "commit")]
+    [DataRow("src/member/pyproject.toml", "120000", "blob")]
+    public void NonregularTargetInputCannotBecomeRunnableOwner(string path, string mode,
+        string type) => Assert.ThrowsExactly<InvalidDataException>(() =>
+        TargetFacts(revision: ChangeEntry(Revision(), path, _ => new(path, mode, type))));
+
+    [TestMethod]
+    public void IncompleteCommittedScopeCannotBecomeRunnableOwner()
+    {
+        GitRevision revision = Revision();
+        PythonProjectDependencies[] projects = Projects();
+        Reject(revision with { Entries = [.. revision.Entries, revision.Entries[0]] },
+            projects, "duplicate entry");
+        Reject(revision with { Commit = "" }, projects, "missing revision");
+        Reject(revision, [.. projects, projects[1]], "duplicate member");
+        Reject(revision, [projects[1]], "missing root member");
+        Reject(revision with
+        {
+            Entries = revision.Entries.Where(entry =>
+                entry.Path != "src/member/pyproject.toml").ToArray()
+        }, projects, "missing manifest");
+
+        static void Reject(GitRevision revision, PythonProjectDependencies[] projects,
+            string scenario) => Assert.ThrowsExactly<InvalidDataException>(() =>
+            TargetFacts(revision: revision, projects: projects), scenario);
+    }
+
+    [TestMethod]
+    public void EnclosingMultipleMembersFailsInsteadOfGuessing()
+    {
+        GitRevision revision = Revision() with
+        {
+            Entries = [.. Revision().Entries, Entry("src/member/nested/pyproject.toml")]
+        };
+        PythonPytestConfiguration configuration = Configuration() with
+        { TestPaths = ["src/member"] };
+        Assert.ThrowsExactly<InvalidDataException>(() => TargetFacts(
+            configuration, revision, [.. Projects(), new("src/member/nested", "nested", [], [])]));
+    }
+
+    [TestMethod]
+    public void EndpointBindingsRemainIndependent()
+    {
+        PythonFactsEndpoint before = TargetEndpoint(Configuration(), Revision(), Projects());
+        PythonFactsEndpoint after = TargetEndpoint(
+            Configuration() with { TestPaths = ["src/member"] },
+            Revision() with { Commit = "candidate" }, Projects());
+        PlanRequest plan = PythonFactsAssembler.Assemble(before, after, [], false).Request;
+        RepositoryFacts basis = plan.Basis;
+        RepositoryFacts candidate = plan.Candidate;
+        Assert.AreEqual("basis", basis.Revision);
+        Assert.AreEqual("candidate", candidate.Revision);
+        Assert.HasCount(2, basis.Projects);
+        ProjectFacts target = Assert.ContainsSingle(candidate.Projects);
+        Assert.AreEqual("pytest:src/member", target.Id);
+        Assert.AreEqual("src/member", target.Directory);
+        Assert.HasCount(4, target.OwnedPaths!);
+        Assert.Contains("src/member/source.py", target.OwnedPaths!);
+    }
+
+    private static ProjectFacts Target(RepositoryFacts facts, string path) =>
+        Assert.ContainsSingle(facts.Projects.Where(project => project.Id == "pytest:" + path));
+
+    private static RepositoryFacts TargetFacts(PythonPytestConfiguration? configuration = null,
+        GitRevision? revision = null, PythonProjectDependencies[]? projects = null)
+    {
+        var endpoint = TargetEndpoint(configuration ?? Configuration(), revision ?? Revision(),
+            projects ?? Projects());
+        return PythonFactsAssembler.Assemble(endpoint, endpoint, [], false).Request.Candidate;
+    }
+
+    private static PythonFactsEndpoint TargetEndpoint(PythonPytestConfiguration configuration,
+        GitRevision revision, PythonProjectDependencies[] projects) =>
+        new(revision, projects, configuration, new("ubuntu-latest", "default", []), [], []);
 }

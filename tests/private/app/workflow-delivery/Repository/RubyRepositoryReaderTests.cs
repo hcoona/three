@@ -1,5 +1,6 @@
 using System.Text.Json;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Ecosystems;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -11,8 +12,23 @@ namespace WorkflowDelivery.Tests.Repository;
 public sealed class RubyRepositoryReaderTests(TestContext context)
 {
     private static readonly string[] RequirePaths = ["lib"];
+    private static readonly string[] VersionArguments = ["get-version", "--format", "json"];
     private static readonly string[] NestedOwnerDirectories =
         ["tests/suite", "tests/suite/vendored"];
+    private const string Smoke = "hcoona-release-smoke-ruby";
+    private const string GeneratedVersion = "/lib/hcoona_release_smoke_ruby/version.rb";
+    private const string GemDeclaration = """
+        schema: workflow-delivery/v3/release-unit
+        release-unit: hcoona-release-smoke-ruby
+        builds:
+          - id: ruby-gem
+            definition: ruby/gem-v1
+            entry-point: hcoona-release-smoke-ruby.gemspec
+            outputs:
+              - id: gem
+                role: primary-package
+                kind: ruby-gem
+        """;
     private static NativeCommandResult Answer(object value) => new(NativeTermination.Exited,
         0, JsonSerializer.Serialize(value), "", 0, null);
     private static RubyRepositoryRequest Request(string root) => new(new(
@@ -81,7 +97,9 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
             "schema: workflow-delivery/v3/quality-selection\necosystems:\n  ruby:\n" +
             "    preset: ruby/rspec-v1\n");
         string helper = "src/private/app/workflow-delivery/Native/Ruby/facts.rb";
+        const string evaluated = "shared/dependencies.rb";
         await repo.SetAsync(helper, "native implementation");
+        await repo.SetAsync(evaluated, "evaluated Gemfile input");
         GitMaterialization checkout = await BindAsync(repo);
         RubyRevisionInputs result = await RubyRepositoryReader.ReadAsync(checkout,
             Request(repo.Directory), async (command, token) =>
@@ -103,7 +121,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
                     lockfile = gemfile + ".lock",
                     bundler_version = "2.7.2",
                     locked_bundler_version = "2.7.2",
-                    gemfiles = new[] { gemfile },
+                    gemfiles = new[] { gemfile, Path.Combine(repo.Directory, evaluated) },
                     direct_dependencies = Array.Empty<string>(),
                     specifications = Array.Empty<object>()
                 });
@@ -115,9 +133,15 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         Assert.AreEqual(directory, owner.Directory);
         Assert.IsNull(owner.ReleaseUnit);
         Assert.AreEqual(RubyProjectChecks.RSpec, Assert.ContainsSingle(owner.Checks).Key.Check);
-        SharedInput input = Assert.ContainsSingle(result.Facts.OperationInputs.Where(row =>
-            row.Path == helper));
-        CollectionAssert.AreEqual(new[] { owner.Id }, input.Consumers);
+        RubyFactAssembly assembly = RubyFactsAssembler.Assemble(result.Facts, result.Facts,
+            [helper, evaluated], false);
+        PlannedCheck check = Assert.ContainsSingle(ImpactPlanner.Plan(assembly.Request,
+            assembly.PairedReasons).Checks);
+        Assert.AreEqual(RubyProjectChecks.RSpec, check.Work.Key.Check);
+        Assert.Contains(new SelectionReason(helper, checkout.Revision.Commit, owner.Id),
+            check.Reasons);
+        Assert.Contains(new SelectionReason(evaluated, checkout.Revision.Commit, owner.Id),
+            check.Reasons);
     }
 
     [TestMethod]
@@ -267,14 +291,13 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
     [TestMethod]
     [DataRow("rspec")]
     [DataRow("input-only")]
-    [DataRow("gem")]
     [DataRow("latexmath")]
     [DataRow("latexmath-package")]
     [DataRow("latexmath-rspec")]
     public async Task NativeSourceAdoptionPreservesRequiredChecksAndVersionInputs(string adoption)
     {
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        string name = adoption == "gem" ? "hcoona-release-smoke-ruby" : "asciidoctor-latexmath";
+        const string name = "asciidoctor-latexmath";
         string real = Path.Combine(RepositoryToolSelection.SourceRoot, "src", "public", "lib",
             name);
         string directory = "src/" + name;
@@ -291,17 +314,10 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
             await repo.SetAsync(directory + "/workflow-delivery.quality.yml",
                 "schema: workflow-delivery/v3/quality-selection\n" +
                 "ecosystems:\n  ruby:\n    preset: " +
-                (adoption is "gem" or "latexmath-package" ? RubyPackageChecks.Preset :
-                    adoption == "latexmath-rspec" ? RubyProjectChecks.Preset :
+                (adoption == "latexmath-package" ? RubyPackageChecks.Preset :
                     RubyProjectChecks.Preset) +
                 "\n");
-        if (adoption == "gem")
-            await repo.SetAsync(directory + "/workflow-delivery.release-unit.yml",
-                "schema: workflow-delivery/v3/release-unit\nrelease-unit: native-smoke\nbuilds:\n" +
-                "  - id: gem\n    definition: ruby/gem-v1\n    entry-point: " + name +
-                ".gemspec\n    outputs:\n      - id: gem\n        role: primary-package\n" +
-                "        kind: ruby-gem\n");
-        else if (adoption.StartsWith("latexmath", StringComparison.Ordinal))
+        if (adoption.StartsWith("latexmath", StringComparison.Ordinal))
             await repo.SetAsync(directory + "/workflow-delivery.release-unit.yml",
                 await File.ReadAllTextAsync(Path.Combine(real,
                     "workflow-delivery.release-unit.yml"), context.CancellationToken));
@@ -373,7 +389,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
             Assert.AreEqual(RubyProjectChecks.RSpec, Assert.ContainsSingle(owner.Checks).Key.Check);
             Assert.IsEmpty(result.Units);
         }
-        else if (adoption == "latexmath")
+        else
         {
             // The committed selection composes whole-project RSpec with the declared gem checks.
             Assert.AreEqual(RubyPackageChecks.RSpecPreset, owner.QualityPreset);
@@ -390,23 +406,206 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
                 result.Facts.OperationInputs.Single(input => input.Path ==
                     directory + "/workflow-delivery.release-unit.yml").Consumers));
         }
-        else
-        {
-            Assert.HasCount(3, owner.Checks);
-            Assert.AreEqual("native-smoke", owner.ReleaseUnit);
-            Assert.IsTrue(owner.Checks.All(check => check.Package!.ExpectedVersion == "1.2.3"));
-            Assert.AreEqual(owner.Id, Assert.ContainsSingle(
-                result.Facts.OperationInputs.Single(input => input.Path ==
-                    directory + "/workflow-delivery.release-unit.yml").Consumers));
-        }
     }
 
     [TestMethod]
-    [DataRow("failure", "Native Ruby fact collection failed")]
-    [DataRow("lock-mismatch", "Native Bundler version differs from the request.")]
-    [DataRow("incomplete-answer", "Incomplete native Ruby fact response.")]
-    public async Task NativeCollectionFailureCannotBecomeEndpointFacts(string defect,
-        string diagnostic)
+    [DataRow("src/original", "1.2.3", "1.2.3")]
+    [DataRow("src/moved", "1.2.3-beta.4+gabcdef0", "1.2.3.pre.beta.4")]
+    public async Task SelectedGemUsesItsOriginalNativeSubjectAndCompletePackageChecks(
+        string directory, string raw, string expectedVersion)
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        string declaration = directory + "/workflow-delivery.release-unit.yml";
+        GitMaterialization checkout = await StageGemAsync(repo, directory, GemDeclaration);
+        RubyRepositoryRequest request = Request(repo.Directory);
+        RubyRevisionInputs native = await RubyRepositoryReader.ReadAsync(checkout, request,
+            (command, token) => ReadGemAsync(command, repo.Directory, directory, raw,
+                expectedVersion, (Smoke, expectedVersion, "ruby"), token),
+            context.CancellationToken);
+        RubyFactAssembly assembly = RubyFactsAssembler.Assemble(native.Facts, native.Facts,
+            [declaration], false);
+        CiPlan plan = ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+        CheckSpec[] checks = plan.Checks.Select(check => check.Work).ToArray();
+
+        CollectionAssert.AreEquivalent(RubyPackageChecks.Kinds,
+            checks.Select(check => check.Key.Check).ToArray());
+        CheckSpec build = checks.Single(check => check.Key.Check == RubyPackageChecks.Build);
+        CheckSpec contents = checks.Single(check => check.Key.Check == RubyPackageChecks.Contents);
+        CheckSpec consumer = checks.Single(check => check.Key.Check == RubyPackageChecks.Consumer);
+        PackageTarget subject = build.Package!;
+        Assert.AreEqual(directory, subject.Directory);
+        Assert.AreEqual(directory + "/" + Smoke + ".gemspec", subject.EntryPoint);
+        Assert.AreEqual(declaration, subject.Declaration);
+        Assert.AreEqual(expectedVersion, subject.ExpectedVersion);
+        Assert.AreEqual(new PackageOutput("gem", "primary-package", "ruby-gem"),
+            Assert.ContainsSingle(subject.Outputs));
+        Assert.IsTrue(checks.All(check => check.Required && check.Package == subject));
+        Assert.AreEqual(build.Key, Assert.ContainsSingle(contents.Prerequisites));
+        CheckKey[] prerequisites = [build.Key, contents.Key];
+        CollectionAssert.AreEquivalent(prerequisites, consumer.Prerequisites);
+        Assert.AreEqual("original gemspec", await File.ReadAllTextAsync(
+            Assert.ContainsSingle(native.Sources).Gemspec, context.CancellationToken));
+        Assert.IsFalse(request.Tools.Environment.ContainsKey("THREE_WORKFLOW_RELEASE_NBGV_PATH"));
+    }
+
+    [TestMethod]
+    [DataRow("definition: ruby/gem-v1", "definition: ruby/other-v1",
+        "Unresolved adopted native Ruby gem subject.")]
+    [DataRow("entry-point: " + Smoke + ".gemspec", "entry-point: other.gemspec",
+        "Unresolved adopted native Ruby gem subject.")]
+    [DataRow("kind: ruby-gem", "kind: npm-tarball", "Unsupported complete Ruby gem output set.")]
+    [DataRow("role: primary-package", "role: source-package",
+        "Unsupported complete Ruby gem output set.")]
+    public async Task UnsupportedGemDeclarationCannotBecomePartialPackageWork(
+        string original, string replacement, string diagnostic)
+    {
+        const string directory = "src/package";
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        GitMaterialization checkout = await StageGemAsync(repo, directory,
+            GemDeclaration.Replace(original, replacement, StringComparison.Ordinal));
+
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            RubyRepositoryReader.ReadAsync(checkout, Request(repo.Directory),
+                (command, token) => ReadGemAsync(command, repo.Directory, directory,
+                    "1.2.3", "1.2.3", (Smoke, "1.2.3", "ruby"), token),
+                context.CancellationToken));
+        Assert.Contains(diagnostic, failure.Message);
+    }
+
+    [TestMethod]
+    [DataRow(Smoke, "9.9.9", "ruby", "Native gemspec differs from its NBGV projection.")]
+    [DataRow(RubyReleaseUnits.Latexmath, "1.2.3", "ruby",
+        "Native gemspec differs from its NBGV projection.")]
+    [DataRow(Smoke, "1.2.3", "x86_64-linux", "Unresolved adopted native Ruby gem subject.")]
+    public async Task NativeGemMustMatchTheProjectedIdentityAndSupportedSubject(
+        string name, string version, string platform, string diagnostic)
+    {
+        const string directory = "src/package";
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        GitMaterialization checkout = await StageGemAsync(repo, directory, GemDeclaration);
+
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            RubyRepositoryReader.ReadAsync(checkout, Request(repo.Directory),
+                (command, token) => ReadGemAsync(command, repo.Directory, directory,
+                    "1.2.3", "1.2.3", (name, version, platform), token),
+                context.CancellationToken));
+        Assert.Contains(diagnostic, failure.Message);
+    }
+
+    [TestMethod]
+    public async Task NativePreparationCannotOverwriteACommittedGeneratedVersion()
+    {
+        const string directory = "src/package";
+        const string generated = directory + GeneratedVersion;
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        await repo.SetAsync(generated, "committed version");
+        GitMaterialization checkout = await StageGemAsync(repo, directory, GemDeclaration);
+
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            RubyRepositoryReader.ReadAsync(checkout, Request(repo.Directory),
+                (command, token) => ReadGemAsync(command, repo.Directory, directory,
+                    "1.2.3", "1.2.3", (Smoke, "1.2.3", "ruby"), token),
+                context.CancellationToken));
+
+        Assert.Contains("Generated Ruby version is a committed input", failure.Message);
+        Assert.AreEqual("committed version", await File.ReadAllTextAsync(
+            Path.Combine(repo.Directory, generated), context.CancellationToken));
+    }
+
+    [TestMethod]
+    [DataRow(1, "{\"SemVer2\":\"1.2.3\"}", "Native Ruby source version query failed")]
+    [DataRow(0, "{}", "Incomplete native NBGV version answer")]
+    public async Task MissingNativeVersionCannotBecomeGemFacts(
+        int exitCode, string stdout, string diagnostic)
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        GitMaterialization checkout = await StageGemAsync(repo, "src/package", GemDeclaration);
+        var result = new NativeCommandResult(NativeTermination.Exited, exitCode, stdout, "",
+            0, null);
+
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            RubyRepositoryReader.ReadAsync(checkout, Request(repo.Directory),
+                (_, _) => Task.FromResult(result), context.CancellationToken));
+        Assert.Contains(diagnostic, failure.Message);
+    }
+
+    [TestMethod]
+    public async Task UnregisteredGemCannotSilentlyDisappearFromTheNativeInventory()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        await repo.SetAsync("src/other/other.gemspec");
+        GitMaterialization checkout = await BindAsync(repo);
+
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            RubyRepositoryReader.ReadAsync(checkout, Request(repo.Directory), (_, _) =>
+                throw new AssertFailedException("No version query is valid for this gem."),
+                context.CancellationToken));
+
+        Assert.Contains("Unsupported native Ruby source input scope", failure.Message);
+    }
+
+    private async Task<GitMaterialization> StageGemAsync(GitFixture repo, string directory,
+        string declaration)
+    {
+        await repo.SetAsync(directory + "/" + Smoke + ".gemspec", "original gemspec");
+        await repo.SetAsync(directory + "/lib/hcoona_release_smoke_ruby.rb", "original library");
+        await repo.SetAsync(directory + "/version.json", "{\"version\":\"1.2\"}");
+        await repo.SetAsync(".gitignore", "**/version.rb\n");
+        await repo.SetAsync(directory + "/workflow-delivery.release-unit.yml", declaration);
+        await repo.SetAsync(directory + "/workflow-delivery.quality.yml",
+            "schema: workflow-delivery/v3/quality-selection\necosystems:\n  ruby:\n    preset: " +
+            RubyPackageChecks.Preset + "\n");
+        return await BindAsync(repo);
+    }
+
+    private static async Task<NativeCommandResult> ReadGemAsync(NativeCommand command, string root,
+        string directory, string raw, string version,
+        (string Name, string Version, string Platform) gem, CancellationToken token)
+    {
+        string nbgv = Path.Combine(root, "nbgv");
+        Assert.IsFalse(command.InheritEnvironment);
+        Assert.AreEqual(nbgv, command.Environment!["THREE_WORKFLOW_RELEASE_NBGV_PATH"]);
+        if (command.Executable == nbgv)
+        {
+            Assert.AreEqual(Path.Combine(root, directory), command.Directory);
+            CollectionAssert.AreEqual(VersionArguments, command.Arguments);
+            return Answer(new { SemVer2 = raw });
+        }
+        using JsonDocument input = JsonDocument.Parse(
+            await File.ReadAllTextAsync(command.Arguments[^1], token));
+        string gemspec = Path.GetFullPath(Path.Combine(root, directory, Smoke + ".gemspec"));
+        Assert.AreEqual(gemspec, Path.GetFullPath(
+            input.RootElement.GetProperty("path").GetString()!));
+        string? operation = input.RootElement.GetProperty("operation").GetString();
+        if (operation == "version")
+            return Answer(new
+            {
+                gemspec,
+                raw,
+                version,
+                literal = JsonSerializer.Serialize(version),
+            });
+        Assert.AreEqual("gemspec", operation);
+        Assert.Contains("VERSION = " + JsonSerializer.Serialize(version),
+            await File.ReadAllTextAsync(Path.Combine(root, directory + GeneratedVersion), token));
+        return Answer(new
+        {
+            gemspec,
+            name = gem.Name,
+            version = gem.Version,
+            platform = gem.Platform,
+            require_paths = RequirePaths,
+            files = Array.Empty<string>(),
+            runtime_dependencies = Array.Empty<object>(),
+        });
+    }
+
+    [TestMethod]
+    [DataRow(1, "2.7.2", "2.7.2", "Native Ruby fact collection failed")]
+    [DataRow(0, "2.4.20", "2.7.2", "Native Bundler version differs from the request.")]
+    [DataRow(0, "2.7.2", null, "Incomplete native Ruby fact response.")]
+    public async Task NativeBundleCollectionFailureCannotBecomeEndpointFacts(
+        int exitCode, string lockedVersion, string? observedVersion, string diagnostic)
     {
         GitFixture repo = sharedBundle!;
         using var scratch = new Scratch();
@@ -416,7 +615,6 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
             {
                 using JsonDocument input = JsonDocument.Parse(
                     await File.ReadAllTextAsync(command.Arguments[^1], token));
-                if (defect == "failure") return Answer(new { }) with { ExitCode = 1 };
                 string gemfile = Path.Combine(repo.Directory, "node/Gemfile");
                 if (input.RootElement.GetProperty("operation").GetString() == "bundle-context")
                     return Answer(new
@@ -424,15 +622,16 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
                         gemfile,
                         lockfile = gemfile + ".lock",
                         bundler_version = "2.7.2",
-                        locked_bundler_version = "2.4.20"
-                    });
-                if (defect == "incomplete-answer") return Answer(new { });
+                        locked_bundler_version = lockedVersion
+                    }) with
+                    { ExitCode = exitCode };
+                if (observedVersion is null) return Answer(new { });
                 return Answer(new
                 {
                     gemfile,
                     lockfile = gemfile + ".lock",
-                    bundler_version = "2.7.2",
-                    locked_bundler_version = "2.7.2",
+                    bundler_version = observedVersion,
+                    locked_bundler_version = lockedVersion,
                     gemfiles = new[] { gemfile },
                     direct_dependencies = Array.Empty<string>(),
                     specifications = Array.Empty<object>()

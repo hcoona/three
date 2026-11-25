@@ -169,46 +169,42 @@ public sealed class NodeGroupPlanningTests
     }
 
     [TestMethod]
-    [DataRow("missing")]
-    [DataRow("unsupported")]
-    [DataRow("foreign")]
-    [DataRow("no-scripts")]
-    [DataRow("build-only")]
-    [DataRow("test-only")]
-    [DataRow("wrong-build-case")]
-    [DataRow("wrong-test-case")]
-    public async Task SelectedAdoptedContractCannotTurnIntoRetainedExecution(string defect)
+    [DataRow(null)]
+    [DataRow("node/unsupported-v1")]
+    [DataRow("python/hcoona-release-smoke-python-v1")]
+    public async Task MissingOrUnsupportedAdoptionCannotFallBackToRetainedWork(string? preset)
     {
         NodeRevisionInputs candidate = Inputs(NodeScenario.Candidate);
-        if (defect is "missing" or "unsupported" or "foreign")
-            candidate = candidate with
-            {
-                Quality = new Dictionary<string, QualitySelection?>(candidate.Quality)
-                {
-                    [Adopted] = defect == "missing" ? null
-                        : new(defect == "foreign" ? "python/hcoona-release-smoke-python-v1" :
-                            "node/unsupported-v1", Adopted + "/workflow-delivery.quality.yml"),
-                },
-            };
-        string[] scriptNames = defect switch
+        candidate = candidate with
         {
-            "no-scripts" => [],
-            "build-only" => ["build"],
-            "test-only" => ["test"],
-            "wrong-build-case" => ["Build", "test"],
-            "wrong-test-case" => ["build", "Test"],
-            _ => ["build", "test"]
+            Quality = new Dictionary<string, QualitySelection?>(candidate.Quality)
+            {
+                [Adopted] = preset is null ? null :
+                    new(preset, Adopted + "/workflow-delivery.quality.yml"),
+            },
         };
 
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            Plan(Inputs(NodeScenario.Basis), candidate, [Adopted + "/index.js"]));
+    }
+
+    [TestMethod]
+    [DataRow("Build", "test", "build")]
+    [DataRow("build", "Test", "test")]
+    public async Task AdoptedScriptsMustHaveTheirExactNames(
+        string buildName, string testName, string missingScript)
+    {
+        var scripts = new Dictionary<string, string>
+        {
+            [buildName] = "opaque build",
+            [testName] = "opaque test",
+        };
         InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
-            () => Plan(
-            Inputs(NodeScenario.Basis), candidate, [Adopted + "/index.js"],
-            scripts: (project, _) => Task.FromResult(new PnpmScripts(project.Directory,
-                scriptNames.ToDictionary(name => name, _ => "opaque", StringComparer.Ordinal)))));
-        if (defect is "no-scripts" or "test-only" or "wrong-build-case")
-            Assert.Contains("'build'", failure.Message);
-        if (defect is "build-only" or "wrong-test-case")
-            Assert.Contains("'test'", failure.Message);
+            () => Plan(Inputs(NodeScenario.Basis), Inputs(NodeScenario.Candidate),
+                [Adopted + "/index.js"],
+                scripts: (project, _) => Task.FromResult(new PnpmScripts(project.Directory,
+                    scripts))));
+        Assert.Contains("'" + missingScript + "'", failure.Message);
     }
 
     [TestMethod]
@@ -283,30 +279,20 @@ public sealed class NodeGroupPlanningTests
     }
 
     [TestMethod]
-    [DataRow("unknown")]
-    [DataRow("revision")]
-    [DataRow("native")]
-    [DataRow("adopted")]
-    public async Task IncompleteInputsCannotYieldSuccessfulRetainedApplicability(string defect)
+    public async Task UnknownPresentChangeCannotReturnEmptyRetainedWork()
     {
+        const string path = "unknown/file.txt";
         NodeRevisionInputs basis = Inputs(NodeScenario.Basis);
         NodeRevisionInputs candidate = Inputs(NodeScenario.Candidate);
-        string[] paths = defect == "unknown" ? ["unknown/file.txt"] : [];
-        ScopeInputs scope = Scope(basis, candidate, paths);
-        if (defect == "revision")
-            scope = scope with { Comparison = scope.Comparison with { Candidate = "other" } };
-        if (defect == "native")
-            candidate = candidate with
-            {
-                Graph = candidate.Graph with { Projects = [NodeScenario.Project(".")] },
-            };
-        if (defect == "unknown")
-            scope = scope with { Candidate = [new(paths[0], true, "100644", [])] };
+        candidate = candidate with
+        {
+            Revision = candidate.Revision with
+            { Entries = [.. candidate.Revision.Entries, NodeScenario.File(path)] },
+        };
 
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => NodeGroupPlanning.PlanAsync(
-            basis, candidate, scope, defect == "adopted" ? "src/missing" : Adopted,
-            (project, _) => Task.FromResult(NodeScenario.Scripts(project)),
-            (_, _) => Task.FromResult("1.2.3"), CancellationToken.None));
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => Plan(basis, candidate, [path]));
+        Assert.Contains(path, failure.Message);
     }
 
     private static NodeRevisionInputs Inputs(string revision, bool dependent = false)

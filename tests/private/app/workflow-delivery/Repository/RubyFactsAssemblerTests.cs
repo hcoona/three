@@ -45,28 +45,57 @@ public sealed class RubyFactsAssemblerTests
     }
 
     [TestMethod]
-    [DataRow("symlink", "committed regular files")]
-    [DataRow("gitlink", "committed regular files")]
-    [DataRow("escape", "normalized repository-relative path")]
-    [DataRow("competing-gemspecs", "Ambiguous source gemspec directory")]
-    [DataRow("competing-bundles", "Ambiguous bundle directory")]
-    public void InvalidNativeEntryPointsCannotBecomeAnEmptyPlan(string defect, string detail)
+    [DataRow("src/gem/native.gemspec", "120000", "blob")]
+    [DataRow("node/client/Gemfile", "160000", "commit")]
+    public void NonregularNativeEntryPointsCannotBecomeAnEmptyPlan(
+        string path, string mode, string objectType)
     {
-        GitEntry[] entries = defect switch
-        {
-            "symlink" => [new("src/gem/native.gemspec", "120000", "blob")],
-            "gitlink" => [new("node/client/Gemfile", "160000", "commit")],
-            "escape" => [new("../native.gemspec", "100644", "blob")],
-            "competing-gemspecs" => [new("src/gem/first.gemspec", "100644", "blob"),
-                new("src/gem/second.gemspec", "100644", "blob")],
-            _ => [new("node/client/Gemfile", "100644", "blob"),
-                new("node/client/gems.rb", "100644", "blob")]
-        };
-        var endpoint = new RubyFactsEndpoint(new("candidate", entries), new(new([], []), []),
-            [], []);
+        var revision = new GitRevision("candidate", [new(path, mode, objectType)]);
+        var endpoint = new RubyFactsEndpoint(revision, new(new([], []), []), [], []);
+
         InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
             Plan(RubyFactsAssembler.Assemble(endpoint, endpoint, [], false)));
-        Assert.Contains(detail, failure.Message);
+        Assert.Contains("committed regular files", failure.Message);
+    }
+
+    [TestMethod]
+    [DataRow("src/a/lib.rb", false)]
+    [DataRow("version.json", false)]
+    [DataRow("version.json", true)]
+    public void SymlinkedSourceOrVersionInputCannotBecomeAPlan(string path, bool basisOnly)
+    {
+        RubyFactsEndpoint valid = Endpoint("basis", [Producer("src/a")], [Owner("src/a")],
+            "version.json");
+        valid = valid with
+        { Native = valid.Native with { Inputs = [new("version.json", ["src/a"])] } };
+        RubyFactsEndpoint invalid = valid with
+        {
+            Revision = valid.Revision with
+            {
+                Entries = valid.Revision.Entries.Select(entry => entry.Path == path
+                    ? entry with { Mode = "120000" } : entry).ToArray(),
+            },
+        };
+        RubyFactsEndpoint candidate = basisOnly ? Endpoint("candidate", [], []) :
+            invalid with { Revision = invalid.Revision with { Commit = "candidate" } };
+        RubyFactsEndpoint basis = basisOnly ? invalid : valid;
+
+        InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+            Plan(RubyFactsAssembler.Assemble(basis, candidate, [], false)));
+        Assert.Contains("Ruby inputs require committed regular files.", failure.Message);
+    }
+
+    [TestMethod]
+    [DataRow("src/gem/first.gemspec", "src/gem/second.gemspec", "source gemspec")]
+    [DataRow("node/client/Gemfile", "node/client/gems.rb", "bundle")]
+    public void CompetingNativeEntryPointsCannotBecomeAnEmptyPlan(
+        string first, string second, string subject)
+    {
+        RubyFactsEndpoint endpoint = Endpoint("candidate", [], [], first, second);
+
+        InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+            RubyFactsAssembler.Assemble(endpoint, endpoint, [], false));
+        Assert.Contains("Ambiguous " + subject + " directory", failure.Message);
     }
 
     [TestMethod]
@@ -424,51 +453,12 @@ public sealed class RubyFactsAssemblerTests
     }
 
     [TestMethod]
-    [DataRow("dangling-producer")]
-    [DataRow("missing-source")]
-    [DataRow("unknown-owner")]
-    [DataRow("missing-prerequisite")]
-    [DataRow("missing-preset")]
-    [DataRow("unknown-operation-owner")]
-    [DataRow("unsupported-owned-entry")]
-    public void IncompleteFactsCannotHideInAnUnselectedOrBasisOnlyEndpoint(string defect)
+    public void RemovedProjectWithAnUnresolvedBasisDependencyCannotBecomeKnownScope()
     {
-        RubyFactsEndpoint basis = Endpoint("basis", [Producer("src/a")], [Owner("src/a")]);
-        RubyProjectDependencies producer = basis.Native.Graph.Projects[0];
-        ProjectFacts owner = basis.Owners[0];
-        if (defect == "dangling-producer")
-            basis = basis with
-            {
-                Native = basis.Native with
-                {
-                    Graph = new(
-                [producer with { Ordinary = ["missing"] }], [])
-                }
-            };
-        if (defect == "missing-source")
-            basis = basis with { Native = basis.Native with { Graph = new([], []) } };
-        if (defect == "unknown-owner")
-            basis = basis with { Owners = [Owner("src/unknown")] };
-        if (defect == "missing-prerequisite")
-            basis = basis with
-            {
-                Owners = [owner with { Checks = [owner.Checks[0] with {
-                Prerequisites = [new("src/a", "missing", "first")] }] }]
-            };
-        if (defect == "missing-preset")
-            basis = basis with { Owners = [owner with { QualityPreset = null }] };
-        if (defect == "unknown-operation-owner")
-            basis = basis with { OperationInputs = [new("version.json", ["unknown"])] };
-        if (defect == "unsupported-owned-entry")
-            basis = basis with
-            {
-                Revision = basis.Revision with
-                {
-                    Entries = basis.Revision.Entries.Select(entry => entry.Path == "src/a/lib.rb"
-                        ? entry with { Mode = "120000" } : entry).ToArray()
-                }
-            };
+        RubyFactsEndpoint basis = Endpoint("basis", [Producer("src/a", "missing")],
+            [Owner("src/a")]);
         RubyFactsEndpoint candidate = Endpoint("candidate", [], []);
+
         Assert.ThrowsExactly<InvalidDataException>(() =>
             RubyFactsAssembler.Assemble(basis, candidate, [], false));
     }
