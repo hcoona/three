@@ -8,6 +8,10 @@ require "rubygems/config_file"
 
 Gem.configuration = Gem::ConfigFile.new(["--norc"])
 
+def runtime_dependencies_facts(dependencies)
+  dependencies.map { |dependency| { "name" => dependency.name, "requirement" => dependency.requirement.to_s } }
+end
+
 def specification_facts(spec)
   raise "Missing native gem specification" unless spec
 
@@ -19,9 +23,7 @@ def specification_facts(spec)
     "files" => spec.files,
     "extensions" => spec.extensions,
     "metadata" => spec.metadata,
-    "runtime_dependencies" => spec.runtime_dependencies.map do |dependency|
-      { "name" => dependency.name, "requirement" => dependency.requirement.to_s }
-    end
+    "runtime_dependencies" => runtime_dependencies_facts(spec.runtime_dependencies)
   }
 end
 
@@ -31,8 +33,7 @@ def locked_specification_facts(spec)
     "name" => spec.name,
     "version" => spec.version.to_s,
     "platform" => spec.platform.to_s,
-    "runtime_dependencies" => spec.dependencies.select { |dependency| dependency.type == :runtime }
-      .map { |dependency| { "name" => dependency.name, "requirement" => dependency.requirement.to_s } }
+    "runtime_dependencies" => runtime_dependencies_facts(spec.dependencies.select { |dependency| dependency.type == :runtime })
   }
 end
 
@@ -98,12 +99,18 @@ def selected_bundle_specs(definition)
   end + [locked_specification_facts(bundler).merge("source" => { "kind" => "metadata" })]
 end
 
+def require_matching_gemfile(gemfile)
+  actual_gemfile = Bundler.default_gemfile.expand_path.to_s
+  raise "Native Gemfile differs from the request" unless actual_gemfile == gemfile
+
+  actual_gemfile
+end
+
 def bundle_facts(gemfile)
   require "bundler"
 
   raise "Bundle collection requires frozen mode" unless Bundler.frozen_bundle?
-  actual_gemfile = Bundler.default_gemfile.expand_path.to_s
-  raise "Native Gemfile differs from the request" unless actual_gemfile == gemfile
+  actual_gemfile = require_matching_gemfile(gemfile)
 
   definition = Bundler.definition
   definition.validate_runtime!
@@ -127,8 +134,7 @@ end
 def bundle_context(gemfile)
   require "bundler"
 
-  actual_gemfile = Bundler.default_gemfile.expand_path.to_s
-  raise "Native Gemfile differs from the request" unless actual_gemfile == gemfile
+  actual_gemfile = require_matching_gemfile(gemfile)
 
   locked = Bundler.locked_gems
   raise "Missing locked Bundler version" unless locked && locked.bundler_version

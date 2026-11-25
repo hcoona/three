@@ -1,7 +1,8 @@
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
-namespace WorkflowDelivery.Ecosystems;
+namespace WorkflowDelivery.Destinations;
 
 internal sealed record RubyPublisherTools(string Ruby, string Gem, string Scratch);
 internal sealed record RubyPublishResult(ReleaseSubject Subject, ReleaseUpload Upload);
@@ -35,16 +36,16 @@ internal static class RubyNativePublisher
             throw new InvalidDataException("Unsupported native Ruby live channel or ref.");
         // The effect boundary repeats the request's live ref eligibility.
         ReleasePolicy.RequireEligible(prepared.Subject);
-        if (new[] { originals, tools.Ruby, tools.Gem, tools.Scratch }.Any(path =>
+        if (new[] { tools.Ruby, tools.Gem, tools.Scratch }.Any(path =>
                 !Path.IsPathFullyQualified(path)) || !Directory.Exists(tools.Scratch) ||
             Directory.EnumerateFileSystemEntries(tools.Scratch).Any())
             throw new InvalidDataException("Native Ruby push requires prepared fresh tool state.");
-        string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(originals));
         ReleaseFile original = prepared.Files[0];
-        string path = Path.GetFullPath(Path.Combine(root, original.Path));
-        if (path == root || !OwnedPath.Within(path, root))
-            throw new InvalidDataException("Ruby original leaves its transfer root.");
-        RubySmokePackageOperations.RequireOriginal(new(path, original.Size, original.Sha256));
+        string path = OwnedPath.ResolveWithin(originals, original.Path,
+            "Native Ruby push requires prepared fresh tool state.",
+            "Ruby original leaves its transfer root.");
+        OwnedFile.Verify(path, original.Size, original.Sha256,
+            "Original gem changed between required checks.");
 
         string keyName = buddy ? "GITHUB_TOKEN" : "GEM_HOST_API_KEY";
         if (!platform.TryGetValue(keyName, out string? key) || string.IsNullOrWhiteSpace(key))
@@ -64,7 +65,8 @@ internal static class RubyNativePublisher
         environment["GEM_HOST_API_KEY"] = buddy ? "Bearer " + key : key;
         string host = buddy ? "https://rubygems.pkg.github.com/hcoona" : "https://rubygems.org";
         token.ThrowIfCancellationRequested();
-        RubySmokePackageOperations.RequireOriginal(new(path, original.Size, original.Sha256));
+        OwnedFile.Verify(path, original.Size, original.Sha256,
+            "Original gem changed between required checks.");
         NativeCommandResult result = await execute(new(tools.Ruby, tools.Scratch,
             [tools.Gem, "push", "--norc", path, "--host", host], 180, environment,
             InheritEnvironment: false, CloseStandardInput: true), token);

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Xml;
 using Microsoft.Build.Evaluation;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
@@ -40,15 +39,10 @@ internal static class NuGetPreparation
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
         lifetime.CancelAfter(TimeSpan.FromMinutes(15));
         token = lifetime.Token;
-        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
-        string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
-        if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            OwnedPath.Overlap(scratch, checkout) ||
-            Directory.EnumerateFileSystemEntries(scratch).Any())
-            throw new InvalidDataException("NuGet Release requires fresh external scratch.");
-        var checks = new List<ReleaseCheck>();
-        var commands = new List<ReleaseCommand>();
-        var errors = new List<string>();
+        (string checkout, string scratch) = ReleaseQualification.RequireFreshScratch(
+            request.Checkout, request.Scratch, PathMessage,
+            "NuGet Release requires fresh external scratch.");
+        var qualification = new ReleaseQualification(execute, token);
         var files = new List<ReleaseFile>();
         var native = new Dictionary<string, string>(StringComparer.Ordinal);
         ReleaseUnitDeclaration? unit = null;
@@ -61,7 +55,7 @@ internal static class NuGetPreparation
         string originals = Directory.CreateDirectory(Path.Combine(scratch, "original")).FullName;
         Dictionary<string, string?> environment = EnvironmentFor(scratch, request.Subject);
 
-        await CheckAsync("native-input", async () =>
+        await qualification.CheckAsync("native-input", async () =>
         {
             ReleasePolicy.RequireEligible(request.Subject);
             if (!GitReader.IsCommitId(request.Subject.Revision))
@@ -127,8 +121,9 @@ internal static class NuGetPreparation
                 native["AssemblyName"] != registered.AssemblyName)
                 throw new InvalidDataException("Unsupported native NuGet product or SDK.");
         });
-        await CheckAsync("build", async () => Compare(await ProjectionAsync("build", "Build")));
-        await CheckAsync("pack", async () =>
+        await qualification.CheckAsync("build", async () =>
+            Compare(await ProjectionAsync("build", "Build")));
+        await qualification.CheckAsync("pack", async () =>
         {
             string response = Path.Combine(scratch, "pack.json");
             await RunAsync("pack", Query("Pack,_GetOutputItemsFromPack", response,
@@ -145,19 +140,20 @@ internal static class NuGetPreparation
                     packed["IncludeSymbols"].Equals("true", StringComparison.OrdinalIgnoreCase));
             native = packed;
         });
-        await CheckAsync("contents", () =>
+        await qualification.CheckAsync("contents", () =>
         {
             DotNetPackageArchive.RequireOriginal(original!);
             DotNetPackageArchive.Contents(original!.Path, native,
                 registered.Library ? registered.Frameworks : null);
             return Task.CompletedTask;
         });
-        await CheckAsync("consumer", async () => await DotNetPackageConsumer.RunAsync(original!,
-            native, Path.Combine(scratch, "probe"), 300,
-            (command, cancellation) => RunAsync("consumer", command, cancellation), token,
-            registered.Library ? new("net" + Version.Parse(native["NETCoreSdkVersion"]).Major +
-                ".0", registered.Probe!, registered.AssemblyName, true) : null));
-        await CheckAsync("original-bytes", () =>
+        await qualification.CheckAsync("consumer", async () =>
+            await DotNetPackageConsumer.RunAsync(original!, native, Path.Combine(scratch, "probe"),
+                300, (command, cancellation) => RunAsync("consumer", command, cancellation),
+                token, registered.Library ? new("net" +
+                    Version.Parse(native["NETCoreSdkVersion"]).Major + ".0",
+                    registered.Probe!, registered.AssemblyName, true) : null));
+        await qualification.CheckAsync("original-bytes", () =>
         {
             DotNetPackageArchive.RequireOriginal(original!);
             files.Add(new(original!.Build, original.Output, original.Kind, native["PackageId"],
@@ -169,8 +165,8 @@ internal static class NuGetPreparation
         native.Remove("MSBuildProjectFullPath");
         if (native.TryGetValue("DocumentationFile", out string? documentation))
             native["DocumentationFile"] = Path.GetFileName(documentation.Replace('\\', '/'));
-        return new(new(request.Subject, [.. files], Required.ToArray(), [.. checks]), native,
-            [.. commands], [.. errors]);
+        return new(new(request.Subject, [.. files], Required.ToArray(), qualification.Checks),
+            native, qualification.Commands, qualification.Errors);
 
         NativeCommand Query(string targets, string response, string[]? extra = null) => new(
             "dotnet", checkout, ["msbuild", DotNetCli.DisableBuildServers, project, "-nologo",
@@ -209,46 +205,18 @@ internal static class NuGetPreparation
                     "Native version recomputation differs across Release phases.");
         }
 
-        async Task<NativeCommandResult> RunAsync(string check, NativeCommand command,
+        Task<NativeCommandResult> RunAsync(string check, NativeCommand command,
             CancellationToken? cancellation = null)
         {
             // Consumer-owned isolation overrides the preparation profile.
             var effective = new Dictionary<string, string?>(environment, StringComparer.Ordinal);
             if (command.Environment is not null)
                 foreach (var pair in command.Environment) effective[pair.Key] = pair.Value;
-            command = command with { Environment = effective, InheritEnvironment = false };
-            NativeCommandResult result = await execute(command, cancellation ?? token);
-            commands.Add(new(check, command, result));
-            if (result.Termination == NativeTermination.Cancelled)
-                throw new OperationCanceledException(token);
-            if (result.Termination == NativeTermination.TimedOut)
-                throw new TimeoutException("Native " + check + " timed out.");
-            if (!result.Succeeded)
-                throw new InvalidDataException("Native " + check + " failed: " +
-                    result.Termination + ".");
-            (cancellation ?? token).ThrowIfCancellationRequested();
-            return result;
-        }
-
-        async Task CheckAsync(string id, Func<Task> action)
-        {
-            if (checks.Any(check => check.Status != ReleaseCheckStatus.Passed))
-            { checks.Add(new(id, ReleaseCheckStatus.Skipped)); return; }
-            try
+            return qualification.RunAsync(command with
             {
-                token.ThrowIfCancellationRequested(); await action();
-                token.ThrowIfCancellationRequested(); checks.Add(new(id,
-                    ReleaseCheckStatus.Passed));
-            }
-            catch (OperationCanceledException)
-            { checks.Add(new(id, ReleaseCheckStatus.Cancelled)); errors.Add(id + " cancelled."); }
-            catch (TimeoutException)
-            { checks.Add(new(id, ReleaseCheckStatus.TimedOut)); errors.Add(id + " timed out."); }
-            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException or
-                InvalidDataException or JsonException or KeyNotFoundException or
-                    InvalidOperationException or
-                ArgumentException or FormatException or BadImageFormatException or XmlException)
-            { checks.Add(new(id, ReleaseCheckStatus.Failed)); errors.Add(failure.Message); }
+                Environment = effective,
+                InheritEnvironment = false,
+            }, cancellation, check: check, requireNullError: false);
         }
     }
 

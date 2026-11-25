@@ -84,7 +84,7 @@ public sealed class PythonPreparationNativeTests(TestContext context)
             foreach (ReleaseFile file in result.Prepared.Files)
             {
                 string path = Path.Combine(scratch, file.Path);
-                PythonSmokePackageOperations.RequireOriginal(
+                PythonPackageOperations.RequireOriginal(
                     new(file.Kind, path, file.Size, file.Sha256));
                 string archive = Path.Combine(retained, Path.GetFileName(path));
                 File.Copy(path, archive);

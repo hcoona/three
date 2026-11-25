@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Ecosystems;
@@ -10,15 +9,11 @@ internal static class NpmPackageOperations
         new("pnpm", checkout, ["--dir", Path.Combine(checkout, product), "pack", "--out",
             archive], 300);
 
-    internal static async Task<(long Size, string Sha256)> OriginalAsync(string archive,
-        CancellationToken token)
-    {
-        NodePackageArchive.RequireRegularFile(archive);
-        using var file = File.OpenRead(archive);
-        if (file.Length <= 0)
-            throw new InvalidDataException("Native npm output is empty.");
-        return (file.Length, Convert.ToHexStringLower(await SHA256.HashDataAsync(file, token)));
-    }
+    internal static Task<(long Size, string Sha256)> OriginalAsync(string archive,
+        CancellationToken token) =>
+        OwnedFile.MeasureAsync(archive, token,
+            "Required npm output is missing or not a file: " + archive,
+            "Native npm output is empty.");
 
     internal static async Task<NativeCommand> MetadataAsync(string archive, string directory,
         CancellationToken token)

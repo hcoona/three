@@ -190,7 +190,7 @@ public sealed class RubyPreparationNativeTests(TestContext context)
             Assert.AreEqual("hcoona-release-smoke-ruby", file.Name);
             Assert.AreEqual(result.Native["version"], file.Version);
             string original = Path.Combine(scratch, file.Path);
-            RubySmokePackageOperations.RequireOriginal(new(original, file.Size, file.Sha256));
+            RubyPackageOperations.RequireOriginal(new(original, file.Size, file.Sha256));
 
             NativeCommand factsCommand = Assert
                 .ContainsSingle(result.Commands.Where(command => command.Check == "contents"))

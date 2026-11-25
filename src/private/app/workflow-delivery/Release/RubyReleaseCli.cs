@@ -1,7 +1,4 @@
-using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
 using WorkflowDelivery.Destinations;
-using WorkflowDelivery.Ecosystems;
 
 namespace WorkflowDelivery.Release;
 
@@ -21,7 +18,7 @@ internal static class RubyReleaseCli
             RubyPreparationResult result = (prepare ?? RubyPreparation.PrepareAsync)(
                 ReleaseCli.Read(requestPath, TransferJson.Default.RubyPreparationRequest),
                 CancellationToken.None).GetAwaiter().GetResult();
-            Write(result, TransferJson.Default.RubyPreparationResult);
+            ReleaseCli.Write(output, result, TransferJson.Default.RubyPreparationResult);
             if (result.Errors.Length != 0 || result.Prepared.Files.Length == 0) return 1;
             RubyRelease.Validate(result);
             return 0;
@@ -35,7 +32,7 @@ internal static class RubyReleaseCli
                 ReleaseCli.Read(toolsPath, TransferJson.Default.RubySourceTools),
                 CancellationToken.None).GetAwaiter().GetResult();
             RubyRelease.ValidateObservation(preparation.Prepared, result);
-            Write(result, TransferJson.Default.RubyObservationResult);
+            ReleaseCli.Write(output, result, TransferJson.Default.RubyObservationResult);
             return result.Observation.Files.All(file => file.State is ReleaseFileState.Exact or
                 ReleaseFileState.Absent) && result.Observation.Checks.All(check =>
                     check.Status == ReleaseCheckStatus.Passed) ? 0 : 1;
@@ -50,7 +47,7 @@ internal static class RubyReleaseCli
                 ? [prepared.Files[0].Output] : [];
             ReleaseDryRun result = ReleaseCompletion.Describe(prepared, observed.Observation,
                 writes);
-            Write(result, TransferJson.Default.ReleaseDryRun);
+            ReleaseCli.Write(output, result, TransferJson.Default.ReleaseDryRun);
             return result.Ready ? 0 : 1;
         }
         if (args is ["release", "publish-ruby", var publishPreparation,
@@ -69,14 +66,16 @@ internal static class RubyReleaseCli
                 publishOriginals, Observation(initialPath),
                 (prepared, token) => Observe(prepared, readTools with
                 {
-                    Scratch = Fresh(readTools.Scratch),
+                    Scratch = ReleaseCli.FreshScratch(readTools.Scratch,
+                        "Ruby phase scratch parent must be absolute."),
                 }, token),
                 (prepared, directory, token) => (publish ?? RubyNativePublisher.PublishAsync)(
                     prepared, directory, publisherTools with
                     {
-                        Scratch = Fresh(publisherTools.Scratch),
+                        Scratch = ReleaseCli.FreshScratch(publisherTools.Scratch,
+                            "Ruby phase scratch parent must be absolute."),
                     }, platform, token), CancellationToken.None).GetAwaiter().GetResult();
-            Write(result, TransferJson.Default.RubyPublicationResult);
+            ReleaseCli.Write(output, result, TransferJson.Default.RubyPublicationResult);
             // Separate final verification retains the actual invocation outcome.
             return result.Errors.Length == 0 ? 0 : 1;
         }
@@ -85,19 +84,18 @@ internal static class RubyReleaseCli
         {
             RubyCompletionResult result = RubyRelease.Complete(
                 Preparation(completePreparation).Prepared, Observation(initialObservation),
-                Observation(finalObservation), publicationPath == "-" ? null :
-                    ReleaseCli.Read(publicationPath, TransferJson.Default.RubyPublicationResult));
-            Write(result, TransferJson.Default.RubyCompletionResult);
+                Observation(finalObservation), ReleaseCli.ReadOptional(publicationPath,
+                    TransferJson.Default.RubyPublicationResult));
+            ReleaseCli.Write(output, result, TransferJson.Default.RubyCompletionResult);
             return result.Outcome.State == ReleaseBusinessState.Satisfied ? 0 : 1;
         }
         return null;
 
-        void Write<T>(T value, JsonTypeInfo<T> type) =>
-            output.WriteLine(JsonSerializer.Serialize(value, type));
-
         Task<RubyObservationResult> Observe(PreparedRelease prepared, RubySourceTools tools,
             CancellationToken token) => (observe ?? RubyDestinationObservation.ObserveAsync)(
-                prepared, tools, Credential(prepared), token);
+                prepared, tools, prepared.Subject.Destination == "github-packages-ruby" ? new(
+                    Environment.GetEnvironmentVariable("GITHUB_ACTOR") ?? "",
+                    Environment.GetEnvironmentVariable("GITHUB_TOKEN") ?? "") : null, token);
     }
 
     // The caller's job-inputs receive operation validated this preparation for the job.
@@ -106,17 +104,4 @@ internal static class RubyReleaseCli
 
     private static RubyObservationResult Observation(string path) =>
         ReleaseCli.Read(path, TransferJson.Default.RubyObservationResult);
-
-    private static RubyReadCredential? Credential(PreparedRelease prepared) =>
-        prepared.Subject.Destination == "github-packages-ruby" ? new(
-            Environment.GetEnvironmentVariable("GITHUB_ACTOR") ?? "",
-            Environment.GetEnvironmentVariable("GITHUB_TOKEN") ?? "") : null;
-
-    private static string Fresh(string parent)
-    {
-        if (!Path.IsPathFullyQualified(parent) || !Directory.Exists(parent))
-            throw new InvalidDataException("Ruby phase scratch parent must be absolute.");
-        return Directory.CreateDirectory(Path.Combine(parent, Guid.NewGuid().ToString("N")))
-            .FullName;
-    }
 }

@@ -1,7 +1,7 @@
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
+using WorkflowDelivery.Release;
 
-namespace WorkflowDelivery.Tests.Ecosystems;
+namespace WorkflowDelivery.Tests.Release;
 
 [TestClass]
 public sealed class PythonIndexToolPreparationTests(TestContext context)

@@ -28,7 +28,7 @@ internal static class RubyRelease
         if (!(buddy || official) || prepared.Files is not
                 [{ Kind: "ruby-gem", Name: var file }] || file != package ||
             !prepared.RequiredChecks.SequenceEqual(RubyPreparation.RequiredFor(unit)) ||
-            !Qualified(prepared.RequiredChecks, prepared.Checks) ||
+            !ReleasePolicy.Qualified(prepared.RequiredChecks, prepared.Checks) ||
             preparation.Errors.Length != 0 || preparation.Commands.Length == 0 ||
             preparation.Commands.Any(command => !command.Result.Succeeded ||
                 command.Result.Error is not null) ||
@@ -46,14 +46,11 @@ internal static class RubyRelease
 
     internal static void Originals(RubyPreparationResult preparation, string directory)
     {
-        if (!Path.IsPathFullyQualified(directory))
-            throw new InvalidDataException("Original Ruby directory must be absolute.");
-        string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
         ReleaseFile file = preparation.Prepared.Files[0];
-        string path = Path.GetFullPath(Path.Combine(root, file.Path));
-        if (path == root || !OwnedPath.Within(path, root))
-            throw new InvalidDataException("Original Ruby path leaves its transfer root.");
-        RubySmokePackageOperations.RequireOriginal(new(path, file.Size, file.Sha256));
+        string path = OwnedPath.ResolveWithin(directory, file.Path,
+            "Original Ruby directory must be absolute.",
+            "Original Ruby path leaves its transfer root.");
+        RubyPackageOperations.RequireOriginal(new(path, file.Size, file.Sha256));
     }
 
     internal static void ValidateObservation(PreparedRelease prepared,
@@ -61,17 +58,14 @@ internal static class RubyRelease
     {
         if (!result.Observation.RequiredChecks.SequenceEqual(["native-source-original"]))
             throw new InvalidDataException("Incomplete native Ruby observation.");
-        if (prepared.Subject.DryRun)
-            _ = ReleaseCompletion.Describe(prepared, result.Observation,
-                result.Observation.Files.Where(file => file.State == ReleaseFileState.Absent)
-                    .Select(file => file.Output).ToArray());
-        else _ = ReleaseCompletion.Evaluate(prepared, result.Observation, []);
+        ReleaseCompletion.ValidateObservation(prepared, result.Observation);
     }
 
     internal static bool Missing(PreparedRelease prepared, RubyObservationResult result)
     {
         ValidateObservation(prepared, result);
-        if (!Qualified(result.Observation.RequiredChecks, result.Observation.Checks) ||
+        if (!ReleasePolicy.Qualified(result.Observation.RequiredChecks,
+                result.Observation.Checks) ||
             result.Observation.Files is not [
                 {
                     State: ReleaseFileState.Exact or
@@ -160,8 +154,4 @@ internal static class RubyRelease
                 null, null);
         return new(outcome, uploads.Length != 0, publication);
     }
-
-    private static bool Qualified(string[] required, ReleaseCheck[] results) =>
-        required.All(id => results.Any(check => check.Id == id &&
-            check.Status == ReleaseCheckStatus.Passed));
 }

@@ -83,14 +83,10 @@ internal static class GithubReleasePreparation
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
         lifetime.CancelAfter(TimeSpan.FromMinutes(60));
         token = lifetime.Token;
-        string checkout = Absolute(request.Checkout), scratch = Absolute(request.Scratch);
-        if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            OwnedPath.Overlap(scratch, checkout) ||
-            Directory.EnumerateFileSystemEntries(scratch).Any())
-            throw new InvalidDataException("GitHub Release requires fresh external scratch.");
-        var commands = new List<ReleaseCommand>();
-        var checks = new List<ReleaseCheck>();
-        var errors = new List<string>();
+        (string checkout, string scratch) = ReleaseQualification.RequireFreshScratch(
+            request.Checkout, request.Scratch, "GitHub Release paths must be absolute.",
+            "GitHub Release requires fresh external scratch.");
+        var qualification = new ReleaseQualification(execute, token);
         var files = new List<ReleaseFile>();
         var native = new Dictionary<string, string>(StringComparer.Ordinal);
         string product = Path.Combine(checkout, GithubReleaseUnits.Product);
@@ -101,9 +97,8 @@ internal static class GithubReleasePreparation
         Dictionary<string, string?> environment = EnvironmentFor(scratch, request.Subject);
         ReleaseBuild? build = null;
         string version = "", publish = "", installer = "", portable = "";
-        string current = "native-input";
 
-        await CheckAsync("native-input", async () =>
+        await qualification.CheckAsync("native-input", async () =>
         {
             ReleaseSubject subject = request.Subject;
             bool official = GithubReleaseUnits.Admit(subject);
@@ -135,7 +130,7 @@ internal static class GithubReleasePreparation
             native.Add("tag", GithubReleaseUnits.Tag(subject, version));
             native.Add("sdk", selected);
         });
-        await CheckAsync("build", async () =>
+        await qualification.CheckAsync("build", async () =>
         {
             // The product's own scripts: the svg-edit payload, the NativeAOT publish and ISCC.
             await RunAsync(new("pwsh", Path.Combine(product, "ImageOcclusionEditorWinUI3"),
@@ -164,7 +159,7 @@ internal static class GithubReleasePreparation
             File.Copy(setup, installer, overwrite: false);
             CreatePortable(publish, portable);
         });
-        await CheckAsync("contents", () =>
+        await qualification.CheckAsync("contents", () =>
         {
             RequirePortableExecutable(installer);
             using ZipArchive archive = ZipFile.OpenRead(portable);
@@ -183,7 +178,7 @@ internal static class GithubReleasePreparation
                 throw new InvalidDataException("Portable package differs from the publish tree.");
             return Task.CompletedTask;
         });
-        await CheckAsync("installer-consumer", async () =>
+        await qualification.CheckAsync("installer-consumer", async () =>
         {
             string target = Path.Combine(consumers, "installed");
             Directory.CreateDirectory(consumers);
@@ -192,14 +187,14 @@ internal static class GithubReleasePreparation
                 "/LOG=" + Path.Combine(consumers, "install.log")], 600));
             RequireConsumed(target, publish);
         });
-        await CheckAsync("portable-consumer", () =>
+        await qualification.CheckAsync("portable-consumer", () =>
         {
             string target = Path.Combine(consumers, "portable");
             ZipFile.ExtractToDirectory(portable, target);
             RequireConsumed(target, publish);
             return Task.CompletedTask;
         });
-        await CheckAsync("original-bytes", () =>
+        await qualification.CheckAsync("original-bytes", () =>
         {
             foreach (ReleaseOutput output in build!.Outputs)
             {
@@ -210,46 +205,14 @@ internal static class GithubReleasePreparation
             }
             return Task.CompletedTask;
         });
-        return new(new(request.Subject, [.. files], Required.ToArray(), [.. checks]), native,
-            [.. commands], [.. errors]);
+        return new(new(request.Subject, [.. files], Required.ToArray(), qualification.Checks),
+            native, qualification.Commands, qualification.Errors);
 
-        async Task<NativeCommandResult> RunAsync(NativeCommand command)
-        {
-            var effective = new Dictionary<string, string?>(environment, StringComparer.Ordinal);
-            command = command with { Environment = effective };
-            NativeCommandResult result = await execute(command, token);
-            commands.Add(new(current, command, result));
-            if (result.Termination == NativeTermination.Cancelled)
-                throw new OperationCanceledException(token);
-            if (result.Termination == NativeTermination.TimedOut)
-                throw new TimeoutException("Native " + current + " timed out.");
-            if (!result.Succeeded || result.Error is not null)
-                throw new InvalidDataException("Native " + current + " failed: " +
-                    result.Termination + ".");
-            token.ThrowIfCancellationRequested();
-            return result;
-        }
-
-        async Task CheckAsync(string id, Func<Task> action)
-        {
-            current = id;
-            if (checks.Any(check => check.Status != ReleaseCheckStatus.Passed))
-            { checks.Add(new(id, ReleaseCheckStatus.Skipped)); return; }
-            try
+        Task<NativeCommandResult> RunAsync(NativeCommand command) =>
+            qualification.RunAsync(command with
             {
-                token.ThrowIfCancellationRequested(); await action();
-                token.ThrowIfCancellationRequested();
-                checks.Add(new(id, ReleaseCheckStatus.Passed));
-            }
-            catch (OperationCanceledException)
-            { checks.Add(new(id, ReleaseCheckStatus.Cancelled)); errors.Add(id + " cancelled."); }
-            catch (TimeoutException)
-            { checks.Add(new(id, ReleaseCheckStatus.TimedOut)); errors.Add(id + " timed out."); }
-            catch (Exception failure) when (failure is IOException or InvalidDataException or
-                UnauthorizedAccessException or JsonException or KeyNotFoundException or
-                InvalidOperationException or ArgumentException or FormatException)
-            { checks.Add(new(id, ReleaseCheckStatus.Failed)); errors.Add(failure.Message); }
-        }
+                Environment = new Dictionary<string, string?>(environment, StringComparer.Ordinal),
+            }, requireNullError: true);
     }
 
     private static readonly string[] Pwsh = ["-NoLogo", "-NoProfile", "-NonInteractive",
@@ -311,13 +274,8 @@ internal static class GithubReleasePreparation
         }
     }
 
-    internal static (long Size, string Sha256) Original(string path)
-    {
-        using FileStream stream = File.OpenRead(path);
-        long size = stream.Length;
-        if (size <= 0) throw new InvalidDataException("Empty original GitHub Release asset.");
-        return (size, Convert.ToHexStringLower(SHA256.HashData(stream)));
-    }
+    internal static (long Size, string Sha256) Original(string path) =>
+        OwnedFile.Measure(path, emptyMessage: "Empty original GitHub Release asset.");
 
     private static Dictionary<string, long> Tree(string directory) =>
         Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories).ToDictionary(
@@ -373,7 +331,4 @@ internal static class GithubReleasePreparation
         values["GITHUB_ENV"] = output;
         return values;
     }
-
-    private static string Absolute(string path) =>
-        OwnedPath.Absolute(path, "GitHub Release paths must be absolute.");
 }

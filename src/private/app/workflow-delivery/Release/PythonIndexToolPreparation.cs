@@ -1,6 +1,6 @@
 using WorkflowDelivery.Platform;
 
-namespace WorkflowDelivery.Ecosystems;
+namespace WorkflowDelivery.Release;
 
 internal sealed record PythonIndexToolCommand(string Stage, NativeCommand Command,
     NativeCommandResult Result);
@@ -46,18 +46,17 @@ internal static class PythonIndexToolPreparation
         lifetime.CancelAfter(TimeSpan.FromMinutes(5));
         try
         {
-            await Run("venv", ["venv", venv, "--python", request.Interpreter, "--no-project"]);
-            await Run("tools", ["pip", "install", "--python", python, "--no-cache",
+            if (!await Run("venv", ["venv", venv, "--python", request.Interpreter, "--no-project"])
+                || !await Run("tools", ["pip", "install", "--python", python, "--no-cache",
                 "--require-hashes", "--only-binary", ":all:", "--keyring-provider", "disabled",
-                "--index-url", "https://pypi.org/simple/", "--requirements", request.Requirements]);
+                "--index-url", "https://pypi.org/simple/", "--requirements", request.Requirements]))
+                errors.Add("Required native index tool preparation command did not succeed.");
         }
-        catch (ToolStopped)
-        { errors.Add("Required native index tool preparation command did not succeed."); }
         catch (OperationCanceledException)
         { errors.Add("Native index tool preparation was interrupted."); }
         return new(python, [.. commands], [.. errors]);
 
-        async Task Run(string stage, string[] arguments)
+        async Task<bool> Run(string stage, string[] arguments)
         {
             lifetime.Token.ThrowIfCancellationRequested();
             var command = new NativeCommand(request.Uv, request.Scratch,
@@ -65,9 +64,7 @@ internal static class PythonIndexToolPreparation
                 CloseStandardInput: true);
             NativeCommandResult result = await execute(command, lifetime.Token);
             commands.Add(new(stage, command, result));
-            if (!result.Succeeded || result.Error is not null) throw new ToolStopped();
+            return result.Succeeded && result.Error is null;
         }
     }
-
-    private sealed class ToolStopped : Exception;
 }

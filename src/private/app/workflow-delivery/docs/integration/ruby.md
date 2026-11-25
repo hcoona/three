@@ -207,8 +207,7 @@ requires the native public-release projection; each unit's committed
 `publicReleaseRefSpec` includes `^refs/heads/main$`.
 
 `Ecosystems/RubyReleaseUnits` statically registers the two units.
-`Ecosystems/RubySmokePackageOperations` and
-`Ecosystems/RubyLatexmathPackageOperations` own their concrete product recipes,
+`Ecosystems/RubyPackageOperations` owns the concrete product recipes,
 build, native archive inspection and original local consumption inside the
 private application.
 `CI/RubyPackageExecution` and `Release/RubyPreparation` consume those operations

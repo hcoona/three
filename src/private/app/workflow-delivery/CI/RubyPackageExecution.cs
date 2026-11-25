@@ -41,7 +41,7 @@ internal static class RubyPackageExecution
             throw new InvalidDataException("Ruby gem execution requires fresh external scratch.");
         string checkoutRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Checkout));
         string scratchRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Scratch));
-        if (OwnedPath.Within(scratchRoot, checkoutRoot))
+        if (OwnedPath.Overlap(scratchRoot, checkoutRoot))
             throw new InvalidDataException("Gem consumer scratch must be outside the checkout.");
         if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Ruby gem plan requires its complete native candidate.");
@@ -72,12 +72,9 @@ internal static class RubyPackageExecution
             PackageTarget subject = build.Package!;
             string state = Directory.CreateDirectory(Path.Combine(scratchRoot,
                 "gem-" + ordinal++)).FullName;
-            // A registered product gem uses its own Release recipe; the smoke gem keeps its own.
-            IRubyReleasePackage operations = subject.Unit == RubyReleaseUnits.Latexmath
-                ? RubyReleaseUnits.Package(RubyReleaseUnits.Named(subject.Unit), request.Facts,
-                    request.Gem, request.Nbgv, state,
-                    Path.GetFullPath(Path.Combine(checkoutRoot, subject.Directory)))
-                : new RubySmokePackageOperations(request.Facts, request.Gem, request.Nbgv, state);
+            RubyReleaseUnit unit = RubyReleaseUnits.Named(subject.Unit);
+            RubyPackageOperations operations = RubyReleaseUnits.Package(unit, request.Facts,
+                request.Gem, request.Nbgv, state);
             RubyGemArchive? original = null;
             foreach (string kind in RubyPackageChecks.Kinds)
             {
@@ -97,20 +94,13 @@ internal static class RubyPackageExecution
                             gems.Add(new(subject, original.Path, original.Length, original.Sha256));
                         }
                         else if (kind == RubyPackageChecks.Contents)
-                        {
-                            if (operations is RubySmokePackageOperations smoke)
-                                await smoke.InspectAsync(original!, subject.ExpectedVersion,
-                                    ExecuteAsync, token);
-                            else
-                                await operations.InspectReleaseAsync(original!,
-                                    subject.ExpectedVersion, ExecuteAsync, token);
-                        }
-                        else if (operations is RubySmokePackageOperations smoke)
-                            await smoke.ConsumeAsync(original!, subject.ExpectedVersion,
-                                ExecuteAsync, token);
+                            await operations.InspectAsync(checkout, subject.Directory, original!,
+                                subject.ExpectedVersion, release: false, ExecuteAsync, token);
                         else
-                            await operations.ConsumeReleaseAsync(original!,
-                                subject.ExpectedVersion, ExecuteAsync, token);
+                            await operations.ConsumeAsync(
+                                Path.GetFullPath(Path.Combine(checkoutRoot, subject.Directory)),
+                                original!, subject.ExpectedVersion, release: false, ExecuteAsync,
+                                token);
                         status = CheckStatus.Passed;
                     }
                     catch (OperationCanceledException) when (token.IsCancellationRequested)

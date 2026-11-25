@@ -14,10 +14,10 @@ internal sealed record NpmReleaseUnit(string Id, string Declaration, string Sour
         subject.Channel == "buddy" ? BuddyName : OfficialName;
 
     // Runs from the consumer created by NpmPackageOperations.InstallAsync.
-    internal NativeCommand Import(string directory, string package) => new("node",
-        Path.Combine(directory, "consumer"),
-        ["--input-type=module", "--eval", Probe.Replace("@@PACKAGE@@", package,
-            StringComparison.Ordinal)], 60);
+    internal NativeCommand Import(string directory, string package, int deadlineSeconds = 60) =>
+        new("node", Path.Combine(directory, "consumer"),
+            ["--input-type=module", "--eval", Probe.Replace("@@PACKAGE@@", package,
+                StringComparison.Ordinal)], deadlineSeconds);
 }
 
 // Static registration of the supported concrete npm Release recipes.

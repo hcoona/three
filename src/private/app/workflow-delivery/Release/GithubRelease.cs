@@ -28,7 +28,7 @@ internal static class GithubRelease
                     file.Name == GithubReleaseUnits.Asset(kind, version)) != 1) ||
             prepared.Files.Any(file => file.Version != version) ||
             !prepared.RequiredChecks.SequenceEqual(GithubReleasePreparation.Required) ||
-            !Qualified(prepared.RequiredChecks, prepared.Checks) ||
+            !ReleasePolicy.Qualified(prepared.RequiredChecks, prepared.Checks) ||
             preparation.Errors.Length != 0 || preparation.Commands.Length == 0 ||
             preparation.Commands.Any(command => !command.Result.Succeeded ||
                 command.Result.Error is not null) ||
@@ -41,14 +41,11 @@ internal static class GithubRelease
 
     internal static void Originals(GithubReleasePreparationResult preparation, string directory)
     {
-        string root = OwnedPath.Absolute(directory,
-            "Original GitHub Release directory must be absolute.");
         foreach (ReleaseFile file in preparation.Prepared.Files)
         {
-            string path = Original(root, file);
-            if (!File.Exists(path) ||
-                GithubReleasePreparation.Original(path) != (file.Size, file.Sha256))
-                throw new InvalidDataException("Transferred original differs from preparation.");
+            string path = Original(directory, file);
+            OwnedFile.Verify(path, file.Size, file.Sha256,
+                "Transferred original differs from preparation.");
         }
     }
 
@@ -56,7 +53,8 @@ internal static class GithubRelease
         GithubReleaseObservationResult observation)
     {
         ValidateObservation(prepared, observation);
-        if (!Qualified(observation.Observation.RequiredChecks, observation.Observation.Checks) ||
+        if (!ReleasePolicy.Qualified(observation.Observation.RequiredChecks,
+                observation.Observation.Checks) ||
             observation.Observation.Files.Any(file => file.State is not
                 (ReleaseFileState.Exact or ReleaseFileState.Absent)))
             throw new InvalidDataException("Current GitHub Release state cannot permit creation.");
@@ -73,11 +71,7 @@ internal static class GithubRelease
             result.ReleaseId is null && result.Observation.Files.Any(file =>
                 file.State == ReleaseFileState.Exact))
             throw new InvalidDataException("Incomplete GitHub Release observation.");
-        if (prepared.Subject.DryRun)
-            _ = ReleaseCompletion.Describe(prepared, result.Observation,
-                result.Observation.Files.Where(file => file.State == ReleaseFileState.Absent)
-                    .Select(file => file.Output).ToArray());
-        else _ = ReleaseCompletion.Evaluate(prepared, result.Observation, []);
+        ReleaseCompletion.ValidateObservation(prepared, result.Observation);
     }
 
     internal static async Task<GithubReleasePublicationResult> PublishAsync(
@@ -132,7 +126,7 @@ internal static class GithubRelease
             token.ThrowIfCancellationRequested();
             ReleaseFile file = prepared.Files.Single(value => value.Output == output);
             NativeCommandResult result = await upload(release!.Value, file,
-                Original(Path.GetFullPath(originals), file), token);
+                Original(originals, file), token);
             uploads.Add(new(output, result));
             if (!result.Succeeded || result.Error is not null)
             { errors.Add("GitHub Release asset upload failed; further writes stopped."); break; }
@@ -191,19 +185,12 @@ internal static class GithubRelease
         }
     }
 
-    private static string Original(string root, ReleaseFile file)
-    {
-        string path = Path.GetFullPath(Path.Combine(root, file.Path));
-        if (path == root || !OwnedPath.Within(path, root))
-            throw new InvalidDataException("Original GitHub Release path leaves its root.");
-        return path;
-    }
+    private static string Original(string root, ReleaseFile file) =>
+        OwnedPath.ResolveWithin(root, file.Path,
+            "Original GitHub Release directory must be absolute.",
+            "Original GitHub Release path leaves its root.");
 
     private static bool Native(GithubReleasePreparationResult preparation, string key,
         string expected) => preparation.Native.TryGetValue(key, out string? value) &&
             value == expected;
-
-    private static bool Qualified(string[] required, ReleaseCheck[] results) =>
-        required.All(id => results.Any(check => check.Id == id &&
-            check.Status == ReleaseCheckStatus.Passed));
 }

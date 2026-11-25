@@ -46,7 +46,7 @@ internal static class PythonPackageExecution
         var tools = new PythonPackageTools(checkout, scratch, request.Uv, request.Interpreter,
             request.Helper, request.DeadlineSeconds, request.Environment,
             InheritEnvironment: false);
-        PythonSmokePackageOperations.Validate(tools);
+        PythonPackageOperations.Validate(tools);
         ResultCollector.Collect(plan, []);
         if (plan.Scope != PythonFactsAssembler.Scope)
             throw new InvalidDataException("Unsupported Python package execution scope.");
@@ -68,7 +68,7 @@ internal static class PythonPackageExecution
             string name = request.Members.Single(member =>
                 member.Directory == subject.Directory).Name;
             string root = Path.Combine(scratch, "package-" + ordinal++);
-            PythonSmokePackageOperations operations = PythonReleaseUnits.Package(name, tools,
+            PythonPackageOperations operations = PythonReleaseUnits.Package(name, tools,
                 root);
             PythonDistribution[] originals = [];
             foreach (string kind in PythonPackageChecks.Kinds)

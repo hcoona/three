@@ -17,6 +17,10 @@ import tarfile
 import zipfile
 from email.parser import BytesParser
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hatchling.metadata.core import ProjectMetadata
 
 # Iterating a compressed sdist decompresses every member, so declared contents
 # and member headers bound that expansion. A wheel reads only its directory and
@@ -69,20 +73,32 @@ def product(name: str, quality: str) -> dict:
     return PRODUCTS[name]
 
 
-def native_identity(project: Path) -> dict:
-    """Use the maintained backend, including its maintained version plugin."""
+def _project_metadata(project: Path) -> ProjectMetadata:
     from hatchling.builders.wheel import WheelBuilder  # noqa: PLC0415
 
-    metadata = WheelBuilder(str(project.resolve())).metadata
+    return WheelBuilder(str(project.resolve())).metadata
+
+
+def _interpreter_facts() -> dict[str, str]:
+    return {
+        "implementation": sys.implementation.name,
+        "interpreter_version": ".".join(
+            str(part) for part in sys.version_info[:3]
+        ),
+    }
+
+
+def native_identity(project: Path) -> dict:
+    """Use the maintained backend, including its maintained version plugin."""
+    metadata = _project_metadata(project)
     return {"name": metadata.core.name, "version": metadata.version}
 
 
 def native_version_facts(project: Path) -> dict:
     """Expose maintained backend and version facts for the caller."""
-    from hatchling.builders.wheel import WheelBuilder  # noqa: PLC0415
     from packaging.version import Version  # noqa: PLC0415
 
-    metadata = WheelBuilder(str(project.resolve())).metadata
+    metadata = _project_metadata(project)
     source = metadata.hatch.version.source
     if source.PLUGIN_NAME != "nbgv":
         message = "Unsupported selected native version source"
@@ -100,19 +116,15 @@ def native_version_facts(project: Path) -> dict:
         "public_release": native["PublicRelease"],
         "local_version": version.local,
         "dependencies": metadata.core.dependencies,
-        "implementation": sys.implementation.name,
-        "interpreter_version": ".".join(
-            str(part) for part in sys.version_info[:3]
-        ),
+        **_interpreter_facts(),
     }
 
 
 def native_static_version_facts(project: Path) -> dict:
     """Expose maintained backend facts of a static [project].version."""
-    from hatchling.builders.wheel import WheelBuilder  # noqa: PLC0415
     from packaging.version import Version  # noqa: PLC0415
 
-    metadata = WheelBuilder(str(project.resolve())).metadata
+    metadata = _project_metadata(project)
     if "version" in metadata.core.dynamic:
         message = "Unsupported selected native version source"
         raise ValueError(message)
@@ -122,10 +134,7 @@ def native_static_version_facts(project: Path) -> dict:
         "version": str(version),
         "local_version": version.local,
         "dependencies": metadata.core.dependencies,
-        "implementation": sys.implementation.name,
-        "interpreter_version": ".".join(
-            str(part) for part in sys.version_info[:3]
-        ),
+        **_interpreter_facts(),
     }
 
 
