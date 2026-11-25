@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using LiteAgensh.Tests.Support;
+using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LiteAgensh.Tests;
@@ -172,6 +173,8 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             Assert.IsTrue(credits["uncertain"]!.GetValue<bool>());
             Assert.AreEqual(0m, credits["actualReported"]!.GetValue<decimal>());
             Assert.IsFalse(state.Ledger.HasCompleteSdkUsage(retained.Id));
+            using SqliteConnection campaign = RunStateQueries.OpenCampaign(state.Database);
+            Assert.IsEmpty(RunStateQueries.Rows(campaign, "SELECT * FROM credit_reports;"));
         });
     }
 

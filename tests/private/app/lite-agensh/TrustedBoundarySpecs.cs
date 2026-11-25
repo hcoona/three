@@ -236,6 +236,15 @@ public sealed class TrustedBoundarySpecs(TestContext context)
         Assert.IsTrue(
             JsonNode.DeepEquals(before, CaptureCollaborationSnapshot(state.Operations))
         );
+        DeliveryBatch retainedPending =
+            state.Operations.ClaimBatch("worker1", false)
+            ?? throw new AssertFailedException(
+                "Expected pending message to remain queued after rejected recovery."
+            );
+        Assert.AreEqual(
+            "Retain the run whose original ledger is missing.",
+            SinglePromptMessageBody(retainedPending)
+        );
         Assert.AreEqual(runId, state.Database.RunId);
         Assert.AreEqual(binding, state.Database.ReadMetadata("native:ledger_binding"));
         Assert.IsFalse(File.Exists(ledgerPath));
@@ -303,6 +312,15 @@ public sealed class TrustedBoundarySpecs(TestContext context)
         Assert.Contains("state has not been recreated", result["message"]!.GetValue<string>());
         Assert.IsTrue(
             JsonNode.DeepEquals(before, CaptureCollaborationSnapshot(state.Operations))
+        );
+        DeliveryBatch retainedPending =
+            state.Operations.ClaimBatch("worker1", false)
+            ?? throw new AssertFailedException(
+                "Expected pending message to remain queued after rejected preflight."
+            );
+        Assert.AreEqual(
+            "Retain the incompatible run's existing message.",
+            SinglePromptMessageBody(retainedPending)
         );
         Assert.AreEqual(runId, state.Database.RunId);
         Assert.AreEqual("owned-existing-state", state.Database.ReadMetadata("phase8:sentinel"));
@@ -576,6 +594,13 @@ public sealed class TrustedBoundarySpecs(TestContext context)
                 .Data(collaboration.Invoke("owner", "board_recent", new()))
                 .DeepClone(),
         };
+
+    private static string SinglePromptMessageBody(DeliveryBatch batch) =>
+        JsonNode
+            .Parse(batch.Prompt)!["events"]!
+            .AsArray()
+            .Single()!["payload"]!["message"]!["body"]!
+            .GetValue<string>();
 
     private static string Digest(string file) =>
         Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(file)));

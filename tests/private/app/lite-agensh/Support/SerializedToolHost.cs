@@ -318,7 +318,16 @@ internal sealed class SerializedToolHost : IAsyncDisposable
         int? exit = process.HasExited ? process.ExitCode : null;
         _ = birthTicks;
         _ = statePath;
-        _ = stderr;
+        bool failed =
+            primary is not null
+            || failures.Count != 0
+            || forced
+            || exit != expectedExit;
+        if (failed && !string.IsNullOrWhiteSpace(stderr))
+        {
+            Console.Error.WriteLine("TOOL_HOST_STDERR " + stderr);
+            primary?.Data["ToolHostStandardError"] = stderr;
+        }
         process.Dispose();
         foreach (Exception failure in failures)
         {

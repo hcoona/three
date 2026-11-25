@@ -479,9 +479,13 @@ internal sealed class InterruptedRunCreator : IAsyncDisposable
                     readStarted ? "stderrDrain" : "stderrReaderRelease",
                     async () =>
                     {
-                        _ = await OwnedCreatorProcess.DrainOutputAsync(
+                        string? text = await OwnedCreatorProcess.DrainOutputAsync(
                             error, outputCapture, "stderr", drains.Token
                         ).ConfigureAwait(false);
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            Console.Error.WriteLine("INTERRUPTED_CREATOR_STDERR " + text);
+                        }
                     }
                 )
                 .ConfigureAwait(false);
