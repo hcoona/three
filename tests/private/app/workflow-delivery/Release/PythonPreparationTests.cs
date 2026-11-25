@@ -31,7 +31,7 @@ public sealed class PythonPreparationTests(TestContext context)
         GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
         try
         {
-            sharedRevision = await Fixture.CommitAsync(repo, null, includeNbgv: true);
+            sharedRevision = await Fixture.CommitAsync(repo, includeNbgv: true);
             shared = repo;
         }
         catch { repo.Dispose(); throw; }
@@ -43,7 +43,6 @@ public sealed class PythonPreparationTests(TestContext context)
     [TestMethod]
     public async Task CompletePairAndConsumersQualifyRelease()
     {
-        // Defect-free control for the shared repository.
         using var fixture = Fixture.Shared(shared!, sharedRevision);
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual("", await NativeProcess.RunAsync("git", fixture.Repo.Directory,
@@ -250,43 +249,32 @@ public sealed class PythonPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("quality", "Unsupported complete Python quality selection.")]
-    [DataRow("outputs", "Unsupported complete Python distribution set.")]
-    [DataRow("input", "Missing committed native input: uv.lock")]
-    public async Task UnsupportedCommittedRecipeIsRejected(string defect, string message)
+    [DataRow("product/workflow-delivery.quality.yml", "python/hcoona-release-smoke-python-v1",
+        "python/unknown-v1", "Unsupported complete Python quality selection.")]
+    [DataRow("product/workflow-delivery.release-unit.yml", "python-sdist", "other-kind",
+        "Unsupported complete Python distribution set.")]
+    [DataRow("uv.lock", null, null, "Missing committed native input: uv.lock")]
+    public async Task UnsupportedCommittedRecipeIsRejected(string path, string? content,
+        string? replacement, string message)
     {
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
+        Dictionary<string, string> files = Fixture.Files();
+        if (content is null) files.Remove(path);
+        else files[path] = files[path].Replace(content, replacement, StringComparison.Ordinal);
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            ReadRecipeAsync(defect));
+            PythonPreparation.ReadRecipeAsync(fixture.Subject, fixture.Repo.Directory,
+                (name, _) => Task.FromResult(files.GetValueOrDefault(name)),
+                context.CancellationToken));
         Assert.AreEqual(message, error.Message);
-    }
-
-    [TestMethod]
-    public async Task CompleteCommittedRecipeSelectsItsEntry()
-    {
-        PythonReleaseRecipe recipe = await ReadRecipeAsync(null);
-        Assert.AreEqual("distributions", recipe.Build.Id);
-        Assert.AreEqual("product", recipe.Directory);
-    }
-
-    // Reads one committed recipe through an in-memory tree; only the directory must exist.
-    private async Task<PythonReleaseRecipe> ReadRecipeAsync(string? defect)
-    {
-        string root = Directory.CreateTempSubdirectory("python-recipe-").FullName;
-        try
-        {
-            Directory.CreateDirectory(Path.Combine(root, "product"));
-            Dictionary<string, string> files = Fixture.Files(defect);
-            return await PythonPreparation.ReadRecipeAsync(Fixture.SubjectFor(Revision), root,
-                (path, _) => Task.FromResult(files.GetValueOrDefault(path)),
-                context.CancellationToken);
-        }
-        finally { Directory.Delete(root, recursive: true); }
     }
 
     [TestMethod]
     public async Task UnsupportedCommittedRecipeStopsBeforeNativeWork()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken, "outputs");
+        using var fixture = await Fixture.CreateAsync((path, content) =>
+            path == "product/workflow-delivery.release-unit.yml"
+                ? content.Replace("python-sdist", "other-kind", StringComparison.Ordinal)
+                : content, context.CancellationToken);
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
         Assert.IsEmpty(result.Commands);
@@ -319,13 +307,18 @@ public sealed class PythonPreparationTests(TestContext context)
     // Each row breaks one distinct invariant between the native answer and the fixture's own
     // committed root selection; the message names the tool and the failed condition.
     [TestMethod]
-    [DataRow("python", "inexact", "is not an exact release version")]
-    [DataRow("uv", "readback", "differs from the committed locked selection")]
-    public async Task ToolOutsideCommittedSelectionStopsPreparation(string tool, string defect,
+    [DataRow("python", "3.12", "is not an exact release version")]
+    [DataRow("uv", "0.0.0", "differs from the committed locked selection")]
+    public async Task ToolOutsideCommittedSelectionStopsPreparation(string tool, string version,
         string condition)
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision);
-        fixture.ToolDefect = (tool, defect);
+        fixture.ChangeToolAnswer = (candidate, answer) =>
+        {
+            if (candidate == tool && tool == "python") answer["version"] = version;
+        };
+        fixture.Override = command => tool == "uv" && command.Arguments.Contains("--short")
+            ? Fixture.Success(version) : null;
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
         Assert.IsEmpty(result.Prepared.Files);
@@ -340,8 +333,9 @@ public sealed class PythonPreparationTests(TestContext context)
     public async Task AnotherCommittedPythonLineQualifies()
     {
         string other = RepositoryToolSelection.NextMajor(RepositoryToolSelection.Locked("python"));
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken, null,
-            (path, content) => RepositoryToolSelection.RaiseMajor(path, content, "python"));
+        using var fixture = await Fixture.CreateAsync(
+            (path, content) => RepositoryToolSelection.RaiseMajor(path, content, "python"),
+            context.CancellationToken);
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors);
         Assert.AreEqual(other, result.Native["python"]);
@@ -464,15 +458,15 @@ public sealed class PythonPreparationTests(TestContext context)
         internal string Version { get; set; } = "1.0.0";
         internal Action<JsonObject>? ChangeFacts { get; set; }
         internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
-        internal (string Tool, string Defect)? ToolDefect { get; set; }
+        internal Action<string, JsonObject>? ChangeToolAnswer { get; set; }
 
-        internal static async Task<Fixture> CreateAsync(CancellationToken token,
-            string? defect = null, Func<string, string, string>? changeConfig = null)
+        internal static async Task<Fixture> CreateAsync(Func<string, string, string> changeConfig,
+            CancellationToken token)
         {
             GitFixture repo = await GitFixture.CreateAsync(token);
             try
             {
-                return new(repo, SubjectFor(await CommitAsync(repo, defect, changeConfig)));
+                return new(repo, SubjectFor(await CommitAsync(repo, changeConfig)));
             }
             catch { repo.Dispose(); throw; }
         }
@@ -492,11 +486,11 @@ public sealed class PythonPreparationTests(TestContext context)
             new(revision, "refs/heads/development", unit,
                 Declaration(unit == Nbgv ? NbgvDirectory : "product"), "buddy", "testpypi", false);
 
-        internal static async Task<string> CommitAsync(GitFixture repo, string? defect,
+        internal static async Task<string> CommitAsync(GitFixture repo,
             Func<string, string, string>? changeConfig = null, bool includeNbgv = false)
         {
-            Dictionary<string, string> files = Files(defect);
-            if (includeNbgv) AddProduct(files, NbgvDirectory, Nbgv, defect: null);
+            Dictionary<string, string> files = Files();
+            if (includeNbgv) AddProduct(files, NbgvDirectory, Nbgv);
             foreach ((string path, string content) in files)
                 await repo.SetAsync(path, changeConfig is null ? content
                     : changeConfig(path, content));
@@ -507,7 +501,7 @@ public sealed class PythonPreparationTests(TestContext context)
 
         // The committed files of the product, keyed by repository path. The root tool
         // configuration is the actual committed one, so the fake follows its updates.
-        internal static Dictionary<string, string> Files(string? defect)
+        internal static Dictionary<string, string> Files()
         {
             var files = new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -517,13 +511,13 @@ public sealed class PythonPreparationTests(TestContext context)
             foreach (string input in new[] { "pyproject.toml", "uv.lock", "global.json",
                 ".config/dotnet-tools.json",
                 "src/private/app/workflow-delivery/Native/Python/packages.py" })
-                if (defect != "input" || input != "uv.lock") files.Add(input, "fixture");
-            AddProduct(files, "product", Smoke, defect);
+                files.Add(input, "fixture");
+            AddProduct(files, "product", Smoke);
             return files;
         }
 
         private static void AddProduct(Dictionary<string, string> files, string directory,
-            string unit, string? defect)
+            string unit)
         {
             files.Add(directory + "/pyproject.toml", "fixture");
             files.Add(directory + "/workflow-delivery.quality.yml", """
@@ -531,9 +525,7 @@ public sealed class PythonPreparationTests(TestContext context)
                 ecosystems:
                   python:
                     preset: python/hcoona-release-smoke-python-v1
-                """.Replace("python/hcoona-release-smoke-python-v1", defect == "quality"
-                    ? "python/unknown-v1" : "python/hcoona-release-smoke-python-v1",
-                        StringComparison.Ordinal));
+                """);
             files.Add(Declaration(directory), """
                 schema: workflow-delivery/v3/release-unit
                 release-unit: hcoona-release-smoke-python
@@ -548,9 +540,7 @@ public sealed class PythonPreparationTests(TestContext context)
                       - id: source
                         role: source-package
                         kind: python-sdist
-                """.Replace("python-sdist", defect == "outputs" ? "other-kind" :
-                    "python-sdist", StringComparison.Ordinal).Replace(Smoke, unit,
-                        StringComparison.Ordinal));
+                """.Replace(Smoke, unit, StringComparison.Ordinal));
         }
 
         internal static JsonObject Facts(string revision, string version,
@@ -584,12 +574,9 @@ public sealed class PythonPreparationTests(TestContext context)
 
         private string ToolAnswer(string tool)
         {
-            string? defect = ToolDefect?.Tool == tool ? ToolDefect.Value.Defect : null;
-            string version = Selected(tool);
             var value = new JsonObject
             {
-                ["version"] = defect == "inexact" ? string.Join('.',
-                    version.Split('.').Take(2)) : version,
+                ["version"] = Selected(tool),
                 ["requested_version"] = RepositoryToolSelection.Requested(
                     File.ReadAllText(Path.Combine(Repo.Directory, "mise.toml")), tool),
                 ["active"] = true,
@@ -599,6 +586,7 @@ public sealed class PythonPreparationTests(TestContext context)
                     ["path"] = Path.Combine(Repo.Directory, "mise.toml"),
                 },
             };
+            ChangeToolAnswer?.Invoke(tool, value);
             return new JsonArray(value).ToJsonString();
         }
 
@@ -615,7 +603,7 @@ public sealed class PythonPreparationTests(TestContext context)
             if (arguments.Contains("ls")) return Success(ToolAnswer(arguments[^1]));
             if (arguments.Contains("which")) return Success(Path.Combine(Scratch, arguments[^1]));
             if (arguments.Contains("--short"))
-                return Success(ToolDefect == ("uv", "readback") ? "0.0.0" : Selected("uv"));
+                return Success(Selected("uv"));
             if (arguments.Contains("identity")) return Success(JsonSerializer.Serialize(new
             { name = Subject.Unit, version = Version }));
             if (arguments.Contains("static-version-facts"))
@@ -659,7 +647,7 @@ public sealed class PythonPreparationTests(TestContext context)
         public void Dispose()
         {
             if (ownsRepository) Repo.Dispose();
-            Directory.Delete(Scratch, recursive: true);
+            PreparationCheckout.Delete(Scratch);
         }
     }
 }

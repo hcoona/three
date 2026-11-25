@@ -73,26 +73,20 @@ public sealed class NuGetPublisherTests(TestContext context)
 
     [TestMethod]
     [DataRow("circular-list", "IO.Github.Hcoona.Collections.CircularList", "official",
-        "nugetorg", "refs/heads/development", "nuget.org")]
+        "nugetorg", "refs/heads/development", NuGetPublisher.NuGetOrgEndpoint)]
     [DataRow("circular-list", "IO.Github.Hcoona.Collections.CircularList", "official",
-        "nugetorg", "refs/heads/main", "github")]
+        "nugetorg", "refs/heads/main", NuGetPublisher.GithubEndpoint)]
     [DataRow("circular-list", "IO.Github.Hcoona.Collections.CircularList", "buddy",
-        "nugetorg", "refs/heads/main", "nuget.org")]
+        "nugetorg", "refs/heads/main", NuGetPublisher.NuGetOrgEndpoint)]
     [DataRow("hcoona-release-smoke-github-packages", "Hcoona.ReleaseSmoke.GithubPackages",
-        "official", "nugetorg", "refs/heads/main", "nuget.org")]
+        "official", "nugetorg", "refs/heads/main", NuGetPublisher.NuGetOrgEndpoint)]
     [DataRow("circular-list", "IO.Github.Hcoona.Pngcs", "buddy", "github-packages-nuget",
-        "refs/heads/main", "github")]
+        "refs/heads/main", NuGetPublisher.GithubEndpoint)]
     public async Task PublisherRejectsMismatchedChannelRefEndpointOrIdentity(string unit,
         string package, string channel, string destination, string reference, string endpoint)
     {
         using var fixture = new Fixture(unit, package, channel, destination, reference);
-        using var handler = new Handler((_, _) => throw new AssertFailedException(
-            "Rejected uploads must not send."));
-        await Assert.ThrowsAsync<InvalidDataException>(() => NuGetPublisher.PushAsync(
-            fixture.Prepared, fixture.Root, endpoint == "github" ? NuGetPublisher.GithubEndpoint
-                : NuGetPublisher.NuGetOrgEndpoint, Credential, context.CancellationToken,
-            handler));
-        Assert.AreEqual(0, handler.Sends);
+        await AssertNoNativeSendAsync(fixture, fixture.Prepared, endpoint);
     }
 
     [TestMethod]
@@ -182,19 +176,25 @@ public sealed class NuGetPublisherTests(TestContext context)
     // the same bound, and the publisher returns the terminal failure as handled data. A real
     // SocketsHttpHandler wraps socket errors in HttpRequestException.
     [TestMethod]
-    [DataRow("http", "HttpRequestException")]
-    [DataRow("io", "IOException")]
-    [DataRow("timeout", "TimeoutException")]
-    public async Task OfficialTransportFailuresRetryInsideTheSameBound(string failure,
-        string type)
+    public Task OfficialHttpFailureRetriesInsideTheSameBound() =>
+        AssertBoundedTransportFailureAsync(() => new HttpRequestException("HTTP failure"),
+            nameof(HttpRequestException));
+
+    [TestMethod]
+    public Task OfficialIoFailureRetriesInsideTheSameBound() =>
+        AssertBoundedTransportFailureAsync(() => new IOException("I/O failure"),
+            nameof(IOException));
+
+    [TestMethod]
+    public Task OfficialRequestTimeoutRetriesInsideTheSameBound() =>
+        AssertBoundedTransportFailureAsync(() => new TimeoutException("Request timed out"),
+            nameof(TimeoutException));
+
+    private async Task AssertBoundedTransportFailureAsync(Func<Exception> createException,
+        string expectedType)
     {
         using var fixture = new Fixture();
-        using var handler = new Handler((_, _) => throw (failure switch
-        {
-            "http" => new HttpRequestException("controlled transport failure"),
-            "io" => new IOException("controlled transport failure"),
-            _ => (Exception)new TimeoutException("controlled transport failure"),
-        }));
+        using var handler = new Handler((_, _) => throw createException());
         NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
             fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
@@ -202,7 +202,7 @@ public sealed class NuGetPublisherTests(TestContext context)
         Assert.IsFalse(result.ReturnedSuccessfully);
         Assert.IsFalse(result.Cancelled);
         Assert.AreEqual(3, handler.Sends);
-        Assert.AreEqual(type, result.FailureType);
+        Assert.AreEqual(expectedType, result.FailureType);
         CollectionAssert.AreEqual(fixture.Original, File.ReadAllBytes(fixture.Path));
     }
 
@@ -242,21 +242,34 @@ public sealed class NuGetPublisherTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("dry-run")]
-    [DataRow("endpoint")]
-    [DataRow("changed-bytes")]
-    public async Task UnqualifiedRequestMakesNoNativeSend(string change)
+    public async Task DryRunMakesNoNativeSend()
     {
         using var fixture = new Fixture();
         PreparedRelease prepared = fixture.Prepared;
-        string endpoint = NuGetPublisher.GithubEndpoint;
-        if (change == "dry-run") prepared = prepared with
-        { Subject = prepared.Subject with { DryRun = true } };
-        if (change == "endpoint") endpoint = "https://example.com/";
-        if (change == "changed-bytes") File.AppendAllText(fixture.Path, "changed");
-        if (change == "missing-check") prepared = prepared with { Checks = [] };
-        using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
-            HttpStatusCode.Created)));
+        await AssertNoNativeSendAsync(fixture,
+            prepared with { Subject = prepared.Subject with { DryRun = true } });
+    }
+
+    [TestMethod]
+    public async Task UntrustedEndpointMakesNoNativeSend()
+    {
+        using var fixture = new Fixture();
+        await AssertNoNativeSendAsync(fixture, fixture.Prepared, "https://example.com/");
+    }
+
+    [TestMethod]
+    public async Task ChangedOriginalMakesNoNativeSend()
+    {
+        using var fixture = new Fixture();
+        File.AppendAllText(fixture.Path, "changed");
+        await AssertNoNativeSendAsync(fixture, fixture.Prepared);
+    }
+
+    private async Task AssertNoNativeSendAsync(Fixture fixture, PreparedRelease prepared,
+        string endpoint = NuGetPublisher.GithubEndpoint)
+    {
+        using var handler = new Handler((_, _) =>
+            throw new AssertFailedException("Rejected uploads must not send."));
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             NuGetPublisher.PushAsync(prepared, fixture.Root, endpoint, Credential,

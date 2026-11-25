@@ -2,6 +2,8 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Ecosystems;
@@ -106,26 +108,49 @@ public sealed class PythonIndexObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("name")]
-    [DataRow("extra")]
-    [DataRow("duplicate")]
-    [DataRow("yanked")]
-    [DataRow("digest")]
-    public async Task ContradictoryNativeMetadataCannotPermitWrites(string defect)
+    [DataRow("yanked", "true")]
+    [DataRow("sha256", "\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\"")]
+    public async Task UnsafeWheelMetadataCannotPermitWrites(string field, string json)
+    {
+        await AssertMetadataBlocksWritesAsync(facts => facts["files"]![0]![field] =
+            JsonNode.Parse(json), expectedReads: 2);
+    }
+
+    [TestMethod]
+    public async Task WrongProjectCannotEstablishOwnership() =>
+        await AssertMetadataBlocksWritesAsync(
+            facts => facts["matches_name"] = false, expectedReads: 1);
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ExtraOrDuplicateFileCannotPermitWrites(bool duplicate) =>
+        await AssertMetadataBlocksWritesAsync(facts =>
+        {
+            JsonArray files = facts["files"]!.AsArray();
+            files.Add(duplicate ? files[0]!.DeepClone()
+                : new JsonObject { ["filename"] = "undeclared.whl" });
+        }, expectedReads: 1);
+
+    private async Task AssertMetadataBlocksWritesAsync(Action<JsonObject> change,
+        int expectedReads)
     {
         using var fixture = new Fixture();
         using var handler = new Handler((_, n, _) => Task.FromResult(Response(200,
             n == 0 ? Encoding.UTF8.GetBytes("{}") : Sdist)));
         using var client = new HttpClient(handler);
-        string facts = Facts(fixture.Prepared, "test-files.pythonhosted.org", defect: defect);
+        JsonObject facts = JsonNode.Parse(Facts(fixture.Prepared,
+            "test-files.pythonhosted.org"))!.AsObject();
+        change(facts);
         PythonIndexObservationResult result = await new PythonIndexObservation(client,
-            fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) => Task.FromResult(Native(facts)),
-            context.CancellationToken);
+            fixture.Tools).ObserveAsync(fixture.Prepared,
+                (_, _) => Task.FromResult(Native(facts.ToJsonString())),
+                context.CancellationToken);
         Assert.Contains(ReleaseFileState.Conflict,
             result.Observation.Files.Select(file => file.State));
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Observation.Checks[0].Status);
         Assert.IsFalse(ReleaseCompletion.Describe(fixture.Prepared, result.Observation, []).Ready);
-        Assert.HasCount(defect is "yanked" or "digest" or "size" ? 2 : 1, handler.Requests);
+        Assert.HasCount(expectedReads, handler.Requests);
     }
 
     [TestMethod]
@@ -211,15 +236,14 @@ public sealed class PythonIndexObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("destination")]
-    [DataRow("kind")]
-    public async Task UnsupportedRequestCannotReadPublicIndex(string defect)
+    [DataRow("other", "python-wheel")]
+    [DataRow("testpypi", "other")]
+    public async Task UnsupportedRequestCannotReadPublicIndex(string destination, string kind)
     {
         using var fixture = new Fixture();
         PreparedRelease prepared = fixture.Prepared;
-        if (defect == "destination") prepared = prepared with
-        { Subject = prepared.Subject with { Destination = "other" } };
-        else prepared.Files[0] = prepared.Files[0] with { Kind = "other" };
+        prepared = prepared with { Subject = prepared.Subject with { Destination = destination } };
+        prepared.Files[0] = prepared.Files[0] with { Kind = kind };
         using var handler = new Handler((_, _, _) =>
             throw new AssertFailedException("Unqualified request reached a public destination."));
         using var client = new HttpClient(handler);
@@ -286,7 +310,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
     public async Task ReadAndPhaseDeadlinesIncludeBodyAndNativeFacts(bool nativePhase)
     {
         using var fixture = new Fixture();
-        var clock = new ManualClock();
+        var clock = new FakeTimeProvider();
         using var handler = new Handler((_, _, _) => Task.FromResult(nativePhase
             ? Response(200, [123, 125])
             : new HttpResponseMessage(HttpStatusCode.OK)
@@ -329,7 +353,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
         Assert.IsEmpty(Directory.GetFileSystemEntries(fixture.Tools.Scratch));
     }
 
-    private sealed class DeadlineBody(ManualClock clock) : MemoryStream
+    private sealed class DeadlineBody(FakeTimeProvider clock) : MemoryStream
     {
         public override ValueTask<int> ReadAsync(Memory<byte> buffer,
             CancellationToken cancellationToken = default)
@@ -351,57 +375,19 @@ public sealed class PythonIndexObservationTests(TestContext context)
         }
     }
 
-    private sealed class ManualClock : TimeProvider
-    {
-        private TimeSpan elapsed;
-        private readonly List<Timer> timers = [];
-        public override ITimer CreateTimer(TimerCallback callback, object? state,
-            TimeSpan dueTime, TimeSpan period)
-        {
-            var timer = new Timer(this, callback, state);
-            timers.Add(timer);
-            timer.Change(dueTime, period);
-            return timer;
-        }
-        internal void Advance(TimeSpan duration)
-        {
-            elapsed += duration;
-            foreach (Timer timer in timers.ToArray()) timer.Fire(elapsed);
-        }
-        private sealed class Timer(ManualClock clock, TimerCallback callback, object? state)
-            : ITimer
-        {
-            private TimeSpan? due;
-            public bool Change(TimeSpan dueTime, TimeSpan period)
-            {
-                due = dueTime == Timeout.InfiniteTimeSpan ? null : clock.elapsed + dueTime;
-                return true;
-            }
-            internal void Fire(TimeSpan now)
-            {
-                if (due is { } value && value <= now)
-                { due = null; callback(state); }
-            }
-            public void Dispose() => due = null;
-            public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
-        }
-    }
-
     private static string Facts(PreparedRelease prepared, string host, int count = 2,
-        string? defect = null, string? url = null)
+        string? url = null)
     {
         var entries = prepared.Files.Take(count).Select((file, i) => new Dictionary<string, object?>
         {
             ["filename"] = Path.GetFileName(file.Path),
             ["url"] = i == 0 && url is not null ? url
                 : $"https://{host}/{Path.GetFileName(file.Path)}",
-            ["sha256"] = i == 0 && defect == "digest" ? new string('f', 64) : file.Sha256,
-            ["yanked"] = i == 0 && defect == "yanked",
-            ["size"] = i == 0 && defect == "size" ? file.Size + 1 : file.Size,
-        }).ToList();
-        if (defect == "duplicate") entries.Add(entries[0]);
-        if (defect == "extra") entries.Add(new() { ["filename"] = "undeclared.whl" });
-        return JsonSerializer.Serialize(new { matches_name = defect != "name", files = entries });
+            ["sha256"] = file.Sha256,
+            ["yanked"] = false,
+            ["size"] = file.Size,
+        }).ToArray();
+        return JsonSerializer.Serialize(new { matches_name = true, files = entries });
     }
 
     private static NativeCommandResult Native(string facts) =>

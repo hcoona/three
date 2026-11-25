@@ -36,7 +36,6 @@ public sealed class NpmPreparationTests(TestContext context)
     [TestMethod]
     public async Task SelectedPreparationQualifiesOriginalWithoutCiPlan()
     {
-        // Defect-free control for the shared commit.
         using var fixture = Fixture.Shared(shared!, sharedCommit);
 
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
@@ -221,13 +220,14 @@ public sealed class NpmPreparationTests(TestContext context)
     // Each row breaks one distinct invariant between the native answer and the fixture's own
     // committed root selection; the message names the tool and the failed condition.
     [TestMethod]
-    [DataRow("node", "readback", "differs from the committed locked selection")]
-    [DataRow("pnpm", "inactive", "is not active")]
+    [DataRow("node", "0.0.0", "differs from the committed locked selection")]
+    [DataRow("pnpm", null, "is not active")]
     public async Task ToolOutsideCommittedSelectionBlocksPreparationBeforeProductCode(
-        string tool, string defect, string condition)
+        string tool, string? readback, string condition)
     {
         using var fixture = Fixture.Shared(shared!, sharedCommit);
-        fixture.ToolDefect = (tool, defect);
+        fixture.IsActive = candidate => candidate != tool || readback is not null;
+        fixture.ReadVersion = candidate => candidate == tool ? readback : null;
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
@@ -268,7 +268,8 @@ public sealed class NpmPreparationTests(TestContext context)
         internal bool MutateOriginal { get; set; }
         internal bool OmitArchive { get; set; }
         internal string? CancelCheck { get; set; }
-        internal (string Tool, string Defect)? ToolDefect { get; set; }
+        internal Func<string, bool>? IsActive { get; set; }
+        internal Func<string, string?>? ReadVersion { get; set; }
         internal NativeTermination? Termination { get; set; }
         internal string TerminationCheck { get; set; } = "build";
         private string? archive;
@@ -365,13 +366,12 @@ public sealed class NpmPreparationTests(TestContext context)
             if (command.Executable == "mise")
             {
                 string tool = args[^1];
-                string? defect = ToolDefect?.Tool == tool ? ToolDefect.Value.Defect : null;
                 output = JsonSerializer.Serialize(new[] { new
                 {
                     version = Selected(tool),
                     requested_version = RepositoryToolSelection.Requested(File.ReadAllText(
                         Path.Combine(repository.Directory, "mise.toml")), tool),
-                    active = defect != "inactive",
+                    active = IsActive?.Invoke(tool) ?? true,
                     source = new
                     {
                         type = "mise.toml",
@@ -382,8 +382,8 @@ public sealed class NpmPreparationTests(TestContext context)
             else if (args.Contains("--version"))
             {
                 string tool = command.Executable;
-                output = ToolDefect == (tool, "readback") ? "0.0.0"
-                    : (tool == "node" ? "v" : "") + Selected(tool);
+                output = ReadVersion?.Invoke(tool)
+                    ?? (tool == "node" ? "v" : "") + Selected(tool);
             }
             else if (args.Contains("pkg") && args.Contains("set"))
                 packageName = args[^1]["name=".Length..];
@@ -420,6 +420,6 @@ public sealed class NpmPreparationTests(TestContext context)
         private string Selected(string tool) => RepositoryToolSelection.Locked(
             File.ReadAllText(Path.Combine(repository.Directory, "mise.lock")), tool);
 
-        public void Dispose() => Directory.Delete(Scratch, recursive: true);
+        public void Dispose() => PreparationCheckout.Delete(Scratch);
     }
 }

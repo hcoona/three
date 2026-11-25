@@ -113,27 +113,37 @@ public sealed class ReleaseStateTests
     }
 
     [TestMethod]
-    [DataRow("duplicate")]
-    [DataRow("missing")]
-    [DataRow("other-name")]
-    [DataRow("other-version")]
-    [DataRow("other-request")]
-    [DataRow("other-bytes")]
-    public void RejectsMismatchedOrIncompleteObservation(string defect)
+    [DataRow(0)]
+    [DataRow(2)]
+    public void RejectsMissingOrDuplicatedFileObservation(int copies) =>
+        RejectObservation(observation => observation with
+        { Files = Enumerable.Repeat(observation.Files[0], copies).ToArray() });
+
+    [TestMethod]
+    [DataRow("other", null, null)]
+    [DataRow(null, "2.0.0", null)]
+    [DataRow(null, null, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")]
+    public void RejectsChangedFileObservation(string? name, string? version, string? sha256) =>
+        RejectObservation(observation =>
+        {
+            ReleaseFileObservation file = observation.Files[0];
+            return observation with
+            {
+                Files = [file with
+                { Name = name ?? file.Name, Version = version ?? file.Version,
+                    Sha256 = sha256 ?? file.Sha256 }]
+            };
+        });
+
+    [TestMethod]
+    public void RejectsObservationForAnotherRevision() =>
+        RejectObservation(observation => observation with
+        { Subject = observation.Subject with { Revision = new('b', 40) } });
+
+    private static void RejectObservation(Func<ReleaseObservation, ReleaseObservation> change)
     {
         PreparedRelease prepared = Prepare();
-        ReleaseObservation observation = Observe(prepared);
-        ReleaseFileObservation file = observation.Files[0];
-        observation = defect switch
-        {
-            "duplicate" => observation with { Files = [file, file] },
-            "missing" => observation with { Files = [] },
-            "other-name" => observation with { Files = [file with { Name = "other" }] },
-            "other-version" => observation with { Files = [file with { Version = "2.0.0" }] },
-            "other-request" => observation with
-            { Subject = observation.Subject with { Revision = new('b', 40) } },
-            _ => observation with { Files = [file with { Sha256 = new('b', 64) }] },
-        };
+        ReleaseObservation observation = change(Observe(prepared));
 
         Assert.ThrowsExactly<InvalidDataException>(() =>
             ReleaseCompletion.Evaluate(prepared, observation, []));
