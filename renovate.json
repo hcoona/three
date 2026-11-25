@@ -19,8 +19,30 @@
   "branchConcurrentLimit": 8,
   "prHourlyLimit": 2,
   "rebaseWhen": "behind-base-branch",
-  "enabledManagers": ["bundler", "custom.regex", "github-actions", "mise", "npm", "nuget", "pep621"],
+  "enabledManagers": [
+    "bundler",
+    "custom.regex",
+    "devcontainer",
+    "github-actions",
+    "mise",
+    "npm",
+    "nuget",
+    "pep621",
+    "pep723"
+  ],
+  "pep723": {
+    "managerFilePatterns": ["/^(eng/scripts|tests/eng)/.*\\.py$/"],
+    "additionalBranchPrefix": "pep723-"
+  },
   "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["eng/dotnet-frameworks/mise.toml"],
+      "matchStrings": ["(?:^|\\r?\\n)dotnet = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""],
+      "depNameTemplate": "dotnet-sdk",
+      "datasourceTemplate": "dotnet-version",
+      "versioningTemplate": "semver"
+    },
     {
       "customType": "regex",
       "managerFilePatterns": ["/^src/private/lib/hk/Config\\.pkl$/"],
@@ -66,6 +88,19 @@
     "minimumGroupSize": 1
   },
   "packageRules": [
+    {
+      "description": "Update the installation-only .NET 10 framework provider without changing the compiler SDK in global.json.",
+      "matchManagers": ["custom.regex"],
+      "matchFileNames": ["eng/dotnet-frameworks/mise.toml"],
+      "matchDepNames": ["dotnet-sdk"],
+      "allowedVersions": "~10.0.0",
+      "automerge": false,
+      "postUpgradeTasks": {
+        "commands": ["mise -C eng/dotnet-frameworks lock --platform linux-x64,windows-x64 dotnet"],
+        "fileFilters": ["eng/dotnet-frameworks/mise.lock"],
+        "executionMode": "branch"
+      }
+    },
     {
       "description": "Apps and labs may track fresher tested dependency lower bounds.",
       "matchFileNames": ["src/public/app/**", "src/private/app/**", "src/lab/**"],
@@ -627,6 +662,17 @@
       "description": "Automerge all Renovate dependency PRs through GitHub after required checks pass.",
       "matchManagers": ["bundler", "github-actions", "mise", "npm", "nuget", "pep621"],
       "automerge": true
+    },
+    {
+      "description": "Review Dev Container and engineering script dependency updates manually.",
+      "matchManagers": ["devcontainer", "pep723"],
+      "automerge": false
+    },
+    {
+      "description": "Allow Dev Container PRs when MCR and GHCR do not supply Docker release timestamps.",
+      "matchManagers": ["devcontainer"],
+      "matchDatasources": ["docker"],
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
     },
     {
       "description": "Review Node major updates manually. They can change the planned CI matrix, which Workflow Delivery derives from declared engines and eng/node-release-schedule.json.",
