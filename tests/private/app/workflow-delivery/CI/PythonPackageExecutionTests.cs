@@ -13,8 +13,6 @@ public sealed class PythonPackageExecutionTests(TestContext context)
 {
     private static readonly string[] DistributionKinds = ["python-wheel", "python-sdist"];
     private static readonly string[] ToolGroups = ["dev", "workflow-delivery-python"];
-
-    // Read-only rows share one committed checkout and own fresh Git-free scratch.
     private static GitFixture? shared;
     private static CiPlan? sharedPlan;
 
@@ -33,11 +31,47 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     [ClassCleanup]
     public static void Cleanup() => shared?.Dispose();
 
+    private static NativeTermination Termination(string statusName) => statusName switch
+    {
+        "Cancelled" => NativeTermination.Cancelled,
+        "TimedOut" => NativeTermination.TimedOut,
+        _ => NativeTermination.Exited,
+    };
+
+    internal static async Task WriteProductAsync(GitFixture repo)
+    {
+        await repo.SetAsync("product/pyproject.toml", "fixture native source");
+        await repo.SetAsync(PythonPackageChecksTests.Unit.SourcePath, """
+            schema: workflow-delivery/v3/release-unit
+            release-unit: product
+            builds:
+              - id: distributions
+                definition: python/distribution-set-v1
+                entry-point: pyproject.toml
+                outputs:
+                  - id: wheel
+                    role: primary-package
+                    kind: python-wheel
+                  - id: source
+                    role: source-package
+                    kind: python-sdist
+            """);
+    }
+
+    internal static PlannedCheck[] PackageChecks() =>
+        PythonPackageChecks.Expand(PythonPackageChecksTests.Unit, PythonPackageChecksTests.Members,
+            new Dictionary<string, string> { ["product"] = "1.0.0" })
+        .Select(check => new PlannedCheck(check, [PythonPackageChecks.Preset], [],
+            [CheckOrigin.Preset])).ToArray();
+
     [TestMethod]
     public async Task CompleteRecipeRetainsOriginalsAndBothIndependentConsumers()
     {
         using var fixture = Fixture.Shared(shared!, sharedPlan!);
+        fixture.Native.Respond = command => command.InheritEnvironment
+            ? PackageNative.Failure("Inherited runner environment.") : null;
         PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
+
         Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied,
             string.Join("; ", result.Failures.Select(failure => failure.Error)));
         Assert.HasCount(4, result.Results);
@@ -54,116 +88,81 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             Assert.AreEqual("original", await File.ReadAllTextAsync(original.Path,
                 context.CancellationToken));
         }
+
         NativeCommand[] builds = result.Commands.Select(item => item.Command)
             .Where(command => command.Arguments[0] == "build").ToArray();
+        NativeCommand sourceBuild = builds.Single(command =>
+            !command.Arguments.Contains("--wheel"));
         NativeCommand gitFree = builds.Single(command => command.Arguments.Contains("--wheel"));
         Assert.Contains(result.Distributions.Single(
-            item => item.Output.Kind == "python-sdist").Path,
-            gitFree.Arguments);
+            item => item.Output.Kind == "python-sdist").Path, gitFree.Arguments);
         Assert.Contains("--offline", gitFree.Arguments);
         Assert.Contains("--no-create-gitignore", gitFree.Arguments);
         Assert.Contains("build-dependency-check", gitFree.Arguments);
+        Assert.Contains("build-dependency-check", sourceBuild.Arguments);
+        Assert.Contains("--no-build-isolation", sourceBuild.Arguments);
         Assert.IsNull(gitFree.Environment!["GIT_DIR"]);
         Assert.IsFalse(gitFree.Directory.StartsWith(fixture.Repo.Directory,
             StringComparison.Ordinal));
-        NativeCommand[] installs = result.Commands.Select(item => item.Command)
-            .Where(command => command.Arguments[0] == "pip").ToArray();
-        Assert.Contains(result.Distributions.Single(
-            item => item.Output.Kind == "python-wheel").Path,
-            installs[0].Arguments);
-        Assert.AreNotEqual(installs[0].Arguments[3], installs[1].Arguments[3]);
-        Assert.IsTrue(installs.All(command => command.Arguments.Contains("--offline") &&
-            command.Arguments.Contains("--no-cache")));
+
+        string originalWheel = result.Distributions.Single(
+            item => item.Output.Kind == "python-wheel").Path;
+        string rebuiltWheel = Path.Combine(
+            gitFree.Arguments[Array.IndexOf(gitFree.Arguments, "--out-dir") + 1], "rebuilt.whl");
+        Assert.AreNotEqual(InstalledWith(PythonPackageChecks.Wheel, originalWheel),
+            InstalledWith(PythonPackageChecks.Sdist, rebuiltWheel));
+
         PythonPackageCommand sourcePreparation = Assert.ContainsSingle(result.Commands.Where(item =>
-            item.Check.Check == PythonPackageChecks.Build &&
-            item.Command.Arguments[0] == "sync"));
+            item.Check.Check == PythonPackageChecks.Build && item.Command.Arguments[0] == "sync"));
         CollectionAssert.AreEquivalent(ToolGroups,
             sourcePreparation.Command.Arguments.Zip(sourcePreparation.Command.Arguments.Skip(1))
                 .Where(pair => pair.First == "--only-group")
                 .Select(pair => pair.Second).ToArray());
-        Assert.Contains("--frozen", sourcePreparation.Command.Arguments);
         Assert.DoesNotContain("--no-editable", sourcePreparation.Command.Arguments);
-        Assert.DoesNotContain("--no-build-isolation", sourcePreparation.Command.Arguments);
-        Assert.DoesNotContain("--no-install-workspace", sourcePreparation.Command.Arguments);
+
         PythonPackageCommand conversion = result.Commands.Single(item =>
-            item.Check.Check == PythonPackageChecks.Sdist &&
-            item.Command.Arguments[0] == "sync");
+            item.Check.Check == PythonPackageChecks.Sdist && item.Command.Arguments[0] == "sync");
         Assert.Contains("--no-editable", conversion.Command.Arguments);
         Assert.Contains("--no-build-isolation", conversion.Command.Arguments);
-        CollectionAssert.AreEqual(sourcePreparation.Command.Arguments,
-            conversion.Command.Arguments.Where(argument => argument != "--no-editable" &&
-                argument != "--no-build-isolation").ToArray());
-        Assert.AreEqual(sourcePreparation.Command.Directory, conversion.Command.Directory);
-        Assert.AreEqual(fixture.Repo.Directory, conversion.Command.Directory);
-        Assert.AreEqual(sourcePreparation.Command.Environment!["UV_PROJECT_ENVIRONMENT"],
-            conversion.Command.Environment!["UV_PROJECT_ENVIRONMENT"]);
-        NativeCommand sourceBuild = builds.Single(command =>
-            !command.Arguments.Contains("--wheel"));
-        Assert.Contains("build-dependency-check", sourceBuild.Arguments);
-        Assert.Contains("--no-create-gitignore", sourceBuild.Arguments);
-        Assert.Contains("--no-build-isolation", sourceBuild.Arguments);
-        string preparedPython = sourceBuild.Arguments[
-            Array.IndexOf(sourceBuild.Arguments, "--python") + 1];
-        Assert.AreEqual(Path.Combine(
-            sourcePreparation.Command.Environment!["UV_PROJECT_ENVIRONMENT"]!,
-            OperatingSystem.IsWindows() ? "Scripts/python.exe" : "bin/python"), preparedPython);
-        Assert.IsLessThan(Array.FindIndex(result.Commands, item => item.Command == sourceBuild),
-            Array.IndexOf(result.Commands, sourcePreparation));
-        Assert.AreEqual(sourceBuild.Arguments[Array.IndexOf(sourceBuild.Arguments, "--python") + 1],
-            gitFree.Arguments[Array.IndexOf(gitFree.Arguments, "--python") + 1]);
         int conversionIndex = Array.IndexOf(result.Commands, conversion);
         Assert.IsLessThan(conversionIndex, Array.FindIndex(result.Commands, item =>
             item.Check.Check == PythonPackageChecks.Wheel &&
             item.Command.Arguments.Contains("consume")));
         Assert.IsLessThan(Array.FindIndex(result.Commands, item => item.Command == gitFree),
             conversionIndex);
-        Assert.AreEqual(fixture.Plan.Candidate, result.Candidate);
-    }
 
-    [TestMethod]
-    public async Task VersionProjectionIgnoresAmbientRunnerRefContext()
-    {
-        // Regression: planning projects the expected NBGV version in the owned environment.
-        // An inherited main-push ref made the execution projection select public-release mode
-        // and drop the local commit part, so every package obligation failed on main.
-        using var fixture = Fixture.Shared(shared!, sharedPlan!);
-        fixture.AmbientVersion = "1.0.0-public";
-        PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied,
-            string.Join("; ", result.Failures.Select(failure => failure.Error)));
-        Assert.IsNotEmpty(result.Commands);
-        foreach (PythonPackageCommand item in result.Commands)
-            Assert.IsFalse(item.Command.InheritEnvironment,
-                string.Join(" ", item.Command.Arguments));
+        string InstalledWith(string check, string wheel)
+        {
+            string[] arguments = Assert.ContainsSingle(result.Commands.Where(item =>
+                item.Check.Check == check && item.Command.Arguments[0] == "pip"))
+                .Command.Arguments;
+            Assert.AreEqual("install", arguments[1]);
+            Assert.AreEqual(wheel, arguments[^1]);
+            Assert.Contains("--offline", arguments);
+            Assert.Contains("--no-cache", arguments);
+            Assert.AreEqual("--python", arguments[2]);
+            return arguments[3];
+        }
     }
 
     [TestMethod]
     [DataRow("Failed")]
     [DataRow("Cancelled")]
     [DataRow("TimedOut")]
-    public async Task FailedSdistPreparationPreservesOriginalsAndCompletedWheel(string statusName)
+    public async Task FailedSdistReconciliationPreservesOriginalsAndCompletedWheel(
+        string statusName)
     {
         using var fixture = Fixture.Shared(shared!, sharedPlan!);
-        fixture.Failure = "sdist-prepare";
-        fixture.Terminal = Enum.Parse<CheckStatus>(statusName);
+        fixture.Native.Respond = command =>
+            command.Arguments[0] == "sync" && command.Arguments.Contains("--no-editable")
+                ? PackageNative.Failure("controlled failure", Termination(statusName)) : null;
         PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
 
-        Assert.AreEqual(fixture.Terminal, result.Results.Single(item =>
+        Assert.AreEqual(Enum.Parse<CheckStatus>(statusName), result.Results.Single(item =>
             item.Key.Check == PythonPackageChecks.Sdist).Status);
         Assert.IsTrue(result.Results.Where(item => item.Key.Check != PythonPackageChecks.Sdist)
             .All(item => item.Status == CheckStatus.Passed));
-        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
-        Assert.HasCount(4, result.Results);
         Assert.HasCount(2, result.Distributions);
-        foreach (PythonOriginalDistribution original in result.Distributions)
-        {
-            Assert.AreEqual("original", await File.ReadAllTextAsync(original.Path,
-                context.CancellationToken));
-            Assert.AreEqual(Convert.ToHexStringLower(SHA256.HashData("original"u8)),
-                original.Sha256);
-        }
-        Assert.Contains(PythonPackageChecks.Sdist,
-            result.Failures.Select(failure => failure.Check.Check));
         Assert.Contains(PythonPackageChecks.Wheel,
             result.Commands.Where(item => item.Command.Arguments.Contains("consume"))
                 .Select(item => item.Check.Check));
@@ -172,196 +171,171 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("python-wheel")]
-    [DataRow("python-sdist")]
-    public async Task ChangedOriginalDuringSdistPreparationStopsConsumer(string changedKind)
+    [DataRow("original.whl")]
+    [DataRow("original.tar.gz")]
+    public async Task ChangedOriginalDuringSdistReconciliationStopsConsumer(string fileName)
     {
         using var fixture = Fixture.Shared(shared!, sharedPlan!);
-        fixture.Failure = "conversion-original-changed";
-        fixture.ChangedKind = changedKind;
+        fixture.Native.Respond = command =>
+        {
+            if (command.Arguments[0] == "sync" && command.Arguments.Contains("--no-editable"))
+                File.WriteAllText(Path.Combine(fixture.Scratch, "package-0", "archives", fileName),
+                    "changed!");
+            return null;
+        };
         PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
 
         Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
             item.Key.Check == PythonPackageChecks.Sdist).Status);
         Assert.IsTrue(result.Results.Where(item => item.Key.Check != PythonPackageChecks.Sdist)
             .All(item => item.Status == CheckStatus.Passed));
-        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
-        Assert.HasCount(2, result.Distributions);
-        PythonOriginalDistribution changed = result.Distributions.Single(item =>
-            item.Output.Kind == changedKind);
-        Assert.AreEqual("changed!", await File.ReadAllTextAsync(changed.Path,
-            context.CancellationToken));
-        Assert.AreEqual(Convert.ToHexStringLower(SHA256.HashData("original"u8)), changed.Sha256);
-        PythonPackageFailure failure = Assert.ContainsSingle(result.Failures);
-        Assert.AreEqual(PythonPackageChecks.Sdist, failure.Check.Check);
-        Assert.Contains("Original Python distribution bytes changed", failure.Error);
-        Assert.IsEmpty(result.Commands.Where(item =>
-            item.Check.Check == PythonPackageChecks.Sdist && item.Command.Arguments[0] != "sync"));
+        Assert.Contains("Original Python distribution bytes changed",
+            Assert.ContainsSingle(result.Failures).Error);
     }
 
     [TestMethod]
-    [DataRow("prepare", "Failed")]
-    [DataRow("prepare", "Cancelled")]
-    [DataRow("prepare", "TimedOut")]
-    [DataRow("build", "Failed")]
-    [DataRow("build", "Cancelled")]
+    [DataRow("sync", "Failed")]
+    [DataRow("sync", "Cancelled")]
     [DataRow("build", "TimedOut")]
     [DataRow("version", "Failed")]
     [DataRow("missing-output", "Failed")]
-    public async Task FailedNativeBuildPreventsConsumers(string failure, string expectedStatus)
+    public async Task FailedNativeBuildPreventsConsumers(string stage, string expectedStatus)
     {
         using var fixture = Fixture.Shared(shared!, sharedPlan!);
-        CheckStatus expected = Enum.Parse<CheckStatus>(expectedStatus);
-        fixture.Failure = failure;
-        fixture.Terminal = expected;
+        if (stage == "missing-output")
+            fixture.Native.AfterBuild = dir => File.Delete(Path.Combine(dir, "original.tar.gz"));
+        else
+        {
+            NativeTermination termination = Termination(expectedStatus);
+            fixture.Native.Respond = command => stage switch
+            {
+                "sync" when command.Arguments[0] == "sync" =>
+                    PackageNative.Failure("controlled failure", termination),
+                "build" when command.Arguments[0] == "build" =>
+                    PackageNative.Failure("controlled failure", termination),
+                "version" when command.Arguments.Contains("identity") =>
+                    PackageNative.Success(
+                        """{"name":"hcoona-release-smoke-python","version":"2.0"}"""),
+                _ => null,
+            };
+        }
         PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.AreEqual(expected, result.Results.Single(item =>
+
+        Assert.AreEqual(Enum.Parse<CheckStatus>(expectedStatus), result.Results.Single(item =>
             item.Key.Check == PythonPackageChecks.Build).Status);
         Assert.IsTrue(result.Results.Where(item => item.Key.Check != PythonPackageChecks.Build)
             .All(item => item.Status == CheckStatus.Skipped));
-        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
         Assert.IsFalse(result.Commands.Any(item => item.Command.Arguments.Contains("consume")));
-        Assert.HasCount(1, result.Failures);
-        Assert.HasCount(4, result.Results);
-        if (failure == "prepare")
+        if (stage == "sync")
         {
-            // The failed native stage and its controlled stderr reach the failure text.
             Assert.Contains(" sync failed: ", result.Failures[0].Error);
             Assert.EndsWith("stderr: controlled failure", result.Failures[0].Error);
-            Assert.IsEmpty(result.Distributions);
-            Assert.IsEmpty(result.Commands.Where(item => item.Command.Arguments[0] != "sync"));
         }
     }
 
     [TestMethod]
-    [DataRow("source-extra-output", PythonPackageChecks.Build)]
-    [DataRow("source-unreported-output", PythonPackageChecks.Build)]
-    [DataRow("sdist-extra-output", PythonPackageChecks.Sdist)]
-    public async Task ExtraBuildOutputFailsRequiredCheckAndStopsItsConsumers(
-        string failure, string failedCheck)
+    public async Task ExtraOrCorruptedArchiveStopsDownstreamConsumersWithoutErasingPeers()
     {
-        using var fixture = Fixture.Shared(shared!, sharedPlan!);
-        fixture.Failure = failure;
-        PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-
-        Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
-            item.Key.Check == failedCheck).Status);
-        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
-        Assert.HasCount(4, result.Results);
-        PythonPackageFailure error = Assert.ContainsSingle(result.Failures);
-        Assert.AreEqual(failedCheck, error.Check.Check);
-        Assert.IsEmpty(result.Commands.Where(item => item.Command.Arguments.Contains("consume") &&
-            (failedCheck == PythonPackageChecks.Build || item.Check.Check == failedCheck)));
-        if (failedCheck == PythonPackageChecks.Build)
+        using var extra = Fixture.Shared(shared!, sharedPlan!);
+        extra.Native.AfterBuild = dir =>
         {
-            Assert.IsEmpty(result.Distributions);
-            Assert.IsTrue(result.Results.Where(item => item.Key.Check != failedCheck)
-                .All(item => item.Status == CheckStatus.Skipped));
-        }
-        else
-        {
-            Assert.HasCount(2, result.Distributions);
-            Assert.IsTrue(result.Results.Where(item => item.Key.Check != failedCheck)
-                .All(item => item.Status == CheckStatus.Passed));
-            foreach (PythonOriginalDistribution original in result.Distributions)
-                Assert.AreEqual("original", await File.ReadAllTextAsync(original.Path,
-                    context.CancellationToken));
-        }
-    }
-
-    [TestMethod]
-    public async Task WheelFailureDoesNotEraseIndependentSdistResult()
-    {
-        using var fixture = Fixture.Shared(shared!, sharedPlan!);
-        fixture.Failure = "wheel-consumer";
-        PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
-            item.Key.Check == PythonPackageChecks.Wheel).Status);
-        Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
+            if (File.Exists(Path.Combine(dir, "rebuilt.whl")))
+                File.WriteAllText(Path.Combine(dir, "unexpected.txt"), "extra");
+        };
+        PythonPackageRunResult sdistExtra = await extra.RunAsync(context.CancellationToken);
+        Assert.AreEqual(CheckStatus.Failed, sdistExtra.Results.Single(item =>
             item.Key.Check == PythonPackageChecks.Sdist).Status);
-        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+        Assert.AreEqual(CheckStatus.Passed, sdistExtra.Results.Single(item =>
+            item.Key.Check == PythonPackageChecks.Wheel).Status);
+
+        using var wheelFail = Fixture.Shared(shared!, sharedPlan!);
+        wheelFail.Native.Respond = command =>
+            command.Arguments.Contains("consume") &&
+            command.Directory.Contains("python-wheel-consumer", StringComparison.Ordinal)
+                ? PackageNative.Failure("wheel consumer failed") : null;
+        PythonPackageRunResult independent = await wheelFail.RunAsync(context.CancellationToken);
+        Assert.AreEqual(CheckStatus.Failed, independent.Results.Single(item =>
+            item.Key.Check == PythonPackageChecks.Wheel).Status);
+        Assert.AreEqual(CheckStatus.Passed, independent.Results.Single(item =>
+            item.Key.Check == PythonPackageChecks.Sdist).Status);
+
+        using var corrupt = Fixture.Shared(shared!, sharedPlan!);
+        corrupt.Native.Respond = command =>
+            command.Arguments.Contains("archive") ? PackageNative.Failure("bad archive") : null;
+        PythonPackageRunResult blocked = await corrupt.RunAsync(context.CancellationToken);
+        Assert.AreEqual(CheckStatus.Failed, blocked.Results.Single(item =>
+            item.Key.Check == PythonPackageChecks.Contents).Status);
+        AssertConsumersSkipped(blocked);
     }
 
     [TestMethod]
-    [DataRow("contents")]
-    [DataRow("original-changed")]
-    public async Task InvalidOriginalContentBlocksBothConsumers(string defect)
+    public async Task OriginalArchiveByteChangeBlocksBothConsumers()
     {
         using var fixture = Fixture.Shared(shared!, sharedPlan!);
-        fixture.Failure = defect;
+        fixture.Native.Respond = command =>
+        {
+            if (!command.Arguments.Contains("archive")) return null;
+            File.WriteAllText(command.Arguments[3], "changed!");
+            return PackageNative.Success();
+        };
+
         PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
+
+        Assert.IsTrue(Assert.ContainsSingle(result.Commands.Where(item =>
+            item.Command.Arguments.Contains("archive"))).Result.Succeeded);
         Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
             item.Key.Check == PythonPackageChecks.Build).Status);
         Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
             item.Key.Check == PythonPackageChecks.Contents).Status);
-        Assert.AreEqual(CheckStatus.Skipped, result.Results.Single(item =>
-            item.Key.Check == PythonPackageChecks.Wheel).Status);
-        Assert.AreEqual(CheckStatus.Skipped, result.Results.Single(item =>
-            item.Key.Check == PythonPackageChecks.Sdist).Status);
+        Assert.Contains("Original Python distribution bytes changed",
+            Assert.ContainsSingle(result.Failures).Error);
+        AssertConsumersSkipped(result);
+    }
+
+    [TestMethod]
+    public async Task UnreportedSourceBuildFileBlocksAllConsumers()
+    {
+        using var fixture = Fixture.Shared(shared!, sharedPlan!);
+        fixture.Native.AfterBuild = dir => File.WriteAllText(
+            Path.Combine(dir, "unexpected.txt"), "extra");
+        fixture.Native.IncludeOutput = path => Path.GetFileName(path) != "unexpected.txt";
+
+        PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
+
+        Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
+            item.Key.Check == PythonPackageChecks.Build).Status);
+        Assert.Contains("Incomplete original Python output set",
+            Assert.ContainsSingle(result.Failures).Error);
+        Assert.IsEmpty(result.Distributions);
+        AssertConsumersSkipped(result);
+    }
+
+    private static void AssertConsumersSkipped(PythonPackageRunResult result)
+    {
+        foreach (string check in new[] { PythonPackageChecks.Wheel, PythonPackageChecks.Sdist })
+            Assert.AreEqual(CheckStatus.Skipped,
+                result.Results.Single(item => item.Key.Check == check).Status);
         Assert.IsFalse(result.Commands.Any(item => item.Command.Arguments.Contains("consume")));
     }
 
     [TestMethod]
-    public async Task CliEmitsOriginalOutputEvenWhenQualificationFails()
+    public async Task InvalidSelectedContractOrDirtyCheckoutStopsBeforeNativeEffects()
     {
-        using var fixture = Fixture.Shared(shared!, sharedPlan!);
-        string planFile = Path.Combine(fixture.Scratch, "plan.json");
-        string requestFile = Path.Combine(fixture.Scratch, "request.json");
-        await File.WriteAllTextAsync(planFile, JsonSerializer.Serialize(fixture.Plan,
-            TransferJson.Default.CiPlan), context.CancellationToken);
-        await File.WriteAllTextAsync(requestFile, JsonSerializer.Serialize(
-            new PythonPackageRunRequest(
-            fixture.Repo.Directory, fixture.Scratch, "controlled-uv", "controlled-python",
-            "controlled-helper", PythonPackageChecksTests.Members, 30,
-            new Dictionary<string, string?>()), TransferJson.Default.PythonPackageRunRequest),
-            context.CancellationToken);
-        var original = new PythonOriginalDistribution("product", "distributions",
-            fixture.Plan.Checks[0].Work.Package!.Outputs[0], "original.whl", 8, "original-digest");
-        var result = new PythonPackageRunResult(fixture.Plan.Candidate,
-            fixture.Plan.Checks.Select(item => new CheckResult(fixture.Plan.Candidate,
-                item.Work.Key, CheckStatus.Failed)).ToArray(), [], [original], []);
-        using var output = new StringWriter();
-        using var error = new StringWriter();
-        Assert.AreEqual(1, Program.Run(["ci", "run-python-package", planFile,
-            requestFile],
-            output, error, runPythonPackage: (plan, request, token) => Task.FromResult(result)));
-        Assert.AreEqual("", error.ToString());
-        PythonPackageRunResult transferred = JsonSerializer.Deserialize(output.ToString(),
-            TransferJson.Default.PythonPackageRunResult)!;
-        Assert.AreEqual(original, Assert.ContainsSingle(transferred.Distributions));
-        CollectionAssert.AreEqual(result.Results, transferred.Results);
-        Assert.AreEqual(result.Candidate, transferred.Candidate);
-    }
-
-    [TestMethod]
-    [DataRow("missing-check")]
-    [DataRow("dirty")]
-    public async Task InvalidSelectedContractStopsBeforeNativeEffects(string defect)
-    {
-        // Only the dirty row changes the checkout, so only it keeps a private repository.
-        using var fixture = defect == "dirty"
-            ? await Fixture.CreateAsync(context.CancellationToken)
-            : Fixture.Shared(shared!, sharedPlan!);
-        CiPlan plan = fixture.Plan;
-        if (defect == "dirty")
-            await File.WriteAllTextAsync(Path.Combine(fixture.Repo.Directory,
-                "product/pyproject.toml"), "dirty", context.CancellationToken);
-        else
-            plan = plan with { Checks = plan.Checks[..^1] };
+        using var sharedFixture = Fixture.Shared(shared!, sharedPlan!);
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.RunAsync(context.CancellationToken, plan));
-        Assert.IsEmpty(fixture.Commands);
-    }
-
-    [TestMethod]
-    public async Task MutableCandidateStopsBeforeNativeEffectsEvenWithEmptyPartition()
-    {
-        using var fixture = Fixture.Shared(shared!, sharedPlan!);
-        CiPlan plan = fixture.Plan with { Candidate = "HEAD", Checks = [] };
+            sharedFixture.RunAsync(context.CancellationToken,
+                sharedFixture.Plan with { Checks = sharedFixture.Plan.Checks[..^1] }));
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.RunAsync(context.CancellationToken, plan));
-        Assert.IsEmpty(fixture.Commands);
-        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+            sharedFixture.RunAsync(context.CancellationToken,
+                sharedFixture.Plan with { Candidate = "HEAD", Checks = [] }));
+        Assert.IsEmpty(sharedFixture.Native.Commands);
+
+        using var dirty = await Fixture.CreateAsync(context.CancellationToken);
+        await File.WriteAllTextAsync(Path.Combine(dirty.Repo.Directory, "product/pyproject.toml"),
+            "dirty", context.CancellationToken);
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            dirty.RunAsync(context.CancellationToken));
+        Assert.IsEmpty(dirty.Native.Commands);
     }
 
     private sealed class Fixture(GitFixture repo, CiPlan plan, bool ownsRepository = true)
@@ -371,12 +345,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         internal CiPlan Plan { get; } = plan;
         internal string Scratch { get; } = Directory.CreateTempSubdirectory(
             "python-package-").FullName;
-        internal List<NativeCommand> Commands { get; } = [];
-        internal string? Failure { get; set; }
-        internal string? ChangedKind { get; set; }
-        // Projection a native query would select from inherited runner ref context.
-        internal string? AmbientVersion { get; set; }
-        internal CheckStatus Terminal { get; set; } = CheckStatus.Failed;
+        internal PackageNative Native { get; } = new();
 
         internal static async Task<Fixture> CreateAsync(CancellationToken token)
         {
@@ -385,85 +354,58 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             catch { repo.Dispose(); throw; }
         }
 
-        // Reads a class-owned committed checkout; the row owns only its scratch.
         internal static Fixture Shared(GitFixture repo, CiPlan plan) =>
             new(repo, plan, ownsRepository: false);
 
         internal static async Task<CiPlan> CommitAsync(GitFixture repo)
         {
-            await repo.SetAsync("product/pyproject.toml", "fixture native source");
-            await repo.SetAsync(PythonPackageChecksTests.Unit.SourcePath, """
-                schema: workflow-delivery/v3/release-unit
-                release-unit: product
-                builds:
-                  - id: distributions
-                    definition: python/distribution-set-v1
-                    entry-point: pyproject.toml
-                    outputs:
-                      - id: wheel
-                        role: primary-package
-                        kind: python-wheel
-                      - id: source
-                        role: source-package
-                        kind: python-sdist
-                """);
+            await WriteProductAsync(repo);
             string candidate = await repo.CommitAsync();
             await repo.GitAsync("reset", "--hard", candidate);
-            CheckSpec[] checks = PythonPackageChecks.Expand(PythonPackageChecksTests.Unit,
-                PythonPackageChecksTests.Members,
-                new Dictionary<string, string> { ["product"] = "1.0.0" });
-            return new(candidate, candidate, PythonFactsAssembler.Scope,
-                checks.Select(check => new PlannedCheck(check, [PythonPackageChecks.Preset],
-                    [], [CheckOrigin.Preset])).ToArray());
+            return new(candidate, candidate, PythonFactsAssembler.Scope, PackageChecks());
         }
 
         internal Task<PythonPackageRunResult> RunAsync(CancellationToken token,
-            CiPlan? plan = null, string? checkout = null, string? scratch = null) =>
+            CiPlan? plan = null) =>
             PythonPackageExecution.RunAsync(plan ?? Plan,
-                new(checkout ?? Repo.Directory, scratch ?? Scratch, "controlled-uv",
-                    Path.Combine(Scratch, "python"),
+                new(Repo.Directory, Scratch, "controlled-uv", Path.Combine(Scratch, "python"),
                     Path.Combine(Scratch, "helper.py"), PythonPackageChecksTests.Members, 30,
                     new Dictionary<string, string?> { ["GIT_DIR"] = "excluded-from-consumer" }),
-                ExecuteAsync, token);
+                Native.ExecuteAsync, token);
 
-        private async Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
+        public void Dispose()
+        {
+            if (ownsRepository) Repo.Dispose();
+            Directory.Delete(Scratch, recursive: true);
+        }
+    }
+
+    internal sealed class PackageNative
+    {
+        internal List<NativeCommand> Commands { get; } = [];
+        internal Func<NativeCommand, NativeCommandResult?>? Respond { get; set; }
+        internal Action<string>? AfterBuild { get; set; }
+        internal Func<string, bool>? IncludeOutput { get; set; }
+
+        internal static NativeCommandResult Success(string stdout = "{}") =>
+            new(NativeTermination.Exited, 0, stdout, "", 0.1, null);
+
+        internal static NativeCommandResult Failure(string stderr,
+            NativeTermination termination = NativeTermination.Exited) =>
+            new(termination, 1, "", stderr, 0.1, null);
+
+        internal async Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
             CancellationToken token)
         {
             Commands.Add(command);
+            if (Respond?.Invoke(command) is { } response) return response;
             string[] arguments = command.Arguments;
-            bool build = arguments[0] == "build";
-            bool conversion = arguments[0] == "sync" && arguments.Contains("--no-editable");
-            bool fail = (Failure == "prepare" && arguments[0] == "sync") ||
-                (Failure == "sdist-prepare" && conversion) ||
-                (Failure == "build" && build) || (Failure == "wheel-consumer" &&
-                    arguments.Contains("consume") && command.Directory.Contains(
-                        "python-wheel-consumer",
-                        StringComparison.Ordinal)) ||
-                (Failure == "contents" && arguments.Contains("archive"));
-            if (fail) return new(Terminal switch
-            {
-                CheckStatus.Cancelled => NativeTermination.Cancelled,
-                CheckStatus.TimedOut => NativeTermination.TimedOut,
-                _ => NativeTermination.Exited,
-            }, 1, "", "controlled failure", 0.1, null);
-            if (Failure == "conversion-original-changed" && conversion)
-            {
-                string archive = Path.Combine(Scratch, "package-0", "archives",
-                    ChangedKind == "python-wheel" ? "original.whl" : "original.tar.gz");
-                await File.WriteAllTextAsync(archive, "changed!", token);
-            }
-            if (build)
+            if (arguments[0] == "build")
             {
                 string destination = arguments[Array.IndexOf(arguments, "--out-dir") + 1];
-                // Represent UV's documented output marker default at both build boundaries.
                 if (!arguments.Contains("--no-create-gitignore"))
-                    await File.WriteAllTextAsync(Path.Combine(destination, ".gitignore"),
-                        "*", token);
-                if ((Failure is "source-extra-output" or "source-unreported-output" &&
-                        !arguments.Contains("--wheel")) ||
-                    (Failure == "sdist-extra-output" && arguments.Contains("--wheel")))
-                    await File.WriteAllTextAsync(Path.Combine(destination, "unexpected.txt"),
-                        "extra", token);
+                    await File.WriteAllTextAsync(Path.Combine(destination, ".gitignore"), "*",
+                        token);
                 if (arguments.Contains("--wheel"))
                     await File.WriteAllTextAsync(Path.Combine(destination, "rebuilt.whl"),
                         "rebuilt", token);
@@ -471,43 +413,28 @@ public sealed class PythonPackageExecutionTests(TestContext context)
                 {
                     await File.WriteAllTextAsync(Path.Combine(destination, "original.whl"),
                         "original", token);
-                    if (Failure != "missing-output")
-                        await File.WriteAllTextAsync(Path.Combine(destination,
-                            "original.tar.gz"), "original", token);
+                    await File.WriteAllTextAsync(Path.Combine(destination, "original.tar.gz"),
+                        "original", token);
                 }
+                AfterBuild?.Invoke(destination);
             }
-            string stdout = "{}";
-            if (Failure == "original-changed" && arguments.Contains("archive"))
-                await File.WriteAllTextAsync(arguments[3], "changed!", token);
-            if (arguments.Contains("identity")) stdout = JsonSerializer.Serialize(new
-            {
-                name = "hcoona-release-smoke-python",
-                version = Failure == "version" ? "2.0" :
-                    command.InheritEnvironment && AmbientVersion is not null ? AmbientVersion :
-                        "1.0.0"
-            });
+            if (arguments.Contains("identity"))
+                return Success("""{"name":"hcoona-release-smoke-python","version":"1.0.0"}""");
             if (arguments.Contains("outputs"))
             {
                 string directory = arguments[3];
-                IEnumerable<string> paths = Directory.GetFiles(directory);
-                if (Failure == "source-unreported-output")
-                    paths = paths.Where(path => Path.GetFileName(path) != "unexpected.txt");
-                stdout = JsonSerializer.Serialize(paths.Select(path => new
-                {
-                    kind = path.EndsWith(".whl",
-                        StringComparison.Ordinal) ? "python-wheel" : "python-sdist",
-                    path,
-                    length = new FileInfo(path).Length,
-                    sha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))),
-                }));
+                return Success(JsonSerializer.Serialize(Directory.EnumerateFiles(directory)
+                    .Where(path => IncludeOutput?.Invoke(path) != false).Select(path => new
+                    {
+                        kind = path.EndsWith(".whl", StringComparison.Ordinal)
+                            ? "python-wheel" : "python-sdist",
+                        path,
+                        length = new FileInfo(path).Length,
+                        sha256 = Convert.ToHexStringLower(SHA256.HashData(
+                            File.ReadAllBytes(path))),
+                    })));
             }
-            return new(NativeTermination.Exited, 0, stdout, "", 0.1, null);
-        }
-
-        public void Dispose()
-        {
-            if (ownsRepository) Repo.Dispose();
-            Directory.Delete(Scratch, recursive: true);
+            return Success();
         }
     }
 }

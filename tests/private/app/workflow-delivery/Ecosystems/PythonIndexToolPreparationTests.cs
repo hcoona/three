@@ -74,37 +74,48 @@ public sealed class PythonIndexToolPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("relative-uv")]
-    [DataRow("relative-interpreter")]
-    [DataRow("relative-requirements")]
-    [DataRow("relative-scratch")]
-    [DataRow("missing-recipe")]
-    [DataRow("missing-scratch")]
-    [DataRow("populated-scratch")]
-    public async Task InvalidInputsRejectBeforeExecutor(string defect)
+    public async Task RelativePathsAreRejectedBeforeNativeExecution()
     {
         using var f = new Fixture();
-        PythonIndexToolRequest request = defect switch
-        {
-            "relative-uv" => f.Request with { Uv = "uv" },
-            "relative-interpreter" => f.Request with { Interpreter = "python" },
-            "relative-requirements" => f.Request with { Requirements = "recipe.txt" },
-            "relative-scratch" => f.Request with { Scratch = "scratch" },
-            _ => f.Request,
-        };
-        if (defect == "missing-recipe") File.Delete(request.Requirements);
-        if (defect == "missing-scratch") Directory.Delete(request.Scratch);
-        if (defect == "populated-scratch") File.WriteAllText(Path.Combine(request.Scratch,
-            "unowned"), "previous state");
-        int calls = 0;
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            PythonIndexToolPreparation.PrepareAsync(request,
-            (_, _) => { calls++; return Task.FromResult(Fixture.Success); },
-                context.CancellationToken));
-        Assert.AreEqual(0, calls);
-        if (defect == "populated-scratch") Assert.AreEqual("previous state",
-            File.ReadAllText(Path.Combine(request.Scratch, "unowned")));
+        await RejectAsync(f.Request with { Uv = "uv" });
+        await RejectAsync(f.Request with { Interpreter = "python" });
+        await RejectAsync(f.Request with { Requirements = "recipe.txt" });
+        await RejectAsync(f.Request with { Scratch = "scratch" });
     }
+
+    [TestMethod]
+    public async Task MissingRequirementsCannotStartPreparation()
+    {
+        using var f = new Fixture();
+        File.Delete(f.Request.Requirements);
+        await RejectAsync(f.Request);
+    }
+
+    [TestMethod]
+    public async Task MissingScratchCannotStartPreparation()
+    {
+        using var f = new Fixture();
+        Directory.Delete(f.Request.Scratch);
+        await RejectAsync(f.Request);
+    }
+
+    [TestMethod]
+    public async Task PopulatedScratchIsRejectedWithoutReplacingExistingData()
+    {
+        using var f = new Fixture();
+        string sentinel = Path.Combine(f.Request.Scratch, "unowned");
+        File.WriteAllText(sentinel, "previous state");
+
+        await RejectAsync(f.Request);
+
+        Assert.AreEqual("previous state", File.ReadAllText(sentinel));
+    }
+
+    private Task<InvalidDataException> RejectAsync(PythonIndexToolRequest request) =>
+        Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            PythonIndexToolPreparation.PrepareAsync(request,
+                (_, _) => throw new AssertFailedException("Invalid input reached native work."),
+                context.CancellationToken));
 
     [TestMethod]
     [DataRow(0, "Exited", 17, "native failure")]

@@ -7,58 +7,51 @@ namespace WorkflowDelivery.Tests.CI;
 public sealed class ResultCollectorTests
 {
     [TestMethod]
-    [DataRow("empty-origin")]
-    [DataRow("undefined-origin")]
-    [DataRow("preset-without-name")]
-    [DataRow("native-with-preset")]
-    [DataRow("mixed-without-preset")]
-    [DataRow("blank-preset")]
-    public void CollectMalformedOriginContractRejectsPassedResults(string defect)
+    public void CollectMalformedOriginContractRejectsPassedResults()
     {
         CheckSpec work = Scenario.Check("library");
         CiPlan plan = Scenario.Plan(work);
         PlannedCheck check = Assert.ContainsSingle(plan.Checks);
-        check = defect switch
-        {
-            "empty-origin" => check with { Origins = [] },
-            "undefined-origin" => check with { Origins = [(CheckOrigin)999] },
-            "preset-without-name" => check with { QualityPresets = [] },
-            "native-with-preset" => check with { Origins = [CheckOrigin.NativeRetained] },
-            "mixed-without-preset" => check with
+        PlannedCheck[] malformed =
+        [
+            check with { Origins = [] },
+            check with { Origins = [(CheckOrigin)999] },
+            check with { QualityPresets = [] },
+            check with { Origins = [CheckOrigin.NativeRetained] },
+            check with
             {
                 Origins = [CheckOrigin.Preset, CheckOrigin.NativeRetained],
                 QualityPresets = [],
             },
-            "blank-preset" => check with { QualityPresets = [" "] },
-            _ => throw new InvalidOperationException(defect),
-        };
-        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            ResultCollector.Collect(plan with { Checks = [check] },
-                [new(plan.Candidate, work.Key, CheckStatus.Passed)]));
-        Assert.Contains("origin/preset relationship", error.Message);
+            check with { QualityPresets = [" "] },
+        ];
+        foreach (PlannedCheck invalid in malformed)
+            Assert.Contains("origin/preset relationship",
+                Assert.ThrowsExactly<InvalidDataException>(() =>
+                    ResultCollector.Collect(plan with { Checks = [invalid] },
+                        [new(plan.Candidate, work.Key, CheckStatus.Passed)])).Message);
     }
 
     [TestMethod]
-    [DataRow("preset")]
-    [DataRow("native")]
-    [DataRow("mixed")]
-    public void CollectValidOriginsPreserveSatisfiedResult(string source)
+    public void CollectPresetNativeAndMixedOriginsPreserveSatisfiedResult()
     {
         CheckSpec work = Scenario.Check("library");
         CiPlan plan = Scenario.Plan(work);
-        PlannedCheck check = Assert.ContainsSingle(plan.Checks);
-        check = source switch
+        PlannedCheck preset = Assert.ContainsSingle(plan.Checks);
+        PlannedCheck[] sources =
+        [
+            preset,
+            preset with { Origins = [CheckOrigin.NativeRetained], QualityPresets = [] },
+            preset with { Origins = [CheckOrigin.Preset, CheckOrigin.NativeRetained] },
+        ];
+        foreach (PlannedCheck source in sources)
         {
-            "preset" => check,
-            "native" => check with { Origins = [CheckOrigin.NativeRetained], QualityPresets = [] },
-            "mixed" => check with { Origins = [CheckOrigin.Preset, CheckOrigin.NativeRetained] },
-            _ => throw new InvalidOperationException(source),
-        };
-        CiOutcome outcome = ResultCollector.Collect(plan with { Checks = [check] },
-            [new(plan.Candidate, work.Key, CheckStatus.Passed)]);
-        Assert.IsTrue(outcome.Satisfied);
-        Assert.IsEmpty(outcome.Errors);
-        Assert.AreEqual(new(work.Key, true, "passed"), Assert.ContainsSingle(outcome.Checks));
+            CiOutcome outcome = ResultCollector.Collect(plan with { Checks = [source] },
+                [new(plan.Candidate, work.Key, CheckStatus.Passed)]);
+            Assert.IsTrue(outcome.Satisfied);
+            Assert.IsEmpty(outcome.Errors);
+            Assert.AreEqual(new(work.Key, true, "passed"), Assert.ContainsSingle(outcome.Checks));
+        }
     }
 
     [TestMethod]
@@ -127,79 +120,69 @@ public sealed class ResultCollectorTests
     }
 
     [TestMethod]
-    [DataRow("failed")]
-    [DataRow("missing")]
-    [DataRow("conflicting")]
-    public void CollectAdvisoryFailureRemainsVisibleWithoutBlocking(string state)
+    [DataRow("failed", true, false)]
+    [DataRow("missing", false, false)]
+    [DataRow("conflicting", true, true)]
+    public void CollectAdvisoryFailureRemainsVisibleWithoutBlocking(string expected,
+        bool failed, bool passed)
     {
         CheckSpec required = Scenario.Check("library");
         CheckSpec advisory = Scenario.Check("library", "lint", required: false);
         var results = new List<CheckResult> { new("candidate", required.Key, CheckStatus.Passed) };
-        if (state != "missing")
+        if (failed)
             results.Add(new("candidate", advisory.Key, CheckStatus.Failed));
-        if (state == "conflicting")
+        if (passed)
             results.Add(new("candidate", advisory.Key, CheckStatus.Passed));
 
         CiOutcome outcome = ResultCollector.Collect(Scenario.Plan(required, advisory), [..
             results]);
 
         Assert.IsTrue(outcome.Satisfied);
-        Assert.Contains(new CheckOutcome(advisory.Key, false, state), outcome.Checks);
+        Assert.Contains(new CheckOutcome(advisory.Key, false, expected), outcome.Checks);
         Assert.Contains(new CheckOutcome(required.Key, true, "passed"), outcome.Checks);
         Assert.IsEmpty(outcome.Errors);
     }
 
     [TestMethod]
-    [DataRow("revision", "Unexpected result subject")]
-    [DataRow("target", "Unexpected result subject")]
-    [DataRow("operation", "Unexpected result subject")]
-    [DataRow("variant", "Unexpected result subject")]
-    [DataRow("status", "Unknown result status")]
-    public void CollectInvalidResultSubjectOrStatusPreventsSuccess(string defect, string message)
+    [DataRow("another-candidate", "library", "test", "default")]
+    [DataRow("candidate", "other", "test", "default")]
+    [DataRow("candidate", "library", "build", "default")]
+    [DataRow("candidate", "library", "test", "windows")]
+    public void CollectDifferentResultSubjectPreventsSuccess(string candidate, string target,
+        string operation, string variant) =>
+        AssertInvalidResult(new(candidate, new(target, operation, variant), CheckStatus.Passed),
+            "Unexpected result subject");
+
+    [TestMethod]
+    public void CollectUnknownResultStatusPreventsSuccess() =>
+        AssertInvalidResult(new("candidate", Scenario.Check("library").Key, (CheckStatus)999),
+            "Unknown result status");
+
+    private static void AssertInvalidResult(CheckResult invalid, string diagnostic)
     {
         CheckSpec check = Scenario.Check("library");
-        CheckResult invalid = new("candidate", check.Key, CheckStatus.Passed);
-        invalid = defect switch
-        {
-            "revision" => invalid with { Candidate = "another-candidate" },
-            "target" => invalid with { Key = check.Key with { Target = "other" } },
-            "operation" => invalid with { Key = check.Key with { Check = "build" } },
-            "variant" => invalid with { Key = check.Key with { Variant = "windows" } },
-            "status" => invalid with { Status = (CheckStatus)999 },
-            _ => throw new InvalidOperationException(defect),
-        };
-
         CiOutcome outcome = ResultCollector.Collect(Scenario.Plan(check),
             [new("candidate", check.Key, CheckStatus.Passed), invalid]);
 
         Assert.IsFalse(outcome.Satisfied);
-        Assert.Contains(message, Assert.ContainsSingle(outcome.Errors));
+        Assert.Contains(diagnostic, Assert.ContainsSingle(outcome.Errors));
         Assert.AreEqual(new(check.Key, true, "passed"), Assert.ContainsSingle(outcome.Checks));
     }
 
     [TestMethod]
-    [DataRow("missing", "Missing prerequisite")]
-    [DataRow("advisory", "advisory prerequisite")]
-    [DataRow("cycle", "Cyclic check prerequisites")]
-    [DataRow("duplicate", "Duplicate planned check")]
-    public void CollectMalformedPlanRejectsInvalidPrerequisiteContracts(string defect, string
-        message)
+    public void CollectMalformedPlanRejectsInvalidPrerequisiteContracts()
     {
         CheckSpec build = Scenario.Check("library", "build");
         CheckSpec test = Scenario.Check("library", prerequisites: [build.Key]);
-        CiPlan plan = defect switch
-        {
-            "missing" => Scenario.Plan(test),
-            "advisory" => Scenario.Plan(test, build with { Required = false }),
-            "cycle" => Scenario.Plan(test, build with { Prerequisites = [test.Key] }),
-            "duplicate" => Scenario.Plan(test, test, build),
-            _ => throw new InvalidOperationException(defect),
-        };
+        AssertRejected("Missing prerequisite", test);
+        AssertRejected("advisory prerequisite", test, build with { Required = false });
+        AssertRejected("Cyclic check prerequisites", test,
+            build with { Prerequisites = [test.Key] });
+        AssertRejected("Duplicate planned check", test, test, build);
 
-        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            ResultCollector.Collect(plan, []));
-
-        Assert.Contains(message, error.Message);
+        static void AssertRejected(string diagnostic, params CheckSpec[] checks) =>
+            Assert.Contains(diagnostic, Assert.ThrowsExactly<InvalidDataException>(() =>
+                ResultCollector.Collect(Scenario.Plan(checks), [])).Message);
     }
 
     [TestMethod]

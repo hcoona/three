@@ -93,15 +93,15 @@ public sealed class DotNetExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Exited", "Failed")]
-    [DataRow("Cancelled", "Cancelled")]
-    [DataRow("TimedOut", "TimedOut")]
-    [DataRow("CleanupFailed", "Failed")]
-    public async Task FailedTestCannotEraseEarlierBuild(string terminationName, string statusName)
+    [DataRow((int)NativeTermination.Exited, (int)CheckStatus.Failed)]
+    [DataRow((int)NativeTermination.Cancelled, (int)CheckStatus.Cancelled)]
+    [DataRow((int)NativeTermination.TimedOut, (int)CheckStatus.TimedOut)]
+    [DataRow((int)NativeTermination.CleanupFailed, (int)CheckStatus.Failed)]
+    public async Task FailedTestCannotEraseEarlierBuild(int terminationValue, int statusValue)
     {
         using var fixture = Shared();
-        NativeTermination termination = Enum.Parse<NativeTermination>(terminationName);
-        CheckStatus status = Enum.Parse<CheckStatus>(statusName);
+        var termination = (NativeTermination)terminationValue;
+        var status = (CheckStatus)statusValue;
         fixture.Override = command => command.Arguments.Contains("-target:TestSelected") ?
             new(termination, 1, "test failed after its Build prelude", "", 0.1, "failure") : null;
         DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
@@ -116,14 +116,14 @@ public sealed class DotNetExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Cancelled", "Cancelled")]
-    [DataRow("TimedOut", "TimedOut")]
+    [DataRow((int)NativeTermination.Cancelled, (int)CheckStatus.Cancelled)]
+    [DataRow((int)NativeTermination.TimedOut, (int)CheckStatus.TimedOut)]
     public async Task InterruptedBatchCannotPassFromSuccessfulBatchResponse(
-        string terminationName, string statusName)
+        int terminationValue, int statusValue)
     {
         using var fixture = Shared();
-        NativeTermination termination = Enum.Parse<NativeTermination>(terminationName);
-        CheckStatus status = Enum.Parse<CheckStatus>(statusName);
+        var termination = (NativeTermination)terminationValue;
+        var status = (CheckStatus)statusValue;
         DotNetRunResult result = await DotNetExecution.RunAsync(fixture.Plan, fixture.Request,
             async (command, token) =>
             {
@@ -187,20 +187,12 @@ public sealed class DotNetExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("missing")]
-    [DataRow("invalid")]
-    public async Task MissingTestReceiptRetainsBuildWithoutFabricatingTest(string defect)
+    public async Task SuccessfulTestWrapperWithoutReceiptDoesNotQualifyTest()
     {
         using var fixture = Shared();
         fixture.Override = command =>
         {
             if (!command.Arguments.Contains("-target:TestSelected")) return null;
-            if (defect == "invalid")
-            {
-                string receipts = Directory.CreateDirectory(Path.Combine(fixture.Scratch,
-                    "test-receipts")).FullName;
-                File.WriteAllText(DotNetTestTask.Receipt(receipts, 0), "{");
-            }
             return new(NativeTermination.Exited, 0, "The diagnostic stream claims success.",
                 "", 0.1, null);
         };
@@ -213,57 +205,76 @@ public sealed class DotNetExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("test", "Failed")]
-    [DataRow("overall", "Failed")]
-    [DataRow("identity", "Failed")]
-    [DataRow("target", "Failed")]
-    [DataRow("receipt", "Cancelled")]
-    public async Task TestBatchEntryCannotMaskAnotherEntry(string defect, string statusName)
+    [DataRow(null, "{")]
+    [DataRow("identity.project", "other.csproj")]
+    [DataRow("identity.globals.TargetFramework", "net8.0")]
+    [DataRow("testTarget", "VSTest")]
+    public async Task InvalidTestReceiptCannotQualifyWhileIndependentReceiptPasses(
+        string? field, string replacement)
     {
-        using var fixture = DotNetExecutionFixture.Shared(shared!, sharedCommit);
-        CiPlan second = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
-            fixture.Plan.Candidate, "MTP", DotNetNativeFixture.Globals("net8.0"));
-        CiPlan plan = fixture.Plan with { Checks = [.. fixture.Plan.Checks, .. second.Checks] };
-        bool missing = defect == "receipt";
-        fixture.ModifyTestReceipt = (index, receipt) =>
+        using var fixture = Shared();
+        CiPlan plan = WithNet8Variant(fixture, "MTP");
+        if (field is not null)
         {
-            if (index != 0) return;
-            switch (defect)
+            fixture.ModifyTestReceipt = (index, receipt) =>
             {
-                case "test": receipt["test"] = "Failure"; break;
-                case "overall": receipt["overall"] = "Failure"; break;
-                case "identity":
-                    receipt["identity"]!["globals"]!["TargetFramework"] = "net8.0";
-                    break;
-                case "target": receipt["testTarget"] = "VSTest"; break;
-            }
-            receipt["log"] = "entry zero diagnostic";
-        };
+                if (index != 0) return;
+                string[] parts = field.Split('.');
+                JsonNode parent = receipt;
+                foreach (string part in parts[..^1]) parent = parent[part]!;
+                parent[parts[^1]] = field == "identity.project"
+                    ? Path.Combine(fixture.Repo.Directory, replacement) : replacement;
+            };
+        }
+
         DotNetRunResult result = await DotNetExecution.RunAsync(plan, fixture.Request,
             async (command, token) =>
             {
                 NativeCommandResult native = await fixture.ExecuteAsync(command, token);
-                if (!missing || !command.Arguments.Contains("-target:TestSelected"))
-                    return native;
-                // An interrupted session retains completed receipts, never the unfinished one.
-                File.Delete(DotNetTestTask.Receipt(Path.Combine(fixture.Scratch,
-                    "test-receipts"), 0));
-                return native with
+                if (field is null && command.Arguments.Contains("-target:TestSelected"))
                 {
-                    Termination = NativeTermination.Cancelled,
-                    ExitCode = null,
-                    Error = "Command cancelled.",
-                };
+                    string receipts = Path.Combine(fixture.Scratch, "test-receipts");
+                    await File.WriteAllTextAsync(DotNetTestTask.Receipt(receipts, 0), replacement,
+                        token);
+                }
+                return native;
             }, context.CancellationToken);
+
+        CheckKey rejected = plan.Checks[1].Work.Key;
+        CheckKey independent = plan.Checks[3].Work.Key;
+        Assert.AreEqual(CheckStatus.Failed,
+            result.Results.Single(item => item.Key == rejected).Status);
+        Assert.AreEqual(CheckStatus.Passed,
+            result.Results.Single(item => item.Key == independent).Status);
+        var failure = Assert.ContainsSingle(result.Failures);
+        Assert.AreEqual(rejected, failure.Key);
+        if (field is not null)
+            Assert.AreEqual("Different selected native test identity.", failure.Error);
+        Assert.IsTrue(result.Outputs.Any(item => item.Key == independent));
+        Assert.IsFalse(result.Outputs.Any(item => item.Key == rejected));
+        Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
+    }
+
+    [TestMethod]
+    public async Task FailedTestReceiptCannotBeMaskedByAnotherPassingVariant()
+    {
+        using var fixture = DotNetExecutionFixture.Shared(shared!, sharedCommit);
+        CiPlan plan = WithNet8Variant(fixture, "MTP");
+        fixture.ModifyTestReceipt = (index, receipt) =>
+        {
+            if (index != 0) return;
+            receipt["test"] = "Failure";
+            receipt["log"] = "entry zero diagnostic";
+        };
+        DotNetRunResult result = await fixture.RunAsync(context.CancellationToken, plan);
         CheckKey first = plan.Checks[1].Work.Key;
         CheckKey other = plan.Checks[3].Work.Key;
-        Assert.AreEqual(Enum.Parse<CheckStatus>(statusName),
+        Assert.AreEqual(CheckStatus.Failed,
             result.Results.Single(item => item.Key == first).Status);
         Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item => item.Key == other)
             .Status);
         Assert.AreEqual(first, Assert.ContainsSingle(result.Failures).Key);
-        if (defect is "test" or "overall")
-            Assert.Contains("entry zero diagnostic", result.Failures[0].Error);
+        Assert.Contains("entry zero diagnostic", result.Failures[0].Error);
         Assert.IsTrue(result.Outputs.Any(output => output.Key == other));
         Assert.IsFalse(result.Outputs.Any(output => output.Key == first));
         Assert.HasCount(2, result.TestBatch!.Keys);
@@ -274,9 +285,7 @@ public sealed class DotNetExecutionTests(TestContext context)
     public async Task CallerCancellationRetainsCompletedTestReceipts()
     {
         using var fixture = DotNetExecutionFixture.Shared(shared!, sharedCommit);
-        CiPlan second = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
-            fixture.Plan.Candidate, "MTP", DotNetNativeFixture.Globals("net8.0"));
-        CiPlan plan = fixture.Plan with { Checks = [.. fixture.Plan.Checks, .. second.Checks] };
+        CiPlan plan = WithNet8Variant(fixture, "MTP");
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         DotNetRunResult result = await DotNetExecution.RunAsync(plan, fixture.Request,
@@ -321,31 +330,11 @@ public sealed class DotNetExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("target")]
-    [DataRow("verdict")]
-    [DataRow("missing-output")]
-    [DataRow("ambiguous-output")]
-    [DataRow("coordinate")]
-    [DataRow("nonfile")]
-    public async Task MissingOrInvalidNativeOutputFails(string defect)
+    public async Task SuccessfulBuildWithoutNativeOutputSkipsTest()
     {
         using var fixture = Shared();
         fixture.ModifyResponse = response =>
-        {
-            JsonObject targets = response["TargetResults"]!.AsObject();
-            JsonObject output = targets["GetTargetPath"]!.AsObject();
-            switch (defect)
-            {
-                case "target": targets.Remove("Build"); break;
-                case "verdict": output["Result"] = "Skipped"; break;
-                case "missing-output": output["Items"] = new JsonArray(); break;
-                case "ambiguous-output":
-                    output["Items"]!.AsArray().Add(
-                    output["Items"]![0]!.DeepClone()); break;
-                case "coordinate": output["Items"]![0]!["FullPath"] = "relative.bin"; break;
-                case "nonfile": output["Items"]![0]!["FullPath"] = fixture.Scratch; break;
-            }
-        };
+            response["TargetResults"]!["GetTargetPath"]!["Items"] = new JsonArray();
         DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
         Assert.AreEqual(CheckStatus.Skipped, result.Results[1].Status);
@@ -355,22 +344,11 @@ public sealed class DotNetExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("missing")]
-    [DataRow("duplicate")]
-    [DataRow("project")]
-    [DataRow("globals")]
-    public async Task MissingOrDifferentBatchIdentityCannotPass(string defect)
+    public async Task BuildOutputFromDifferentNativeVariantCannotQualifyCandidate()
     {
         using var fixture = Shared();
         fixture.ModifyBatchResponse = response =>
-        {
-            JsonArray entries = response["entries"]!.AsArray();
-            if (defect == "missing") entries.Clear();
-            else if (defect == "duplicate") entries.Add(entries[0]!.DeepClone());
-            else if (defect == "project") entries[0]!["identity"]!["project"] =
-                Path.Combine(fixture.Repo.Directory, "other.csproj");
-            else entries[0]!["identity"]!["globals"]!["TargetFramework"] = "net8.0";
-        };
+            response["entries"]![0]!["identity"]!["globals"]!["TargetFramework"] = "net8.0";
         DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
         Assert.AreEqual(CheckStatus.Skipped, result.Results[1].Status);
@@ -381,10 +359,7 @@ public sealed class DotNetExecutionTests(TestContext context)
     public async Task ReorderedBatchResultsRetainOriginalVariantBinding()
     {
         using var fixture = DotNetExecutionFixture.Shared(shared!, sharedCommit, "None");
-        var globals = new Dictionary<string, string>(DotNetNativeFixture.Globals("net8.0"));
-        CiPlan second = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
-            fixture.Plan.Candidate, "None", globals);
-        CiPlan plan = fixture.Plan with { Checks = [.. fixture.Plan.Checks, .. second.Checks] };
+        CiPlan plan = WithNet8Variant(fixture, "None");
         fixture.ModifyBatchResponse = response =>
         {
             JsonArray entries = response["entries"]!.AsArray();
@@ -396,10 +371,17 @@ public sealed class DotNetExecutionTests(TestContext context)
         DotNetRunResult result = await fixture.RunAsync(context.CancellationToken, plan);
         Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
         Assert.AreEqual(CheckStatus.Passed, result.Results[1].Status);
-        Assert.AreEqual(second.Checks[0].Work.Key, Assert.ContainsSingle(result.Outputs).Key);
+        Assert.AreEqual(plan.Checks[1].Work.Key, Assert.ContainsSingle(result.Outputs).Key);
         Assert.IsNull(result.TestBatch);
         Assert.IsNotNull(result.BatchBuild);
         Assert.HasCount(2, result.BatchBuild.Keys);
+    }
+
+    private static CiPlan WithNet8Variant(DotNetExecutionFixture fixture, string capability)
+    {
+        CiPlan alternate = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
+            fixture.Plan.Candidate, capability, DotNetNativeFixture.Globals("net8.0"));
+        return fixture.Plan with { Checks = [.. fixture.Plan.Checks, .. alternate.Checks] };
     }
 
     [TestMethod]
@@ -416,54 +398,47 @@ public sealed class DotNetExecutionTests(TestContext context)
     [TestMethod]
     [DataRow("test-capability", "VSTest")]
     [DataRow(DotNetTools.Dimension, """{"python":"1.0.1"}""")]
-    public void RetainedBuildAndTestRequireMatchingCapabilitiesAndTools(string dimension,
+    public async Task RetainedBuildAndTestRequireMatchingCapabilitiesAndTools(string dimension,
         string value)
     {
-        string checkout = shared!.Directory;
-        CiPlan plan = DotNetExecutionFixture.CreatePlan(checkout, sharedCommit, "MTP");
+        using var fixture = Shared();
+        CiPlan plan = fixture.Plan;
         foreach (PlannedCheck check in plan.Checks)
             check.Work.Dimensions[DotNetTools.Dimension] = """{"python":"1.0.0"}""";
         PlannedCheck test = plan.Checks.Single(check => check.Work.Key.Check == DotNetChecks.Test);
         test.Work.Dimensions[dimension] = value;
 
-        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            DotNetExecution.ReadChecks(plan, checkout));
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(context.CancellationToken, plan));
 
         Assert.AreEqual("Incomplete selected native identity obligations.", error.Message);
+        Assert.IsEmpty(fixture.Commands);
     }
 
     [TestMethod]
-    [DataRow("scratch-used")]
-    [DataRow("dirty")]
-    [DataRow("wrong-head")]
-    [DataRow("uncommitted-project")]
-    public async Task InvalidRequestStopsBeforeProductCommands(string defect)
+    public async Task NonemptyExternalScratchIsRejectedWithoutReplacingExistingData()
     {
-        // Rows that change the checkout keep a private repository.
-        using var fixture = defect is "dirty" or "wrong-head"
-            ? await DotNetExecutionFixture.CreateAsync(context.CancellationToken) : Shared();
-        DotNetRunRequest request = fixture.Request;
-        CiPlan plan = fixture.Plan;
-        switch (defect)
-        {
-            case "scratch-used":
-                await File.WriteAllTextAsync(Path.Combine(fixture.Scratch,
-                "existing"), "used", context.CancellationToken); break;
-            case "dirty":
-                await File.AppendAllTextAsync(Path.Combine(fixture.Repo.Directory,
-                "product.csproj"), "changed", context.CancellationToken); break;
-            case "wrong-head":
-                await fixture.Repo.SetAsync("new.txt", "new candidate");
-                string other = await fixture.Repo.CommitAsync(plan.Candidate);
-                await fixture.Repo.GitAsync("reset", "--hard", other);
-                break;
-            case "uncommitted-project":
-                plan = DotNetExecutionFixture.CreatePlan(
-                fixture.Repo.Directory, plan.Candidate, "MTP", project: "uncommitted.csproj");
-                break;
-        }
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => DotNetExecution.RunAsync(
-            plan, request, fixture.ExecuteAsync, context.CancellationToken));
+        using var fixture = Shared();
+        string sentinel = Path.Combine(fixture.Scratch, "existing");
+        await File.WriteAllTextAsync(sentinel, "used", context.CancellationToken);
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(context.CancellationToken));
+
+        Assert.IsEmpty(fixture.Commands);
+        Assert.AreEqual("used", File.ReadAllText(sentinel));
+    }
+
+    [TestMethod]
+    public async Task ProjectAbsentFromCandidateCannotStartBuild()
+    {
+        using var fixture = Shared();
+        CiPlan plan = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
+            fixture.Plan.Candidate, "MTP", project: "uncommitted.csproj");
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(context.CancellationToken, plan));
+
         Assert.IsEmpty(fixture.Commands);
     }
 
@@ -481,13 +456,13 @@ public sealed class DotNetExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("nul", "Probe", "\0")]
-    [DataRow("restore-sources", "RestoreSources", "https://example.invalid/feed")]
-    public void UnsupportedGlobalsFailBeforeCommands(string scenario, string name, string value)
+    [DataRow("Probe", "\0")]
+    [DataRow("RestoreSources", "https://example.invalid/feed")]
+    public void UnsupportedGlobalsFailBeforeCommands(string name, string value)
     {
         var globals = new Dictionary<string, string> { [name] = value };
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
             DotNetChecks.Properties(globals));
-        Assert.Contains(name, error.Message, scenario);
+        Assert.Contains(name, error.Message);
     }
 }

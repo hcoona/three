@@ -1,4 +1,3 @@
-using System.Text.Json;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -10,10 +9,12 @@ namespace WorkflowDelivery.Tests.CI;
 [TestClass]
 public sealed class PythonGroupExecutionTests(TestContext context)
 {
-    // Every row reads one class-owned committed checkout and owns fresh scratch. A row that
-    // edits the checkout must create its own repository instead.
+    private static readonly string[] Targets = ["tests/root", "pkg-a/tests", "pkg-b/tests"];
+    private static readonly string[] SelectedOwners = ["native-root", "native-a", "native-b"];
+    private static readonly string[] PytestInvocation =
+        ["python", "-m", "pytest", "-c", "pyproject.toml"];
     private static GitFixture? shared;
-    private static GitRevision? sharedRevision;
+    private static GitRevision? revision;
 
     [ClassInitialize]
     public static async Task InitializeAsync(TestContext classContext)
@@ -21,8 +22,16 @@ public sealed class PythonGroupExecutionTests(TestContext context)
         GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
         try
         {
-            string candidate = await Fixture.CommitAsync(repo);
-            sharedRevision = await new GitReader(repo.Directory).ReadAsync(candidate,
+            await repo.SetAsync("pyproject.toml", "controlled root pytest configuration");
+            foreach (string target in Targets)
+                await repo.SetAsync(target + "/test_example.py");
+            await repo.SetAsync("pkg-a/pyproject.toml");
+            await repo.SetAsync("pkg-b/pyproject.toml");
+            await repo.SetAsync("input/pyproject.toml");
+            await PythonPackageExecutionTests.WriteProductAsync(repo);
+            string candidate = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", candidate);
+            revision = await new GitReader(repo.Directory).ReadAsync(candidate,
                 classContext.CancellationToken);
             shared = repo;
         }
@@ -32,298 +41,307 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     [ClassCleanup]
     public static void Cleanup() => shared?.Dispose();
 
-    private static Fixture Shared() => Fixture.Create(shared!, sharedRevision!);
-
     [TestMethod]
-    public async Task OriginalMixedPlanAndRequiredResultsSurviveBothPartitions()
+    public async Task MixedPlanRunsSelectedPytestTargetsAndQualifiesBothDistributions()
     {
-        // Defect-free control for the shared checkout.
-        using var fixture = Shared();
+        using var fixture = new Fixture();
+
         PythonGroupRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsTrue(result.Outcome.Satisfied);
+
+        Assert.IsTrue(result.Outcome.Satisfied,
+            string.Join("; ", result.Packages.Failures.Select(item => item.Error)));
         Assert.AreEqual(fixture.Plan.Candidate, result.Candidate);
-        Assert.ContainsSingle(fixture.Queries);
-        foreach (CiPlan partition in fixture.Partitions)
-        {
-            Assert.AreEqual(fixture.Plan.Comparison, partition.Comparison);
-            Assert.AreEqual(fixture.Plan.Candidate, partition.Candidate);
-            Assert.AreEqual(fixture.Plan.Scope, partition.Scope);
-        }
-        Assert.HasCount(2, fixture.Scratches.Distinct(StringComparer.Ordinal));
         CollectionAssert.AreEquivalent(fixture.Plan.Checks.Select(item => item.Work.Key).ToArray(),
             result.Results.Select(item => item.Key).ToArray());
-    }
+        Assert.HasCount(2, result.Packages.Distributions);
+        NativeCommand sync = Assert.ContainsSingle(result.Pytest.Commands.Where(item =>
+            item.Command.Arguments[0] == "sync")).Command;
+        string[] owners = sync.Arguments.Zip(sync.Arguments.Skip(1))
+            .Where(pair => pair.First == "--package").Select(pair => pair.Second).ToArray();
+        CollectionAssert.AreEquivalent(SelectedOwners, owners);
+        Assert.Contains("--frozen", sync.Arguments);
+        Assert.DoesNotContain("--no-editable", sync.Arguments);
+        AssertScrubbed(sync);
+        string? environment = sync.Environment!["UV_PROJECT_ENVIRONMENT"];
+        Assert.IsNotNull(environment);
+        Assert.StartsWith(fixture.Scratch, environment);
+        Assert.AreNotEqual("inherited-environment", environment);
 
-    [TestMethod]
-    public async Task PytestFailureLeavesIndependentPackageObligationsVisible()
-    {
-        using var fixture = Shared();
-        fixture.PytestStatus = CheckStatus.Failed;
-        PythonGroupRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsFalse(result.Outcome.Satisfied);
-        Assert.AreEqual(CheckStatus.Failed, Assert.ContainsSingle(result.Pytest.Results).Status);
-        Assert.HasCount(4, result.Packages.Results);
-        Assert.IsTrue(result.Packages.Results.All(item => item.Status == CheckStatus.Passed));
-    }
-
-    [TestMethod]
-    [DataRow("package")]
-    [DataRow("pytest")]
-    public async Task BothContractsAreValidatedBeforeEitherPartition(string defect)
-    {
-        using var fixture = Shared();
-        CiPlan plan = fixture.Plan;
-        if (defect == "package") plan = plan with { Checks = plan.Checks[..^1] };
-        if (defect == "pytest") plan = plan with
+        NativeCommand[] invocations = result.Pytest.Commands.Select(item => item.Command)
+            .Where(command => command.Arguments[0] == "run").ToArray();
+        CollectionAssert.AreEquivalent(Targets,
+            invocations.Select(command => command.Arguments[^1]).ToArray());
+        var reports = new HashSet<string>(StringComparer.Ordinal);
+        const string reportFlag = "--junitxml=";
+        foreach (NativeCommand invocation in invocations)
         {
-            Checks = [plan.Checks[0] with
-        { Work = plan.Checks[0].Work with
-            { Dimensions = new(plan.Checks[0].Work.Dimensions) { ["testPath"] = "foreign" } } },
-            .. plan.Checks[1..]]
-        };
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.RunAsync(context.CancellationToken, plan));
-        Assert.IsEmpty(fixture.Partitions);
-        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+            Assert.Contains("--no-project", invocation.Arguments);
+            Assert.Contains(environment, invocation.Arguments);
+            CollectionAssert.AreEqual(PytestInvocation, invocation.Arguments[4..9]);
+            AssertScrubbed(invocation);
+            Assert.IsNull(invocation.Environment!["UV_PROJECT_ENVIRONMENT"]);
+            string report = Assert.ContainsSingle(invocation.Arguments.Where(argument =>
+                argument.StartsWith(reportFlag, StringComparison.Ordinal)))[reportFlag.Length..];
+            Assert.AreEqual(Path.Combine(fixture.Scratch, "pytest"), Path.GetDirectoryName(report));
+            Assert.EndsWith(".xml", report);
+            Assert.IsTrue(reports.Add(report));
+        }
+        NativeCommand membership = Assert.ContainsSingle(fixture.GroupMembershipQueries);
+        Assert.AreEqual("1", membership.Environment!["PYTHONSAFEPATH"]);
+        Assert.AreNotEqual(environment, membership.Environment["UV_PROJECT_ENVIRONMENT"]);
+    }
+
+    private static void AssertScrubbed(NativeCommand command)
+    {
+        Assert.IsNull(command.Environment!["PYTHONSAFEPATH"]);
+        Assert.IsNull(command.Environment["PYTEST_ADDOPTS"]);
+        Assert.IsNull(command.Environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"]);
     }
 
     [TestMethod]
-    public async Task CancellationRetainsEveryOriginalRequiredResult()
+    [DataRow(nameof(NativeTermination.Exited), nameof(CheckStatus.Failed))]
+    [DataRow(nameof(NativeTermination.TimedOut), nameof(CheckStatus.TimedOut))]
+    [DataRow(nameof(NativeTermination.Cancelled), nameof(CheckStatus.Cancelled))]
+    public async Task SharedPreparationFailureIsAttributedToEveryPytestTarget(
+        string termination, string expectedStatus)
     {
-        using var fixture = Shared();
+        using var fixture = new Fixture();
+        fixture.PytestResponse = command => command.Arguments[0] == "sync" ?
+            new(Enum.Parse<NativeTermination>(termination), 1, "", "controlled sync failure",
+                0.1, null) : null;
+
+        PythonGroupRunResult result = await fixture.RunAsync(context.CancellationToken);
+
+        Assert.IsFalse(result.Outcome.Satisfied);
+        CheckStatus status = Enum.Parse<CheckStatus>(expectedStatus);
+        Assert.IsTrue(result.Pytest.Results.All(item => item.Status == status));
+        CollectionAssert.AreEquivalent(fixture.PytestKeys,
+            result.Pytest.Failures.Select(item => item.Check).ToArray());
+        foreach (PythonPytestFailure failure in result.Pytest.Failures)
+        {
+            Assert.Contains("Shared uv sync preparation failed", failure.Error);
+            Assert.Contains("controlled sync failure", failure.Error);
+        }
+        Assert.IsFalse(result.Pytest.Commands.Any(item => item.Command.Arguments[0] == "run"));
+        Assert.HasCount(2, result.Packages.Distributions);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task FailedTargetDoesNotEraseOtherSelectedWork(bool timedOut)
+    {
+        using var fixture = new Fixture();
+        NativeTermination termination = timedOut ? NativeTermination.TimedOut :
+            NativeTermination.Exited;
+        fixture.PytestResponse = command => command.Arguments[^1] == "tests/root"
+            ? new(termination, timedOut ? null : 1, "", "pytest failed", 0.1, null) : null;
+
+        PythonGroupRunResult result = await fixture.RunAsync(context.CancellationToken);
+
+        Assert.IsFalse(result.Outcome.Satisfied);
+        CheckResult failed = Assert.ContainsSingle(result.Results.Where(item =>
+            item.Status != CheckStatus.Passed));
+        Assert.AreEqual("pytest:tests/root", failed.Key.Target);
+        Assert.AreEqual(timedOut ? CheckStatus.TimedOut : CheckStatus.Failed, failed.Status);
+        Assert.HasCount(fixture.Plan.Checks.Length, result.Results);
+        Assert.HasCount(Targets.Length - 1, result.Pytest.Results.Where(item =>
+            item.Status == CheckStatus.Passed));
+        Assert.AreEqual(failed.Key, Assert.ContainsSingle(result.Pytest.Failures).Check);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task CancellationPreservesOriginalKeysAndStopsRemainingPartitions(bool inPytest)
+    {
+        using var fixture = new Fixture();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
-        fixture.Cancel = cancellation;
+        fixture.PytestResponse = command =>
+        {
+            if (command.Arguments[0] == (inPytest ? "run" : "sync")) cancellation.Cancel();
+            return null;
+        };
+
         PythonGroupRunResult result = await fixture.RunAsync(cancellation.Token);
+
+        Assert.IsFalse(result.Outcome.Satisfied);
         CollectionAssert.AreEquivalent(fixture.Plan.Checks.Select(item => item.Work.Key).ToArray(),
             result.Results.Select(item => item.Key).ToArray());
         Assert.IsTrue(result.Results.All(item => item.Status == CheckStatus.Cancelled));
-        Assert.IsFalse(result.Outcome.Satisfied);
-        Assert.IsFalse(Directory.Exists(Path.Combine(fixture.Scratch, "packages")));
+        Assert.HasCount(inPytest ? 1 : 0, result.Pytest.Commands.Where(item =>
+            item.Command.Arguments[0] == "run"));
+        Assert.IsEmpty(result.Packages.Commands);
     }
 
     [TestMethod]
-    public async Task MissingRequiredPackageResultCannotBecomeGroupSuccess()
+    public void AlteredPytestTargetsMembershipAndOptionsAreRejected()
     {
-        using var fixture = Shared();
-        fixture.DropPackageResult = true;
-        PythonGroupRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsFalse(result.Outcome.Satisfied);
-        Assert.AreEqual(fixture.Plan.Checks[^1].Work.Key,
-            Assert.ContainsSingle(result.Outcome.Checks.Where(item =>
-                item.Status == "missing")).Key);
+        using var fixture = new Fixture();
+        PythonPytestRunRequest native = fixture.Native;
+        PythonPytestTarget[] targets = native.Targets.Targets;
+        Reject(native with
+        {
+            Targets = native.Targets with
+            {
+                Targets = [targets[0] with { Inputs = [] },
+                .. targets[1..]]
+            },
+        }, "target transfer differs");
+        Reject(native with
+        {
+            Targets = native.Targets with
+            {
+                Targets = [targets[0], targets[1] with { Member = "pkg-b" }, targets[2]],
+            },
+        }, "target transfer differs");
+        Reject(native with { Members = native.Members[1..] }, "Ambiguous native pytest membership");
+        Reject(native with
+        {
+            Configuration = native.Configuration with { Options = ["--collect-only"] },
+        }, "Unsupported supplied native pytest option");
+
+        void Reject(PythonPytestRunRequest request, string diagnostic) =>
+            Assert.Contains(diagnostic, Assert.ThrowsExactly<InvalidDataException>(() =>
+                PythonPytestExecution.ReadChecks(fixture.PytestPlan, request, revision!)).Message);
     }
 
     [TestMethod]
-    public async Task EmptyPlanCreatesNoProductPartition()
+    public void AlteredPytestRunnerDimensionsAndOriginAreRejected()
     {
-        using var fixture = Shared();
-        PythonGroupRunResult result = await fixture.RunAsync(context.CancellationToken,
-            fixture.Plan with { Checks = [] });
+        using var fixture = new Fixture();
+        CiPlan plan = fixture.PytestPlan;
+        PlannedCheck first = plan.Checks[0];
+        PlannedCheck[] altered =
+        [
+            first with { Work = first.Work with { Runner = "foreign" } },
+            first with { Work = first.Work with
+                { Dimensions = new(first.Work.Dimensions) { ["testPath"] = "foreign" } } },
+            first with { Origins = [CheckOrigin.Preset], QualityPresets = ["foreign"] },
+        ];
+        foreach (PlannedCheck check in altered)
+        {
+            var invalid = plan with { Checks = [check, .. plan.Checks[1..]] };
+            Assert.Contains("Conflicting native pytest check contract",
+                Assert.ThrowsExactly<InvalidDataException>(() => PythonPytestExecution
+                    .ReadChecks(invalid, fixture.Native, revision!)).Message);
+        }
+    }
+
+    [TestMethod]
+    public async Task IncompleteDistributionPlanStopsBeforeEitherPartition()
+    {
+        using var fixture = new Fixture();
+        CiPlan incomplete = fixture.Plan with { Checks = fixture.Plan.Checks[..^1] };
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(incomplete, context.CancellationToken));
+
+        Assert.IsEmpty(fixture.GroupMembershipQueries);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+    }
+
+    [TestMethod]
+    public async Task MembershipMismatchStopsBeforeEitherPartition()
+    {
+        using var fixture = new Fixture();
+        fixture.NativeMembers = fixture.NativeMembers[..^1];
+
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(context.CancellationToken));
+
+        Assert.Contains("membership transfer differs", failure.Message);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+    }
+
+    [TestMethod]
+    public async Task EmptyPlanDoesNotPrepareNativeWork()
+    {
+        using var fixture = new Fixture();
+
+        PythonGroupRunResult result = await fixture.RunAsync(fixture.Plan with { Checks = [] },
+            context.CancellationToken);
+
         Assert.IsTrue(result.Outcome.Satisfied);
         Assert.IsEmpty(result.Results);
-        Assert.IsEmpty(fixture.Partitions);
+        Assert.IsEmpty(fixture.GroupMembershipQueries);
         Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
     }
 
-    [TestMethod]
-    public async Task CliTransfersOriginalRequestAndCollectsAgainstOriginalPlan()
+    private sealed class Fixture : IDisposable
     {
-        using var fixture = Shared();
-        using var files = new DriverFiles();
-        string plan = Path.Combine(files.Root, "plan.json"), request = Path.Combine(files.Root,
-            "request.json");
-        await File.WriteAllTextAsync(plan, JsonSerializer.Serialize(fixture.Plan,
-            TransferJson.Default.CiPlan), context.CancellationToken);
-        await File.WriteAllTextAsync(request, JsonSerializer.Serialize(fixture.Request,
-            TransferJson.Default.PythonGroupRunRequest), context.CancellationToken);
-        using var output = new StringWriter();
-        using var error = new StringWriter();
-        int exit = Program.Run(["ci", "run-python-group", plan, request], output, error,
-            runPythonGroup: async (receivedPlan, receivedRequest, token) =>
-            {
-                Assert.AreEqual(fixture.Plan.Candidate, receivedPlan.Candidate);
-                Assert.AreEqual(fixture.Request.Native.Configuration.ConfigurationFile,
-                    receivedRequest.Native.Configuration.ConfigurationFile);
-                Assert.AreEqual(fixture.Request.PackageHelper, receivedRequest.PackageHelper);
-                return await fixture.RunAsync(token, receivedPlan, receivedRequest);
-            });
-        Assert.AreEqual(0, exit, error.ToString());
-        Assert.AreEqual("", error.ToString());
-        PythonGroupRunResult result = JsonSerializer.Deserialize(output.ToString(),
-            TransferJson.Default.PythonGroupRunResult)!;
-        Assert.IsTrue(result.Outcome.Satisfied);
-        Assert.AreEqual(fixture.Plan.Candidate, result.Candidate);
-    }
+        private readonly PythonGroupRunRequest request;
+        private readonly PythonPackageExecutionTests.PackageNative packageNative = new();
 
-    [TestMethod]
-    public async Task MembershipMismatchRejectsBothPartitions()
-    {
-        using var fixture = Shared();
-        PythonMetadataMember[] members = fixture.Request.Native.Members.ToArray();
-        members[1] = members[1] with { Name = "other-product" };
-        PythonGroupRunRequest request = fixture.Request with
-        { Native = fixture.Request.Native with { Members = members } };
-
-        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.RunAsync(context.CancellationToken, request: request));
-
-        Assert.Contains("membership transfer differs", error.Message);
-        Assert.ContainsSingle(fixture.Queries);
-        Assert.IsEmpty(fixture.Partitions);
-        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
-    }
-
-    [TestMethod]
-    [DataRow("failed-query")]
-    [DataRow("missing-member")]
-    [DataRow("created-environment")]
-    public async Task UnavailableNativeMembershipStopsBothProductPartitions(string defect)
-    {
-        using var fixture = Shared();
-        fixture.MetadataDefect = defect;
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.RunAsync(context.CancellationToken));
-        Assert.ContainsSingle(fixture.Queries);
-        Assert.IsEmpty(fixture.Partitions);
-        Assert.IsFalse(Directory.Exists(Path.Combine(fixture.Scratch, "pytest")));
-        Assert.IsFalse(Directory.Exists(Path.Combine(fixture.Scratch, "packages")));
-    }
-
-    [TestMethod]
-    public async Task BothPartitionsReceiveTheSingleNativeMembershipContext()
-    {
-        using var fixture = Shared();
-        PythonGroupRunRequest request = fixture.Request with
+        internal Fixture()
         {
-            Native = fixture.Request.Native with
-            {
-                Members = fixture.Request.Native.Members
-            .Reverse().Select(member => member with { Id = "previous:" + member.Id }).ToArray()
-            }
-        };
-        PythonGroupRunResult result = await fixture.RunAsync(context.CancellationToken,
-            request: request);
-        Assert.IsTrue(result.Outcome.Satisfied);
-        Assert.ContainsSingle(fixture.Queries);
-    }
-
-    private sealed class DriverFiles : IDisposable
-    {
-        internal string Root { get; } =
-            Directory.CreateTempSubdirectory("python-group-cli-").FullName;
-        public void Dispose() => Directory.Delete(Root, true);
-    }
-
-    private sealed class Fixture(GitFixture repo, CiPlan plan, PythonGroupRunRequest request)
-        : IDisposable
-    {
-        internal GitFixture Repo { get; } = repo;
-        internal CiPlan Plan { get; } = plan;
-        internal PythonGroupRunRequest Request { get; } = request;
-        internal string Scratch => Request.Native.Scratch;
-        internal List<CiPlan> Partitions { get; } = [];
-        internal List<string> Scratches { get; } = [];
-        internal List<NativeCommand> Queries { get; } = [];
-        internal CheckStatus PytestStatus { get; set; } = CheckStatus.Passed;
-        internal bool DropPackageResult { get; set; }
-        internal CancellationTokenSource? Cancel { get; set; }
-        internal string? MetadataDefect { get; set; }
-
-        internal static async Task<string> CommitAsync(GitFixture repo)
-        {
-            await repo.SetAsync("pyproject.toml", "controlled root pytest configuration");
-            await repo.SetAsync("tests/root/test_one.py");
-            await repo.SetAsync("product/pyproject.toml", "controlled native product");
-            await repo.SetAsync(PythonPackageChecksTests.Unit.SourcePath, """
-                schema: workflow-delivery/v3/release-unit
-                release-unit: product
-                builds:
-                  - id: distributions
-                    definition: python/distribution-set-v1
-                    entry-point: pyproject.toml
-                    outputs:
-                      - id: wheel
-                        role: primary-package
-                        kind: python-wheel
-                      - id: source
-                        role: source-package
-                        kind: python-sdist
-                """);
-            string candidate = await repo.CommitAsync();
-            await repo.GitAsync("reset", "--hard", candidate);
-            return candidate;
+            PythonMetadataMember[] members = [new("native-root", ".", "root-id"),
+                new("native-a", "pkg-a", "a-id"), new("native-b", "pkg-b", "b-id"),
+                new("input-only", "input", "input-id"), .. PythonPackageChecksTests.Members];
+            NativeMembers = members;
+            var configuration = new PythonPytestConfiguration("pyproject.toml", Targets,
+                ["--import-mode=importlib"]);
+            var operation = new PythonPytestOperation("ubuntu-latest", "native", new());
+            PythonProjectDependencies[] projects = members.Select(member =>
+                new PythonProjectDependencies(member.Directory, member.Name, [], [])).ToArray();
+            GitRevision candidate = revision!;
+            PythonPytestTargetSet targets = PythonPytestTargets.Bind(configuration, candidate,
+                projects);
+            PlannedCheck[] pytest = PythonPytestChecks.Expand(configuration, targets, operation)
+                .Select(check => new PlannedCheck(check, [], [], [CheckOrigin.NativeRetained]))
+                .ToArray();
+            PytestKeys = pytest.Select(item => item.Work.Key).ToArray();
+            Plan = new(candidate.Commit, candidate.Commit, PythonFactsAssembler.Scope,
+                [.. pytest, .. PythonPackageExecutionTests.PackageChecks()]);
+            request = new(new(shared!.Directory, Scratch, "controlled-uv",
+                Path.Combine(Scratch, "python"), members, configuration, targets, operation, 30,
+                new Dictionary<string, string?>
+                {
+                    ["PYTEST_ADDOPTS"] = "--collect-only",
+                    ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1",
+                    ["PYTHONSAFEPATH"] = "1",
+                    ["UV_PROJECT_ENVIRONMENT"] = "inherited-environment",
+                }), Path.Combine(Scratch, "helper.py"));
         }
 
-        internal static Fixture Create(GitFixture repo, GitRevision revision)
-        {
-            string scratch = Directory.CreateTempSubdirectory("workflow-python-group-").FullName;
-            try
-            {
-                PythonMetadataMember[] members = [new("native-root", ".", "root"),
-                    .. PythonPackageChecksTests.Members];
-                var configuration = new PythonPytestConfiguration("pyproject.toml",
-                    ["tests/root"], []);
-                PythonPytestTargetSet targets = PythonPytestTargets.Bind(configuration, revision,
-                    members.Select(member => new PythonProjectDependencies(member.Directory,
-                        member.Name, [], [])).ToArray());
-                var operation = new PythonPytestOperation("ubuntu-latest", "native", new());
-                CheckSpec[] native = PythonPytestChecks.Expand(configuration, targets, operation);
-                CheckSpec[] packages = PythonPackageChecks.Expand(PythonPackageChecksTests.Unit,
-                    members, new Dictionary<string, string> { ["product"] = "1.0.0" });
-                var plan = new CiPlan(revision.Commit, revision.Commit, PythonFactsAssembler.Scope,
-                    [.. native.Select(check =>
-                        new PlannedCheck(check, [], [], [CheckOrigin.NativeRetained])),
-                        .. packages.Select(check =>
-                            new PlannedCheck(check, [PythonPackageChecks.Preset],
-                            [], [CheckOrigin.Preset]))]);
-                return new(repo, plan, new(new(repo.Directory, scratch, "controlled-uv",
-                    Path.Combine(scratch, "python"), members, configuration, targets, operation,
-                    30, new Dictionary<string, string?>()), Path.Combine(scratch, "packages.py")));
-            }
-            catch { Directory.Delete(scratch, true); throw; }
-        }
+        internal string Scratch { get; } =
+            Directory.CreateTempSubdirectory("python-group-").FullName;
+        internal CiPlan Plan { get; }
+        internal CiPlan PytestPlan => Plan with { Checks = Plan.Checks[..PytestKeys.Length] };
+        internal PythonPytestRunRequest Native => request.Native;
+        internal CheckKey[] PytestKeys { get; }
+        internal PythonMetadataMember[] NativeMembers { get; set; }
+        internal List<NativeCommand> GroupMembershipQueries { get; } = [];
+        internal Func<NativeCommand, NativeCommandResult?>? PytestResponse { get; set; }
 
-        internal Task<PythonGroupRunResult> RunAsync(CancellationToken token, CiPlan? plan = null,
-            PythonGroupRunRequest? request = null) => PythonGroupExecution.RunAsync(plan ?? Plan,
-                request ?? Request, RunPytestAsync, RunPackagesAsync, ReadMetadataAsync, token);
+        internal Task<PythonGroupRunResult> RunAsync(CancellationToken token) =>
+            RunAsync(Plan, token);
 
-        private Task<NativeCommandResult> ReadMetadataAsync(NativeCommand command,
+        internal Task<PythonGroupRunResult> RunAsync(CiPlan plan, CancellationToken token) =>
+            PythonGroupExecution.RunAsync(plan, request,
+                (partition, native, cancellation) => PythonPytestExecution.RunAsync(
+                    partition, native, RunPytestAsync, cancellation),
+                (partition, native, cancellation) => PythonPackageExecution.RunAsync(
+                    partition, native, packageNative.ExecuteAsync, cancellation),
+                (command, _) =>
+                {
+                    GroupMembershipQueries.Add(command);
+                    return Task.FromResult(Membership());
+                }, token);
+
+        private NativeCommandResult Membership() =>
+            PythonExecutionMetadata.Result(request.Native.Checkout, NativeMembers);
+
+        private Task<NativeCommandResult> RunPytestAsync(NativeCommand command,
             CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            Queries.Add(command);
-            if (MetadataDefect == "failed-query")
-                return Task.FromResult(new NativeCommandResult(NativeTermination.Exited,
-                    1, "", "controlled failure", 0.1, null));
-            if (MetadataDefect == "created-environment")
-                Directory.CreateDirectory(command.Environment!["UV_PROJECT_ENVIRONMENT"]!);
-            return Task.FromResult(PythonExecutionMetadata.Result(Repo.Directory,
-                MetadataDefect == "missing-member" ? Request.Native.Members[..1] :
-                    Request.Native.Members));
+            if (command.Arguments[0] == "workspace") return Task.FromResult(Membership());
+            return Task.FromResult(PytestResponse?.Invoke(command) ??
+                PythonPackageExecutionTests.PackageNative.Success());
         }
 
-        private Task<PythonPytestRunResult> RunPytestAsync(CiPlan plan,
-            PythonPytestRunRequest request, CancellationToken token)
-        {
-            CollectionAssert.AreEquivalent(Request.Native.Members, request.Members);
-            Partitions.Add(plan); Scratches.Add(request.Scratch);
-            Cancel?.Cancel(); token.ThrowIfCancellationRequested();
-            return Task.FromResult(new PythonPytestRunResult(plan.Candidate,
-                plan.Checks.Select(item =>
-                new CheckResult(plan.Candidate, item.Work.Key, PytestStatus)).ToArray(), [], []));
-        }
-        private Task<PythonPackageRunResult> RunPackagesAsync(CiPlan plan,
-            PythonPackageRunRequest request, CancellationToken token)
-        {
-            CollectionAssert.AreEquivalent(Request.Native.Members, request.Members);
-            token.ThrowIfCancellationRequested();
-            Partitions.Add(plan); Scratches.Add(request.Scratch);
-            CheckResult[] results = plan.Checks.Select(item => new CheckResult(plan.Candidate,
-                item.Work.Key, CheckStatus.Passed)).ToArray();
-            return Task.FromResult(new PythonPackageRunResult(plan.Candidate,
-                DropPackageResult ? results[..^1] : results, [], [], []));
-        }
-        public void Dispose() => Directory.Delete(Scratch, true);
+        public void Dispose() => Directory.Delete(Scratch, recursive: true);
     }
 }

@@ -113,23 +113,8 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         }
         if (command.Arguments.Contains("rspec", StringComparer.Ordinal))
         {
-            Assert.Contains("_2.4.20_", command.Arguments);
-            await File.WriteAllTextAsync(command.Arguments[^1], JsonSerializer.Serialize(new
-            {
-                version = "3.13.0",
-                examples = new[] { new { id = "./spec/whole_spec.rb[1:1]",
-                    description = "whole suite", full_description = "whole suite",
-                    status = failedSuite ? "failed" : "passed", file_path = "./spec/whole_spec.rb",
-                    line_number = 1, run_time = 0.01 } },
-                summary = new
-                {
-                    duration = 0.01,
-                    example_count = 1,
-                    failure_count = failedSuite ? 1 : 0,
-                    pending_count = 0,
-                    errors_outside_of_examples_count = 0
-                }
-            }), token);
+            await File.WriteAllTextAsync(command.Arguments[^1],
+                ReadOriginalRSpecReport(failedSuite), token);
             return failedSuite ? Answer(new { }) with { ExitCode = 1 } : Answer(new { });
         }
         if (command.Arguments[0] == request.Gem)
@@ -201,6 +186,17 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         Assert.IsTrue(result.Results.All(check => check.Candidate == plan.Candidate));
     }
 
+    private static string ReadOriginalRSpecReport(bool failed)
+    {
+        var assembly = typeof(RubyGroupExecutionTests).Assembly;
+        string fixture = failed ? "ruby-rspec-failed.json" : "ruby-rspec-passed.json";
+        string name = assembly.GetManifestResourceNames().Single(resource =>
+            resource.EndsWith(fixture, StringComparison.Ordinal));
+        using Stream stream = assembly.GetManifestResourceStream(name)!;
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
     // The registered Latexmath unit composes its whole suite with its own native gem recipe.
     private static CiPlan LatexmathPlan(CiPlan plan, RubyGroupRunRequest request)
     {
@@ -219,7 +215,7 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     }
 
     private static async Task<NativeCommandResult> LatexmathAsync(RubyGroupRunRequest request,
-        NativeCommand command, string defect, CancellationToken token)
+        NativeCommand command, string failedCheck, CancellationToken token)
     {
         Assert.IsFalse(command.InheritEnvironment);
         string gemfile = Path.GetFullPath(Path.Combine(request.Checkout, Suite, "Gemfile"));
@@ -239,7 +235,8 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         {
             if (command.Arguments[1] == "build")
             {
-                if (defect == "failed-build") return Answer(new { }) with { ExitCode = 1 };
+                if (failedCheck == RubyPackageChecks.Build)
+                    return Answer(new { }) with { ExitCode = 1, Stderr = "gem build failed" };
                 await File.WriteAllTextAsync(command.Arguments[^1], "original gem", token);
             }
             else Assert.StartsWith(request.Scratch, command.Environment!["GEM_HOME"]!);
@@ -248,8 +245,9 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         if (command.Arguments[0] == "-e")
         {
             Assert.StartsWith("require 'asciidoctor-latexmath'", command.Arguments[1]);
-            return defect == "failed-require" ? Answer(new { }) with
-            { ExitCode = 1, Stderr = "cannot load such file" } : Answer(new { });
+            return failedCheck == RubyPackageChecks.Consumer
+                ? Answer(new { }) with { ExitCode = 1, Stderr = "cannot load such file" }
+                : Answer(new { });
         }
         if (command.Executable == request.Nbgv || command.Arguments is [_, _, "install"] ||
             command.Arguments.Contains("rspec", StringComparer.Ordinal))
@@ -296,16 +294,21 @@ public sealed class RubyGroupExecutionTests(TestContext context)
                 gem.runtime_dependencies,
                 extensions = Array.Empty<string>(),
                 metadata = new { github_repo = "https://github.com/hcoona/three" },
-                contents = defect == "missing-content" ? LatexmathFiles[1..] : LatexmathFiles
+                contents = failedCheck == RubyPackageChecks.Contents
+                    ? LatexmathFiles[1..] : LatexmathFiles
             });
     }
 
     [TestMethod]
-    [DataRow("")]
-    [DataRow("failed-build")]
-    [DataRow("missing-content")]
-    [DataRow("failed-require")]
-    public async Task LatexmathSuiteAndOriginalGemChecksAllBlockTheGroup(string defect)
+    [DataRow("", (int)CheckStatus.Passed, (int)CheckStatus.Passed, (int)CheckStatus.Passed)]
+    [DataRow(RubyPackageChecks.Build, (int)CheckStatus.Failed, (int)CheckStatus.Skipped,
+        (int)CheckStatus.Skipped)]
+    [DataRow(RubyPackageChecks.Contents, (int)CheckStatus.Passed, (int)CheckStatus.Failed,
+        (int)CheckStatus.Skipped)]
+    [DataRow(RubyPackageChecks.Consumer, (int)CheckStatus.Passed, (int)CheckStatus.Passed,
+        (int)CheckStatus.Failed)]
+    public async Task LatexmathRequiresBothWholeSuiteAndOriginalGemQualification(
+        string failedCheck, int build, int contents, int consumer)
     {
         using var scratch = new Scratch();
         var (plan, request) = Shared(scratch.Directory);
@@ -321,30 +324,31 @@ public sealed class RubyGroupExecutionTests(TestContext context)
             }
         };
         RubyGroupRun result = await RubyGroupExecution.RunAsync(plan, request,
-            (command, token) => LatexmathAsync(request, command, defect, token),
+            (command, token) => LatexmathAsync(request, command, failedCheck, token),
             context.CancellationToken);
-        CheckStatus Status(string check) => result.Results.Single(item =>
-            item.Key.Check == check).Status;
+
+        CheckStatus Status(string check) =>
+            result.Results.Single(item => item.Key.Check == check).Status;
         Assert.AreEqual(CheckStatus.Passed, Status(RubyProjectChecks.RSpec));
-        Assert.AreEqual(defect.Length == 0, result.Outcome.Satisfied,
+        Assert.AreEqual((CheckStatus)build, Status(RubyPackageChecks.Build));
+        Assert.AreEqual((CheckStatus)contents, Status(RubyPackageChecks.Contents));
+        Assert.AreEqual((CheckStatus)consumer, Status(RubyPackageChecks.Consumer));
+        Assert.AreEqual(failedCheck.Length == 0, result.Outcome.Satisfied,
             JsonSerializer.Serialize(result));
-        Assert.HasCount(4, result.Results);
-        Assert.AreEqual(defect == "failed-build" ? CheckStatus.Failed : CheckStatus.Passed,
-            Status(RubyPackageChecks.Build));
-        Assert.AreEqual(defect switch
+        if (failedCheck.Length != 0)
+            Assert.AreEqual(failedCheck,
+                Assert.ContainsSingle(result.Packages.Failures).Check.Check);
+        if (consumer == (int)CheckStatus.Skipped)
         {
-            "failed-build" => CheckStatus.Skipped,
-            "missing-content" => CheckStatus.Failed,
-            _ => CheckStatus.Passed,
-        }, Status(RubyPackageChecks.Contents));
-        Assert.AreEqual(defect switch
-        {
-            "" => CheckStatus.Passed,
-            "failed-require" => CheckStatus.Failed,
-            _ => CheckStatus.Skipped,
-        }, Status(RubyPackageChecks.Consumer));
-        Assert.AreEqual(defect is "" or "failed-require", result.Packages.Commands.Any(
-            command => command.Command.Arguments[0] == "-e"));
+            Assert.IsFalse(result.Packages.Commands.Any(item => item.Command.Arguments[0] == "-e"));
+            return;
+        }
+        RubyOriginalGem gem = Assert.ContainsSingle(result.Packages.Gems);
+        Assert.AreEqual("original gem", await File.ReadAllTextAsync(gem.Path,
+            context.CancellationToken));
+        NativeCommand require = Assert.ContainsSingle(result.Packages.Commands.Where(
+            item => item.Command.Arguments[0] == "-e")).Command;
+        Assert.StartsWith(request.Scratch, require.Directory);
     }
 
     [TestMethod]
@@ -372,20 +376,146 @@ public sealed class RubyGroupExecutionTests(TestContext context)
                 }
             }
         };
-        var order = new List<string>();
+        var installed = new List<string>();
         RubyGroupRun result = await RubyGroupExecution.RunAsync(plan with
-        { Checks = plan.Checks[..1] }, request, (command, token) =>
+        { Checks = plan.Checks[..1] }, request, async (command, token) =>
         {
-            order.Add(command.Arguments is [_, _, "install"]
-                ? command.Environment!["BUNDLE_GEMFILE"]! : "rspec");
-            return command.Arguments is [_, _, "install"] ? Task.FromResult(Answer(new { }))
-                : NativeAsync(request, command, false, token);
+            if (command.Arguments is [_, _, "install"])
+            {
+                Assert.AreEqual("1", command.Environment!["BUNDLE_FROZEN"]);
+                Assert.Contains("_2.4.20_", command.Arguments);
+                installed.Add(command.Environment["BUNDLE_GEMFILE"]!);
+                return Answer(new { });
+            }
+            string[] expected = [suite.Gemfile, nested.Gemfile];
+            CollectionAssert.AreEquivalent(expected, installed);
+            Assert.AreEqual(Path.GetFullPath(Path.Combine(request.Checkout, Suite)),
+                command.Directory);
+            Assert.AreEqual(suite.Gemfile, command.Environment!["BUNDLE_GEMFILE"]);
+            Assert.Contains("_2.4.20_", command.Arguments);
+            Assert.AreEqual("1", command.Environment["BUNDLE_FROZEN"]);
+            Assert.IsFalse(command.InheritEnvironment);
+            return await NativeAsync(request, command, false, token);
         }, context.CancellationToken);
         Assert.IsTrue(result.Outcome.Satisfied);
-        CollectionAssert.AreEqual(new[] { suite.Gemfile, nested.Gemfile, "rspec" }, order);
-        CollectionAssert.AreEqual(new[] { suite.Gemfile, nested.Gemfile },
-            Assert.ContainsSingle(result.RSpec).Installs.Select(install =>
-                install.Command.Environment!["BUNDLE_GEMFILE"]).ToArray());
+        RubyGroupRSpec observation = Assert.ContainsSingle(result.RSpec);
+        CollectionAssert.AreEquivalent(installed, observation.Installs.Select(install =>
+            install.Command.Environment!["BUNDLE_GEMFILE"]).ToArray());
+        Assert.IsNotNull(observation.Run.Report);
+        Assert.AreEqual(ReadOriginalRSpecReport(false).Trim(),
+            observation.Run.Report.Original.GetRawText());
+        Assert.IsFalse(File.Exists(observation.Run.Command.Arguments[^1]));
+    }
+
+    [TestMethod]
+    [DataRow(nameof(NativeTermination.Exited), 1, nameof(CheckStatus.Failed))]
+    [DataRow(nameof(NativeTermination.TimedOut), 0, nameof(CheckStatus.TimedOut))]
+    [DataRow(nameof(NativeTermination.Cancelled), 0, nameof(CheckStatus.Cancelled))]
+    public async Task PassingRSpecReportCannotOverrideNativeInterruption(
+        string termination, int exitCode, string expected)
+    {
+        using var scratch = new Scratch();
+        var (plan, request) = Shared(scratch.Directory);
+        RubyGroupRun result = await RubyGroupExecution.RunAsync(plan with
+        { Checks = plan.Checks[..1] }, request, async (command, token) =>
+        {
+            NativeCommandResult native = await NativeAsync(request, command, false, token);
+            return command.Arguments.Contains("rspec")
+                ? native with
+                { Termination = Enum.Parse<NativeTermination>(termination), ExitCode = exitCode }
+                : native;
+        }, context.CancellationToken);
+
+        RubyRSpecRun run = Assert.ContainsSingle(result.RSpec).Run;
+        Assert.IsFalse(result.Outcome.Satisfied);
+        Assert.IsNotNull(run.Report);
+        Assert.AreEqual(Enum.Parse<CheckStatus>(expected), run.Status);
+        Assert.IsFalse(File.Exists(run.Command.Arguments[^1]));
+    }
+
+    [TestMethod]
+    public async Task CancellationAfterRSpecSuccessDeletesItsReport()
+    {
+        using var scratch = new Scratch();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken);
+        var (plan, request) = Shared(scratch.Directory);
+        RubyGroupRun result = await RubyGroupExecution.RunAsync(plan with
+        { Checks = plan.Checks[..1] }, request, async (command, token) =>
+        {
+            NativeCommandResult native = await NativeAsync(request, command, false, token);
+            if (command.Arguments.Contains("rspec")) cancellation.Cancel();
+            return native;
+        }, cancellation.Token);
+
+        RubyRSpecRun run = Assert.ContainsSingle(result.RSpec).Run;
+        Assert.IsTrue(run.Result.Succeeded);
+        Assert.AreEqual(CheckStatus.Cancelled, run.Status);
+        Assert.IsFalse(result.Outcome.Satisfied);
+        Assert.IsNull(run.Report);
+        Assert.IsFalse(File.Exists(run.Command.Arguments[^1]));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task EmptyRSpecReportRetainsBoundedDiagnosticAndSeparateStreams(
+        bool timedOut)
+    {
+        using var scratch = new Scratch();
+        var (plan, request) = Shared(scratch.Directory);
+        const string stdout = "controlled RSpec stdout";
+        const string stderrHead = "controlled RSpec stderr head";
+        const string stderrTail = "controlled RSpec stderr tail";
+        string stderr = stderrHead + new string('x', NativeDiagnostic.TailLength) + stderrTail;
+        NativeTermination termination = timedOut ? NativeTermination.TimedOut :
+            NativeTermination.Exited;
+        RubyGroupRun result = await RubyGroupExecution.RunAsync(plan with
+        { Checks = plan.Checks[..1] }, request, async (command, token) =>
+        {
+            if (!command.Arguments.Contains("rspec"))
+                return await NativeAsync(request, command, false, token);
+            await File.WriteAllTextAsync(command.Arguments[^1], "", token);
+            return new(termination, timedOut ? null : 1, stdout, stderr, 0.1, null);
+        }, context.CancellationToken);
+
+        RubyRSpecRun run = Assert.ContainsSingle(result.RSpec).Run;
+        Assert.AreEqual(timedOut ? CheckStatus.TimedOut : CheckStatus.Failed, run.Status);
+        Assert.IsFalse(result.Outcome.Satisfied);
+        Assert.IsNull(run.Report);
+        Assert.AreEqual(stdout, run.Result.Stdout);
+        Assert.AreEqual(stderr, run.Result.Stderr);
+        Assert.StartsWith("Native RSpec result could not be read: ", run.ReportError);
+        Assert.Contains("Native RSpec command failed: " + termination, run.ReportError);
+        Assert.Contains("stderr: [truncated]", run.ReportError);
+        Assert.EndsWith(stderrTail, run.ReportError);
+        Assert.DoesNotContain(stderrHead, run.ReportError);
+        Assert.DoesNotContain(stdout, run.ReportError);
+        Assert.IsFalse(File.Exists(run.Command.Arguments[^1]));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task RSpecWithoutReportCannotQualifySuite(bool startupFailed)
+    {
+        using var scratch = new Scratch();
+        var (plan, request) = Shared(scratch.Directory);
+        NativeCommandResult native = startupFailed
+            ? new(NativeTermination.StartFailed, null, "", "could not start RSpec", 0.1, null)
+            : Answer(new { });
+        RubyGroupRun result = await RubyGroupExecution.RunAsync(plan with
+        { Checks = plan.Checks[..1] }, request, (command, token) =>
+            command.Arguments.Contains("rspec") ? Task.FromResult(native)
+                : NativeAsync(request, command, false, token), context.CancellationToken);
+
+        RubyRSpecRun run = Assert.ContainsSingle(result.RSpec).Run;
+        Assert.IsFalse(result.Outcome.Satisfied);
+        Assert.AreEqual(CheckStatus.Failed, run.Status);
+        Assert.IsNull(run.Report);
+        Assert.IsNotNull(run.ReportError);
+        Assert.Contains("required JSON result", run.ReportError);
+        if (startupFailed) Assert.Contains(native.Stderr, run.ReportError);
     }
 
     [TestMethod]

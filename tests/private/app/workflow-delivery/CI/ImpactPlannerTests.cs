@@ -6,6 +6,12 @@ namespace WorkflowDelivery.Tests.CI;
 [TestClass]
 public sealed class ImpactPlannerTests
 {
+    private const string PairedInput = "shared/removed.py";
+    private static readonly string[] PairedInputPaths = [PairedInput];
+    private static readonly string[] PairedConsumer = ["consumer"];
+    private static readonly string[] PairedFullTargets = ["c", "other"];
+    private static readonly string[] PairedSurvivingTargets = ["consumer", "new"];
+
     [TestMethod]
     public void PlanExactOwnershipExcludesFixtureSourceButPreservesEmbeddedConsumer()
     {
@@ -112,14 +118,13 @@ public sealed class ImpactPlannerTests
     }
 
     [TestMethod]
-    [DataRow("duplicate")]
-    [DataRow("invalid")]
-    public void PlanMalformedExactOwnershipFailsBeforeSelection(string defect)
+    [DataRow("src/native/code.cs", "src/native/code.cs")]
+    [DataRow("../src/native/code.cs", "src/native/other.cs")]
+    public void PlanMalformedExactOwnershipFailsBeforeSelection(string first, string second)
     {
         ProjectFacts project = Scenario.Project("native") with
         {
-            OwnedPaths = defect == "duplicate" ? ["src/native/code.cs", "src/native/code.cs"]
-                : ["../src/native/code.cs"],
+            OwnedPaths = [first, second],
         };
 
         Assert.ThrowsExactly<InvalidDataException>(() =>
@@ -151,16 +156,17 @@ public sealed class ImpactPlannerTests
     }
 
     [TestMethod]
-    [DataRow("empty")]
-    [DataRow("preset")]
-    [DataRow("unknown")]
-    public void PlanNativeRetainedDoesNotAcceptAnUnresolvedOrContradictoryContract(string defect)
+    [DataRow((int)CheckOrigin.NativeRetained, null, false)]
+    [DataRow((int)CheckOrigin.NativeRetained, "invented-adoption", true)]
+    [DataRow(42, null, true)]
+    public void PlanRejectsUnresolvedOrContradictoryNativeRetainedContract(
+        int origin, string? preset, bool hasCheck)
     {
         ProjectFacts native = Scenario.Project("native") with
         {
-            QualityPreset = defect == "preset" ? "invented-adoption" : null,
-            Origin = defect == "unknown" ? (CheckOrigin)42 : CheckOrigin.NativeRetained,
-            Checks = defect == "empty" ? [] : [Scenario.Check("native")],
+            QualityPreset = preset,
+            Origin = (CheckOrigin)origin,
+            Checks = hasCheck ? [Scenario.Check("native")] : [],
         };
 
         Assert.ThrowsExactly<InvalidDataException>(() =>
@@ -480,79 +486,65 @@ public sealed class ImpactPlannerTests
     }
 
     [TestMethod]
-    [DataRow("dependency", "Unresolved relation")]
-    [DataRow("quality-consumer", "Unresolved relation")]
-    [DataRow("shared-input", "Unresolved shared input")]
-    [DataRow("duplicate", "Duplicate project")]
-    [DataRow("quality-preset", "Unresolved quality contract")]
-    [DataRow("quality-checks", "Unresolved quality contract")]
-    [DataRow("scope", "coverage scopes differ")]
-    public void PlanInvalidFactsRejectsUnresolvedContracts(string defect, string message)
+    public void PlanRejectsMissingDependencyAndQualityConsumer()
     {
         ProjectFacts project = Scenario.Project("library");
         PlanRequest request = Scenario.Request([project], "src/library/code.cs");
-        RepositoryFacts candidate = request.Candidate;
-        candidate = defect switch
-        {
-            "dependency" => candidate with
-            {
-                Projects = [project with { Dependencies =
-                ["missing"] }]
-            },
-            "quality-consumer" => candidate with
-            {
-                Projects = [project with { QualityConsumers
-                = ["missing"] }]
-            },
-            "shared-input" => candidate with { SharedInputs = [new("build.props", ["missing"])] },
-            "duplicate" => candidate with { Projects = [project, project] },
-            "quality-preset" => candidate with
-            {
-                Projects = [project with { QualityPreset =
-                null }]
-            },
-            "quality-checks" => candidate with { Projects = [project with { Checks = [] }] },
-            "scope" => candidate with { Scope = "unsupported-subset" },
-            _ => throw new InvalidOperationException(defect),
-        };
-
-        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(
-            () => ImpactPlanner.Plan(request with { Candidate = candidate }));
-
-        Assert.Contains(message, error.Message);
+        AssertCandidateRejected(request, request.Candidate with
+        { Projects = [project with { Dependencies = ["missing"] }] }, "Unresolved relation");
+        AssertCandidateRejected(request, request.Candidate with
+        { Projects = [project with { QualityConsumers = ["missing"] }] }, "Unresolved relation");
     }
 
     [TestMethod]
-    [DataRow("dimensions")]
-    [DataRow("dimension-value")]
-    [DataRow("runner")]
-    [DataRow("prerequisites")]
-    public void PlanConflictingCheckDefinitionRejectsAmbiguousWork(string field)
+    public void PlanRejectsUnresolvedSharedInputAndDuplicateProject()
+    {
+        ProjectFacts project = Scenario.Project("library");
+        PlanRequest request = Scenario.Request([project], "src/library/code.cs");
+        AssertCandidateRejected(request, request.Candidate with
+        { SharedInputs = [new("build.props", ["missing"])] }, "Unresolved shared input");
+        AssertCandidateRejected(request, request.Candidate with
+        { Projects = [project, project] }, "Duplicate project");
+    }
+
+    [TestMethod]
+    public void PlanRejectsSelectedOwnerWithoutPresetOrChecks()
+    {
+        ProjectFacts project = Scenario.Project("library");
+        PlanRequest request = Scenario.Request([project], "src/library/code.cs");
+        AssertCandidateRejected(request, request.Candidate with
+        { Projects = [project with { QualityPreset = null }] }, "Unresolved quality contract");
+        AssertCandidateRejected(request, request.Candidate with
+        { Projects = [project with { Checks = [] }] }, "Unresolved quality contract");
+    }
+
+    [TestMethod]
+    public void PlanRejectsMismatchedCoverageScopes()
+    {
+        PlanRequest request = Scenario.Request([Scenario.Project("library")],
+            "src/library/code.cs");
+        AssertCandidateRejected(request, request.Candidate with { Scope = "unsupported-subset" },
+            "coverage scopes differ");
+    }
+
+    [TestMethod]
+    public void PlanRejectsAmbiguousDimensionsRunnerOrPrerequisitesForSharedCheck()
     {
         CheckSpec check = Scenario.Check("shared") with
+        { Dimensions = new() { ["tfm"] = "net10.0" } };
+        CheckSpec[] conflicts =
+        [
+            check with { Dimensions = [] },
+            check with { Dimensions = new() { ["tfm"] = "net9.0" } },
+            check with { Runner = "windows-latest" },
+            check with { Prerequisites = [Scenario.Check("missing").Key] },
+        ];
+        foreach (CheckSpec conflict in conflicts)
         {
-            Dimensions = new()
-            {
-                ["tfm"] =
-            "net10.0"
-            }
-        };
-        CheckSpec conflicting = field switch
-        {
-            "dimensions" => check with { Dimensions = [] },
-            "dimension-value" => check with { Dimensions = new() { ["tfm"] = "net9.0" } },
-            "runner" => check with { Runner = "windows-latest" },
-            "prerequisites" => check with { Prerequisites = [Scenario.Check("missing").Key] },
-            _ => throw new InvalidOperationException(field),
-        };
-
-        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(
-            Scenario.Request([Scenario.Project("a", checks: [check]), Scenario.Project("b",
-                checks: [conflicting])],
-                "src/a/code.cs")));
-
-        Assert.Contains("Conflicting check definition", error.Message);
+            AssertCheckConflict(Scenario.Request(
+                [Scenario.Project("a", checks: [check]), Scenario.Project("b", checks: [conflict])],
+                "src/a/code.cs"));
+        }
     }
 
     [TestMethod]
@@ -706,33 +698,22 @@ public sealed class ImpactPlannerTests
         Assert.Contains("normalized repository-relative path", error.Message);
     }
     [TestMethod]
-    [DataRow("directory")]
-    [DataRow("version")]
-    [DataRow("output")]
-    public void PlanRejectsConflictingPackageSubjectForIdenticalCheckKey(string field)
+    public void PlanRejectsConflictingPackageSubjectsForIdenticalCheckKey()
     {
         PackageTarget subject = PackageSubject();
-        PackageTarget other = field switch
-        {
-            "directory" => subject with { Directory = "src/other" },
-            "version" => subject with { ExpectedVersion = "2.0.0" },
-            _ => subject with
-            {
-                Outputs = [new("different", "primary-package", "npm-tarball")],
-            },
-        };
         CheckSpec first = Scenario.Check("release/product/build", "artifact") with
-        {
-            Package = subject
-        };
-        CheckSpec second = first with { Package = other };
-
-        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(Scenario.Request(
-                [Scenario.Project("a", checks: [first]), Scenario.Project("b", checks: [second])],
-                "src/a/code.cs", "src/b/code.cs")));
-
-        Assert.Contains("Conflicting check definition", error.Message);
+        { Package = subject };
+        PackageTarget[] conflicts =
+        [
+            subject with { Directory = "src/other" },
+            subject with { ExpectedVersion = "2.0.0" },
+            subject with { Outputs = [new("different", "primary-package", "npm-tarball")] },
+        ];
+        foreach (PackageTarget conflict in conflicts)
+            AssertCheckConflict(Scenario.Request(
+                [Scenario.Project("a", checks: [first]),
+                    Scenario.Project("b", checks: [first with { Package = conflict }])],
+                "src/a/code.cs", "src/b/code.cs"));
     }
 
     [TestMethod]
@@ -757,10 +738,204 @@ public sealed class ImpactPlannerTests
         Assert.HasCount(4, selected.Reasons);
     }
 
+    [TestMethod]
+    public void PairedReasonSelectsCandidateOnlyOwnerAndCompleteSharedClosure()
+    {
+        CheckSpec prepare = Scenario.Check("tooling", "restore", required: false);
+        CheckSpec linux = Scenario.Check("c", variant: "linux", prerequisites: [prepare.Key])
+            with
+        { Dimensions = new() { ["rid"] = "linux-x64" } };
+        CheckSpec windows = Scenario.Check("c", variant: "windows", prerequisites: [prepare.Key])
+            with
+        { Runner = "windows-latest", Dimensions = new() { ["rid"] = "win-x64" } };
+        ProjectFacts owner = Scenario.Project("c", qualityConsumers: ["quality"],
+            releaseUnit: "product", checks: [linux, windows]) with
+        { QualityPreset = null, Origin = CheckOrigin.NativeRetained };
+        ProjectFacts sibling = Scenario.Project("sibling", releaseUnit: "product");
+        ProjectFacts consumer = Scenario.Project("consumer", dependencies: [owner.Id]);
+        ProjectFacts quality = Scenario.Project("quality");
+        var request = new PlanRequest(Scenario.Facts("base"), Scenario.Facts("candidate",
+            owner, sibling, consumer, quality, Scenario.Project("tooling", checks: [prepare]),
+            Scenario.Project("unrelated")), PairedInputPaths, false);
+        var reason = new SelectionReason(PairedInput, "base", owner.Id);
+
+        CiPlan plan = ImpactPlanner.Plan(request, [reason]);
+
+        CollectionAssert.AreEquivalent(new[] { linux.Key, windows.Key, prepare.Key,
+            sibling.Checks[0].Key, consumer.Checks[0].Key, quality.Checks[0].Key },
+            plan.Checks.Select(check => check.Work.Key).ToArray());
+        Assert.AreEqual("base", plan.Comparison);
+        Assert.AreEqual("candidate", plan.Candidate);
+        foreach (PlannedCheck check in plan.Checks)
+            Assert.AreEqual(reason, Assert.ContainsSingle(check.Reasons));
+        PlannedCheck prerequisite = plan.Checks.Single(check => check.Work.Key == prepare.Key);
+        Assert.IsTrue(prerequisite.Work.Required);
+        Assert.AreEqual(CheckOrigin.NativeRetained, Assert.ContainsSingle(prerequisite.Origins));
+        Assert.IsEmpty(prerequisite.QualityPresets);
+        PlannedCheck selectedWindows = plan.Checks.Single(check => check.Work.Key == windows.Key);
+        Assert.AreEqual("windows-latest", selectedWindows.Work.Runner);
+        Assert.AreEqual("win-x64", selectedWindows.Work.Dimensions["rid"]);
+        PlannedCheck selectedSibling = plan.Checks.Single(check =>
+            check.Work.Key == sibling.Checks[0].Key);
+        Assert.AreEqual(CheckOrigin.Preset, Assert.ContainsSingle(selectedSibling.Origins));
+        Assert.AreEqual("standard", Assert.ContainsSingle(selectedSibling.QualityPresets));
+    }
+
+    [TestMethod]
+    public void DeletedPairedOwnerKeepsSurvivingMixedEndpointConsumers()
+    {
+        RepositoryFacts basis = Scenario.Facts("base",
+            Scenario.Project("removed", qualityConsumers: PairedConsumer),
+            Scenario.Project("consumer"));
+        RepositoryFacts candidate = Scenario.Facts("candidate", Scenario.Project("consumer"),
+            Scenario.Project("new", dependencies: PairedConsumer), Scenario.Project("unrelated"));
+        var reason = new SelectionReason(PairedInput, "base", "removed");
+
+        CiPlan plan = ImpactPlanner.Plan(new(basis, candidate, PairedInputPaths, false), [reason]);
+
+        CollectionAssert.AreEquivalent(PairedSurvivingTargets,
+            plan.Checks.Select(check => check.Work.Key.Target).ToArray());
+        foreach (PlannedCheck check in plan.Checks)
+            Assert.AreEqual(reason, Assert.ContainsSingle(check.Reasons));
+    }
+
+    [TestMethod]
+    public void PairedAndNativeReasonsRetainBothEndpointProvenance()
+    {
+        const string native = "src/c/code.py";
+        PlanRequest request = Scenario.Request([Scenario.Project("c")], PairedInput, native);
+        var basis = new SelectionReason(PairedInput, "base", "c");
+        var candidate = new SelectionReason(PairedInput, "candidate", "c");
+
+        PlannedCheck selected = Assert.ContainsSingle(ImpactPlanner.Plan(request,
+            [basis, candidate, basis]).Checks);
+
+        CollectionAssert.AreEquivalent(new[] { basis, candidate,
+            new SelectionReason(native, "base", "c"),
+            new SelectionReason(native, "candidate", "c") }, selected.Reasons);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void ValidPairedReasonDoesNotHideOtherUnknownChanges(bool full)
+    {
+        PlanRequest request = Scenario.Request([Scenario.Project("c")], PairedInput,
+            "unknown/file.py") with
+        { Full = full };
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            ImpactPlanner.Plan(request, [new(PairedInput, "base", "c")]));
+
+        Assert.Contains("Unresolved changed path: unknown/file.py", error.Message);
+    }
+
+    [TestMethod]
+    [DataRow("src/c/code.py", "base", "foreign", false)]
+    [DataRow("src/c/code.py", "base", "foreign", true)]
+    [DataRow("src/c/code.py", "foreign", "c", false)]
+    [DataRow("src/c/code.py", "foreign", "c", true)]
+    [DataRow("src/c/unchanged.py", "base", "c", false)]
+    [DataRow("src/c/unchanged.py", "base", "c", true)]
+    [DataRow("../outside.py", "base", "c", false)]
+    [DataRow("../outside.py", "base", "c", true)]
+    public void InvalidPairedReasonRejectsWithoutFullFallback(string path, string revision,
+        string owner, bool full)
+    {
+        PlanRequest request = Scenario.Request([Scenario.Project("c")], "src/c/code.py") with
+        { Full = full };
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ImpactPlanner.Plan(request, [new(path, revision, owner)]));
+    }
+
+    [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(false, true)]
+    [DataRow(true, false)]
+    [DataRow(true, true)]
+    public void PairedReasonsDoNotBypassEndpointFactValidation(bool invalidBasis, bool full)
+    {
+        PlanRequest request = Scenario.Request([Scenario.Project("c")], PairedInput) with
+        { Full = full };
+        string[] errors = ["incomplete native scope"];
+        request = invalidBasis
+            ? request with { Basis = request.Basis with { Errors = errors } }
+            : request with { Candidate = request.Candidate with { Errors = errors } };
+
+        Assert.Contains(errors[0], Assert.ThrowsExactly<InvalidDataException>(() =>
+            ImpactPlanner.Plan(request, [new(PairedInput, "base", "c")])).Message);
+    }
+
+    [TestMethod]
+    public void PairedReasonsDoNotBypassSelectedQualityContract()
+    {
+        foreach (ProjectFacts owner in MalformedQualityContracts(Scenario.Project("c")))
+        {
+            var request = new PlanRequest(Scenario.Facts("base"),
+                Scenario.Facts("candidate", owner), PairedInputPaths, false);
+
+            Assert.Contains("Unresolved quality contract for c",
+                Assert.ThrowsExactly<InvalidDataException>(() =>
+                    ImpactPlanner.Plan(request, [new(PairedInput, "base", owner.Id)])).Message);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void PairedReasonsRejectMalformedDeletedOwnersBeforeClosure(bool full)
+    {
+        ProjectFacts consumer = Scenario.Project("consumer");
+        ProjectFacts removed = Scenario.Project("removed", qualityConsumers: PairedConsumer);
+        foreach (ProjectFacts owner in MalformedQualityContracts(removed))
+        {
+            var request = new PlanRequest(Scenario.Facts("base", owner, consumer),
+                Scenario.Facts("candidate", consumer), PairedInputPaths, full);
+
+            Assert.Contains("Unresolved quality contract for removed",
+                Assert.ThrowsExactly<InvalidDataException>(() => ImpactPlanner.SelectProjects(
+                    request, [new(PairedInput, "base", owner.Id)])).Message);
+        }
+    }
+
+    [TestMethod]
+    public void PairedReasonPreservesExplicitFullMode()
+    {
+        PlanRequest request = Scenario.Request([Scenario.Project("c"),
+            Scenario.Project("other")], PairedInput) with
+        { Full = true };
+        var reason = new SelectionReason(PairedInput, "base", "c");
+
+        CiPlan plan = ImpactPlanner.Plan(request, [reason]);
+
+        CollectionAssert.AreEquivalent(PairedFullTargets,
+            plan.Checks.Select(check => check.Work.Key.Target).ToArray());
+        CollectionAssert.AreEquivalent(new[] { reason,
+            new SelectionReason("<full>", "candidate", "c") },
+            plan.Checks.Single(check => check.Work.Key.Target == "c").Reasons);
+        Assert.AreEqual(new SelectionReason("<full>", "candidate", "other"),
+            Assert.ContainsSingle(plan.Checks.Single(check =>
+                check.Work.Key.Target == "other").Reasons));
+    }
+
+    private static ProjectFacts[] MalformedQualityContracts(ProjectFacts owner) =>
+    [
+        owner with { Checks = [] },
+        owner with { QualityPreset = null },
+        owner with { Origin = CheckOrigin.NativeRetained },
+    ];
+
+    private static void AssertCandidateRejected(PlanRequest request, RepositoryFacts candidate,
+        string diagnostic) => Assert.Contains(diagnostic,
+            Assert.ThrowsExactly<InvalidDataException>(() =>
+                ImpactPlanner.Plan(request with { Candidate = candidate })).Message);
+
+    private static void AssertCheckConflict(PlanRequest request) =>
+        Assert.Contains("Conflicting check definition",
+            Assert.ThrowsExactly<InvalidDataException>(() => ImpactPlanner.Plan(request)).Message);
+
     private static PackageTarget PackageSubject() => new("product",
         "workflow-delivery.release-unit.yml", "build", "node/npm-package-v1",
         "src/a", "src/a/package.json", null, "1.2.3",
         [new("package", "primary-package", "npm-tarball")]);
-
-
 }
