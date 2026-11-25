@@ -15,7 +15,7 @@ internal delegate Task<ProcessResult> ConfiguredCheckInvocation(
     CancellationToken cancellationToken
 );
 
-public sealed class GitOperations
+public sealed class GitOperations : IGitWorkspace
 {
     private readonly RunDatabase database;
     private readonly CollaborationOperations collaboration;
@@ -40,6 +40,11 @@ public sealed class GitOperations
         this.collaboration = collaboration;
         processes = new ProcessRunner(database);
         this.configuredCheck = configuredCheck;
+        EnsureSchema(database);
+    }
+
+    internal static void EnsureSchema(RunDatabase database)
+    {
         using SqliteConnection connection = database.Open();
         using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         Sql.Execute(
@@ -360,6 +365,11 @@ public sealed class GitOperations
     {
         using FileStream ownership = AcquireOwnership();
         RequireInitialized();
+        if (TryCompleteIdleHealthPass(cancellationToken))
+        {
+            return;
+        }
+
         await RecoverRequestsAsync(cancellationToken).ConfigureAwait(false);
         await EvaluateHealthCoreAsync(forceChecks: false, cancellationToken).ConfigureAwait(false);
         List<long> ids = [];
@@ -1987,38 +1997,58 @@ public sealed class GitOperations
             return;
         }
 
-        ProcessResult exists = await GitResultAsync(
-                Repository,
-                ["show-ref", "--verify", "--quiet", reference],
-                token
-            )
-            .ConfigureAwait(false);
-        if (exists.ExitCode != 0)
-        {
-            await GitAsync(
-                    Repository,
-                    ["update-ref", reference, commit, new string('0', commit.Length)],
-                    token
-                )
-                .ConfigureAwait(false);
-        }
-        else if (await ResolveAsync(reference, token).ConfigureAwait(false) != commit)
-        {
-            throw new OperationException(
-                "conflict",
-                "An incompletely allocated run ref has moved; ownership requires inspection."
-            );
-        }
-
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        if (!Directory.Exists(path))
+        if (state is null)
         {
             await GitAsync(
                     Repository,
-                    ["worktree", "add", "--quiet", path, reference["refs/heads/".Length..]],
+                    [
+                        "worktree",
+                        "add",
+                        "--quiet",
+                        "-b",
+                        reference["refs/heads/".Length..],
+                        path,
+                        commit,
+                    ],
                     token
                 )
                 .ConfigureAwait(false);
+        }
+        else
+        {
+            ProcessResult exists = await GitResultAsync(
+                    Repository,
+                    ["show-ref", "--verify", "--quiet", reference],
+                    token
+                )
+                .ConfigureAwait(false);
+            if (exists.ExitCode != 0)
+            {
+                await GitAsync(
+                        Repository,
+                        ["update-ref", reference, commit, new string('0', commit.Length)],
+                        token
+                    )
+                    .ConfigureAwait(false);
+            }
+            else if (await ResolveAsync(reference, token).ConfigureAwait(false) != commit)
+            {
+                throw new OperationException(
+                    "conflict",
+                    "An incompletely allocated run ref has moved; ownership requires inspection."
+                );
+            }
+
+            if (!Directory.Exists(path))
+            {
+                await GitAsync(
+                        Repository,
+                        ["worktree", "add", "--quiet", path, reference["refs/heads/".Length..]],
+                        token
+                    )
+                    .ConfigureAwait(false);
+            }
         }
 
         await VerifyWorktreeAsync(reference, path, repositoryCommon, token).ConfigureAwait(false);
@@ -2071,16 +2101,24 @@ public sealed class GitOperations
         string[] paths = (
             await GitAsync(
                     path,
-                    ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
+                    [
+                        "rev-parse",
+                        "--path-format=absolute",
+                        "--show-toplevel",
+                        "--git-common-dir",
+                        "--symbolic-full-name",
+                        "HEAD",
+                    ],
                     token
                 )
                 .ConfigureAwait(false)
         ).Split('\n');
         if (
-            paths.Length != 3
-            || paths[2].Length != 0
+            paths.Length != 4
+            || paths[3].Length != 0
             || string.IsNullOrWhiteSpace(paths[0])
             || string.IsNullOrWhiteSpace(paths[1])
+            || string.IsNullOrWhiteSpace(paths[2])
         )
         {
             throw new OperationException(
@@ -2091,9 +2129,7 @@ public sealed class GitOperations
 
         string root = paths[0].Trim();
         string common = paths[1].Trim();
-        string branch = (
-            await GitAsync(path, ["symbolic-ref", "-q", "HEAD"], token).ConfigureAwait(false)
-        ).Trim();
+        string branch = paths[2].Trim();
         repositoryCommon ??= (
             await GitAsync(
                     Repository,
@@ -2109,6 +2145,91 @@ public sealed class GitOperations
                 "Worktree identity does not match the saved run association."
             );
         }
+    }
+
+    private bool TryCompleteIdleHealthPass(CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        RequireSettledProcessOwnership();
+        using SqliteConnection connection = database.Open();
+        if (
+            Convert.ToInt64(
+                Sql.Scalar(
+                    connection,
+                    "SELECT EXISTS(SELECT 1 FROM integration_requests WHERE state IN "
+                        + "('pending','running'));"
+                ),
+                CultureInfo.InvariantCulture
+            ) != 0
+        )
+        {
+            return false;
+        }
+
+        string? expectedHead =
+            Sql.Scalar(
+                connection,
+                """
+                SELECT COALESCE(
+                    (SELECT integrated_commit FROM integration_requests
+                     WHERE state='succeeded' ORDER BY id DESC LIMIT 1),
+                    (SELECT value FROM meta WHERE key='git:base_commit')
+                );
+                """
+            ) as string;
+        if (expectedHead is null)
+        {
+            return false;
+        }
+
+        bool idle;
+        using (
+            SqliteCommand command = Sql.Command(
+                connection,
+                "SELECT commit_hash,passed,red_since,alerted,lifted "
+                    + "FROM git_health WHERE singleton=1;"
+            )
+        )
+        using (ObservedSqliteReader reader = Sql.Reader(command))
+        {
+            if (!reader.Read() || reader.GetString(0) != expectedHead)
+            {
+                return false;
+            }
+
+            if (reader.GetBoolean(1))
+            {
+                idle = true;
+            }
+            else if (reader.IsDBNull(2))
+            {
+                idle = false;
+            }
+            else
+            {
+                DateTimeOffset redSince = DateTimeOffset.Parse(
+                    reader.GetString(2),
+                    CultureInfo.InvariantCulture
+                );
+                TimeSpan elapsed = database.Now - redSince;
+                idle =
+                    (reader.GetBoolean(3) || elapsed < TimeSpan.FromMinutes(15))
+                    && (reader.GetBoolean(4) || elapsed < TimeSpan.FromMinutes(60));
+            }
+        }
+
+        if (!idle)
+        {
+            return false;
+        }
+
+        Sql.Execute(
+            connection,
+            "UPDATE git_health SET checked_at=$time WHERE singleton=1;",
+            null,
+            ("$time", Stamp)
+        );
+        return true;
     }
 
     private async Task RequireCleanAsync(string path, CancellationToken token)
@@ -2130,18 +2251,28 @@ public sealed class GitOperations
 
     private async Task RequireExactTreeAsync(string path, string commit, CancellationToken token)
     {
-        string current = (
-            await GitAsync(path, ["rev-parse", "--verify", "HEAD"], token).ConfigureAwait(false)
-        ).Trim();
-        ProcessResult diff = await GitResultAsync(path, ["diff", "--quiet", "HEAD", "--"], token)
-            .ConfigureAwait(false);
-        ProcessResult index = await GitResultAsync(
+        string output = await GitAsync(
                 path,
-                ["diff", "--quiet", "--cached", "HEAD", "--"],
+                ["status", "--porcelain=v2", "--branch", "--untracked-files=no"],
                 token
             )
             .ConfigureAwait(false);
-        if (current != commit || diff.ExitCode != 0 || index.ExitCode != 0)
+        string? current = null;
+        bool clean = true;
+        foreach (string raw in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string line = raw.TrimEnd('\r');
+            if (line.StartsWith("# branch.oid ", StringComparison.Ordinal))
+            {
+                current = line["# branch.oid ".Length..];
+            }
+            else if (!line.StartsWith("# ", StringComparison.Ordinal))
+            {
+                clean = false;
+            }
+        }
+
+        if (!clean || current != commit)
         {
             throw new OperationException(
                 "stale_candidate",

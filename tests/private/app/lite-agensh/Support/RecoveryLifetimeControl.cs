@@ -10,35 +10,32 @@ namespace LiteAgensh.Tests.Support;
 // ledger, plus the selected public typed dependency. Earlier helpers stay immutable.
 internal sealed class RecoveryLifetimeControl : IAsyncDisposable
 {
-    private readonly GitScenarioState git;
+    private readonly ScratchDirectory scratch = new();
     private readonly TaskCompletionSource peerStarted = Signal();
     private readonly TaskCompletionSource originalFailed = Signal();
     private readonly List<Host> hosts = [];
     private readonly string originalVersion;
     private readonly bool undelivered;
-    private readonly Dictionary<string, string?> environment;
     private readonly CancellationToken originalLifetime;
 
     private RecoveryLifetimeControl(
-        GitScenarioState git,
         bool shared,
         string version,
         bool undelivered,
-        Dictionary<string, string?> environment,
         decimal runAndCampaignAllowance,
         CancellationToken originalLifetime
     )
     {
-        this.git = git;
         originalVersion = version;
         this.undelivered = undelivered;
-        this.environment = environment;
         this.originalLifetime = originalLifetime;
-        RunConfiguration configuration = git.Database.Configuration with
+        RunConfiguration configuration = new()
         {
-            StatePath = git.PathFor("original-lifetime"),
-            CampaignLedgerPath = git.PathFor("original-lifetime-campaign.sqlite"),
+            RepositoryPath = scratch.PathFor("checkout"),
+            StatePath = scratch.PathFor("original-lifetime"),
+            CampaignLedgerPath = scratch.PathFor("original-lifetime-campaign.sqlite"),
             Goal = "Recover original closed-window evidence without additional native work.",
+            NativeExecutable = scratch.PathFor("unavailable-native", "copilot"),
             NativeModel = "controlled-model",
             CreditAllocation = shared ? "shared" : "per-session",
             RunAiCreditAllowance = runAndCampaignAllowance,
@@ -51,7 +48,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         Coordinator = new(
             Database,
             collaboration,
-            new(Database, collaboration),
+            new LightweightGitWorkspace(Database, collaboration),
             (_, _, _) => new DriverFactory(this)
         );
     }
@@ -78,7 +75,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
     internal double FreshNano { get; set; } = 247_000_000_000d;
     internal ManualScenarioClock HistoryClock { get; } = new();
     internal string Cwd => Original.Cwd;
-    internal string Root => git.PathFor("original-lifetime");
+    internal string Root => scratch.PathFor("original-lifetime");
 
     internal static async Task<RecoveryLifetimeControl> CreateAsync(
         CancellationToken token,
@@ -88,29 +85,15 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         decimal runAndCampaignAllowance = 607.25m
     )
     {
-        // Test-host strings only, never inspect user/global/system file contents.
-        string[] names =
-        [
-            "GIT_CONFIG_GLOBAL",
-            "GIT_CONFIG_SYSTEM",
-            "HOME",
-            "USERPROFILE",
-            "XDG_CONFIG_HOME",
-        ];
-        Dictionary<string, string?> environment = names.ToDictionary(
-            name => name,
-            Environment.GetEnvironmentVariable,
-            StringComparer.Ordinal
-        );
-        GitScenarioState git = await GitScenarioState.CreateAsync(token).ConfigureAwait(false);
+        TestAssembly.AssertEnvironmentUnchanged();
         RecoveryLifetimeControl state =
-            new(git, shared, version, undelivered, environment, runAndCampaignAllowance, token);
+            new(shared, version, undelivered, runAndCampaignAllowance, token);
         try
         {
-            await state.Coordinator.InitializeAsync(token).ConfigureAwait(false);
             await state.Coordinator.PreflightAsync(token).ConfigureAwait(false);
             await state.Coordinator.CalibrateAsync(token).ConfigureAwait(false);
             JsonObject run = await state.Coordinator.RunAsync("run", token).ConfigureAwait(false);
+            _ = run;
             return state;
         }
         catch (Exception primaryFailure)
@@ -163,7 +146,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         return factory.ReadSettledUsageAsync(
             Reservation,
             Cwd,
-            git.PathFor("recovery-" + Guid.NewGuid().ToString("N")),
+            scratch.PathFor("recovery-" + Guid.NewGuid().ToString("N")),
             token
         );
     }
@@ -374,7 +357,8 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         }
         try
         {
-            git.Dispose();
+            scratch.Dispose();
+            TestAssembly.AssertEnvironmentUnchanged();
         }
         catch (Exception exception)
         {
@@ -422,7 +406,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         string[] directories =
         [
             Path.Combine(Root, "run.sqlite.diagnostics"),
-            git.PathFor("original-lifetime-campaign.sqlite.diagnostics"),
+            scratch.PathFor("original-lifetime-campaign.sqlite.diagnostics"),
         ];
         SqliteIncidentOutput.Report(directories, Console.Out, cleanupFailures);
     }

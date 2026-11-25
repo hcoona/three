@@ -7,7 +7,9 @@ namespace LiteAgensh.Tests.Support;
 // Native recovery provenance/finality remains at the qualified Ph4/5 boundary.
 internal sealed class PublicBoundaryRun : IAsyncDisposable
 {
-    private readonly GitScenarioState git;
+    private readonly GitScenarioState? git;
+    private readonly ScratchDirectory? scratch;
+    private readonly bool realGit;
     private readonly OfflineNativeControl control;
     private readonly TaskCompletionSource[] recorded;
     private Exception? primary;
@@ -33,13 +35,28 @@ internal sealed class PublicBoundaryRun : IAsyncDisposable
         set => control.FailPaidStop = value;
     }
 
-    private PublicBoundaryRun(GitScenarioState git, int workers)
+    private PublicBoundaryRun(GitScenarioState? git, ScratchDirectory? scratch, int workers)
     {
         this.git = git;
-        RunConfiguration configuration = git.Database.Configuration with
+        this.scratch = scratch;
+        realGit = git is not null;
+        Func<string, string> pathFor = name =>
+            git is not null ? git.PathFor(name) : scratch!.PathFor(name);
+        RunConfiguration baseConfig = git?.Database.Configuration ?? new()
         {
-            StatePath = git.PathFor("public-run"),
-            CampaignLedgerPath = git.PathFor("public-campaign.sqlite"),
+            RepositoryPath = scratch!.PathFor("checkout"),
+            StatePath = scratch.PathFor("public-run"),
+            CampaignLedgerPath = scratch.PathFor("public-campaign.sqlite"),
+            Goal = "Integrate two independent changes without touching the initial checkout.",
+            NativeExecutable = scratch.PathFor("unavailable-native", "copilot"),
+            CandidateChecks = [GitScenarioState.ExitCheck(0)],
+            IntegrationChecks = [],
+            FinalChecks = [GitScenarioState.ExitCheck(0)],
+        };
+        RunConfiguration configuration = baseConfig with
+        {
+            StatePath = pathFor("public-run"),
+            CampaignLedgerPath = pathFor("public-campaign.sqlite"),
             NativeModel = "controlled-model",
             WorkerCount = workers,
             RunAiCreditAllowance = 207.25m,
@@ -57,21 +74,32 @@ internal sealed class PublicBoundaryRun : IAsyncDisposable
                 )),
         ];
         CollaborationOperations collaboration = new(Database);
+        IGitWorkspace workspace = realGit
+            ? new GitOperations(Database, collaboration)
+            : new LightweightGitWorkspace(Database, collaboration);
         Coordinator = new(
             Database,
             collaboration,
-            new(Database, collaboration),
+            workspace,
             (_, _, _) => new Factory(this)
         );
     }
 
-    internal static async Task<PublicBoundaryRun> CreateAsync(int workers, CancellationToken token)
+    internal static async Task<PublicBoundaryRun> CreateAsync(
+        int workers,
+        CancellationToken token,
+        bool realGit = false
+    )
     {
-        GitScenarioState git = await GitScenarioState.CreateAsync(token).ConfigureAwait(false);
+        GitScenarioState.AssertEnvironmentUnchanged();
+        GitScenarioState? git = realGit
+            ? await GitScenarioState.CreateAsync(token).ConfigureAwait(false)
+            : null;
+        ScratchDirectory? scratch = realGit ? null : new();
         PublicBoundaryRun? state = null;
         try
         {
-            state = new(git, workers);
+            state = new(git, scratch, workers);
             GitScenarioState.Data(
                 await state.Coordinator.InitializeAsync(token).ConfigureAwait(false)
             );
@@ -86,6 +114,8 @@ internal sealed class PublicBoundaryRun : IAsyncDisposable
             }
             else
             {
+                git?.Dispose();
+                scratch?.Dispose();
                 GitScenarioState.AssertEnvironmentUnchanged();
             }
             throw;
@@ -137,10 +167,13 @@ internal sealed class PublicBoundaryRun : IAsyncDisposable
     internal Coordinator Reopen()
     {
         CollaborationOperations collaboration = new(Database);
+        IGitWorkspace workspace = realGit
+            ? new GitOperations(Database, collaboration)
+            : new LightweightGitWorkspace(Database, collaboration);
         return new(
             Database,
             collaboration,
-            new(Database, collaboration),
+            workspace,
             (_, _, _) => new Factory(this)
         );
     }
@@ -180,7 +213,9 @@ internal sealed class PublicBoundaryRun : IAsyncDisposable
         {
             if (primary is null && secondary is null)
             {
-                git.Dispose();
+                git?.Dispose();
+                scratch?.Dispose();
+                GitScenarioState.AssertEnvironmentUnchanged();
             }
             else
             {

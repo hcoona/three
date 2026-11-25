@@ -335,7 +335,7 @@ public sealed class TrustedBoundarySpecs(TestContext context)
     public async Task MissingCapabilityPreservesBusinessStateAndReleasesOperationOwnership()
     {
         PublicBoundaryRun state = await PublicBoundaryRun
-            .CreateAsync(1, context.CancellationToken)
+            .CreateAsync(1, context.CancellationToken, realGit: true)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>

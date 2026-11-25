@@ -9,6 +9,10 @@ namespace LiteAgensh.Tests.Support;
 // Each case owns its Git/SQLite state; inherited Git configuration is assembly-owned.
 internal sealed class GitScenarioState : IDisposable
 {
+    private sealed record BaseTemplate(string Directory, string BaseCommit);
+
+    private static readonly SemaphoreSlim TemplateGate = new(1, 1);
+    private static volatile BaseTemplate? cachedTemplate;
     private readonly ScratchDirectory scratch = new();
     private readonly ProcessRunner processes;
 
@@ -96,19 +100,56 @@ internal sealed class GitScenarioState : IDisposable
         );
         try
         {
-            await state
+            BaseTemplate template = await EnsureBaseTemplateAsync(state, token)
+                .ConfigureAwait(false);
+            CopyDirectory(template.Directory, state.Repository);
+            state.BaseCommit = template.BaseCommit;
+            return state;
+        }
+        catch
+        {
+            state.Dispose();
+            throw;
+        }
+    }
+
+    private static async Task<BaseTemplate> EnsureBaseTemplateAsync(
+        GitScenarioState bootstrap,
+        CancellationToken token
+    )
+    {
+        if (cachedTemplate is { } ready)
+        {
+            return ready;
+        }
+
+        await TemplateGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (cachedTemplate is { } existing)
+            {
+                return existing;
+            }
+
+            string templateRepo = TestAssembly.OwnedPathFor(
+                "git-base-template-" + Guid.NewGuid().ToString("N")
+            );
+            string emptyTemplate = TestAssembly.OwnedPathFor("git-empty-template");
+            Directory.CreateDirectory(templateRepo);
+            Directory.CreateDirectory(emptyTemplate);
+            await bootstrap
                 .GitAsync(
-                    state.Repository,
+                    templateRepo,
                     token,
                     "init",
                     "--quiet",
                     "--initial-branch=main",
-                    "--template=" + state.PathFor("git-template")
+                    "--template=" + emptyTemplate
                 )
                 .ConfigureAwait(false);
-            await state
+            await bootstrap
                 .GitAsync(
-                    state.Repository,
+                    templateRepo,
                     token,
                     "config",
                     "--local",
@@ -117,16 +158,16 @@ internal sealed class GitScenarioState : IDisposable
                 )
                 .ConfigureAwait(false);
             File.WriteAllText(
-                Path.Combine(state.Repository, "AGENTS.md"),
+                Path.Combine(templateRepo, "AGENTS.md"),
                 "# Target instructions\nKeep these target-owned instructions intact.\n",
                 new UTF8Encoding(false)
             );
-            File.WriteAllText(Path.Combine(state.Repository, "shared.txt"), "base shared\n");
-            File.WriteAllText(Path.Combine(state.Repository, "tracked.txt"), "base tracked\n");
-            File.WriteAllText(Path.Combine(state.Repository, "stable.txt"), "base stable\n");
-            await state
+            File.WriteAllText(Path.Combine(templateRepo, "shared.txt"), "base shared\n");
+            File.WriteAllText(Path.Combine(templateRepo, "tracked.txt"), "base tracked\n");
+            File.WriteAllText(Path.Combine(templateRepo, "stable.txt"), "base stable\n");
+            await bootstrap
                 .GitAsync(
-                    state.Repository,
+                    templateRepo,
                     token,
                     "add",
                     "--",
@@ -136,20 +177,43 @@ internal sealed class GitScenarioState : IDisposable
                     "stable.txt"
                 )
                 .ConfigureAwait(false);
-            await state
-                .GitAsync(state.Repository, token, "commit", "--quiet", "-m", "Owned base")
+            await bootstrap
+                .GitAsync(templateRepo, token, "commit", "--quiet", "-m", "Owned base")
                 .ConfigureAwait(false);
-            state.BaseCommit = (
-                await state
-                    .GitAsync(state.Repository, token, "rev-parse", "HEAD")
+            string baseCommit = (
+                await bootstrap
+                    .GitAsync(templateRepo, token, "rev-parse", "HEAD")
                     .ConfigureAwait(false)
             ).Trim();
-            return state;
+            BaseTemplate created = new(templateRepo, baseCommit);
+            cachedTemplate = created;
+            return created;
         }
-        catch
+        finally
         {
-            state.Dispose();
-            throw;
+            TemplateGate.Release();
+        }
+    }
+
+    private static void CopyDirectory(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+        foreach (
+            string directory in Directory.GetDirectories(source, "*", SearchOption.AllDirectories)
+        )
+        {
+            Directory.CreateDirectory(
+                Path.Combine(destination, Path.GetRelativePath(source, directory))
+            );
+        }
+
+        foreach (string file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+        {
+            File.Copy(
+                file,
+                Path.Combine(destination, Path.GetRelativePath(source, file)),
+                overwrite: true
+            );
         }
     }
 

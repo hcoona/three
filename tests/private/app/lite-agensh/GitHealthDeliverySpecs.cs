@@ -397,6 +397,88 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             "failed for at least 15 minutes",
             ReadAndCompleteEvents(state, "worker2")
         );
+
+        // Simulate an interrupted process between advancing integration and updating git_health:
+        // an idle ProcessPendingAsync pass must detect the stale health commit and evaluate the
+        // new integrated head rather than returning stale green health.
+        long healthTask = health["taskId"]!.GetValue<long>();
+        _ = await state.InvokeAsync(
+            "worker1",
+            "change_write",
+            new()
+            {
+                ["action"] = "update",
+                ["id"] = change["id"]!.GetValue<long>(),
+                ["taskIds"] = new JsonArray(healthTask),
+            },
+            token
+        );
+        checkExitCode = 0;
+        await state.QueueAsync(change, token);
+        await state.Operations.ProcessPendingAsync(token);
+        string integratedHead = await state.ResolveAsync(state.IntegrationRef, token);
+        Assert.AreNotEqual(state.BaseCommit, integratedHead);
+        using (Microsoft.Data.Sqlite.SqliteConnection connection = state.Database.Open())
+        {
+            Sql.Execute(
+                connection,
+                """
+                UPDATE git_health SET commit_hash=$stale,passed=1,red_since=NULL,
+                    broken_commit='',alerted=0,lifted=0 WHERE singleton=1;
+                """,
+                null,
+                ("$stale", state.BaseCommit)
+            );
+        }
+
+        checkExitCode = 17;
+        state.Clock.Advance(TimeSpan.FromTicks(1));
+        DateTimeOffset postCrashRed = state.Clock.GetUtcNow();
+        await state.Operations.ProcessPendingAsync(token);
+        Assert.Contains(
+            "Integration fails at " + integratedHead,
+            ReadAndCompleteEvents(state, "worker1")
+        );
+        _ = ReadAndCompleteEvents(state, "worker2");
+
+        // Exercise the idle ProcessPendingAsync guard directly across the 15- and 60-minute
+        // thresholds without calling EvaluateHealthAsync first.
+        Assert.AreEqual(
+            0L,
+            state.Number(
+                "SELECT COUNT(*) FROM integration_requests WHERE state IN ('pending','running');"
+            )
+        );
+        long leasesBeforePreAlert = state.Number("SELECT COUNT(*) FROM process_leases;");
+        state.Clock.Advance(TimeSpan.FromMinutes(15) - TimeSpan.FromTicks(1));
+        await state.Operations.ProcessPendingAsync(token);
+        Assert.AreEqual(leasesBeforePreAlert, state.Number("SELECT COUNT(*) FROM process_leases;"));
+        Assert.IsNull(state.Collaboration.ClaimBatch("worker1", bootstrap: false));
+
+        state.Clock.Advance(TimeSpan.FromTicks(1));
+        await state.Operations.ProcessPendingAsync(token);
+        Assert.Contains(
+            "Integration has failed for at least 15 minutes",
+            ReadAndCompleteEvents(state, "worker1")
+        );
+        _ = ReadAndCompleteEvents(state, "worker2");
+
+        long leasesBeforePreLift = state.Number("SELECT COUNT(*) FROM process_leases;");
+        state.Clock.Advance(TimeSpan.FromMinutes(45) - TimeSpan.FromTicks(1));
+        await state.Operations.ProcessPendingAsync(token);
+        Assert.AreEqual(leasesBeforePreLift, state.Number("SELECT COUNT(*) FROM process_leases;"));
+        Assert.IsNull(state.Collaboration.ClaimBatch("worker1", bootstrap: false));
+
+        state.Clock.Advance(TimeSpan.FromTicks(1));
+        await state.Operations.ProcessPendingAsync(token);
+        Assert.Contains(
+            "restriction lifted after 60 minutes",
+            ReadAndCompleteEvents(state, "worker1")
+        );
+        health = GitScenarioState.Data(await state.Operations.EvaluateHealthAsync(token));
+        Assert.AreEqual(integratedHead, health["commit"]!.GetValue<string>());
+        Assert.AreEqual(integratedHead, health["brokenCommit"]!.GetValue<string>());
+        AssertHealth(health, restricted: false, alerted: true, lifted: true, postCrashRed);
     }
 
     [TestMethod]
