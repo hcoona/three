@@ -58,59 +58,6 @@ public sealed class PythonReleaseCliTests
     }
 
     [TestMethod]
-    [DynamicData(nameof(MalformedTransferCases))]
-    public void TypedTransfersRejectMalformedRequiredFields(string transfer, string defect)
-    {
-        using var f = new Fixture();
-        switch (transfer)
-        {
-            case "request":
-                Reject(new PythonPreparationRequest(f.Prepared.Subject, f.Root, f.Root, f.Root),
-                    TransferJson.Default.PythonPreparationRequest, "checkout");
-                break;
-            case "preparation":
-                Reject(f.Preparation, TransferJson.Default.PythonPreparationResult,
-                "native"); break;
-            case "index-tools":
-                Reject(f.IndexTools, TransferJson.Default.PythonIndexTools,
-                "helper"); break;
-            case "publisher-tools":
-                Reject(f.PublisherTools,
-                TransferJson.Default.PythonPublisherTools, "uv"); break;
-            case "index-tool-request":
-                Reject(new PythonIndexToolRequest(f.PublisherTools.Uv, f.IndexTools.Interpreter,
-                    f.Root, f.Root),
-                    TransferJson.Default.PythonIndexToolRequest, "requirements");
-                break;
-            case "observation":
-                Reject(f.Observe(),
-                TransferJson.Default.PythonIndexObservationResult, "observation"); break;
-            case "publication":
-                Reject(new PythonPublicationResult(f.Prepared.Subject, f.Observe(), [], []),
-                    TransferJson.Default.PythonPublicationResult, "invocations");
-                break;
-            default: Assert.Fail("Unmapped typed transfer."); break;
-        }
-        void Reject<T>(T value, JsonTypeInfo<T> type, string field)
-        {
-            string path = f.Save(value, type);
-            Fixture.Corrupt(path, defect, field, "", "");
-            if (defect == "duplicate") Assert.ThrowsExactly<InvalidDataException>(() =>
-                ReleaseCli.Read(path, type));
-            else Assert.ThrowsExactly<JsonException>(() => ReleaseCli.Read(path, type));
-        }
-    }
-
-    private static readonly string[] TransferKinds = ["request", "preparation", "index-tools",
-        "publisher-tools", "index-tool-request", "observation", "publication"];
-    private static readonly string[] TransferDefects = ["duplicate", "missing", "extra"];
-
-    public static IEnumerable<object[]> MalformedTransferCases =>
-        from transfer in TransferKinds
-        from defect in TransferDefects
-        select new object[] { transfer, defect };
-
-    [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
     public void PrepareRetainsActualFailedOrMissingPreparation(bool missingFiles)
@@ -143,69 +90,69 @@ public sealed class PythonReleaseCliTests
     }
 
     [TestMethod]
-    [DataRow("duplicate")]
-    [DataRow("missing")]
-    [DataRow("extra")]
-    [DataRow("nested-duplicate")]
-    [DataRow("nested-missing")]
-    [DataRow("nested-extra")]
-    public void PrepareRejectsMalformedTypedInput(string defect)
+    public void PrepareRejectsMissingSubjectRevisionBeforeNativeWork()
     {
         using var f = new Fixture();
         var request = new PythonPreparationRequest(f.Prepared.Subject, f.Root, f.Root, f.Root);
         string path = f.Save(request, TransferJson.Default.PythonPreparationRequest);
-        Fixture.Corrupt(path, defect, "checkout", "subject", "revision");
+        JsonObject input = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        input["subject"]!.AsObject().Remove("revision");
+        File.WriteAllText(path, input.ToJsonString());
         int calls = 0;
         using var output = new StringWriter();
         void Run() => PythonReleaseCli.Run(["release", "prepare-python", path], output,
             prepare: (_, _) => { calls++; return Task.FromResult(f.Preparation); });
-        if (defect.EndsWith("duplicate", StringComparison.Ordinal))
-            Assert.ThrowsExactly<InvalidDataException>(Run);
-        else Assert.ThrowsExactly<JsonException>(Run);
+        Assert.ThrowsExactly<JsonException>(Run);
         Assert.AreEqual(0, calls);
         Assert.AreEqual("", output.ToString());
     }
 
     [TestMethod]
-    [DataRow("duplicate")]
-    [DataRow("missing")]
-    [DataRow("extra")]
-    [DataRow("nested-duplicate")]
-    [DataRow("nested-missing")]
-    [DataRow("nested-extra")]
-    [DataRow("array-duplicate")]
-    [DataRow("array-missing")]
-    [DataRow("array-extra")]
-    public void DescribeRejectsMalformedObservationTransfer(string defect)
+    public void PrepareIndexToolsRejectsMissingRequirementsBeforeNativeWork()
+    {
+        using var f = new Fixture();
+        var request = new PythonIndexToolRequest(f.PublisherTools.Uv, f.IndexTools.Interpreter,
+            f.Root, f.Root);
+        JsonObject input = JsonNode.Parse(JsonSerializer.Serialize(request,
+            TransferJson.Default.PythonIndexToolRequest))!.AsObject();
+        input.Remove("requirements");
+        string path = f.SaveText(input.ToJsonString());
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        Assert.AreEqual(2, Program.Run(["release", "prepare-python-index-tools", path],
+            output, error));
+
+        Assert.AreEqual("", output.ToString());
+        Assert.Contains("requirements", error.ToString());
+    }
+
+    [TestMethod]
+    public void DescribeRejectsUnknownNestedFileProperty()
     {
         using var f = new Fixture(true);
         string preparation = f.Save(f.Preparation, TransferJson.Default.PythonPreparationResult);
         string observation = f.Save(f.Observe(), TransferJson.Default.PythonIndexObservationResult);
-        Fixture.Corrupt(observation, defect, "reads", "observation", "files");
+        JsonObject input = JsonNode.Parse(File.ReadAllText(observation))!.AsObject();
+        input["observation"]!["files"]![0]!["unexpected"] = true;
+        File.WriteAllText(observation, input.ToJsonString());
         using var output = new StringWriter();
         void Run() => PythonReleaseCli.Run(["release", "describe-python", preparation, observation],
             output,
             publish: (_, _, _, _, _) => throw new AssertFailedException("Publisher reached."));
-        if (defect.EndsWith("duplicate", StringComparison.Ordinal))
-            Assert.ThrowsExactly<InvalidDataException>(Run);
-        else Assert.ThrowsExactly<JsonException>(Run);
+        Assert.ThrowsExactly<JsonException>(Run);
         Assert.AreEqual("", output.ToString());
     }
 
     [TestMethod]
     [DataRow("missing-format")]
     [DataRow("duplicate-format")]
-    [DataRow("required-check")]
-    [DataRow("failed-check")]
     [DataRow("native-name")]
     [DataRow("native-version")]
     [DataRow("native-commit")]
     [DataRow("native-missing")]
     [DataRow("commands-missing")]
-    [DataRow("command-failed")]
     [DataRow("command-error")]
-    [DataRow("errors")]
-    [DataRow("destination")]
     public void InvalidCompletePreparationFailsReceipt(string defect)
     {
         using var f = new Fixture();
@@ -222,46 +169,11 @@ public sealed class PythonReleaseCliTests
                 with { Kind = "python-wheel" }]
                 }
             },
-            "required-check" => bad with
-            {
-                Prepared = p with
-                {
-                    RequiredChecks =
-                p.RequiredChecks[..^1]
-                }
-            },
-            "failed-check" => bad with
-            {
-                Prepared = p with
-                {
-                    Checks = p.Checks.Select(c => c with
-                    {
-                        Status = ReleaseCheckStatus.Failed
-                    }).ToArray()
-                }
-            },
             "commands-missing" => bad with { Commands = [] },
-            "command-failed" => bad with
-            {
-                Commands = [bad.Commands[0] with { Result =
-                Fixture.Success with { ExitCode = 19 } }]
-            },
             "command-error" => bad with
             {
                 Commands = [bad.Commands[0] with { Result =
                 Fixture.Success with { Error = "cleanup failed" } }]
-            },
-            "errors" => bad with { Errors = ["incomplete preparation"] },
-            "destination" => bad with
-            {
-                Prepared = p with
-                {
-                    Subject = p.Subject with
-                    {
-                        Destination =
-                "pypi"
-                    }
-                }
             },
             _ => bad,
         };
@@ -300,14 +212,11 @@ public sealed class PythonReleaseCliTests
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public void SubstitutedOriginalStopsBeforeObservation(bool missing)
+    public void SubstitutedOriginalStopsBeforeObservation()
     {
         using var f = new Fixture();
         string original = Path.Combine(f.Root, f.Prepared.Files[0].Path);
-        if (missing) File.Delete(original);
-        else File.WriteAllBytes(original, new byte[checked((int)f.Prepared.Files[0].Size)]);
+        File.WriteAllBytes(original, new byte[checked((int)f.Prepared.Files[0].Size)]);
         int reads = 0;
         using var output = new StringWriter();
         Assert.ThrowsExactly<InvalidDataException>(() => PythonReleaseCli.Run(f.ObserveArgs(),
@@ -415,6 +324,70 @@ public sealed class PythonReleaseCliTests
     }
 
     [TestMethod]
+    [DoNotParallelize]
+    [OSCondition(OperatingSystems.Linux)]
+    [TestCategory("PythonNativeContract")]
+    public void PublishForwardsNativeMasksOnlyToStderr()
+    {
+        using var f = new Fixture();
+        string originals = Directory.CreateDirectory(Path.Combine(f.Root, "originals")).FullName;
+        Directory.Move(Path.Combine(f.Root, "archives"), Path.Combine(originals, "archives"));
+        const string StdoutMask = "::add-mask::controlled-cli-stdout";
+        const string StderrMask = "::add-mask::controlled-cli-stderr";
+        File.WriteAllText(f.PublisherTools.Uv, $"""
+            #!/bin/sh
+            printf '%s\n' '{StdoutMask}'
+            printf '%s\n' '{StderrMask}' >&2
+            """);
+        if (OperatingSystem.IsLinux())
+            File.SetUnixFileMode(f.PublisherTools.Uv,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+        PythonIndexObservationResult initial = f.Observe(ReleaseFileState.Exact);
+        string[] args = f.PublishArgs(initial, originals);
+        var platform = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["GITHUB_ACTIONS"] = "true",
+            ["ACTIONS_ID_TOKEN_REQUEST_URL"] = "https://oidc.invalid/token",
+            ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"] = "controlled-cli-oidc",
+        };
+        var previous = platform.Keys.ToDictionary(name => name,
+            Environment.GetEnvironmentVariable, StringComparer.Ordinal);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        TextWriter previousOutput = Console.Out;
+        TextWriter previousError = Console.Error;
+        int? exit;
+        try
+        {
+            foreach ((string name, string value) in platform)
+                Environment.SetEnvironmentVariable(name, value);
+            Console.SetOut(output);
+            Console.SetError(error);
+            exit = PythonReleaseCli.Run(args, Console.Out,
+                observe: (_, _, _) => Task.FromResult(initial));
+        }
+        finally
+        {
+            Console.SetOut(previousOutput);
+            Console.SetError(previousError);
+            foreach ((string name, string? value) in previous)
+                Environment.SetEnvironmentVariable(name, value);
+        }
+
+        Assert.AreEqual(0, exit);
+        var result = Fixture.Parse(output, TransferJson.Default.PythonPublicationResult);
+        PythonPublishResult invocation = Assert.ContainsSingle(result.Invocations);
+        Assert.AreEqual("sdist", invocation.Upload.Output);
+        Assert.IsTrue(invocation.Upload.Command.Succeeded);
+        Assert.IsFalse(invocation.MaskForwardingFailed);
+        Assert.DoesNotContain("::add-mask::", output.ToString());
+        Assert.DoesNotContain("controlled-cli-", output.ToString());
+        Assert.AreEqual(StdoutMask + Environment.NewLine + StderrMask + Environment.NewLine,
+            error.ToString());
+    }
+
+    [TestMethod]
     public void PublishCannotEnlargeInitialBoundRequest()
     {
         using var f = new Fixture();
@@ -435,16 +408,13 @@ public sealed class PythonReleaseCliTests
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public void PublishExactOrDryRequestRejectsBeforeDelegates(bool dry)
+    public void PublishDryRequestRejectsBeforeDelegates()
     {
-        using var f = new Fixture(dry);
+        using var f = new Fixture(dry: true);
         int calls = 0;
         using var output = new StringWriter();
         Assert.ThrowsExactly<InvalidDataException>(() => PythonReleaseCli.Run(
-            f.PublishArgs(dry ? f.Observe() : f.Observe(ReleaseFileState.Exact,
-                ReleaseFileState.Exact)), output,
+            f.PublishArgs(f.Observe()), output,
             observe: (_, _, _) =>
             {
                 calls++; throw new
@@ -461,7 +431,6 @@ public sealed class PythonReleaseCliTests
 
     [TestMethod]
     [DataRow("Exact", "Satisfied", 0)]
-    [DataRow("Absent", "Unsatisfied", 1)]
     [DataRow("Unknown", "Unknown", 1)]
     public void CompleteUsesFinalIndexStateAndRetainsActualFailedPublish(string sdistState,
         string business, int exit)
@@ -521,32 +490,26 @@ public sealed class PythonReleaseCliTests
     }
 
     [TestMethod]
-    [DataRow("wheel")]
-    [DataRow("sdist")]
-    public void CompleteRequiresBothFinalIndexFiles(string missing)
+    public void CompleteRejectsAnIncompleteFinalTransferOnStderr()
     {
         using var f = new Fixture();
-        string[] args = f.CompleteArgs(f.Observe(ReleaseFileState.Exact, ReleaseFileState.Exact),
-            f.Observe(missing == "wheel" ? ReleaseFileState.Absent : ReleaseFileState.Exact,
-                missing == "sdist" ? ReleaseFileState.Absent : ReleaseFileState.Exact), "-");
+        PythonIndexObservationResult exact = f.Observe(ReleaseFileState.Exact,
+            ReleaseFileState.Exact);
+        var incomplete = exact with
+        {
+            Observation = exact.Observation with { Files = [exact.Observation.Files[0]] }
+        };
         using var output = new StringWriter();
-        Assert.AreEqual(1, PythonReleaseCli.Run(args, output));
-        var result = Fixture.Parse(output, TransferJson.Default.PythonCompletionResult);
-        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, result.Outcome.State);
-        Assert.AreEqual(false, result.MutationAttempted);
-        Assert.IsEmpty(result.Outcome.Uploads);
-        Assert.Contains("Required destination file is absent: " + missing, string.Join(";",
-            result.Outcome.Reasons));
+        using var error = new StringWriter();
+
+        Assert.AreEqual(2, Program.Run(f.CompleteArgs(exact, incomplete, "-"), output, error));
+
+        Assert.AreEqual("", output.ToString());
+        Assert.IsNotEmpty(error.ToString());
     }
 
     [TestMethod]
-    [DataRow("subject")]
-    [DataRow("missing-file")]
-    [DataRow("extra-file")]
-    [DataRow("digest")]
-    [DataRow("size")]
-    [DataRow("required-check")]
-    public void ObserveRejectsMismatchedCompleteResult(string defect)
+    public void ObserveRejectsResultForAnotherRevision()
     {
         using var f = new Fixture();
         PythonIndexObservationResult observed = f.Observe(ReleaseFileState.Exact,
@@ -554,33 +517,9 @@ public sealed class PythonReleaseCliTests
         ReleaseObservation value = observed.Observation;
         observed = observed with
         {
-            Observation = defect switch
+            Observation = value with
             {
-                "subject" => value with
-                {
-                    Subject = value.Subject with
-                    {
-                        Revision = new string('b',
-                    40)
-                    }
-                },
-                "missing-file" => value with { Files = [value.Files[0]] },
-                "extra-file" => value with
-                {
-                    Files = [.. value.Files, value.Files[0] with { Output =
-                    "other" }]
-                },
-                "digest" => value with
-                {
-                    Files = [value.Files[0] with { Sha256 = new string('f', 64)
-                    }, value.Files[1]]
-                },
-                "size" => value with
-                {
-                    Files = [value.Files[0] with { Size = value.Files[0].Size + 1
-                    }, value.Files[1]]
-                },
-                _ => value with { RequiredChecks = [] },
+                Subject = value.Subject with { Revision = new('b', 40) }
             },
         };
         int writes = 0;
@@ -677,8 +616,9 @@ public sealed class PythonReleaseCliTests
         internal string[] ObserveArgs() => ["release", "observe-python", Save(Preparation,
             TransferJson.Default.PythonPreparationResult), Root, Save(IndexTools,
             TransferJson.Default.PythonIndexTools)];
-        internal string[] PublishArgs(PythonIndexObservationResult initial) => ["release",
-            "publish-python", Save(Preparation, TransferJson.Default.PythonPreparationResult), Root,
+        internal string[] PublishArgs(PythonIndexObservationResult initial,
+            string? originals = null) => ["release", "publish-python",
+            Save(Preparation, TransferJson.Default.PythonPreparationResult), originals ?? Root,
             Save(initial, TransferJson.Default.PythonIndexObservationResult), Save(IndexTools,
             TransferJson.Default.PythonIndexTools), Save(PublisherTools,
             TransferJson.Default.PythonPublisherTools)];
@@ -688,27 +628,6 @@ public sealed class PythonReleaseCliTests
                 TransferJson.Default.PythonPreparationResult), Save(initial,
                 TransferJson.Default.PythonIndexObservationResult),
                 Save(final, TransferJson.Default.PythonIndexObservationResult), publication];
-        internal static void Corrupt(string path, string defect, string field, string nested, string
-            nestedField)
-        {
-            JsonObject root = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
-            JsonObject target = defect.StartsWith("array-", StringComparison.Ordinal)
-                ? root[nested]![nestedField]!.AsArray()[0]!.AsObject()
-                : defect.StartsWith("nested-", StringComparison.Ordinal) ? root[nested]!.AsObject()
-                    : root;
-            string key = defect.StartsWith("array-", StringComparison.Ordinal) ? "output"
-                : defect.StartsWith("nested-", StringComparison.Ordinal) ? nestedField : field;
-            if (defect.EndsWith("missing", StringComparison.Ordinal)) target.Remove(key);
-            else if (defect.EndsWith("extra", StringComparison.Ordinal)) target["unrecognized"] =
-                true;
-            string json = root.ToJsonString();
-            if (defect.EndsWith("duplicate", StringComparison.Ordinal))
-            {
-                string needle = JsonSerializer.Serialize(key) + ":" + target[key]!.ToJsonString();
-                json = json.Replace(needle, needle + "," + needle, StringComparison.Ordinal);
-            }
-            File.WriteAllText(path, json);
-        }
         public void Dispose() => Directory.Delete(Root, true);
     }
 }

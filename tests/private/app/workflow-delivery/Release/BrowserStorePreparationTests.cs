@@ -12,6 +12,28 @@ namespace WorkflowDelivery.Tests.Release;
 [TestClass]
 public sealed class BrowserStorePreparationTests(TestContext context)
 {
+    private static GitFixture? shared;
+    private static string sharedRevision = "";
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repository = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            sharedRevision = await Fixture.CommitAsync(repository);
+            shared = repository;
+        }
+        catch
+        {
+            repository.Dispose();
+            throw;
+        }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
     [TestMethod]
     [DataRow("chrome-web-store", "chrome-zip")]
     [DataRow("firefox-amo", "firefox-sources,firefox-zip")]
@@ -19,7 +41,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     public async Task OneUnprivilegedBuildQualifiesOnlyTheStoreOriginals(string store,
         string outputs)
     {
-        using Fixture fixture = await Fixture.CreateAsync(store, context.CancellationToken);
+        using Fixture fixture = new(store);
 
         BrowserStorePreparationResult result = await fixture.RunAsync(
             context.CancellationToken);
@@ -52,8 +74,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     [DataRow("missing", "build")]
     public async Task DefectiveStoreZipCannotQualify(string defect, string failed)
     {
-        using Fixture fixture = await Fixture.CreateAsync("firefox-amo",
-            context.CancellationToken);
+        using Fixture fixture = new("firefox-amo");
         fixture.Defect = defect;
 
         BrowserStorePreparationResult result = await fixture.RunAsync(
@@ -74,8 +95,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     public async Task StoreRequestIsOfficialFromMainOrADryRun(string channel, string selected,
         bool dryRun)
     {
-        using Fixture fixture = await Fixture.CreateAsync("chrome-web-store",
-            context.CancellationToken);
+        using Fixture fixture = new("chrome-web-store", writable: false);
         fixture.Request = fixture.Request with
         {
             Subject = fixture.Request.Subject with
@@ -89,8 +109,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     [TestMethod]
     public async Task BuddyDryRunFromADevelopmentBranchPreparesWithoutWrites()
     {
-        using Fixture fixture = await Fixture.CreateAsync("edge-addons",
-            context.CancellationToken);
+        using Fixture fixture = new("edge-addons");
         fixture.Request = fixture.Request with
         {
             Subject = fixture.Request.Subject with
@@ -106,62 +125,66 @@ public sealed class BrowserStorePreparationTests(TestContext context)
 
     internal sealed class Fixture : IDisposable
     {
-        private readonly GitFixture repository;
+        private readonly string root = Directory.CreateTempSubdirectory("browser-store-").FullName;
+        private readonly string checkout;
         internal BrowserStorePreparationRequest Request { get; set; }
         internal string Scratch => Request.Scratch;
         internal string? Defect { get; set; }
 
-        private Fixture(GitFixture repository, BrowserStorePreparationRequest request)
+        internal Fixture(string store, bool writable = true)
         {
-            this.repository = repository;
-            Request = request;
-        }
-
-        internal static async Task<Fixture> CreateAsync(string store, CancellationToken token)
-        {
-            GitFixture repository = await GitFixture.CreateAsync(token);
             try
             {
-                string product = BrowserStorePreparation.Product + "/";
-                await repository.SetAsync(product + "package.json",
-                    """{"name":"steam-account-history-to-csv","version":"0.0.0-placeholder"}""");
-                await repository.SetAsync(product + "version.json",
-                    """{"version":"1.2.0-dev.{height}"}""");
-                await repository.SetAsync(BrowserStorePreparation.Declaration, """
-                    schema: workflow-delivery/v3/release-unit
-                    release-unit: steam-account-history-to-csv
-                    builds:
-                      - id: browser-extensions
-                        definition: node/browser-extension-v1
-                        entry-point: package.json
-                        outputs:
-                          - id: chrome-zip
-                            role: primary-package
-                            kind: chrome-extension-zip
-                          - id: firefox-zip
-                            role: primary-package
-                            kind: firefox-extension-zip
-                          - id: firefox-sources
-                            role: source-package
-                            kind: firefox-source-zip
-                          - id: edge-zip
-                            role: primary-package
-                            kind: edge-extension-zip
-                    """);
-                await repository.SetAsync("mise.toml", RepositoryToolSelection.MiseToml);
-                await repository.SetAsync("mise.lock", RepositoryToolSelection.MiseLock);
-                foreach (string path in new[] { "pnpm-lock.yaml", "pnpm-workspace.yaml" })
-                    await repository.SetAsync(path, "committed native fixture");
-                string commit = await repository.CommitAsync();
-                await repository.GitAsync("reset", "--hard", commit);
-                return new(repository, new(new(commit, "refs/heads/feature",
+                checkout = writable ? PreparationCheckout.Copy(shared!.Directory, root)
+                    : shared!.Directory;
+                Request = new(new(sharedRevision, "refs/heads/feature",
                         BrowserStorePreparation.Unit, BrowserStorePreparation.Declaration,
                         "official", store, true),
                     new(store, "item", store == "chrome-web-store" ? "publisher" : null),
-                    repository.Directory,
-                    Directory.CreateTempSubdirectory("browser-store-").FullName));
+                    checkout, Directory.CreateDirectory(Path.Combine(root, "prepared")).FullName);
             }
-            catch { repository.Dispose(); throw; }
+            catch
+            {
+                Dispose();
+                throw;
+            }
+        }
+
+        internal static async Task<string> CommitAsync(GitFixture repository)
+        {
+            string product = BrowserStorePreparation.Product + "/";
+            await repository.SetAsync(product + "package.json",
+                """{"name":"steam-account-history-to-csv","version":"0.0.0-placeholder"}""");
+            await repository.SetAsync(product + "version.json",
+                """{"version":"1.2.0-dev.{height}"}""");
+            await repository.SetAsync(BrowserStorePreparation.Declaration, """
+                schema: workflow-delivery/v3/release-unit
+                release-unit: steam-account-history-to-csv
+                builds:
+                  - id: browser-extensions
+                    definition: node/browser-extension-v1
+                    entry-point: package.json
+                    outputs:
+                      - id: chrome-zip
+                        role: primary-package
+                        kind: chrome-extension-zip
+                      - id: firefox-zip
+                        role: primary-package
+                        kind: firefox-extension-zip
+                      - id: firefox-sources
+                        role: source-package
+                        kind: firefox-source-zip
+                      - id: edge-zip
+                        role: primary-package
+                        kind: edge-extension-zip
+                """);
+            await repository.SetAsync("mise.toml", RepositoryToolSelection.MiseToml);
+            await repository.SetAsync("mise.lock", RepositoryToolSelection.MiseLock);
+            foreach (string path in new[] { "pnpm-lock.yaml", "pnpm-workspace.yaml" })
+                await repository.SetAsync(path, "committed native fixture");
+            string commit = await repository.CommitAsync();
+            await repository.GitAsync("reset", "--hard", commit);
+            return commit;
         }
 
         internal Task<BrowserStorePreparationResult> RunAsync(CancellationToken token) =>
@@ -181,10 +204,10 @@ public sealed class BrowserStorePreparationTests(TestContext context)
                 {
                     version = Selected(tool),
                     requested_version = RepositoryToolSelection.Requested(File.ReadAllText(
-                        Path.Combine(repository.Directory, "mise.toml")), tool),
+                        Path.Combine(checkout, "mise.toml")), tool),
                     active = true,
                     source = new { type = "mise.toml",
-                        path = Path.Combine(repository.Directory, "mise.toml") },
+                        path = Path.Combine(checkout, "mise.toml") },
                 } });
             }
             else if (args.Contains("--version"))
@@ -197,7 +220,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
 
         private void Build(string script)
         {
-            string directory = Path.Combine(repository.Directory,
+            string directory = Path.Combine(checkout,
                 BrowserStorePreparation.Product, ".output");
             Directory.CreateDirectory(directory);
             string browser = script switch
@@ -256,12 +279,8 @@ public sealed class BrowserStorePreparationTests(TestContext context)
         }
 
         private string Selected(string tool) => RepositoryToolSelection.Locked(
-            File.ReadAllText(Path.Combine(repository.Directory, "mise.lock")), tool);
+            File.ReadAllText(Path.Combine(checkout, "mise.lock")), tool);
 
-        public void Dispose()
-        {
-            repository.Dispose();
-            Directory.Delete(Scratch, recursive: true);
-        }
+        public void Dispose() => PreparationCheckout.Delete(root);
     }
 }

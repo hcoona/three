@@ -163,17 +163,39 @@ public sealed class ReleaseStateTests
     }
 
     [TestMethod]
-    public void UnsupportedPartialSetCannotBecomeHypotheticalPublication()
+    [DataRow(false)]
+    [DataRow(true)]
+    public void PartialSetNeedsDestinationSupportForExactlyTheMissingFiles(bool supported)
     {
-        PreparedRelease prepared = Prepare() with
-        { Subject = Prepare().Subject with { DryRun = true } };
+        PreparedRelease prepared = Prepare();
+        ReleaseFile second = prepared.Files[0] with
+        { Output = "symbols", Kind = "debug-symbols", Path = "original/symbols.zip" };
+        prepared = prepared with
+        {
+            Subject = prepared.Subject with { DryRun = true },
+            Files = [prepared.Files[0], second]
+        };
+        ReleaseObservation observation = Observe(prepared);
+        observation = observation with
+        {
+            Files = [observation.Files[0], observation.Files[1] with
+                { State = ReleaseFileState.Absent, Size = null, Sha256 = null }]
+        };
 
-        ReleaseDryRun result = ReleaseCompletion.Describe(prepared,
-            Observe(prepared, ReleaseFileState.Absent), []);
+        ReleaseDryRun result = ReleaseCompletion.Describe(prepared, observation,
+            supported ? [second.Output] : []);
 
-        Assert.IsFalse(result.Ready);
-        Assert.IsEmpty(result.HypotheticalWrites);
-        Assert.Contains("missing set", Assert.ContainsSingle(result.Reasons));
+        Assert.AreEqual(supported, result.Ready);
+        if (supported)
+        {
+            Assert.AreEqual(second.Output, Assert.ContainsSingle(result.HypotheticalWrites));
+            Assert.IsEmpty(result.Reasons);
+        }
+        else
+        {
+            Assert.IsEmpty(result.HypotheticalWrites);
+            Assert.Contains("missing set", Assert.ContainsSingle(result.Reasons));
+        }
     }
 
     [TestMethod]

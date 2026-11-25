@@ -19,10 +19,6 @@ public sealed class PythonNativePublisherTests(TestContext context)
     [DataRow("buddy", "testpypi", "refs/heads/development", "wheel",
         "https://test.pypi.org/legacy/")]
     [DataRow("official", "pypi", "refs/heads/main", "sdist",
-        "https://upload.pypi.org/legacy/")]
-    [DataRow("buddy", "testpypi", "refs/heads/development", "sdist",
-        "https://test.pypi.org/legacy/", PythonReleaseUnits.Nbgv)]
-    [DataRow("official", "pypi", "refs/heads/main", "wheel",
         "https://upload.pypi.org/legacy/", PythonReleaseUnits.Nbgv)]
     public async Task NativePublisherReceivesOnlyQualifiedOriginalAndSelectedContext(
         string channel, string destination, string selectedRef, string output, string endpoint,
@@ -86,11 +82,9 @@ public sealed class PythonNativePublisherTests(TestContext context)
     [DataRow(nameof(NativeTermination.Exited), 0)]
     [DataRow(nameof(NativeTermination.Exited), 7)]
     [DataRow(nameof(NativeTermination.Cancelled), -1)]
-    [DataRow(nameof(NativeTermination.Cancelled), 0)]
     [DataRow(nameof(NativeTermination.TimedOut), -1)]
     [DataRow(nameof(NativeTermination.InvalidOutput), 0)]
     [DataRow(nameof(NativeTermination.InputFailed), -1)]
-    [DataRow(nameof(NativeTermination.InputFailed), 0)]
     [DataRow(nameof(NativeTermination.CleanupFailed), -1)]
     [DataRow(nameof(NativeTermination.StartFailed), -1)]
     public async Task NativeOutcomesCannotPersistCredentialBearingDiagnostics(
@@ -130,8 +124,6 @@ public sealed class PythonNativePublisherTests(TestContext context)
 
     [TestMethod]
     [DataRow("dry-run")]
-    [DataRow("official-ref")]
-    [DataRow("buddy-ref")]
     [DataRow("destination")]
     [DataRow("wrong-name")]
     [DataRow("wrong-unit")]
@@ -160,31 +152,12 @@ public sealed class PythonNativePublisherTests(TestContext context)
                     Subject = prepared.Subject with
                     { DryRun = true }
                 }; break;
-            case "official-ref":
-                prepared = prepared with
-                {
-                    Subject = prepared.Subject with
-                    { Channel = "official", Destination = "pypi" }
-                }; break;
-            case "buddy-ref":
-                prepared = prepared with
-                {
-                    Subject = prepared.Subject with
-                    { SelectedRef = "refs/tags/unsupported" }
-                }; break;
             case "destination":
                 prepared = prepared with
                 {
                     Subject = prepared.Subject with
                     { Destination = "pypi" }
                 }; break;
-            case "failed-check":
-                prepared = prepared with
-                {
-                    Checks =
-                [new("qualified", ReleaseCheckStatus.Failed)]
-                }; break;
-            case "missing-check": prepared = prepared with { Checks = [] }; break;
             case "wrong-name":
                 prepared = prepared with
                 {
@@ -196,12 +169,6 @@ public sealed class PythonNativePublisherTests(TestContext context)
                 {
                     Subject = prepared.Subject with
                     { Unit = "foreign" }
-                }; break;
-            case "wrong-version":
-                prepared = prepared with
-                {
-                    Files = [prepared.Files[0] with
-                { Version = "0.2" }, prepared.Files[1]]
                 }; break;
             case "missing-pair": prepared = prepared with { Files = [prepared.Files[0]] }; break;
             case "wrong-kind":

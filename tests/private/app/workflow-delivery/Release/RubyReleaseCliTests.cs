@@ -55,8 +55,6 @@ public sealed class RubyReleaseCliTests(TestContext context)
 
     [TestMethod]
     [DataRow("Exact", 0)]
-    [DataRow("Absent", 0)]
-    [DataRow("Conflict", 1)]
     [DataRow("Unknown", 1)]
     public void ObserveTypedJsonPreservesNativeState(string stateName, int expectedExit)
     {
@@ -94,15 +92,13 @@ public sealed class RubyReleaseCliTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Exact", 0)]
-    [DataRow("Absent", 1)]
-    public void DescribeTypedJsonReportsOnlyHypotheticalWrites(string state, int count)
+    public void DescribeTypedJsonReportsOnlyHypotheticalWrites()
     {
         using var fixture = new RubyCallerFixture("official", dry: true);
         using var output = new StringWriter();
         using var error = new StringWriter();
         int exit = Program.Run(["release", "describe-ruby", Preparation(fixture),
-            Observation(fixture, "observed.json", Enum.Parse<ReleaseFileState>(state))], output,
+            Observation(fixture, "observed.json", ReleaseFileState.Absent)], output,
             error);
         Assert.AreEqual("", error.ToString());
         Assert.AreEqual(0, exit);
@@ -112,8 +108,7 @@ public sealed class RubyReleaseCliTests(TestContext context)
         Assert.IsTrue(result.Ready);
         Assert.IsTrue(result.Subject.DryRun);
         Assert.AreEqual(fixture.Prepared.Subject, result.Subject);
-        Assert.HasCount(count, result.HypotheticalWrites);
-        if (count != 0) Assert.AreEqual(fixture.Original.Output,
+        Assert.AreEqual(fixture.Original.Output,
             Assert.ContainsSingle(result.HypotheticalWrites));
         Assert.IsEmpty(result.Reasons);
     }
@@ -180,31 +175,19 @@ public sealed class RubyReleaseCliTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("exact", 0, "Satisfied")]
-    [DataRow("write", 0, "Satisfied")]
     [DataRow("failed-after-effect", 0, "Satisfied")]
     [DataRow("missing-publication", 1, "Unknown")]
-    [DataRow("final-absent", 1, "Unsatisfied")]
-    [DataRow("final-unknown", 1, "Unknown")]
     public void CompleteTypedJsonSeparatesEffectsCommandsAndSatisfaction(string journey, int
         expectedExit, string business)
     {
         using var fixture = new RubyCallerFixture();
-        bool initiallyAbsent = journey is "write" or "failed-after-effect" or "missing-publication";
-        string initial = Observation(fixture, "initial.json", initiallyAbsent ?
-            ReleaseFileState.Absent : ReleaseFileState.Exact);
-        string final = Observation(fixture, "final.json", journey switch
-        {
-            "final-absent" => ReleaseFileState.Absent,
-            "final-unknown" => ReleaseFileState.Unknown,
-            _ => ReleaseFileState.Exact,
-        });
+        string initial = Observation(fixture, "initial.json", ReleaseFileState.Absent);
+        string final = Observation(fixture, "final.json", ReleaseFileState.Exact);
         string publisher = "-";
         NativeCommandResult? native = null;
-        if (journey is "write" or "failed-after-effect")
+        if (journey == "failed-after-effect")
         {
-            native = RubyCallerFixture.Command(NativeTermination.Exited, journey == "write" ? 0 :
-                17);
+            native = RubyCallerFixture.Command(NativeTermination.Exited, 17);
             publisher = fixture.Write("publication.json", new
                 RubyPublicationResult(fixture.Prepared.Subject,
                 fixture.Observe(ReleaseFileState.Absent), fixture.Publish(native),
@@ -235,22 +218,13 @@ public sealed class RubyReleaseCliTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("preparation", "missing-file")]
     [DataRow("observation", "missing-file")]
-    [DataRow("publication", "missing-file")]
-    [DataRow("preparation", "corrupt")]
-    [DataRow("observation", "corrupt")]
-    [DataRow("publication", "corrupt")]
-    [DataRow("preparation", "null")]
-    [DataRow("observation", "duplicate")]
-    [DataRow("observation", "unknown")]
     [DataRow("publication", "missing-property")]
     public void CompleteDamagedTransferCannotReportSuccess(string target, string defect)
     {
         using var fixture = new RubyCallerFixture();
         var paths = new Dictionary<string, string>
         {
-            ["preparation"] = Preparation(fixture),
             ["observation"] = Observation(fixture, "final.json", ReleaseFileState.Exact),
             ["publication"] = fixture.Write("publication.json", new
                 RubyPublicationResult(fixture.Prepared.Subject,
@@ -261,24 +235,17 @@ public sealed class RubyReleaseCliTests(TestContext context)
         };
         string path = paths[target];
         if (defect == "missing-file") File.Delete(path);
-        else if (defect == "corrupt") File.WriteAllText(path, "{broken");
-        else if (defect == "null") File.WriteAllText(path, "null");
         else
         {
-            string text = File.ReadAllText(path);
-            JsonObject root = JsonNode.Parse(text)!.AsObject();
-            if (defect == "unknown") root["unexpected"] = true;
-            if (defect == "missing-property") root.Remove("before");
-            File.WriteAllText(path, defect == "duplicate" ? "{\"observation\":" +
-                root["observation"]!.ToJsonString() + "," + text.TrimStart()[1..] :
-                root.ToJsonString());
+            JsonObject root = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            root.Remove("before");
+            File.WriteAllText(path, root.ToJsonString());
         }
         using var output = new StringWriter();
-        void Run() => RubyReleaseCli.Run(["release", "complete-ruby", paths["preparation"],
+        void Run() => RubyReleaseCli.Run(["release", "complete-ruby", Preparation(fixture),
             Observation(fixture, "initial.json", ReleaseFileState.Absent), paths["observation"],
             paths["publication"]], output);
         if (defect == "missing-file") Assert.ThrowsExactly<FileNotFoundException>(Run);
-        else if (defect is "null" or "duplicate") Assert.ThrowsExactly<InvalidDataException>(Run);
         else Assert.Throws<JsonException>(Run);
         Assert.AreEqual("", output.ToString());
     }

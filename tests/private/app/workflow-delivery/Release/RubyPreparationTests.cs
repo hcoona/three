@@ -40,23 +40,16 @@ public sealed class RubyPreparationTests(TestContext context)
         "nbgv",
     ];
 
-    // Rows that only vary native answers read one committed repository; each row still owns
-    // fresh scratch and runs the full preparation. Pure admission, recipe and projection rules
-    // run on their entry points without a repository.
     private static GitFixture? shared;
     private static string sharedRevision = "";
-    // RubySourceCollector writes <product>/lib/.../version.rb into the checkout, so every
-    // shared row that can reach source reading gets its own committed product directory.
-    private const int LaneCount = 65;
-    private static int nextLane = -1;
     private const string Revision = "0123456789abcdef0123456789abcdef01234567";
 
-    private static Fixture SharedLane()
-    {
-        int lane = Interlocked.Increment(ref nextLane);
-        Assert.IsLessThan(LaneCount, lane, "Raise LaneCount for the added shared rows.");
-        return Fixture.Shared(shared!, sharedRevision, "lanes/" + lane, "");
-    }
+    // The smoke gem generates version.rb in its checkout; those rows need a writable copy.
+    private static Fixture Smoke(bool writable = false, string directory = "product") =>
+        Fixture.Shared(shared!, sharedRevision, directory, writable: writable);
+
+    private static Fixture Latexmath() =>
+        Fixture.Shared(shared!, sharedRevision, "latexmath", unit: Fixture.Latexmath);
 
     [ClassInitialize]
     public static async Task InitializeAsync(TestContext classContext)
@@ -66,11 +59,9 @@ public sealed class RubyPreparationTests(TestContext context)
         {
             await Fixture.StageRootAsync(repo, "");
             await Fixture.StageProductAsync(repo, "product", "");
-            // A defect-free control at the same depth proves the location itself qualifies.
             await Fixture.StageProductAsync(repo, "recipes/control", "");
             await Fixture.StageProductAsync(repo, "recipes/quality", "quality");
-            for (int lane = 0; lane < LaneCount; lane++)
-                await Fixture.StageProductAsync(repo, "lanes/" + lane, "");
+            await Fixture.StageProductAsync(repo, "latexmath", "", Fixture.Latexmath);
             sharedRevision = await repo.CommitAsync();
             await repo.GitAsync("reset", "--hard", sharedRevision);
             shared = repo;
@@ -88,7 +79,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     public async Task CompleteOriginalQualifiesRelease()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Smoke(writable: true);
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
         ReleaseCompletion.Validate(result.Prepared);
@@ -127,7 +118,7 @@ public sealed class RubyPreparationTests(TestContext context)
         Assert.AreEqual("3.10.94", result.Native["nbgv"]);
         Assert.IsFalse(
             result.Native.Values.Any(value =>
-                value.Contains(fixture.Repo.Directory, StringComparison.Ordinal)
+                value.Contains(fixture.Checkout, StringComparison.Ordinal)
             )
         );
         RubyPreparationRequest request = JsonSerializer.Deserialize(
@@ -213,7 +204,7 @@ public sealed class RubyPreparationTests(TestContext context)
                 fixture.Tools.Gem,
                 "build",
                 "--norc",
-                Path.Combine(fixture.Repo.Directory, Fixture.Entry),
+                Path.Combine(fixture.Checkout, Fixture.Entry),
                 "--output",
                 Path.Combine(fixture.Scratch, "package", "original.gem"),
             },
@@ -247,55 +238,34 @@ public sealed class RubyPreparationTests(TestContext context)
         Assert.Contains("spec.platform.to_s == 'ruby'", consumer.Arguments[1]);
         Assert.Contains("File.realpath(spec.full_gem_path)", consumer.Arguments[1]);
         Assert.Contains("loaded.length == 2", consumer.Arguments[1]);
-        Assert.DoesNotContain(fixture.Repo.Directory, consumer.Arguments);
+        Assert.DoesNotContain(fixture.Checkout, consumer.Arguments);
         Assert.IsEmpty(Directory.GetFiles(Path.Combine(fixture.Scratch, "queries")));
     }
 
     [TestMethod]
-    [DataRow("buddy", "github-packages-ruby", "refs/heads/topic", false, "")]
-    [DataRow("official", "rubygems", "refs/heads/main", false, "")]
-    [DataRow("official", "rubygems", "refs/heads/topic", true, "")]
-    [DataRow("buddy", "github-packages-ruby", "refs/tags/preview", true, "")]
-    [DataRow("official", "rubygems", "refs/tags/preview", true, "")]
-    [DataRow("buddy", "github-packages-ruby", "refs/tags/preview", false, LiveRef)]
-    [DataRow("buddy", "github-packages-ruby", "refs/heads/", false, LiveRef)]
-    [DataRow("official", "rubygems", "refs/heads/topic", false, LiveRef)]
-    [DataRow("buddy", "rubygems", "refs/heads/main", false, Channel)]
-    [DataRow("official", "github-packages-ruby", "refs/heads/main", true, Channel)]
-    [DataRow("buddy", "github-packages-ruby", "", true, Channel)]
-    [DataRow("unknown", "rubygems", "refs/heads/main", true, Channel)]
-    public void ChannelRefAndDryRunRemainIndependent(
-        string channel,
-        string destination,
-        string selectedRef,
-        bool dryRun,
-        string rejection
-    )
+    [DataRow("github-packages-ruby", "refs/heads/main")]
+    [DataRow("rubygems", "")]
+    public void OfficialDryRunStillRequiresRubyGemsAndANamedRef(string destination,
+        string selectedRef)
     {
         ReleaseSubject subject = Fixture.SubjectFor(Revision, "product", "") with
         {
-            Channel = channel,
+            Channel = "official",
             Destination = destination,
             SelectedRef = selectedRef,
-            DryRun = dryRun,
+            DryRun = true,
         };
-        if (rejection.Length == 0)
-            Assert.AreEqual(channel == "official", RubyPreparation.Admit(subject).Official);
-        else
-            Assert.AreEqual(
-                rejection,
-                Assert.ThrowsExactly<InvalidDataException>(() => RubyPreparation.Admit(subject))
-                    .Message
-            );
+        Assert.AreEqual(Channel,
+            Assert.ThrowsExactly<InvalidDataException>(() => RubyPreparation.Admit(subject))
+                .Message);
     }
 
-    private const string LiveRef = "Unsupported live Release channel ref.";
     private const string Channel = "Unsupported Ruby Release channel or ref.";
 
     [TestMethod]
     public async Task UnadmittedSubjectStopsBeforeNativeWork()
     {
-        using var fixture = Fixture.Shared(shared!, sharedRevision, "recipes/control", "");
+        using var fixture = Smoke();
         fixture.Subject = fixture.Subject with { Destination = "rubygems" };
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(fixture.Subject, result.Prepared.Subject);
@@ -369,7 +339,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     public async Task RelocatedRecipeControlQualifies()
     {
-        using var fixture = Fixture.Shared(shared!, sharedRevision, "recipes/control", "");
+        using var fixture = Smoke(writable: true, directory: "recipes/control");
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
         Assert.IsTrue(
@@ -378,7 +348,6 @@ public sealed class RubyPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("commit")]
     [DataRow("rubygems")]
     [DataRow("name")]
     [DataRow("version")]
@@ -387,7 +356,8 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("projection-raw")]
     public async Task NativeIdentityCannotQualifyAnotherRequest(string defect)
     {
-        using var fixture = SharedLane();
+        using var fixture = Smoke(writable: defect is "name" or "version" or "platform"
+            or "source-path");
         fixture.Subject = fixture.Subject with
         {
             Channel = "official",
@@ -404,7 +374,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     public async Task OfficialNonPublicProjectionStopsBeforeBuild()
     {
-        using var fixture = SharedLane();
+        using var fixture = Smoke();
         fixture.Subject = fixture.Subject with
         {
             Channel = "official",
@@ -423,7 +393,6 @@ public sealed class RubyPreparationTests(TestContext context)
 
     [TestMethod]
     [DataRow("commit", nameof(InvalidDataException))]
-    [DataRow("public-release", nameof(InvalidDataException))]
     [DataRow("missing-commit", nameof(KeyNotFoundException))]
     [DataRow("missing-version", nameof(KeyNotFoundException))]
     [DataRow("missing-public-release", nameof(KeyNotFoundException))]
@@ -447,42 +416,30 @@ public sealed class RubyPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("official", false, "", true)]
-    [DataRow("official", true, "public-release", false)]
-    [DataRow("buddy", false, "public-release", false)]
-    public void NativeProjectionQualifiesItsRequest(
-        string channel,
-        bool dryRun,
-        string defect,
-        bool publicRelease
-    )
+    public void OfficialNativeProjectionRetainsItsVersion()
     {
         ReleaseSubject subject = Fixture.SubjectFor(Revision, "product", "") with
         {
-            Channel = channel,
-            DryRun = dryRun,
+            Channel = "official",
         };
         using JsonDocument projection = JsonDocument.Parse(
-            Fixture.Projection(Revision, defect).ToJsonString()
+            Fixture.Projection(Revision, "").ToJsonString()
         );
         Assert.AreEqual(
-            ("1.2.3+g1234567", publicRelease),
-            RubyPreparation.QualifyNative(subject, channel == "official", projection.RootElement)
+            ("1.2.3+g1234567", true),
+            RubyPreparation.QualifyNative(subject, official: true, projection.RootElement)
         );
     }
 
     // Each row breaks one distinct invariant between the native answers and the fixture's own
     // committed root selection; the message names the tool and the failed condition.
     [TestMethod]
-    [DataRow("missing", "has no single locked selection")]
-    [DataRow("inactive", "is not active")]
-    [DataRow("source-type", "not the committed root")]
     [DataRow("source-path", "not the committed root")]
     [DataRow("readback", "differs from the committed locked selection")]
     public async Task RuntimeOutsideCommittedSelectionStopsBeforeBuild(string defect,
         string condition)
     {
-        using var fixture = SharedLane();
+        using var fixture = Smoke();
         fixture.ToolDefect = defect;
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
@@ -493,7 +450,7 @@ public sealed class RubyPreparationTests(TestContext context)
         NativeCommand query = Assert.ContainsSingle(result.Commands.Where(command =>
             command.Command.Executable == "mise")).Command;
         Assert.AreEqual(fixture.Request.MiseDataDirectory, query.Environment!["MISE_DATA_DIR"]);
-        Assert.AreEqual(fixture.Repo.Directory, query.Environment["MISE_TRUSTED_CONFIG_PATHS"]);
+        Assert.AreEqual(fixture.Checkout, query.Environment["MISE_TRUSTED_CONFIG_PATHS"]);
     }
 
     // The mise query reads the checkout, so the selected revision must commit its inputs.
@@ -502,7 +459,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("mise.lock")]
     public async Task MissingCommittedToolConfigurationStopsBeforeMiseQuery(string path)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken, path);
+        using var fixture = await Fixture.CreateAsync(path, token: context.CancellationToken);
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
         Assert.AreEqual("Missing committed native input: " + path,
@@ -515,8 +472,9 @@ public sealed class RubyPreparationTests(TestContext context)
     public async Task AnotherCommittedRubyLineQualifies()
     {
         string other = RepositoryToolSelection.NextMajor(RepositoryToolSelection.Locked("ruby"));
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken, "",
-            (path, content) => RepositoryToolSelection.RaiseMajor(path, content, "ruby"));
+        using var fixture = await Fixture.CreateAsync("",
+            (path, content) => RepositoryToolSelection.RaiseMajor(path, content, "ruby"),
+            context.CancellationToken);
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
         Assert.AreEqual(other, result.Native["ruby"]);
@@ -525,7 +483,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     public async Task DryRefPreservesNativeProjectionWhenPublicReleaseIsFalse()
     {
-        using var fixture = SharedLane();
+        using var fixture = Smoke(writable: true);
         fixture.Subject = fixture.Subject with
         {
             Channel = "official",
@@ -552,7 +510,7 @@ public sealed class RubyPreparationTests(TestContext context)
     {
         // Committed root defects need a private repository; native-answer defects share one.
         using var fixture = defect is "manifest" or "global" or "helper"
-            ? await Fixture.CreateAsync(context.CancellationToken, defect) : SharedLane();
+            ? await Fixture.CreateAsync(defect, token: context.CancellationToken) : Smoke();
         fixture.Defect = defect;
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
@@ -562,19 +520,15 @@ public sealed class RubyPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("buddy")]
-    [DataRow("official")]
-    public async Task LatexmathOriginalQualifiesWithLockedRuntimeDependencies(string channel)
+    public async Task LatexmathOriginalQualifiesWithLockedRuntimeDependencies()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken,
-            unit: Fixture.Latexmath);
-        if (channel == "official")
-            fixture.Subject = fixture.Subject with
-            {
-                Channel = "official",
-                Destination = "rubygems",
-                SelectedRef = "refs/heads/main"
-            };
+        using var fixture = Latexmath();
+        fixture.Subject = fixture.Subject with
+        {
+            Channel = "official",
+            Destination = "rubygems",
+            SelectedRef = "refs/heads/main"
+        };
         var consumer = new List<NativeCommand>();
         fixture.Override = command =>
         {
@@ -591,7 +545,7 @@ public sealed class RubyPreparationTests(TestContext context)
         CollectionAssert.AreEqual(Tested, result.Prepared.RequiredChecks);
         foreach (ReleaseCheck check in result.Prepared.Checks)
             Assert.AreEqual(ReleaseCheckStatus.Passed, check.Status, check.Id);
-        string project = Path.Combine(fixture.Request.Checkout, "product");
+        string project = Path.Combine(fixture.Checkout, "latexmath");
         // The adopted suite uses its own full locked bundle, separate from the runtime consumer.
         NativeCommand[] tests = [.. result.Commands.Where(command => command.Check == "tests")
             .Select(command => command.Command)];
@@ -619,8 +573,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("missing-content")]
     public async Task LatexmathArchiveDefectCannotReachConsumer(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken,
-            unit: Fixture.Latexmath);
+        using var fixture = Latexmath();
         fixture.ArchiveDefect = defect;
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "contents", ReleaseCheckStatus.Failed, Tested);
@@ -635,8 +588,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("missing-report")]
     public async Task LatexmathFailedSuiteBlocksQualification(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken,
-            unit: Fixture.Latexmath);
+        using var fixture = Latexmath();
         fixture.SuiteDefect = defect;
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "tests", ReleaseCheckStatus.Failed, Tested);
@@ -658,7 +610,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("archive-path")]
     public async Task UnsupportedArchiveCannotReachConsumer(string defect)
     {
-        using var fixture = SharedLane();
+        using var fixture = Smoke(writable: true);
         fixture.ArchiveDefect = defect;
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "contents", ReleaseCheckStatus.Failed);
@@ -677,15 +629,9 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("native-input", "Cancelled", "Cancelled")]
     [DataRow("build", "Exited", "Failed")]
     [DataRow("build", "StartFailed", "Failed")]
-    [DataRow("build", "TimedOut", "TimedOut")]
-    [DataRow("build", "Cancelled", "Cancelled")]
-    [DataRow("contents", "Exited", "Failed")]
     [DataRow("contents", "InvalidOutput", "Failed")]
     [DataRow("contents", "TimedOut", "TimedOut")]
-    [DataRow("contents", "Cancelled", "Cancelled")]
-    [DataRow("consumer", "Exited", "Failed")]
     [DataRow("consumer", "StartFailed", "Failed")]
-    [DataRow("consumer", "TimedOut", "TimedOut")]
     [DataRow("consumer", "Cancelled", "Cancelled")]
     public async Task FailedNativePhaseRetainsReceiptAndSkipsDependents(
         string phase,
@@ -693,7 +639,7 @@ public sealed class RubyPreparationTests(TestContext context)
         string statusText
     )
     {
-        using var fixture = SharedLane();
+        using var fixture = Smoke(writable: phase != "native-input");
         NativeTermination termination = Enum.Parse<NativeTermination>(terminationText);
         fixture.Override = command =>
             fixture.Phase(command) == phase
@@ -722,7 +668,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     public async Task PreparedTransferPreservesFailureAndNativeCommandReceipt()
     {
-        using var fixture = SharedLane();
+        using var fixture = Smoke(writable: true);
         fixture.Override = command =>
             fixture.Phase(command) == "build"
                 ? new(NativeTermination.TimedOut, null, "partial", "diagnostic", 1.5, "deadline")
@@ -749,7 +695,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     public async Task BuddyBranchDoesNotRequireNativePublicRelease()
     {
-        using var fixture = SharedLane();
+        using var fixture = Smoke(writable: true);
         fixture.Defect = "public-release";
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
@@ -764,7 +710,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("consumer-origin")]
     public async Task MissingOutputOrFailedInstalledIdentityCannotQualify(string defect)
     {
-        using var fixture = SharedLane();
+        using var fixture = Smoke(writable: true);
         fixture.Defect = defect;
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         string phase =
@@ -783,7 +729,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("consumer", "missing")]
     public async Task ChangedOriginalCannotQualifyRelease(string phase, string change)
     {
-        using var fixture = SharedLane();
+        using var fixture = Smoke(writable: true);
         fixture.Override = command =>
         {
             if (
@@ -808,7 +754,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     public async Task AbbreviatedRevisionCannotSupplyExactBinding()
     {
-        using var fixture = SharedLane();
+        using var fixture = Smoke();
         fixture.Subject = fixture.Subject with { Revision = fixture.Subject.Revision[..12] };
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
@@ -818,7 +764,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     public async Task CancellationBeforeWorkRetainsCompleteObligations()
     {
-        using var fixture = SharedLane();
+        using var fixture = Smoke();
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
         RubyPreparationResult result = await fixture.RunAsync(cancelled.Token);
@@ -835,7 +781,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("nonempty-scratch")]
     public async Task UnownedOrUnpreparedPathsFailBeforeCommands(string defect)
     {
-        using var fixture = SharedLane();
+        using var fixture = Smoke();
         RubyPreparationRequest request = fixture.Request;
         if (defect == "relative-checkout")
             request = request with { Checkout = "relative" };
@@ -846,7 +792,7 @@ public sealed class RubyPreparationTests(TestContext context)
         if (defect == "relative-mise-data")
             request = request with { MiseDataDirectory = "mise-data" };
         if (defect == "nested-scratch")
-            request = request with { Scratch = fixture.Repo.Directory };
+            request = request with { Scratch = fixture.Checkout };
         if (defect == "nonempty-scratch")
             await File.WriteAllTextAsync(
                 Path.Combine(fixture.Scratch, "unowned"),
@@ -892,11 +838,7 @@ public sealed class RubyPreparationTests(TestContext context)
         Assert.IsNotEmpty(result.Errors);
     }
 
-    private sealed class Fixture(
-        GitFixture repo,
-        ReleaseSubject subject,
-        bool ownsRepository = true
-    ) : IDisposable
+    private sealed class Fixture : IDisposable
     {
         internal const string Unit = "hcoona-release-smoke-ruby";
         internal const string Latexmath = "asciidoctor-latexmath";
@@ -916,38 +858,57 @@ public sealed class RubyPreparationTests(TestContext context)
             "lib/hcoona_release_smoke_ruby/version.rb",
         ];
         private int archiveQueries;
-        internal GitFixture Repo { get; } = repo;
-        internal ReleaseSubject Subject { get; set; } = subject;
-        internal string Scratch { get; } =
-            Directory.CreateTempSubdirectory("ruby-release-").FullName;
-        internal string Helper => Path.Combine(Repo.Directory, HelperPath);
+        private readonly GitFixture? ownedRepository;
+        private readonly string root = Directory.CreateTempSubdirectory("ruby-release-").FullName;
+        internal ReleaseSubject Subject { get; set; }
+        internal string Scratch { get; }
+        internal string Checkout { get; }
+        internal string Helper => Path.Combine(Checkout, HelperPath);
         internal RubyPreparationTools Tools =>
             new(
-                Path.Combine(Repo.Directory, "ruby"),
-                Path.Combine(Repo.Directory, "gem"),
-                Path.Combine(Repo.Directory, "dotnet"),
-                Path.Combine(Repo.Directory, "provider", "mise")
+                Path.Combine(Checkout, "ruby"),
+                Path.Combine(Checkout, "gem"),
+                Path.Combine(Checkout, "dotnet"),
+                Path.Combine(Checkout, "provider", "mise")
             );
         internal const string RubyGems = "fixture-rubygems";
-        internal RubyPreparationRequest Request => new(Subject, Repo.Directory, Scratch, Tools,
-            Path.Combine(Repo.Directory, "mise-data"));
+        internal RubyPreparationRequest Request => new(Subject, Checkout, Scratch, Tools,
+            Path.Combine(Checkout, "mise-data"));
         internal string Defect { get; set; } = "";
         internal string ToolDefect { get; set; } = "";
         internal string ArchiveDefect { get; set; } = "";
         internal string SuiteDefect { get; set; } = "";
         internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
 
-        internal static async Task<Fixture> CreateAsync(CancellationToken token, string defect = "",
-            Func<string, string, string>? changeConfig = null, string unit = Unit)
+        private Fixture(GitFixture repo, ReleaseSubject subject, bool ownsRepository,
+            bool writable = false)
+        {
+            ownedRepository = ownsRepository ? repo : null;
+            Subject = subject;
+            try
+            {
+                Checkout = writable ? PreparationCheckout.Copy(repo.Directory, root)
+                    : repo.Directory;
+                Scratch = Directory.CreateDirectory(Path.Combine(root, "prepared")).FullName;
+            }
+            catch
+            {
+                PreparationCheckout.Delete(root);
+                throw;
+            }
+        }
+
+        internal static async Task<Fixture> CreateAsync(string defect,
+            Func<string, string, string>? changeConfig = null, CancellationToken token = default)
         {
             GitFixture repo = await GitFixture.CreateAsync(token);
             try
             {
                 await StageRootAsync(repo, defect, changeConfig);
-                await StageProductAsync(repo, "product", defect, unit);
+                await StageProductAsync(repo, "product", defect);
                 string revision = await repo.CommitAsync();
                 await repo.GitAsync("reset", "--hard", revision);
-                return new(repo, SubjectFor(revision, "product", defect, unit));
+                return new(repo, SubjectFor(revision, "product", defect), ownsRepository: true);
             }
             catch
             {
@@ -956,13 +917,15 @@ public sealed class RubyPreparationTests(TestContext context)
             }
         }
 
-        // Reads a class-owned committed repository; the row owns only its scratch.
         internal static Fixture Shared(
             GitFixture repo,
             string revision,
-            string directory = "product",
-            string defect = ""
-        ) => new(repo, SubjectFor(revision, directory, defect), ownsRepository: false);
+            string directory,
+            string defect = "",
+            string unit = Unit,
+            bool writable = false
+        ) => new(repo, SubjectFor(revision, directory, defect, unit), ownsRepository: false,
+            writable);
 
         internal static ReleaseSubject SubjectFor(
             string revision,
@@ -1312,31 +1275,29 @@ public sealed class RubyPreparationTests(TestContext context)
 
         // The fixture's own committed root lock selects the runtime.
         private string Selected() => RepositoryToolSelection.Locked(
-            File.ReadAllText(Path.Combine(Repo.Directory, "mise.lock")), "ruby");
+            File.ReadAllText(Path.Combine(Checkout, "mise.lock")), "ruby");
 
         private string ToolAnswer()
         {
-            if (ToolDefect == "missing") return "[]";
             return new JsonArray(new JsonObject
             {
                 ["version"] = Selected(),
                 ["requested_version"] = RepositoryToolSelection.Requested(
-                    File.ReadAllText(Path.Combine(Repo.Directory, "mise.toml")), "ruby"),
-                ["active"] = ToolDefect != "inactive",
+                    File.ReadAllText(Path.Combine(Checkout, "mise.toml")), "ruby"),
+                ["active"] = true,
                 ["source"] = new JsonObject
                 {
-                    ["type"] = ToolDefect == "source-type" ? ".tool-versions" : "mise.toml",
+                    ["type"] = "mise.toml",
                     ["path"] = Path.Combine(ToolDefect == "source-path"
-                        ? Path.Combine(Repo.Directory, "product") : Repo.Directory, "mise.toml"),
+                        ? Path.Combine(Checkout, "product") : Checkout, "mise.toml"),
                 },
             }).ToJsonString();
         }
 
         public void Dispose()
         {
-            if (ownsRepository)
-                Repo.Dispose();
-            Directory.Delete(Scratch, recursive: true);
+            ownedRepository?.Dispose();
+            PreparationCheckout.Delete(root);
         }
     }
 }

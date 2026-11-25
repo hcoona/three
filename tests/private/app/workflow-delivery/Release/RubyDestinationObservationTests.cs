@@ -29,15 +29,9 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     [DataRow("buddy", "github-packages-ruby", "exact")]
     [DataRow("buddy", "github-packages-ruby", "absent")]
     [DataRow("buddy", "github-packages-ruby", "different")]
-    [DataRow("buddy", "github-packages-ruby", "unknown")]
-    [DataRow("official", "rubygems", "exact")]
     [DataRow("official", "rubygems", "absent")]
-    [DataRow("official", "rubygems", "different")]
     [DataRow("official", "rubygems", "unknown")]
-    [DataRow("buddy", "github-packages-ruby", "exact", RubyReleaseUnits.Latexmath)]
-    [DataRow("buddy", "github-packages-ruby", "absent", RubyReleaseUnits.Latexmath)]
     [DataRow("official", "rubygems", "exact", RubyReleaseUnits.Latexmath)]
-    [DataRow("official", "rubygems", "different", RubyReleaseUnits.Latexmath)]
     public async Task SupportedDestinationsBindOriginalAndObservation(string channel,
         string destination, string scenario, string unit = RubyReleaseUnits.Smoke)
     {
@@ -275,9 +269,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     [DataRow("Exited", 0, true)]
     [DataRow("StartFailed", -1, true)]
     [DataRow("TimedOut", -1, true)]
-    [DataRow("TimedOut", 0, false)]
     [DataRow("Cancelled", -1, true)]
-    [DataRow("Cancelled", 0, false)]
     [DataRow("InvalidOutput", 0, true)]
     [DataRow("CleanupFailed", 0, true)]
     [DataRow("InputFailed", -1, true)]

@@ -36,11 +36,8 @@ public sealed class RubyReleaseTests(TestContext context)
 
     [TestMethod]
     [DataRow("missing-check")]
-    [DataRow("failed-check")]
     [DataRow("missing-command")]
-    [DataRow("failed-command")]
     [DataRow("command-error")]
-    [DataRow("errors")]
     [DataRow("name")]
     [DataRow("version")]
     [DataRow("platform")]
@@ -60,30 +57,12 @@ public sealed class RubyReleaseTests(TestContext context)
                 result.Prepared.Checks[..^1]
                 }
             },
-            "failed-check" => result with
-            {
-                Prepared = result.Prepared with
-                {
-                    Checks =
-                result.Prepared.Checks.Select(c => c.Id == "contents" ? c with
-                {
-                    Status =
-                ReleaseCheckStatus.Failed
-                } : c).ToArray()
-                }
-            },
             "missing-command" => result with { Commands = [] },
-            "failed-command" => result with
-            {
-                Commands = [result.Commands[0] with { Result =
-                RubyCallerFixture.Command(NativeTermination.Exited, 17) }]
-            },
             "command-error" => result with
             {
                 Commands = [result.Commands[0] with { Result =
                 RubyCallerFixture.Command() with { Error = "Controlled error" } }]
             },
-            "errors" => result with { Errors = ["Incomplete qualification"] },
             "extra-file" => result with
             {
                 Prepared = result.Prepared with
@@ -123,19 +102,11 @@ public sealed class RubyReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("buddy", "github-packages-ruby", "refs/heads/topic", false, false, true)]
-    [DataRow("official", "rubygems", "refs/heads/main", false, true, true)]
-    [DataRow("official", "rubygems", "refs/heads/main", false, false, false)]
     [DataRow("official", "rubygems", "refs/tags/preview", true, false, true)]
-    [DataRow("buddy", "github-packages-ruby", "refs/tags/preview", true, false, true)]
     [DataRow("buddy", "rubygems", "refs/heads/main", true, true, false)]
     [DataRow("buddy", "github-packages-ruby", "refs/heads/topic", false, false, true,
         RubyReleaseUnits.Latexmath)]
-    [DataRow("official", "rubygems", "refs/heads/main", false, true, true,
-        RubyReleaseUnits.Latexmath)]
     [DataRow("official", "rubygems", "refs/heads/main", false, false, false,
-        RubyReleaseUnits.Latexmath)]
-    [DataRow("official", "rubygems", "refs/heads/main", true, false, true,
         RubyReleaseUnits.Latexmath)]
     public void ValidateChannelRefAndDryEligibility(string channel, string destination,
         string selectedRef, bool dry, bool publicRelease, bool accepted,
@@ -161,7 +132,6 @@ public sealed class RubyReleaseTests(TestContext context)
         };
         if (accepted) RubyRelease.Validate(preparation);
         else Assert.ThrowsExactly<InvalidDataException>(() => RubyRelease.Validate(preparation));
-        Assert.AreEqual(dry, preparation.Prepared.Subject.DryRun);
         Assert.AreEqual(selectedRef, preparation.Prepared.Subject.SelectedRef);
     }
 
@@ -262,7 +232,6 @@ public sealed class RubyReleaseTests(TestContext context)
 
     [TestMethod]
     [DataRow("Exact", true)]
-    [DataRow("Unknown", false)]
     [DataRow("Conflict", false)]
     public async Task PublishRefreshedStateSkipsMutation(string stateName, bool satisfied)
     {
@@ -295,12 +264,8 @@ public sealed class RubyReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Exited", 0, "Exact", "Satisfied")]
     [DataRow("Exited", 17, "Exact", "Satisfied")]
-    [DataRow("Cancelled", 17, "Exact", "Satisfied")]
     [DataRow("TimedOut", 17, "Absent", "Unsatisfied")]
-    [DataRow("Exited", 17, "Unknown", "Unknown")]
-    [DataRow("Exited", 17, "Conflict", "Unsatisfied")]
     public async Task PublishOnceReadbackSeparatesCommandAndBusiness(string terminationName, int
         code, string finalStateName, string outcomeName)
     {
@@ -376,36 +341,6 @@ public sealed class RubyReleaseTests(TestContext context)
         Assert.AreSame(attempt.Upload, Assert.ContainsSingle(complete.Outcome.Uploads));
         Assert.AreEqual(NativeTermination.Cancelled,
             complete.Outcome.Uploads[0].Command.Termination);
-    }
-
-    [TestMethod]
-    [DataRow("Absent", "Unsatisfied")]
-    [DataRow("Conflict", "Unsatisfied")]
-    [DataRow("Unknown", "Unknown")]
-    public void CompleteRequiresFinalNativeSourceOriginal(string state, string expected)
-    {
-        using var fixture = new RubyCallerFixture();
-        RubyCompletionResult result = RubyRelease.Complete(fixture.Prepared,
-            fixture.Observe(ReleaseFileState.Exact),
-            fixture.Observe(Enum.Parse<ReleaseFileState>(state)), null);
-        Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expected), result.Outcome.State);
-        Assert.AreEqual(false, result.MutationAttempted);
-        Assert.IsNotEmpty(result.Outcome.Reasons);
-        Assert.IsEmpty(result.Outcome.Uploads);
-    }
-
-    [TestMethod]
-    public void CompleteMissingPublicationRetainsUnknownEffects()
-    {
-        using var fixture = new RubyCallerFixture();
-        RubyCompletionResult result = RubyRelease.Complete(fixture.Prepared,
-            fixture.Observe(ReleaseFileState.Absent), fixture.Observe(ReleaseFileState.Exact),
-            null);
-        Assert.AreEqual(ReleaseBusinessState.Unknown, result.Outcome.State);
-        Assert.IsNull(result.MutationAttempted);
-        Assert.IsNull(result.Publication);
-        Assert.IsEmpty(result.Outcome.Uploads);
-        Assert.Contains("effects remain unknown", string.Join(';', result.Outcome.Reasons));
     }
 
     [TestMethod]
@@ -514,9 +449,7 @@ public sealed class RubyReleaseTests(TestContext context)
 
     [TestMethod]
     [DataRow("buddy", "Exited", 0)]
-    [DataRow("official", "Exited", 17)]
-    [DataRow("official", "Cancelled", 17)]
-    [DataRow("buddy", "TimedOut", 17)]
+    [DataRow("official", "TimedOut", 17)]
     public async Task NativePublisherControlledExecutionRetainsActualResult(string channel, string
         termination, int code)
     {

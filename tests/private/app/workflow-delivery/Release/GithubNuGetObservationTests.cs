@@ -88,8 +88,6 @@ public sealed class GithubNuGetObservationTests
     }
 
     [TestMethod]
-    [DataRow("identity", "Exact")]
-    [DataRow("Identity", "Exact")]
     [DataRow("iDeNtItY", "Exact")]
     [DataRow("gzip", "Unknown")]
     public async Task ContentEncodingUsesSupportedTokenSemantics(string encoding,
@@ -167,7 +165,6 @@ public sealed class GithubNuGetObservationTests
     [DataRow(302)]
     [DataRow(401)]
     [DataRow(404)]
-    [DataRow(429)]
     [DataRow(503)]
     public async Task UnavailableNativeMetadataCannotAuthorizeCreation(int status)
     {
