@@ -1301,3 +1301,71 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
   registry or storefront operation; no Workflow Delivery release or proving
   dispatch or credential, authentication, ruleset, or access change; no
   retirement or behavior change to retained projects.
+
+### Retire superseded standalone Workflow Delivery CI CLI routes
+
+- **Work carrier:** [Issue #1842](https://github.com/hcoona/three/issues/1842)
+  and its linked authorization and implementation pull requests.
+- **Accepted inputs:** the [governance policy](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [engineering principles](engineering/engineering-principles.md), and Workflow
+  Delivery's [application interface](../src/private/app/workflow-delivery/README.md),
+  [project portal](../src/private/app/workflow-delivery/docs/README.md),
+  [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
+  [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
+  [CI design](../src/private/app/workflow-delivery/docs/design/ci.md),
+  [execution boundaries](../src/private/app/workflow-delivery/docs/design/execution-boundaries.md),
+  [common integration tables](../src/private/app/workflow-delivery/docs/integration/common.md),
+  [.NET integration](../src/private/app/workflow-delivery/docs/integration/dotnet.md),
+  and [agent handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md).
+- **Owner decisions and boundaries:**
+    - Retire the 15 superseded slice-era standalone `ci` CLI routes
+      (`ci comparison`, `ci control-inputs`, `ci plan`, `ci plan-node`,
+      `ci plan-node-group`, `ci prepare-python-group`, `ci plan-python-group`,
+      `ci run-python-group`, `ci run-python-package`, `ci prepare-ruby-group`,
+      `ci plan-ruby-group`, `ci run-ruby-group`, `ci run-dotnet`, `ci run-node`,
+      and `ci result`), their `CiCliOverrides` test-injection delegates, and
+      `TransferJson` serializer root registrations whose sole consumer was one
+      of those retired standalone CLI routes.
+    - Retain all production CLI routes invoked by `.github/workflows/*.yml`,
+      `mise.toml`, and `eng/scripts/*` (`ci caller-*`,
+      `ci native-preparation-plan`, `release ...`, and
+      `native-message-schemas`), all MSBuild out-of-process task contracts
+      (`DotNetGraphRequest`/`DotNetGraphResponse`,
+      `DotNetBuildRequest`/`DotNetBuildResponse`, and
+      `DotNetTestRequest`/`DotNetTestEntryResult`), and the underlying
+      in-process C# operations (`GitHubComparison.Resolve`,
+      `ControlTestInputs.ReadAsync`, `ImpactPlanner`, `ResultCollector`, group
+      readers, and executors).
+    - Leave `Platform/NativeProcess.cs` and
+      `tests/private/app/workflow-delivery/Release/NuGetWorkflowCallerTests.cs`
+      untouched in coordination with the active Windows NuGet caller liveness
+      grant ([PR #1729](https://github.com/hcoona/three/pull/1729)).
+- **Advancement and outcome:** remove the 15 superseded standalone `ci` CLI
+  routes, `CiCliOverrides`, and orphaned `TransferJson` root registrations;
+  re-anchor affected CLI tests in `ProgramTests.cs` and
+  `ControlTestInputsTests.cs` onto active `caller-*` commands and direct
+  in-process domain boundaries; and reconcile the operator interface and payload
+  tables in `src/private/app/workflow-delivery/README.md`,
+  `src/private/app/workflow-delivery/docs/integration/common.md`, and
+  `src/private/app/workflow-delivery/docs/integration/dotnet.md`.
+- **Ordering and gates:** merge this authorization before substantive
+  CLI-surface contraction changes; contract-preserving internal refactoring
+  under #1842 may proceed independently. Keep implementation, tests, and owning
+  records self-consistent at each merge into `main`. Retain applicable
+  independent `engineering-guidance`, Workflow Delivery
+  `open-code-review-delegate` (OCR), and `record-system-review` gates,
+  [GOV-011](governance/governance-system.md#gov-011-separate-findings-from-disposition)
+  finding disposition, explicit-base `records:check`, HK conformance, and
+  `Validate` CI. Material scope or feasibility tradeoffs return to the
+  repository owner.
+- **Acceptance and closure:** only active CI, Release, and schema-regeneration
+  routes remain on the `WorkflowDelivery` CLI, operator documentation matches
+  the implemented CLI surface, and local validation plus `Validate` CI pass with
+  no unresolved material findings. Close this entry by deleting it in the final
+  implementation pull request (or an explicit Wave-only closure pull request).
+- **Exclusions:** no changes to `.github/workflows/*.yml` caller semantics,
+  Release destination or channel behavior, `Platform/NativeProcess.cs`, or
+  `NuGetWorkflowCallerTests.cs`; no package or release publication,
+  release/proving dispatch, credential, authentication, Environment, ruleset, or
+  access change; no reopening of closed proving campaigns.
