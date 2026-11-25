@@ -153,8 +153,9 @@ internal sealed partial class PassResolver
                 }
             }
 
-            string condition = $"{InputName(processor)}.{PassGrammar.ValueProperty(processor.From)}"
-                + $" is {Type(ruleType)} {NodeVariable}";
+            string value = LanguageEmitter.UnionValue(
+                processor.From.NonTerminal!, Type(processor.From.Type), InputName(processor));
+            string condition = $"{value} is {Type(ruleType)} {NodeVariable}";
             if (terminal is { Predicate: not null })
             {
                 string binding = LanguageEmitter.TerminalBinding(terminal);

@@ -68,12 +68,6 @@ internal sealed class PassGrammar
     internal static ImmutableArray<LanguageModel.Production> Rules(PassModel.Kind kind) =>
         kind.NonTerminal is { } nonTerminal ? [.. nonTerminal.Productions] : [];
 
-    internal static string ValueProperty(PassModel.Kind kind) =>
-        kind.NonTerminal?.Declared == LanguageModel.Declaration.Struct
-        || string.Equals(kind.Name, "Value", StringComparison.Ordinal)
-            ? "RawValue"
-            : "Value";
-
     internal static string Shape(LanguageModel.Production rule)
     {
         var fields = rule.Fields.Select(static field => field.MetaVar)

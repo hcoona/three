@@ -494,6 +494,15 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
     }
 
     [TestMethod]
+    public void CustomUnion_SynthesizedPassDispatchesThroughExplicitUnionMembers()
+    {
+        var input = CustomUnionNamesLanguage.Parse("#f");
+        var result = new NegateCustomUnion().Run(input);
+
+        Assert.AreEqual("#t", CustomUnionNamesLanguage.UnparseToString(result));
+    }
+
+    [TestMethod]
     public void ProductionFields_ReserveFinalRecordNameAndSynthesizedMemberNames()
     {
         const string input = """
@@ -903,6 +912,13 @@ internal static partial class CustomUnionNamesLanguage
 {
     [NonTerminal("v"), Cases(typeof(bool))]
     public readonly partial struct RawValue;
+}
+
+[Pass(typeof(CustomUnionNamesLanguage), typeof(CustomUnionNamesLanguage))]
+internal sealed partial class NegateCustomUnion
+{
+    [Rewrite]
+    private static CustomUnionNamesLanguage.RawValue Negate(bool value) => !value;
 }
 
 [Language, Entry("EntryPoint"), NonTerminalDef("EntryPoint", ["p"], "(unit)")]
