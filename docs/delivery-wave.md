@@ -1098,7 +1098,7 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
   ruleset, credential, authentication, or access change; no change to
   `CurrentTargetFramework` (`net10.0`) for unrelated projects.
 
-### Retire superseded .NET projects and deprecate MicrosoftExtensions.Logging.Xunit
+### Retire superseded internal/lab .NET projects and consolidate PhiFailureDetector.Console
 
 - **Work carrier:** [Issue #1792](https://github.com/hcoona/three/issues/1792)
   and its linked authorization and implementation pull requests.
@@ -1108,33 +1108,17 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
   [documentation portal](README.md),
   [family catalog](governance/record-families.yaml),
   [.NET compatibility rationale](engineering/dotnet-compatibility.md), root
-  `dirs.proj`, `Directory.Packages.props`,
-  `src/public/lib/Directory.Packages.props`, `renovate.json`, `.gitattributes`,
-  `.editorconfig-checker.json`, `.typos.toml`, and
-  `.github/workflows/workflow-delivery-v3-nuget-release.yml`; Workflow Delivery's
-  [portal](../src/private/app/workflow-delivery/docs/README.md),
-  [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
-  [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
-  [.NET integration contract](../src/private/app/workflow-delivery/docs/integration/dotnet.md),
-  and [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md);
-  and the READMEs for
-  [MicrosoftExtensions.Logging.Xunit](../src/public/lib/MicrosoftExtensions.Logging.Xunit/README.md),
+  `dirs.proj`, `Directory.Packages.props`, `renovate.json`, `.gitattributes`,
+  `.editorconfig-checker.json`, `.typos.toml`, Workflow Delivery's
+  [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md) and
+  `tests/private/app/workflow-delivery/Repository/CiScopeTests.cs`, and the
+  READMEs for
   [PhiFailureDetector](../src/public/lib/PhiFailureDetector/README.md),
   [PhiFailureDetector.Console](../src/public/app/PhiFailureDetector.Console/README.md),
   and [OxfordDictExtractor](../src/private/app/OxfordDictExtractor/README.md).
 - **Owner decisions and boundaries:**
-    - Deprecate all published versions (`<= 1.2.1`) of
-      `MicrosoftExtensions.Logging.Xunit` on `nuget.org` as `Legacy` with
-      alternate package `MartinCostello.Logging.XUnit`, noting xUnit v3
-      alternatives (`MartinCostello.Logging.XUnit.v3` and
-      `Meziantou.Extensions.Logging.Xunit.v3`) in the deprecation message while
-      keeping all versions listed.
-    - Retire `src/public/lib/MicrosoftExtensions.Logging.Xunit/`,
-      `tests/public/lib/MicrosoftExtensions.Logging.Xunit.v2.Tests/`, and
-      `tests/public/lib/MicrosoftExtensions.Logging.Xunit.v3.Tests/`, removing
-      the `microsoft-extensions-logging-xunit` release unit from Workflow
-      Delivery's code, workflow inputs, integration contract, and tests.
-    - Retire `src/lab/TplLab/`, `src/lab/TaskAssigner/`,
+    - Retire the superseded internal and experimental .NET projects
+      `src/lab/TplLab/`, `src/lab/TaskAssigner/`,
       `src/private/app/DotNetLockFileLister/`,
       `src/private/app/OxfordDictExtractor/`,
       `tests/private/app/OxfordDictExtractor.Tests/`,
@@ -1146,47 +1130,30 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
       `tests/public/lib/PhiFailureDetector.UnitTest/` without changing the
       `PhiFailureDetector` library implementation or public contracts, then
       remove `src/public/app/PhiFailureDetector.Console/`.
-    - Leave `Hjg.Pngcs`, `PhiFailureDetector` core library logic, and all other
-      `nuget.org` packages unchanged.
-- **Advancement and outcome:** execute the `nuget.org` deprecation update and
-  verify it via the public NuGet V3 API; consolidate
-  `PhiFailureDetector.Console` notes/tests and remove the retired project trees;
-  prune orphaned CPM declarations, lockfiles, Renovate rules, and obsolete
-  entries in `.gitattributes`, `.editorconfig-checker.json`, `.typos.toml`, and
-  `dotnet-compatibility.md`; and reconcile `docs/README.md`,
-  `docs/governance/record-families.yaml`, and Workflow Delivery's NuGet
-  release-unit registrations, workflow inputs, documentation, and tests.
-- **Owner risk decision and external effects:** permit one bounded interactive
-  `nuget.org` manage-deprecation submission on
-  `MicrosoftExtensions.Logging.Xunit` (all published versions `<= 1.2.1`,
-  reason `Legacy`, alternate `MartinCostello.Logging.XUnit`) via Playwright MCP
-  attached to the owner's already-authenticated Windows host Edge profile,
-  followed by read-only public NuGet V3 API verification. Confirm package
-  identity, ownership, and listed version set (`<= 1.2.1`) before submitting.
-  Stop immediately without submitting (or without retrying an uncertain/failed
-  submission before checking public V3 state) and return to the owner if
-  `nuget.org` prompts for credentials, MFA/re-authentication, or account
-  recovery, or if observed package state differs from these preconditions.
-  Record only sanitized public package coordinates, timestamps, and public V3
-  API deprecation fields—never cookies, tokens, emails, or account identifiers.
-- **Ordering and gates:** merge this authorization before executing the
-  `nuget.org` portal update or substantive retirement changes. Keep
-  implementation, lockfiles, Workflow Delivery contracts, and owning
-  records/routing self-consistent at each merge into `main`. Retain applicable
-  independent `engineering-guidance`, Workflow Delivery
-  `open-code-review-delegate` (OCR), `record-system-review`, and
-  `research-evidence-review` gates, `GOV-011` finding disposition,
-  explicit-base `records:check`, HK conformance, and `Validate` CI. Material
-  scope or feasibility tradeoffs return to the repository owner.
-- **Acceptance and closure:** public NuGet V3 metadata reports all published
-  versions (`<= 1.2.1`) of `MicrosoftExtensions.Logging.Xunit` as deprecated
-  (`Legacy`, alternate `MartinCostello.Logging.XUnit`) while remaining listed,
-  the repository retirements and `PhiFailureDetector` consolidation pass local
-  validation and `Validate` CI with reconciled catalogs/portals/locks, and no
-  unresolved material findings remain. Close this entry by deleting it in the
-  final retirement pull request (or an explicit Wave-only closure pull request).
-- **Exclusions:** no package unlisting, new package or release publication,
-  Workflow Delivery release/proving dispatch, API-key/OIDC/Trusted-Publishing/
-  owner/account/permission change, `nuget.org` change outside
-  `MicrosoftExtensions.Logging.Xunit` deprecation metadata, or implementation/TFM
-  change to retained `src/public/lib/*` libraries.
+    - Retain all `src/public/lib/*` libraries (including
+      `MicrosoftExtensions.Logging.Xunit`, tracked separately in #1802) and
+      leave `Hjg.Pngcs` and `PhiFailureDetector` core library logic unchanged.
+- **Advancement and outcome:** consolidate `PhiFailureDetector.Console`
+  notes/tests and remove the retired project trees; prune orphaned CPM
+  declarations, lockfiles, Renovate rules, and obsolete entries in
+  `.gitattributes`, `.editorconfig-checker.json`, and `.typos.toml`; update
+  affected path-based scope test fixtures; and reconcile `docs/README.md` and
+  `docs/governance/record-families.yaml`.
+- **Ordering and gates:** merge this authorization before substantive retirement
+  changes. Keep implementation, lockfiles, and owning records/routing
+  self-consistent at each merge into `main`. Retain applicable independent
+  `engineering-guidance`, Workflow Delivery `open-code-review-delegate` (OCR)
+  when Workflow Delivery tests change, and `record-system-review` gates,
+  `GOV-011` finding disposition, explicit-base `records:check`, HK conformance,
+  and `Validate` CI. Material scope or feasibility tradeoffs return to the
+  repository owner.
+- **Acceptance and closure:** all retired project trees are removed,
+  `PhiFailureDetector` retains the consolidated documentation and tests,
+  catalogs, portals, and lockfiles are reconciled, and local validation plus
+  `Validate` CI pass with no unresolved material findings. Close this entry by
+  deleting it in the final retirement pull request (or an explicit Wave-only
+  closure pull request).
+- **Exclusions:** no package unlisting, deprecation, or new package/release
+  publication; no Workflow Delivery release/proving dispatch, credential,
+  authentication, ruleset, or access change; no retirement or behavior/TFM
+  change to any `src/public/lib/*` library.
