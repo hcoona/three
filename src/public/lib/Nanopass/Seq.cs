@@ -21,7 +21,19 @@ using System.Collections.Immutable;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Provides factory methods for <see cref="Seq{T}"/> instances and C# collection expressions.
+/// </summary>
 public static class Seq
 {
+    /// <summary>
+    /// Creates an immutable value-equatable sequence copying the elements of
+    /// <paramref name="items"/>.
+    /// </summary>
+    /// <typeparam name="T">The element type of the sequence.</typeparam>
+    /// <param name="items">The elements to copy into the sequence.</param>
+    /// <returns>
+    /// A <see cref="Seq{T}"/> containing the elements of <paramref name="items"/>.
+    /// </returns>
     public static Seq<T> Create<T>(ReadOnlySpan<T> items) => new(ImmutableArray.Create(items));
 }

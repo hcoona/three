@@ -6,6 +6,25 @@ namespace Hcoona.Nanopass.Tests;
 public static partial class BooleanLanguage;
 
 [Language]
+[Terminal(typeof(Symbol), "x")]
+[NonTerminalDef("Expr", ["e"], "u => (from-u u)", "w => (from-w w)", "v => (dup v v)")]
+[NonTerminalDef("U", ["u"], "x => (u-symbol x)")]
+[NonTerminalDef("W", ["w"], "x => (w-symbol x)")]
+[NonTerminalDef("V", ["v"], "w => (v-form w)")]
+public static partial class TwoInclusionsLanguage;
+
+[Language]
+[Terminal(typeof(Symbol), "x", Predicate = nameof(IsIdentifier))]
+[NonTerminalDef("Expr", ["e"], "v => (expr v)", "(pair e0 e1)")]
+[NonTerminalDef("Value", ["v"], "a => (value a)", "(unit) => cooked")]
+[NonTerminalDef("Atom", ["a"], "x => (id x)")]
+public static partial class InclusionPrettyLanguage
+{
+    private static bool IsIdentifier(Symbol symbol) =>
+        !string.Equals(symbol.Name, "reserved", StringComparison.Ordinal);
+}
+
+[Language]
 [Terminal(typeof(bool), "b")]
 [Terminal(typeof(long), "i", Name = "integer")]
 [NonTerminalDef("Exp", ["e"], "(Int i)", "(Bool b)", "(Bar (maybe i) e)", "(Foo i (maybe e))")]

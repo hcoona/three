@@ -22,11 +22,23 @@ using System.Linq;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Provides S-expression rendering, grammar diffing, and reachability pruning for
+/// <see cref="LanguageDescriptor"/> definitions.
+/// </summary>
 public static class LanguageServices
 {
     /// <summary>
     /// Renders the complete grammar, optionally retaining terminal and production prettifiers.
     /// </summary>
+    /// <param name="language">The language descriptor to render.</param>
+    /// <param name="includePrettifiers">
+    /// <see langword="true"/> to emit <c>=&gt;</c> prettifier clauses; otherwise,
+    /// <see langword="false"/>.
+    /// </param>
+    /// <returns>
+    /// The <c>define-language</c> S-expression representing <paramref name="language"/>.
+    /// </returns>
     public static SExpr ToSExpression(LanguageDescriptor language, bool includePrettifiers = false)
     {
         ArgumentNullException.ThrowIfNull(language);
@@ -36,6 +48,12 @@ public static class LanguageServices
     /// <summary>
     /// Renders the grammar delta in Nanopass extension syntax.
     /// </summary>
+    /// <param name="source">The base language descriptor.</param>
+    /// <param name="target">The derived language descriptor.</param>
+    /// <returns>
+    /// A <c>define-language</c> S-expression expressing <paramref name="target"/> as an extension
+    /// of <paramref name="source"/>.
+    /// </returns>
     /// <remarks>
     /// Like the Racket operation, comparison uses terminal names and production syntax;
     /// changes to handlers alone are not emitted.
@@ -106,6 +124,8 @@ public static class LanguageServices
     /// <summary>
     /// Renders the grammar reachable from the entry nonterminal, without prettifiers.
     /// </summary>
+    /// <param name="language">The language descriptor to prune and render.</param>
+    /// <returns>The pruned <c>define-language</c> S-expression.</returns>
     public static SExpr Prune(LanguageDescriptor language) => RenderLanguage(
         PruneDescriptor(language), includePrettifiers: false, omitEmptyTerminals: true);
 
@@ -113,6 +133,10 @@ public static class LanguageServices
     /// Keeps only the nonterminals and terminals reachable from the entry,
     /// retaining their original descriptor metadata.
     /// </summary>
+    /// <param name="language">The language descriptor to prune.</param>
+    /// <returns>
+    /// A copy of <paramref name="language"/> restricted to reachable grammar items.
+    /// </returns>
     public static LanguageDescriptor PruneDescriptor(LanguageDescriptor language)
     {
         ArgumentNullException.ThrowIfNull(language);
@@ -154,10 +178,9 @@ public static class LanguageServices
                 }
 
                 SExpr fields = production.Syntax;
-                if (fields is SExpr.Pair pair)
+                if (fields is SExpr.Pair { Car: SExpr.Sym headSymbol } pair)
                 {
-                    // A production whose first leaf is a metavariable has no literal tag.
-                    Symbol head = RawMetaVariable(FirstSymbol(pair.Car));
+                    Symbol head = RawMetaVariable(headSymbol.Value);
                     if (!terminalMetaVars.ContainsKey(head)
                         && !nonTerminalMetaVars.ContainsKey(head))
                     {
@@ -284,16 +307,6 @@ public static class LanguageServices
         }
 
         return index;
-    }
-
-    private static Symbol FirstSymbol(SExpr syntax)
-    {
-        while (syntax is SExpr.Pair pair)
-        {
-            syntax = pair.Car;
-        }
-
-        return syntax is SExpr.Sym symbol ? symbol.Value : default;
     }
 
     private static IEnumerable<Symbol> EnumerateFields(SExpr syntax)

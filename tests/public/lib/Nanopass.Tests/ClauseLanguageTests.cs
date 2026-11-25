@@ -19,6 +19,49 @@ public sealed class ClauseLanguageTests
     }
 
     [TestMethod]
+    public void TermPredicates_UnwrapInclusionsAndValidateTerminalPredicates()
+    {
+        Assert.IsTrue(BooleanLambdaLanguage.IsValue(BooleanLambdaLanguage.Parse("#t")));
+
+        InclusionPrettyLanguage.Atom invalid = new Symbol("reserved");
+        InclusionPrettyLanguage.Value wrapped = invalid;
+        Assert.IsFalse(InclusionPrettyLanguage.IsAtom(invalid));
+        Assert.IsFalse(InclusionPrettyLanguage.IsValue(wrapped));
+        Assert.IsFalse(InclusionPrettyLanguage.IsLanguageTerm(wrapped));
+        Assert.IsTrue(InclusionPrettyLanguage.IsAtom(InclusionPrettyLanguage.Parse("source")));
+    }
+
+    [TestMethod]
+    public void Unparse_PrettyInclusionsWrapTheRecursivelyPrettifiedTarget()
+    {
+        const string input = "(pair source (unit))";
+        var term = InclusionPrettyLanguage.Parse(input);
+
+        Assert.AreEqual(input, InclusionPrettyLanguage.UnparseToString(term, raw: true));
+        Assert.AreEqual(
+            "(pair (expr (value (id source))) (expr cooked))",
+            InclusionPrettyLanguage.UnparseToString(term));
+    }
+
+    [TestMethod]
+    public void Unparse_PrettyInclusionsPreserveTheSelectedSiblingAndRepeatedCaptures()
+    {
+        TwoInclusionsLanguage.W sibling = new Symbol("datum");
+        TwoInclusionsLanguage.Expr included = sibling;
+        TwoInclusionsLanguage.V intermediate = sibling;
+        TwoInclusionsLanguage.Expr repeated = intermediate;
+
+        Assert.AreEqual("(from-w (w-symbol datum))",
+            TwoInclusionsLanguage.UnparseToString(included));
+        Assert.AreEqual(
+            SExpr.Parse("(w-symbol datum)"), TwoInclusionsLanguage.UnparseObject(sibling));
+        Assert.AreEqual(
+            "(dup (v-form (w-symbol datum)) (v-form (w-symbol datum)))",
+            TwoInclusionsLanguage.UnparseToString(repeated));
+        Assert.AreEqual("datum", TwoInclusionsLanguage.UnparseToString(repeated, raw: true));
+    }
+
+    [TestMethod]
     [DataRow("(lambda (x) #f)")]
     [DataRow("(lambda (f) (f #f))")]
     [DataRow("(lambda (f) (not (f #f)))")]

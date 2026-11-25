@@ -20,15 +20,35 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Declares a Nanopass nonterminal, its metavariable prefixes, and its S-expression productions on
+/// a language class.
+/// </summary>
+/// <param name="name">The name of the nonterminal.</param>
+/// <param name="metaVars">
+/// The metavariable prefixes bound to the nonterminal in grammar patterns.
+/// </param>
+/// <param name="productions">
+/// The S-expression production clauses belonging to the nonterminal.
+/// </param>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class NonTerminalDefAttribute(
     string name,
     string[] metaVars,
     params string[] productions) : Attribute
 {
+    /// <summary>
+    /// Gets the name of the nonterminal.
+    /// </summary>
     public string Name { get; } = name;
 
+    /// <summary>
+    /// Gets the metavariable prefixes bound to the nonterminal in grammar patterns.
+    /// </summary>
     public string[] MetaVars { get; } = metaVars;
 
+    /// <summary>
+    /// Gets the S-expression production clauses belonging to the nonterminal.
+    /// </summary>
     public string[] Productions { get; } = productions;
 }

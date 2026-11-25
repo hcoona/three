@@ -20,14 +20,30 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Extends, adds, or removes productions on a nonterminal in a derived Nanopass language.
+/// </summary>
+/// <param name="name">The name of the nonterminal to declare or modify.</param>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class ExtendNonTerminalAttribute(string name) : Attribute
 {
+    /// <summary>
+    /// Gets the name of the nonterminal to declare or modify.
+    /// </summary>
     public string Name { get; } = name;
 
+    /// <summary>
+    /// Gets or initializes the metavariable prefixes introduced for the nonterminal.
+    /// </summary>
     public string[]? MetaVars { get; init; }
 
+    /// <summary>
+    /// Gets or initializes the S-expression production patterns to remove from the nonterminal.
+    /// </summary>
     public string[]? Remove { get; init; }
 
+    /// <summary>
+    /// Gets or initializes the S-expression production patterns to add to the nonterminal.
+    /// </summary>
     public string[]? Add { get; init; }
 }

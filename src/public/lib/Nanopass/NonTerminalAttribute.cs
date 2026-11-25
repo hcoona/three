@@ -20,8 +20,18 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Marks a nested union or struct declaration as a Nanopass nonterminal and assigns its
+/// metavariable prefixes.
+/// </summary>
+/// <param name="metaVars">
+/// The metavariable prefixes bound to the nonterminal in grammar patterns.
+/// </param>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, Inherited = false)]
 public sealed class NonTerminalAttribute(params string[] metaVars) : Attribute
 {
+    /// <summary>
+    /// Gets the metavariable prefixes bound to the nonterminal in grammar patterns.
+    /// </summary>
     public string[] MetaVars { get; } = metaVars;
 }

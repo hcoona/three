@@ -82,13 +82,41 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
                 throw new Failure(3, $"Unrecognized {kind} in subtract: '{removal.Name}'.");
             }
         }
+
+        foreach (var clause in input.Clauses)
+        {
+            var nonTerminal = nonTerminals.FirstOrDefault(item => Equal(item.Name, clause.Name));
+            foreach (string remove in clause.Remove)
+            {
+                string syntax = PatternDatum.Parse(remove).Syntax.ToString();
+                if (nonTerminal?.Productions.RemoveAll(rule => Equal(rule.Syntax, syntax)) > 0)
+                {
+                    continue;
+                }
+
+                if (input.NativeNonTerminals.Any(item => Equal(item.Name, clause.Name)
+                    && item.Declaration == LanguageModel.Declaration.Union))
+                {
+                    var message = $"Cannot subtract '{syntax}' from partial union '{clause.Name}' "
+                        + "before its cases are declared.";
+                    throw new Failure(5, message);
+                }
+
+                var missing = nonTerminal is null
+                    ? $"Unrecognized nonterminal in subtract: '{clause.Name}'."
+                    : $"Unrecognized production in subtract: '{syntax}'.";
+                throw new Failure(3, missing);
+            }
+        }
     }
 
     private static void DeclareClauses(
-        EquatableArray<LanguageInput.Clause> clauses,
-        List<NonTerminalBuilder> nonTerminals)
+        LanguageInput input,
+        LanguageModel? inherited,
+        List<NonTerminalBuilder> nonTerminals,
+        string? nativeEntry)
     {
-        foreach (var clause in clauses)
+        foreach (var clause in input.Clauses)
         {
             if (!SyntaxFacts.IsValidIdentifier(clause.Name))
             {
@@ -104,9 +132,27 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
             var nonTerminal = nonTerminals.FirstOrDefault(item => Equal(item.Name, clause.Name));
             if (nonTerminal is null)
             {
-                if (clause.Remove.Count > 0)
+                var extensions = input.Clauses.Where(item =>
+                    item.Extend && Equal(item.Name, clause.Name));
+                var native = input.NativeNonTerminals.FirstOrDefault(item =>
+                    Equal(item.Name, clause.Name));
+                bool anyAdd = clause.Add.Count > 0 || extensions.Any(item => item.Add.Count > 0);
+                bool anyRemove = extensions.Any(item => item.Remove.Count > 0);
+                bool anyMetaVars = extensions.Any(item => item.MetaVars.Count > 0)
+                    || native is { MetaVars.Count: > 0 };
+                if (!anyAdd && native is null && !Equal(clause.Name, nativeEntry))
                 {
-                    throw new Failure(3, $"Unrecognized nonterminal in subtract: '{clause.Name}'.");
+                    if (anyRemove)
+                    {
+                        continue;
+                    }
+
+                    throw new Failure(3, $"Unrecognized nonterminal '{clause.Name}'.");
+                }
+
+                if (clause.Extend && !anyMetaVars)
+                {
+                    metaVars = InheritedMetaVars(inherited, clause.Name);
                 }
 
                 nonTerminal = new(
@@ -125,24 +171,15 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
         }
     }
 
-    private static void ApplyClauses(
+    private static void AddClauseProductions(
         EquatableArray<LanguageInput.Clause> clauses,
         List<NonTerminalBuilder> nonTerminals,
         List<LanguageModel.Terminal> terminals)
     {
         var metas = IndexMetaVars(terminals, nonTerminals);
-        foreach (var clause in clauses)
+        foreach (var clause in clauses.Where(static clause => clause.Add.Count > 0))
         {
             var nonTerminal = nonTerminals.First(item => Equal(item.Name, clause.Name));
-            foreach (string remove in clause.Remove)
-            {
-                string syntax = PatternDatum.Parse(remove).Syntax.ToString();
-                if (nonTerminal.Productions.RemoveAll(rule => Equal(rule.Syntax, syntax)) == 0)
-                {
-                    throw new Failure(3, $"Unrecognized production in subtract: '{syntax}'.");
-                }
-            }
-
             foreach (string add in clause.Add)
             {
                 AddProduction(nonTerminal, ProductionReader.Read(add, metas));
@@ -221,37 +258,65 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
         return new(normalized);
     }
 
-    private static void ApplyNative(
-        LanguageInput input,
-        LanguageModel? inherited,
-        List<LanguageModel.Terminal> terminals,
-        List<NonTerminalBuilder> nonTerminals)
+    private static void DeclareNative(
+        LanguageInput input, LanguageModel? inherited, List<NonTerminalBuilder> nonTerminals)
     {
         foreach (var native in input.NativeNonTerminals)
         {
+            if (native.Declaration == LanguageModel.Declaration.Union
+                && Equal(native.Name, "Value"))
+            {
+                var message = "A partial union cannot be named 'Value'. "
+                    + "Use '[NonTerminal] public readonly partial struct Value' or "
+                    + "[NonTerminalDef] instead.";
+                throw new Failure(5, message);
+            }
+
             var target = nonTerminals.FirstOrDefault(item => Equal(item.Name, native.Name));
             var meta = native.MetaVars.Count > 0
                 ? NormalizeMetaVars(native.MetaVars)
-                : target?.MetaVars ?? new([native.Name.Substring(0, 1).ToLowerInvariant()]);
+                : target is { MetaVars.Count: > 0 }
+                    ? target.MetaVars
+                    : InheritedMetaVars(inherited, native.Name);
+            if (meta.Count == 0)
+            {
+                meta = new([native.Name.Substring(0, 1).ToLowerInvariant()]);
+            }
+
             if (target is null)
             {
                 nonTerminals.Add(new(native.Name, meta, native.Declaration));
             }
             else
             {
-                target.MetaVars = meta;
+                target.MetaVars = native.MetaVars.Count > 0 && target.MetaVars.Count > 0
+                    ? new(target.MetaVars.Concat(meta).Distinct(StringComparer.Ordinal))
+                    : meta;
                 target.Declared = native.Declaration;
             }
         }
+    }
 
+    private static void ApplyNative(
+        LanguageInput input,
+        LanguageModel? inherited,
+        List<LanguageModel.Terminal> terminals,
+        List<NonTerminalBuilder> nonTerminals,
+        string? nativeEntry)
+    {
         var seenRecords = new HashSet<string>(StringComparer.Ordinal);
         foreach (var native in input.NativeNonTerminals)
         {
             var target = nonTerminals.First(item => Equal(item.Name, native.Name));
             foreach (var alternative in native.Cases)
             {
+                if (alternative.Type.EndsWith("?", StringComparison.Ordinal))
+                {
+                    throw new Failure(5, $"Union case '{alternative.Type}' cannot be nullable.");
+                }
+
                 var record = input.NativeRecords.FirstOrDefault(item =>
-                    Equal(input.QualifiedName + "." + item.Path, alternative));
+                    Equal(input.QualifiedName + "." + item.Path, alternative.Type));
                 if (record is not null)
                 {
                     AddProduction(target, ReadNativeRecord(record));
@@ -276,7 +341,7 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
             }
         }
 
-        if (input.NativeNonTerminals.Count == 0 && (inherited is null || input.Clauses.Count > 0))
+        if (input.NativeNonTerminals.Count == 0 && nativeEntry is null)
         {
             return;
         }
@@ -292,9 +357,9 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
 
             var target = nonTerminals.FirstOrDefault(item =>
                 record.Path.StartsWith(item.Name + ".", StringComparison.Ordinal));
-            target ??= inherited is null
-                ? (nonTerminals.Count == 1 ? nonTerminals[0] : null)
-                : nonTerminals.FirstOrDefault(item => Equal(item.Name, inherited.Entry));
+            target ??= nativeEntry is not null
+                ? nonTerminals.FirstOrDefault(item => Equal(item.Name, nativeEntry))
+                : inherited is null && nonTerminals.Count == 1 ? nonTerminals[0] : null;
             if (target is null || target.Declared == LanguageModel.Declaration.Union)
             {
                 continue;
@@ -303,12 +368,16 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
             AddProduction(target, ReadNativeRecord(record));
         }
 
-        LanguageModel.Field FindTarget(string type)
+        LanguageModel.Field FindTarget(LanguageInput.TypeRef typeRef)
         {
-            var nonTerminal = nonTerminals.FirstOrDefault(item => Equal(type, item.Name)
-                || Equal(type, input.QualifiedName + "." + item.Name)
+            var type = typeRef.Type;
+            var nonTerminal = typeRef.UnqualifiedName is { } bare
+                ? nonTerminals.FirstOrDefault(item => Equal(bare, item.Name))
+                : null;
+            nonTerminal ??= nonTerminals.FirstOrDefault(item =>
+                Equal(type, input.QualifiedName + "." + LanguageEmitter.Id(item.Name))
                 || (inherited is not null
-                    && Equal(type, inherited.QualifiedName + "." + item.Name)));
+                    && Equal(type, inherited.QualifiedName + "." + LanguageEmitter.Id(item.Name))));
             if (nonTerminal is not null)
             {
                 return new(nonTerminal.MetaVars[0], string.Empty, nonTerminal.Name, true, 0, false);
@@ -346,13 +415,17 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
                 SequenceDepth = field.SequenceDepth,
                 IsMaybe = field.IsMaybe,
             }).ToArray();
-            var tag = record.SyntaxName ?? LowerInitial(record.Name);
-            var defaultFields = fields.Select((field, index) => DefaultFieldSyntax(field with
+            var syntax = record.Syntax;
+            if (syntax is null)
             {
-                MetaVar = field.MetaVar + index.ToString(CultureInfo.InvariantCulture),
-            }));
-            var syntax = record.Syntax
-                ?? "(" + string.Join(" ", new[] { tag }.Concat(defaultFields)) + ")";
+                var tag = record.SyntaxName ?? LowerInitial(record.Name);
+                var defaultFields = fields.Select((field, index) => DefaultFieldSyntax(field with
+                {
+                    MetaVar = field.MetaVar + index.ToString(CultureInfo.InvariantCulture),
+                }));
+                syntax = "(" + string.Join(" ", new[] { tag }.Concat(defaultFields)) + ")";
+            }
+
             var metas = IndexMetaVars(terminals, nonTerminals);
             foreach (var field in fields)
             {
@@ -365,6 +438,11 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
             }
 
             var production = ProductionReader.Read(syntax, metas);
+            if (production.Pretty is not null && record.HasPrettyAttribute)
+            {
+                throw new Failure(5, $"'{record.Path}' specifies both inline => and [Pretty].");
+            }
+
             if (production.Alternative is not null || production.Fields.Count != fields.Length)
             {
                 throw new Failure(
@@ -427,6 +505,10 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
 
     private static bool Equal(string? left, string? right) =>
         string.Equals(left, right, StringComparison.Ordinal);
+
+    private static EquatableArray<string> InheritedMetaVars(
+        LanguageModel? inherited, string name) =>
+        inherited?.NonTerminals.FirstOrDefault(item => Equal(item.Name, name))?.MetaVars ?? default;
 
     private static void AssignRecordNames(
         LanguageInput input, List<NonTerminalBuilder> nonTerminals)
@@ -682,6 +764,45 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
         }
 
         ApplyRemovals(input, inherited, terminals, nonTerminals);
+        nonTerminals.RemoveAll(static item => item.Productions.Count == 0);
+
+        var claimedTypes = new HashSet<string>(
+            terminals.Concat(input.Terminals).Select(static terminal => terminal.Type),
+            StringComparer.Ordinal);
+        claimedTypes.UnionWith(input.NativeNonTerminals.SelectMany(static item => item.Cases)
+            .Select(static type => type.Type));
+        bool hasUnclaimedRecord = input.NativeRecords.Any(record => record.Path.IndexOf('.') < 0
+            && !claimedTypes.Contains(input.QualifiedName + "." + record.Path));
+        var nativeEntry = hasUnclaimedRecord
+            ? (input.Entries.Count == 1 ? input.Entries[0] : inherited?.Entry)
+            : null;
+
+        DeclareClauses(input, inherited, nonTerminals, nativeEntry);
+        DeclareNative(input, inherited, nonTerminals);
+        if (nativeEntry is not null)
+        {
+            var fallback = nonTerminals.FirstOrDefault(item => Equal(item.Name, nativeEntry));
+            if (fallback is null)
+            {
+                nonTerminals.Add(new(
+                    nativeEntry,
+                    InheritedMetaVars(inherited, nativeEntry),
+                    LanguageModel.Declaration.None));
+            }
+            else if (fallback.MetaVars.Count == 0)
+            {
+                fallback.MetaVars = InheritedMetaVars(inherited, nativeEntry);
+            }
+        }
+
+        foreach (var nonTerminal in nonTerminals)
+        {
+            if (nonTerminal.MetaVars.Count == 0)
+            {
+                throw new Failure(5, $"Expected metavariables for '{nonTerminal.Name}'.");
+            }
+        }
+
         foreach (var terminal in input.Terminals)
         {
             if (terminal.Type.Length == 0 || terminal.MetaVars.Count == 0
@@ -698,18 +819,12 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
             terminals.Add(terminal with { MetaVars = NormalizeMetaVars(terminal.MetaVars) });
         }
 
-        DeclareClauses(input.Clauses, nonTerminals);
-        ApplyNative(input, inherited, terminals, nonTerminals);
-        ApplyClauses(input.Clauses, nonTerminals, terminals);
+        ApplyNative(input, inherited, terminals, nonTerminals, nativeEntry);
+        AddClauseProductions(input.Clauses, nonTerminals, terminals);
         nonTerminals.RemoveAll(static item => item.Productions.Count == 0);
         var entry = input.Entries.Count == 1
             ? input.Entries[0]
             : inherited?.Entry ?? nonTerminals.FirstOrDefault()?.Name;
-        if (entry is null || !nonTerminals.Any(item => Equal(item.Name, entry)))
-        {
-            throw new Failure(2, $"Unrecognized entry nonterminal '{entry}'.");
-        }
-
         var metas = IndexMetaVars(terminals, nonTerminals);
         foreach (var nonTerminal in nonTerminals)
         {
@@ -725,16 +840,67 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
         }
 
         AssignRecordNames(input, nonTerminals);
-        return new(
+        var model = new LanguageModel(
             input.Name,
             input.QualifiedName,
             input.Namespace,
             input.Accessibility,
             input.Containers,
-            entry,
+            entry ?? string.Empty,
             new(terminals),
             new(nonTerminals.Select(static item => new LanguageModel.NonTerminal(
                 item.Name, item.MetaVars, new(item.Productions), item.Declared))));
+        foreach (var native in input.NativeNonTerminals)
+        {
+            if (native.Declaration != LanguageModel.Declaration.Union)
+            {
+                continue;
+            }
+
+            var nonTerminal = model.NonTerminals.FirstOrDefault(item =>
+                Equal(item.Name, native.Name));
+            var guidance = $"Use '[NonTerminal] public readonly partial struct {native.Name}' "
+                + "or omit the union declaration.";
+            if (nonTerminal is null)
+            {
+                var message = $"Partial union '{native.Name}' has no resolved cases. {guidance}";
+                throw new Failure(5, message);
+            }
+
+            if (nonTerminal.Productions.Any(static rule => rule.Alternative is null
+                && !rule.IsDeclared))
+            {
+                var message = $"Partial union '{native.Name}' cannot contain synthesized records. "
+                    + guidance;
+                throw new Failure(5, message);
+            }
+
+            var declaredCases = new HashSet<string>(
+                native.Cases.Select(NormalizeCaseType), StringComparer.Ordinal);
+            if (!declaredCases.SetEquals(LanguageEmitter.CaseTypes(model, nonTerminal)))
+            {
+                var message = $"Partial union '{native.Name}' must list all its resolved cases "
+                    + $"and no others. {guidance}";
+                throw new Failure(5, message);
+            }
+        }
+
+        if (entry is null || !nonTerminals.Any(item => Equal(item.Name, entry)))
+        {
+            throw new Failure(2, $"Unrecognized entry nonterminal '{entry}'.");
+        }
+
+        return model;
+
+        string NormalizeCaseType(LanguageInput.TypeRef typeRef)
+        {
+            var sibling = typeRef.UnqualifiedName is { } bare
+                ? model.NonTerminals.FirstOrDefault(item => Equal(bare, item.Name))
+                : null;
+            return sibling is null
+                ? typeRef.Type
+                : model.QualifiedName + "." + LanguageEmitter.Id(sibling.Name);
+        }
 
         LanguageModel.Field Rebind(LanguageModel.Field field)
         {

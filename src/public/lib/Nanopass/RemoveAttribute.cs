@@ -20,9 +20,16 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Removes nonterminals or production case types inherited from a base Nanopass language.
+/// </summary>
+/// <param name="types">The inherited nonterminal or production record types to remove.</param>
 [AttributeUsage(
     AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = true, Inherited = false)]
 public sealed class RemoveAttribute(params Type[] types) : Attribute
 {
+    /// <summary>
+    /// Gets the inherited nonterminal or production record types to remove.
+    /// </summary>
     public Type[] Types { get; } = types;
 }

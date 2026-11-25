@@ -20,33 +20,99 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Represents an S-expression symbol compared by ordinal character value.
+/// </summary>
+/// <param name="Name">The textual name of the symbol.</param>
 public readonly record struct Symbol(string Name) : IComparable<Symbol>
 {
     private readonly string? name = Name is "" ? null : Name;
 
+    /// <summary>
+    /// Gets or initializes the textual name of the symbol, defaulting to
+    /// <see cref="string.Empty"/>.
+    /// </summary>
     public string Name
     {
         get => this.name ?? string.Empty;
         init => this.name = value is "" ? null : value;
     }
 
+    /// <summary>
+    /// Converts a string into a <see cref="Symbol"/>.
+    /// </summary>
+    /// <param name="name">The textual name of the symbol.</param>
+    /// <returns>A <see cref="Symbol"/> with the specified <paramref name="name"/>.</returns>
     public static implicit operator Symbol(string name) => FromString(name);
 
+    /// <summary>
+    /// Determines whether one symbol precedes another in ordinal sort order.
+    /// </summary>
+    /// <param name="left">The first symbol to compare.</param>
+    /// <param name="right">The second symbol to compare.</param>
+    /// <returns>
+    /// <see langword="true"/> if <paramref name="left"/> precedes <paramref name="right"/>;
+    /// otherwise, <see langword="false"/>.
+    /// </returns>
     public static bool operator <(Symbol left, Symbol right) => left.CompareTo(right) < 0;
 
+    /// <summary>
+    /// Determines whether one symbol precedes or equals another in ordinal sort order.
+    /// </summary>
+    /// <param name="left">The first symbol to compare.</param>
+    /// <param name="right">The second symbol to compare.</param>
+    /// <returns>
+    /// <see langword="true"/> if <paramref name="left"/> precedes or equals
+    /// <paramref name="right"/>; otherwise, <see langword="false"/>.
+    /// </returns>
     public static bool operator <=(Symbol left, Symbol right) => left.CompareTo(right) <= 0;
 
+    /// <summary>
+    /// Determines whether one symbol follows another in ordinal sort order.
+    /// </summary>
+    /// <param name="left">The first symbol to compare.</param>
+    /// <param name="right">The second symbol to compare.</param>
+    /// <returns>
+    /// <see langword="true"/> if <paramref name="left"/> follows <paramref name="right"/>;
+    /// otherwise, <see langword="false"/>.
+    /// </returns>
     public static bool operator >(Symbol left, Symbol right) => left.CompareTo(right) > 0;
 
+    /// <summary>
+    /// Determines whether one symbol follows or equals another in ordinal sort order.
+    /// </summary>
+    /// <param name="left">The first symbol to compare.</param>
+    /// <param name="right">The second symbol to compare.</param>
+    /// <returns>
+    /// <see langword="true"/> if <paramref name="left"/> follows or equals
+    /// <paramref name="right"/>; otherwise, <see langword="false"/>.
+    /// </returns>
     public static bool operator >=(Symbol left, Symbol right) => left.CompareTo(right) >= 0;
 
+    /// <summary>
+    /// Creates a <see cref="Symbol"/> from a non-null string.
+    /// </summary>
+    /// <param name="name">The textual name of the symbol.</param>
+    /// <returns>A <see cref="Symbol"/> with the specified <paramref name="name"/>.</returns>
     public static Symbol FromString(string name)
     {
         ArgumentNullException.ThrowIfNull(name);
         return new(name);
     }
 
+    /// <summary>
+    /// Compares this symbol with another symbol using ordinal string comparison.
+    /// </summary>
+    /// <param name="other">The symbol to compare with this instance.</param>
+    /// <returns>
+    /// A signed integer indicating the relative ordinal order of this symbol and
+    /// <paramref name="other"/>.
+    /// </returns>
     public int CompareTo(Symbol other) => string.CompareOrdinal(this.Name, other.Name);
 
+    /// <summary>
+    /// Returns the unescaped textual name of the symbol.
+    /// </summary>
+    /// <returns>The <see cref="Name"/> of the symbol.</returns>
     public override string ToString() => this.Name;
 }

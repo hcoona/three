@@ -57,6 +57,10 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
         public static partial class Broken;
         """)]
     [DataRow("NP0103", """
+        [Language, NonTerminalDef("Expr", ["e"], "(unit)"), ExtendNonTerminal("Missing")]
+        public static partial class Broken;
+        """)]
+    [DataRow("NP0103", """
         [Language, NonTerminalDef("Expr", ["e"], "(unit)")] public static partial class Base;
         [Language, Extends(typeof(Base)), ExtendNonTerminal("Expr", Remove = ["(missing)"])]
         public static partial class Broken;
@@ -119,6 +123,23 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
         [Language, NonTerminalDef("Expr", [], "(unit)")] public static partial class Broken;
         """)]
     [DataRow("NP0105", """
+        [Language, NonTerminalDef("Empty", [], "(unit)")]
+        public static partial class Broken
+        {
+            public partial union Expr(Empty);
+        }
+        """)]
+    [DataRow("NP0105", """
+        [Language, NonTerminalDef("Expr", ["e"], "(unit)")]
+        public static partial class Source;
+
+        [Language, Extends(typeof(Source)), Entry("Fresh")]
+        public static partial class Broken
+        {
+            public sealed record New;
+        }
+        """)]
+    [DataRow("NP0105", """
         [Language, NonTerminalDef("Expr", ["e"], "(1 2)")] public static partial class Broken;
         """)]
     [DataRow("NP0105", """
@@ -135,6 +156,94 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
     [DataRow("NP0105", """
         [Language, NonTerminalDef("Expr", ["e"], "(children e ...) => (values e)")]
         public static partial class Broken;
+        """)]
+    [DataRow("NP0105", """
+        [Language]
+        public static partial class Broken
+        {
+            public partial union Value(bool);
+        }
+        """)]
+    [DataRow("NP0105", """
+        [Language, NonTerminalDef("Expr", ["e"], "(unit)")]
+        public static partial class Source;
+
+        [Language, Extends(typeof(Source))]
+        public static partial class Broken
+        {
+            public partial union Expr(New);
+            public sealed record New;
+        }
+        """)]
+    [DataRow("NP0105", """
+        [Language, ExtendNonTerminal("Expr", Add = ["(extra)"])]
+        public static partial class Broken
+        {
+            public partial union Expr(Unit);
+            public sealed record Unit;
+        }
+        """)]
+    [DataRow("NP0105", """
+        [Language, ExtendNonTerminal("Expr", Add = ["(extra)"])]
+        public static partial class Hybrid
+        {
+            public partial union Expr(Unit, Hybrid.Extra);
+            public sealed record Unit;
+        }
+        """)]
+    [DataRow("NP0105", """
+        [Language, ExtendNonTerminal("Expr", Remove = ["(unit)"])]
+        public static partial class Broken
+        {
+            public partial union Expr(Unit, Keep);
+            public sealed record Unit;
+            public sealed record Keep;
+        }
+        """)]
+    [DataRow("NP0105", """
+        using System;
+
+        [Language, Entry("Expr"), NonTerminalDef("Range", ["r"], "(span)")]
+        public static partial class Hybrid
+        {
+            public partial union Expr(Range?);
+        }
+        """)]
+    [DataRow("NP0105", """
+        [Language]
+        public static partial class Hybrid
+        {
+            public partial union Expr(Term?);
+            public sealed record Term;
+        }
+        """)]
+    [DataRow("NP0105", """
+        [Language, ExtendNonTerminal("Expr", Remove = ["(unit)"])]
+        public static partial class Broken
+        {
+            public partial union Expr(Unit);
+            public sealed record Unit;
+        }
+        """)]
+    [DataRow("NP0105", """
+        [Language]
+        public static partial class Broken
+        {
+            public partial union Expr(Unit);
+
+            [Syntax("(unit) => inline"), Pretty("separate")]
+            public sealed record Unit;
+        }
+        """)]
+    [DataRow("NP0105", """
+        [Language]
+        public static partial class Broken
+        {
+            public partial union Expr(Unit);
+
+            [Syntax("(unit) => inline"), Pretty]
+            public sealed record Unit;
+        }
         """)]
     public void Diagnostics_ReportGrammarErrorsAtSource(string expected, string declaration)
     {
@@ -355,6 +464,234 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
             """";
 
         _ = this.Emit(this.Generate(this.Compile("CanonicalMetas", input)));
+    }
+
+    [TestMethod]
+    public void HybridReferences_ResolveOptionalAndSequenceFieldsToGeneratedSibling()
+    {
+        const string input = """
+            using System;
+
+            [Language, Entry("Expr"), NonTerminalDef("Range", ["r"], "(unit)")]
+            public static partial class Hybrid
+            {
+                public partial union Expr(Range, Box);
+                public sealed record Box(Range? Item, Seq<Range> Items, Seq<Range?> OptionalItems);
+                public static Expr Make() => new Box(null, [ParseRange("(unit)")], [null]);
+            }
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("HybridUnion", input)));
+    }
+
+    [TestMethod]
+    public void NativeReferences_ResolveInheritedNonterminalsInCasesAndFields()
+    {
+        const string input = """
+            using System;
+
+            [Language, NonTerminalDef("Expr", ["e"], "(unit)")]
+            [NonTerminalDef("Range", ["r"], "(span)")]
+            public static partial class Source;
+
+            [Language, Extends(typeof(Source))]
+            public static partial class Derived
+            {
+                [NonTerminal("e"), Cases(typeof(Range))]
+                public readonly partial struct Expr
+                {
+                    public sealed record Box(Range? Span);
+                }
+
+                public static Expr Make() => ParseRange("(span)");
+            }
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("InheritedCases", input)));
+    }
+
+    [TestMethod]
+    [DataRow("[Remove(typeof(Source.Span))]")]
+    [DataRow("""[ExtendNonTerminal("Range", Remove = ["(span)"])]""")]
+    public void NativeReferences_UseTheBoundTypeWhenAnInheritedNonterminalIsRemoved(
+        string removal)
+    {
+        var input = $$"""
+            using System;
+
+            [Language, NonTerminalDef("Expr", ["e"], "(unit)")]
+            [NonTerminalDef("Range", ["r"], "(span)")]
+            public static partial class Source;
+
+            [Language, Extends(typeof(Source))]
+            {{removal}}
+            public static partial class Derived
+            {
+                [NonTerminal("e")]
+                public readonly partial struct Expr;
+
+                public sealed record Slice(Range Bounds);
+                public static Expr Make() => new Slice(System.Range.All);
+            }
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("RemovedSibling", input)));
+    }
+
+    [TestMethod]
+    public void NativeRecords_RecreateAnInheritedEntryBeforeResolvingFields()
+    {
+        const string input = """
+            using System;
+
+            [Language, NonTerminalDef("Range", ["r"], "(span)")]
+            public static partial class Source;
+
+            [Language, Extends(typeof(Source)), Remove(typeof(Source.Range))]
+            public static partial class Derived
+            {
+                public sealed record SubRange(Range Inner);
+                public sealed record End;
+                public static Range Make() => new SubRange(new End());
+            }
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("RecreatedEntry", input)));
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void RecreatedNonterminals_UseOnlyNewMetavariablesAcrossSplitClauses(bool metaVarsFirst)
+    {
+        const string metaVars = """[ExtendNonTerminal("Expr", MetaVars = ["fresh"])]""";
+        const string additions = """
+            [ExtendNonTerminal("Expr", Add = ["(unit)", "(wrap fresh old)"])]
+            """;
+        var first = metaVarsFirst ? metaVars : additions;
+        var second = metaVarsFirst ? additions : metaVars;
+        var input = $$"""
+            [Language, NonTerminalDef("Expr", ["old"], "(unit)")]
+            public static partial class Source;
+
+            [Language, Extends(typeof(Source)), Terminal(typeof(Symbol), "old")]
+            [ExtendNonTerminal("Expr")]
+            {{first}}
+            {{second}}
+            [ExtendNonTerminal("Expr", Remove = ["(unit)"])]
+            public static partial class Derived
+            {
+                public static Expr Make() => new Wrap(new Unit(), new Symbol("datum"));
+            }
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("RecreatedAliases", input)));
+    }
+
+    [TestMethod]
+    public void RecreatedNativeNonterminal_UsesInheritedMetavariablesWhenUnannotated()
+    {
+        const string input = """
+            [Language, NonTerminalDef("Expr", ["old"], "(unit)")]
+            public static partial class Source;
+
+            [Language, Extends(typeof(Source)), Remove(typeof(Source.Unit))]
+            public static partial class Derived
+            {
+                public partial union Expr(Next, End);
+
+                [Syntax("(next old)")]
+                public sealed record Next(Expr Tail);
+                public sealed record End;
+            }
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("RecreatedNativeAliases", input)));
+    }
+
+    [TestMethod]
+    public void NativeNonterminals_MergeInheritedClauseAndNativeMetavariables()
+    {
+        const string input = """
+            [Language, NonTerminalDef("Expr", ["e", "body"], "(unit)")]
+            public static partial class Source;
+
+            [Language, Extends(typeof(Source))]
+            [ExtendNonTerminal("Expr", MetaVars = ["hybrid"], Add = ["(call body hybrid native)"])]
+            public static partial class Derived
+            {
+                [NonTerminal("e", "native")]
+                public readonly partial struct Expr;
+            }
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("MergedNativeMetavariables", input)));
+    }
+
+    [TestMethod]
+    public void NativeRecords_RouteUnclaimedProductionsToTheExplicitEntry()
+    {
+        const string input = """
+            [Language, NonTerminalDef("Expr", ["e"], "(unit)")]
+            public static partial class Source;
+
+            [Language, Extends(typeof(Source)), Entry("Fresh")]
+            [ExtendNonTerminal("Fresh", MetaVars = ["f"])]
+            public static partial class Derived
+            {
+                public sealed record Start;
+                public static Fresh Make() => new Start();
+                public static Fresh Read() => Parse("(start)");
+            }
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("ExplicitNativeEntry", input)));
+    }
+
+    [TestMethod]
+    public void NativeRecords_ResolveSyntaxAfterSubtractionsFreeTheTerminalMetavariable()
+    {
+        const string input = """
+            using System;
+
+            [Language, NonTerminalDef("Expr", ["e"], "(unit)")]
+            [NonTerminalDef("Range", ["r"], "(span)")]
+            public static partial class Source;
+
+            [Language, Extends(typeof(Source)), Remove(typeof(Source.Span))]
+            [Terminal(typeof(Range), "r")]
+            [ExtendNonTerminal("Expr", Add = ["(unit)"])]
+            [ExtendNonTerminal("Expr", Remove = ["(unit)"])]
+            public static partial class Derived
+            {
+                [Syntax("(slice r)")]
+                public sealed record Slice(Range R);
+                public static Expr Make() => new Slice(System.Range.All);
+            }
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("ReusedMetavariable", input)));
+    }
+
+    [TestMethod]
+    public void NativeReferences_PreserveAnInnerTerminalThatShadowsAGeneratedSibling()
+    {
+        const string input = """
+            [Language, Entry("Expr"), NonTerminalDef("Opaque", ["o"], "(outer)")]
+            public static partial class Hybrid
+            {
+                [NonTerminal("e")]
+                public readonly partial struct Expr
+                {
+                    public readonly record struct Opaque(int Value);
+                    public sealed record Box(Opaque Value, Seq<Opaque?> Items);
+                }
+
+                public static Expr Make() => new Expr.Box(new Expr.Opaque(1), [null]);
+            }
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("ShadowedTerminal", input)));
     }
 
     private CSharpCompilation Compile(

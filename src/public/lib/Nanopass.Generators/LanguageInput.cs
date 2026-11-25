@@ -35,6 +35,8 @@ internal sealed record LanguageInput(
     EquatableArray<LanguageInput.NativeRecord> NativeRecords,
     EquatableArray<string> MemberNames)
 {
+    internal readonly record struct TypeRef(string Type, string? UnqualifiedName);
+
     internal sealed record Inheritance(string Type, string? Metadata, bool Prune);
 
     internal sealed record Removal(string? Owner, string Name, bool IsTerminal, bool IsType);
@@ -49,7 +51,7 @@ internal sealed record LanguageInput(
     internal sealed record Native(
         string Name,
         EquatableArray<string> MetaVars,
-        EquatableArray<string> Cases,
+        EquatableArray<TypeRef> Cases,
         LanguageModel.Declaration Declaration);
 
     internal sealed record NativeRecord(
@@ -59,7 +61,8 @@ internal sealed record LanguageInput(
         string? SyntaxName,
         string? Pretty,
         string? PrettyHandler,
+        bool HasPrettyAttribute,
         EquatableArray<NativeField> Fields);
 
-    internal sealed record NativeField(string Name, string Type, int SequenceDepth, bool IsMaybe);
+    internal sealed record NativeField(string Name, TypeRef Type, int SequenceDepth, bool IsMaybe);
 }

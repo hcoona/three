@@ -20,6 +20,16 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Describes a terminal and its metavariable bindings within a <see cref="LanguageDescriptor"/>.
+/// </summary>
+/// <param name="Name">The symbol naming the terminal.</param>
+/// <param name="MetaVariables">The metavariable prefixes associated with the terminal.</param>
+/// <param name="ClrType">The CLR representation type of the terminal, if known.</param>
+/// <param name="Predicate">The optional predicate method name validating terminal values.</param>
+/// <param name="Prettifier">
+/// The optional S-expression prettifier descriptor of the terminal.
+/// </param>
 public sealed record TerminalDescriptor(
     Symbol Name,
     Seq<Symbol> MetaVariables,

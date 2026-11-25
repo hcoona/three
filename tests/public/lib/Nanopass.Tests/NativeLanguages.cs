@@ -54,5 +54,9 @@ public static partial class NativeDerivedLanguage
     public readonly partial struct Expr
     {
         public sealed record Multiply(Expr Left, Expr Right);
+
+        public readonly record struct Opaque(int Number);
+
+        public sealed record UseOpaque(Opaque Data);
     }
 }

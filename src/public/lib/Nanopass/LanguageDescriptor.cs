@@ -18,6 +18,13 @@
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Describes the resolved grammar of a Nanopass language.
+/// </summary>
+/// <param name="Name">The symbol naming the language.</param>
+/// <param name="Entry">The symbol naming the entry nonterminal.</param>
+/// <param name="Terminals">The terminal descriptors declared by the language.</param>
+/// <param name="NonTerminals">The nonterminal descriptors declared by the language.</param>
 public sealed record LanguageDescriptor(
     Symbol Name,
     Symbol Entry,

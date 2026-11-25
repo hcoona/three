@@ -24,6 +24,15 @@ using System.Linq;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Provides runtime parsing, unparsing, node counting, and term recognition infrastructure to
+/// support generated Nanopass language implementations.
+/// </summary>
+/// <param name="name">The name of the generated language.</param>
+/// <param name="terminals">The runtime terminal descriptors of the generated language.</param>
+/// <param name="nonTerminals">
+/// The runtime nonterminal descriptors of the generated language.
+/// </param>
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class LanguageRuntime(
     string name,
@@ -39,6 +48,14 @@ public sealed class LanguageRuntime(
         .GroupBy(static rule => rule.RecordType!)
         .ToDictionary(static group => group.Key, static group => group.First());
 
+    /// <summary>
+    /// Reads and validates a terminal value from an <see cref="SExpr"/> datum for generated
+    /// Nanopass language implementations.
+    /// </summary>
+    /// <typeparam name="T">The expected CLR representation type of the terminal.</typeparam>
+    /// <param name="datum">The input S-expression datum.</param>
+    /// <param name="predicate">An optional terminal predicate.</param>
+    /// <returns>The boxed terminal value if accepted; otherwise, <see langword="null"/>.</returns>
     public static object? ReadTerminal<T>(SExpr datum, Func<T, bool>? predicate = null)
     {
         object? value = datum is T typedDatum && typeof(T) != typeof(object)
@@ -47,9 +64,24 @@ public sealed class LanguageRuntime(
         return value is T typed && (predicate is null || predicate(typed)) ? typed : null;
     }
 
+    /// <summary>
+    /// Converts a captured array of elements into a <see cref="Seq{T}"/> for generated Nanopass
+    /// language implementations.
+    /// </summary>
+    /// <typeparam name="T">The target element type.</typeparam>
+    /// <param name="value">The captured <see cref="object"/> array.</param>
+    /// <param name="convert">The element conversion function.</param>
+    /// <returns>A <see cref="Seq{T}"/> of converted elements.</returns>
     public static Seq<T> Sequence<T>(object? value, Func<object?, T> convert) =>
         [.. ((object?[])value!).Select(convert)];
 
+    /// <summary>
+    /// Parses an <see cref="SExpr"/> datum as the specified nonterminal for generated Nanopass
+    /// language implementations.
+    /// </summary>
+    /// <param name="nonTerminal">The zero-based nonterminal index.</param>
+    /// <param name="datum">The input S-expression datum.</param>
+    /// <returns>The parsed nonterminal union value.</returns>
     public object Parse(int nonTerminal, SExpr datum)
     {
         ArgumentNullException.ThrowIfNull(datum);
@@ -58,36 +90,22 @@ public sealed class LanguageRuntime(
                 $"Invalid {name} syntax for {nonTerminals[nonTerminal].Name}: {datum}.");
     }
 
-    public SExpr Unparse(object? value, bool raw)
-    {
-        while (value is not null && this.unions.TryGetValue(value.GetType(), out var nonTerminal))
-        {
-            value = nonTerminal.GetValue(value);
-            if (value is not null && this.TryPrintAlternative(nonTerminal, value, raw) is { } datum)
-            {
-                return datum;
-            }
-        }
+    /// <summary>
+    /// Unparses a language term into an <see cref="SExpr"/> datum for generated Nanopass language
+    /// implementations.
+    /// </summary>
+    /// <param name="value">The term or terminal value to unparse.</param>
+    /// <param name="raw">
+    /// <see langword="true"/> to bypass prettifiers; <see langword="false"/> to apply them.
+    /// </param>
+    /// <returns>The rendered <see cref="SExpr"/> datum.</returns>
+    public SExpr Unparse(object? value, bool raw) => this.Unparse(null, value, raw);
 
-        if (value is not null)
-        {
-            if (this.records.TryGetValue(value.GetType(), out Rule? rule))
-            {
-                return this.Render(rule, value, raw);
-            }
-
-            foreach (Terminal terminal in terminals)
-            {
-                if (terminal.Accept(value))
-                {
-                    return raw ? SExpr.FromValue(value) : terminal.Print(value);
-                }
-            }
-        }
-
-        throw new NanopassException($"unrecognized {name} language form {value ?? "<null>"}.");
-    }
-
+    /// <summary>
+    /// Counts the AST nodes in a language term for generated Nanopass language implementations.
+    /// </summary>
+    /// <param name="value">The language term to inspect.</param>
+    /// <returns>The total number of AST nodes in <paramref name="value"/>.</returns>
     public int CountNodes(object? value)
     {
         value = this.Unwrap(value);
@@ -115,11 +133,36 @@ public sealed class LanguageRuntime(
         throw new NanopassException($"unrecognized {name} language record {value ?? "<null>"}.");
     }
 
-    public bool IsTerm(object? value) =>
-        value is not null && nonTerminals.Any(nonTerminal => this.IsTerm(nonTerminal, value, []));
+    /// <summary>
+    /// Determines whether a value belongs to any nonterminal of the generated Nanopass language.
+    /// </summary>
+    /// <param name="value">The value to test.</param>
+    /// <returns>
+    /// <see langword="true"/> if <paramref name="value"/> is a valid term of the language;
+    /// otherwise, <see langword="false"/>.
+    /// </returns>
+    public bool IsTerm(object? value)
+    {
+        value = this.Unwrap(value);
+        return value is not null
+            && nonTerminals.Any(nonTerminal => this.IsTerm(nonTerminal, value, []));
+    }
 
-    public bool IsTerm(int nonTerminal, object? value) =>
-        value is not null && this.IsTerm(nonTerminals[nonTerminal], value, []);
+    /// <summary>
+    /// Determines whether a value belongs to a specific nonterminal of the generated Nanopass
+    /// language.
+    /// </summary>
+    /// <param name="nonTerminal">The zero-based nonterminal index.</param>
+    /// <param name="value">The value to test.</param>
+    /// <returns>
+    /// <see langword="true"/> if <paramref name="value"/> belongs to the specified nonterminal;
+    /// otherwise, <see langword="false"/>.
+    /// </returns>
+    public bool IsTerm(int nonTerminal, object? value)
+    {
+        value = this.Unwrap(value);
+        return value is not null && this.IsTerm(nonTerminals[nonTerminal], value, []);
+    }
 
     private static object? RawTerminal<T>(SExpr datum) =>
         datum switch
@@ -146,11 +189,6 @@ public sealed class LanguageRuntime(
 
     private bool IsTerm(NonTerminal nonTerminal, object value, HashSet<NonTerminal> active)
     {
-        if (value.GetType() == nonTerminal.Type)
-        {
-            return nonTerminal.GetValue(value) is not null;
-        }
-
         if (!active.Add(nonTerminal))
         {
             return false;
@@ -237,20 +275,73 @@ public sealed class LanguageRuntime(
         return value;
     }
 
-    private SExpr? TryPrintAlternative(NonTerminal nonTerminal, object value, bool raw)
+    private SExpr Unparse(NonTerminal? nonTerminal, object? value, bool raw)
     {
-        if (this.unions.ContainsKey(value.GetType()) || this.records.ContainsKey(value.GetType()))
+        while (value is not null
+            && (nonTerminal is not null
+                || this.unions.TryGetValue(value.GetType(), out nonTerminal)))
         {
-            return null;
+            value = nonTerminal.GetValue(value);
+            if (value is not null && this.TryPrintAlternative(nonTerminal, value, raw) is { } datum)
+            {
+                return datum;
+            }
+
+            nonTerminal = null;
         }
 
+        if (value is not null)
+        {
+            if (this.records.TryGetValue(value.GetType(), out Rule? rule))
+            {
+                return this.Render(rule, value, raw);
+            }
+
+            foreach (Terminal terminal in terminals)
+            {
+                if (terminal.Accept(value))
+                {
+                    return raw ? SExpr.FromValue(value) : terminal.Print(value);
+                }
+            }
+        }
+
+        throw new NanopassException($"unrecognized {name} language form {value ?? "<null>"}.");
+    }
+
+    private SExpr? TryPrintAlternative(NonTerminal nonTerminal, object value, bool raw)
+    {
+        var type = value.GetType();
+        bool isLeaf = !this.unions.ContainsKey(type) && !this.records.ContainsKey(type);
         foreach (var rule in nonTerminal.Rules)
         {
-            if (rule.Alternative is { IsNonTerminal: false } field
-                && terminals[field.Target].Accept(value))
+            if (rule.Alternative is not { } field)
             {
-                return rule.Pattern.Render([value], raw, (item, leaf) =>
-                    this.PrintField(item, leaf, raw));
+                continue;
+            }
+
+            if (!field.IsNonTerminal)
+            {
+                if (isLeaf && terminals[field.Target].Accept(value))
+                {
+                    return rule.Pattern.Render([value], raw, (item, leaf) =>
+                        this.PrintField(item, leaf, raw));
+                }
+
+                continue;
+            }
+
+            if (raw || !rule.HasPrettyTemplate)
+            {
+                continue;
+            }
+
+            var target = nonTerminals[field.Target];
+            if (target.Type == type && this.Unwrap(value) is { } form
+                && this.IsTerm(target, form, []))
+            {
+                var inner = this.Unparse(target, value, raw);
+                return rule.Pattern.Render([value], raw, (_, _) => inner);
             }
         }
 
@@ -286,20 +377,70 @@ public sealed class LanguageRuntime(
         return ((IEnumerable)value).Cast<object?>().Sum(item => this.CountField(item, depth - 1));
     }
 
+    /// <summary>
+    /// Describes a runtime terminal handler table entry supporting generated Nanopass language
+    /// implementations.
+    /// </summary>
+    /// <param name="Parse">Reads a terminal value from an <see cref="SExpr"/> datum.</param>
+    /// <param name="Accept">Tests whether a runtime CLR object satisfies the terminal.</param>
+    /// <param name="Print">Renders a terminal value as a prettified <see cref="SExpr"/>.</param>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public sealed record Terminal(
         Func<SExpr, object?> Parse,
         Func<object, bool> Accept,
         Func<object, SExpr> Print);
 
+    /// <summary>
+    /// Describes a runtime nonterminal dispatch entry supporting generated Nanopass language
+    /// implementations.
+    /// </summary>
+    /// <param name="Name">The grammar name of the nonterminal.</param>
+    /// <param name="Type">The generated union CLR type of the nonterminal.</param>
+    /// <param name="GetValue">Unwraps the underlying case value from a union instance.</param>
+    /// <param name="Rules">The ordered production dispatch rules of the nonterminal.</param>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public sealed record NonTerminal(
         string Name,
         Type Type,
         Func<object, object?> GetValue,
         Rule[] Rules);
 
+    /// <summary>
+    /// Describes a captured metavariable field in a runtime production rule supporting generated
+    /// Nanopass language implementations.
+    /// </summary>
+    /// <param name="Name">The metavariable name in the pattern.</param>
+    /// <param name="Target">The zero-based target nonterminal or terminal index.</param>
+    /// <param name="IsNonTerminal">
+    /// <see langword="true"/> if <paramref name="Target"/> indexes nonterminals;
+    /// <see langword="false"/> if it indexes terminals.
+    /// </param>
+    /// <param name="SequenceDepth">The ellipsis nesting depth of the field.</param>
+    /// <param name="IsMaybe">
+    /// <see langword="true"/> if the field accepts <c>#f</c> as <see langword="null"/>; otherwise,
+    /// <see langword="false"/>.
+    /// </param>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public sealed record Field(
         string Name, int Target, bool IsNonTerminal, int SequenceDepth, bool IsMaybe);
 
+    /// <summary>
+    /// Describes a runtime production pattern and construction rule supporting generated Nanopass
+    /// language implementations.
+    /// </summary>
+    /// <param name="syntax">The raw S-expression pattern string.</param>
+    /// <param name="pretty">The optional S-expression prettifier template string.</param>
+    /// <param name="alternative">
+    /// The standalone terminal or nonterminal field when the rule has no record wrapper.
+    /// </param>
+    /// <param name="fields">The ordered record fields captured by the rule.</param>
+    /// <param name="type">The generated production record CLR type, if any.</param>
+    /// <param name="create">
+    /// Constructs the union or record instance from captured field values.
+    /// </param>
+    /// <param name="read">Extracts field values from a record instance for unparsing.</param>
+    /// <param name="prettyHandler">An optional custom prettifier callback.</param>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public sealed class Rule(
         string syntax,
         string? pretty,
@@ -312,6 +453,8 @@ public sealed class LanguageRuntime(
     {
         internal GrammarPattern Pattern { get; } =
             new(syntax, pretty, alternative is null ? fields : [alternative]);
+
+        internal bool HasPrettyTemplate { get; } = pretty is not null;
 
         internal Field? Alternative { get; } = alternative;
 

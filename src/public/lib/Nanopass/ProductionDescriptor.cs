@@ -18,9 +18,25 @@
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Describes a single grammar production belonging to a <see cref="NonTerminalDescriptor"/>.
+/// </summary>
+/// <param name="Syntax">The raw S-expression pattern of the production.</param>
+/// <param name="Name">The optional generated or explicit CLR record name of the production.</param>
+/// <param name="Pretty">
+/// The optional pretty-printing S-expression template of the production.
+/// </param>
 public sealed record ProductionDescriptor(SExpr Syntax, string? Name = null, SExpr? Pretty = null)
 {
+    /// <summary>
+    /// Gets or initializes the terminal names referenced directly by the production, when
+    /// precomputed.
+    /// </summary>
     public Seq<Symbol>? ReferencedTerminals { get; init; }
 
+    /// <summary>
+    /// Gets or initializes the nonterminal names referenced directly by the production, when
+    /// precomputed.
+    /// </summary>
     public Seq<Symbol>? ReferencedNonTerminals { get; init; }
 }

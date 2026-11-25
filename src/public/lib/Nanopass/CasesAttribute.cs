@@ -20,8 +20,17 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Specifies the case types of a struct-declared Nanopass nonterminal union.
+/// </summary>
+/// <param name="types">
+/// The production record, terminal, or nonterminal types included in the union.
+/// </param>
 [AttributeUsage(AttributeTargets.Struct, Inherited = false)]
 public sealed class CasesAttribute(params Type[] types) : Attribute
 {
+    /// <summary>
+    /// Gets the production record, terminal, or nonterminal types included in the union.
+    /// </summary>
     public Type[] Types { get; } = types;
 }

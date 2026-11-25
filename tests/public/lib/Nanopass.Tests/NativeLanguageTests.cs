@@ -67,6 +67,19 @@ public sealed class NativeLanguageTests
     }
 
     [TestMethod]
+    public void TypeFirstInference_TreatsNestedRecordStructAsAnOpaqueTerminal()
+    {
+        var opaque = new NativeDerivedLanguage.Expr.Opaque(7);
+        var input = SExpr.List(SExpr.Parse("useOpaque"), SExpr.FromValue(opaque));
+        NativeDerivedLanguage.Expr expected = new NativeDerivedLanguage.Expr.UseOpaque(opaque);
+
+        Assert.AreEqual(expected, NativeDerivedLanguage.Parse(input));
+        Assert.AreEqual(input, NativeDerivedLanguage.Unparse(expected, raw: true));
+        Assert.ThrowsExactly<NanopassParseException>(
+            () => NativeDerivedLanguage.Parse("(opaque 7)"));
+    }
+
+    [TestMethod]
     public void Prune_UsesResolvedDependenciesInsteadOfInferringFromSyntaxAliases()
     {
         var result = NativeBaseLanguage.Prune().Format();

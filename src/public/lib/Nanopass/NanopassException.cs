@@ -20,17 +20,34 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Represents errors reported by Nanopass runtime operations.
+/// </summary>
 public class NanopassException : Exception
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NanopassException"/> class.
+    /// </summary>
     public NanopassException()
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NanopassException"/> class with a specified
+    /// error message.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
     public NanopassException(string? message)
         : base(message)
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NanopassException"/> class with a specified
+    /// error message and inner exception.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
+    /// <param name="innerException">The exception that caused the current exception.</param>
     public NanopassException(string? message, Exception? innerException)
         : base(message, innerException)
     {

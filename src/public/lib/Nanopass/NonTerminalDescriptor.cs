@@ -18,6 +18,12 @@
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Describes a nonterminal and its productions within a <see cref="LanguageDescriptor"/>.
+/// </summary>
+/// <param name="Name">The symbol naming the nonterminal.</param>
+/// <param name="MetaVariables">The metavariable prefixes associated with the nonterminal.</param>
+/// <param name="Productions">The ordered production descriptors of the nonterminal.</param>
 public sealed record NonTerminalDescriptor(
     Symbol Name,
     Seq<Symbol> MetaVariables,

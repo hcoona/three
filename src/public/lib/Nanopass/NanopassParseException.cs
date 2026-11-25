@@ -21,22 +21,48 @@ using System.Globalization;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Represents an error encountered while reading an S-expression or parsing a Nanopass language
+/// form.
+/// </summary>
 public sealed class NanopassParseException : NanopassException
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NanopassParseException"/> class.
+    /// </summary>
     public NanopassParseException()
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NanopassParseException"/> class with a
+    /// specified error message.
+    /// </summary>
+    /// <param name="message">The message that describes the parse error.</param>
     public NanopassParseException(string? message)
         : base(message)
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NanopassParseException"/> class with a
+    /// specified error message and inner exception.
+    /// </summary>
+    /// <param name="message">The message that describes the parse error.</param>
+    /// <param name="innerException">The exception that caused the current exception.</param>
     public NanopassParseException(string? message, Exception? innerException)
         : base(message, innerException)
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NanopassParseException"/> class with a
+    /// specified error message and zero-based input offset.
+    /// </summary>
+    /// <param name="message">The message that describes the parse error.</param>
+    /// <param name="offset">
+    /// The zero-based character offset in the input where parsing failed.
+    /// </param>
     public NanopassParseException(string message, int offset)
         : base(string.Create(CultureInfo.InvariantCulture, $"{message} (offset {offset})."))
     {

@@ -20,18 +20,34 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Identifies the entry nonterminal of a Nanopass language.
+/// </summary>
 [AttributeUsage(
     AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = true, Inherited = false)]
 public sealed class EntryAttribute : Attribute
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EntryAttribute"/> class for the annotated
+    /// nonterminal.
+    /// </summary>
     public EntryAttribute()
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EntryAttribute"/> class with an explicit
+    /// nonterminal name.
+    /// </summary>
+    /// <param name="nonTerminalName">The name of the entry nonterminal.</param>
     public EntryAttribute(string nonTerminalName)
     {
         this.NonTerminalName = nonTerminalName;
     }
 
+    /// <summary>
+    /// Gets the explicit entry nonterminal name, or <see langword="null"/> when inferred from the
+    /// annotated nonterminal.
+    /// </summary>
     public string? NonTerminalName { get; }
 }

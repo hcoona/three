@@ -20,20 +20,40 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Removes an inherited terminal from a derived Nanopass language by CLR type or terminal name.
+/// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class RemoveTerminalAttribute : Attribute
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RemoveTerminalAttribute"/> class matching a
+    /// terminal by CLR representation type.
+    /// </summary>
+    /// <param name="clrType">The CLR representation type of the terminal to remove.</param>
     public RemoveTerminalAttribute(Type clrType)
     {
         this.ClrType = clrType;
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RemoveTerminalAttribute"/> class matching a
+    /// terminal by name.
+    /// </summary>
+    /// <param name="terminalName">The name of the terminal to remove.</param>
     public RemoveTerminalAttribute(string terminalName)
     {
         this.TerminalName = terminalName;
     }
 
+    /// <summary>
+    /// Gets the CLR representation type of the terminal to remove, or <see langword="null"/> when
+    /// matched by name.
+    /// </summary>
     public Type? ClrType { get; }
 
+    /// <summary>
+    /// Gets the name of the terminal to remove, or <see langword="null"/> when matched by CLR type.
+    /// </summary>
     public string? TerminalName { get; }
 }

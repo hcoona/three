@@ -20,8 +20,18 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Derives a Nanopass language containing only the terminals and nonterminals reachable from the
+/// source language entry.
+/// </summary>
+/// <param name="sourceLanguage">
+/// The type of the source <see cref="LanguageAttribute"/> class to prune.
+/// </param>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class PrunedLanguageAttribute(Type sourceLanguage) : Attribute
 {
+    /// <summary>
+    /// Gets the type of the source language being pruned.
+    /// </summary>
     public Type SourceLanguage { get; } = sourceLanguage;
 }

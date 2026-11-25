@@ -20,8 +20,16 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Stores serialized Nanopass grammar metadata on a generated language class for cross-assembly
+/// inheritance.
+/// </summary>
+/// <param name="metadata">The encoded Nanopass grammar metadata S-expression.</param>
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
 public sealed class LanguageMetadataAttribute(string metadata) : Attribute
 {
+    /// <summary>
+    /// Gets the encoded Nanopass grammar metadata S-expression.
+    /// </summary>
     public string Metadata { get; } = metadata;
 }

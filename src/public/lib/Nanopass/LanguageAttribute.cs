@@ -20,5 +20,8 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Marks a <c>static partial</c> class for Nanopass language source generation.
+/// </summary>
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
 public sealed class LanguageAttribute : Attribute;

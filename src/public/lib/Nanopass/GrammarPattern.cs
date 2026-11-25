@@ -19,10 +19,16 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Matches and renders S-expression production patterns to support generated Nanopass language
+/// implementations.
+/// </summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 internal sealed class GrammarPattern
 {
     private readonly Dictionary<Symbol, int> indices;

@@ -124,15 +124,31 @@ internal static class LanguageInputReader
             var attribute = FindAttribute(member, "NonTerminalAttribute");
             var declarations = member.DeclaringSyntaxReferences
                 .Select(reference => reference.GetSyntax(cancellationToken)).ToArray();
-            bool union = declarations.Any(static syntax => syntax is UnionDeclarationSyntax);
+            var unionParts = declarations.OfType<UnionDeclarationSyntax>().ToArray();
+            bool union = unionParts.Length > 0;
             if (union || (attribute is not null
                 && declarations.Any(static syntax => syntax is StructDeclarationSyntax)))
             {
-                var cases = member.UnionCaseTypes.Select(TypeName).ToList();
+                var cases = union
+                    ? unionParts.SelectMany(ReadCases).ToList()
+                    : member.UnionCaseTypes.Select(symbol => ReadTypeRef(symbol, null, type))
+                        .ToList();
                 if (!union && cases.Count == 0)
                 {
                     var caseAttribute = FindAttribute(member, "CasesAttribute");
-                    cases.AddRange(Types(caseAttribute).Select(TypeName));
+                    if (caseAttribute?.ApplicationSyntaxReference?.GetSyntax(cancellationToken)
+                        is AttributeSyntax { ArgumentList: { } arguments })
+                    {
+                        var semanticModel = compilation.GetSemanticModel(arguments.SyntaxTree);
+                        cases.AddRange(arguments.DescendantNodes().OfType<TypeOfExpressionSyntax>()
+                            .Select(expression => ReadCaseType(expression.Type, semanticModel)));
+                    }
+
+                    if (cases.Count == 0)
+                    {
+                        cases.AddRange(Types(caseAttribute)
+                            .Select(symbol => ReadTypeRef(symbol, null, type)));
+                    }
                 }
 
                 var metas = attribute is null
@@ -156,15 +172,16 @@ internal static class LanguageInputReader
 
                 foreach (INamedTypeSymbol nested in member.GetTypeMembers())
                 {
-                    var nestedRecord =
-                        ReadRecord(nested, member.Name + ".", compilation, cancellationToken);
+                    var nestedRecord = ReadRecord(
+                        nested, member.Name + ".", compilation, type, cancellationToken);
                     if (nestedRecord is not null)
                     {
                         records.Add(nestedRecord);
                     }
                 }
             }
-            else if (ReadRecord(member, string.Empty, compilation, cancellationToken) is { } record)
+            else if (ReadRecord(member, string.Empty, compilation, type, cancellationToken)
+                is { } record)
             {
                 records.Add(record);
             }
@@ -192,6 +209,62 @@ internal static class LanguageInputReader
             new(nonTerminals),
             new(records),
             new(memberNames));
+
+        IEnumerable<LanguageInput.TypeRef> ReadCases(UnionDeclarationSyntax part)
+        {
+            var semanticModel = compilation.GetSemanticModel(part.SyntaxTree);
+            return (part.ParameterList?.Parameters ?? default)
+                .Select(static parameter => parameter.Type).OfType<TypeSyntax>()
+                .Select(syntax => ReadCaseType(syntax, semanticModel));
+        }
+
+        LanguageInput.TypeRef ReadCaseType(TypeSyntax syntax, SemanticModel semanticModel) =>
+            ReadTypeRef(semanticModel.GetTypeInfo(syntax, cancellationToken).Type, syntax, type);
+    }
+
+    private static LanguageInput.TypeRef ReadTypeRef(
+        ITypeSymbol? symbol, TypeSyntax? syntax, INamedTypeSymbol language)
+    {
+        var typeName = symbol is null ? syntax?.ToString() ?? string.Empty : TypeName(symbol);
+        if (syntax is NullableTypeSyntax && !typeName.EndsWith("?", StringComparison.Ordinal))
+        {
+            typeName += "?";
+        }
+
+        if (syntax is IdentifierNameSyntax identifier)
+        {
+            for (var owner = symbol?.ContainingType; owner is not null;
+                owner = owner.ContainingType)
+            {
+                if (SymbolEqualityComparer.Default.Equals(owner, language))
+                {
+                    return new(typeName, null);
+                }
+            }
+
+            return new(typeName, identifier.Identifier.ValueText);
+        }
+
+        return new(typeName, null);
+    }
+
+    private static ITypeSymbol? NullableElement(ITypeSymbol? type) =>
+        type is INamedTypeSymbol named
+        && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+            ? named.TypeArguments[0]
+            : null;
+
+    private static TypeSyntax? TypeArgument(TypeSyntax? syntax)
+    {
+        var name = syntax switch
+        {
+            QualifiedNameSyntax qualified => qualified.Right,
+            AliasQualifiedNameSyntax alias => alias.Name,
+            _ => syntax,
+        };
+        return name is GenericNameSyntax { TypeArgumentList.Arguments.Count: 1 } generic
+            ? generic.TypeArgumentList.Arguments[0]
+            : null;
     }
 
     private static AttributeData? FindAttribute(INamedTypeSymbol? owner, string name) =>
@@ -266,8 +339,14 @@ internal static class LanguageInputReader
         INamedTypeSymbol type,
         string prefix,
         Compilation compilation,
+        INamedTypeSymbol language,
         CancellationToken cancellationToken)
     {
+        if (type.TypeKind != TypeKind.Class)
+        {
+            return null;
+        }
+
         var declaration = type.DeclaringSyntaxReferences.Select(r => r.GetSyntax(cancellationToken))
             .OfType<RecordDeclarationSyntax>().FirstOrDefault();
         if (declaration is null)
@@ -280,6 +359,7 @@ internal static class LanguageInputReader
         SemanticModel semanticModel = compilation.GetSemanticModel(declaration.SyntaxTree);
         var fields = declaration.ParameterList?.Parameters.Select(parameter =>
         {
+            TypeSyntax? leafSyntax = parameter.Type;
             var parameterType = semanticModel.GetTypeInfo(parameter.Type!, cancellationToken).Type;
             var depth = 0;
             while (parameterType
@@ -291,20 +371,19 @@ internal static class LanguageInputReader
             {
                 depth++;
                 parameterType = sequence.TypeArguments[0];
+                leafSyntax = TypeArgument(leafSyntax);
             }
 
-            var maybe = parameterType?.NullableAnnotation == NullableAnnotation.Annotated
-                || (depth == 0 && parameter.Type is NullableTypeSyntax);
-            if (parameterType is INamedTypeSymbol nullable
-                && nullable.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
-            {
-                parameterType = nullable.TypeArguments[0];
-                maybe = true;
-            }
+            var element = NullableElement(parameterType);
+            var maybe = element is not null || leafSyntax is NullableTypeSyntax
+                || parameterType?.NullableAnnotation == NullableAnnotation.Annotated;
+            leafSyntax = leafSyntax is NullableTypeSyntax nullable
+                ? nullable.ElementType
+                : element is null ? leafSyntax : TypeArgument(leafSyntax);
 
             return new LanguageInput.NativeField(
                 parameter.Identifier.ValueText,
-                parameterType is null ? parameter.Type!.ToString() : TypeName(parameterType),
+                ReadTypeRef(element ?? parameterType, leafSyntax, language),
                 depth,
                 maybe);
         }) ?? [];
@@ -313,8 +392,9 @@ internal static class LanguageInputReader
             prefix + type.Name,
             Text(syntax, 0),
             NamedText(syntax, "Name"),
-            Text(pretty, 0) ?? NamedText(syntax, "Pretty"),
+            Text(pretty, 0),
             NamedText(pretty, "PrettyHandler"),
+            pretty is not null,
             new(fields));
     }
 }

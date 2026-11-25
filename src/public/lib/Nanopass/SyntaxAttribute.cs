@@ -20,12 +20,22 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Specifies the S-expression syntax pattern for a Nanopass production record.
+/// </summary>
+/// <param name="pattern">
+/// The S-expression grammar pattern, optionally followed by <c>=&gt;</c> and a prettifier.
+/// </param>
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
 public sealed class SyntaxAttribute(string pattern) : Attribute
 {
+    /// <summary>
+    /// Gets the S-expression grammar pattern matched and rendered by the production.
+    /// </summary>
     public string Pattern { get; } = pattern;
 
+    /// <summary>
+    /// Gets or initializes an optional explicit production name.
+    /// </summary>
     public string? Name { get; init; }
-
-    public string? Pretty { get; init; }
 }

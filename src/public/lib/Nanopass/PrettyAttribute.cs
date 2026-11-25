@@ -20,9 +20,18 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Customizes pretty-printed S-expression unparsing for a Nanopass production record.
+/// </summary>
+/// <param name="template">
+/// An optional S-expression prettifier template rendered instead of the raw syntax pattern.
+/// </param>
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
 public sealed class PrettyAttribute(string? template = null) : Attribute
 {
+    /// <summary>
+    /// Gets the S-expression prettifier template, or <see langword="null"/> when a handler is used.
+    /// </summary>
     public string? Template { get; } = template;
 
     /// <summary>

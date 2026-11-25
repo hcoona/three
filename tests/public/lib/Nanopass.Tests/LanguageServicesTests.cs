@@ -100,6 +100,19 @@ public sealed class LanguageServicesTests
     }
 
     [TestMethod]
+    public void Prune_VisitsAnOptionalFieldAtTheHeadOfAnImplicitProduction()
+    {
+        LanguageDescriptor language = new(
+            "L", "Expr", [new("variable", ["x"]), new("unused", ["u"])],
+            [NonTerminal("Expr", "e", "((maybe x) e)")]);
+
+        Assert.AreEqual(
+            SExpr.Parse("(define-language L (entry Expr) "
+                + "(terminals (variable (x))) (Expr (e) ((maybe x) e)))"),
+            LanguageServices.Prune(language));
+    }
+
+    [TestMethod]
     public void Prune_MissingEntry_RejectsInvalidDescriptor()
     {
         LanguageDescriptor invalid = new("L", "Missing", [], [NonTerminal("Found", "f", "(atom)")]);

@@ -20,8 +20,17 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Declares that a Nanopass language inherits grammar definitions from a base language.
+/// </summary>
+/// <param name="baseLanguage">
+/// The type of the base <see cref="LanguageAttribute"/> class to extend.
+/// </param>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class ExtendsAttribute(Type baseLanguage) : Attribute
 {
+    /// <summary>
+    /// Gets the type of the base language being extended.
+    /// </summary>
     public Type BaseLanguage { get; } = baseLanguage;
 }

@@ -20,16 +20,41 @@ using System;
 
 namespace Hcoona.Nanopass;
 
+/// <summary>
+/// Declares a terminal type, its metavariable prefixes, and optional predicate or prettifier hooks
+/// on a Nanopass language class.
+/// </summary>
+/// <param name="clrType">The CLR representation type of the terminal.</param>
+/// <param name="metaVars">
+/// The metavariable prefixes bound to the terminal in grammar patterns.
+/// </param>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class TerminalAttribute(Type clrType, params string[] metaVars) : Attribute
 {
+    /// <summary>
+    /// Gets the CLR representation type of the terminal.
+    /// </summary>
     public Type ClrType { get; } = clrType;
 
+    /// <summary>
+    /// Gets the metavariable prefixes bound to the terminal in grammar patterns.
+    /// </summary>
     public string[] MetaVars { get; } = metaVars;
 
+    /// <summary>
+    /// Gets or sets the grammar name of the terminal, defaulting to the lowercase CLR type name.
+    /// </summary>
     public string? Name { get; set; }
 
+    /// <summary>
+    /// Gets or sets the name of a static predicate method on the language class that validates
+    /// terminal values.
+    /// </summary>
     public string? Predicate { get; set; }
 
+    /// <summary>
+    /// Gets or sets the name of a static prettifier method on the language class that converts a
+    /// terminal value to an <see cref="SExpr"/>.
+    /// </summary>
     public string? Prettifier { get; set; }
 }
