@@ -830,10 +830,12 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
             }
         }
 
-        List<LanguageModel.Terminal> terminals = inherited is null ? [] : [.. inherited.Terminals];
+        List<LanguageModel.Terminal> terminals = [];
         List<NonTerminalBuilder> nonTerminals = [];
         if (inherited is not null)
         {
+            terminals.AddRange(inherited.Terminals.Select(terminal =>
+                terminal with { Owner = inherited.QualifiedName }));
             foreach (var item in inherited.NonTerminals)
             {
                 var previous = new NonTerminalBuilder(

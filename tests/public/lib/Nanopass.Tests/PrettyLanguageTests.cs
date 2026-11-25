@@ -44,6 +44,14 @@ public sealed class PrettyLanguageTests
     }
 
     [TestMethod]
+    public void PrettyTemplates_DistinguishBooleanFromSameNamedSequenceField()
+    {
+        var term = BooleanPrettyLanguage.Parse("(flags a b)");
+
+        Assert.AreEqual(SExpr.Parse("(#t a b)"), BooleanPrettyLanguage.Unparse(term));
+    }
+
+    [TestMethod]
     public void PrettyTemplates_RecursivelyZipFactorialBindingsWithoutLosingOpaqueTerminals()
     {
         SExpr raw = BoxVariables(SExpr.Parse("""
@@ -126,6 +134,10 @@ public sealed class PrettyLanguageTests
     @"(delimiters) => (#\( #\) #\  #\\ #\newline)",
     """(constants) => (#true 9223372036854775807 -.5 "line\n" |1/2| |#unknown|)""")]
 internal static partial class CharacterPrettyLanguage;
+
+[Language, Terminal(typeof(Symbol), "|#t|")]
+[NonTerminalDef("Expr", ["e"], "(flags |#t| ...) => (#t |#t| ...)")]
+internal static partial class BooleanPrettyLanguage;
 
 [Language]
 [Terminal(typeof(object[]), "a", Name = "array", Prettifier = nameof(PrintArray))]

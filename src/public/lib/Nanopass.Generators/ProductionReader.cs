@@ -253,7 +253,8 @@ internal static class ProductionReader
                     throw new FormatException($"Unexpected '{atom}' in pretty template.");
                 }
 
-                if (byName.TryGetValue(atom, out var field) && field.SequenceDepth > depth)
+                if (item.IsSymbol && byName.TryGetValue(atom, out var field)
+                    && field.SequenceDepth > depth)
                 {
                     throw new FormatException($"Missing ellipsis for pretty field '{atom}'.");
                 }
@@ -290,7 +291,8 @@ internal static class ProductionReader
         {
             if (item.Atom is { } atom)
             {
-                return byName.TryGetValue(atom, out var field) && field.SequenceDepth > depth;
+                return item.IsSymbol && byName.TryGetValue(atom, out var field)
+                    && field.SequenceDepth > depth;
             }
 
             return item.Items.Any(child => RepeatsField(child, depth))

@@ -55,8 +55,8 @@ public static class LanguageServices
     /// of <paramref name="source"/>.
     /// </returns>
     /// <remarks>
-    /// Like the Racket operation, comparison uses terminal names and production syntax;
-    /// changes to handlers alone are not emitted.
+    /// Like the Racket operation, comparison uses terminals' names and metavariables
+    /// and production syntax; changes to handlers alone are not emitted.
     /// </remarks>
     public static SExpr Diff(LanguageDescriptor source, LanguageDescriptor target)
     {
@@ -72,9 +72,9 @@ public static class LanguageServices
         ];
 
         IEnumerable<SExpr> terminals = Changes(
-            WithoutNames(source.Terminals, target.Terminals, static x => x.Name)
+            WithoutTerminals(source.Terminals, target.Terminals)
                 .Select(static x => RenderTerminal(x, includePrettifiers: false)),
-            WithoutNames(target.Terminals, source.Terminals, static x => x.Name)
+            WithoutTerminals(target.Terminals, source.Terminals)
                 .Select(static x => RenderTerminal(x, includePrettifiers: false)));
         SExpr[] terminalChanges = terminals.ToArray();
         if (terminalChanges.Length > 0)
@@ -273,10 +273,13 @@ public static class LanguageServices
 
     private static SExpr.Sym Sym(Symbol name) => new(name);
 
-    private static IEnumerable<T> WithoutNames<T>(Seq<T> source, Seq<T> other, Func<T, Symbol> name)
+    private static IEnumerable<TerminalDescriptor> WithoutTerminals(
+        Seq<TerminalDescriptor> source, Seq<TerminalDescriptor> other)
     {
-        HashSet<Symbol> otherNames = other.Select(name).ToHashSet();
-        return source.Where(x => !otherNames.Contains(name(x)));
+        var bindings = other.Select(static terminal => (terminal.Name, terminal.MetaVariables))
+            .ToHashSet();
+        return source.Where(terminal =>
+            !bindings.Contains((terminal.Name, terminal.MetaVariables)));
     }
 
     private static IEnumerable<SExpr> Changes(IEnumerable<SExpr> removed, IEnumerable<SExpr> added)

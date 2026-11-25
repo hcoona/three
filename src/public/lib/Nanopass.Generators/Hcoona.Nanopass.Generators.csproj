@@ -17,6 +17,7 @@
   <ItemGroup>
     <Compile Include="../Nanopass/SExprLiteral.cs" Link="SExprLiteral.cs" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>

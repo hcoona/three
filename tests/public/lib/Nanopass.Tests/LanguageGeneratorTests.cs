@@ -154,6 +154,11 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
         public static partial class Broken;
         """)]
     [DataRow("NP0105", """
+        [Language, Terminal(typeof(Symbol), "|#t|")]
+        [NonTerminalDef("Expr", ["e"], "(flags |#t| ...) => (#t ...)")]
+        public static partial class Broken;
+        """)]
+    [DataRow("NP0105", """
         [Language, NonTerminalDef("Expr", ["e"], @"(unit) => #\unknown")]
         public static partial class Broken;
         """)]
