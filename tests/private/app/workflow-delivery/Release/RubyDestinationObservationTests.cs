@@ -26,62 +26,38 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         "GEM_SPEC_CACHE", "TMPDIR", "TMP", "TEMP"];
 
     [TestMethod]
-    [DataRow("buddy", "github-packages-ruby", "exact")]
-    [DataRow("buddy", "github-packages-ruby", "absent")]
-    [DataRow("buddy", "github-packages-ruby", "different")]
-    [DataRow("official", "rubygems", "absent")]
-    [DataRow("official", "rubygems", "unknown")]
-    [DataRow("official", "rubygems", "exact", RubyReleaseUnits.Latexmath)]
-    public async Task SupportedDestinationsBindOriginalAndObservation(string channel,
-        string destination, string scenario, string unit = RubyReleaseUnits.Smoke)
+    [DataRow("buddy", "github-packages-ruby", RubyReleaseUnits.Smoke, true, "Exact")]
+    [DataRow("buddy", "github-packages-ruby", RubyReleaseUnits.Smoke, false, "Conflict")]
+    [DataRow("official", "rubygems", RubyReleaseUnits.Latexmath, true, "Exact")]
+    public async Task PresentNativeOriginalIsComparedByteForByte(string channel,
+        string destination, string unit, bool matches, string state)
     {
         using var fixture = new Fixture(channel, destination, unit);
-        RubyObservationResult result = await fixture.ObserveAsync(command => Success(scenario switch
-        {
-            "exact" => fixture.Present(command, Fixture.Original),
-            "different" => fixture.Present(command, Fixture.DifferentOriginal),
-            _ => JsonSerializer.Serialize(new { state = scenario }),
-        }), context.CancellationToken);
-
-        ReleaseFileState expected = scenario switch
-        {
-            "exact" => ReleaseFileState.Exact,
-            "absent" => ReleaseFileState.Absent,
-            "different" => ReleaseFileState.Conflict,
-            _ => ReleaseFileState.Unknown,
-        };
-        AssertObservation(fixture.Prepared, result, expected,
-            scenario is "exact" or "absent" ? ReleaseCheckStatus.Passed :
-                ReleaseCheckStatus.Failed);
-        Assert.AreEqual(scenario switch
-        {
-            "exact" or "different" => RubySourceState.Present,
-            "absent" => RubySourceState.Absent,
-            _ => RubySourceState.Unknown,
-        }, result.Read.State);
-        if (scenario is "exact" or "different")
-        {
-            RubySourceOriginal original = result.Read.Original!;
-            Assert.IsNotNull(original);
-            byte[] actual = File.ReadAllBytes(original.Path);
-            CollectionAssert.AreEqual(scenario == "exact" ? Fixture.Original :
-                Fixture.DifferentOriginal, actual);
-            Assert.AreEqual((long)actual.Length, original.Size);
-            Assert.AreEqual(Hash(actual), original.Sha256);
-            Assert.AreEqual("ruby", original.Platform);
-            Assert.AreEqual(fixture.Prepared.Files[0].Version, original.Version);
-            Assert.AreEqual(fixture.Prepared.Files[0].Name, original.Name);
-            Assert.AreEqual(original.Size, result.Observation.Files[0].Size);
-            Assert.AreEqual(original.Sha256, result.Observation.Files[0].Sha256);
-            Assert.IsEmpty(result.Read.Errors);
-        }
-        else
-        {
-            Assert.IsNull(result.Read.Original);
-            Assert.IsNull(result.Observation.Files[0].Size);
-            Assert.IsNull(result.Observation.Files[0].Sha256);
-        }
+        byte[] bytes = matches ? Fixture.Original : Fixture.DifferentOriginal;
+        RubyObservationResult result = await fixture.ObserveAsync(command =>
+            Success(fixture.Present(command, bytes)), context.CancellationToken);
+        AssertObservation(fixture.Prepared, result, Enum.Parse<ReleaseFileState>(state),
+            matches ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed);
+        Assert.AreEqual(RubySourceState.Present, result.Read.State);
+        Assert.IsNotNull(result.Read.Original);
+        Assert.AreEqual((long)bytes.Length, result.Read.Original.Size);
+        Assert.AreEqual(Hash(bytes), result.Observation.Files[0].Sha256);
         AssertSanitized(result, Success(""));
+    }
+
+    [TestMethod]
+    [DataRow("buddy", "github-packages-ruby")]
+    [DataRow("official", "rubygems")]
+    public async Task SupportedDestinationCanEstablishAbsence(string channel, string destination)
+    {
+        using var fixture = new Fixture(channel, destination);
+        RubyObservationResult result = await fixture.ObserveAsync(_ =>
+            Success("""{"state":"absent"}"""), context.CancellationToken);
+        AssertObservation(fixture.Prepared, result, ReleaseFileState.Absent,
+            ReleaseCheckStatus.Passed);
+        Assert.AreEqual(RubySourceState.Absent, result.Read.State);
+        Assert.IsNull(result.Read.Original);
+        Assert.IsNull(result.Observation.Files[0].Sha256);
     }
 
     [TestMethod]
@@ -160,33 +136,26 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("malformed")]
-    [DataRow("missing-state")]
-    [DataRow("missing-original")]
-    [DataRow("wrong-type")]
-    [DataRow("unknown")]
+    [DataRow("{" + Unsafe + Secret)]
+    [DataRow("{}")]
+    [DataRow("""{"state":"present"}""")]
+    [DataRow("""{"state":42}""")]
+    [DataRow("""{"state":"unknown"}""")]
     [DataRow("null")]
-    [DataRow("utf8-oversized")]
-    public async Task InvalidSourceAnswersRemainUnknown(string scenario)
+    public async Task InvalidSourceAnswersRemainUnknown(string answer) =>
+        await AssertUnreadableAsync(answer);
+
+    [TestMethod]
+    public async Task Utf8AnswerOverByteLimitRemainsUnknown() =>
+        await AssertUnreadableAsync(JsonSerializer.Serialize(new
+        {
+            state = "absent",
+            padding = new string('é', 140000),
+        }, NativeJson));
+
+    private async Task AssertUnreadableAsync(string answer)
     {
         using var fixture = new Fixture();
-        string answer = scenario switch
-        {
-            "malformed" => "{" + Unsafe + Secret,
-            "missing-state" => "{}",
-            "missing-original" => "{\"state\":\"present\"}",
-            "wrong-type" => "{\"state\":42}",
-            "unknown" => "{\"state\":\"unknown\"}",
-            "null" => "null",
-            "oversized" => "{\"state\":\"absent\"}" + new string(' ', 256 * 1024),
-            _ => JsonSerializer.Serialize(new
-            {
-                state = "absent",
-                padding = new string('é',
-                140000)
-            },
-                NativeJson),
-        };
         NativeCommandResult reached = Success(answer);
         RubyObservationResult result = await fixture.ObserveAsync(_ => reached,
             context.CancellationToken);
@@ -209,55 +178,57 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("outside")]
-    [DataRow("prefix-sibling")]
-    [DataRow("missing")]
-    [DataRow("changed-bytes")]
-    [DataRow("name")]
-    [DataRow("version")]
-    [DataRow("platform")]
-    [DataRow("size")]
-    [DataRow("digest")]
-    [DataRow("relative")]
-    [DataRow("empty")]
-    public async Task UnownedOrInconsistentOriginalCannotCertifyExact(string scenario)
+    [DataRow("name", "\"unrelated-package\"")]
+    [DataRow("version", "\"9.0.0\"")]
+    [DataRow("platform", "\"x86_64-linux\"")]
+    [DataRow("size", "1")]
+    [DataRow("sha256", "\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"")]
+    [DataRow("path", "\"download/original.gem\"")]
+    public async Task InconsistentNativeEvidenceCannotCertifyExact(string field, string json) =>
+        await AssertOriginalRejectedAsync((_, answer) => answer[field] = JsonNode.Parse(json));
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task AbsoluteOriginalOutsideDownloadCannotCertifyExact(bool prefixSibling) =>
+        await AssertOriginalRejectedAsync((fixture, answer) =>
+        {
+            string directory = prefixSibling ? Directory.CreateDirectory(Path.Combine(
+                fixture.Tools.Scratch, "download-other")).FullName : fixture.Root;
+            string path = Path.Combine(directory, "original.gem");
+            File.WriteAllBytes(path, Fixture.Original);
+            answer["path"] = path;
+        });
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task OriginalMustExistWithAdvertisedBytes(bool missing) =>
+        await AssertOriginalRejectedAsync((_, answer) =>
+        {
+            string path = answer["path"]!.GetValue<string>();
+            if (missing) File.Delete(path);
+            else File.WriteAllBytes(path, Fixture.DifferentOriginal);
+        });
+
+    [TestMethod]
+    public async Task EmptyOriginalCannotCertifyExact() =>
+        await AssertOriginalRejectedAsync((_, answer) =>
+        {
+            byte[] empty = [];
+            File.WriteAllBytes(answer["path"]!.GetValue<string>(), empty);
+            answer["size"] = 0;
+            answer["sha256"] = Hash(empty);
+        });
+
+    private async Task AssertOriginalRejectedAsync(Action<Fixture, JsonObject> change)
     {
         using var fixture = new Fixture();
         RubyObservationResult result = await fixture.ObserveAsync(command =>
         {
             JsonObject answer = JsonNode.Parse(fixture.Present(command,
                 Fixture.Original))!.AsObject();
-            string path = answer["path"]!.GetValue<string>();
-            switch (scenario)
-            {
-                case "outside":
-                case "prefix-sibling":
-                    string outside = scenario == "outside" ? Path.Combine(fixture.Root,
-                        "outside.gem") :
-                        Path.Combine(Directory.CreateDirectory(Path.Combine(fixture.Tools.Scratch,
-                            "download-other")).FullName, "original.gem");
-                    File.WriteAllBytes(outside, Fixture.Original);
-                    answer["path"] = outside;
-                    break;
-                case "missing": File.Delete(path); break;
-                case "changed-bytes":
-                    // Same length and supplied expected hash cannot certify unrelated file bytes.
-                    File.WriteAllBytes(path, Enumerable.Repeat((byte)'x',
-                        Fixture.Original.Length).ToArray());
-                    break;
-                case "name": answer["name"] = "unrelated-package"; break;
-                case "version": answer["version"] = "9.0.0"; break;
-                case "platform": answer["platform"] = "x86_64-linux"; break;
-                case "size": answer["size"] = Fixture.Original.Length + 1; break;
-                case "digest": answer["sha256"] = new string('a', 64); break;
-                case "relative": answer["path"] = "download/original.gem"; break;
-                case "empty":
-                    byte[] bytes = [];
-                    File.WriteAllBytes(path, bytes);
-                    answer["size"] = bytes.Length;
-                    answer["sha256"] = Hash(bytes);
-                    break;
-            }
+            change(fixture, answer);
             return Success(answer.ToJsonString());
         }, context.CancellationToken);
         AssertUnknown(fixture, result, ReleaseCheckStatus.Failed);
@@ -308,22 +279,14 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("null")]
-    [DataRow("empty-user")]
-    [DataRow("empty-token")]
-    [DataRow("blank-user")]
-    [DataRow("blank-token")]
-    public async Task MissingBuddyCredentialDoesNotRead(string scenario)
+    [DataRow(null, null)]
+    [DataRow("", Secret)]
+    [DataRow(User, " ")]
+    public async Task MissingBuddyCredentialDoesNotRead(string? user, string? token)
     {
         using var fixture = new Fixture();
-        RubyReadCredential? credential = scenario switch
-        {
-            "null" => null,
-            "empty-user" => Credential with { User = "" },
-            "empty-token" => Credential with { Token = "" },
-            "blank-user" => Credential with { User = " " },
-            _ => Credential with { Token = " " },
-        };
+        RubyReadCredential? credential = user is not null && token is not null
+            ? new(user, token) : null;
         int calls = 0;
         RubyObservationResult result = await RubyDestinationObservation.ObserveAsync(
             fixture.Prepared,
@@ -340,37 +303,19 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("destination")]
-    [DataRow("channel")]
-    [DataRow("crossed-destination")]
-    [DataRow("name")]
-    [DataRow("kind")]
-    public async Task UnsupportedPreparationDoesNotRead(string scenario)
+    [DataRow("buddy", "unknown", null, "ruby-gem")]
+    [DataRow("unknown", "github-packages-ruby", null, "ruby-gem")]
+    [DataRow("buddy", "rubygems", null, "ruby-gem")]
+    [DataRow("buddy", "github-packages-ruby", "unrelated-package", "ruby-gem")]
+    [DataRow("buddy", "github-packages-ruby", null, "python-wheel")]
+    public async Task UnsupportedPreparationDoesNotRead(string channel, string destination,
+        string? name, string kind)
     {
-        using var fixture = new Fixture();
-        PreparedRelease prepared = fixture.Prepared;
-        prepared = scenario switch
+        using var fixture = new Fixture(channel, destination);
+        PreparedRelease prepared = fixture.Prepared with
         {
-            "destination" => prepared with
-            {
-                Subject = prepared.Subject with
-                {
-                    Destination =
-                "unknown"
-                }
-            },
-            "channel" => prepared with { Subject = prepared.Subject with { Channel = "unknown" } },
-            "crossed-destination" => prepared with
-            {
-                Subject =
-                prepared.Subject with { Destination = "rubygems" }
-            },
-            "name" => prepared with
-            {
-                Files = [prepared.Files[0] with { Name =
-                "unrelated-package" }]
-            },
-            _ => prepared with { Files = [prepared.Files[0] with { Kind = "python-wheel" }] },
+            Files = [fixture.Prepared.Files[0] with { Name = name ?? RubyReleaseUnits.Smoke,
+            Kind = kind }]
         };
         int calls = 0;
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
@@ -384,44 +329,45 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("host")]
-    [DataRow("name")]
-    [DataRow("blank-version")]
-    [DataRow("relative-ruby")]
-    [DataRow("relative-helper")]
-    [DataRow("relative-state")]
-    [DataRow("missing-state")]
-    [DataRow("used-state")]
-    public async Task SourceRequiresSupportedHostAndFreshAbsoluteState(string scenario)
+    [DataRow("https://unselected.invalid", RubyReleaseUnits.Smoke, "1.2.3")]
+    [DataRow("https://rubygems.org", "another-package", "1.2.3")]
+    [DataRow("https://rubygems.org", RubyReleaseUnits.Smoke, " ")]
+    public async Task UnsupportedSourceCoordinateCannotRead(string host, string name,
+        string version)
     {
         using var fixture = new Fixture();
-        RubySourceTools tools = scenario switch
-        {
-            "relative-ruby" => fixture.Tools with { Ruby = "ruby" },
-            "relative-helper" => fixture.Tools with { Helper = "source.rb" },
-            "relative-state" => fixture.Tools with { Scratch = "scratch" },
-            "missing-state" => fixture.Tools with
-            {
-                Scratch = Path.Combine(fixture.Root,
-                "missing")
-            },
-            _ => fixture.Tools,
-        };
-        if (scenario == "used-state") File.WriteAllText(Path.Combine(tools.Scratch, "stale"),
-            "stale");
-        int calls = 0;
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => RubySourceReader.ReadAsync(
-            scenario == "host" ? "https://unselected.invalid" : "https://rubygems.org",
-            scenario == "name" ? "another-package" : fixture.Prepared.Files[0].Name,
-            scenario == "blank-version" ? " " : fixture.Prepared.Files[0].Version,
-            tools, null, (_, _) =>
-            {
-                calls++;
-                return Task.FromResult(Success("{\"state\":\"absent\"}"));
-            }, context.CancellationToken));
-        Assert.AreEqual(0, calls);
-        Assert.IsFalse(File.Exists(Path.Combine(tools.Scratch, "request.json")));
+        await AssertNoSourceReadAsync(fixture.Tools, host, name, version);
     }
+
+    [TestMethod]
+    [DataRow("ruby", null, null)]
+    [DataRow(null, "source.rb", null)]
+    [DataRow(null, null, "scratch")]
+    public async Task SourceToolsRequireAbsolutePaths(string? ruby, string? helper, string? scratch)
+    {
+        using var fixture = new Fixture();
+        await AssertNoSourceReadAsync(new(ruby ?? fixture.Tools.Ruby,
+            helper ?? fixture.Tools.Helper, scratch ?? fixture.Tools.Scratch));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task SourceRequiresExistingEmptyScratch(bool missing)
+    {
+        using var fixture = new Fixture();
+        if (missing) Directory.Delete(fixture.Tools.Scratch);
+        else File.WriteAllText(Path.Combine(fixture.Tools.Scratch, "stale"), "stale");
+        await AssertNoSourceReadAsync(fixture.Tools);
+        Assert.IsFalse(File.Exists(Path.Combine(fixture.Tools.Scratch, "request.json")));
+    }
+
+    private async Task AssertNoSourceReadAsync(RubySourceTools tools,
+        string host = "https://rubygems.org", string name = RubyReleaseUnits.Smoke,
+        string version = "1.2.3") =>
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => RubySourceReader.ReadAsync(
+            host, name, version, tools, null, (_, _) => throw new AssertFailedException(
+                "Unsafe read request reached the native executor."), context.CancellationToken));
 
     [TestMethod]
     public async Task ExactObservationCannotCompleteWithMissingRequiredCheck()

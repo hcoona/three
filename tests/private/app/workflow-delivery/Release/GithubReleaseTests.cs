@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
@@ -68,22 +69,22 @@ public sealed class GithubReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("linux", "native-input")]
-    [DataRow("missing-editor", "contents")]
-    [DataRow("install-fails", "installer-consumer")]
-    [DataRow("install-wrong", "installer-consumer")]
-    [DataRow("official-unreleased", "native-input")]
-    public async Task PreparationStopsAtFirstUnqualifiedCheck(string defect, string failed)
+    [DataRow(false, true, null, null, 0, "native-input")]
+    [DataRow(true, true, "svg-edit/index.html", null, 0, "contents")]
+    [DataRow(true, true, null, null, 5, "installer-consumer")]
+    [DataRow(true, true, null, "ImageOcclusionEditor.exe", 0, "installer-consumer")]
+    [DataRow(true, false, null, null, 0, "native-input")]
+    public async Task PreparationStopsAtFirstUnqualifiedCheck(bool windows, bool publicRelease,
+        string? missingBuildFile, string? missingInstalledFile, int installerExit, string failed)
     {
         using var fixture = await PreparationFixture.CreateAsync(context.CancellationToken);
-        fixture.Defect = defect;
-        if (defect == "official-unreleased")
-            fixture.Subject = fixture.Subject with
-            {
-                Channel = "official",
-                Destination = GithubReleaseUnits.Official,
-                SelectedRef = "refs/heads/main",
-            };
+        fixture.Windows = windows;
+        fixture.PublicRelease = publicRelease;
+        fixture.MissingBuildFile = missingBuildFile;
+        fixture.MissingInstalledFile = missingInstalledFile;
+        fixture.InstallerExit = installerExit;
+        if (!publicRelease) fixture.Subject = Subject(official: true) with
+        { Revision = fixture.Subject.Revision };
         GithubReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
 
         Assert.IsNotEmpty(result.Errors);
@@ -120,25 +121,23 @@ public sealed class GithubReleaseTests(TestContext context)
     }
 
     [TestMethod]
+    [DoNotParallelize]
     [DataRow(false)]
     [DataRow(true)]
-    public async Task AbsentReleaseIsCreatedOnceThenReadBackByteForByte(bool official)
+    public void AbsentReleaseIsCreatedOnceThenReadBackByteForByte(bool official)
     {
         using var github = new FakeGithub();
         using var originals = new Originals();
-        GithubReleasePreparationResult preparation = Preparation(official);
-        PreparedRelease prepared = preparation.Prepared;
-        GithubReleaseDestination destination = github.Destination();
-
-        GithubReleaseObservationResult initial = await destination.ObserveAsync(prepared,
-            context.CancellationToken);
+        string preparation = originals.Save("prepared.json", Preparation(official),
+            TransferJson.Default.GithubReleasePreparationResult);
+        var (initial, initialPath) = Execute("observe", ["release", "observe-github-release",
+            preparation, originals.Root], TransferJson.Default.GithubReleaseObservationResult);
         Assert.IsTrue(initial.Observation.Files.All(file =>
             file.State == ReleaseFileState.Absent));
-        Assert.AreEqual("installer,portable", string.Join(",",
-            GithubRelease.Missing(prepared, initial)));
 
-        GithubReleasePublicationResult publication = await Publish(preparation, originals,
-            initial, destination);
+        var (publication, publicationPath) = Execute("publish",
+            ["release", "publish-github-release", preparation, originals.Root, initialPath],
+            TransferJson.Default.GithubReleasePublicationResult);
         Assert.IsEmpty(publication.Errors);
         Assert.IsTrue(publication.Creation!.Succeeded);
         Assert.HasCount(2, publication.Uploads);
@@ -149,15 +148,36 @@ public sealed class GithubReleaseTests(TestContext context)
         Assert.AreEqual("image-occlusion-editor v" + Version, github.Release.Name);
         Assert.AreEqual(official ? null : "false", github.Release.MakeLatest);
 
-        GithubReleaseObservationResult final = await destination.ObserveAsync(prepared,
-            context.CancellationToken);
-        GithubReleaseCompletionResult completion = GithubRelease.Complete(prepared, initial,
-            final, publication);
+        var (final, finalPath) = Execute("verify", ["release", "observe-github-release",
+            preparation, originals.Root], TransferJson.Default.GithubReleaseObservationResult);
+        Assert.IsTrue(final.Observation.Files.All(file => file.State == ReleaseFileState.Exact));
+        var (completion, _) = Execute("complete",
+            ["release", "complete-github-release", preparation, initialPath, finalPath,
+                publicationPath], TransferJson.Default.GithubReleaseCompletionResult);
         Assert.AreEqual(ReleaseBusinessState.Satisfied, completion.Outcome.State,
             string.Join("; ", completion.Outcome.Reasons));
         Assert.IsTrue(completion.MutationAttempted);
         Assert.IsTrue(github.Requests.Where(request => request.Method == HttpMethod.Post)
             .All(request => request.Authorization == "Bearer controlled-token"));
+
+        (T Result, string Path) Execute<T>(string phase, string[] arguments, JsonTypeInfo<T> type)
+        {
+            string? previous = Environment.GetEnvironmentVariable("GITHUB_TOKEN");
+            try
+            {
+                Environment.SetEnvironmentVariable("GITHUB_TOKEN", "controlled-token");
+                using var output = new StringWriter();
+                Assert.AreEqual(0, GithubReleaseCli.Run(arguments, output,
+                    client: () => new HttpClient(github, disposeHandler: false)));
+                string path = Path.Combine(originals.Root, phase + ".json");
+                File.WriteAllText(path, output.ToString());
+                return (ReleaseCli.Read(path, type), path);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("GITHUB_TOKEN", previous);
+            }
+        }
     }
 
     [TestMethod]
@@ -183,35 +203,51 @@ public sealed class GithubReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("different-bytes", "Conflict")]
-    [DataRow("different-size", "Conflict")]
-    [DataRow("other-tag-commit", "Conflict")]
-    [DataRow("annotated-tag", "Conflict")]
-    [DataRow("channel", "Conflict")]
-    [DataRow("extra-asset", "Conflict")]
-    [DataRow("starter-asset", "Unknown")]
-    [DataRow("unavailable", "Unknown")]
-    public async Task ExistingDifferentStateIsNeverOverwritten(string defect, string expected)
+    [DataRow("MZ controlled setuq")]
+    [DataRow("MZ other")]
+    public async Task ExistingDifferentOriginalIsNeverOverwritten(string bytes) =>
+        await AssertNoMutationAsync(github => github.Publish(Revision, prerelease: true,
+            ("setup", Encoding.ASCII.GetBytes(bytes))), ReleaseFileState.Conflict);
+
+    [TestMethod]
+    [DataRow("notes.txt", "uploaded", "Conflict")]
+    [DataRow("", "starter", "Unknown")]
+    public async Task UnexpectedOrUnfinishedAssetsBlockPublication(string name, string state,
+        string expected) => await AssertNoMutationAsync(github =>
+        {
+            github.Publish(Revision, prerelease: true, ("setup", Setup));
+            github.AddAsset(name.Length == 0 ? Name("portable-zip") : name, state, Portable);
+        }, Enum.Parse<ReleaseFileState>(expected));
+
+    [TestMethod]
+    [DataRow("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", false, true)]
+    [DataRow(Revision, true, true)]
+    [DataRow(Revision, false, false)]
+    public async Task WrongTagOrChannelCannotMutateRelease(string commit, bool annotated,
+        bool prerelease) => await AssertNoMutationAsync(github =>
+        {
+            github.Publish(commit, prerelease: true, ("setup", Setup));
+            github.AnnotatedTag = annotated;
+            if (!prerelease) github.MarkFullRelease();
+        }, ReleaseFileState.Conflict);
+
+    [TestMethod]
+    public async Task UnavailableRepositoryCannotMutateRelease() =>
+        await AssertNoMutationAsync(github => github.Unavailable = true, ReleaseFileState.Unknown);
+
+    private async Task AssertNoMutationAsync(Action<FakeGithub> arrange,
+        ReleaseFileState expected)
     {
         using var github = new FakeGithub();
         using var originals = new Originals();
-        byte[] setup = defect == "different-bytes" ? Encoding.ASCII.GetBytes("MZ controlled setuq")
-            : defect == "different-size" ? Encoding.ASCII.GetBytes("MZ other") : Setup;
-        github.Publish(defect == "other-tag-commit" ? new string('b', 40) : Revision,
-            prerelease: true, ("setup", setup));
-        if (defect == "channel") github.MarkFullRelease();
-        if (defect == "annotated-tag") github.AnnotatedTag = true;
-        if (defect == "extra-asset") github.AddAsset("notes.txt", "uploaded", [1, 2, 3]);
-        if (defect == "starter-asset") github.AddAsset(Name("portable-zip"), "starter", Portable);
-        if (defect == "unavailable") github.Unavailable = true;
+        arrange(github);
         GithubReleasePreparationResult preparation = Preparation(false);
         PreparedRelease prepared = preparation.Prepared;
         GithubReleaseDestination destination = github.Destination();
         GithubReleaseObservationResult observed = await destination.ObserveAsync(prepared,
             context.CancellationToken);
 
-        Assert.IsTrue(observed.Observation.Files.Any(file =>
-            file.State == Enum.Parse<ReleaseFileState>(expected)));
+        Assert.Contains(expected, observed.Observation.Files.Select(file => file.State));
         Assert.ThrowsExactly<InvalidDataException>(() =>
             GithubRelease.Missing(prepared, observed));
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => Publish(preparation,
@@ -328,11 +364,13 @@ public sealed class GithubReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("create")]
-    [DataRow("upload")]
-    public async Task FailedWriteStopsFurtherWritesAndCompletionIsUnsatisfied(string failing)
+    [DataRow(1, 0, 0)]
+    [DataRow(2, 1, 0)]
+    [DataRow(3, 2, 1)]
+    public async Task FailedWriteStopsFurtherWritesAndRetainsPartialProgress(int failWrite,
+        int uploads, int retainedAssets)
     {
-        using var github = new FakeGithub { Failing = failing };
+        using var github = new FakeGithub { RejectWrite = failWrite };
         using var originals = new Originals();
         GithubReleasePreparationResult preparation = Preparation(false);
         GithubReleaseDestination destination = github.Destination();
@@ -342,7 +380,10 @@ public sealed class GithubReleaseTests(TestContext context)
         GithubReleasePublicationResult publication = await Publish(preparation, originals,
             initial, destination);
         Assert.IsNotEmpty(publication.Errors);
-        Assert.HasCount(failing == "create" ? 0 : 1, publication.Uploads);
+        Assert.HasCount(uploads, publication.Uploads);
+        Assert.AreEqual(retainedAssets, github.Release?.Assets.Count ?? 0);
+        Assert.HasCount(failWrite, github.Requests.Where(request =>
+            request.Method == HttpMethod.Post));
         GithubReleaseObservationResult final = await destination.ObserveAsync(
             preparation.Prepared, context.CancellationToken);
         GithubReleaseCompletionResult completion = GithubRelease.Complete(preparation.Prepared,
@@ -402,6 +443,13 @@ public sealed class GithubReleaseTests(TestContext context)
             File.WriteAllBytes(Path.Combine(Root, "originals/portable.zip"), Portable);
         }
 
+        internal string Save<T>(string name, T value, JsonTypeInfo<T> type)
+        {
+            string path = Path.Combine(Root, name);
+            File.WriteAllText(path, JsonSerializer.Serialize(value, type));
+            return path;
+        }
+
         public void Dispose() => Directory.Delete(Root, true);
     }
 
@@ -425,7 +473,8 @@ public sealed class GithubReleaseTests(TestContext context)
             Release is null ? null : tags.GetValueOrDefault(Release.Tag);
         internal bool AnnotatedTag { get; set; }
         internal bool Unavailable { get; set; }
-        internal string? Failing { get; init; }
+        internal int? RejectWrite { get; init; }
+        private int writes;
         internal Hosted? Release { get; private set; }
         internal IReadOnlyCollection<string> Tags => tags.Keys;
         internal List<Seen> Requests { get; } = [];
@@ -505,7 +554,7 @@ public sealed class GithubReleaseTests(TestContext context)
                 return new(HttpStatusCode.OK) { Content = new ByteArrayContent(served.Bytes) };
             if (request.Method == HttpMethod.Post && path == Repo + "/releases")
             {
-                if (Failing == "create") return new(HttpStatusCode.UnprocessableEntity)
+                if (++writes == RejectWrite) return new(HttpStatusCode.UnprocessableEntity)
                 { Content = new StringContent("{}") };
                 JsonObject body = JsonNode.Parse(await request.Content!.ReadAsStringAsync(
                     token))!.AsObject();
@@ -521,7 +570,7 @@ public sealed class GithubReleaseTests(TestContext context)
                 request.RequestUri.Host == "uploads.github.com" &&
                 path == Repo + "/releases/" + owner.Id + "/assets")
             {
-                if (Failing == "upload") return new(HttpStatusCode.InternalServerError)
+                if (++writes == RejectWrite) return new(HttpStatusCode.InternalServerError)
                 { Content = new StringContent("{}") };
                 string name = Uri.UnescapeDataString(request.RequestUri.Query["?name=".Length..]);
                 owner.Assets.Add(new(next++, name, "uploaded",
@@ -556,7 +605,11 @@ public sealed class GithubReleaseTests(TestContext context)
         {
             Revision = revision,
         };
-        internal string? Defect { get; set; }
+        internal bool Windows { get; set; } = true;
+        internal bool PublicRelease { get; set; } = true;
+        internal string? MissingBuildFile { get; set; }
+        internal string? MissingInstalledFile { get; set; }
+        internal int InstallerExit { get; set; }
 
         internal static async Task<PreparationFixture> CreateAsync(CancellationToken token)
         {
@@ -585,9 +638,7 @@ public sealed class GithubReleaseTests(TestContext context)
 
         internal Task<GithubReleasePreparationResult> RunAsync(CancellationToken token) =>
             GithubReleasePreparation.PrepareAsync(new(Subject, repo.Directory, Scratch),
-                ExecuteAsync, Defect != "linux", token);
-
-        private string publish = "";
+                ExecuteAsync, Windows, token);
 
         private Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
             CancellationToken token)
@@ -603,14 +654,14 @@ public sealed class GithubReleaseTests(TestContext context)
                 {
                     ["SemVer2"] = Version + ".g0123456",
                     ["GitCommitId"] = Subject.Revision,
-                    ["PublicRelease"] = Defect != "official-unreleased",
+                    [nameof(PublicRelease)] = PublicRelease,
                 }.ToJsonString();
             else if (args.Any(arg => arg.EndsWith("Publish-ImageOcclusionEditor.ps1",
                          StringComparison.Ordinal)))
             {
-                publish = Path.Combine(Value("-OutputRoot"),
+                string publish = Path.Combine(Value("-OutputRoot"),
                     "ImageOcclusionEditor/Release/net10.0-windows10.0.22000.0/win-x64");
-                Write(publish, Defect == "missing-editor" ? "svg-edit/index.html" : null);
+                Write(publish, MissingBuildFile);
             }
             else if (args.Any(arg => arg.EndsWith("Build-InnoInstaller.ps1",
                          StringComparison.Ordinal)))
@@ -622,12 +673,13 @@ public sealed class GithubReleaseTests(TestContext context)
             }
             else if (command.Executable.EndsWith("-setup.exe", StringComparison.Ordinal))
             {
-                if (Defect == "install-fails")
-                    return Task.FromResult(new NativeCommandResult(NativeTermination.Exited, 5,
+                if (InstallerExit != 0)
+                    return Task.FromResult(new NativeCommandResult(NativeTermination.Exited,
+                        InstallerExit,
                         "", "", 1, null));
                 string target = args.Single(arg => arg.StartsWith("/DIR=",
                     StringComparison.Ordinal))["/DIR=".Length..];
-                Write(target, Defect == "install-wrong" ? "ImageOcclusionEditor.exe" : null);
+                Write(target, MissingInstalledFile);
             }
             return Task.FromResult(new NativeCommandResult(NativeTermination.Exited, 0, stdout,
                 "", 0.1, null));
@@ -646,7 +698,7 @@ public sealed class GithubReleaseTests(TestContext context)
 
         public void Dispose()
         {
-            Directory.Delete(Scratch, true);
+            PreparationCheckout.Delete(Scratch);
             repo.Dispose();
         }
     }

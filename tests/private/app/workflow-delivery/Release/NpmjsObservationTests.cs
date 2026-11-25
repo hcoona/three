@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Release;
@@ -109,27 +110,21 @@ public sealed class NpmjsObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("duplicate")]
-    [DataRow("name")]
-    [DataRow("version")]
-    [DataRow("origin")]
-    [DataRow("encoding")]
-    public async Task UnsupportedMetadataStopsBeforeFurtherRequests(string defect)
+    [DataRow("\"version\":", "\"version\":\"1.2.3\",\"version\":", null)]
+    [DataRow("@example/package", "other", null)]
+    [DataRow("1.2.3", "9.9.9", null)]
+    [DataRow("registry.npmjs.org", "example.org", null)]
+    [DataRow(null, null, "gzip")]
+    public async Task UnsupportedMetadataStopsBeforeFurtherRequests(string? original,
+        string? replacement, string? contentEncoding)
     {
-        string metadata = defect switch
-        {
-            "duplicate" => Metadata().Replace("\"version\":", "\"version\":\"1.2.3\",\"version\":",
-                StringComparison.Ordinal),
-            "name" => Metadata().Replace("@example/package", "other", StringComparison.Ordinal),
-            "version" => Metadata().Replace("1.2.3", "9.9.9", StringComparison.Ordinal),
-            "origin" => Metadata().Replace("registry.npmjs.org", "example.org",
-                StringComparison.Ordinal),
-            _ => Metadata(),
-        };
+        string metadata = original is null ? Metadata()
+            : Metadata().Replace(original, replacement, StringComparison.Ordinal);
         using var handler = new Handler((_, _, _) =>
         {
             HttpResponseMessage response = Response(200, metadata);
-            if (defect == "encoding") response.Content.Headers.ContentEncoding.Add("gzip");
+            if (contentEncoding is not null)
+                response.Content.Headers.ContentEncoding.Add(contentEncoding);
             return Task.FromResult(response);
         });
         using var client = new HttpClient(handler);
@@ -186,7 +181,7 @@ public sealed class NpmjsObservationTests(TestContext context)
     [TestMethod]
     public async Task IndividualRequestDeadlineIncludesResponseBody()
     {
-        var clock = new ManualClock();
+        var clock = new FakeTimeProvider();
         using var handler = new Handler((_, _, _) => Task.FromResult(
             new HttpResponseMessage(HttpStatusCode.OK)
             { Content = new StreamContent(new DeadlineStream(clock)) }));
@@ -200,7 +195,7 @@ public sealed class NpmjsObservationTests(TestContext context)
         Assert.Contains("deadline", result.Reads[^1].Detail);
     }
 
-    private sealed class DeadlineStream(ManualClock clock) : MemoryStream
+    private sealed class DeadlineStream(FakeTimeProvider clock) : MemoryStream
     {
         public override ValueTask<int> ReadAsync(Memory<byte> buffer,
             CancellationToken cancellationToken = default)
@@ -259,42 +254,6 @@ public sealed class NpmjsObservationTests(TestContext context)
             cancellation.Cancel();
             cancellationToken.ThrowIfCancellationRequested();
             throw new AssertFailedException("Body cancellation did not propagate.");
-        }
-    }
-
-    private sealed class ManualClock : TimeProvider
-    {
-        private TimeSpan elapsed;
-        private readonly List<Timer> timers = [];
-        public override ITimer CreateTimer(TimerCallback callback, object? state,
-            TimeSpan dueTime, TimeSpan period)
-        {
-            var timer = new Timer(this, callback, state);
-            timers.Add(timer);
-            timer.Change(dueTime, period);
-            return timer;
-        }
-        internal void Advance(TimeSpan duration)
-        {
-            elapsed += duration;
-            foreach (Timer timer in timers.ToArray()) timer.Fire(elapsed);
-        }
-        private sealed class Timer(ManualClock clock, TimerCallback callback, object? state)
-            : ITimer
-        {
-            private TimeSpan? due;
-            public bool Change(TimeSpan dueTime, TimeSpan period)
-            {
-                due = dueTime == Timeout.InfiniteTimeSpan ? null : clock.elapsed + dueTime;
-                return true;
-            }
-            internal void Fire(TimeSpan now)
-            {
-                if (due is { } value && value <= now)
-                { due = null; callback(state); }
-            }
-            public void Dispose() => due = null;
-            public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
         }
     }
 

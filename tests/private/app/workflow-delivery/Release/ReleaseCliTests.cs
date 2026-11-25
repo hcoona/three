@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Release;
@@ -97,13 +96,13 @@ public sealed class ReleaseCliTests
     }
 
     [TestMethod]
-    [DataRow("missing")]
-    [DataRow("substituted")]
-    public void ActualObservationCommandRejectsMissingOrSubstitutedOriginal(string defect)
+    [DataRow(true)]
+    [DataRow(false)]
+    public void ObserveRejectsMissingOrSubstitutedOriginal(bool missing)
     {
         using var files = new Files();
         string archive = Path.Combine(files.Root, files.Prepared.Files[0].Path);
-        if (defect == "missing") File.Delete(archive);
+        if (missing) File.Delete(archive);
         else File.WriteAllBytes(archive, [4, 5, 6]);
         using var output = new StringWriter();
         using var error = new StringWriter();
@@ -134,23 +133,29 @@ public sealed class ReleaseCliTests
     }
 
     [TestMethod]
-    [DataRow("missing")]
-    [DataRow("null")]
-    [DataRow("unknown")]
-    [DataRow("duplicate")]
-    public void ActualPreparationCommandRejectsMalformedSubjectBeforeNativeExecution(
-        string defect)
+    [DataRow("""{"checkout":"product","scratch":"output"}""")]
+    [DataRow("""{"subject":null,"checkout":"product","scratch":"output"}""")]
+    public void PrepareRejectsMalformedSubjectBeforeNativeExecution(string request)
     {
         using var files = new Files();
-        JsonObject request = JsonNode.Parse(JsonSerializer.Serialize(
+        AssertPreparationRejected(files.Write("request.json", request));
+    }
+
+    [TestMethod]
+    [DataRow("\"scratch\":\"replaced\",", "Duplicate")]
+    [DataRow("\"approvalMirror\":true,", "approvalMirror")]
+    public void PrepareRejectsAdditionalTransferFields(string property, string diagnostic)
+    {
+        using var files = new Files();
+        string request = JsonSerializer.Serialize(
             new NpmPreparationRequest(files.Prepared.Subject, files.Root, files.Root),
-            TransferJson.Default.NpmPreparationRequest))!.AsObject();
-        if (defect == "missing") request.Remove("subject");
-        if (defect == "null") request["subject"] = null;
-        if (defect == "unknown") request["approvalMirror"] = true;
-        string json = request.ToJsonString();
-        if (defect == "duplicate") json = json.Insert(1, "\"scratch\":\"duplicate\",");
-        string path = files.Write("request.json", json);
+            TransferJson.Default.NpmPreparationRequest);
+        AssertPreparationRejected(files.Write("request.json", request.Insert(1, property)),
+            diagnostic);
+    }
+
+    private static void AssertPreparationRejected(string path, string? diagnostic = null)
+    {
         using var output = new StringWriter();
         using var error = new StringWriter();
 
@@ -158,6 +163,7 @@ public sealed class ReleaseCliTests
 
         Assert.AreEqual("", output.ToString());
         Assert.IsNotEmpty(error.ToString());
+        if (diagnostic is not null) Assert.Contains(diagnostic, error.ToString());
     }
 
     [TestMethod]

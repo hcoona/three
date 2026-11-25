@@ -123,100 +123,88 @@ public sealed class PythonNativePublisherTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("dry-run")]
-    [DataRow("destination")]
-    [DataRow("wrong-name")]
-    [DataRow("wrong-unit")]
-    [DataRow("missing-pair")]
-    [DataRow("wrong-kind")]
-    [DataRow("unknown-output")]
-    [DataRow("missing-context")]
-    [DataRow("missing-url")]
-    [DataRow("wrong-platform")]
-    [DataRow("nonempty-scratch")]
-    [DataRow("overlapping-scratch")]
-    [DataRow("relative-uv")]
-    [DataRow("relative-scratch")]
-    [DataRow("missing-original")]
-    public async Task UnsupportedOrUnqualifiedRequestsCannotInvokePublisher(string defect)
+    [DataRow(true, "testpypi", "hcoona-release-smoke-python", "python-wheel", "wheel")]
+    [DataRow(false, "pypi", "hcoona-release-smoke-python", "python-wheel", "wheel")]
+    [DataRow(false, "testpypi", "foreign", "python-wheel", "wheel")]
+    [DataRow(false, "testpypi", "hcoona-release-smoke-python", "other", "wheel")]
+    [DataRow(false, "testpypi", "hcoona-release-smoke-python", "python-wheel", "foreign")]
+    public async Task IneligibleSelectionCannotInvokePublisher(bool dryRun, string destination,
+        string name, string kind, string output)
     {
         using var fixture = new Fixture();
-        PreparedRelease prepared = fixture.Prepared;
-        PythonPublisherTools tools = fixture.Tools;
-        string output = "wheel";
-        switch (defect)
+        PreparedRelease prepared = fixture.Prepared with
         {
-            case "dry-run":
-                prepared = prepared with
-                {
-                    Subject = prepared.Subject with
-                    { DryRun = true }
-                }; break;
-            case "destination":
-                prepared = prepared with
-                {
-                    Subject = prepared.Subject with
-                    { Destination = "pypi" }
-                }; break;
-            case "wrong-name":
-                prepared = prepared with
-                {
-                    Files = [prepared.Files[0] with
-                { Name = "foreign" }, prepared.Files[1]]
-                }; break;
-            case "wrong-unit":
-                prepared = prepared with
-                {
-                    Subject = prepared.Subject with
-                    { Unit = "foreign" }
-                }; break;
-            case "missing-pair": prepared = prepared with { Files = [prepared.Files[0]] }; break;
-            case "wrong-kind":
-                prepared = prepared with
-                {
-                    Files = [prepared.Files[0] with
-                { Kind = "other" }, prepared.Files[1]]
-                }; break;
-            case "unknown-output": output = "foreign"; break;
-            case "missing-context":
-                fixture.Platform.Remove("ACTIONS_ID_TOKEN_REQUEST_TOKEN");
-                break;
-            case "missing-url": fixture.Platform.Remove("ACTIONS_ID_TOKEN_REQUEST_URL"); break;
-            case "wrong-platform": fixture.Platform["GITHUB_ACTIONS"] = "false"; break;
-            case "nonempty-scratch":
-                File.WriteAllText(Path.Combine(tools.Scratch, "state"), "x");
-                break;
-            case "overlapping-scratch": tools = tools with { Scratch = fixture.Originals }; break;
-            case "relative-uv": tools = tools with { Uv = "uv" }; break;
-            case "relative-scratch": tools = tools with { Scratch = "scratch" }; break;
-            case "missing-original":
-                File.Delete(Path.Combine(fixture.Originals,
-                prepared.Files[0].Path)); break;
-        }
-        using var masks = new StringWriter();
-        bool invoked = false;
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            PythonNativePublisher.PublishAsync(prepared, fixture.Originals, output, tools,
-                fixture.Platform, masks, (_, _) =>
-                { invoked = true; throw new AssertFailedException("Unexpected native writer."); },
-                context.CancellationToken));
+            Subject = fixture.Prepared.Subject with { DryRun = dryRun, Destination = destination },
+            Files = [fixture.Prepared.Files[0] with { Name = name, Kind = kind },
+                fixture.Prepared.Files[1]],
+        };
+        await AssertNoPublishAsync(fixture, prepared, output: output);
+    }
 
-        Assert.IsFalse(invoked);
+    [TestMethod]
+    public async Task MissingPairCannotInvokePublisher()
+    {
+        using var fixture = new Fixture();
+        await AssertNoPublishAsync(fixture, fixture.Prepared with
+        { Files = [fixture.Prepared.Files[0]] });
+    }
+
+    [TestMethod]
+    [DataRow("ACTIONS_ID_TOKEN_REQUEST_TOKEN", null)]
+    [DataRow("ACTIONS_ID_TOKEN_REQUEST_URL", null)]
+    [DataRow("GITHUB_ACTIONS", "false")]
+    public async Task PublicationRequiresCompleteActionsContext(string name, string? value)
+    {
+        using var fixture = new Fixture();
+        if (value is null) fixture.Platform.Remove(name);
+        else fixture.Platform[name] = value;
+        await AssertNoPublishAsync(fixture, fixture.Prepared);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task PublisherRequiresFreshNonOverlappingScratch(bool overlapping)
+    {
+        using var fixture = new Fixture();
+        PythonPublisherTools tools = fixture.Tools;
+        if (overlapping) tools = tools with { Scratch = fixture.Originals };
+        else File.WriteAllText(Path.Combine(tools.Scratch, "state"), "x");
+        await AssertNoPublishAsync(fixture, fixture.Prepared, tools);
+    }
+
+    [TestMethod]
+    [DataRow("uv", null)]
+    [DataRow(null, "scratch")]
+    public async Task PublisherRequiresAbsoluteToolAndScratch(string? uv, string? scratch)
+    {
+        using var fixture = new Fixture();
+        await AssertNoPublishAsync(fixture, fixture.Prepared, fixture.Tools with
+        { Uv = uv ?? fixture.Tools.Uv, Scratch = scratch ?? fixture.Tools.Scratch });
+    }
+
+    private async Task AssertNoPublishAsync(Fixture fixture, PreparedRelease prepared,
+        PythonPublisherTools? tools = null, string output = "wheel")
+    {
+        using var masks = new StringWriter();
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            PythonNativePublisher.PublishAsync(prepared, fixture.Originals, output,
+                tools ?? fixture.Tools, fixture.Platform, masks, (_, _) =>
+                    throw new AssertFailedException("Unexpected native writer."),
+                context.CancellationToken));
         Assert.IsEmpty(masks.ToString());
     }
 
     [TestMethod]
-    public async Task ChangedOriginalCannotInvokePublisher()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task MissingOrChangedOriginalCannotInvokePublisher(bool missing)
     {
         using var fixture = new Fixture();
-        File.WriteAllBytes(Path.Combine(fixture.Originals, fixture.Prepared.Files[1].Path),
-            [9, 9, 9]);
-        using var masks = new StringWriter();
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            PythonNativePublisher.PublishAsync(fixture.Prepared, fixture.Originals, "wheel",
-                fixture.Tools, fixture.Platform, masks, (_, _) =>
-                    throw new AssertFailedException("Unexpected native writer."),
-                context.CancellationToken));
+        string path = Path.Combine(fixture.Originals, fixture.Prepared.Files[1].Path);
+        if (missing) File.Delete(path);
+        else File.WriteAllBytes(path, [9, 9, 9]);
+        await AssertNoPublishAsync(fixture, fixture.Prepared);
     }
 
     [TestMethod]

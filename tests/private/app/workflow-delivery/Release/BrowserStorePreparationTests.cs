@@ -65,18 +65,52 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("version", "consumer")]
-    [DataRow("reference", "consumer")]
-    [DataRow("manifest-version", "consumer")]
-    [DataRow("unsafe-path", "contents")]
-    [DataRow("source-output", "contents")]
-    [DataRow("source-lockfile", "contents")]
-    [DataRow("missing", "build")]
-    public async Task DefectiveStoreZipCannotQualify(string defect, string failed)
+    [DataRow("edge", """{"version":"1.2.0.8"}""")]
+    [DataRow("chrome", """{"manifest_version":2}""")]
+    [DataRow("chrome", """{"content_scripts":[{"js":["content-scripts/missing.js"]}]}""")]
+    public async Task MismatchedStoreManifestCannotQualify(string browser, string patch)
     {
         using Fixture fixture = new("firefox-amo");
-        fixture.Defect = defect;
+        fixture.ChangeArchive = (target, entries) =>
+        {
+            if (target != browser) return;
+            using JsonDocument original = JsonDocument.Parse(entries["manifest.json"]);
+            using JsonDocument changes = JsonDocument.Parse(patch);
+            var manifest = original.RootElement.EnumerateObject().ToDictionary(
+                property => property.Name, property => property.Value, StringComparer.Ordinal);
+            foreach (JsonProperty property in changes.RootElement.EnumerateObject())
+                manifest[property.Name] = property.Value;
+            entries["manifest.json"] = JsonSerializer.Serialize(manifest);
+        };
+        await AssertUnqualifiedAsync(fixture, "consumer");
+    }
 
+    [TestMethod]
+    [DataRow("firefox", "../escape", "x")]
+    [DataRow("sources", BrowserStorePreparation.Product + "/.output/old.zip", "x")]
+    [DataRow("sources", "pnpm-lock.yaml", null)]
+    public async Task UnacceptableArchiveEntriesCannotQualify(string archive, string entry,
+        string? contents)
+    {
+        using Fixture fixture = new("firefox-amo");
+        fixture.ChangeArchive = (target, entries) =>
+        {
+            if (target != archive) return;
+            if (contents is null) entries.Remove(entry);
+            else entries[entry] = contents;
+        };
+        await AssertUnqualifiedAsync(fixture, "contents");
+    }
+
+    [TestMethod]
+    public async Task MissingStoreOutputCannotQualify()
+    {
+        using Fixture fixture = new("firefox-amo") { OmitArchive = "edge" };
+        await AssertUnqualifiedAsync(fixture, "build");
+    }
+
+    private async Task AssertUnqualifiedAsync(Fixture fixture, string failed)
+    {
         BrowserStorePreparationResult result = await fixture.RunAsync(
             context.CancellationToken);
 
@@ -129,7 +163,8 @@ public sealed class BrowserStorePreparationTests(TestContext context)
         private readonly string checkout;
         internal BrowserStorePreparationRequest Request { get; set; }
         internal string Scratch => Request.Scratch;
-        internal string? Defect { get; set; }
+        internal string? OmitArchive { get; init; }
+        internal Action<string, Dictionary<string, string>>? ChangeArchive { get; set; }
 
         internal Fixture(string store, bool writable = true)
         {
@@ -229,19 +264,17 @@ public sealed class BrowserStorePreparationTests(TestContext context)
                 "zip:firefox" => "firefox",
                 _ => "edge"
             };
-            if (Defect == "missing" && browser == "edge") return;
+            if (OmitArchive == browser) return;
             string Name(string suffix) => Path.Combine(directory,
                 $"steam-account-history-to-csv-1.2.0-dev.7-{suffix}.zip");
             var manifest = new Dictionary<string, object>
             {
-                ["manifest_version"] = Defect == "manifest-version" && browser == "chrome" ? 2
-                    : browser == "firefox" ? 2 : 3,
+                ["manifest_version"] = browser == "firefox" ? 2 : 3,
                 ["name"] = BrowserStorePreparation.ManifestName,
-                ["version"] = Defect == "version" && browser == "edge" ? "1.2.0.8" : "1.2.0.7",
+                ["version"] = "1.2.0.7",
                 ["icons"] = new Dictionary<string, string> { ["16"] = "icons/16.png" },
                 ["content_scripts"] = new[] { new Dictionary<string, string[]>
-                    { ["js"] = [Defect == "reference" && browser == "chrome"
-                        ? "content-scripts/missing.js" : "content-scripts/history.js"] } },
+                    { ["js"] = ["content-scripts/history.js"] } },
             };
             if (browser != "firefox") manifest["version_name"] = "1.2.0-dev.7";
             var entries = new Dictionary<string, string>
@@ -250,7 +283,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
                 ["icons/16.png"] = "png",
                 ["content-scripts/history.js"] = "script",
             };
-            if (Defect == "unsafe-path" && browser == "firefox") entries["../escape"] = "x";
+            ChangeArchive?.Invoke(browser, entries);
             Write(Name(browser), entries);
             if (browser == "firefox")
             {
@@ -262,8 +295,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
                     [product + "/package.json"] = "{}",
                     [product + "/wxt.config.ts"] = "config",
                 };
-                if (Defect == "source-output") sources[product + "/.output/old.zip"] = "x";
-                if (Defect == "source-lockfile") sources.Remove("pnpm-lock.yaml");
+                ChangeArchive?.Invoke("sources", sources);
                 Write(Name("sources"), sources);
             }
         }

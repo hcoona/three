@@ -13,224 +13,83 @@ public sealed class RubyNativePublisherTests(TestContext context)
     private const string RepositoryKey = "controlled-repository-write-key";
     private const string TrustedKey = "controlled-action-exported-trusted-key";
     private const string AmbientKey = "controlled-unselected-ambient-key";
-    private const string Uncertainty =
-        "Native Ruby publisher process failed; effects remain uncertain.";
-    private static readonly string[] WindowsVariables = ["SystemRoot", "WINDIR", "PATHEXT"];
-    private static readonly string[] OtherAllowedVariables =
-    [
-        "SystemRoot",
-        "WINDIR",
-        "PATHEXT",
-        "PATH",
-        "LANG",
-        "LC_ALL",
-        "GEM_HOST_API_KEY",
-    ];
+    private static readonly string[] Secrets = [RepositoryKey, TrustedKey, AmbientKey];
+    private static readonly string[] State = ["HOME", "USERPROFILE", "XDG_CONFIG_HOME",
+        "XDG_CACHE_HOME", "XDG_DATA_HOME", "APPDATA", "LOCALAPPDATA", "GEM_HOME", "GEM_PATH",
+        "GEM_SPEC_CACHE", "TMPDIR", "TMP", "TEMP"];
+    private static readonly string[] PlatformVariables = ["SystemRoot", "WINDIR", "PATHEXT"];
+    private static readonly string[] EnvironmentKeys = [.. State, .. PlatformVariables,
+        "PATH", "LANG", "LC_ALL", "GEM_HOST_API_KEY"];
+    private static readonly string[] AmbientVariables = ["GITHUB_TOKEN", "GEM_HOST_API_KEY",
+        "GH_TOKEN", "HTTP_PROXY", "HTTPS_PROXY", "RUBYOPT", "RUBYLIB",
+        "BUNDLE_GEMS__RUBYGEMS__ORG", "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+        "ACTIONS_ID_TOKEN_REQUEST_URL"];
     private static readonly string[] ResultFields = ["Subject", "Upload"];
-    private static readonly string[] RequiredChecks =
-    [
-        "native-input",
-        "build",
-        "contents",
-        "consumer",
-        "original-bytes",
-    ];
-    private static readonly string[] StateVariables =
-    [
-        "HOME",
-        "USERPROFILE",
-        "XDG_CONFIG_HOME",
-        "XDG_CACHE_HOME",
-        "XDG_DATA_HOME",
-        "APPDATA",
-        "LOCALAPPDATA",
-        "GEM_HOME",
-        "GEM_PATH",
-        "GEM_SPEC_CACHE",
-        "TMPDIR",
-        "TMP",
-        "TEMP",
-    ];
-    private static readonly string[] ExcludedVariables =
-    [
-        "GITHUB_TOKEN",
-        "GH_TOKEN",
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "ALL_PROXY",
-        "NO_PROXY",
-        "http_proxy",
-        "https_proxy",
-        "all_proxy",
-        "no_proxy",
-        "BUNDLE_GEMS__RUBYGEMS__ORG",
-        "BUNDLE_RUBYGEMS__PKG__GITHUB__COM",
-        "BUNDLE_USER_CONFIG",
-        "BUNDLE_PATH",
-        "BUNDLE_GEMFILE",
-        "RUBYOPT",
-        "RUBYLIB",
-        "RUBYGEMS_API_KEY",
-        "GEM_API_KEY",
-        "RUBYGEMS_HOST",
-        "GEM_HOST",
-        "GEM_CREDENTIALS",
-        "RUBYGEMS_EMAIL",
-        "RUBYGEMS_PASSWORD",
-        "GEM_USERNAME",
-        "GEM_PASSWORD",
-        "SOURCE_DATE_EPOCH",
-        "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
-        "ACTIONS_ID_TOKEN_REQUEST_URL",
-    ];
+    private static readonly byte[] OriginalBytes = [1, 2, 3, 4];
 
     [TestMethod]
     [DoNotParallelize]
-    [DataRow(
-        "buddy",
-        "github-packages-ruby",
-        "refs/heads/development",
-        "false",
-        "https://rubygems.pkg.github.com/hcoona",
-        "Bearer " + RepositoryKey
-    )]
-    [DataRow("official", "rubygems", "refs/heads/main", "true", "https://rubygems.org", TrustedKey)]
-    [DataRow(
-        "buddy",
-        "github-packages-ruby",
-        "refs/heads/development",
-        "false",
-        "https://rubygems.pkg.github.com/hcoona",
-        "Bearer " + RepositoryKey,
-        RubyReleaseUnits.Latexmath
-    )]
-    [DataRow("official", "rubygems", "refs/heads/main", "true", "https://rubygems.org", TrustedKey,
-        RubyReleaseUnits.Latexmath)]
-    public async Task NativePushUsesQualifiedOriginalSelectedKeyAndClosedState(
-        string channel,
-        string destination,
-        string selectedRef,
-        string publicRelease,
-        string host,
-        string expectedKey,
-        string unit = RubyReleaseUnits.Smoke
-    )
+    [DataRow("buddy", "github-packages-ruby", "refs/heads/development", RubyReleaseUnits.Smoke,
+        "https://rubygems.pkg.github.com/hcoona", "Bearer " + RepositoryKey)]
+    [DataRow("official", "rubygems", "refs/heads/main", RubyReleaseUnits.Smoke,
+        "https://rubygems.org", TrustedKey)]
+    [DataRow("buddy", "github-packages-ruby", "refs/heads/development",
+        RubyReleaseUnits.Latexmath, "https://rubygems.pkg.github.com/hcoona",
+        "Bearer " + RepositoryKey)]
+    [DataRow("official", "rubygems", "refs/heads/main", RubyReleaseUnits.Latexmath,
+        "https://rubygems.org", TrustedKey)]
+    public async Task PushUsesSelectedKeyAndIsolatedState(string channel, string destination,
+        string reference, string unit, string host, string key)
     {
-        using var fixture = new Fixture(unit);
-        RubyPreparationResult preparation = fixture.ForChannel(channel, destination, selectedRef);
-        preparation.Native["public-release"] = publicRelease;
-        var previous = ExcludedVariables
-            .Append("GEM_HOST_API_KEY")
-            .ToDictionary(name => name, Environment.GetEnvironmentVariable, StringComparer.Ordinal);
+        using var fixture = new Fixture(channel, destination, reference, unit);
+        var previous = AmbientVariables.ToDictionary(name => name,
+            Environment.GetEnvironmentVariable, StringComparer.Ordinal);
         try
         {
             foreach (string name in previous.Keys)
                 Environment.SetEnvironmentVariable(name, AmbientKey);
-            int calls = 0;
-            RubyPublishResult result = await RubyNativePublisher.PublishAsync(
-                preparation,
-                fixture.Originals,
-                fixture.Tools,
-                fixture.Platform,
-                (command, token) =>
-                {
-                    calls++;
-                    Assert.AreEqual(context.CancellationToken, token);
-                    Assert.AreEqual(fixture.Tools.Ruby, command.Executable);
-                    Assert.AreEqual(fixture.Tools.Scratch, command.Directory);
-                    Assert.AreEqual(180, command.DeadlineSeconds);
-                    Assert.IsFalse(command.InheritEnvironment);
-                    Assert.IsTrue(command.CloseStandardInput);
-                    CollectionAssert.AreEqual(
-                        new[]
-                        {
-                            fixture.Tools.Gem,
-                            "push",
-                            "--norc",
-                            fixture.OriginalPath,
-                            "--host",
-                            host,
-                        },
-                        command.Arguments
-                    );
-                    Assert.IsNotNull(command.Environment);
-                    Assert.AreEqual(expectedKey, command.Environment["GEM_HOST_API_KEY"]);
-                    Assert.AreEqual("C.UTF-8", command.Environment["LANG"]);
-                    Assert.AreEqual("C.UTF-8", command.Environment["LC_ALL"]);
-                    CollectionAssert.AreEquivalent(
-                        StateVariables.Concat(OtherAllowedVariables).ToArray(),
-                        command.Environment.Keys.ToArray()
-                    );
-                    Assert.AreEqual(
-                        string.Join(
-                            Path.PathSeparator,
-                            Path.GetDirectoryName(fixture.Tools.Ruby),
-                            "/usr/bin",
-                            "/bin"
-                        ),
-                        command.Environment["PATH"]
-                    );
-                    foreach (string name in WindowsVariables)
-                        Assert.AreEqual(
-                            Environment.GetEnvironmentVariable(name),
-                            command.Environment[name]
-                        );
-                    foreach (string name in StateVariables)
-                    {
-                        string state = command.Environment[name]!;
-                        Assert.AreEqual(
-                            Path.Combine(fixture.Tools.Scratch, name.ToLowerInvariant()),
-                            state
-                        );
-                        Assert.IsTrue(Directory.Exists(state), name);
-                        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(state), name);
-                    }
-                    Assert.HasCount(
-                        StateVariables.Length,
-                        StateVariables.Select(name => command.Environment[name]).Distinct()
-                    );
-                    foreach (string name in ExcludedVariables)
-                        Assert.DoesNotContain(name, command.Environment.Keys);
-                    Assert.DoesNotContain(AmbientKey, command.Environment.Values);
-                    Assert.DoesNotContain(
-                        channel == "buddy" ? TrustedKey : RepositoryKey,
-                        command.Environment.Values
-                    );
-                    Assert.DoesNotContain(expectedKey, command.Arguments);
-                    Assert.DoesNotContain("-e", command.Arguments);
-                    Assert.DoesNotContain("-r", command.Arguments);
-                    Assert.DoesNotContain("require", string.Join(" ", command.Arguments));
-                    Assert.IsEmpty(
-                        Directory.EnumerateFiles(
-                            command.Directory,
-                            "*",
-                            SearchOption.AllDirectories
-                        )
-                    );
-                    CollectionAssert.AreEqual(
-                        new byte[] { 1, 2, 3, 4 },
-                        File.ReadAllBytes(fixture.OriginalPath)
-                    );
-                    return Task.FromResult(Success());
-                },
-                context.CancellationToken
-            );
+            var commands = new List<NativeCommand>();
+            RubyPublishResult result = await fixture.RunAsync((command, token) =>
+            {
+                commands.Add(command);
+                Assert.AreEqual(context.CancellationToken, token);
+                return Task.FromResult(new NativeCommandResult(NativeTermination.Exited, 0,
+                    "native output", "native diagnostic", 1.25, null));
+            }, context.CancellationToken);
 
-            Assert.AreEqual(1, calls);
-            Assert.AreEqual(preparation.Prepared.Subject, result.Subject);
+            NativeCommand push = Assert.ContainsSingle(commands);
+            Assert.AreEqual(fixture.Tools.Ruby, push.Executable);
+            Assert.AreEqual(fixture.Tools.Scratch, push.Directory);
+            Assert.AreEqual(180, push.DeadlineSeconds);
+            Assert.IsFalse(push.InheritEnvironment);
+            Assert.IsTrue(push.CloseStandardInput);
+            string[] arguments = [fixture.Tools.Gem, "push", "--norc", fixture.Archive,
+                "--host", host];
+            CollectionAssert.AreEqual(arguments, push.Arguments);
+            Assert.IsNotNull(push.Environment);
+            CollectionAssert.AreEquivalent(EnvironmentKeys, push.Environment.Keys.ToArray());
+            Assert.AreEqual(key, push.Environment["GEM_HOST_API_KEY"]);
+            Assert.DoesNotContain(AmbientKey, push.Environment.Values);
+            Assert.DoesNotContain(key, push.Arguments);
+            Assert.AreEqual("C.UTF-8", push.Environment["LANG"]);
+            Assert.AreEqual("C.UTF-8", push.Environment["LC_ALL"]);
+            Assert.AreEqual(string.Join(Path.PathSeparator,
+                Path.GetDirectoryName(fixture.Tools.Ruby), "/usr/bin", "/bin"),
+                push.Environment["PATH"]);
+            foreach (string name in PlatformVariables)
+                Assert.AreEqual(Environment.GetEnvironmentVariable(name), push.Environment[name]);
+            foreach (string name in State)
+            {
+                string home = Path.Combine(push.Directory, name.ToLowerInvariant());
+                Assert.AreEqual(home, push.Environment[name]);
+                Assert.IsEmpty(Directory.EnumerateFileSystemEntries(home));
+            }
+            CollectionAssert.AreEqual(OriginalBytes, File.ReadAllBytes(fixture.Archive));
+            Assert.AreEqual(fixture.Preparation.Prepared.Subject, result.Subject);
             Assert.AreEqual("selected-gem", result.Upload.Output);
-            Assert.AreEqual(NativeTermination.Exited, result.Upload.Command.Termination);
-            Assert.AreEqual(0, result.Upload.Command.ExitCode);
-            Assert.AreEqual(1.25, result.Upload.Command.DurationSeconds);
             Assert.IsTrue(result.Upload.Command.Succeeded);
-            Assert.IsNull(result.Upload.Command.Error);
-            Assert.IsEmpty(result.Upload.Command.Stdout);
-            Assert.IsEmpty(result.Upload.Command.Stderr);
-            Assert.AreEqual(
-                preparation.Prepared.Files[0].Sha256,
-                Digest(File.ReadAllBytes(fixture.OriginalPath))
-            );
-            AssertTransientStateAbsent(result, fixture);
+            Assert.AreEqual(1.25, result.Upload.Command.DurationSeconds);
+            AssertRedacted(result, fixture);
         }
         finally
         {
@@ -240,251 +99,105 @@ public sealed class RubyNativePublisherTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("no-files")]
-    [DataRow("extra-file")]
-    [DataRow("wrong-unit")]
-    [DataRow("wrong-name")]
-    [DataRow("wrong-kind")]
-    public async Task QualifiedStateDefectsStopBeforeNativeInvocation(string defect)
+    [DataRow("buddy", "rubygems", "refs/heads/development", false)]
+    [DataRow("official", "github-packages-ruby", "refs/heads/main", false)]
+    [DataRow("official", "rubygems", "refs/heads/development", false)]
+    [DataRow("buddy", "github-packages-ruby", "refs/heads/development", true)]
+    public async Task IneligibleSubjectCannotPush(string channel, string destination,
+        string reference, bool dryRun)
     {
-        using var fixture = new Fixture();
-        RubyPreparationResult preparation = fixture.Preparation;
-        PreparedRelease prepared = preparation.Prepared;
-        ReleaseFile file = prepared.Files[0];
-        switch (defect)
-        {
-            case "errors":
-                preparation = preparation with { Errors = ["failed"] };
-                break;
-            case "no-commands":
-                preparation = preparation with { Commands = [] };
-                break;
-            case "no-files":
-                prepared = prepared with { Files = [] };
-                break;
-            case "extra-file":
-                prepared = prepared with
-                {
-                    Files =
-                    [
-                        file,
-                        file with
-                        {
-                            Output = "other",
-                            Path = "other.gem",
-                            Version = "2.0",
-                        },
-                    ],
-                };
-                break;
-            case "wrong-unit":
-                prepared = prepared with { Subject = prepared.Subject with { Unit = "other" } };
-                break;
-            case "wrong-name":
-                file = file with { Name = "other" };
-                preparation.Native["name"] = "other";
-                break;
-            case "wrong-kind":
-                file = file with { Kind = "other" };
-                break;
-            case "empty-output":
-                file = file with { Output = "" };
-                break;
-            case "empty-build":
-                file = file with { Build = "" };
-                break;
-            case "invalid-revision":
-                prepared = prepared with { Subject = prepared.Subject with { Revision = "a" } };
-                break;
-            case "invalid-declaration":
-                prepared = prepared with
-                {
-                    Subject = prepared.Subject with { Declaration = "../unit.yml" },
-                };
-                break;
-            case "no-required-checks":
-                prepared = prepared with { RequiredChecks = [], Checks = [] };
-                break;
-            case "reordered-required-checks":
-                prepared = prepared with { RequiredChecks = RequiredChecks.Reverse().ToArray() };
-                break;
-            case "subset-required-checks":
-                prepared = prepared with
-                {
-                    RequiredChecks = ["native-input"],
-                    Checks = [new("native-input", ReleaseCheckStatus.Passed)],
-                };
-                break;
-            default:
-                Assert.Fail("Unknown qualification scenario.");
-                break;
-        }
-        if (file != fixture.Preparation.Prepared.Files[0])
-            prepared = prepared with { Files = [file] };
-        await AssertRejectedAsync(preparation with { Prepared = prepared }, fixture);
+        using var fixture = new Fixture(channel, destination, reference, dryRun: dryRun);
+        await AssertRejectedAsync(fixture);
     }
 
     [TestMethod]
-    [DataRow("buddy", "rubygems", "refs/heads/development")]
-    [DataRow("official", "github-packages-ruby", "refs/heads/main")]
-    [DataRow("official", "rubygems", "refs/heads/development")]
-    public async Task UnsupportedChannelsAndRefsStopBeforeNativeInvocation(
-        string channel,
-        string destination,
-        string selectedRef
-    )
+    [DataRow("buddy", "github-packages-ruby", "refs/heads/development", "GITHUB_TOKEN")]
+    [DataRow("official", "rubygems", "refs/heads/main", "GEM_HOST_API_KEY")]
+    public async Task MissingSelectedKeyDoesNotFallBack(string channel, string destination,
+        string reference, string selectedKey)
     {
-        using var fixture = new Fixture();
-        RubyPreparationResult preparation = fixture.ForChannel(channel, destination, selectedRef);
-        await AssertRejectedAsync(preparation, fixture);
+        using var fixture = new Fixture(channel, destination, reference);
+        fixture.Platform.Remove(selectedKey);
+        await AssertRejectedAsync(fixture);
     }
 
     [TestMethod]
-    public async Task DryRunStopsBeforeNativeInvocation()
+    [DataRow("another-unit", "ruby-gem", "another-unit")]
+    [DataRow(RubyReleaseUnits.Smoke, "other-kind", RubyReleaseUnits.Smoke)]
+    [DataRow(RubyReleaseUnits.Smoke, "ruby-gem", "unrelated-gem")]
+    public async Task UnsupportedCoordinateCannotPush(string unit, string kind, string name)
     {
-        using var fixture = new Fixture();
-        RubyPreparationResult preparation = fixture.Preparation;
-        await AssertRejectedAsync(
-            preparation with
-            {
-                Prepared = preparation.Prepared with
-                {
-                    Subject = preparation.Prepared.Subject with { DryRun = true },
-                },
-            },
-            fixture
-        );
+        using var fixture = new Fixture(unit: unit);
+        fixture.SetFiles(fixture.Original with { Kind = kind, Name = name });
+        await AssertRejectedAsync(fixture);
     }
 
     [TestMethod]
-    [DataRow("buddy", "missing")]
-    [DataRow("official", "null")]
-    [DataRow("official", "blank")]
-    public async Task MissingSelectedKeyNeverFallsBack(string channel, string defect)
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task PushRequiresExactlyOneOriginal(bool extra)
     {
         using var fixture = new Fixture();
-        RubyPreparationResult preparation =
-            channel == "buddy"
-                ? fixture.Preparation
-                : fixture.ForChannel("official", "rubygems", "refs/heads/main");
-        string selected = channel == "buddy" ? "GITHUB_TOKEN" : "GEM_HOST_API_KEY";
-        if (defect == "missing")
-            fixture.Platform.Remove(selected);
-        else
-            fixture.Platform[selected] = defect == "null" ? null : " \t\r\n";
-        // The other destination's key, account/API keys and OIDC inputs remain available.
-        await AssertRejectedAsync(preparation, fixture);
+        fixture.SetFiles(extra ? [fixture.Original,
+            fixture.Original with { Output = "second", Path = "other.gem" }] : []);
+        await AssertRejectedAsync(fixture);
     }
 
     [TestMethod]
-    [DataRow("missing-original")]
-    [DataRow("changed-same-length")]
-    [DataRow("wrong-digest")]
-    [DataRow("wrong-size")]
-    [DataRow("parent-path")]
-    [DataRow("relative-originals")]
-    [DataRow("relative-ruby")]
-    [DataRow("relative-gem")]
-    [DataRow("relative-scratch")]
-    [DataRow("missing-scratch")]
-    [DataRow("nonempty-scratch")]
-    [DataRow("wrong-owned-path")]
-    public async Task OriginalTransferDefectsStopBeforeNativeInvocation(string defect)
+    [DataRow("../original.gem")]
+    [DataRow("package/other.gem")]
+    public async Task UnexpectedOriginalPathCannotPush(string path)
     {
         using var fixture = new Fixture();
-        RubyPreparationResult preparation = fixture.Preparation;
-        ReleaseFile file = preparation.Prepared.Files[0];
-        RubyPublisherTools tools = fixture.Tools;
-        string originals = fixture.Originals;
-        switch (defect)
-        {
-            case "missing-original":
-                File.Delete(fixture.OriginalPath);
-                break;
-            case "changed-same-length":
-                File.WriteAllBytes(fixture.OriginalPath, [4, 3, 2, 1]);
-                Assert.AreEqual(file.Size, new FileInfo(fixture.OriginalPath).Length);
-                Assert.AreNotEqual(file.Sha256, Digest(File.ReadAllBytes(fixture.OriginalPath)));
-                break;
-            case "wrong-digest":
-                file = file with { Sha256 = new string('b', 64) };
-                break;
-            case "wrong-size":
-                file = file with { Size = file.Size + 1 };
-                break;
-            case "parent-path":
-                file = file with { Path = "../original.gem" };
-                break;
-            case "absolute-path":
-                file = file with { Path = fixture.OriginalPath };
-                break;
-            case "relative-originals":
-                originals = "originals";
-                break;
-            case "relative-ruby":
-                tools = tools with { Ruby = "ruby" };
-                break;
-            case "relative-gem":
-                tools = tools with { Gem = "gem" };
-                break;
-            case "relative-scratch":
-                tools = tools with { Scratch = "scratch" };
-                break;
-            case "missing-scratch":
-                Directory.Delete(tools.Scratch);
-                break;
-            case "nonempty-scratch":
-                File.WriteAllText(Path.Combine(tools.Scratch, "ambient-state"), AmbientKey);
-                break;
-            case "wrong-owned-path":
-                file = file with { Path = "package/other.gem" };
-                break;
-            default:
-                Assert.Fail("Unknown transfer scenario.");
-                break;
-        }
-        preparation = preparation with { Prepared = preparation.Prepared with { Files = [file] } };
-        await AssertRejectedAsync(preparation, fixture, originals, tools);
+        fixture.SetFiles(fixture.Original with { Path = path });
+        await AssertRejectedAsync(fixture);
     }
 
     [TestMethod]
-    public async Task OriginalChangedDuringKeySelectionStopsBeforeNativeInvocation()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task OriginalBytesMustStillMatchAtLaunch(bool duringKeySelection)
     {
         using var fixture = new Fixture();
-        int lookups = 0,
-            calls = 0;
-        var platform = new KeySelection(
-            fixture.Platform,
-            () =>
-            {
-                lookups++;
-                File.WriteAllBytes(fixture.OriginalPath, [4, 3, 2, 1]);
-            }
-        );
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            RubyNativePublisher.PublishAsync(
-                fixture.Preparation,
-                fixture.Originals,
-                fixture.Tools,
-                platform,
-                (_, _) =>
-                {
-                    calls++;
-                    throw new AssertFailedException("Unexpected native push.");
-                },
-                context.CancellationToken
-            )
-        );
-        Assert.AreEqual(1, lookups);
-        Assert.AreEqual(0, calls);
-        Assert.AreEqual(
-            fixture.Preparation.Prepared.Files[0].Size,
-            new FileInfo(fixture.OriginalPath).Length
-        );
-        Assert.AreNotEqual(
-            fixture.Preparation.Prepared.Files[0].Sha256,
-            Digest(File.ReadAllBytes(fixture.OriginalPath))
-        );
+        void Substitute() => File.WriteAllBytes(fixture.Archive, [4, 3, 2, 1]);
+        if (duringKeySelection) fixture.KeyLookup = Substitute;
+        else Substitute();
+        await AssertRejectedAsync(fixture);
+        Assert.AreEqual(fixture.Original.Size, new FileInfo(fixture.Archive).Length);
+    }
+
+    [TestMethod]
+    public async Task OriginalDeclaredSizeMustMatchAtLaunch()
+    {
+        using var fixture = new Fixture();
+        fixture.SetFiles(fixture.Original with { Size = fixture.Original.Size + 1 });
+        await AssertRejectedAsync(fixture);
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task FreshScratchIsRequired(bool missing)
+    {
+        using var fixture = new Fixture();
+        if (missing) Directory.Delete(fixture.Tools.Scratch);
+        else File.WriteAllText(Path.Combine(fixture.Tools.Scratch, "ambient-state"), AmbientKey);
+        await AssertRejectedAsync(fixture);
+    }
+
+    [TestMethod]
+    [DataRow("originals", null, null, null)]
+    [DataRow(null, "ruby", null, null)]
+    [DataRow(null, null, "gem", null)]
+    [DataRow(null, null, null, "scratch")]
+    public async Task RelativePathsCannotPush(string? originals, string? ruby,
+        string? gem, string? scratch)
+    {
+        using var fixture = new Fixture();
+        fixture.Originals = originals ?? fixture.Originals;
+        fixture.Tools = new(ruby ?? fixture.Tools.Ruby, gem ?? fixture.Tools.Gem,
+            scratch ?? fixture.Tools.Scratch);
+        await AssertRejectedAsync(fixture);
     }
 
     [TestMethod]
@@ -494,27 +207,11 @@ public sealed class RubyNativePublisherTests(TestContext context)
     {
         using var fixture = new Fixture();
         using var cancelled = CancellationTokenSource.CreateLinkedTokenSource(
-            context.CancellationToken
-        );
-        if (!duringKeySelection)
-            await cancelled.CancelAsync();
-        var platform = new KeySelection(fixture.Platform, cancelled.Cancel);
-        int calls = 0;
-        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
-            RubyNativePublisher.PublishAsync(
-                fixture.Preparation,
-                fixture.Originals,
-                fixture.Tools,
-                platform,
-                (_, _) =>
-                {
-                    calls++;
-                    throw new AssertFailedException("Unexpected native push.");
-                },
-                cancelled.Token
-            )
-        );
-        Assert.AreEqual(0, calls);
+            context.CancellationToken);
+        if (duringKeySelection) fixture.KeyLookup = cancelled.Cancel;
+        else await cancelled.CancelAsync();
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => fixture.RunAsync(
+            UnexpectedPush, cancelled.Token));
     }
 
     [TestMethod]
@@ -527,126 +224,51 @@ public sealed class RubyNativePublisherTests(TestContext context)
     [DataRow(nameof(NativeTermination.StartFailed), -1, true, false)]
     [DataRow(nameof(NativeTermination.InputFailed), -1, true, false)]
     [DataRow(nameof(NativeTermination.Exited), 0, true, true)]
-    public async Task NativeOutcomesRetainFactsAndOmitDiagnostics(
-        string terminationName,
-        int exit,
-        bool error,
-        bool nativeSucceeded
-    )
+    public async Task NativeOutcomesRetainFactsAndOmitDiagnostics(string termination, int exit,
+        bool error, bool succeeded)
     {
         using var fixture = new Fixture();
-        NativeTermination termination = Enum.Parse<NativeTermination>(terminationName);
-        string unsafeText =
-            RepositoryKey
-            + " "
-            + TrustedKey
-            + " "
-            + AmbientKey
-            + " https://user:password@controlled.invalid arbitrary-native-diagnostic";
-        var native = new NativeCommandResult(
-            termination,
-            exit < 0 ? null : exit,
-            "pushed-before-response-loss " + unsafeText,
-            "::error::" + unsafeText,
-            4.75,
-            error ? unsafeText : null
-        );
-        int calls = 0;
-        RubyPublishResult result = await RubyNativePublisher.PublishAsync(
-            fixture.Preparation,
-            fixture.Originals,
-            fixture.Tools,
-            fixture.Platform,
-            (_, _) =>
-            {
-                calls++;
-                return Task.FromResult(native);
-            },
-            context.CancellationToken
-        );
+        string unsafeText = string.Join(' ', Secrets) + " https://user:password@controlled.invalid";
+        var native = new NativeCommandResult(Enum.Parse<NativeTermination>(termination),
+            exit < 0 ? null : exit, "partial " + unsafeText, "::error::" + unsafeText,
+            4.75, error ? unsafeText : null);
+        int pushes = 0;
+        RubyPublishResult result = await fixture.RunAsync((_, _) =>
+        {
+            pushes++;
+            return Task.FromResult(native);
+        }, context.CancellationToken);
 
-        Assert.AreEqual(1, calls);
-        Assert.AreEqual(fixture.Preparation.Prepared.Subject, result.Subject);
-        Assert.AreEqual("selected-gem", result.Upload.Output);
-        Assert.AreEqual(termination, result.Upload.Command.Termination);
-        Assert.AreEqual(exit < 0 ? (int?)null : exit, result.Upload.Command.ExitCode);
-        Assert.AreEqual(4.75, result.Upload.Command.DurationSeconds);
-        Assert.AreEqual(nativeSucceeded, result.Upload.Command.Succeeded);
+        Assert.AreEqual(1, pushes);
+        Assert.AreEqual(native.Termination, result.Upload.Command.Termination);
+        Assert.AreEqual(native.ExitCode, result.Upload.Command.ExitCode);
+        Assert.AreEqual(native.DurationSeconds, result.Upload.Command.DurationSeconds);
+        Assert.AreEqual(succeeded, result.Upload.Command.Succeeded);
+        Assert.AreEqual(error ? "Native Ruby publisher process failed; effects remain uncertain."
+            : null, result.Upload.Command.Error);
+        AssertRedacted(result, fixture);
+    }
+
+    private async Task AssertRejectedAsync(Fixture fixture) =>
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => fixture.RunAsync(
+            UnexpectedPush, context.CancellationToken));
+
+    private static Task<NativeCommandResult> UnexpectedPush(NativeCommand command,
+        CancellationToken token) => throw new AssertFailedException("Unexpected native push.");
+
+    private static void AssertRedacted(RubyPublishResult result, Fixture fixture)
+    {
         Assert.IsEmpty(result.Upload.Command.Stdout);
         Assert.IsEmpty(result.Upload.Command.Stderr);
-        Assert.AreEqual(error ? Uncertainty : null, result.Upload.Command.Error);
-        string retained = JsonSerializer.Serialize(result);
-        Assert.DoesNotContain("arbitrary-native-diagnostic", retained);
-        Assert.DoesNotContain("pushed-before-response-loss", retained);
-        Assert.DoesNotContain("user:password", retained);
-        Assert.DoesNotContain("::error::", retained);
-        AssertTransientStateAbsent(result, fixture);
-        using JsonDocument record = JsonDocument.Parse(retained);
-        CollectionAssert.AreEquivalent(
-            ResultFields,
-            record.RootElement.EnumerateObject().Select(property => property.Name).ToArray()
-        );
+        string serialized = JsonSerializer.Serialize(result);
+        foreach (string secret in Secrets) Assert.DoesNotContain(secret, serialized);
+        Assert.DoesNotContain("user:password", serialized);
+        Assert.DoesNotContain("::error::", serialized);
+        Assert.DoesNotContain(fixture.Root, serialized);
+        using JsonDocument document = JsonDocument.Parse(serialized);
+        CollectionAssert.AreEquivalent(ResultFields, document.RootElement.EnumerateObject()
+            .Select(property => property.Name).ToArray());
     }
-
-    private async Task AssertRejectedAsync(
-        RubyPreparationResult preparation,
-        Fixture fixture,
-        string? originals = null,
-        RubyPublisherTools? tools = null
-    )
-    {
-        int calls = 0;
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            RubyNativePublisher.PublishAsync(
-                preparation,
-                originals ?? fixture.Originals,
-                tools ?? fixture.Tools,
-                fixture.Platform,
-                (_, _) =>
-                {
-                    calls++;
-                    throw new AssertFailedException("Unexpected native push.");
-                },
-                context.CancellationToken
-            )
-        );
-        Assert.AreEqual(0, calls);
-    }
-
-    private static void AssertTransientStateAbsent(RubyPublishResult result, Fixture fixture)
-    {
-        string retained = JsonSerializer.Serialize(result);
-        foreach (string secret in new[] { RepositoryKey, TrustedKey, AmbientKey })
-            Assert.DoesNotContain(secret, retained);
-        foreach (
-            string member in new[]
-            {
-                "Executable",
-                "Arguments",
-                "Environment",
-                "DeadlineSeconds",
-                "InheritEnvironment",
-                "CloseStandardInput",
-                "State",
-            }
-        )
-            Assert.DoesNotContain("\"" + member + "\"", retained);
-        Assert.DoesNotContain(fixture.Root, retained);
-        Assert.DoesNotContain(fixture.Tools.Gem, retained);
-        Assert.DoesNotContain(fixture.Tools.Ruby, retained);
-    }
-
-    private static string Digest(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
-
-    private static NativeCommandResult Success() =>
-        new(
-            NativeTermination.Exited,
-            0,
-            "arbitrary-success-output",
-            "arbitrary-success-diagnostic",
-            1.25,
-            null
-        );
 
     private sealed class KeySelection(IReadOnlyDictionary<string, string?> values, Action select)
         : IReadOnlyDictionary<string, string?>
@@ -672,96 +294,47 @@ public sealed class RubyNativePublisherTests(TestContext context)
     private sealed class Fixture : IDisposable
     {
         internal string Root { get; } = Directory.CreateTempSubdirectory("ruby publish ").FullName;
-        internal string Originals { get; }
-        internal string OriginalPath { get; }
-        internal RubyPublisherTools Tools { get; }
-        internal RubyPreparationResult Preparation { get; }
-        internal Dictionary<string, string?> Platform { get; } = new(StringComparer.Ordinal);
+        internal string Originals { get; set; }
+        internal string Archive { get; }
+        internal RubyPublisherTools Tools { get; set; }
+        internal RubyPreparationResult Preparation { get; private set; }
+        internal ReleaseFile Original => Preparation.Prepared.Files[0];
+        internal Action? KeyLookup { get; set; }
+        internal Dictionary<string, string?> Platform { get; } = new(StringComparer.Ordinal)
+        {
+            ["GITHUB_TOKEN"] = RepositoryKey,
+            ["GEM_HOST_API_KEY"] = TrustedKey,
+            ["GH_TOKEN"] = AmbientKey,
+            ["RUBYGEMS_API_KEY"] = AmbientKey,
+        };
 
-        internal Fixture(string unit = RubyReleaseUnits.Smoke)
+        internal Fixture(string channel = "buddy", string destination = "github-packages-ruby",
+            string reference = "refs/heads/development", string unit = RubyReleaseUnits.Smoke,
+            bool dryRun = false)
         {
             Originals = Directory.CreateDirectory(Path.Combine(Root, "originals")).FullName;
-            OriginalPath = Path.Combine(
-                Directory.CreateDirectory(Path.Combine(Originals, "package")).FullName,
-                "original.gem"
-            );
-            byte[] bytes = [1, 2, 3, 4];
-            File.WriteAllBytes(OriginalPath, bytes);
-            Tools = new(
-                Path.Combine(Root, "prepared tools", "ruby"),
+            string package = Directory.CreateDirectory(Path.Combine(Originals, "package")).FullName;
+            Archive = Path.Combine(package, "original.gem");
+            File.WriteAllBytes(Archive, OriginalBytes);
+            Tools = new(Path.Combine(Root, "prepared tools", "ruby"),
                 Path.Combine(Root, "prepared tools", "gem"),
-                Directory.CreateDirectory(Path.Combine(Root, "scratch")).FullName
-            );
-            PreparedRelease prepared = new(
-                new(
-                    new string('a', 40),
-                    "refs/heads/development",
-                    unit,
-                    "product/unit.yml",
-                    "buddy",
-                    "github-packages-ruby",
-                    false
-                ),
-                [
-                    new(
-                        "gem-build",
-                        "selected-gem",
-                        "ruby-gem",
-                        unit,
-                        "1.2.3",
-                        "package/original.gem",
-                        bytes.Length,
-                        Digest(bytes)
-                    ),
-                ],
-                RequiredChecks.ToArray(),
-                RequiredChecks
-                    .Select(id => new ReleaseCheck(id, ReleaseCheckStatus.Passed))
-                    .ToArray()
-            );
-            Preparation = new(
-                prepared,
-                new(StringComparer.Ordinal)
-                {
-                    ["name"] = unit,
-                    ["version"] = "1.2.3",
-                    ["platform"] = "ruby",
-                    ["commit"] = prepared.Subject.Revision,
-                    ["public-release"] = "true",
-                },
-                [
-                    new("build", new(Tools.Ruby, Originals, [Tools.Gem, "build"], 180), Success()),
-                    new("consumer", new(Tools.Ruby, Originals, ["consumer"], 180), Success()),
-                ],
-                []
-            );
-            foreach (string name in ExcludedVariables)
-                Platform[name] = AmbientKey;
-            Platform["GITHUB_TOKEN"] = RepositoryKey;
-            Platform["GEM_HOST_API_KEY"] = TrustedKey;
-            Platform["PATH"] = "controlled-ambient-path";
-            foreach (string name in StateVariables)
-                Platform[name] = Root;
+                Directory.CreateDirectory(Path.Combine(Root, "scratch")).FullName);
+            Preparation = new(new(new(new string('a', 40), reference, unit, "product/unit.yml",
+                channel, destination, dryRun), [new("gem-build", "selected-gem", "ruby-gem",
+                    unit, "1.2.3", "package/original.gem", OriginalBytes.Length,
+                    Convert.ToHexStringLower(SHA256.HashData(OriginalBytes)))], [], []),
+                new(StringComparer.Ordinal), [], []);
         }
 
-        internal RubyPreparationResult ForChannel(
-            string channel,
-            string destination,
-            string selectedRef
-        ) =>
-            Preparation with
-            {
-                Prepared = Preparation.Prepared with
-                {
-                    Subject = Preparation.Prepared.Subject with
-                    {
-                        Channel = channel,
-                        Destination = destination,
-                        SelectedRef = selectedRef,
-                    },
-                },
-            };
+        internal void SetFiles(params ReleaseFile[] files) => Preparation = Preparation with
+        { Prepared = Preparation.Prepared with { Files = files } };
 
-        public void Dispose() => Directory.Delete(Root, true);
+        internal Task<RubyPublishResult> RunAsync(
+            Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+            CancellationToken token) => RubyNativePublisher.PublishAsync(Preparation, Originals,
+                Tools, KeyLookup is null ? Platform : new KeySelection(Platform, KeyLookup),
+                execute, token);
+
+        public void Dispose() => PreparationCheckout.Delete(Root);
     }
 }

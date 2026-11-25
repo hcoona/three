@@ -3,6 +3,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Time.Testing;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Release;
 
@@ -30,9 +31,7 @@ public sealed class GithubNuGetObservationTests
         byte[] original = Archive();
         using var handler = new Handler((_, step) => Response(step,
             different ? Archive(extra: true) : original));
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(original), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler, original);
 
         Assert.AreEqual(Enum.Parse<ReleaseFileState>(expected),
             Assert.ContainsSingle(result.Observation.Files).State);
@@ -59,9 +58,7 @@ public sealed class GithubNuGetObservationTests
             if (!declared && step > 3) response.Content.Headers.ContentLength = null;
             return response;
         });
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(original), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler, original);
 
         ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
         Assert.AreEqual(ReleaseFileState.Conflict, file.State);
@@ -76,9 +73,7 @@ public sealed class GithubNuGetObservationTests
         byte[] original = Archive();
         byte[] remote = Encoding.UTF8.GetBytes("not a NuGet archive");
         using var handler = new Handler((_, step) => Response(step, remote));
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(original), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler, original);
 
         ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
         Assert.AreEqual(ReleaseFileState.Conflict, file.State);
@@ -100,9 +95,7 @@ public sealed class GithubNuGetObservationTests
             response.Content.Headers.ContentEncoding.Add(encoding);
             return response;
         });
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(original), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler, original);
 
         Assert.AreEqual(Enum.Parse<ReleaseFileState>(expected),
             Assert.ContainsSingle(result.Observation.Files).State);
@@ -119,9 +112,7 @@ public sealed class GithubNuGetObservationTests
             2 => Json("[]"),
             _ => Json("{\"versions\":[]}"),
         });
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Absent, result.Observation.Files[0].State);
         Assert.IsTrue(result.Observation.Checks.All(check =>
@@ -130,19 +121,14 @@ public sealed class GithubNuGetObservationTests
     }
 
     [TestMethod]
-    [DataRow("unrelated")]
-    [DataRow("npm")]
-    public async Task ConflictingPackageControlStopsBeforeVersionReads(string change)
+    [DataRow("hcoona/three", "hcoona/unrelated")]
+    [DataRow("nuget", "npm")]
+    public async Task ConflictingPackageControlStopsBeforeVersionReads(string original,
+        string replacement)
     {
-        string control = change switch
-        {
-            "npm" => Control.Replace("nuget", "npm", StringComparison.Ordinal),
-            _ => Control.Replace("hcoona/three", "hcoona/unrelated", StringComparison.Ordinal),
-        };
+        string control = Control.Replace(original, replacement, StringComparison.Ordinal);
         using var handler = new Handler((_, step) => Json(step == 0 ? Index : control));
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Conflict, result.Observation.Files[0].State);
         Assert.HasCount(2, handler.Requests);
@@ -153,9 +139,7 @@ public sealed class GithubNuGetObservationTests
     {
         using var handler = new Handler((_, step) => step == 3
             ? Json("{\"versions\":[]}") : Response(step, Archive()));
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(4, handler.Requests);
@@ -170,9 +154,7 @@ public sealed class GithubNuGetObservationTests
     {
         using var handler = new Handler((_, _) => new((HttpStatusCode)status)
         { Content = new ByteArrayContent([]) });
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(1, handler.Requests);
@@ -194,52 +176,31 @@ public sealed class GithubNuGetObservationTests
     }
 
     [TestMethod]
-    [DataRow("duplicate")]
-    [DataRow("different-owner")]
-    [DataRow("multiple-endpoints")]
-    [DataRow("missing")]
-    public async Task InvalidNativeServiceResourcesStopBeforePackageReads(string shape)
+    [DataRow("\"version\":\"3.0.0\"", "\"version\":\"3.0.0\",\"version\":\"3.0.0\"")]
+    [DataRow("/hcoona/", "/unrelated/")]
+    [DataRow("\"resources\":[", "\"resources\":[{\"@type\":\"PackageBaseAddress/3.0.0\","
+        + "\"@id\":\"https://nuget.pkg.github.com/hcoona/other/\"},")]
+    [DataRow(Index, """{"version":"3.0.0","resources":[]}""")]
+    public async Task InvalidNativeServiceResourcesStopBeforePackageReads(string original,
+        string replacement)
     {
-        string index = shape switch
-        {
-            "duplicate" => Index.Replace("\"version\":\"3.0.0\"",
-                "\"version\":\"3.0.0\",\"version\":\"3.0.0\"", StringComparison.Ordinal),
-            "different-owner" => Index.Replace("/hcoona/", "/unrelated/",
-                StringComparison.Ordinal),
-            "multiple-endpoints" => Index.Replace("\"resources\":[",
-                "\"resources\":[{\"@type\":\"PackageBaseAddress/3.0.0\","
-                + "\"@id\":\"https://nuget.pkg.github.com/hcoona/other/\"},",
-                StringComparison.Ordinal),
-            _ => "{\"version\":\"3.0.0\",\"resources\":[]}",
-        };
+        string index = Index.Replace(original, replacement, StringComparison.Ordinal);
         using var handler = new Handler((_, _) => Json(index));
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(1, handler.Requests);
     }
 
     [TestMethod]
-    [DataRow("duplicate-id")]
-    [DataRow("duplicate-version")]
-    [DataRow("missing-id")]
-    public async Task InvalidSupportingInventoryCannotEstablishAbsence(string shape)
+    [DataRow("""[{"id":1,"name":"1.0"},{"id":1,"name":"2.0"}]""")]
+    [DataRow("""[{"id":1,"name":"1.0"},{"id":2,"name":"1.0.0"}]""")]
+    [DataRow("""[{"name":"1.0"}]""")]
+    public async Task InvalidSupportingInventoryCannotEstablishAbsence(string versions)
     {
-        string versions = shape switch
-        {
-            "duplicate-id" => "[{\"id\":1,\"name\":\"1.0\"},"
-                + "{\"id\":1,\"name\":\"2.0\"}]",
-            "duplicate-version" => "[{\"id\":1,\"name\":\"1.0\"},"
-                + "{\"id\":2,\"name\":\"1.0.0\"}]",
-            _ => "[{\"name\":\"1.0\"}]",
-        };
         using var handler = new Handler((_, step) => step == 2 ? Json(versions)
             : Response(step, Archive()));
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(3, handler.Requests);
@@ -256,9 +217,7 @@ public sealed class GithubNuGetObservationTests
             response.Content.Headers.ContentLength = oversized ? 3 * 1024 * 1024 : 1;
             return response;
         });
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(1, handler.Requests);
@@ -271,9 +230,7 @@ public sealed class GithubNuGetObservationTests
             : Json("[" + string.Join(',', Enumerable.Range(0, 100).Select(offset =>
                 "{\"id\":" + (step * 100 + offset) + ",\"name\":\"1.0."
                 + (step * 100 + offset) + "\"}")) + "]"));
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(80, handler.Requests);
@@ -284,12 +241,10 @@ public sealed class GithubNuGetObservationTests
     [TestMethod]
     public async Task BodyConsumptionSharesThePerReadDeadline()
     {
-        var clock = new ManualClock();
+        var clock = new FakeTimeProvider();
         using var handler = new Handler((_, _) => new(HttpStatusCode.OK)
         { Content = new StreamContent(new ExpiredBody(clock)) });
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client, clock)
-            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler, clock: clock);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(1, handler.Requests);
@@ -299,22 +254,28 @@ public sealed class GithubNuGetObservationTests
     [TestMethod]
     public async Task CompleteIndividualReadsStillShareTheObservationDeadline()
     {
-        var clock = new ManualClock();
+        var clock = new FakeTimeProvider();
         using var handler = new Handler((_, step) =>
         {
             clock.Advance(TimeSpan.FromSeconds(24));
             return Response(step, Archive());
         });
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client, clock)
-            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
+        NuGetObservationResult result = await ObserveAsync(handler, clock: clock);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(4, handler.Requests);
         Assert.Contains("deadline", result.Reads[^1].Detail);
     }
 
-    private sealed class ExpiredBody(ManualClock clock) : MemoryStream
+    private static async Task<NuGetObservationResult> ObserveAsync(Handler handler,
+        byte[]? original = null, TimeProvider? clock = null)
+    {
+        using var client = new HttpClient(handler, disposeHandler: false);
+        return await new GithubNuGetObservation(client, clock)
+            .ObserveAsync(Prepared(original ?? Archive()), Credential, CancellationToken.None);
+    }
+
+    private sealed class ExpiredBody(FakeTimeProvider clock) : MemoryStream
     {
         public override ValueTask<int> ReadAsync(Memory<byte> buffer,
             CancellationToken cancellationToken = default)
@@ -322,41 +283,6 @@ public sealed class GithubNuGetObservationTests
             clock.Advance(TimeSpan.FromSeconds(31));
             cancellationToken.ThrowIfCancellationRequested();
             throw new AssertFailedException("Body deadline did not propagate.");
-        }
-    }
-
-    private sealed class ManualClock : TimeProvider
-    {
-        private TimeSpan elapsed;
-        private readonly List<Timer> timers = [];
-        public override ITimer CreateTimer(TimerCallback callback, object? state,
-            TimeSpan dueTime, TimeSpan period)
-        {
-            var timer = new Timer(this, callback, state);
-            timers.Add(timer);
-            timer.Change(dueTime, period);
-            return timer;
-        }
-        internal void Advance(TimeSpan duration)
-        {
-            elapsed += duration;
-            foreach (Timer timer in timers.ToArray()) timer.Fire(elapsed);
-        }
-        private sealed class Timer(ManualClock clock, TimerCallback callback, object? state)
-            : ITimer
-        {
-            private TimeSpan? due;
-            public bool Change(TimeSpan dueTime, TimeSpan period)
-            {
-                due = dueTime == Timeout.InfiniteTimeSpan ? null : clock.elapsed + dueTime;
-                return true;
-            }
-            internal void Fire(TimeSpan now)
-            {
-                if (due is { } value && value <= now) { due = null; callback(state); }
-            }
-            public void Dispose() => due = null;
-            public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
         }
     }
 

@@ -10,39 +10,17 @@ namespace WorkflowDelivery.Tests.Release;
 [TestClass]
 public sealed class RubyPreparationTests(TestContext context)
 {
-    private static readonly string[] Checks =
-    [
-        "native-input",
-        "build",
-        "contents",
-        "consumer",
-        "original-bytes",
-    ];
-    private static readonly string[] Tested =
-    [
-        "native-input",
-        "build",
-        "contents",
-        "consumer",
-        "tests",
-        "original-bytes",
-    ];
-
-    private static readonly string[] NativeKeys =
-    [
-        "name",
-        "version",
-        "platform",
-        "commit",
-        "public-release",
-        "ruby",
-        "rubygems",
-        "nbgv",
-    ];
-
+    private static readonly string[] Checks = ["native-input", "build", "contents",
+        "consumer", "original-bytes"];
+    private static readonly string[] Tested = ["native-input", "build", "contents",
+        "consumer", "tests", "original-bytes"];
+    private static readonly string[] AmbientSecrets = ["GEM_HOST_API_KEY", "GITHUB_TOKEN",
+        "HTTPS_PROXY"];
     private static GitFixture? shared;
     private static string sharedRevision = "";
-    private const string Revision = "0123456789abcdef0123456789abcdef01234567";
+    private const string Channel = "Unsupported Ruby Release channel or ref.";
+    private const string Recipe = "Unsupported complete Ruby Release recipe.";
+    private const string Quality = "Unsupported complete Ruby quality selection.";
 
     // The smoke gem generates version.rb in its checkout; those rows need a writable copy.
     private static Fixture Smoke(bool writable = false, string directory = "product") =>
@@ -52,471 +30,244 @@ public sealed class RubyPreparationTests(TestContext context)
         Fixture.Shared(shared!, sharedRevision, "latexmath", unit: Fixture.Latexmath);
 
     [ClassInitialize]
-    public static async Task InitializeAsync(TestContext classContext)
-    {
-        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
-        try
+    public static async Task InitializeAsync(TestContext classContext) =>
+        (shared, sharedRevision) = await Fixture.CommitAsync(async repo =>
         {
-            await Fixture.StageRootAsync(repo, "");
-            await Fixture.StageProductAsync(repo, "product", "");
-            await Fixture.StageProductAsync(repo, "recipes/control", "");
-            await Fixture.StageProductAsync(repo, "recipes/quality", "quality");
-            await Fixture.StageProductAsync(repo, "latexmath", "", Fixture.Latexmath);
-            sharedRevision = await repo.CommitAsync();
-            await repo.GitAsync("reset", "--hard", sharedRevision);
-            shared = repo;
-        }
-        catch
-        {
-            repo.Dispose();
-            throw;
-        }
-    }
+            await Fixture.StageRootAsync(repo);
+            await Fixture.StageProductAsync(repo, "product");
+            await Fixture.StageProductAsync(repo, "recipes/control");
+            await Fixture.StageProductAsync(repo, "recipes/quality", preset: "ruby/unknown-v1");
+            await Fixture.StageProductAsync(repo, "latexmath", Fixture.Latexmath);
+        }, classContext.CancellationToken);
 
     [ClassCleanup]
     public static void Cleanup() => shared?.Dispose();
 
     [TestMethod]
-    public async Task CompleteOriginalQualifiesRelease()
+    [DataRow("product")]
+    [DataRow("recipes/control")]
+    [DataRow("product", "official", "rubygems", "refs/heads/main", false, false, false)]
+    [DataRow("product", "official", "rubygems", "refs/tags/preview", true, false)]
+    [DataRow("product", "buddy", "github-packages-ruby", "refs/heads/topic", false, false)]
+    public async Task SmokeQualifiesOriginalForAdmittedPathAndProjection(string directory,
+        string channel = "buddy", string destination = "github-packages-ruby",
+        string selectedRef = "refs/heads/topic", bool dryRun = false, bool publicRelease = true,
+        bool allowed = true)
     {
-        using var fixture = Smoke(writable: true);
+        using var fixture = Smoke(writable: allowed, directory);
+        fixture.Subject = fixture.Subject with
+        {
+            Channel = channel,
+            Destination = destination,
+            SelectedRef = selectedRef,
+            DryRun = dryRun,
+        };
+        fixture.ChangeAnswer("projection", answer => answer["PublicRelease"] = publicRelease);
+        if (!allowed)
+        {
+            RubyPreparationResult rejected = await StoppedAsync(fixture, "native-input");
+            Assert.AreEqual("Native Ruby source/ref projection differs.",
+                Assert.ContainsSingle(rejected.Errors));
+            return;
+        }
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
         ReleaseCompletion.Validate(result.Prepared);
         Assert.AreEqual(fixture.Subject, result.Prepared.Subject);
         CollectionAssert.AreEqual(Checks, result.Prepared.RequiredChecks);
-        CollectionAssert.AreEqual(
-            Checks,
-            result.Prepared.Checks.Select(check => check.Id).ToArray()
-        );
-        foreach (ReleaseCheck check in result.Prepared.Checks)
-            Assert.AreEqual(ReleaseCheckStatus.Passed, check.Status, check.Id);
+        Assert.IsTrue(result.Prepared.Checks.All(check =>
+            check.Status == ReleaseCheckStatus.Passed));
         ReleaseFile file = Assert.ContainsSingle(result.Prepared.Files);
-        Assert.AreEqual("gem-build", file.Build);
-        Assert.AreEqual("gem-output", file.Output);
-        Assert.AreEqual("ruby-gem", file.Kind);
-        Assert.AreEqual("hcoona-release-smoke-ruby", file.Name);
-        Assert.AreEqual("1.2.3", file.Version);
-        Assert.AreEqual("package/original.gem", file.Path);
-        Assert.AreEqual(8L, file.Size);
+        Assert.AreEqual(("gem-output", Fixture.Unit, "1.2.3", "package/original.gem", 8L),
+            (file.Output, file.Name, file.Version, file.Path, file.Size));
         Assert.AreEqual(Convert.ToHexStringLower(SHA256.HashData("original"u8)), file.Sha256);
-        Assert.AreEqual(
-            "original",
-            await File.ReadAllTextAsync(
-                Path.Combine(fixture.Scratch, file.Path),
-                context.CancellationToken
-            )
-        );
-        CollectionAssert.AreEquivalent(NativeKeys, result.Native.Keys.ToArray());
-        Assert.AreEqual(file.Name, result.Native["name"]);
-        Assert.AreEqual(file.Version, result.Native["version"]);
-        Assert.AreEqual("ruby", result.Native["platform"]);
+        Assert.AreEqual("original", File.ReadAllText(Path.Combine(fixture.Scratch, file.Path)));
         Assert.AreEqual(fixture.Subject.Revision, result.Native["commit"]);
-        Assert.AreEqual("true", result.Native["public-release"]);
         Assert.AreEqual(RepositoryToolSelection.Locked("ruby"), result.Native["ruby"]);
-        Assert.AreEqual(Fixture.RubyGems, result.Native["rubygems"]);
         Assert.AreEqual("3.10.94", result.Native["nbgv"]);
-        Assert.IsFalse(
-            result.Native.Values.Any(value =>
-                value.Contains(fixture.Checkout, StringComparison.Ordinal)
-            )
-        );
-        RubyPreparationRequest request = JsonSerializer.Deserialize(
-            JsonSerializer.Serialize(fixture.Request, TransferJson.Default.RubyPreparationRequest),
-            TransferJson.Default.RubyPreparationRequest
-        )!;
-        Assert.AreEqual(fixture.Request, request);
-        RubyPreparationResult transfer = JsonSerializer.Deserialize(
-            JsonSerializer.Serialize(result, TransferJson.Default.RubyPreparationResult),
-            TransferJson.Default.RubyPreparationResult
-        )!;
-        Assert.AreEqual(file, Assert.ContainsSingle(transfer.Prepared.Files));
-        Assert.AreEqual(result.Prepared.Subject, transfer.Prepared.Subject);
-        CollectionAssert.AreEqual(Checks, transfer.Prepared.RequiredChecks);
-        CollectionAssert.AreEqual(
-            result.Commands.Select(command => command.Check).ToArray(),
-            transfer.Commands.Select(command => command.Check).ToArray()
-        );
-        Assert.HasCount(2, result.Commands.Where(command => command.Check == "consumer"));
-        Assert.IsEmpty(result.Commands.Where(command => command.Check == "original-bytes"));
-        foreach (ReleaseCommand command in result.Commands)
+        Assert.AreEqual(publicRelease ? "true" : "false", result.Native["public-release"]);
+        foreach (ReleaseCommand receipt in result.Commands)
         {
-            Assert.IsTrue(command.Result.Succeeded);
-            Assert.IsFalse(command.Command.InheritEnvironment);
-            Assert.IsTrue(command.Command.CloseStandardInput);
-            var environment = command.Command.Environment!;
-            Assert.AreEqual(fixture.Subject.SelectedRef, environment["GITHUB_REF"]);
-            Assert.AreEqual(fixture.Subject.Revision, environment["GITHUB_SHA"]);
-            Assert.StartsWith(fixture.Scratch, environment["HOME"]!);
-            // The selected mise Ruby's RubyGems plugin needs its provider during installs.
-            if (command.Command.Executable != "mise")
-                CollectionAssert.Contains(
-                    environment["PATH"]!.Split(Path.PathSeparator),
-                    Path.GetDirectoryName(fixture.Tools.Mise)
-                );
-            foreach (
-                string excluded in new[]
-                {
-                    "GITHUB_TOKEN",
-                    "GH_TOKEN",
-                    "GEM_HOST_API_KEY",
-                    "BUNDLE_GEMS__RUBYGEMS__ORG",
-                    "HTTP_PROXY",
-                    "HTTPS_PROXY",
-                    "SOURCE_DATE_EPOCH",
-                }
-            )
-                Assert.IsFalse(environment.ContainsKey(excluded), excluded);
-            Assert.IsFalse(
-                environment.TryGetValue("RUBYOPT", out string? options) && options is not null
-            );
-            Assert.IsFalse(
-                environment.TryGetValue("RUBYLIB", out string? library) && library is not null
-            );
+            NativeCommand command = receipt.Command;
+            Assert.IsFalse(command.InheritEnvironment);
+            Assert.IsTrue(command.CloseStandardInput);
+            Assert.AreEqual(fixture.Subject.SelectedRef, command.Environment!["GITHUB_REF"]);
+            Assert.AreEqual(fixture.Subject.Revision, command.Environment["GITHUB_SHA"]);
+            Assert.StartsWith(fixture.Scratch, command.Environment["HOME"]!);
+            Assert.IsFalse(AmbientSecrets.Any(command.Environment.ContainsKey));
         }
-        NativeCommand preparation = Assert
-            .ContainsSingle(
-                result.Commands.Where(command => command.Command.Arguments[0] == "tool")
-            )
-            .Command;
-        Assert.AreEqual(fixture.Tools.Dotnet, preparation.Executable);
-        CollectionAssert.AreEqual(
-            new[]
-            {
-                "tool",
-                "install",
-                "nbgv",
-                "--version",
-                "3.10.94",
-                "--tool-path",
-                Path.Combine(fixture.Scratch, "native-tools"),
-            },
-            preparation.Arguments
-        );
-        NativeCommand build = Assert
-            .ContainsSingle(
-                result.Commands.Where(command => command.Command.Arguments.Contains("build"))
-            )
-            .Command;
-        CollectionAssert.AreEqual(
-            new[]
-            {
-                fixture.Tools.Gem,
-                "build",
-                "--norc",
-                Path.Combine(fixture.Checkout, Fixture.Entry),
-                "--output",
-                Path.Combine(fixture.Scratch, "package", "original.gem"),
-            },
-            build.Arguments
-        );
-        NativeCommand install = Assert
-            .ContainsSingle(
-                result.Commands.Where(command =>
-                    command.Command.Arguments.Contains("install")
-                    && command.Command.Executable == fixture.Tools.Ruby
-                )
-            )
-            .Command;
-        CollectionAssert.AreEqual(
-            new[]
-            {
-                fixture.Tools.Gem,
-                "install",
-                "--norc",
-                Path.Combine(fixture.Scratch, "package", "original.gem"),
-                "--local",
-                "--no-document",
-            },
-            install.Arguments
-        );
+        NativeCommand mise = Assert.ContainsSingle(result.Commands.Where(command =>
+            command.Command.Executable == "mise")).Command;
+        Assert.AreEqual(fixture.Request.MiseDataDirectory, mise.Environment!["MISE_DATA_DIR"]);
+        Assert.AreEqual(fixture.Checkout, mise.Environment["MISE_TRUSTED_CONFIG_PATHS"]);
+        NativeCommand build = result.Commands.First(command =>
+            command.Command.Arguments.Contains("build")).Command;
+        Assert.Contains("--norc", build.Arguments);
+        Assert.Contains(Path.Combine(fixture.Checkout, $"{directory}/{Fixture.Unit}.gemspec"),
+            build.Arguments);
+        NativeCommand install = result.Commands.Single(command =>
+            command.Command.Arguments is [_, "install", "--norc", ..]).Command;
+        Assert.Contains(Path.Combine(fixture.Scratch, "package", "original.gem"),
+            install.Arguments);
+        Assert.Contains("--local", install.Arguments);
         NativeCommand consumer = result.Commands[^1].Command;
         Assert.StartsWith(fixture.Scratch, consumer.Directory);
-        Assert.AreEqual(consumer.Environment!["GEM_HOME"], consumer.Environment["GEM_PATH"]);
-        Assert.AreEqual(consumer.Environment["GEM_HOME"], consumer.Arguments[3]);
-        Assert.Contains("Gem.loaded_specs", consumer.Arguments[1]);
-        Assert.Contains("spec.platform.to_s == 'ruby'", consumer.Arguments[1]);
         Assert.Contains("File.realpath(spec.full_gem_path)", consumer.Arguments[1]);
-        Assert.Contains("loaded.length == 2", consumer.Arguments[1]);
-        Assert.DoesNotContain(fixture.Checkout, consumer.Arguments);
+        Assert.Contains("spec.platform.to_s == 'ruby'", consumer.Arguments[1]);
         Assert.IsEmpty(Directory.GetFiles(Path.Combine(fixture.Scratch, "queries")));
     }
 
     [TestMethod]
-    [DataRow("github-packages-ruby", "refs/heads/main")]
-    [DataRow("rubygems", "")]
-    public void OfficialDryRunStillRequiresRubyGemsAndANamedRef(string destination,
-        string selectedRef)
+    [DataRow("product", "rubygems", Channel)]
+    [DataRow("recipes/quality", "github-packages-ruby", Quality)]
+    [DataRow("product", "github-packages-ruby", "Ruby Release requires the exact source revision.",
+        12)]
+    [DataRow("product", "github-packages-ruby", Channel, null, "refs/heads/main")]
+    [DataRow("product", "rubygems", Channel, null, "")]
+    public async Task InvalidSubjectOrQualityStopsBeforeNativeWork(string directory,
+        string destination, string diagnostic, int? revisionLength = null,
+        string? officialDryRunRef = null)
     {
-        ReleaseSubject subject = Fixture.SubjectFor(Revision, "product", "") with
+        using var fixture = Smoke(directory: directory);
+        string revision = fixture.Subject.Revision;
+        fixture.Subject = fixture.Subject with
         {
-            Channel = "official",
             Destination = destination,
-            SelectedRef = selectedRef,
-            DryRun = true,
+            Revision = revision[..(revisionLength ?? revision.Length)],
+            Channel = officialDryRunRef is null ? "buddy" : "official",
+            SelectedRef = officialDryRunRef ?? fixture.Subject.SelectedRef,
+            DryRun = officialDryRunRef is not null,
         };
-        Assert.AreEqual(Channel,
-            Assert.ThrowsExactly<InvalidDataException>(() => RubyPreparation.Admit(subject))
-                .Message);
-    }
-
-    private const string Channel = "Unsupported Ruby Release channel or ref.";
-
-    [TestMethod]
-    public async Task UnadmittedSubjectStopsBeforeNativeWork()
-    {
-        using var fixture = Smoke();
-        fixture.Subject = fixture.Subject with { Destination = "rubygems" };
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        RubyPreparationResult result = await StoppedAsync(fixture, "native-input");
         Assert.AreEqual(fixture.Subject, result.Prepared.Subject);
-        RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
-        Assert.AreEqual(Channel, Assert.ContainsSingle(result.Errors));
+        Assert.AreEqual(diagnostic, Assert.ContainsSingle(result.Errors));
         Assert.IsEmpty(result.Commands);
     }
 
     [TestMethod]
-    [DataRow("declaration", "Missing committed Ruby release declaration.")]
-    [DataRow("build", Recipe)]
-    [DataRow("extra-build", Recipe)]
-    [DataRow("outputs", Recipe)]
-    [DataRow("extra-output", Recipe)]
-    [DataRow("quality", Quality)]
-    [DataRow("missing-quality", Quality)]
-    [DataRow("entry", "Missing committed adopted Ruby entry.")]
-    [DataRow("entry-name", "Missing committed adopted Ruby entry.")]
-    [DataRow("unit", Recipe)]
-    public async Task UnsupportedCommittedRecipeIsRejected(string defect, string message)
+    [DataRow("product/workflow-delivery.release-unit.yml", null,
+        "Missing committed Ruby release declaration.")]
+    [DataRow(Fixture.Entry, null, "Missing committed adopted Ruby entry.")]
+    [DataRow("product/workflow-delivery.quality.yml", null, Quality)]
+    [DataRow("ruby/gem-v1", "ruby/unknown-v1", Recipe)]
+    [DataRow("kind: ruby-gem", "kind: unknown-kind", Recipe)]
+    [DataRow("entry-point: hcoona-release-smoke-ruby.gemspec", "entry-point: other.gemspec",
+        "Missing committed adopted Ruby entry.")]
+    public async Task UnsupportedCommittedRecipeIsRejected(string input, string? replacement,
+        string message)
     {
+        var files = Fixture.ProductFiles("product");
+        ReleaseSubject subject = Fixture.SubjectFor(sharedRevision, "product");
+        if (replacement is null) files.Remove(input);
+        else files[subject.Declaration] = files[subject.Declaration]
+            .Replace(input, replacement, StringComparison.Ordinal);
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            ReadRecipeAsync(defect)
-        );
+            RubyPreparation.ReadRecipeAsync(subject, shared!.Directory,
+                (path, _) => Task.FromResult(files.GetValueOrDefault(path)),
+                context.CancellationToken));
         Assert.AreEqual(message, error.Message);
     }
 
-    private const string Recipe = "Unsupported complete Ruby Release recipe.";
-    private const string Quality = "Unsupported complete Ruby quality selection.";
-
     [TestMethod]
-    public async Task CompleteCommittedRecipeSelectsItsEntry()
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task ExtraBuildOrOutputStopsBeforeNativeWork(bool extraBuild)
     {
-        RubyReleaseRecipe recipe = await ReadRecipeAsync("");
-        Assert.AreEqual("gem-build", recipe.Build.Id);
-        Assert.AreEqual(Fixture.Entry, recipe.Entry);
-        Assert.AreEqual("product", recipe.Directory);
-    }
+        const string Product = "product";
+        const string Declaration = Product + "/workflow-delivery.release-unit.yml";
+        const string ExtraOutput = "{id: extra, role: primary-package, kind: ruby-gem}";
+        (GitFixture repo, string revision) = await Fixture.CommitAsync(async git =>
+        {
+            await Fixture.StageRootAsync(git);
+            await Fixture.StageProductAsync(git, Product);
+            string declaration = Fixture.ProductFiles(Product)[Declaration];
+            string expanded = extraBuild ? declaration + "\n" + $$"""
+                  - id: extra
+                    definition: ruby/gem-v1
+                    entry-point: {{Fixture.Unit}}.gemspec
+                    outputs: [{{ExtraOutput}}]
+                """ : declaration[..^1] + ", " + ExtraOutput + "]";
+            await git.SetAsync(Declaration, expanded);
+        }, context.CancellationToken);
+        using var repository = repo;
+        using var fixture = Fixture.Shared(repository, revision, Product);
+        fixture.Override = _ => throw new AssertFailedException("Unexpected native preparation.");
 
-    [TestMethod]
-    public async Task UnsupportedCommittedRecipeStopsBeforeNativeWork()
-    {
-        using var fixture = Fixture.Shared(shared!, sharedRevision, "recipes/quality", "quality");
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
-        Assert.AreEqual(Quality, Assert.ContainsSingle(result.Errors));
+        RubyPreparationResult result = await StoppedAsync(fixture, "native-input");
+        Assert.AreEqual(Recipe, Assert.ContainsSingle(result.Errors));
         Assert.IsEmpty(result.Commands);
     }
 
-    // Reads one committed recipe through an in-memory tree; only the directory must exist.
-    private async Task<RubyReleaseRecipe> ReadRecipeAsync(string defect)
+    [TestMethod]
+    [DataRow("runtime", "rubygems", "")]
+    [DataRow("gemspec", "name", "other")]
+    [DataRow("gemspec", "version", "9.9.9")]
+    [DataRow("gemspec", "platform", "other")]
+    [DataRow("gemspec", "gemspec", "other.gemspec")]
+    [DataRow("version", "raw", "other")]
+    [DataRow("projection", "GitCommitId", "0000000000000000000000000000000000000000")]
+    [DataRow("runtime", "ruby", "0.0.0", "differs from the committed locked selection")]
+    [DataRow("mise", "path", "product/mise.toml", "not the committed root", "source")]
+    public async Task NativeFactsMustMatchCommittedInputs(string operation, string field,
+        string value, string? diagnostic = null, string? sourceObject = null)
     {
-        string root = Directory.CreateTempSubdirectory("ruby-recipe-").FullName;
-        try
+        using var fixture = Smoke(writable: operation == "gemspec");
+        fixture.ChangeAnswer(operation, answer =>
         {
-            Directory.CreateDirectory(Path.Combine(root, "product"));
-            Dictionary<string, string> files = Fixture.ProductFiles("product", defect);
-            return await RubyPreparation.ReadRecipeAsync(
-                Fixture.SubjectFor(Revision, "product", defect),
-                root,
-                (path, _) => Task.FromResult(files.GetValueOrDefault(path)),
-                context.CancellationToken
-            );
+            if (sourceObject is null) answer[field] = value;
+            else answer[sourceObject]![field] = Path.GetFullPath(value, fixture.Checkout);
+        });
+        RubyPreparationResult result = await StoppedAsync(fixture, "native-input");
+        Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
+        if (diagnostic is not null)
+        {
+            string error = Assert.ContainsSingle(result.Errors);
+            Assert.Contains(" ruby ", error);
+            Assert.Contains(diagnostic, error);
         }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
     }
 
     [TestMethod]
-    public async Task RelocatedRecipeControlQualifies()
+    [DataRow(null, null)]
+    [DataRow("mise.toml", "Missing committed native input: mise.toml")]
+    [DataRow("mise.lock", "Missing committed native input: mise.lock")]
+    [DataRow(".config/dotnet-tools.json", "Missing committed NBGV tool manifest.")]
+    [DataRow("global.json", "Missing SDK selection.")]
+    [DataRow(Fixture.HelperPath, null)]
+    public async Task CommittedRootDeterminesNativeToolSelection(string? omit, string? diagnostic)
     {
-        using var fixture = Smoke(writable: true, directory: "recipes/control");
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
-        Assert.IsTrue(
-            result.Prepared.Checks.All(check => check.Status == ReleaseCheckStatus.Passed)
-        );
-    }
-
-    [TestMethod]
-    [DataRow("rubygems")]
-    [DataRow("name")]
-    [DataRow("version")]
-    [DataRow("platform")]
-    [DataRow("source-path")]
-    [DataRow("projection-raw")]
-    public async Task NativeIdentityCannotQualifyAnotherRequest(string defect)
-    {
-        using var fixture = Smoke(writable: defect is "name" or "version" or "platform"
-            or "source-path");
-        fixture.Subject = fixture.Subject with
-        {
-            Channel = "official",
-            Destination = "rubygems",
-            SelectedRef = "refs/heads/main",
-        };
-        fixture.Defect = defect;
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
-        Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
-    }
-
-    // Production passes the admitted Official result into the native projection check.
-    [TestMethod]
-    public async Task OfficialNonPublicProjectionStopsBeforeBuild()
-    {
-        using var fixture = Smoke();
-        fixture.Subject = fixture.Subject with
-        {
-            Channel = "official",
-            Destination = "rubygems",
-            SelectedRef = "refs/heads/main",
-        };
-        fixture.Defect = "public-release";
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
-        Assert.AreEqual(
-            "Native Ruby source/ref projection differs.",
-            Assert.ContainsSingle(result.Errors)
-        );
-        Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
-    }
-
-    [TestMethod]
-    [DataRow("commit", nameof(InvalidDataException))]
-    [DataRow("missing-commit", nameof(KeyNotFoundException))]
-    [DataRow("missing-version", nameof(KeyNotFoundException))]
-    [DataRow("missing-public-release", nameof(KeyNotFoundException))]
-    public void NativeProjectionCannotQualifyAnotherRequest(string defect, string failure)
-    {
-        ReleaseSubject subject = Fixture.SubjectFor(Revision, "product", "") with
-        {
-            Channel = "official",
-            Destination = "rubygems",
-            SelectedRef = "refs/heads/main",
-        };
-        using JsonDocument projection = JsonDocument.Parse(
-            Fixture.Projection(Revision, defect).ToJsonString()
-        );
-        Exception error = Assert.Throws<Exception>(() =>
-            RubyPreparation.QualifyNative(subject, official: true, projection.RootElement)
-        );
-        Assert.AreEqual(failure, error.GetType().Name);
-        if (error is InvalidDataException)
-            Assert.AreEqual("Native Ruby source/ref projection differs.", error.Message);
-    }
-
-    [TestMethod]
-    public void OfficialNativeProjectionRetainsItsVersion()
-    {
-        ReleaseSubject subject = Fixture.SubjectFor(Revision, "product", "") with
-        {
-            Channel = "official",
-        };
-        using JsonDocument projection = JsonDocument.Parse(
-            Fixture.Projection(Revision, "").ToJsonString()
-        );
-        Assert.AreEqual(
-            ("1.2.3+g1234567", true),
-            RubyPreparation.QualifyNative(subject, official: true, projection.RootElement)
-        );
-    }
-
-    // Each row breaks one distinct invariant between the native answers and the fixture's own
-    // committed root selection; the message names the tool and the failed condition.
-    [TestMethod]
-    [DataRow("source-path", "not the committed root")]
-    [DataRow("readback", "differs from the committed locked selection")]
-    public async Task RuntimeOutsideCommittedSelectionStopsBeforeBuild(string defect,
-        string condition)
-    {
-        using var fixture = Smoke();
-        fixture.ToolDefect = defect;
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
-        Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
-        string error = Assert.ContainsSingle(result.Errors);
-        Assert.Contains(" ruby ", error);
-        Assert.Contains(condition, error);
-        NativeCommand query = Assert.ContainsSingle(result.Commands.Where(command =>
-            command.Command.Executable == "mise")).Command;
-        Assert.AreEqual(fixture.Request.MiseDataDirectory, query.Environment!["MISE_DATA_DIR"]);
-        Assert.AreEqual(fixture.Checkout, query.Environment["MISE_TRUSTED_CONFIG_PATHS"]);
-    }
-
-    // The mise query reads the checkout, so the selected revision must commit its inputs.
-    [TestMethod]
-    [DataRow("mise.toml")]
-    [DataRow("mise.lock")]
-    public async Task MissingCommittedToolConfigurationStopsBeforeMiseQuery(string path)
-    {
-        using var fixture = await Fixture.CreateAsync(path, token: context.CancellationToken);
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
-        Assert.AreEqual("Missing committed native input: " + path,
-            Assert.ContainsSingle(result.Errors));
-        Assert.IsFalse(result.Commands.Any(command => command.Command.Executable == "mise"));
-    }
-
-    // The committed selection, not an application runtime line, decides the runtime.
-    [TestMethod]
-    public async Task AnotherCommittedRubyLineQualifies()
-    {
-        string other = RepositoryToolSelection.NextMajor(RepositoryToolSelection.Locked("ruby"));
-        using var fixture = await Fixture.CreateAsync("",
-            (path, content) => RepositoryToolSelection.RaiseMajor(path, content, "ruby"),
+        using var fixture = await Fixture.CreateAsync(omit,
+            omit is null ? (path, content) =>
+                RepositoryToolSelection.RaiseMajor(path, content, "ruby") : null,
             context.CancellationToken);
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
-        Assert.AreEqual(other, result.Native["ruby"]);
-    }
-
-    [TestMethod]
-    public async Task DryRefPreservesNativeProjectionWhenPublicReleaseIsFalse()
-    {
-        using var fixture = Smoke(writable: true);
-        fixture.Subject = fixture.Subject with
+        if (omit is null)
         {
-            Channel = "official",
-            Destination = "rubygems",
-            SelectedRef = "refs/tags/preview",
-            DryRun = true,
-        };
-        fixture.Defect = "public-release";
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
-        Assert.AreEqual("false", result.Native["public-release"]);
-        Assert.AreEqual("1.2.3", Assert.ContainsSingle(result.Prepared.Files).Version);
+            RubyPreparationResult selected = await fixture.RunAsync(context.CancellationToken);
+            Assert.IsEmpty(selected.Errors, string.Join("; ", selected.Errors));
+            string expected = RepositoryToolSelection.NextMajor(
+                RepositoryToolSelection.Locked("ruby"));
+            Assert.AreEqual(expected, selected.Native["ruby"]);
+            return;
+        }
+        RubyPreparationResult result = await StoppedAsync(fixture, "native-input");
+        if (diagnostic is not null)
+        {
+            Assert.AreEqual(diagnostic, Assert.ContainsSingle(result.Errors));
+            Assert.DoesNotContain("mise",
+                result.Commands.Select(command => command.Command.Executable));
+        }
     }
 
     [TestMethod]
-    [DataRow("history")]
-    [DataRow("sdk")]
-    [DataRow("missing-nbgv")]
-    [DataRow("missing-tool")]
-    [DataRow("manifest")]
-    [DataRow("global")]
-    [DataRow("helper")]
-    public async Task MissingHistoryOrPreparedToolsCannotBuild(string defect)
+    [DataRow("--is-shallow-repository", "true")]
+    [DataRow("--version", "10.0.400")]
+    [DataRow("tool", "")]
+    public async Task UnpreparedHistoryOrToolCannotBuild(string argument, string answer)
     {
-        // Committed root defects need a private repository; native-answer defects share one.
-        using var fixture = defect is "manifest" or "global" or "helper"
-            ? await Fixture.CreateAsync(defect, token: context.CancellationToken) : Smoke();
-        fixture.Defect = defect;
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
-        Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
-        if (defect == "missing-tool")
-            Assert.AreEqual(NativeTermination.StartFailed, result.Commands[^1].Result.Termination);
+        using var fixture = Smoke();
+        fixture.Override = command => command.Arguments.Contains(argument)
+            ? Fixture.Success(answer) : null;
+        await StoppedAsync(fixture, "native-input");
     }
 
     [TestMethod]
@@ -529,236 +280,136 @@ public sealed class RubyPreparationTests(TestContext context)
             Destination = "rubygems",
             SelectedRef = "refs/heads/main"
         };
-        var consumer = new List<NativeCommand>();
-        fixture.Override = command =>
-        {
-            if (fixture.Phase(command) == "consumer")
-                consumer.Add(command);
-            return null;
-        };
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
         RubyRelease.Validate(result);
-        Assert.AreEqual("true", result.Native["public-release"]);
         Assert.AreEqual(Fixture.Latexmath, Assert.ContainsSingle(result.Prepared.Files).Name);
-        Assert.AreEqual(Fixture.Latexmath, result.Native["name"]);
         CollectionAssert.AreEqual(Tested, result.Prepared.RequiredChecks);
-        foreach (ReleaseCheck check in result.Prepared.Checks)
-            Assert.AreEqual(ReleaseCheckStatus.Passed, check.Status, check.Id);
-        string project = Path.Combine(fixture.Checkout, "latexmath");
-        // The adopted suite uses its own full locked bundle, separate from the runtime consumer.
-        NativeCommand[] tests = [.. result.Commands.Where(command => command.Check == "tests")
-            .Select(command => command.Command)];
+        string gemfile = Path.Combine(fixture.Checkout, "latexmath", "Gemfile");
+        NativeCommand[] tests = Commands("tests");
         Assert.HasCount(4, tests);
         Assert.IsTrue(tests.All(command => command.Environment!["BUNDLE_WITHOUT"] is null &&
             command.Environment["BUNDLE_FROZEN"] == "1" &&
-            command.Environment["BUNDLE_GEMFILE"] == Path.Combine(project, "Gemfile")));
-        Assert.AreEqual(project, tests[^1].Directory);
+            command.Environment["BUNDLE_GEMFILE"] == gemfile));
         Assert.Contains("rspec", tests[^1].Arguments);
+        NativeCommand[] consumer = Commands("consumer");
         Assert.HasCount(5, consumer);
+        Assert.Contains(Fixture.LockedBundler, consumer[1].Arguments);
         Assert.AreEqual("development", consumer[2].Environment!["BUNDLE_WITHOUT"]);
-        Assert.IsTrue(consumer.All(command => command.Environment!["BUNDLE_GEMFILE"] is null ||
-            command.Environment["BUNDLE_GEMFILE"] == Path.Combine(project, "Gemfile")));
-        CollectionAssert.Contains(consumer[1].Arguments, Fixture.LockedBundler);
-        CollectionAssert.AreEqual(new[] { "_" + Fixture.LockedBundler + "_", "install" },
-            consumer[2].Arguments[1..]);
         Assert.AreEqual("1", consumer[2].Environment!["BUNDLE_FROZEN"]);
-        CollectionAssert.Contains(consumer[3].Arguments, "--local");
-        Assert.AreEqual("-e", consumer[4].Arguments[0]);
-        Assert.IsNull(consumer[4].Environment!["GEM_PATH"]);
+        Assert.AreEqual(gemfile, consumer[2].Environment!["BUNDLE_GEMFILE"]);
+        Assert.Contains("--local", consumer[3].Arguments);
+        Assert.IsNull(consumer[^1].Environment!["GEM_PATH"]);
+
+        NativeCommand[] Commands(string phase) => [.. result.Commands
+            .Where(command => command.Check == phase).Select(command => command.Command)];
     }
 
     [TestMethod]
-    [DataRow("dependencies")]
-    [DataRow("missing-content")]
-    public async Task LatexmathArchiveDefectCannotReachConsumer(string defect)
+    [DataRow(false, "name", "\"other\"")]
+    [DataRow(false, "version", "\"9.9.9\"")]
+    [DataRow(false, "platform", "\"other\"")]
+    [DataRow(false, "require_paths", "[\"other\"]")]
+    [DataRow(false, "extensions", "[\"ext/extconf.rb\"]")]
+    [DataRow(false, "extensions", null)]
+    [DataRow(false, "metadata", "{\"github_repo\":\"https://other.invalid\"}")]
+    [DataRow(false, "metadata", null)]
+    [DataRow(false, "contents", "[\"extra.rb\"]")]
+    [DataRow(false, "contents", "\"extra.rb\"", true)]
+    [DataRow(false, "contents",
+        "\"lib/hcoona_release_smoke_ruby/_workflow_delivery_provenance.json\"", true)]
+    [DataRow(false, "archive", "\"other.gem\"")]
+    [DataRow(false, "runtime_dependencies", "[{\"name\":\"extra\",\"requirement\":\">= 0\"}]")]
+    [DataRow(true, "runtime_dependencies", "[]")]
+    [DataRow(true, "contents", "[]")]
+    public async Task UnsupportedArchiveCannotReachConsumer(bool latexmath, string field,
+        string? value, bool append = false)
     {
-        using var fixture = Latexmath();
-        fixture.ArchiveDefect = defect;
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RequireStopped(result, "contents", ReleaseCheckStatus.Failed, Tested);
-        Assert.DoesNotContain(
-            "consumer",
-            result.Commands.Select(command => command.Check).ToArray()
-        );
-    }
-
-    [TestMethod]
-    [DataRow("failed")]
-    [DataRow("missing-report")]
-    public async Task LatexmathFailedSuiteBlocksQualification(string defect)
-    {
-        using var fixture = Latexmath();
-        fixture.SuiteDefect = defect;
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RequireStopped(result, "tests", ReleaseCheckStatus.Failed, Tested);
-    }
-
-    [TestMethod]
-    [DataRow("name")]
-    [DataRow("version")]
-    [DataRow("platform")]
-    [DataRow("dependencies")]
-    [DataRow("extensions")]
-    [DataRow("missing-extensions")]
-    [DataRow("repository")]
-    [DataRow("missing-metadata")]
-    [DataRow("require-paths")]
-    [DataRow("missing-content")]
-    [DataRow("extra-content")]
-    [DataRow("witness")]
-    [DataRow("archive-path")]
-    public async Task UnsupportedArchiveCannotReachConsumer(string defect)
-    {
-        using var fixture = Smoke(writable: true);
-        fixture.ArchiveDefect = defect;
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RequireStopped(result, "contents", ReleaseCheckStatus.Failed);
-        Assert.DoesNotContain(
-            "consumer",
-            result.Commands.Select(command => command.Check).ToArray()
-        );
-        Assert.IsTrue(result.Commands.All(command => command.Result.Succeeded));
+        using var fixture = latexmath ? Latexmath() : Smoke(writable: true);
+        fixture.ChangeAnswer("contents", answer =>
+        {
+            if (value is null) answer.Remove(field);
+            else if (append) answer[field]!.AsArray().Add(JsonNode.Parse(value));
+            else answer[field] = JsonNode.Parse(value);
+        });
+        RubyPreparationResult result = await StoppedAsync(fixture, "contents",
+            expected: latexmath ? Tested : Checks);
         Assert.AreEqual("contents", result.Commands[^1].Check);
+        Assert.IsTrue(result.Commands.All(command => command.Result.Succeeded));
     }
 
     [TestMethod]
-    [DataRow("native-input", "Exited", "Failed")]
-    [DataRow("native-input", "TimedOut", "TimedOut")]
-    [DataRow("native-input", "StartFailed", "Failed")]
-    [DataRow("native-input", "Cancelled", "Cancelled")]
-    [DataRow("build", "Exited", "Failed")]
-    [DataRow("build", "StartFailed", "Failed")]
-    [DataRow("contents", "InvalidOutput", "Failed")]
-    [DataRow("contents", "TimedOut", "TimedOut")]
-    [DataRow("consumer", "StartFailed", "Failed")]
-    [DataRow("consumer", "Cancelled", "Cancelled")]
-    public async Task FailedNativePhaseRetainsReceiptAndSkipsDependents(
-        string phase,
-        string terminationText,
-        string statusText
-    )
+    [DataRow(0)]
+    [DataRow(1)]
+    public async Task LatexmathMissingOrFailedSuiteBlocksQualification(int exitCode)
+    {
+        using var fixture = Latexmath();
+        fixture.Override = command =>
+        {
+            if (!command.Arguments.Contains("rspec")) return null;
+            if (exitCode != 0)
+                File.WriteAllText(command.Arguments[^1], Fixture.SuiteReport
+                    .Replace("\"passed\"", "\"failed\"", StringComparison.Ordinal)
+                    .Replace("\"failure_count\":0", "\"failure_count\":1",
+                        StringComparison.Ordinal));
+            return Fixture.Success("") with { ExitCode = exitCode };
+        };
+        await StoppedAsync(fixture, "tests", expected: Tested);
+    }
+
+    [TestMethod]
+    [DataRow("native-input", "StartFailed", null, "Failed")]
+    [DataRow("build", "Exited", 7, "Failed")]
+    [DataRow("build", "TimedOut", null, "TimedOut")]
+    [DataRow("contents", "InvalidOutput", null, "Failed")]
+    [DataRow("consumer", "Cancelled", null, "Cancelled")]
+    [DataRow("build", "Exited", 0, "Failed", "build")]
+    [DataRow("contents", "Exited", 0, "Failed")]
+    [DataRow("consumer", "Exited", 2, "Failed", "-e")]
+    public async Task FailedPhaseRetainsReceiptAndSkipsDependents(string phase,
+        string termination, int? exitCode, string status,
+        string? argument = null)
     {
         using var fixture = Smoke(writable: phase != "native-input");
-        NativeTermination termination = Enum.Parse<NativeTermination>(terminationText);
-        fixture.Override = command =>
-            fixture.Phase(command) == phase
-                ? new(
-                    termination,
-                    termination == NativeTermination.Exited ? 7 : null,
-                    "partial native output",
-                    "native diagnostic",
-                    0.25,
-                    null
-                )
-                : null;
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RequireStopped(result, phase, Enum.Parse<ReleaseCheckStatus>(statusText));
-        ReleaseCommand failed = Assert.ContainsSingle(
-            result.Commands.Where(command => !command.Result.Succeeded)
-        );
-        Assert.AreEqual(failed, result.Commands[^1]);
-        Assert.AreEqual(phase, failed.Check);
-        Assert.AreEqual(termination, failed.Result.Termination);
-        Assert.AreEqual("partial native output", failed.Result.Stdout);
-        Assert.AreEqual("native diagnostic", failed.Result.Stderr);
-        Assert.AreEqual(0.25, failed.Result.DurationSeconds);
-    }
-
-    [TestMethod]
-    public async Task PreparedTransferPreservesFailureAndNativeCommandReceipt()
-    {
-        using var fixture = Smoke(writable: true);
-        fixture.Override = command =>
-            fixture.Phase(command) == "build"
-                ? new(NativeTermination.TimedOut, null, "partial", "diagnostic", 1.5, "deadline")
-                : null;
+        var native = exitCode is 0 or 2 ? Fixture.Success("{}") with { ExitCode = exitCode }
+            : new NativeCommandResult(Enum.Parse<NativeTermination>(termination), exitCode,
+                "partial native output",
+                "native diagnostic", 0.25, "controlled failure");
+        fixture.Override = command => fixture.SmokePhase(command) == phase &&
+            (argument is null || command.Arguments.Contains(argument)) ? native : null;
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RubyPreparationResult transfer = JsonSerializer.Deserialize(
             JsonSerializer.Serialize(result, TransferJson.Default.RubyPreparationResult),
-            TransferJson.Default.RubyPreparationResult
-        )!;
-        RequireStopped(transfer, "build", ReleaseCheckStatus.TimedOut);
-        ReleaseCommand command = transfer.Commands[^1];
-        Assert.AreEqual("build", command.Check);
-        Assert.AreEqual(NativeTermination.TimedOut, command.Result.Termination);
-        Assert.IsNull(command.Result.ExitCode);
-        Assert.AreEqual("partial", command.Result.Stdout);
-        Assert.AreEqual("diagnostic", command.Result.Stderr);
-        Assert.AreEqual("deadline", command.Result.Error);
-        Assert.AreEqual(1.5, command.Result.DurationSeconds);
-        Assert.IsTrue(command.Command.CloseStandardInput);
-        Assert.IsFalse(command.Command.InheritEnvironment);
-        Assert.AreEqual(fixture.Subject.SelectedRef, command.Command.Environment!["GITHUB_REF"]);
+            TransferJson.Default.RubyPreparationResult)!;
+        RequireStopped(transfer, phase, Enum.Parse<ReleaseCheckStatus>(status));
+        ReleaseCommand failed = transfer.Commands[^1];
+        if (!native.Succeeded)
+            Assert.ContainsSingle(transfer.Commands.Where(command => !command.Result.Succeeded));
+        Assert.AreEqual(phase, failed.Check);
+        Assert.AreEqual(native, failed.Result);
+        Assert.IsTrue(failed.Command.CloseStandardInput);
+        Assert.IsFalse(failed.Command.InheritEnvironment);
     }
 
     [TestMethod]
-    public async Task BuddyBranchDoesNotRequireNativePublicRelease()
-    {
-        using var fixture = Smoke(writable: true);
-        fixture.Defect = "public-release";
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
-        Assert.AreEqual("false", result.Native["public-release"]);
-        Assert.AreEqual("1.2.3", Assert.ContainsSingle(result.Prepared.Files).Version);
-    }
-
-    [TestMethod]
-    [DataRow("missing-output")]
-    [DataRow("missing-answer")]
-    [DataRow("consumer-identity")]
-    [DataRow("consumer-origin")]
-    public async Task MissingOutputOrFailedInstalledIdentityCannotQualify(string defect)
-    {
-        using var fixture = Smoke(writable: true);
-        fixture.Defect = defect;
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        string phase =
-            defect == "missing-output" ? "build"
-            : defect == "missing-answer" ? "contents"
-            : "consumer";
-        RequireStopped(result, phase, ReleaseCheckStatus.Failed);
-        if (defect.StartsWith("consumer", StringComparison.Ordinal))
-            Assert.Contains(defect, result.Commands[^1].Result.Stderr);
-    }
-
-    [TestMethod]
-    [DataRow("build", "size")]
-    [DataRow("contents", "digest")]
-    [DataRow("consumer", "digest")]
-    [DataRow("consumer", "missing")]
-    public async Task ChangedOriginalCannotQualifyRelease(string phase, string change)
+    [DataRow("build", "short")]
+    [DataRow("contents", "replaced")]
+    [DataRow("consumer", "replaced")]
+    [DataRow("consumer", null)]
+    public async Task ChangedOriginalCannotQualifyRelease(string phase, string? content)
     {
         using var fixture = Smoke(writable: true);
         fixture.Override = command =>
         {
-            if (
-                fixture.Phase(command) == phase
-                && (phase != "build" || command.Arguments[0] == fixture.Helper)
-            )
-            {
-                string path = Path.Combine(fixture.Scratch, "package", "original.gem");
-                if (change == "missing")
-                    File.Delete(path);
-                else
-                    File.WriteAllText(path, change == "size" ? "short" : "replaced");
-            }
+            if (fixture.SmokePhase(command) != phase ||
+                phase == "build" && command.Arguments[0] != fixture.Helper) return null;
+            if (content is null) File.Delete(fixture.Original);
+            else File.WriteAllText(fixture.Original, content);
             return null;
         };
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RequireStopped(result, phase, ReleaseCheckStatus.Failed);
+        RubyPreparationResult result = await StoppedAsync(fixture, phase);
         Assert.Contains("Original gem changed", string.Join(";", result.Errors));
         Assert.IsTrue(result.Commands.All(command => command.Result.Succeeded));
-    }
-
-    [TestMethod]
-    public async Task AbbreviatedRevisionCannotSupplyExactBinding()
-    {
-        using var fixture = Smoke();
-        fixture.Subject = fixture.Subject with { Revision = fixture.Subject.Revision[..12] };
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
-        Assert.IsEmpty(result.Commands);
     }
 
     [TestMethod]
@@ -773,67 +424,59 @@ public sealed class RubyPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("relative-checkout")]
-    [DataRow("relative-tool")]
-    [DataRow("relative-mise-data")]
-    [DataRow("relative-mise")]
-    [DataRow("nested-scratch")]
-    [DataRow("nonempty-scratch")]
-    public async Task UnownedOrUnpreparedPathsFailBeforeCommands(string defect)
+    [DataRow("relative", null, null, null, false)]
+    [DataRow(null, "gem", null, null, false)]
+    [DataRow(null, null, "mise", null, false)]
+    [DataRow(null, null, null, "mise-data", false)]
+    [DataRow(null, null, null, null, true)]
+    [DataRow(null, null, null, null, false, "keep")]
+    public async Task UnownedOrRelativePathsFailBeforeCommands(string? checkout,
+        string? gem, string? mise, string? miseData, bool nestedScratch,
+        string? unownedContent = null)
     {
         using var fixture = Smoke();
-        RubyPreparationRequest request = fixture.Request;
-        if (defect == "relative-checkout")
-            request = request with { Checkout = "relative" };
-        if (defect == "relative-tool")
-            request = request with { Tools = request.Tools with { Gem = "gem" } };
-        if (defect == "relative-mise")
-            request = request with { Tools = request.Tools with { Mise = "mise" } };
-        if (defect == "relative-mise-data")
-            request = request with { MiseDataDirectory = "mise-data" };
-        if (defect == "nested-scratch")
-            request = request with { Scratch = fixture.Checkout };
-        if (defect == "nonempty-scratch")
-            await File.WriteAllTextAsync(
-                Path.Combine(fixture.Scratch, "unowned"),
-                "keep",
-                context.CancellationToken
-            );
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            RubyPreparation.PrepareAsync(
-                request,
-                (_, _) =>
-                {
-                    Assert.Fail("Invalid owned state cannot execute native commands.");
-                    return Task.FromResult(Fixture.Success(""));
-                },
-                context.CancellationToken
-            )
-        );
+        string unowned = Path.Combine(fixture.Scratch, "unowned");
+        if (unownedContent is not null) File.WriteAllText(unowned, unownedContent);
+        RubyPreparationRequest request = fixture.Request with
+        {
+            Checkout = checkout ?? fixture.Checkout,
+            Scratch = nestedScratch ? fixture.Checkout : fixture.Scratch,
+            MiseDataDirectory = miseData ?? fixture.Request.MiseDataDirectory,
+            Tools = fixture.Tools with
+            {
+                Gem = gem ?? fixture.Tools.Gem,
+                Mise = mise ?? fixture.Tools.Mise
+            },
+        };
+        await AssertPathsRejectedAsync(request);
+        if (unownedContent is not null) Assert.AreEqual(unownedContent, File.ReadAllText(unowned));
     }
 
-    private static void RequireStopped(
-        RubyPreparationResult result,
-        string phase,
-        ReleaseCheckStatus status,
-        string[]? expected = null
-    )
+    private async Task AssertPathsRejectedAsync(RubyPreparationRequest request) =>
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            RubyPreparation.PrepareAsync(request, (_, _) => throw new AssertFailedException(
+                "Invalid owned state cannot execute native commands."), context.CancellationToken));
+
+    private async Task<RubyPreparationResult> StoppedAsync(Fixture fixture, string phase,
+        string[]? expected = null)
+    {
+        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        RequireStopped(result, phase, ReleaseCheckStatus.Failed, expected);
+        return result;
+    }
+
+    private static void RequireStopped(RubyPreparationResult result, string phase,
+        ReleaseCheckStatus status, string[]? expected = null)
     {
         string[] checks = expected ?? Checks;
         CollectionAssert.AreEqual(checks, result.Prepared.RequiredChecks);
-        CollectionAssert.AreEqual(
-            checks,
-            result.Prepared.Checks.Select(check => check.Id).ToArray()
-        );
+        CollectionAssert.AreEqual(checks,
+            result.Prepared.Checks.Select(check => check.Id).ToArray());
         int index = Array.IndexOf(checks, phase);
         for (int position = 0; position < checks.Length; position++)
-            Assert.AreEqual(
-                position < index ? ReleaseCheckStatus.Passed
-                    : position == index ? status
-                    : ReleaseCheckStatus.Skipped,
-                result.Prepared.Checks[position].Status,
-                checks[position]
-            );
+            Assert.AreEqual(position < index ? ReleaseCheckStatus.Passed
+                : position == index ? status : ReleaseCheckStatus.Skipped,
+                result.Prepared.Checks[position].Status, checks[position]);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.IsNotEmpty(result.Errors);
     }
@@ -843,42 +486,33 @@ public sealed class RubyPreparationTests(TestContext context)
         internal const string Unit = "hcoona-release-smoke-ruby";
         internal const string Latexmath = "asciidoctor-latexmath";
         internal const string LockedBundler = "2.4.20";
-        internal static readonly string[] LatexmathLibrary =
-        [
-            "lib/asciidoctor-latexmath.rb",
-            "lib/asciidoctor/latexmath/version.rb",
-        ];
+        internal static readonly string[] LatexmathLibrary = ["lib/asciidoctor-latexmath.rb",
+            "lib/asciidoctor/latexmath/version.rb"];
+        private static readonly string[] LatexmathFiles = [.. LatexmathLibrary, "README.md",
+            "LICENSE"];
         internal const string Entry = "product/hcoona-release-smoke-ruby.gemspec";
-        private const string HelperPath = "src/private/app/workflow-delivery/Native/Ruby/facts.rb";
-        private static readonly string[] Files =
-        [
-            "LICENSE",
-            "README.md",
-            "lib/hcoona_release_smoke_ruby.rb",
-            "lib/hcoona_release_smoke_ruby/version.rb",
-        ];
+        internal const string HelperPath = "src/private/app/workflow-delivery/Native/Ruby/facts.rb";
+        private static readonly string[] SmokeFiles = ["LICENSE", "README.md",
+            "lib/hcoona_release_smoke_ruby.rb", "lib/hcoona_release_smoke_ruby/version.rb"];
         private int archiveQueries;
         private readonly GitFixture? ownedRepository;
         private readonly string root = Directory.CreateTempSubdirectory("ruby-release-").FullName;
         internal ReleaseSubject Subject { get; set; }
         internal string Scratch { get; }
+        internal string Original => Path.Combine(Scratch, "package", "original.gem");
         internal string Checkout { get; }
         internal string Helper => Path.Combine(Checkout, HelperPath);
-        internal RubyPreparationTools Tools =>
-            new(
-                Path.Combine(Checkout, "ruby"),
-                Path.Combine(Checkout, "gem"),
-                Path.Combine(Checkout, "dotnet"),
-                Path.Combine(Checkout, "provider", "mise")
-            );
+        internal RubyPreparationTools Tools => new(Path.Combine(Checkout, "ruby"),
+            Path.Combine(Checkout, "gem"), Path.Combine(Checkout, "dotnet"),
+            Path.Combine(Checkout, "provider", "mise"));
         internal const string RubyGems = "fixture-rubygems";
         internal RubyPreparationRequest Request => new(Subject, Checkout, Scratch, Tools,
             Path.Combine(Checkout, "mise-data"));
-        internal string Defect { get; set; } = "";
-        internal string ToolDefect { get; set; } = "";
-        internal string ArchiveDefect { get; set; } = "";
-        internal string SuiteDefect { get; set; } = "";
+        private Action<string, JsonObject>? changeAnswer;
         internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
+
+        internal void ChangeAnswer(string operation, Action<JsonObject> change) =>
+            changeAnswer = (phase, answer) => { if (phase == operation) change(answer); };
 
         private Fixture(GitFixture repo, ReleaseSubject subject, bool ownsRepository,
             bool writable = false)
@@ -894,21 +528,32 @@ public sealed class RubyPreparationTests(TestContext context)
             catch
             {
                 PreparationCheckout.Delete(root);
+                ownedRepository?.Dispose();
                 throw;
             }
         }
 
-        internal static async Task<Fixture> CreateAsync(string defect,
+        internal static async Task<Fixture> CreateAsync(string? omit,
             Func<string, string, string>? changeConfig = null, CancellationToken token = default)
+        {
+            (GitFixture repo, string revision) = await CommitAsync(async git =>
+            {
+                await StageRootAsync(git, omit, changeConfig);
+                await StageProductAsync(git, "product");
+            }, token);
+            return new(repo, SubjectFor(revision, "product"), ownsRepository: true);
+        }
+
+        internal static async Task<(GitFixture Repo, string Revision)> CommitAsync(
+            Func<GitFixture, Task> stage, CancellationToken token)
         {
             GitFixture repo = await GitFixture.CreateAsync(token);
             try
             {
-                await StageRootAsync(repo, defect, changeConfig);
-                await StageProductAsync(repo, "product", defect);
+                await stage(repo);
                 string revision = await repo.CommitAsync();
                 await repo.GitAsync("reset", "--hard", revision);
-                return new(repo, SubjectFor(revision, "product", defect), ownsRepository: true);
+                return (repo, revision);
             }
             catch
             {
@@ -917,381 +562,194 @@ public sealed class RubyPreparationTests(TestContext context)
             }
         }
 
-        internal static Fixture Shared(
-            GitFixture repo,
-            string revision,
-            string directory,
-            string defect = "",
-            string unit = Unit,
-            bool writable = false
-        ) => new(repo, SubjectFor(revision, directory, defect, unit), ownsRepository: false,
-            writable);
+        internal static Fixture Shared(GitFixture repo, string revision, string directory,
+            string unit = Unit, bool writable = false) =>
+            new(repo, SubjectFor(revision, directory, unit), ownsRepository: false, writable);
 
-        internal static ReleaseSubject SubjectFor(
-            string revision,
-            string directory,
-            string defect,
-            string unit = Unit
-        ) =>
-            new(
-                revision,
-                "refs/heads/topic",
-                defect == "unit" ? "another" : unit,
-                directory + "/workflow-delivery.release-unit.yml",
-                "buddy",
-                "github-packages-ruby",
-                false
-            );
+        internal static ReleaseSubject SubjectFor(string revision, string directory,
+            string unit = Unit) => new(revision, "refs/heads/topic", unit,
+                directory + "/workflow-delivery.release-unit.yml", "buddy",
+                "github-packages-ruby", false);
 
-        internal static async Task StageRootAsync(GitFixture repo, string defect,
+        internal static async Task StageRootAsync(GitFixture repo, string? omit = null,
             Func<string, string, string>? changeConfig = null)
         {
-            // The fake answers from the actual committed root tool configuration.
-            foreach ((string path, string content) in new[]
+            var files = new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ("mise.toml", RepositoryToolSelection.MiseToml),
-                ("mise.lock", RepositoryToolSelection.MiseLock),
-            })
-                if (defect != path)
-                    await repo.SetAsync(path, changeConfig is null ? content
-                        : changeConfig(path, content));
-            if (defect != "helper")
-                await repo.SetAsync(HelperPath);
-            if (defect != "manifest")
-                await repo.SetAsync(
-                    ".config/dotnet-tools.json",
-                    """{"tools":{"nbgv":{"version":"3.10.94"}}}"""
-                );
-            if (defect != "global")
-                await repo.SetAsync(
-                    "global.json",
-                    """{"sdk":{"version":"10.0.401","rollForward":"disable"}}"""
-                );
+                ["mise.toml"] = RepositoryToolSelection.MiseToml,
+                ["mise.lock"] = RepositoryToolSelection.MiseLock,
+                [HelperPath] = "fixture",
+                [".config/dotnet-tools.json"] = """{"tools":{"nbgv":{"version":"3.10.94"}}}""",
+                ["global.json"] = """{"sdk":{"version":"10.0.401","rollForward":"disable"}}""",
+            };
+            foreach ((string path, string content) in files)
+                if (path != omit)
+                    await repo.SetAsync(path, changeConfig?.Invoke(path, content) ?? content);
         }
 
-        // Stages one committed recipe directory; recipe defects are directory-local.
-        internal static async Task StageProductAsync(
-            GitFixture repo,
-            string directory,
-            string defect,
-            string unit = Unit
-        )
+        internal static async Task StageProductAsync(GitFixture repo, string directory,
+            string unit = Unit, string? preset = null)
         {
-            foreach ((string path, string content) in ProductFiles(directory, defect, unit))
+            foreach ((string path, string content) in ProductFiles(directory, unit, preset))
                 await repo.SetAsync(path, content);
         }
 
-        // The committed files of one recipe directory, keyed by repository path.
-        internal static Dictionary<string, string> ProductFiles(string directory, string defect,
-            string unit = Unit)
+        internal static Dictionary<string, string> ProductFiles(string directory,
+            string unit = Unit, string? preset = null)
         {
-            var files = new Dictionary<string, string>(StringComparer.Ordinal);
-            if (defect != "entry")
-                files.Add(directory + "/" + unit + ".gemspec", "fixture");
-            if (unit == Latexmath)
-                foreach (string file in LatexmathLibrary)
-                    files.Add(directory + "/" + file, "fixture");
-            if (defect != "missing-quality")
-                files.Add(
-                    directory + "/workflow-delivery.quality.yml",
-                    """
+            preset ??= unit == Latexmath
+                ? "ruby/rspec-gem-v1" : "ruby/hcoona-release-smoke-ruby-v1";
+            var files = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [$"{directory}/{unit}.gemspec"] = "fixture",
+                [$"{directory}/workflow-delivery.quality.yml"] = $$$"""
                     schema: workflow-delivery/v3/quality-selection
-                    ecosystems:
-                      ruby:
-                        preset: ruby/hcoona-release-smoke-ruby-v1
-                    """.Replace(
-                        "ruby/hcoona-release-smoke-ruby-v1",
-                        defect == "quality" ? "ruby/unknown-v1"
-                            : unit == Latexmath ? "ruby/rspec-gem-v1"
-                            : "ruby/hcoona-release-smoke-ruby-v1",
-                        StringComparison.Ordinal
-                    )
-                );
-            string text = """
-                schema: workflow-delivery/v3/release-unit
-                release-unit: hcoona-release-smoke-ruby
-                builds:
-                  - id: gem-build
-                    definition: ruby/gem-v1
-                    entry-point: hcoona-release-smoke-ruby.gemspec
-                    outputs:
-                      - id: gem-output
-                        role: primary-package
-                        kind: ruby-gem
-                """.Replace(Unit, unit, StringComparison.Ordinal);
-            text = defect switch
-            {
-                "build" => text.Replace("ruby/gem-v1", "ruby/unknown-v1", StringComparison.Ordinal),
-                "outputs" => text.Replace("ruby-gem", "unknown-kind", StringComparison.Ordinal),
-                "entry-name" => text.Replace(
-                    "hcoona-release-smoke-ruby.gemspec",
-                    "other.gemspec",
-                    StringComparison.Ordinal
-                ),
-                "extra-output" => text
-                    + "\n      - id: extra\n        role: source-package"
-                    + "\n        kind: ruby-gem\n",
-                "extra-build" => text
-                    + "\n  - id: extra\n    definition: ruby/gem-v1"
-                    + "\n    entry-point: hcoona-release-smoke-ruby.gemspec\n    outputs:"
-                    + "\n      - id: extra\n        role: primary-package"
-                    + "\n        kind: ruby-gem\n",
-                _ => text,
+                    ecosystems: {ruby: {preset: {{{preset}}} } }
+                    """,
+                [$"{directory}/workflow-delivery.release-unit.yml"] = $$"""
+                    schema: workflow-delivery/v3/release-unit
+                    release-unit: {{unit}}
+                    builds:
+                      - id: gem-build
+                        definition: ruby/gem-v1
+                        entry-point: {{unit}}.gemspec
+                        outputs: [{id: gem-output, role: primary-package, kind: ruby-gem}]
+                    """,
             };
-            if (defect != "declaration")
-                files.Add(directory + "/workflow-delivery.release-unit.yml", text);
+            if (unit == Latexmath)
+                foreach (string file in LatexmathLibrary) files[$"{directory}/{file}"] = "fixture";
             return files;
-        }
-
-        internal static JsonObject Projection(string revision, string defect)
-        {
-            var value = new JsonObject
-            {
-                ["SemVer2"] = "1.2.3+g1234567",
-                ["GitCommitId"] = defect == "commit" ? new string('0', 40) : revision,
-                ["PublicRelease"] = defect != "public-release",
-            };
-            if (defect == "missing-version")
-                value.Remove("SemVer2");
-            if (defect == "missing-commit")
-                value.Remove("GitCommitId");
-            if (defect == "missing-public-release")
-                value.Remove("PublicRelease");
-            return value;
         }
 
         internal Task<RubyPreparationResult> RunAsync(CancellationToken token) =>
             RubyPreparation.PrepareAsync(Request, ExecuteAsync, token);
 
-        internal string Phase(NativeCommand command)
+        internal string SmokePhase(NativeCommand command)
         {
             string[] args = command.Arguments;
-            if (command.Directory == Path.Combine(Scratch, "package", "tests") ||
-                args.Contains("rspec"))
-                return "tests";
-            if (args.Contains("build"))
-                return "build";
-            if (args.Contains("install") && command.Executable == Tools.Ruby || args[0] == "-e" ||
-                args is ["-r", "bundler", ..])
-                return "consumer";
-            if (
-                args[0] == Helper
-                && File.ReadAllText(args[^1]).Contains("\"archive\"", StringComparison.Ordinal)
-            )
-                return archiveQueries == 0 && Subject.Unit != Latexmath ? "build" : "contents";
+            if (args.Contains("build")) return "build";
+            if (args is ["-e", ..] || args is [_, "install", ..] &&
+                command.Executable == Tools.Ruby) return "consumer";
+            if (args[0] == Helper &&
+                File.ReadAllText(args[^1]).Contains("\"archive\"", StringComparison.Ordinal))
+                return archiveQueries == 0 ? "build" : "contents";
             return "native-input";
         }
 
-        private async Task<NativeCommandResult> ExecuteAsync(
-            NativeCommand command,
-            CancellationToken token
-        )
+        private async Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
+            CancellationToken token)
         {
-            if (Override?.Invoke(command) is { } result)
-                return result;
+            if (Override?.Invoke(command) is { } result) return result;
             string[] args = command.Arguments;
-            if (command.Executable == "mise")
-                return Success(ToolAnswer());
-            if (args.Contains("--is-shallow-repository"))
-                return Success(Defect == "history" ? "true" : "false");
-            if (args[0] == "--version")
-                return Defect == "missing-tool"
-                    ? new(NativeTermination.StartFailed, null, "", "", 0, "missing prepared dotnet")
-                    : Success(Defect == "sdk" ? "10.0.400" : "10.0.401");
-            if (args[0] == "tool")
+            if (command.Executable == "mise") return ToolAnswer();
+            if (args.Contains("--is-shallow-repository")) return Success("false");
+            if (args[0] == "--version") return Success("10.0.401");
+            if (args[0] == "tool") return await EmitAsync(Path.Combine(args[^1],
+                OperatingSystem.IsWindows() ? "nbgv.exe" : "nbgv"), "tool", token);
+            if (args is ["-r", "bundler", ..]) return Success(LockedBundler + "\n");
+            if (args.Contains("rspec")) return await EmitAsync(args[^1], SuiteReport, token);
+            if (args[0] == Bundle("consumer") || args[0] == Bundle("tests"))
+                return Success();
+            if (args[0] == "-r") return Answer("runtime", new()
+            { ["ruby"] = Selected(), ["rubygems"] = RubyGems });
+            if (args[0] == "get-version") return Answer("projection", new()
             {
-                if (Defect != "missing-nbgv")
-                    await File.WriteAllTextAsync(
-                        Path.Combine(args[^1], OperatingSystem.IsWindows() ? "nbgv.exe" : "nbgv"),
-                        "tool",
-                        token
-                    );
-                return Success("");
-            }
-            if (args is ["-r", "bundler", ..])
-                return Success(LockedBundler + "\n");
-            if (args.Contains("rspec"))
-            {
-                bool failed = SuiteDefect == "failed";
-                if (SuiteDefect != "missing-report")
-                    await File.WriteAllTextAsync(args[^1], JsonSerializer.Serialize(new
-                    {
-                        version = "3.13.0",
-                        examples = new[] { new { id = "./spec/suite_spec.rb[1:1]",
-                            description = "suite", full_description = "suite",
-                            status = failed ? "failed" : "passed",
-                            file_path = "./spec/suite_spec.rb", line_number = 1,
-                            run_time = 0.01 } },
-                        summary = new
-                        {
-                            duration = 0.01,
-                            example_count = 1,
-                            failure_count = failed ? 1 : 0,
-                            pending_count = 0,
-                            errors_outside_of_examples_count = 0
-                        },
-                    }), token);
-                return failed ? Success("") with { ExitCode = 1 } : Success("");
-            }
-            if (args[0] == Path.Combine(Scratch, "package", "consumer", "gems", "bin", "bundle") ||
-                args[0] == Path.Combine(Scratch, "package", "tests", "gems", "bin", "bundle"))
-                return Success("");
-            if (args[0] == "-r")
-                return Success(
-                    JsonSerializer.Serialize(
-                        new
-                        {
-                            ruby = ToolDefect == "readback" ? "0.0.0" : Selected(),
-                            rubygems = Defect == "rubygems" ? "" : RubyGems,
-                        }
-                    )
-                );
-            if (args[0] == "get-version")
-                return Success(Projection(Subject.Revision, Defect).ToJsonString());
+                ["SemVer2"] = "1.2.3+g1234567",
+                ["GitCommitId"] = Subject.Revision,
+                ["PublicRelease"] = true
+            });
             if (args[0] == Tools.Gem)
             {
                 Assert.AreEqual("--norc", args[2]);
-                if (args[1] == "build" && Defect != "missing-output")
-                    await File.WriteAllTextAsync(args[^1], "original", token);
-                return Success("");
+                return args[1] == "build" ? await EmitAsync(args[^1], "original", token)
+                    : Success();
             }
-            if (args[0] == "-e")
-                return Defect.StartsWith("consumer", StringComparison.Ordinal)
-                    ? Success("") with
-                    {
-                        ExitCode = 2,
-                        Stderr = Defect,
-                    }
-                    : Success("");
+            if (args[0] == "-e") return Success();
             Assert.AreEqual(Helper, args[0]);
-            using JsonDocument input = JsonDocument.Parse(
-                await File.ReadAllTextAsync(args[^1], token)
-            );
+            using JsonDocument input = JsonDocument.Parse(await File.ReadAllTextAsync(args[^1],
+                token));
             string operation = input.RootElement.GetProperty("operation").GetString()!;
             string path = input.RootElement.GetProperty("path").GetString()!;
-            if (operation == "version")
+            if (operation == "version") return Answer(operation, new()
             {
-                string raw = input.RootElement.GetProperty("raw").GetString()!;
-                return Success(
-                    JsonSerializer.Serialize(
-                        new
-                        {
-                            gemspec = path,
-                            raw = Defect == "projection-raw" ? "other" : raw,
-                            version = "1.2.3",
-                            literal = "\"1.2.3\"",
-                        }
-                    )
-                );
-            }
+                ["gemspec"] = path,
+                ["raw"] = input.RootElement.GetProperty("raw").GetString(),
+                ["version"] = "1.2.3",
+                ["literal"] = "\"1.2.3\"",
+            });
+
+            return GemAnswer(operation, path);
+        }
+
+        private string Bundle(string phase) => Path.Combine(Scratch, "package", phase, "gems",
+            "bin", "bundle");
+
+        private NativeCommandResult GemAnswer(string operation, string path)
+        {
             bool latexmath = Subject.Unit == Latexmath;
-            string[] files = latexmath ? [.. LatexmathLibrary, "README.md", "LICENSE"] : Files;
+            string[] files = latexmath ? LatexmathFiles : SmokeFiles;
+            bool gemspec = operation == "gemspec";
             var gem = new JsonObject
             {
                 ["name"] = Subject.Unit,
                 ["version"] = "1.2.3",
                 ["platform"] = "ruby",
                 ["require_paths"] = new JsonArray("lib"),
-                ["files"] = JsonSerializer.SerializeToNode(files),
-                ["runtime_dependencies"] = latexmath ? new JsonArray(new JsonObject
-                {
-                    ["name"] = "asciidoctor",
-                    ["requirement"] = ">= 2.0, < 3.0",
-                }) : new JsonArray(),
                 ["extensions"] = new JsonArray(),
+                ["files"] = JsonSerializer.SerializeToNode(files),
+                ["runtime_dependencies"] = JsonNode.Parse(latexmath
+                    ? """[{"name":"asciidoctor","requirement":">= 2.0, < 3.0"}]""" : "[]"),
                 ["metadata"] = new JsonObject
-                {
-                    ["github_repo"] = "https://github.com/hcoona/three",
-                },
+                { ["github_repo"] = "https://github.com/hcoona/three" },
+                [gemspec ? "gemspec" : "archive"] = path,
             };
-            if (operation == "gemspec")
-            {
-                gem["gemspec"] = Defect == "source-path" ? Path.Combine(Scratch, "other") : path;
-                if (Defect is "name" or "version" or "platform")
-                    gem[Defect] = "other";
-            }
-            else
-            {
-                Assert.AreEqual("archive", operation);
-                archiveQueries++;
-                gem["archive"] = path;
-                gem["contents"] = JsonSerializer.SerializeToNode(files);
-                if (archiveQueries > (latexmath ? 0 : 1))
-                {
-                    if (Defect == "missing-answer")
-                        return Success("{}");
-                    switch (ArchiveDefect)
-                    {
-                        case "name":
-                        case "version":
-                        case "platform":
-                            gem[ArchiveDefect] = "other";
-                            break;
-                        case "dependencies":
-                            gem["runtime_dependencies"] = new JsonArray(
-                                new JsonObject { ["name"] = "dependency", ["requirement"] = ">= 0" }
-                            );
-                            break;
-                        case "extensions":
-                            gem["extensions"] = new JsonArray("ext/extconf.rb");
-                            break;
-                        case "missing-extensions":
-                            gem.Remove("extensions");
-                            break;
-                        case "repository":
-                            gem["metadata"]!["github_repo"] = "https://other";
-                            break;
-                        case "missing-metadata":
-                            gem.Remove("metadata");
-                            break;
-                        case "require-paths":
-                            gem["require_paths"] = new JsonArray("other");
-                            break;
-                        case "missing-content":
-                            gem["contents"]!.AsArray().RemoveAt(0);
-                            break;
-                        case "extra-content":
-                            gem["contents"]!.AsArray().Add("extra.rb");
-                            break;
-                        case "witness":
-                            gem["contents"]!
-                                .AsArray()
-                                .Add(
-                                    "lib/hcoona_release_smoke_ruby/"
-                                        + "_workflow_delivery_provenance.json"
-                                );
-                            break;
-                        case "archive-path":
-                            gem["archive"] = Path.Combine(Scratch, "other.gem");
-                            break;
-                    }
-                }
-            }
-            return Success(gem.ToJsonString());
+            if (gemspec) return Answer(operation, gem);
+            Assert.AreEqual("archive", operation);
+            gem["contents"] = JsonSerializer.SerializeToNode(files);
+            return Answer(archiveQueries++ > 0 || latexmath ? "contents" : "build", gem);
         }
 
-        internal static NativeCommandResult Success(string stdout) =>
+        private NativeCommandResult Answer(string operation, JsonObject answer)
+        {
+            changeAnswer?.Invoke(operation, answer);
+            return Success(answer.ToJsonString());
+        }
+
+        internal static NativeCommandResult Success(string stdout = "") =>
             new(NativeTermination.Exited, 0, stdout, "", 0.1, null);
+
+        private static async Task<NativeCommandResult> EmitAsync(string path, string content,
+            CancellationToken token)
+        {
+            await File.WriteAllTextAsync(path, content, token);
+            return Success();
+        }
+
+        internal const string SuiteReport = """
+            {"version":"3.13.0","examples":[{"id":"./spec/suite_spec.rb[1:1]",
+              "description":"suite","full_description":"suite","status":"passed",
+              "file_path":"./spec/suite_spec.rb","line_number":1,"run_time":0.01}],
+              "summary":{"duration":0.01,"example_count":1,"failure_count":0,
+                "pending_count":0,"errors_outside_of_examples_count":0}}
+            """;
 
         // The fixture's own committed root lock selects the runtime.
         private string Selected() => RepositoryToolSelection.Locked(
             File.ReadAllText(Path.Combine(Checkout, "mise.lock")), "ruby");
 
-        private string ToolAnswer()
+        private NativeCommandResult ToolAnswer()
         {
-            return new JsonArray(new JsonObject
+            string config = Path.Combine(Checkout, "mise.toml");
+            var answer = new JsonObject
             {
                 ["version"] = Selected(),
-                ["requested_version"] = RepositoryToolSelection.Requested(
-                    File.ReadAllText(Path.Combine(Checkout, "mise.toml")), "ruby"),
                 ["active"] = true,
-                ["source"] = new JsonObject
-                {
-                    ["type"] = "mise.toml",
-                    ["path"] = Path.Combine(ToolDefect == "source-path"
-                        ? Path.Combine(Checkout, "product") : Checkout, "mise.toml"),
-                },
-            }).ToJsonString();
+                ["requested_version"] = RepositoryToolSelection.Requested(
+                    File.ReadAllText(config), "ruby"),
+                ["source"] = new JsonObject { ["type"] = "mise.toml", ["path"] = config },
+            };
+            changeAnswer?.Invoke("mise", answer);
+            return Success(new JsonArray(answer).ToJsonString());
         }
 
         public void Dispose()

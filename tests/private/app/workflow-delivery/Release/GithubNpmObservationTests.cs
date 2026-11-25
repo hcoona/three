@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Ecosystems;
@@ -153,18 +154,14 @@ public sealed class GithubNpmObservationTests
     }
 
     [TestMethod]
-    [DataRow("missing-versions")]
-    [DataRow("duplicate-version")]
-    [DataRow("missing-package")]
-    public async Task IncompleteOrAmbiguousMetadataCannotEstablishAbsence(string defect)
+    [DataRow(200, """{"name":"@hcoona/hcoona-release-smoke-npm"}""")]
+    [DataRow(200, """{"name":"@hcoona/hcoona-release-smoke-npm","versions":{},"versions":{}}""")]
+    [DataRow(404, "")]
+    public async Task IncompleteOrAmbiguousMetadataCannotEstablishAbsence(int status, string body)
     {
         using var handler = new Handler((_, index) => index == 0 ? Json(Control)
-            : defect == "missing-package" ? new(HttpStatusCode.NotFound)
-            { Content = new ByteArrayContent([]) }
-            : Json(defect == "missing-versions"
-                ? "{\"name\":\"@hcoona/hcoona-release-smoke-npm\"}"
-                : "{\"name\":\"@hcoona/hcoona-release-smoke-npm\","
-                    + "\"versions\":{},\"versions\":{}}"));
+            : status == 200 ? Json(body)
+            : new((HttpStatusCode)status) { Content = new ByteArrayContent([]) });
         using var client = new HttpClient(handler);
 
         GithubNpmObservationResult result = await new GithubNpmObservation(client)
@@ -199,7 +196,7 @@ public sealed class GithubNpmObservationTests
     [TestMethod]
     public async Task BodyDeadlinePreventsFurtherReads()
     {
-        var clock = new ManualClock();
+        var clock = new FakeTimeProvider();
         using var handler = new Handler((_, _) => new(HttpStatusCode.OK)
         { Content = new StreamContent(new ExpiredBody(clock)) });
         using var client = new HttpClient(handler);
@@ -213,7 +210,7 @@ public sealed class GithubNpmObservationTests
         Assert.Contains("deadline", result.Reads[^1].Detail);
     }
 
-    private sealed class ExpiredBody(ManualClock clock) : MemoryStream
+    private sealed class ExpiredBody(FakeTimeProvider clock) : MemoryStream
     {
         public override ValueTask<int> ReadAsync(Memory<byte> buffer,
             CancellationToken cancellationToken = default)
@@ -221,42 +218,6 @@ public sealed class GithubNpmObservationTests
             clock.Advance(TimeSpan.FromSeconds(21));
             cancellationToken.ThrowIfCancellationRequested();
             throw new AssertFailedException("Body deadline did not propagate.");
-        }
-    }
-
-    private sealed class ManualClock : TimeProvider
-    {
-        private TimeSpan elapsed;
-        private readonly List<Timer> timers = [];
-        public override ITimer CreateTimer(TimerCallback callback, object? state,
-            TimeSpan dueTime, TimeSpan period)
-        {
-            var timer = new Timer(this, callback, state);
-            timers.Add(timer);
-            timer.Change(dueTime, period);
-            return timer;
-        }
-        internal void Advance(TimeSpan duration)
-        {
-            elapsed += duration;
-            foreach (Timer timer in timers.ToArray()) timer.Fire(elapsed);
-        }
-        private sealed class Timer(ManualClock clock, TimerCallback callback, object? state)
-            : ITimer
-        {
-            private TimeSpan? due;
-            public bool Change(TimeSpan dueTime, TimeSpan period)
-            {
-                due = dueTime == Timeout.InfiniteTimeSpan ? null : clock.elapsed + dueTime;
-                return true;
-            }
-            internal void Fire(TimeSpan now)
-            {
-                if (due is { } value && value <= now)
-                { due = null; callback(state); }
-            }
-            public void Dispose() => due = null;
-            public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
         }
     }
 
