@@ -46,6 +46,8 @@
     <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104</WarningsNotAsErrors>
   </PropertyGroup>
 
+  <Import Project="../../../../../eng/msbuild/WinUI.NonWindowsDesignTime.props" />
+
   <ItemGroup>
     <PackageReference Include="FileSignatures" />
     <PackageReference Include="IO.Github.Hcoona.Pngcs" />
