@@ -103,8 +103,18 @@ jobs:
           mise install --locked pkl powershell pnpm uv ruby
           mise reshim
 
-          gem install bundler -v 2.4.20 --no-document
-          gem install bundler -v 2.7.2 --no-document
+          bundler_output="$(
+            git ls-files 'Gemfile.lock' '**/Gemfile.lock' |
+              xargs -r ruby -rbundler -e 'puts ARGV.filter_map { |f| Bundler::LockfileParser.new(File.read(f)).bundler_version&.to_s }.uniq.sort'
+          )"
+          mapfile -t bundler_versions <<< "$bundler_output"
+          if [[ ${#bundler_versions[@]} -eq 0 || -z "${bundler_versions[0]}" ]]; then
+            echo "Failed to discover locked Bundler versions from Gemfile.lock files." >&2
+            exit 1
+          fi
+          for version in "${bundler_versions[@]}"; do
+            gem install bundler -v "$version" --no-document
+          done
 
           command -v mise
           command -v pkl
@@ -124,8 +134,9 @@ jobs:
           uv --version
           ruby --version
           gem --version
-          bundle _2.4.20_ --version
-          bundle _2.7.2_ --version
+          for version in "${bundler_versions[@]}"; do
+            bundle "_${version}_" --version
+          done
 
       - name: Verify NBGV metadata in full clone
         shell: pwsh
