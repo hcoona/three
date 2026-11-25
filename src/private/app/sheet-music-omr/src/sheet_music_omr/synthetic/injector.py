@@ -1025,6 +1025,27 @@ def _flag_facet(flag: object) -> str | None:
     return None
 
 
+def _has_restated_midscore_clef(root: ET.Element) -> bool:
+    seen_staves: set[str] = set()
+    for m_idx, measure in enumerate(root.findall("./part/measure"), 1):
+        seen_motion = False
+        for child in measure:
+            if child.tag in {"note", "backup", "forward"}:
+                seen_motion = True
+            elif child.tag == "attributes":
+                for clef in child.findall("clef"):
+                    st_num = clef.get("number", "1")
+                    if (
+                        m_idx == 1
+                        and not seen_motion
+                        and st_num not in seen_staves
+                    ):
+                        seen_staves.add(st_num)
+                    else:
+                        return True
+    return False
+
+
 def has_unchecked_verovio_supplementary_facet(
     score: AssembledScore, musicxml_text: str | bytes
 ) -> list[str]:
@@ -1041,6 +1062,7 @@ def has_unchecked_verovio_supplementary_facet(
         ".//wavy-line": "extended_trill",
         ".//direction-type/dashes": "dashes",
         ".//direction-type/bracket": "voice_leading_line",
+        ".//ending": "volta_ending",
         ".//notehead[@parentheses='yes']": "parenthesized_notehead",
         ".//accidental[@parentheses='yes']": "parenthesized_accidental",
         ".//metronome[@parentheses='yes']": "parenthesized_metronome",
@@ -1054,6 +1076,8 @@ def has_unchecked_verovio_supplementary_facet(
         for query, facet in xml_facets.items()
         if root.find(query) is not None
     )
+    if _has_restated_midscore_clef(root):
+        facets.add("restated_clef")
     if any(
         (mark.text or "").strip() not in DynamicMark
         for mark in root.iter("other-dynamics")
