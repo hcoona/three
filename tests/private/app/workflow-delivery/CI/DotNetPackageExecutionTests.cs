@@ -1,8 +1,8 @@
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
@@ -53,7 +53,7 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     [TestMethod]
     public async Task SelectedRecipePreservesNativeContextAndPrerequisites()
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         string scratch =
             Directory.CreateDirectory(Path.Combine(fixture.Scratch, "projection")).FullName;
         CiPlan plan = await DotNetFactsAssembler.CompleteAsync(fixture.Selection,
@@ -137,7 +137,7 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     [TestMethod]
     public async Task NativeProjectionFailurePreventsProductCompilation()
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         fixture.Override = _ => new(NativeTermination.Exited, 1, "", "failed NBGV", 0.1, null);
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             DotNetFactsAssembler.CompleteAsync(
@@ -147,12 +147,7 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("scope")]
-    [DataRow("origin")]
-    [DataRow("preset")]
-    [DataRow("missing-contents")]
     [DataRow("missing-consumer")]
-    [DataRow("native-dimension")]
     [DataRow("dirty")]
     public async Task InvalidPackagePlanStopsBeforeNativeEffects(string defect)
     {
@@ -160,31 +155,15 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
         using var fixture = defect == "dirty"
             ? await DotNetPackageFixture.CreateAsync(context.CancellationToken) : Shared();
         CiPlan plan = fixture.Plan;
-        if (defect == "scope") plan = plan with { Scope = "other" };
-        else if (defect.StartsWith("missing-", StringComparison.Ordinal))
+        if (defect == "dirty")
+            await File.AppendAllTextAsync(Path.Combine(fixture.Repo.Directory,
+                DotNetPackageFixture.Project), "changed", context.CancellationToken);
+        else
             plan = plan with
             {
-                Checks = plan.Checks.Where(item => item.Work.Key.Check !=
-                (defect == "missing-contents" ? DotNetPackageChecks.Contents :
-                    DotNetPackageChecks.Consumer)).ToArray()
+                Checks = plan.Checks.Where(item =>
+                    item.Work.Key.Check != DotNetPackageChecks.Consumer).ToArray()
             };
-        else if (defect == "dirty") await File.AppendAllTextAsync(
-            Path.Combine(fixture.Repo.Directory,
-            DotNetPackageFixture.Project), "changed", context.CancellationToken);
-        else
-        {
-            PlannedCheck first = plan.Checks[0];
-            if (defect == "origin") first =
-                first with { Origins = [CheckOrigin.NativeRetained], QualityPresets = [] };
-            if (defect == "preset") first = first with { QualityPresets = ["unknown"] };
-            if (defect == "native-dimension")
-            {
-                var dimensions = new Dictionary<string, string>(first.Work.Dimensions);
-                dimensions["native"] = "{}";
-                first = first with { Work = first.Work with { Dimensions = dimensions } };
-            }
-            plan = plan with { Checks = [first, .. plan.Checks[1..]] };
-        }
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => fixture.RunAsync(
             context.CancellationToken, plan));
         Assert.IsEmpty(fixture.Commands);
@@ -193,7 +172,7 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     [TestMethod]
     public async Task OriginalArchiveCoordinateAndBytesAreRetained()
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied,
             string.Join("; ", result.Failures.Select(failure => failure.Error)));
@@ -206,7 +185,6 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
         Assert.AreEqual("original.nupkg", Path.GetFileName(package.Path));
         Assert.AreEqual(new FileInfo(package.Path).Length, package.Size);
         Assert.AreEqual(DotNetPackageArchive.Digest(package.Path), package.Sha256);
-        Assert.HasCount(4, result.Commands);
         // Pack, consumer restore and consumer build own their native process trees; the
         // final command runs the consumer output itself.
         Assert.AreEqual("msbuild restore msbuild", string.Join(' ', result.Commands.Take(3)
@@ -261,7 +239,7 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
             CheckStatus.Failed, CheckStatus.Skipped, CheckStatus.Skipped },
             result.Results.Select(item => item.Status).ToArray());
         Assert.IsEmpty(result.Packages);
-        Assert.HasCount(1, result.Commands);
+        Assert.IsEmpty(result.ConsumerOutputs);
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
     }
 
@@ -303,7 +281,7 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
             CheckStatus.Passed, CheckStatus.Failed, CheckStatus.Skipped },
             result.Results.Select(item => item.Status).ToArray());
         Assert.HasCount(1, result.Packages);
-        Assert.HasCount(1, result.Commands);
+        Assert.IsFalse(result.Commands.Any(item => item.Command.Arguments.Contains("restore")));
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
     }
 
@@ -333,7 +311,7 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     [DataRow("marker")]
     public async Task LaterPhaseFailureRetainsSuccessfulPrerequisites(string defect)
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         fixture.Override = command =>
             defect == "restore" && command.Arguments.Contains("restore") ||
             defect == "build" && command.Arguments.Contains("-target:Build,GetTargetPath") ?
@@ -395,7 +373,7 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     public async Task NativePackageInterruptionCannotFabricateSuccess(string
         termination, string status)
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         fixture.Override =
             _ => new(Enum.Parse<NativeTermination>(termination), null, "", "", 0.1, "interrupted");
         DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);

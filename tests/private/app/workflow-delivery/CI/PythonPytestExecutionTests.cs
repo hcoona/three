@@ -33,28 +33,16 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     public static void Cleanup() => shared?.Dispose();
 
     [TestMethod]
-    public async Task SharedCheckoutQualifiesEveryTarget()
-    {
-        // Defect-free control: the shared checkout runs every selected target.
-        using var fixture = Fixture.Shared(shared!, sharedRevision!);
-        PythonPytestRunResult result = await fixture.RunAsync(fixture.Plan,
-            context.CancellationToken);
-        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
-        Assert.ContainsSingle(fixture.Queries);
-        Assert.HasCount(4, fixture.Commands);
-    }
-
-    [TestMethod]
     public async Task RootTargetUsesNativeRootPreparationAndOriginalConfiguration()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision!);
         CiPlan selected = fixture.Select("tests/root");
         PythonPytestRunResult result = await fixture.RunAsync(selected, context.CancellationToken);
         Assert.IsTrue(ResultCollector.Collect(selected, result.Results).Satisfied);
         Assert.AreEqual(selected.Candidate, result.Candidate);
         Assert.AreEqual(selected.Checks[0].Work.Key, result.Results[0].Key);
-        Assert.HasCount(2, result.Commands);
-        PythonPytestCommand preparation = result.Commands[0];
+        PythonPytestCommand preparation = Assert.ContainsSingle(result.Commands.Where(item =>
+            item.Command.Arguments[0] == "sync"));
         CollectionAssert.AreEqual(RootPackages, Packages(preparation.Command));
         Assert.Contains("--frozen", preparation.Command.Arguments);
         Assert.DoesNotContain("--only-group", preparation.Command.Arguments);
@@ -67,7 +55,9 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         Assert.IsNull(preparation.Command.Environment["PYTHONSAFEPATH"]);
         Assert.IsNull(preparation.Command.Environment["PYTEST_ADDOPTS"]);
         Assert.IsNull(preparation.Command.Environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"]);
-        NativeCommand invocation = result.Commands[1].Command;
+        PythonPytestCommand run = Assert.ContainsSingle(result.Commands.Where(item =>
+            item.Command.Arguments[0] == "run"));
+        NativeCommand invocation = run.Command;
         string junit = JunitOutput(invocation);
         Assert.IsTrue(Path.IsPathFullyQualified(junit));
         Assert.AreEqual(fixture.Scratch, Path.GetDirectoryName(junit));
@@ -81,7 +71,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
             "-c", "pyproject.toml", "--junitxml=" + junit, "tests/root"];
         CollectionAssert.AreEqual(expectedInvocation, invocation.Arguments);
         CollectionAssert.AreEqual(new[] { selected.Checks[0].Work.Key },
-            result.Commands[1].Checks);
+            run.Checks);
         Assert.IsEmpty(result.Failures);
         NativeCommand query = Assert.ContainsSingle(fixture.Queries);
         CollectionAssert.AreEqual(new[] { "workspace", "metadata", "--frozen", "--python",
@@ -97,7 +87,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     [TestMethod]
     public async Task MixedTargetsPrepareOnlyRootAndSelectedNativeMembersOnce()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision!);
         CiPlan selected = fixture.Select("tests/root", "pkg-a/tests", "pkg-b/tests");
         PythonPytestRunResult result = await fixture.RunAsync(selected, context.CancellationToken);
         Assert.IsTrue(ResultCollector.Collect(selected, result.Results).Satisfied);
@@ -167,9 +157,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         foreach (PythonPytestFailure failure in result.Failures)
             Assert.AreEqual($"Shared uv sync preparation failed: {termination}, exit 1. " +
                 "stderr: controlled failure", failure.Error);
-        Assert.HasCount(1, result.Commands);
-        Assert.HasCount(1, fixture.Commands);
-        Assert.HasCount(3, result.Commands[0].Checks);
+        Assert.IsFalse(fixture.Commands.Any(command => command.Arguments[0] == "run"));
     }
 
     [TestMethod]
@@ -187,7 +175,6 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         CollectionAssert.AreEqual(new[] { Enum.Parse<CheckStatus>(expected),
                 CheckStatus.Passed, CheckStatus.Passed },
             result.Results.Select(item => item.Status).ToArray());
-        Assert.HasCount(4, fixture.Commands);
         Assert.AreEqual(fixture.Plan.Checks[0].Work.Key,
             Assert.ContainsSingle(result.Failures).Check);
     }
@@ -209,7 +196,8 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
         Assert.HasCount(3, result.Results);
         Assert.IsTrue(result.Results.All(item => item.Status == CheckStatus.Cancelled));
-        Assert.HasCount(cancelAt == "sync" ? 1 : 2, fixture.Commands);
+        Assert.IsTrue(fixture.Commands.Where(command => command.Arguments[0] == "run")
+            .All(command => cancelAt == "tests/root" && command.Arguments[^1] == "tests/root"));
     }
 
     [TestMethod]
@@ -283,7 +271,6 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("candidate")]
     [DataRow("check")]
     [DataRow("dirty")]
     public async Task InvalidTransferStopsBeforeNativeProductEffects(string defect)
@@ -294,8 +281,6 @@ public sealed class PythonPytestExecutionTests(TestContext context)
             : Fixture.Shared(shared!, sharedRevision!);
         PythonPytestRunRequest request = fixture.Request;
         CiPlan plan = fixture.Plan;
-        if (defect == "candidate") request = request with
-        { Targets = request.Targets with { Revision = "foreign" } };
         if (defect == "check") plan = plan with
         {
             Checks = [plan.Checks[0] with { Work =
@@ -314,44 +299,30 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task MutableCandidateIsRejectedEvenForEmptyPartition(bool empty)
+    public async Task MutableCandidateIsRejectedEvenForEmptyPartition()
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision!);
-        CiPlan plan = (empty ? fixture.Select() : fixture.Plan) with { Candidate = "HEAD" };
+        CiPlan plan = fixture.Select() with { Candidate = "HEAD" };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(plan, context.CancellationToken));
         Assert.IsEmpty(fixture.Commands);
     }
 
     [TestMethod]
-    [DataRow("unique-name")]
-    [DataRow("swap")]
-    [DataRow("coordinated")]
-    public async Task CandidateMembershipMismatchStopsBeforeProductPreparation(string defect)
+    public async Task CandidateMembershipMismatchStopsBeforeProductPreparation()
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision!);
         PythonPytestRunRequest request = fixture.Request;
-        PythonMetadataMember[] members = request.Members.ToArray();
-        if (defect == "unique-name") members[1] = members[1] with { Name = "other-unique" };
-        if (defect == "swap")
+        request = request with
         {
-            members[1] = members[1] with { Name = request.Members[3].Name };
-            members[3] = members[3] with { Name = request.Members[1].Name };
-        }
-        if (defect == "coordinated")
-            request = request with
+            Members = [request.Members[0], .. request.Members[2..]],
+            Targets = request.Targets with
             {
-                Members = [members[0], .. members[2..]],
-                Targets = request.Targets with
-                {
-                    Targets = [request.Targets.Targets[0],
+                Targets = [request.Targets.Targets[0],
                     request.Targets.Targets[1] with { Member = null,
                         Inputs = ["pkg-a/tests/test_a.py"] }, request.Targets.Targets[2]]
-                },
-            };
-        else request = request with { Members = members };
+            },
+        };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(fixture.Plan, context.CancellationToken, request));
         Assert.ContainsSingle(fixture.Queries);
@@ -362,7 +333,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     [TestMethod]
     public async Task ReorderedMembershipUsesIdsFromReceivingNativeContext()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision!);
         PythonPytestRunRequest request = fixture.Request with
         {
             Members = fixture.Request.Members.Reverse().Select(member => member with

@@ -104,15 +104,15 @@ public sealed class NativeCommandTests(TestContext context)
     // Each stream builds its own strict decoder, so both reject invalid UTF-8. The bound is
     // enforced by one shared capture, so a single limit row covers both streams.
     [TestMethod]
-    [DataRow("stdout", "utf8")]
-    [DataRow("stderr", "utf8")]
+    [DataRow("stdout", "wyg=")]
+    [DataRow("stderr", "//5BAA==")]
     [DataRow("stderr", "limit")]
     public async Task ExecuteRejectsInvalidUtf8OrBoundedOutput(string stream, string defect)
     {
-        string[] command = defect == "utf8"
-            ? ["bytes", stream == "stdout" ? "wyg=" : "", stream == "stdout" ? "" : "wyg=",
-                "sleep"]
-            : ["flood", stream];
+        string[] command = defect == "limit"
+            ? ["flood", stream]
+            : ["bytes", stream == "stdout" ? defect : "", stream == "stdout" ? "" : defect,
+                "sleep"];
         using var fixture = new CommandFixture();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
@@ -153,9 +153,12 @@ public sealed class NativeCommandTests(TestContext context)
     {
         using var fixture = new CommandFixture();
         fixture.DeadlineSeconds = seconds;
+        string marker = Path.Combine(fixture.Directory, "marker.txt");
 
         await Assert.ThrowsExactlyAsync<ArgumentException>(() =>
-            fixture.RunAsync(context.CancellationToken, "sleep"));
+            fixture.RunAsync(context.CancellationToken, "marker", marker));
+
+        Assert.IsFalse(File.Exists(marker));
     }
 
     private static async Task<Process> WaitForRootAsync(Task<NativeCommandResult> execution,

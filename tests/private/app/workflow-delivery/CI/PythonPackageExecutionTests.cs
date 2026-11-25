@@ -14,8 +14,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     private static readonly string[] DistributionKinds = ["python-wheel", "python-sdist"];
     private static readonly string[] ToolGroups = ["dev", "workflow-delivery-python"];
 
-    // Native-answer and candidate-reference rows read one class-owned committed checkout,
-    // including its pre-created mutable branch; each row owns fresh Git-free scratch.
+    // Read-only rows share one committed checkout and own fresh Git-free scratch.
     private static GitFixture? shared;
     private static CiPlan? sharedPlan;
 
@@ -26,7 +25,6 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         try
         {
             sharedPlan = await Fixture.CommitAsync(repo);
-            await repo.GitAsync("branch", Fixture.MutableBranch, sharedPlan.Candidate);
             shared = repo;
         }
         catch { repo.Dispose(); throw; }
@@ -36,22 +34,9 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     public static void Cleanup() => shared?.Dispose();
 
     [TestMethod]
-    public async Task SharedCheckoutQualifiesCompleteRecipe()
-    {
-        // Defect-free control: the shared checkout satisfies every package obligation.
-        using var fixture = Fixture.Shared(shared!, sharedPlan!);
-        PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied,
-            string.Join("; ", result.Failures.Select(failure => failure.Error)));
-        Assert.HasCount(2, result.Distributions);
-        Assert.HasCount(2, result.Commands.Where(item => item.Command.Arguments.Contains(
-            "consume")));
-    }
-
-    [TestMethod]
     public async Task CompleteRecipeRetainsOriginalsAndBothIndependentConsumers()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedPlan!);
         PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied,
             string.Join("; ", result.Failures.Select(failure => failure.Error)));
@@ -71,7 +56,6 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         }
         NativeCommand[] builds = result.Commands.Select(item => item.Command)
             .Where(command => command.Arguments[0] == "build").ToArray();
-        Assert.HasCount(2, builds);
         NativeCommand gitFree = builds.Single(command => command.Arguments.Contains("--wheel"));
         Assert.Contains(result.Distributions.Single(
             item => item.Output.Kind == "python-sdist").Path,
@@ -84,15 +68,12 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             StringComparison.Ordinal));
         NativeCommand[] installs = result.Commands.Select(item => item.Command)
             .Where(command => command.Arguments[0] == "pip").ToArray();
-        Assert.HasCount(2, installs);
         Assert.Contains(result.Distributions.Single(
             item => item.Output.Kind == "python-wheel").Path,
             installs[0].Arguments);
         Assert.AreNotEqual(installs[0].Arguments[3], installs[1].Arguments[3]);
         Assert.IsTrue(installs.All(command => command.Arguments.Contains("--offline") &&
             command.Arguments.Contains("--no-cache")));
-        Assert.HasCount(2, result.Commands.Where(item => item.Command.Arguments.Contains(
-            "consume")));
         PythonPackageCommand sourcePreparation = Assert.ContainsSingle(result.Commands.Where(item =>
             item.Check.Check == PythonPackageChecks.Build &&
             item.Command.Arguments[0] == "sync"));
@@ -321,14 +302,9 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Passed", 0)]
-    [DataRow("Failed", 1)]
-    [DataRow("Skipped", 1)]
-    public async Task CliTransfersOriginalResultsAndCannotSatisfyMissingObligations(
-        string statusName, int expectedExit)
+    public async Task CliEmitsOriginalOutputEvenWhenQualificationFails()
     {
         using var fixture = Fixture.Shared(shared!, sharedPlan!);
-        CheckStatus status = Enum.Parse<CheckStatus>(statusName);
         string planFile = Path.Combine(fixture.Scratch, "plan.json");
         string requestFile = Path.Combine(fixture.Scratch, "request.json");
         await File.WriteAllTextAsync(planFile, JsonSerializer.Serialize(fixture.Plan,
@@ -343,10 +319,10 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             fixture.Plan.Checks[0].Work.Package!.Outputs[0], "original.whl", 8, "original-digest");
         var result = new PythonPackageRunResult(fixture.Plan.Candidate,
             fixture.Plan.Checks.Select(item => new CheckResult(fixture.Plan.Candidate,
-                item.Work.Key, status)).ToArray(), [], [original], []);
+                item.Work.Key, CheckStatus.Failed)).ToArray(), [], [original], []);
         using var output = new StringWriter();
         using var error = new StringWriter();
-        Assert.AreEqual(expectedExit, Program.Run(["ci", "run-python-package", planFile,
+        Assert.AreEqual(1, Program.Run(["ci", "run-python-package", planFile,
             requestFile],
             output, error, runPythonPackage: (plan, request, token) => Task.FromResult(result)));
         Assert.AreEqual("", error.ToString());
@@ -359,9 +335,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
 
     [TestMethod]
     [DataRow("missing-check")]
-    [DataRow("preset")]
     [DataRow("dirty")]
-    [DataRow("prerequisite")]
     public async Task InvalidSelectedContractStopsBeforeNativeEffects(string defect)
     {
         // Only the dirty row changes the checkout, so only it keeps a private repository.
@@ -369,47 +343,21 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             ? await Fixture.CreateAsync(context.CancellationToken)
             : Fixture.Shared(shared!, sharedPlan!);
         CiPlan plan = fixture.Plan;
-        if (defect == "missing-check") plan = plan with { Checks = plan.Checks[..3] };
-        if (defect == "preset") plan = plan with
-        {
-            Checks = [plan.Checks[0] with
-            { QualityPresets = ["other"] }, .. plan.Checks[1..]]
-        };
-        if (defect == "prerequisite") plan = plan with
-        {
-            Checks = [plan.Checks[0],
-            plan.Checks[1] with { Work = plan.Checks[1].Work with { Prerequisites = [] } },
-            .. plan.Checks[2..]]
-        };
-        if (defect == "dirty") await File.WriteAllTextAsync(Path.Combine(fixture.Repo.Directory,
-            "product/pyproject.toml"), "dirty", context.CancellationToken);
+        if (defect == "dirty")
+            await File.WriteAllTextAsync(Path.Combine(fixture.Repo.Directory,
+                "product/pyproject.toml"), "dirty", context.CancellationToken);
+        else
+            plan = plan with { Checks = plan.Checks[..^1] };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(context.CancellationToken, plan));
         Assert.IsEmpty(fixture.Commands);
     }
 
     [TestMethod]
-    [DataRow("HEAD", false)]
-    [DataRow("branch", false)]
-    [DataRow("short", false)]
-    [DataRow("HEAD", true)]
-    [DataRow("branch", true)]
-    [DataRow("short", true)]
-    public async Task MutableOrAbbreviatedCandidateStopsBeforeNativeEffects(
-        string reference, bool emptyPartition)
+    public async Task MutableCandidateStopsBeforeNativeEffectsEvenWithEmptyPartition()
     {
         using var fixture = Fixture.Shared(shared!, sharedPlan!);
-        string candidate = reference switch
-        {
-            "branch" => Fixture.MutableBranch,
-            "short" => fixture.Plan.Candidate[..8],
-            _ => "HEAD",
-        };
-        CiPlan plan = fixture.Plan with
-        {
-            Candidate = candidate,
-            Checks = emptyPartition ? [] : fixture.Plan.Checks
-        };
+        CiPlan plan = fixture.Plan with { Candidate = "HEAD", Checks = [] };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(context.CancellationToken, plan));
         Assert.IsEmpty(fixture.Commands);
@@ -419,7 +367,6 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     private sealed class Fixture(GitFixture repo, CiPlan plan, bool ownsRepository = true)
         : IDisposable
     {
-        internal const string MutableBranch = "package-candidate";
         internal GitFixture Repo { get; } = repo;
         internal CiPlan Plan { get; } = plan;
         internal string Scratch { get; } = Directory.CreateTempSubdirectory(

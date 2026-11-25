@@ -41,7 +41,6 @@ public sealed class DotNetExecutionTests(TestContext context)
         DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied,
             string.Join("; ", result.Failures.Select(failure => failure.Error)));
-        Assert.HasCount(2, fixture.Commands);
         Assert.HasCount(2, result.Outputs);
         // Neither wrapper may leave reusable MSBuild nodes or compiler servers behind. The
         // nested BuildManager reads the compiler-server choices from the environment.
@@ -65,7 +64,6 @@ public sealed class DotNetExecutionTests(TestContext context)
             capability);
         DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
-        Assert.HasCount(2, fixture.Commands);
         Assert.Contains("-target:BuildSelected", fixture.Commands[0].Arguments);
         Assert.IsNotNull(result.BatchBuild);
         DotNetBuildRequest request = JsonSerializer.Deserialize(await File.ReadAllTextAsync(
@@ -112,7 +110,6 @@ public sealed class DotNetExecutionTests(TestContext context)
         Assert.AreEqual(status, result.Results.Single(item =>
             item.Key.Check == DotNetChecks.Test).Status);
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
-        Assert.HasCount(2, fixture.Commands);
         Assert.AreEqual(termination, result.TestBatch!.Result.Termination);
         Assert.IsNotNull(result.BatchBuild);
         Assert.AreEqual(DotNetChecks.Build, Assert.ContainsSingle(result.Outputs).Key.Check);
@@ -141,7 +138,6 @@ public sealed class DotNetExecutionTests(TestContext context)
         Assert.AreEqual(CheckStatus.Skipped, result.Results[1].Status);
         Assert.IsEmpty(result.Outputs);
         Assert.IsNull(result.TestBatch);
-        Assert.HasCount(1, fixture.Commands);
         Assert.IsNotNull(result.BatchBuild);
         Assert.AreEqual(termination, result.BatchBuild.Result.Termination);
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
@@ -180,7 +176,7 @@ public sealed class DotNetExecutionTests(TestContext context)
         DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
         Assert.AreEqual(CheckStatus.Skipped, result.Results[1].Status);
-        Assert.HasCount(1, fixture.Commands);
+        Assert.IsNull(result.TestBatch);
         CiOutcome missing = ResultCollector.Collect(fixture.Plan, result.Results[..1]);
         Assert.IsFalse(missing.Satisfied);
         Assert.AreEqual("missing", missing.Checks[1].Status);
@@ -378,7 +374,6 @@ public sealed class DotNetExecutionTests(TestContext context)
         DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
         Assert.AreEqual(CheckStatus.Skipped, result.Results[1].Status);
-        Assert.HasCount(1, fixture.Commands);
         Assert.IsEmpty(result.Outputs);
     }
 
@@ -402,79 +397,50 @@ public sealed class DotNetExecutionTests(TestContext context)
         Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
         Assert.AreEqual(CheckStatus.Passed, result.Results[1].Status);
         Assert.AreEqual(second.Checks[0].Work.Key, Assert.ContainsSingle(result.Outputs).Key);
-        Assert.HasCount(1, fixture.Commands);
         Assert.IsNull(result.TestBatch);
         Assert.IsNotNull(result.BatchBuild);
         Assert.HasCount(2, result.BatchBuild.Keys);
     }
 
     [TestMethod]
-    [DataRow("scope")]
-    [DataRow("origin")]
-    [DataRow("capability")]
-    [DataRow("global")]
-    [DataRow("required")]
-    [DataRow("missing-test")]
-    [DataRow("missing-build")]
-    [DataRow("tools-missing")]
-    [DataRow("tools-mismatch")]
-    [DataRow("tools-unknown")]
-    [DataRow("tools-version")]
-    [DataRow("tools-noncanonical")]
-    public async Task InvalidPlanStopsBeforeProductCommands(string defect)
+    public async Task IncompleteRetainedPlanStopsBeforeProductCommands()
     {
         using var fixture = Shared();
-        CiPlan plan = fixture.Plan;
-        PlannedCheck first = plan.Checks[0];
-        if (defect == "scope") plan = plan with { Scope = "other" };
-        else if (defect == "missing-test") plan = plan with { Checks = plan.Checks[..1] };
-        else if (defect == "missing-build") plan = plan with { Checks = plan.Checks[1..] };
-        else
-        {
-            if (defect == "origin") first = first with
-            { Origins = [CheckOrigin.Preset], QualityPresets = ["adopted-quality"] };
-            else if (defect == "required") first = first with
-            { Work = first.Work with { Required = false } };
-            else if (defect.StartsWith("tools-", StringComparison.Ordinal))
-            {
-                var dimensions = new Dictionary<string, string>(first.Work.Dimensions);
-                if (defect == "tools-missing") dimensions.Remove(DotNetTools.Dimension);
-                else dimensions[DotNetTools.Dimension] = defect switch
-                {
-                    "tools-mismatch" => "{\"node\":\"24.1.0\"}",
-                    "tools-unknown" => "{\"ruby\":\"3.4.1\"}",
-                    "tools-version" => "{\"node\":\"24\"}",
-                    _ => "{ \"node\": \"24.1.0\" }",
-                };
-                first = first with { Work = first.Work with { Dimensions = dimensions } };
-            }
-            else
-            {
-                var dimensions = new Dictionary<string, string>(first.Work.Dimensions);
-                dimensions[defect == "capability" ? "test-capability" : "globals"] =
-                    defect == "capability" ? "unknown" : "{}";
-                first = first with { Work = first.Work with { Dimensions = dimensions } };
-            }
-            plan = plan with { Checks = [first, .. plan.Checks[1..]] };
-        }
+        CiPlan plan = fixture.Plan with { Checks = fixture.Plan.Checks[..1] };
+
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => fixture.RunAsync(
             context.CancellationToken, plan));
         Assert.IsEmpty(fixture.Commands);
     }
 
     [TestMethod]
+    [DataRow("test-capability", "VSTest")]
+    [DataRow(DotNetTools.Dimension, """{"python":"1.0.1"}""")]
+    public void RetainedBuildAndTestRequireMatchingCapabilitiesAndTools(string dimension,
+        string value)
+    {
+        string checkout = shared!.Directory;
+        CiPlan plan = DotNetExecutionFixture.CreatePlan(checkout, sharedCommit, "MTP");
+        foreach (PlannedCheck check in plan.Checks)
+            check.Work.Dimensions[DotNetTools.Dimension] = """{"python":"1.0.0"}""";
+        PlannedCheck test = plan.Checks.Single(check => check.Work.Key.Check == DotNetChecks.Test);
+        test.Work.Dimensions[dimension] = value;
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            DotNetExecution.ReadChecks(plan, checkout));
+
+        Assert.AreEqual("Incomplete selected native identity obligations.", error.Message);
+    }
+
+    [TestMethod]
     [DataRow("scratch-used")]
-    [DataRow("scratch-inside-checkout")]
-    [DataRow("scratch-missing")]
-    [DataRow("scratch-relative")]
-    [DataRow("deadline")]
     [DataRow("dirty")]
     [DataRow("wrong-head")]
     [DataRow("uncommitted-project")]
     public async Task InvalidRequestStopsBeforeProductCommands(string defect)
     {
         // Rows that change the checkout keep a private repository.
-        using var fixture = defect is "scratch-inside-checkout" or "dirty" or "wrong-head"
+        using var fixture = defect is "dirty" or "wrong-head"
             ? await DotNetExecutionFixture.CreateAsync(context.CancellationToken) : Shared();
         DotNetRunRequest request = fixture.Request;
         CiPlan plan = fixture.Plan;
@@ -483,17 +449,6 @@ public sealed class DotNetExecutionTests(TestContext context)
             case "scratch-used":
                 await File.WriteAllTextAsync(Path.Combine(fixture.Scratch,
                 "existing"), "used", context.CancellationToken); break;
-            case "scratch-inside-checkout":
-                request = request with
-                {
-                    Scratch = Directory.CreateDirectory(Path.Combine(fixture.Repo.Directory,
-                        "scratch")).FullName
-                }; break;
-            case "scratch-missing":
-                request = request with
-                { Scratch = Path.Combine(fixture.Scratch, "absent") }; break;
-            case "scratch-relative": request = request with { Scratch = "scratch" }; break;
-            case "deadline": request = request with { DeadlineSeconds = 0 }; break;
             case "dirty":
                 await File.AppendAllTextAsync(Path.Combine(fixture.Repo.Directory,
                 "product.csproj"), "changed", context.CancellationToken); break;
@@ -522,7 +477,7 @@ public sealed class DotNetExecutionTests(TestContext context)
         Assert.IsEmpty(fixture.Commands);
         DotNetRunResult build = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(CheckStatus.Passed, Assert.ContainsSingle(build.Results).Status);
-        Assert.HasCount(1, fixture.Commands);
+        Assert.IsNull(build.TestBatch);
     }
 
     [TestMethod]

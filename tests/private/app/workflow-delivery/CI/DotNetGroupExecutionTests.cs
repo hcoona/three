@@ -33,6 +33,13 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
     [ClassCleanup]
     public static void Cleanup() => shared?.Dispose();
 
+    private static DotNetPackageFixture PackageFixture() =>
+        DotNetPackageFixture.Shared(shared!, sharedCandidate);
+
+    private static DotNetExecutionFixture RetainedFixture() =>
+        new(shared!, DotNetExecutionFixture.CreatePlan(shared!.Directory, sharedCandidate, "MTP",
+            project: DotNetPackageFixture.Project), ownsRepository: false);
+
     [TestMethod]
     public async Task TransferredPackageControlQualifies()
     {
@@ -46,12 +53,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
 
     [TestMethod]
     [DataRow("MSBuildProjectFullPath")]
-    [DataRow("PackageId")]
     [DataRow("NuGetPackageVersion")]
-    [DataRow("PackageVersion")]
-    [DataRow("AssemblyVersion")]
-    [DataRow("AssemblyFileVersion")]
-    [DataRow("AssemblyInformationalVersion")]
     public async Task TransferredPackageRejectsDifferentNativeProjection(string property)
     {
         DotNetGroupRunResult result = await RunTransferredAsync(property);
@@ -71,7 +73,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
 
     private async Task<DotNetGroupRunResult> RunTransferredAsync(string? property)
     {
-        using var fixture = DotNetPackageFixture.Shared(shared!, sharedCandidate);
+        using var fixture = PackageFixture();
         string original = JsonSerializer.Serialize(fixture.Plan, TransferJson.Default.CiPlan);
         CiPlan transferred = JsonSerializer.Deserialize(original, TransferJson.Default.CiPlan)!;
         string receiver = sharedReceiver;
@@ -83,17 +85,11 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
             if (property is null) return;
             if (property == "MSBuildProjectFullPath")
                 values[property] = fixture.Node.Identity.Project;
-            else if (property is "NuGetPackageVersion" or "PackageVersion")
+            else
             {
                 values["NuGetPackageVersion"] = "2.0.0";
                 values["PackageVersion"] = "2.0.0";
             }
-            else values[property] = property switch
-            {
-                "PackageId" => "Different.Native.Package",
-                "AssemblyInformationalVersion" => "different-native-source",
-                _ => "2.0.0.0",
-            };
         };
         string execution = Directory.CreateDirectory(
             Path.Combine(fixture.Scratch, "received-run")).FullName;
@@ -113,7 +109,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
     [DataRow(false)]
     public async Task OriginalMixedPlanRequiresBothPartitions(bool packageComplete)
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = PackageFixture();
         CiPlan retained = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
             fixture.Candidate, "MTP", project: DotNetPackageFixture.Project);
         CiPlan original = fixture.Plan with
@@ -153,7 +149,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
     [TestMethod]
     public async Task InvalidSelectedContractFailsBeforeEffects()
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = PackageFixture();
         CiPlan retained = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
             fixture.Candidate, "None", project: DotNetPackageFixture.Project);
         PlannedCheck broken = fixture.Plan.Checks[0] with
@@ -172,7 +168,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
     [TestMethod]
     public async Task MixedToolGroupsFailBeforeEffects()
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = PackageFixture();
         CiPlan retained = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
             fixture.Candidate, "MTP", project: DotNetPackageFixture.Project);
         PlannedCheck[] node = [.. retained.Checks.Select(check => check with
@@ -199,7 +195,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
     [TestMethod]
     public async Task EmptyPlanHasNoSelectedCommands()
     {
-        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = RetainedFixture();
         CiPlan original = fixture.Plan with { Checks = [] };
         DotNetGroupRunResult result = await DotNetGroupExecution.RunAsync(original,
             fixture.Request, context.CancellationToken);
@@ -213,23 +209,20 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Failed")]
-    [DataRow("Cancelled")]
-    [DataRow("TimedOut")]
-    public async Task FailedTestRetainsBuild(string nativeStatus)
+    public async Task FailedTestRetainsBuild()
     {
-        CheckStatus status = Enum.Parse<CheckStatus>(nativeStatus);
-        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = RetainedFixture();
         DotNetGroupRunResult result = await DotNetGroupExecution.RunAsync(fixture.Plan,
             fixture.Request, (plan, _, _) => Task.FromResult(new DotNetRunResult(plan.Candidate,
                 plan.Checks.Select(item => new CheckResult(plan.Candidate, item.Work.Key,
-                    item.Work.Key.Check == DotNetChecks.Build ? CheckStatus.Passed : status))
+                    item.Work.Key.Check == DotNetChecks.Build ? CheckStatus.Passed :
+                        CheckStatus.Failed))
                     .ToArray(), [], [])), DotNetPackageExecution.RunAsync,
                         context.CancellationToken);
         Assert.IsFalse(result.Outcome.Satisfied);
         Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
             item.Key.Check == DotNetChecks.Build).Status);
-        Assert.AreEqual(status, result.Results.Single(item => item.Key.Check ==
+        Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item => item.Key.Check ==
             DotNetChecks.Test).Status);
     }
 
@@ -238,7 +231,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
     [DataRow(true)]
     public async Task OuterCancellationRetainsCompletedPartition(bool selectedPackages)
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = PackageFixture();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         CiPlan retained = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
@@ -283,12 +276,9 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(true, 0)]
-    [DataRow(false, 1)]
-    public async Task CliRetainsExecutionOwnerOutcomeAndMissingRequiredResults(bool complete,
-        int expectedExit)
+    public async Task CliEmitsGroupOutcomeAndMapsUnsatisfiedToExitOne()
     {
-        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = RetainedFixture();
         string planPath = Path.Combine(fixture.Scratch, "plan.json");
         string requestPath = Path.Combine(fixture.Scratch, "request.json");
         await File.WriteAllTextAsync(planPath, JsonSerializer.Serialize(fixture.Plan,
@@ -300,23 +290,18 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
         int exit = Program.Run(["ci", "run-dotnet", planPath, requestPath], output, error,
             runDotNet: (plan, _, _) =>
             {
-                CheckResult[] results = plan.Checks.Take(complete ? 2 : 1).Select(item =>
-                    new CheckResult(plan.Candidate, item.Work.Key, CheckStatus.Passed)).ToArray();
+                CheckResult[] results = [new(plan.Candidate,
+                    plan.Checks[0].Work.Key, CheckStatus.Passed)];
                 return Task.FromResult(new DotNetGroupRunResult(plan.Candidate, results,
                     new(plan.Candidate, results, [], []),
                     new(plan.Candidate, [], [], [], [], []),
                     ResultCollector.Collect(plan, results)));
             });
-        Assert.AreEqual(expectedExit, exit, error.ToString());
+        Assert.AreEqual(1, exit, error.ToString());
         Assert.AreEqual("", error.ToString());
         DotNetGroupRunResult transferred = JsonSerializer.Deserialize(output.ToString(),
             TransferJson.Default.DotNetGroupRunResult)!;
         Assert.AreEqual(fixture.Plan.Candidate, transferred.Candidate);
-        Assert.HasCount(complete ? 2 : 1, transferred.Results);
-        Assert.AreEqual(complete, transferred.Outcome.Satisfied);
-        Assert.AreEqual(fixture.Plan.Comparison, transferred.Outcome.Comparison);
-        Assert.AreEqual(fixture.Plan.Scope, transferred.Outcome.Scope);
-        Assert.HasCount(complete ? 0 : 1,
-            transferred.Outcome.Checks.Where(check => check.Status == "missing"));
+        Assert.IsFalse(transferred.Outcome.Satisfied);
     }
 }

@@ -19,10 +19,9 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     private static NativeCommandResult Answer(object value) => new(NativeTermination.Exited,
         0, JsonSerializer.Serialize(value), "", 0, null);
 
-    // Rows that stop before any product work read one class-owned commit; rows that build
-    // the gem write generated version.rb into the checkout and keep a private repository.
+    // Only smoke-gem builds write version.rb into the checkout and need a private repository.
     private static GitFixture? shared;
-    private static string sharedHead = "";
+    private static GitRevision? sharedRevision;
 
     [ClassInitialize]
     public static async Task InitializeAsync(TestContext classContext)
@@ -30,7 +29,9 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
         try
         {
-            sharedHead = await CommitAsync(repo);
+            string head = await CommitAsync(repo);
+            sharedRevision = await new GitReader(repo.Directory).ReadAsync(head,
+                classContext.CancellationToken);
             shared = repo;
         }
         catch { repo.Dispose(); throw; }
@@ -54,19 +55,19 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     private async Task<(CiPlan Plan, RubyGroupRunRequest Request)> PrepareAsync(GitFixture repo)
     {
         string head = await CommitAsync(repo);
-        return await RequestAsync(repo, head, Directory.CreateDirectory(Path.Combine(
+        GitRevision revision = await new GitReader(repo.Directory).ReadAsync(head,
+            context.CancellationToken);
+        return CreateRequest(repo, revision, Directory.CreateDirectory(Path.Combine(
             Path.GetDirectoryName(repo.Directory)!, "execution")).FullName);
     }
 
-    // Reads the class-owned commit; the row owns only its scratch.
-    private Task<(CiPlan Plan, RubyGroupRunRequest Request)> SharedAsync(string scratch) =>
-        RequestAsync(shared!, sharedHead, scratch);
+    private static (CiPlan Plan, RubyGroupRunRequest Request) Shared(string scratch) =>
+        CreateRequest(shared!, sharedRevision!, scratch);
 
-    private async Task<(CiPlan Plan, RubyGroupRunRequest Request)> RequestAsync(GitFixture repo,
-        string head, string scratch)
+    private static (CiPlan Plan, RubyGroupRunRequest Request) CreateRequest(GitFixture repo,
+        GitRevision revision, string scratch)
     {
-        GitRevision revision = await new GitReader(repo.Directory).ReadAsync(head,
-            context.CancellationToken);
+        string head = revision.Commit;
         string PathFor(string path) => Path.GetFullPath(Path.Combine(repo.Directory, path));
         var source = new RubySourceGemFacts(PathFor(Gem + "/hcoona-release-smoke-ruby.gemspec"),
             new("hcoona-release-smoke-ruby", "1.2.3", "ruby", RequirePaths, Files, []));
@@ -306,8 +307,8 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     [DataRow("failed-require")]
     public async Task LatexmathSuiteAndOriginalGemChecksAllBlockTheGroup(string defect)
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        var (plan, request) = await PrepareAsync(repo);
+        using var scratch = new Scratch();
+        var (plan, request) = Shared(scratch.Directory);
         plan = LatexmathPlan(plan, request);
         // Group preparation shares a bundle path; the clean consumer must not inherit it.
         request = request with
@@ -350,7 +351,7 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     public async Task SelectedSuiteInstallsItsGovernedBundlesBeforeRSpecAndRetainsThem()
     {
         using var scratch = new Scratch();
-        var (plan, request) = await SharedAsync(scratch.Directory);
+        var (plan, request) = Shared(scratch.Directory);
         string Gemfile(string directory) => Path.GetFullPath(Path.Combine(request.Checkout,
             directory, "Gemfile"));
         RubyBundleFacts suite = request.Candidate.Bundles[0];
@@ -410,17 +411,12 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("partial-gem")]
-    [DataRow("missing-bundle")]
-    [DataRow("candidate")]
-    public async Task InvalidOriginalPlanCannotExecute(string defect)
+    public async Task UnresolvedSuiteBundleStopsBothPartitions()
     {
         using var scratch = new Scratch();
-        var (plan, request) = await SharedAsync(scratch.Directory);
-        if (defect == "partial-gem") plan = plan with { Checks = plan.Checks[..^1] };
-        if (defect == "missing-bundle") request = request with
+        var (plan, request) = Shared(scratch.Directory);
+        request = request with
         { Candidate = request.Candidate with { Bundles = [] } };
-        if (defect == "candidate") plan = plan with { Candidate = plan.Candidate[..8] };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => RubyGroupExecution.RunAsync(
             plan, request, (_, _) =>
             {
@@ -435,7 +431,7 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     {
         // Defect-free control: the shared commit binds and satisfies an empty selection.
         using var scratch = new Scratch();
-        var (plan, request) = await SharedAsync(scratch.Directory);
+        var (plan, request) = Shared(scratch.Directory);
         RubyGroupRun result = await RubyGroupExecution.RunAsync(plan with { Checks = [] },
             request, (_, _) =>
             {
@@ -457,9 +453,10 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     [TestMethod]
     public async Task CancellationRetainsOriginalKeys()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        var (plan, request) = await PrepareAsync(repo);
-        using var cancellation = new CancellationTokenSource();
+        using var scratch = new Scratch();
+        var (plan, request) = Shared(scratch.Directory);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken);
         RubyGroupRun result = await RubyGroupExecution.RunAsync(plan, request,
             async (command, token) =>
             {

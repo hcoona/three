@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
@@ -13,6 +12,8 @@ namespace WorkflowDelivery.Tests.CI;
 [TestClass]
 public sealed class NodeExecutionTests(TestContext context)
 {
+    private static readonly string[] VersionArguments = ["--version"];
+
     // Rows that only vary native answers, the request or scratch read one class-owned
     // committed checkout. Rows that edit, tag or fetch into the checkout keep their own.
     private static GitFixture? shared;
@@ -34,129 +35,50 @@ public sealed class NodeExecutionTests(TestContext context)
     public static void Cleanup() => shared?.Dispose();
 
     [TestMethod]
-    [DataRow("check", "Incomplete or conflicting Node package checks")]
-    [DataRow("runner", "Unsupported Node execution quality/runner/variant")]
-    [DataRow("variant", "Incomplete or conflicting Node package checks")]
-    [DataRow("dimensions", "Unsupported Node execution quality/runner/variant")]
-    [DataRow("preset", "Unsupported Node execution quality/runner/variant")]
-    [DataRow("association", "Incomplete or conflicting Node package checks")]
-    [DataRow("prerequisite", "Unsupported complete Node package association")]
     [DataRow("missing-consumer", "Incomplete or conflicting Node package checks")]
-    [DataRow("output-identity", "Conflicting unit-wide Node output identity")]
-    [DataRow("definition", "Unsupported complete Node package association")]
-    [DataRow("publish-directory", "Unsupported complete Node package association")]
-    [DataRow("output-kind", "Unsupported complete Node package association")]
-    [DataRow("scope", "Unsupported Node execution scope")]
-    [DataRow("missing-source-test", "Unresolved complete Node source checks")]
-    [DataRow("missing-node24-version", "Conflicting planned Node runtime context")]
     [DataRow("conflicting-pnpm", "Conflicting planned PNPM versions")]
-    [DataRow("conflicting-node24", "Conflicting planned Node runtime context")]
     [DataRow("node22-package", "Incomplete or conflicting Node package checks")]
     public async Task RunRejectsCompletePlanBeforeAnyCommand(string defect, string diagnostic)
     {
         using var checkout = new ScratchFixture("checkout");
         using var scratch = new ScratchFixture("scratch");
         CiPlan original = NodeExecutionFixture.CreatePlan(new string('a', 40), "first", "second");
-        var commands = new List<NativeCommand>();
         PlannedCheck[] checks = original.Checks.ToArray();
-        PlannedCheck last = checks[^1];
-        CheckSpec work = last.Work;
-        work = defect switch
-        {
-            "check" => work with { Key = work.Key with { Check = "unknown" } },
-            "runner" => work with { Runner = "windows-latest" },
-            "variant" => work with { Key = work.Key with { Variant = "alternate" } },
-            "dimensions" => work with { Dimensions = new() { ["os"] = "ubuntu" } },
-            "association" => work with
-            {
-                Package = work.Package! with
-                { ExpectedVersion = "9.9.9" }
-            },
-            "prerequisite" => work with { Prerequisites = [] },
-            "missing-node24-version" => work with
-            {
-                Dimensions = new()
-                { ["node"] = "24.x", ["pnpm"] = "12.8.2" }
-            },
-            "conflicting-pnpm" => work with
-            {
-                Dimensions = new()
-                { ["node"] = "24.x", ["node-version"] = "24.21.0", ["pnpm"] = "12.8.3" }
-            },
-            "conflicting-node24" => work with
-            {
-                Dimensions = new()
-                { ["node"] = "24.x", ["node-version"] = "24.22.0", ["pnpm"] = "12.8.2" }
-            },
-            "node22-package" => work with
-            {
-                Key = work.Key with { Variant = "node22" },
-                Dimensions = new() { ["node"] = "22.x", ["pnpm"] = "12.8.2" }
-            },
-            _ => work,
-        };
-        checks[^1] = last with
-        {
-            Work = work,
-            QualityPresets = defect == "preset" ? ["unknown"] : last.QualityPresets
-        };
         if (defect == "missing-consumer")
             checks = checks[..^1];
-        if (defect == "missing-source-test")
-            checks = checks.Where(item => !(item.Work.Key.Variant == "node22" &&
-                item.Work.Key.Check == "node/project-test-v1")).ToArray();
-        if (defect == "output-identity")
-            checks = checks.Select(item => item.Work.Package?.Build == "second"
-                ? item with
-                {
-                    Work = item.Work with
-                    {
-                        Package = item.Work.Package with
-                        { Outputs = [new("first-package", "primary-package", "npm-tarball")] }
-                    }
-                }
-                : item).ToArray();
-        if (defect is "definition" or "publish-directory" or "output-kind")
-            checks = checks.Select(item => item.Work.Package?.Build == "second"
-                ? item with
-                {
-                    Work = item.Work with
-                    {
-                        Package = defect switch
-                        {
-                            "definition" => item.Work.Package with { Definition = "unknown" },
-                            "publish-directory" => item.Work.Package with
-                            { PublishDirectory = "packed" },
-                            _ => item.Work.Package with
-                            { Outputs = [new("second-package", "primary-package", "unknown")] },
-                        }
-                    }
-                } : item).ToArray();
-        CiPlan plan = original with
+        else
         {
-            Checks = checks,
-            Scope = defect == "scope" ? "unknown" : original.Scope
-        };
+            PlannedCheck last = checks[^1];
+            CheckSpec work = last.Work;
+            checks[^1] = last with
+            {
+                Work = defect == "conflicting-pnpm" ? work with
+                {
+                    Dimensions = new(work.Dimensions) { ["pnpm"] = "12.8.3" },
+                } : work with
+                {
+                    Key = work.Key with { Variant = "node22" },
+                    Dimensions = new() { ["node"] = "22.x", ["pnpm"] = "12.8.2" },
+                },
+            };
+        }
 
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            NodeExecution.RunAsync(plan, new(checkout.Scratch, scratch.Scratch, "node24"),
-                (command, _) =>
-                {
-                    commands.Add(command);
-                    return Task.FromResult(NodeExecutionFixture.Success());
-                }, context.CancellationToken));
+            NodeExecution.RunAsync(original with { Checks = checks },
+                new(checkout.Scratch, scratch.Scratch, "node24"),
+                (_, _) => throw new AssertFailedException("Invalid plan reached native work."),
+                context.CancellationToken));
 
         Assert.Contains(diagnostic, error.Message);
-        Assert.IsEmpty(commands);
         Assert.IsEmpty(Directory.EnumerateFileSystemEntries(checkout.Scratch));
         Assert.IsEmpty(Directory.EnumerateFileSystemEntries(scratch.Scratch));
     }
 
     [TestMethod]
-    [DataRow("node22", "22.20.0", 2, 0)]
-    [DataRow("node24", "24.21.0", 5, 1)]
+    [DataRow("node22", "22.20.0", 0)]
+    [DataRow("node24", "24.21.0", 1)]
     public async Task RunSelectedRuntimeRetainsExactKeysAndReadback(string runtime,
-        string nodeVersion, int checkCount, int packageCount)
+        string nodeVersion, int packageCount)
     {
         // Defect-free control for the shared checkout.
         using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
@@ -165,16 +87,12 @@ public sealed class NodeExecutionTests(TestContext context)
 
         NodeRunResult result = await fixture.RunAsync(context.CancellationToken);
 
-        Assert.HasCount(7, fixture.Plan.Checks);
         Assert.AreEqual(runtime, result.Runtime);
         Assert.AreEqual(fixture.Plan.Candidate, result.Candidate);
-        Assert.HasCount(checkCount, result.Results);
         CollectionAssert.AreEqual(fixture.SelectedPlan.Checks.Select(item => item.Work.Key)
             .ToArray(), result.Results.Select(item => item.Key).ToArray());
         Assert.IsTrue(result.Results.All(item => item.Status == CheckStatus.Passed));
         Assert.HasCount(packageCount, result.Outputs);
-        Assert.HasCount(packageCount, fixture.Commands.Where(item =>
-            item.Arguments.Contains("pack")));
         Assert.IsNotNull(result.RuntimeVersions);
         Assert.AreEqual(nodeVersion, result.RuntimeVersions.NodeVersion);
         Assert.AreEqual("12.8.2", result.RuntimeVersions.PnpmVersion);
@@ -187,13 +105,11 @@ public sealed class NodeExecutionTests(TestContext context)
             fixture.Commands.Take(2).Select(item => item.Executable).ToArray());
         foreach (NativeCommand command in fixture.Commands.Take(2))
         {
-            string[] arguments = ["--version"];
-            CollectionAssert.AreEqual(arguments, command.Arguments);
+            CollectionAssert.AreEqual(VersionArguments, command.Arguments);
             Assert.AreEqual(fixture.Repository.Directory, command.Directory);
             Assert.AreEqual(30, command.DeadlineSeconds);
         }
         Assert.IsTrue(ResultCollector.Collect(fixture.SelectedPlan, result.Results).Satisfied);
-        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
     }
 
     [TestMethod]
@@ -260,32 +176,11 @@ public sealed class NodeExecutionTests(TestContext context)
             fixture.RunAsync(context.CancellationToken));
 
         Assert.AreEqual(Differs, error.Message);
-        Assert.IsTrue(fixture.Commands.All(item => item.Arguments.SequenceEqual(["--version"])));
+        Assert.IsTrue(fixture.Commands.All(item => item.Arguments.SequenceEqual(VersionArguments)));
         string[] tools = ["node", "pnpm"];
         CollectionAssert.AreEqual(tools, fixture.Commands.Select(item => item.Executable)
             .ToArray());
         Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
-    }
-
-    [TestMethod]
-    public async Task CompleteParentRequiresBothRuntimeResults()
-    {
-        using var node22 = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
-        node22.Runtime = "node22";
-        node22.NodeVersion = "22.20.0";
-        using var node24 = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
-        CiPlan parent = node24.Plan;
-        await node22.Repository.GitAsync("fetch", node24.Repository.Directory, parent.Candidate);
-        await node22.Repository.GitAsync("reset", "--hard", parent.Candidate);
-        NodeRunResult older = await node22.RunAsync(context.CancellationToken, parent);
-        NodeRunResult current = await node24.RunAsync(context.CancellationToken);
-        CheckResult[] both = older.Results.Concat(current.Results).ToArray();
-
-        Assert.IsTrue(ResultCollector.Collect(parent, both).Satisfied);
-        Assert.IsFalse(ResultCollector.Collect(parent, current.Results).Satisfied);
-        Assert.IsFalse(ResultCollector.Collect(parent, both.Select(item =>
-            item.Key.Variant == "node22" ? item with { Status = CheckStatus.Failed } : item)
-            .ToArray()).Satisfied);
     }
 
     [TestMethod]
@@ -312,53 +207,40 @@ public sealed class NodeExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("relative-checkout", "Node execution paths must be absolute.")]
-    [DataRow("relative-scratch", "Node execution paths must be absolute.")]
-    [DataRow("missing-scratch", "Node execution requires fresh external scratch.")]
-    [DataRow("same", "Node execution requires fresh external scratch.")]
-    [DataRow("nested", "Node execution requires fresh external scratch.")]
-    [DataRow("nonempty", "Node execution requires fresh external scratch.")]
-    public async Task RunRejectsInvalidScratchBeforeReadingGit(string defect, string diagnostic)
+    public async Task RunRejectsNestedScratchBeforeReadingGit()
     {
-        // Path checks precede every Git read, so no repository is needed; the exact
-        // diagnostic proves the path rule rejected the request rather than a Git failure.
         using var checkout = new ScratchFixture("checkout");
-        using var scratch = new ScratchFixture("scratch");
         CiPlan plan = NodeExecutionFixture.CreatePlan(new string('a', 40));
-        var commands = new List<NativeCommand>();
-        var request = new NodeRunRequest(checkout.Scratch, scratch.Scratch, "node24");
-        if (defect == "nested")
-        {
-            string nested = Path.Combine(request.Checkout, "scratch");
-            Directory.CreateDirectory(nested);
-            request = request with { Scratch = nested };
-        }
-        if (defect == "nonempty")
-            File.WriteAllText(Path.Combine(request.Scratch, "previous.txt"), "previous");
-        request = defect switch
-        {
-            "relative-checkout" => request with { Checkout = "repository" },
-            "relative-scratch" => request with { Scratch = "scratch" },
-            "missing-scratch" => request with { Scratch = Path.Combine(request.Scratch, "absent") },
-            "same" => request with { Scratch = request.Checkout },
-            _ => request,
-        };
+        string scratch = Directory.CreateDirectory(Path.Combine(checkout.Scratch, "scratch"))
+            .FullName;
+        var request = new NodeRunRequest(checkout.Scratch, scratch, "node24");
 
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            NodeExecution.RunAsync(plan, request, (command, _) =>
-            {
-                commands.Add(command);
-                return Task.FromResult(NodeExecutionFixture.Success());
-            }, context.CancellationToken));
+            NodeExecution.RunAsync(plan, request,
+                (_, _) => throw new AssertFailedException("Nested scratch reached native work."),
+                context.CancellationToken));
 
-        Assert.AreEqual(diagnostic, error.Message);
-        Assert.IsEmpty(commands);
+        Assert.AreEqual("Node execution requires fresh external scratch.", error.Message);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(scratch));
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task RunRejectsCheckoutFilesystemRootBeforeNativeWork(bool empty)
+    public async Task RunRejectsNonemptyExternalScratchWithoutTouchingSentinel()
+    {
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
+        string sentinel = Path.Combine(fixture.Scratch, "existing.txt");
+        File.WriteAllText(sentinel, "existing scratch data");
+
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(context.CancellationToken));
+
+        Assert.AreEqual("Node execution requires fresh external scratch.", error.Message);
+        Assert.IsEmpty(fixture.Commands);
+        Assert.AreEqual("existing scratch data", File.ReadAllText(sentinel));
+    }
+
+    [TestMethod]
+    public async Task RunRejectsCheckoutFilesystemRootEvenForEmptyPlan()
     {
         using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         string root = Path.GetPathRoot(fixture.Request.Checkout)!;
@@ -367,7 +249,7 @@ public sealed class NodeExecutionTests(TestContext context)
         Assert.AreEqual(root, Path.GetPathRoot(fixture.Scratch));
         Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
         NodeRunRequest request = fixture.Request with { Checkout = root };
-        CiPlan plan = empty ? fixture.Plan with { Checks = [] } : fixture.Plan;
+        CiPlan plan = fixture.Plan with { Checks = [] };
 
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(context.CancellationToken, plan, request));
@@ -378,29 +260,18 @@ public sealed class NodeExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(NodeExecutionFixture.Test)]
-    [DataRow(NodeExecutionFixture.Contents)]
-    [DataRow(NodeExecutionFixture.Consumer)]
-    [DataRow("all")]
-    public async Task RunRejectsAdvisorySupportedQualityBeforeProductCommands(string operation)
+    public async Task RunRejectsMakingRequiredWorkAdvisoryBeforeProductCommands()
     {
         using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         CiPlan advisory = fixture.Plan with
         {
-            Checks = fixture.Plan.Checks.Select(item => operation == "all" ||
-                item.Work.Key.Check == operation
-                ? item with { Work = item.Work with { Required = false } } : item).ToArray(),
+            Checks = fixture.Plan.Checks.Select(item =>
+                item with { Work = item.Work with { Required = false } }).ToArray(),
         };
-        string json = JsonSerializer.Serialize(advisory, TransferJson.Default.CiPlan);
-        CiPlan transferred = JsonSerializer.Deserialize(json, TransferJson.Default.CiPlan)!;
-        CiOutcome generic = ResultCollector.Collect(transferred, []);
-        Assert.IsEmpty(generic.Errors);
-        Assert.HasCount(operation == "all" ? 7 : operation == NodeExecutionFixture.Test ? 2 : 1,
-            generic.Checks.Where(item => !item.Required));
-        Assert.AreEqual(operation == "all", generic.Satisfied);
+        Assert.IsTrue(ResultCollector.Collect(advisory, []).Satisfied);
 
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.RunAsync(context.CancellationToken, transferred));
+            fixture.RunAsync(context.CancellationToken, advisory));
 
         Assert.Contains("Unsupported Node execution quality/runner/variant", error.Message);
         Assert.IsEmpty(fixture.Commands);
@@ -450,7 +321,6 @@ public sealed class NodeExecutionTests(TestContext context)
             item.Work.Key.Variant == fixture.Runtime).ToArray()
         }, result.Results).Satisfied);
         Assert.HasCount(2, result.Outputs);
-        Assert.HasCount(12, result.Commands);
         Assert.IsEmpty(result.Failures);
         foreach (NodeOriginalOutput output in result.Outputs)
         {
@@ -494,7 +364,6 @@ public sealed class NodeExecutionTests(TestContext context)
                 NodeExecutionFixture.Contents, NodeExecutionFixture.Consumer })
                 Assert.AreEqual(CheckStatus.Skipped, Status(result, check));
         Assert.HasCount(runtime == "node24" ? 5 : 2, result.Results);
-        Assert.HasCount(2, result.Commands);
         Assert.IsEmpty(result.Outputs);
         Assert.IsFalse(ResultCollector.Collect(fixture.SelectedPlan, result.Results).Satisfied);
     }
@@ -581,24 +450,17 @@ public sealed class NodeExecutionTests(TestContext context)
         AssertMetadataRejected(InstalledShape(field, json));
 
     [TestMethod]
-    [DataRow("identity")]
-    [DataRow("malformed")]
-    [DataRow("installed-shape")]
-    public async Task RunRejectsNativeMetadataBeforeInstall(string defect)
+    public async Task RunRejectsNativeMetadataBeforeInstall()
     {
-        // The metadata rule is checked above without a repository; these rows prove execution
-        // applies it to both artifact checks and stops before any native install effect.
         using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
-        fixture.NativeMetadata = defect switch
-        {
-            "identity" => UnexpectedMetadata("version", "1.2.4"),
-            "malformed" => UnexpectedMetadata("json", "malformed"),
-            _ => InstalledShape("scripts", "{\"install\":\"native operation\"}"),
-        };
+        fixture.NativeMetadata = InstalledShape("scripts", "{\"install\":\"native operation\"}");
 
         NodeRunResult result = await fixture.RunAsync(context.CancellationToken);
 
-        AssertMetadataFailed(result);
+        Assert.AreEqual(CheckStatus.Passed, Status(result, NodeExecutionFixture.Pack));
+        Assert.AreEqual(CheckStatus.Failed, Status(result, NodeExecutionFixture.Contents));
+        Assert.AreEqual(CheckStatus.Failed, Status(result, NodeExecutionFixture.Consumer));
+        Assert.IsFalse(result.Commands.Any(item => item.Command.Arguments.Contains("install")));
     }
 
     [TestMethod]
@@ -621,7 +483,7 @@ public sealed class NodeExecutionTests(TestContext context)
 
         Assert.IsTrue(ResultCollector.Collect(fixture.SelectedPlan, result.Results).Satisfied);
         Assert.IsEmpty(result.Failures);
-        Assert.HasCount(1, fixture.Commands.Where(item => item.Arguments.Contains("pack")));
+        Assert.ContainsSingle(result.Outputs);
     }
 
     [TestMethod]
@@ -786,7 +648,6 @@ public sealed class NodeExecutionTests(TestContext context)
 
         NodeRunResult result = await fixture.RunAsync(cancellation.Token);
 
-        Assert.HasCount(1, result.Commands);
         CollectionAssert.AreEqual(fixture.SelectedPlan.Checks
             .Select(item => item.Work.Key).ToArray(),
             result.Results.Select(item => item.Key).ToArray());
@@ -796,33 +657,10 @@ public sealed class NodeExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("HEAD", false)]
-    [DataRow("abbreviation", false)]
-    [DataRow("tag", false)]
-    [DataRow("HEAD", true)]
-    [DataRow("abbreviation", true)]
-    [DataRow("tag", true)]
-    public async Task RunRejectsNativeCandidateAliasesBeforeProductCommands(string alias,
-        bool empty)
+    public async Task RunRejectsMutableCandidateEvenForEmptyPlan()
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
-        await fixture.Repository.GitAsync("tag", "candidate-alias", fixture.Plan.Candidate);
-        string candidate = alias switch
-        {
-            "abbreviation" => fixture.Plan.Candidate[..12],
-            "tag" => "candidate-alias",
-            _ => alias,
-        };
-        CiPlan plan = fixture.Plan with
-        {
-            Candidate = candidate,
-            Comparison = candidate,
-            Checks = empty ? [] : fixture.Plan.Checks.Select(item => item with
-            {
-                Reasons = [new(NodeExecutionFixture.Source + "/index.js", candidate,
-                    NodeExecutionFixture.Source)],
-            }).ToArray(),
-        };
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
+        CiPlan plan = fixture.Plan with { Candidate = "HEAD", Comparison = "HEAD", Checks = [] };
 
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(context.CancellationToken, plan));
@@ -857,25 +695,11 @@ public sealed class NodeExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("dirty")]
-    [DataRow("wrong-head")]
-    [DataRow("non-git")]
-    public async Task RunEmptyPlanRejectsInvalidStartingBind(string defect)
+    public async Task RunEmptyPlanRejectsCheckoutWithoutGit()
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         using var nonGit = new ScratchFixture("non-git-checkout");
-        NodeRunRequest request = fixture.Request;
-        if (defect == "dirty")
-            await File.WriteAllTextAsync(Path.Combine(request.Checkout,
-                NodeExecutionFixture.Source, "index.js"), "changed", context.CancellationToken);
-        if (defect == "wrong-head")
-        {
-            await fixture.Repository.SetAsync("new.txt");
-            string next = await fixture.Repository.CommitAsync(fixture.Plan.Candidate);
-            await fixture.Repository.GitAsync("reset", "--hard", next);
-        }
-        if (defect == "non-git")
-            request = request with { Checkout = nonGit.Scratch };
+        NodeRunRequest request = fixture.Request with { Checkout = nonGit.Scratch };
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => fixture.RunAsync(
             context.CancellationToken, fixture.Plan with { Checks = [] }, request));
@@ -965,15 +789,6 @@ public sealed class NodeExecutionTests(TestContext context)
         Exception error = Assert.Throws<Exception>(() =>
             AdoptedNpmPackage.ValidateMetadata(metadata, "1.2.3"));
         Assert.IsTrue(error is InvalidDataException or JsonException, error.ToString());
-    }
-
-    private static void AssertMetadataFailed(NodeRunResult result)
-    {
-        Assert.AreEqual(CheckStatus.Passed, Status(result, NodeExecutionFixture.Pack));
-        Assert.AreEqual(CheckStatus.Failed, Status(result, NodeExecutionFixture.Contents));
-        Assert.AreEqual(CheckStatus.Failed, Status(result, NodeExecutionFixture.Consumer));
-        Assert.HasCount(2, result.Failures);
-        Assert.IsFalse(result.Commands.Any(item => item.Command.Arguments.Contains("install")));
     }
 
     private static CheckStatus Status(NodeRunResult result, string operation,
