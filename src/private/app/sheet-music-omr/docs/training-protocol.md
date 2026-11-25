@@ -25,8 +25,9 @@ This protocol does not itself grant work: execution requires an active
 [Delivery Wave](../../../../../docs/delivery-wave.md) entry covering the
 specific slice (CPU Slice A now; GPU Slice B on the local RTX 4090 `24 GB`
 physical host under a subsequent Wave entry). The `sheet_music_omr.training`
-modules, asset-lock manifest and CLI commands named below are **planned Slice A
-implementation targets**, not yet implemented on `main` at protocol admission.
+modules, asset-lock manifest and CLI commands named below implement the CPU
+Slice A controls, while full-weight GPU training, calibration fits and frozen
+`TEST` evaluation remain deferred to Slice B.
 
 When authorized by an accepted [Delivery Wave](../../../../../docs/delivery-wave.md)
 entry, this record governs:
@@ -40,7 +41,7 @@ entry, this record governs:
   **`20,000`-crop** / **`50,000`-crop** `Tier R` `14.0 px` crop + co-warped
   `system`/`measure` page-box dataset packaging;
 - strictly `Apache-2.0`, `MIT` or `BSD-3-Clause` external model contracts,
-  spatial-resolution mechanics and planned CPU tiny-model smoke checks for **Arm
+  spatial-resolution mechanics and CPU tiny-model smoke checks for **Arm
   A** (`Qwen3-VL-2B/4B-Instruct`, `Qwen3.5-2B`, `PaddleOCR-VL-1.6`), **Arm B**
   (`timm/convnext_tiny` `stride 8 + 16` and `zenosai/MonkeyOCRv2-S` +
   autoregressive `Text Score 2` decoder) and the **2-class (`system`,
@@ -61,7 +62,7 @@ immutable public repositories or repository commits), **runtime observations**
 (measured in earlier accepted runs), **inferences**, and **hypotheses**:
 
 - Per [OMR-REQ-014](requirements.md#omr-req-014-evidence-separation), Slice A
-  dataset statistics, tokenizer/processor grid lengths and planned tiny-model
+  dataset statistics, tokenizer/processor grid lengths and tiny-model
   CPU smoke checks establish pipeline contract compliance and sizing only — not
   trained recognizer accuracy, CUDA VRAM consumption on `24 GB` hardware or
   sim-to-real transfer (measured in GPU Slice B). Similarly, the
@@ -132,22 +133,19 @@ sequenceDiagram
       analogous to `evaluation/wheel_lock.py` and `synthetic/ledgers.py`)
       pinning: (a) exact wheel URLs (from PyPI and PyTorch's official CPU wheel
       index `https://download.pytorch.org/whl/cpu`), byte sizes, `SHA-256`
-      digests and verified permissive, non-strong-copyleft, non-NC,
-      non-revenue-restricted open-source package license provenance
-      (`Apache-2.0`, `MIT`, `MIT-CMU`, `BSD-2-Clause`, `BSD-3-Clause`,
-      `PSF-2.0` / `Python-2.0`, `ISC`, `Unlicense`, plus dynamically linked
-      runtime library notices such as PyTorch CPU third-party notices and
-      SciPy's bundled `LGPL` `libquadmath`, failing closed on any `GPL`/`AGPL`
-      strong-copyleft wheel package, `CC-BY-NC` or commercial-threshold wheel
-      dependency) for `DOWNLOADS/w6-train-venv`, covering the accepted Wave's
-      named packages and required transitive Python/native wheels (`torch`,
-      `torchvision` code-only without `COCO_V1` checkpoints, `scipy`, `timm`,
+      digests and package license provenance satisfying
+      [OMR-REQ-027](requirements.md#omr-req-027-clean-permissive-recognizer-and-page-detector-model-stack)
+      (enforced via `asset_locks.py:verify_lock_licenses`) for
+      `DOWNLOADS/w6-train-venv`, covering the accepted Wave's named packages
+      and required transitive Python/native wheels (`torch`, `torchvision`
+      code-only without `COCO_V1` checkpoints, `scipy`, `timm`,
       `transformers >= 5.24.1`, `peft`, `accelerate`, `safetensors`,
-      `tokenizers`, `sentencepiece`, `numpy`, `pillow`, `regex`, `hf-xet` and
-      pure-Python helpers), and (b) exact per-file byte sizes, Git blob OIDs and
-      `SHA-256` digests for the strictly `Apache-2.0` / `MIT` / `BSD-3-Clause`
-      W6 model metadata files listed below. Missing or drifted lock entries
-      abort fail-closed.
+      `datasets`, `tokenizers`, `sentencepiece`, `numpy`, `pillow`, `regex`,
+      `pyarrow`, `hf-xet` and pure-Python helpers), and (b) exact per-file
+      byte sizes, Git blob OIDs and `SHA-256` digests for the W6 model
+      metadata files listed below under
+      [OMR-REQ-027](requirements.md#omr-req-027-clean-permissive-recognizer-and-page-detector-model-stack).
+      Missing or drifted lock entries abort fail-closed.
     - **Phase 1 (`setup-w6-slice-a`, zero private inputs, zero remote `.py`
       files):** installs locked CPU wheels into `DOWNLOADS/w6-train-venv` and
       fetches **only** pinned non-code metadata files (`config.json`,
@@ -345,9 +343,9 @@ False`, the token vocabulary IDs exclusively encoding `cat` (`8va`/`8vb`/
       `p99`, `max`), per-category positive counts, and exact visual-grid +
       target-token length quantiles under each pinned tokenizer/processor.
 
-## Planned training, detector and constrained-decoding contracts
+## Training, detector and constrained-decoding contracts
 
-1. **Arm A (Small VLM SFT/LoRA — planned Slice A implementation, GPU training in
+1. **Arm A (Small VLM SFT/LoRA — Slice A harness, GPU training in
    Slice B):**
     - Prompt, `carry_in` and `incoming_header_state` contract: because
       `Text Score 2` `CarryState` omits `key`, `meter` and `clefs` while
@@ -687,11 +685,13 @@ system_index)` `<print>` boundaries and isolated spanner numbers without
 
 ## Finite execution bounds, ledgers, stops, privacy and cleanup
 
-- **Persistent non-resettable Slice A safeguards (planned in
-  `sheet_music_omr.training.ledgers`; both Slice A ledgers are permanently
-  preserved and carried forward across cleanup and `DOWNLOADS` roots, never
-  deleted or reset, while preserving earlier W1, W2/W3 and W4/W5 ledgers
-  untouched):**
+- **Persistent non-resettable Slice A safeguards (implemented in
+  `sheet_music_omr.training.ledgers`; initialize once via
+  `setup-w6-slice-a --init-campaign`, rebind only after copying preserved
+  ledgers and moving retained `w6-slice-a-*` run directories via
+  `migrate-w6-downloads --from-downloads OLD --to-downloads NEW`, and never
+  delete or reset either Slice A ledger while preserving earlier W1, W2/W3 and
+  W4/W5 ledgers untouched):**
     1. **Download ledger (`DOWNLOADS/w6-slice-a-download-ledger.json`):** under
        an exclusive lock, meters every HTTP `HEAD`/`GET` probe and reserves
        exact byte budgets against `asset_locks.py` before fetching any

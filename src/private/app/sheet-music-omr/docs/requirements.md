@@ -429,11 +429,12 @@ and PyTorch's official CPU wheel index, covering the accepted Wave's named
 packages and required transitive wheels) shall carry permissive,
 non-strong-copyleft, non-NC, non-revenue-restricted licenses (`Apache-2.0`,
 `MIT`, `MIT-CMU`, `BSD-2-Clause`, `BSD-3-Clause`, `PSF-2.0` / `Python-2.0`,
-`ISC`, `Unlicense`, plus PyTorch/SciPy dynamically linked runtime library
-notices, failing closed on `GPL`/`AGPL` wheel packages, `CC-BY-NC` or
-revenue-threshold external assets while keeping the first-party repository
-package under its existing license and leaving W4/W5 external CLI renderer
-rechecks under [synthetic-protocol.md](synthetic-protocol.md)). The trainable
+`ISC`, `Unlicense`, unmodified transitive `MPL-2.0 AND MIT` on `tqdm`, plus
+PyTorch/SciPy dynamically linked runtime library notices, failing closed on
+`GPL`/`AGPL` wheel packages, `CC-BY-NC` or revenue-threshold external assets
+while keeping the first-party repository package under its existing license and
+leaving W4/W5 external CLI renderer rechecks under
+[synthetic-protocol.md](synthetic-protocol.md)). The trainable
 matrix shall comprise: (a) **Arm A** small VLMs emitting `Text Score 2`
 (`Qwen/Qwen3-VL-2B-Instruct` control plus `4B` capacity option,
 `Qwen/Qwen3.5-2B` non-thinking mode, and `PaddlePaddle/PaddleOCR-VL-1.6` native
