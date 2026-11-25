@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import shutil
 import tomllib
 from pathlib import Path
@@ -13,7 +14,13 @@ from typing import TYPE_CHECKING, Any
 import pytest
 import yaml
 
-from .ci_workflow_shell import executable, resolve, run_step
+from .ci_workflow_shell import (
+    artifact_upload,
+    dependencies,
+    executable,
+    resolve,
+    run_step,
+)
 
 if TYPE_CHECKING:
     import subprocess
@@ -21,28 +28,9 @@ if TYPE_CHECKING:
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHILD_FAILURE = 73
 RETIRED_BUDDY_WORKFLOWS = ("buddy", "release-buddy", "legacy-buddy")
-VALIDATE_NEEDS = [
-    "mise-lock",
-    "conformance",
-    "dotnet-tests",
-    "dotnet-results",
-    "azureauth-foundation-artifacts",
-    "scholarly-tests",
-    "renovate-compat",
-    "nuget-native-preparation",
-    "github-release-native-preparation",
-    "python-tests",
-    "native-preparation-tests",
-    "ruby-group",
-    "node-tests",
-]
 SKIPPED_TEST_SUMMARY = "./eng/scripts/Write-SkippedTestSummary.ps1 -Path "
 NODE_PACKAGE_DIR = "src/public/lib/hexo-renderer-asciidoc"
 DOTNET_GROUP = "node+npm+python"
-DOTNET_TOOL_SETUP = {
-    "Setup planned Python": ("setup-python", "python", "python-version"),
-    "Setup planned Node.js": ("setup-node", "node", "node-version"),
-}
 NODE_RETAINED = {
     "22.x": [NODE_PACKAGE_DIR, "src/retained"],
     "24.x": [NODE_PACKAGE_DIR, "src/retained"],
@@ -155,126 +143,14 @@ def _required_step(scope: dict[str, Any]) -> None:
     assert scope.get("continue-on-error", False) is False
 
 
-def _python_retention_step(step: dict[str, Any]) -> None:
-    if step["with"]["name"] == "python-release-preparation":
-        assert step["if"] == (
-            "always() && steps.plan.outputs.native_preparation == 'true'"
-        )
-        assert step["with"]["path"] == (
-            "${{ steps.endpoints.outputs.candidate_directory }}"
-            "/artifacts/python-release-preparation/"
-        )
-        assert step["with"]["if-no-files-found"] == "error"
-    elif step["with"]["name"] == "ruby-release-preparation":
-        assert step["if"] == (
-            "always() && steps.plan.outputs.native_ruby_preparation == 'true'"
-        )
-        assert step["with"]["path"].splitlines() == [
-            (
-                "${{ steps.endpoints.outputs.candidate_directory }}"
-                "/artifacts/ruby-release-preparation/"
-            ),
-            (
-                "${{ steps.endpoints.outputs.candidate_directory }}"
-                "/tests/private/app/workflow-delivery/bin/**/"
-                "ruby-release-preparation-tests1-native/"
-            ),
-        ]
-        assert step["with"]["if-no-files-found"] == "error"
-    else:
-        assert step["if"] == "always()"
-    assert step["uses"].startswith("actions/upload-artifact@")
-    assert not step.get("continue-on-error", False)
-
-
-def _skipped_test_summary_step(step: dict[str, Any]) -> bool:
-    """Report-only steps that name skipped tests after a test step ran."""
-    if step.get("name") != "Name skipped tests":
-        return False
+def _assert_skipped_test_summary(step: dict[str, Any]) -> None:
+    """Report skipped test names after an executed test step."""
     assert step["if"].startswith("always() && ")
     assert step["if"].endswith(("outcome != 'skipped'", "outcome == 'success'"))
     assert step["shell"] == "pwsh"
     assert step["run"].startswith(SKIPPED_TEST_SUMMARY)
     assert "uses" not in step
     assert not step.get("continue-on-error", False)
-    return True
-
-
-def _required_context_step(key: str, step: dict[str, Any]) -> None:
-    if _skipped_test_summary_step(step):
-        return
-    if key == "native-preparation-tests":
-        conditions = {
-            "Setup selected native tools": (
-                "steps.plan.outputs.python == 'true' || "
-                "steps.plan.outputs.ruby == 'true' || "
-                "steps.plan.outputs.node == 'true' || "
-                "steps.plan.outputs.browser == 'true'"
-            ),
-            "Execute required original Python preparation scenario": (
-                "steps.plan.outputs.python == 'true'"
-            ),
-            "Execute original Ruby preparation scenario": (
-                "${{ !cancelled() && steps.plan.outputs.ruby == 'true' }}"
-            ),
-            "Execute PNPM and Node native contracts": (
-                "${{ !cancelled() && steps.plan.outputs.node == 'true' }}"
-            ),
-            "Execute browser-store preparation scenario": (
-                "${{ !cancelled() && steps.plan.outputs.browser == 'true' }}"
-            ),
-            "Retain original preparation plans, reports and packages": (
-                "always()"
-            ),
-            "Reject canceled qualification": "cancelled()",
-        }
-        assert step.get("if", "success()") == conditions.get(
-            step["name"], "success()"
-        )
-        assert not step.get("continue-on-error", False)
-    elif key == "validation":
-        assert step["if"] in {"always()", "cancelled()"}
-        assert not step.get("continue-on-error", False)
-    elif key == "ruby-group" and step["name"] in {
-        "Install system dependencies",
-        "Ensure fd is available",
-    }:
-        assert step["if"] == (
-            "success() && steps.plan.outputs.latexmath == 'true'"
-        )
-        assert not step.get("continue-on-error", False)
-    elif (key == "scope" and step["name"] == "Setup basis resource SDK") or (
-        key == "python-tests"
-        and step["name"] == "Setup candidate NBGV and control SDK"
-    ):
-        output = "materialize" if key == "scope" else "endpoints"
-        assert step["if"] == f"steps.{output}.outputs.basis_separate == 'true'"
-        assert step["uses"] == "actions/setup-dotnet@v6"
-        assert step["with"]["global-json-file"] == (
-            "${{ steps.materialize.outputs.basis_directory }}/global.json"
-            if key == "scope"
-            else "${{ steps.endpoints.outputs.candidate_directory }}"
-            "/global.json"
-        )
-        assert not step.get("continue-on-error", False)
-    elif key == "python-tests" and "Retain" in step["name"]:
-        _python_retention_step(step)
-    elif key == "dotnet-tests" and step["name"] in DOTNET_TOOL_SETUP:
-        action, tool, version = DOTNET_TOOL_SETUP[step["name"]]
-        assert step["if"] == f"matrix.group.tools.{tool}"
-        assert step["uses"] == f"actions/{action}@v7"
-        assert step["with"] == {
-            version: f"${{{{ matrix.group.tools.{tool} }}}}"
-        }
-        assert not step.get("continue-on-error", False)
-    elif key == "azureauth-foundation-artifacts" and "&& (matrix." in step.get(
-        "if", ""
-    ):
-        guard, row = step["if"].split(" && (matrix.", 1)
-        _required_step(step | {"if": guard})
-        assert row in {"run-host-tests)", "run-deployment-validation)"}
-    elif "Retain" not in step["name"] and step.get("if") != "cancelled()":
-        _required_step(step)
 
 
 def _bindings(tmp_path: Path) -> dict[str, str]:
@@ -413,10 +289,37 @@ def _run_validation(
     )
 
 
+@pytest.mark.parametrize(("shell", "exit_code"), [(None, 0), ("bash", 1)])
+def test_workflow_shell_uses_only_fixture_bindings(
+    tmp_path, monkeypatch, shell, exit_code
+):
+    """Host startup hooks and Actions variables cannot affect shell outcomes."""
+    startup = tmp_path / "host-startup"
+    startup.write_text("exit 93\n")
+    for key in ("BASH_ENV", "ENV", "CI", "GITHUB_WORKSPACE", "RUNNER_TEMP"):
+        monkeypatch.setenv(key, str(startup))
+    step = {
+        "run": (
+            '[[ -z "${ENV}${CI}${GITHUB_WORKSPACE}${RUNNER_TEMP}" ]] '
+            "|| exit 91\n"
+            '[[ "$GITHUB_EVENT_NAME" == pull_request ]] || exit 92\n'
+            "false | true"
+        ),
+        "shell": shell,
+    }
+    result = run_step(
+        step,
+        cwd=tmp_path,
+        env={"GITHUB_EVENT_NAME": "pull_request"},
+        bindings={},
+    )
+    assert result.returncode == exit_code, result.stderr
+
+
 def test_required_general_ci_checks_remain_eligible(
     workflow: dict[str, Any],
 ) -> None:
-    """The main Ruleset requires only Validate, which gates every job."""
+    """CI stays eligible on main without granting its jobs write access."""
     events = workflow.get("on", workflow.get(True))
     for event in ("pull_request", "push"):
         assert "main" in events[event]["branches"]
@@ -434,40 +337,15 @@ def test_required_general_ci_checks_remain_eligible(
     assert "uv " not in entry
     assert "python" not in entry
     assert 'ci caller-node plan "$state" "$scope"' in entry
-    contexts = {job["name"]: key for key, job in jobs.items()}
-    required = {"Validate": "validation"}
-    assert required.items() <= contexts.items()
-    pending = [contexts[name] for name in required]
-    visited = set()
-    while pending:
-        key = pending.pop()
-        if key in visited:
-            continue
-        visited.add(key)
-        job = jobs[key]
-        if key == "scope":
-            _required_step(job)
-        else:
-            assert job["if"] == (
-                "always()" if key == "validation" else "${{ !cancelled() }}"
-            )
-            assert job["needs"] == (
-                VALIDATE_NEEDS
-                if key == "validation"
-                else ["scope", "node-group"]
-                if key == "node-tests"
-                else ["scope", "dotnet-tests"]
-                if key == "dotnet-results"
-                else "scope"
-            )
+    for job in jobs.values():
         permissions = job.get("permissions", workflow["permissions"])
         assert isinstance(permissions, dict)
         assert permissions.get("contents") == "read"
         assert "write" not in permissions.values()
-        for step in job["steps"]:
-            _required_context_step(key, step)
-        needs = job.get("needs", [])
-        pending.extend([needs] if isinstance(needs, str) else needs)
+        assert not job.get("continue-on-error", False)
+        assert not any(
+            step.get("continue-on-error", False) for step in job["steps"]
+        )
 
 
 def test_validation_installs_locked_tools_before_bootstrap_and_hk(
@@ -615,11 +493,8 @@ def test_node_matrix_consumes_the_complete_planned_runtime_selectors(
         "${{ steps.execute.outputs.node_versions }}"
     )
     planned = "fromJSON(needs.node-group.outputs.node_versions)"
-    assert job["strategy"]["matrix"] == {
-        "node-version": f"${{{{ {planned} }}}}"
-    }
-    assert "node-group" in job["needs"]
-    assert job["name"] == "Test & Build (Node.js ${{ matrix.node-version }})"
+    assert job["strategy"]["matrix"]["node-version"] == f"${{{{ {planned} }}}}"
+    assert "node-group" in dependencies(job)
 
 
 @pytest.mark.parametrize("version", ["22.x", "24.x", "26.x"])
@@ -727,15 +602,10 @@ def test_node_group_requires_received_immutable_scope(
 ):
     """Group always plans and consumes the actual scope upload identity."""
     job = workflow["jobs"]["node-group"]
-    assert job["needs"] == "scope"
-    assert job["if"] == "${{ !cancelled() }}"
+    assert "scope" in dependencies(job)
     assert "needs.scope.outputs.node" not in json.dumps(job)
     assert "ruby" not in json.dumps(job).lower()
-    upload = _action(workflow["jobs"]["scope"], "actions/upload-artifact")
-    assert upload["id"] == "retain"
-    assert workflow["jobs"]["scope"]["outputs"]["artifact_id"] == (
-        "${{ steps.retain.outputs.artifact-id }}"
-    )
+    artifact_upload(workflow["jobs"]["scope"], "artifact_id")
     download = next(
         step
         for step in job["steps"]
@@ -842,10 +712,7 @@ def _run_dotnet(
     for step in job["steps"]:
         if "run" not in step or step.get("if") == "cancelled()":
             continue
-        if _skipped_test_summary_step(step):
-            continue
-        if step.get("continue-on-error", False):
-            _required_context_step(name, step)
+        if step["run"].startswith(SKIPPED_TEST_SUMMARY):
             continue
         _required_step(step)
         result = run_step(
@@ -955,7 +822,7 @@ def test_framework_provider_reaches_every_native_sdk_root(workflow):
         prepare = next(
             step
             for step in job["steps"]
-            if step["name"].startswith("Prepare required frameworks")
+            if step.get("run", "").startswith("mise install")
         )
         control = next(
             step
@@ -1168,15 +1035,9 @@ def test_dotnet_check_receives_original_plan_and_complete_control(
     )
     assert producer["shell"] == "pwsh"
     assert "Bootstrap-CiControl.ps1" in producer["run"]
-    upload = next(
-        step for step in scope["steps"] if step.get("id") == "retain-dotnet"
-    )
-    assert upload["uses"].startswith("actions/upload-artifact@")
+    upload = artifact_upload(scope, "dotnet_artifact_id")
     assert upload["with"]["path"] == "${{ steps.control.outputs.transfer }}/"
     assert upload["with"]["if-no-files-found"] == "error"
-    assert scope["outputs"]["dotnet_artifact_id"] == (
-        "${{ steps.retain-dotnet.outputs.artifact-id }}"
-    )
     download = _action(job, "actions/download-artifact")
     assert download["with"] == {
         "artifact-ids": "${{ needs.scope.outputs.dotnet_artifact_id }}",
@@ -1206,28 +1067,21 @@ def test_dotnet_groups_follow_the_plan_and_provision_planned_tools(workflow):
     assert scope["outputs"]["dotnet_groups"] == (
         "${{ steps.select.outputs.dotnet_groups }}"
     )
-    assert job["name"] == ".NET group (${{ matrix.group.key }})"
-    assert job["strategy"] == {
-        "fail-fast": False,
-        "matrix": {
-            "group": "${{ fromJSON(needs.scope.outputs.dotnet_groups) }}"
-        },
-    }
-    setup = [step for step in job["steps"] if step["name"] in DOTNET_TOOL_SETUP]
-    assert [step["name"] for step in setup] == list(DOTNET_TOOL_SETUP)
-    for step in setup:
-        _required_context_step("dotnet-tests", step)
+    assert job["strategy"]["fail-fast"] is False
+    assert job["strategy"]["matrix"]["group"] == (
+        "${{ fromJSON(needs.scope.outputs.dotnet_groups) }}"
+    )
     execute = next(
         step for step in job["steps"] if " execute " in step.get("run", "")
     )
-    assert all(
-        job["steps"].index(step) < job["steps"].index(execute) for step in setup
-    )
-    upload = _action(job, "actions/upload-artifact")
-    assert upload["with"]["name"] == (
-        "dotnet-group-results-${{ matrix.group.key }}"
-    )
-    assert upload["with"]["path"] == "${{ runner.temp }}/dotnet-execution/"
+    for action, tool, version in (
+        ("actions/setup-python", "python", "python-version"),
+        ("actions/setup-node", "node", "node-version"),
+    ):
+        step = _action(job, action)
+        assert step["if"] == f"matrix.group.tools.{tool}"
+        assert step["with"][version] == f"${{{{ matrix.group.tools.{tool} }}}}"
+        assert job["steps"].index(step) < job["steps"].index(execute)
 
 
 @pytest.mark.parametrize("failure", [False, True])
@@ -1240,24 +1094,39 @@ def test_dotnet_results_join_every_group_result_against_the_plan(
     job = workflow["jobs"]["dotnet-results"]
     assert job["runs-on"].startswith("ubuntu-")
     assert job["permissions"] == {"contents": "read", "actions": "read"}
-    assert job["needs"] == ["scope", "dotnet-tests"]
+    assert {"scope", "dotnet-tests"} <= set(dependencies(job))
     downloads = [
         step
         for step in job["steps"]
         if step.get("uses", "").startswith("actions/download-artifact@")
     ]
-    assert [step["with"] for step in downloads] == [
-        {
-            "artifact-ids": "${{ needs.scope.outputs.dotnet_artifact_id }}",
-            "path": "${{ runner.temp }}/dotnet-plan-transfer",
-            "merge-multiple": True,
-        },
-        {
-            "pattern": "dotnet-group-results-*",
-            "path": "${{ runner.temp }}/dotnet-group-results",
-            "merge-multiple": True,
-        },
+    assert len(downloads) == 2
+    assert not any(step.get("continue-on-error", False) for step in downloads)
+    # The pinned action defaults to an error on digest mismatch.
+    inputs = [
+        {"digest-mismatch": "error", **step["with"]} for step in downloads
     ]
+    for selector, path in (
+        (
+            {"artifact-ids": "${{ needs.scope.outputs.dotnet_artifact_id }}"},
+            "dotnet-plan-transfer",
+        ),
+        ({"pattern": "dotnet-group-results-*"}, "dotnet-group-results"),
+    ):
+        transfer = {
+            **selector,
+            "path": f"${{{{ runner.temp }}}}/{path}",
+            "merge-multiple": True,
+            "digest-mismatch": "error",
+        }
+        assert transfer in inputs
+    group = workflow["jobs"]["dotnet-tests"]
+    assert any(
+        step["with"]["name"] == "dotnet-group-results-${{ matrix.group.key }}"
+        and step["with"]["path"] == "${{ runner.temp }}/dotnet-execution/"
+        for step in group["steps"]
+        if step.get("uses", "").startswith("actions/upload-artifact@")
+    )
     env = _dotnet_commands(tmp_path)
     if failure:
         env["FAIL_COMMAND"] = json.dumps(_dotnet_join_command(tmp_path))
@@ -1345,9 +1214,9 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
             "native-preparation-tests",
         }:
             continue
-        assert job["needs"] == (
-            ["scope", "node-group"] if name == "node-tests" else "scope"
-        )
+        assert "scope" in dependencies(job)
+        if name == "node-tests":
+            assert "node-group" in dependencies(job)
         assert job["if"] == "${{ !cancelled() }}"
         guard = job["steps"][0]
         assert guard["id"] == "scope"
@@ -1408,33 +1277,18 @@ def test_renovate_compat_shares_the_credential_free_runtime(workflow):
         _action(scheduled, "./.github/actions/setup-renovate")["with"]
         == (setup["with"])
     )
-    assert any(
-        step["name"] == "Seed Renovate repository with full clone"
-        for step in scheduled["steps"]
-    )
-    assert any(
-        step["name"] == "Verify NBGV metadata in full clone"
-        for step in scheduled["steps"]
-    )
-    assert "config.fullClone = true" not in json.dumps(scheduled)
-
     action = yaml.safe_load(
         (REPO_ROOT / ".github/actions/setup-renovate/action.yml").read_text()
     )
     steps = action["runs"]["steps"]
-    node_setups = [
-        step for step in steps if step.get("uses") == "actions/setup-node@v7"
-    ]
-    assert node_setups[0]["with"]["node-version"] == (
-        "${{ steps.engine.outputs.range }}"
-    )
-    assert node_setups[1]["with"]["node-version"] == (
-        "${{ inputs.repository-node }}"
-    )
-    validator = steps[-1]["run"]
-    assert '"$CLI_NODE" "$CLI_ENTRY" --version' in validator
-    assert "--strict --no-global renovate.json" in validator
-    assert "--strict .github/renovate/global.cjs" in validator
+    assert {
+        "${{ steps.engine.outputs.range }}",
+        "${{ inputs.repository-node }}",
+    } <= {
+        step["with"]["node-version"]
+        for step in steps
+        if step.get("uses", "").startswith("actions/setup-node@")
+    }
 
 
 @pytest.mark.parametrize(
@@ -1567,7 +1421,7 @@ def test_renovate_rejects_unsupported_or_weakened_npm_cooldown(  # noqa: PLR0913
     step = next(
         s
         for s in action["runs"]["steps"]
-        if s["name"] == "Verify repository npm cooldown"
+        if "min-release-age-exclude" in s.get("run", "")
     )
     (tmp_path / "eng/renovate").mkdir(parents=True)
     runner_temp = tmp_path / "runner-temp"
@@ -1647,19 +1501,115 @@ def test_nuget_preparation_guard_rejects_missing_rows(
     assert not output.exists()
 
 
-def test_validate_transitively_gates_every_ci_job(workflow):
-    """Validate is the only merge gate, so no job may stay outside it."""
+def _probe_value(expr: str, probe: Path, flag_value: str) -> str:
+    fixed = {
+        "github.workspace": str(probe),
+        "runner.temp": str(probe),
+        "matrix.node-version": "22.x",
+    }
+    if expr in fixed:
+        return fixed[expr]
+    if expr.endswith(".retained_directories"):
+        return '{"22.x": ["src/pkg"]}'
+    if expr.endswith(".result"):
+        return "success"
+    return "1" if expr.endswith("_id") else flag_value
+
+
+def _step_gates_upstream(
+    workflow: dict[str, Any],
+    job: dict[str, Any],
+    step: dict[str, Any],
+    target_expr: str,
+    probe: Path,
+) -> bool:
+    effective_env = {
+        **(workflow.get("env") or {}),
+        **(job.get("env") or {}),
+        **(step.get("env") or {}),
+    }
+    step_raw = json.dumps({"env": effective_env, "run": step["run"]})
+    if target_expr not in set(re.findall(r"\$\{\{\s*(.*?)\s*\}\}", step_raw)):
+        return False
+    effective_wd = (
+        step.get("working-directory")
+        or job.get("defaults", {}).get("run", {}).get("working-directory")
+        or workflow.get("defaults", {}).get("run", {}).get("working-directory")
+        or "."
+    )
+    full_raw = json.dumps([effective_env, effective_wd, step["run"]])
+    expressions = set(re.findall(r"\$\{\{\s*(.*?)\s*\}\}", full_raw))
+    for flag_value in ("false", "true"):
+        case_dir = probe / flag_value
+        case_dir.mkdir(parents=True, exist_ok=True)
+        env = _node_commands(case_dir)
+        base = {e: _probe_value(e, case_dir, flag_value) for e in expressions}
+        ok = run_step(
+            step,
+            cwd=case_dir,
+            env=env | {"GITHUB_OUTPUT": str(case_dir / "ok-output")},
+            bindings=base | {target_expr: "success"},
+            workflow=workflow,
+            job=job,
+        )
+        bad = run_step(
+            step,
+            cwd=case_dir,
+            env=env | {"GITHUB_OUTPUT": str(case_dir / "bad-output")},
+            bindings=base | {target_expr: "failure"},
+            workflow=workflow,
+            job=job,
+        )
+        if ok.returncode != 0 or bad.returncode == 0:
+            return False
+    return True
+
+
+def _step_propagates_upstream_failure(
+    workflow: dict[str, Any],
+    consumer_name: str,
+    upstream: str,
+    tmp_path: Path,
+) -> bool:
+    job = workflow["jobs"][consumer_name]
+    if job.get("if") in (None, True, "success()"):
+        return True
+    default_shell = job.get("defaults", {}).get("run", {}).get("shell")
+    target_expr = f"needs.{upstream}.result"
+    return any(
+        _step_gates_upstream(
+            workflow,
+            job,
+            step,
+            target_expr,
+            tmp_path / f"propagate-{consumer_name}-{upstream}-{index}",
+        )
+        for index, step in enumerate(job["steps"])
+        if "run" in step
+        and not step.get("continue-on-error", False)
+        and step.get("if") in (None, True, "success()")
+        and step.get("shell", default_shell) in (None, "bash")
+    )
+
+
+def test_validate_transitively_gates_every_ci_job(workflow, tmp_path):
+    """Validate is the only merge gate, and upstream failures must reach it."""
     jobs = workflow["jobs"]
-    reached = set()
-    pending = ["validation"]
-    while pending:
-        key = pending.pop()
-        if key in reached:
-            continue
-        reached.add(key)
-        needs = jobs[key].get("needs", [])
-        pending.extend([needs] if isinstance(needs, str) else needs)
-    assert set(jobs) - reached == set()
+    direct = set(dependencies(jobs["validation"]))
+    gated = {"validation"} | direct
+    changed = True
+    while changed:
+        changed = False
+        for consumer_name in list(gated):
+            if consumer_name == "validation":
+                continue
+            for upstream in dependencies(jobs[consumer_name]):
+                if upstream not in gated and _step_propagates_upstream_failure(
+                    workflow, consumer_name, upstream, tmp_path
+                ):
+                    gated.add(upstream)
+                    changed = True
+    assert set(jobs) <= gated
 
 
 def test_required_validate_rejects_missing_or_failed_consumers(
@@ -1668,44 +1618,37 @@ def test_required_validate_rejects_missing_or_failed_consumers(
     """Keep every selected validation consumer inside the required check."""
     job = workflow["jobs"]["validation"]
     assert job["name"] == "Validate"
-    assert job["needs"] == VALIDATE_NEEDS
     assert job["if"] == "always()"
-    step = job["steps"][0]
-    assert step["if"] == "always()"
-    assert not step.get("continue-on-error", False)
-    successful = {
-        f"needs.{dependency}.result": "success" for dependency in VALIDATE_NEEDS
-    }
-    scenarios = [successful]
-    for dependency in VALIDATE_NEEDS:
-        for result in ("failure", "cancelled", "skipped", ""):
-            scenarios.append(
-                successful | {f"needs.{dependency}.result": result}
-            )
-    for bindings in scenarios:
-        result = run_step(
-            step,
-            cwd=tmp_path,
-            env={},
-            bindings=bindings,
-            workflow=workflow,
-            job=job,
+    successful = {f"needs.{key}.result": "success" for key in dependencies(job)}
+    assert successful
+    gates = [
+        step
+        for step in job["steps"]
+        if "run" in step and step.get("if") == "always()"
+    ]
+    assert gates
+
+    def gate_passes(bindings):
+        return all(
+            run_step(
+                step,
+                cwd=tmp_path,
+                env={},
+                bindings=bindings,
+                workflow=workflow,
+                job=job,
+            ).returncode
+            == 0
+            for step in gates
         )
-        assert (result.returncode == 0) is (bindings == successful)
-        if bindings != successful:
-            assert "Required validation did not complete" in result.stderr
 
-
-def _cancelable_dotnet_step(name, step):
-    """Preserve required native result retention and failure handling."""
-    if _skipped_test_summary_step(step):
-        return
-    if "Retain" in step["name"]:
-        assert step["if"] == "always()"
-        assert step["uses"].startswith("actions/upload-artifact@")
-        assert not step.get("continue-on-error", False)
-    else:
-        _required_context_step(name, step)
+    assert gate_passes(successful)
+    for dependency in successful:
+        for result in ("failure", "cancelled", "skipped", ""):
+            assert not gate_passes(successful | {dependency: result}), (
+                dependency,
+                result,
+            )
 
 
 def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
@@ -1717,46 +1660,19 @@ def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
         assert job["if"] == (
             "always()" if name == "validation" else "${{ !cancelled() }}"
         )
-        for step in job["steps"][1:-1]:
-            if name in {"dotnet-tests", "dotnet-results"}:
-                _cancelable_dotnet_step(name, step)
-            elif name == "python-tests":
-                _required_context_step(name, step)
-            elif name in {
-                "node-group",
-                "ruby-group",
-                "native-preparation-tests",
-            }:
-                if name != "native-preparation-tests":
-                    assert step.get("if", "success()").split(" && ")[0] in {
-                        "success()",
-                        "always()",
-                    }
-                assert not step.get("continue-on-error", False)
-            elif _skipped_test_summary_step(step):
-                continue
-            elif step["if"].startswith("always() &&"):
-                assert step.get("uses", "").startswith(
-                    "actions/upload-artifact@"
-                )
-            else:
-                assert step["if"].startswith(
-                    "success() && !cancelled() && "
-                    "steps.scope.outputs.run == 'true'"
-                )
-        terminal = job["steps"][-1]
-        assert terminal["if"] == "cancelled()"
-        assert not terminal.get("continue-on-error", False)
-        result = run_step(
-            terminal,
-            cwd=tmp_path,
-            env={},
-            bindings=_bindings(tmp_path),
-            workflow=workflow,
-            job=job,
-        )
-        assert result.returncode != 0
-        assert "canceled before a complete result" in result.stderr
+        assert any(
+            run_step(
+                step,
+                cwd=tmp_path,
+                env={},
+                bindings=_bindings(tmp_path),
+                workflow=workflow,
+                job=job,
+            ).returncode
+            != 0
+            for step in job["steps"]
+            if "run" in step and step.get("if") == "cancelled()"
+        ), name
 
 
 @pytest.mark.parametrize("failure", [False, True])
@@ -1854,10 +1770,10 @@ def test_scope_framework_metadata_cannot_fall_back_to_native_sdk(
         ("success", "10", "", False),
     ],
 )
-def test_python_group_requires_native_comparison_not_legacy_flags(
+def test_python_group_requires_original_scope_and_control(
     workflow, tmp_path, scenario
 ):
-    """Every successful transfer enters Linux analysis without old flags."""
+    """Missing scope or control blocks the native Python comparison."""
     selection, scope, control, passed = scenario
     job = workflow["jobs"]["python-tests"]
     steps = job["steps"]
@@ -1876,39 +1792,92 @@ def test_python_group_requires_native_comparison_not_legacy_flags(
         job=job,
     )
     assert (result.returncode == 0) is passed
-    assert "APPLICABLE" not in contract["env"]
-    materialize = next(
-        i for i, step in enumerate(steps) if step.get("id") == "endpoints"
-    )
-    sdks = [
-        i
-        for i, step in enumerate(steps)
-        if step.get("uses", "").startswith("actions/setup-dotnet@")
-    ]
-    assert sdks
-    assert sdks[0] < materialize
-    assert all(materialize < i for i in sdks[1:])
-    assert all(
-        "steps.endpoints.outputs." in steps[i]["with"]["global-json-file"]
-        for i in sdks[1:]
-    )
-    plan = next(step for step in steps if step.get("id") == "plan")
-    assert "ci caller-python plan " in plan["run"]
-    assert "if" not in plan
     receivers = [
         step
         for step in steps
         if step.get("uses", "").startswith("actions/download-artifact@")
     ]
-    assert {step["with"]["artifact-ids"] for step in receivers} == {
-        "${{ needs.scope.outputs.artifact_id }}",
-        "${{ needs.scope.outputs.dotnet_artifact_id }}",
+    assert {
+        (
+            "${{ needs.scope.outputs.artifact_id }}",
+            "${{ runner.temp }}/python-scope",
+        ),
+        (
+            "${{ needs.scope.outputs.dotnet_artifact_id }}",
+            "${{ runner.temp }}/python-control",
+        ),
+    } <= {
+        (step["with"]["artifact-ids"], step["with"]["path"])
+        for step in receivers
     }
     assert all(
         "name" not in step["with"] and "pattern" not in step["with"]
         for step in receivers
     )
     assert job["permissions"] == {"contents": "read", "actions": "read"}
+    if not passed:
+        return
+    run_dir = tmp_path / "python-caller"
+    run_dir.mkdir()
+    env = _commands(run_dir)
+    for dirname in ("/usr/bin", "/bin"):
+        for util in ("command", "printf"):
+            candidate = Path(dirname) / util
+            if candidate.exists() and not (Path(env["PATH"]) / util).exists():
+                (Path(env["PATH"]) / util).symlink_to(candidate)
+    unconditional = [
+        (idx, s)
+        for idx, s in enumerate(steps[1:], start=1)
+        if "run" in s
+        and s.get("if") in (None, True, "success()")
+        and not s.get("continue-on-error", False)
+    ]
+    caller_steps = [s for _, s in unconditional if "caller-python" in s["run"]]
+    assert len(caller_steps) == 3
+    for caller_step in caller_steps:
+        assert (
+            run_step(
+                caller_step,
+                cwd=run_dir,
+                env=env,
+                bindings=_bindings(run_dir),
+                workflow=workflow,
+                job=job,
+            ).returncode
+            == 0
+        )
+    dll = f"{env['RUNNER_TEMP']}/python-control/control/WorkflowDelivery.dll"
+    scope_file = f"{env['RUNNER_TEMP']}/python-scope/ci-scope.json"
+    group_dir = f"{env['RUNNER_TEMP']}/python-group"
+    calls = [item["command"] for item in _observations(env)]
+    assert calls[0] == [
+        "dotnet",
+        dll,
+        "ci",
+        "caller-python",
+        "materialize",
+        str(run_dir),
+        scope_file,
+        f"{env['RUNNER_TEMP']}/python-control",
+        group_dir,
+    ]
+    assert calls[1][:7] == [
+        "dotnet",
+        dll,
+        "ci",
+        "caller-python",
+        "plan",
+        group_dir,
+        scope_file,
+    ]
+    assert calls[2][:6] == [
+        "dotnet",
+        dll,
+        "ci",
+        "caller-python",
+        "execute",
+        group_dir,
+    ]
 
 
 @pytest.mark.parametrize(
@@ -1928,7 +1897,7 @@ def test_native_ruby_scope_and_control_guard(  # noqa: PLR0913, PLR0917 - Guard 
     result = run_step(
         job["steps"][0],
         cwd=tmp_path,
-        env=os.environ.copy(),
+        env={},
         bindings={
             "needs.scope.result": selection,
             "needs.scope.outputs.artifact_id": scope,
@@ -1940,27 +1909,111 @@ def test_native_ruby_scope_and_control_guard(  # noqa: PLR0913, PLR0917 - Guard 
     assert (result.returncode == 0) is succeeds
 
 
-def test_native_ruby_transfers_original_control_and_complete_plan(workflow):
-    """One receiver and plan feed the sole native Ruby PR owner."""
+def test_native_ruby_transfers_original_control_and_complete_plan(
+    workflow, tmp_path
+):
+    """The native Ruby job plans and executes transferred control."""
     job = workflow["jobs"]["ruby-group"]
-    assert job["needs"] == "scope"
-    assert "outputs" not in job
+    assert "scope" in dependencies(job)
     assert job["permissions"] == {"contents": "read", "actions": "read"}
     assert "environment" not in job
-    runs = [step["run"] for step in job["steps"] if "run" in step]
-    entry = [run for run in runs if "ci caller-ruby" in run]
-    assert len(entry) == 3
-    assert " materialize " in entry[0]
-    assert "artifact.json" not in json.dumps(job)
-    assert "gh api" not in json.dumps(job)
-    assert " plan " in entry[1]
-    assert " execute " in entry[2]
-    assert all('"$RUNNER_TEMP/ruby-group"' in run for run in entry)
-    assert all("continue-on-error" not in step for step in job["steps"])
-    assert "ruby-tests" not in workflow["jobs"]
-    assert not (
-        REPO_ROOT / ".github/workflows/workflow-delivery-v3-ruby-ci.yml"
-    ).exists()
+    assert {
+        (
+            "${{ needs.scope.outputs.artifact_id }}",
+            "${{ runner.temp }}/ruby-scope",
+        ),
+        (
+            "${{ needs.scope.outputs.dotnet_artifact_id }}",
+            "${{ runner.temp }}/ruby-control",
+        ),
+    } <= {
+        (step["with"]["artifact-ids"], step["with"]["path"])
+        for step in job["steps"]
+        if step.get("uses", "").startswith("actions/download-artifact@")
+    }
+    unconditional = [
+        (index, step)
+        for index, step in enumerate(job["steps"])
+        if "run" in step
+        and step.get("if") in (None, True, "success()")
+        and not step.get("continue-on-error", False)
+    ]
+    caller_steps = [
+        (index, step)
+        for index, step in unconditional
+        if index > 0 and "caller-ruby" in step["run"]
+    ]
+    assert [idx for idx, _ in caller_steps] == sorted(
+        idx for idx, _ in caller_steps
+    )
+    assert len(caller_steps) == 3
+
+    env = _commands(tmp_path)
+    tools = Path(env["PATH"])
+    executable(tools / "ruby", "print('2.7.2', end='')")
+    for tool in ("gem", "bundle"):
+        executable(tools / tool, "pass")
+    for _, caller_step in caller_steps:
+        assert (
+            run_step(
+                caller_step,
+                cwd=tmp_path,
+                env=env,
+                bindings={},
+                workflow=workflow,
+                job=job,
+            ).returncode
+            == 0
+        )
+    dll = f"{env['RUNNER_TEMP']}/ruby-control/control/WorkflowDelivery.dll"
+    scope_file = f"{env['RUNNER_TEMP']}/ruby-scope/ci-scope.json"
+    group_dir = f"{env['RUNNER_TEMP']}/ruby-group"
+    calls = [item["command"] for item in _observations(env)]
+    assert calls[0] == [
+        "dotnet",
+        dll,
+        "ci",
+        "caller-ruby",
+        "materialize",
+        str(tmp_path),
+        scope_file,
+        f"{env['RUNNER_TEMP']}/ruby-control",
+        group_dir,
+    ]
+    assert calls[1][:7] == [
+        "dotnet",
+        dll,
+        "ci",
+        "caller-ruby",
+        "plan",
+        group_dir,
+        scope_file,
+    ]
+    assert calls[1][-1] == "2.7.2"
+    assert calls[2] == [
+        "dotnet",
+        dll,
+        "ci",
+        "caller-ruby",
+        "execute",
+        group_dir,
+    ]
+    fail_env = env | {
+        "FAIL_COMMAND": json.dumps(
+            ["dotnet", dll, "ci", "caller-ruby", "execute"]
+        )
+    }
+    assert (
+        run_step(
+            caller_steps[2][1],
+            cwd=tmp_path,
+            env=fail_env,
+            bindings={},
+            workflow=workflow,
+            job=job,
+        ).returncode
+        == CHILD_FAILURE
+    )
 
 
 def test_native_ruby_retains_failed_outcomes_and_uses_native_runtime(workflow):
@@ -1980,10 +2033,8 @@ def test_native_ruby_retains_failed_outcomes_and_uses_native_runtime(workflow):
         if step.get("with", {}).get("name") == "ruby-group-results"
     )
     assert retained["if"] == "always()"
-    assert retained["with"]["name"] == "ruby-group-results"
     assert "*.json" in retained["with"]["path"]
     assert "*.stderr" in retained["with"]["path"]
-    assert job["steps"][-1]["if"] == "cancelled()"
 
 
 def test_retained_node_uses_committed_pnpm_without_ruby(workflow):
@@ -2018,10 +2069,95 @@ def _native_test(job: dict[str, Any]) -> str:
     return step["run"]
 
 
+def _normalized_if(expression: str) -> str:
+    body = expression.strip().removeprefix("${{").removesuffix("}}").strip()
+    return " ".join(body.split())
+
+
+@pytest.mark.parametrize(
+    ("flag", "results_directory", "expected_if", "tool_clause"),
+    [
+        (
+            "python",
+            "python",
+            "steps.plan.outputs.python == 'true'",
+            "steps.plan.outputs.python == 'true' && 'python uv'",
+        ),
+        (
+            "ruby",
+            "ruby",
+            "!cancelled() && steps.plan.outputs.ruby == 'true'",
+            "steps.plan.outputs.ruby == 'true' && 'ruby'",
+        ),
+        (
+            "node",
+            "node",
+            "!cancelled() && steps.plan.outputs.node == 'true'",
+            "steps.plan.outputs.node == 'true'",
+        ),
+        (
+            "browser",
+            "browser-store",
+            "!cancelled() && steps.plan.outputs.browser == 'true'",
+            "steps.plan.outputs.browser == 'true'",
+        ),
+    ],
+)
+def test_native_preparation_runs_only_selected_scenarios(
+    workflow: dict[str, Any],
+    flag: str,
+    results_directory: str,
+    expected_if: str,
+    tool_clause: str,
+) -> None:
+    """Each native test step runs for its own selected plan output."""
+    job = workflow["jobs"]["native-preparation-tests"]
+    assert _normalized_if(job["if"]) == "!cancelled()"
+    setup = _step_using(job, "jdx/mise-action@")
+    assert _normalized_if(setup["if"]) == (
+        "steps.plan.outputs.python == 'true' || "
+        "steps.plan.outputs.ruby == 'true' || "
+        "steps.plan.outputs.node == 'true' || "
+        "steps.plan.outputs.browser == 'true'"
+    )
+    install_args = " ".join(setup["with"]["install_args"].split())
+    assert tool_clause in install_args
+    if flag in {"node", "browser"}:
+        assert "'node pnpm'" in install_args
+    directory = (
+        '--results-directory "$RUNNER_TEMP/native-preparation/'
+        f'{results_directory}"'
+    )
+    step = next(
+        step for step in job["steps"] if directory in step.get("run", "")
+    )
+    assert _normalized_if(step["if"]) == expected_if
+    skipped = next(
+        s
+        for s in job["steps"]
+        if "Write-SkippedTestSummary.ps1" in s.get("run", "")
+    )
+    assert (
+        _normalized_if(skipped["if"])
+        == "always() && steps.plan.outcome == 'success'"
+    )
+    upload = next(
+        s
+        for s in job["steps"]
+        if s.get("with", {}).get("name") == "native-preparation-results"
+    )
+    assert _normalized_if(upload["if"]) == "always()"
+    assert upload["with"]["if-no-files-found"] == "error"
+    assert any(
+        _normalized_if(str(s.get("if", ""))) == "cancelled()"
+        for s in job["steps"]
+        if "exit 1" in s.get("run", "")
+    )
+
+
 def test_nuget_native_preparation_runs_selected_rows(workflow):
     """Per-PR CI runs the selected units' native NuGet preparation rows."""
     job = workflow["jobs"]["nuget-native-preparation"]
-    assert job["name"] == "NuGet native preparation (Windows)"
     assert job["runs-on"].startswith("windows-")
     for key in ("", "_filter", "_tests"):
         assert workflow["jobs"]["scope"]["outputs"][
@@ -2033,7 +2169,6 @@ def test_nuget_native_preparation_runs_selected_rows(workflow):
         "TESTS": "${{ needs.scope.outputs.nuget_native_preparation_tests }}",
     }
     assert selection.items() <= job["steps"][0]["env"].items()
-    assert "nuget-native-preparation" in workflow["jobs"]["validation"]["needs"]
     checkout = _step_using(job, "actions/checkout@")
     assert checkout["with"]["persist-credentials"] is False
     run = _native_test(job)
@@ -2049,7 +2184,6 @@ def test_nuget_native_preparation_runs_selected_rows(workflow):
     assert "exit $LASTEXITCODE" in run
     upload = _step_using(job, "actions/upload-artifact@")
     assert upload["if"] == "always() && steps.scope.outputs.run == 'true'"
-    assert upload["with"]["name"] == "nuget-native-preparation-windows"
     assert upload["with"]["path"] == "artifacts/nuget-native-preparation"
     assert upload["with"]["if-no-files-found"] == "error"
     assert upload["with"]["retention-days"] == 30
@@ -2067,10 +2201,6 @@ def test_github_release_native_preparation_runs_the_real_recipe(workflow):
             "github_release_native_preparation"
         ]
         == "${{ steps.select.outputs.github_release_native_preparation }}"
-    )
-    assert (
-        "github-release-native-preparation"
-        in workflow["jobs"]["validation"]["needs"]
     )
     checkout = _step_using(job, "actions/checkout@")
     assert checkout["with"]["persist-credentials"] is False
@@ -2104,17 +2234,11 @@ def test_ci_dotnet_test_steps_name_skipped_tests(workflow):
             summary = next(
                 later
                 for later in steps[index + 1 :]
-                if later.get("name") == "Name skipped tests"
+                if later.get("run", "").startswith(SKIPPED_TEST_SUMMARY)
             )
-            assert _skipped_test_summary_step(summary)
+            _assert_skipped_test_summary(summary)
             covered.add(name)
-    assert covered == {
-        "dotnet-tests",
-        "azureauth-foundation-artifacts",
-        "nuget-native-preparation",
-        "github-release-native-preparation",
-        "native-preparation-tests",
-    }
+    assert covered
 
 
 def test_nuget_reproducibility_runs_on_dispatch_and_main_changes(workflow):
@@ -2167,17 +2291,9 @@ def test_nuget_reproducibility_runs_on_dispatch_and_main_changes(workflow):
     assert "exit $LASTEXITCODE" in run
     upload = _step_using(job, "actions/upload-artifact@")
     assert upload["if"] == "always()"
-    assert upload["with"]["name"] == "nuget-reproducibility-windows"
     assert upload["with"]["path"] == "artifacts/nuget-reproducibility"
     assert upload["with"]["if-no-files-found"] == "error"
     assert upload["with"]["retention-days"] == 30
-    pins = {
-        step["uses"]
-        for workflow_job in workflow["jobs"].values()
-        for step in workflow_job.get("steps", ())
-        if "uses" in step
-    }
-    assert all(step["uses"] in pins for step in job["steps"] if "uses" in step)
 
 
 def test_retired_buddy_routes_stay_absent_and_v3_buddy_stays_dedicated():

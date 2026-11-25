@@ -215,8 +215,11 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_general_ci_workflow.py", "eng/scripts/hk_scope_drift.py")]
     [DataRow("tests/eng/test_python_runtime.py", "global.json")]
     [DataRow("tests/eng/test_python_release_caller.py", "global.json")]
+    [DataRow("tests/eng/test_python_release_caller.py", "tests/eng/ci_workflow_shell.py")]
     [DataRow("tests/eng/test_browser_store_release_caller.py",
         ".github/workflows/workflow-delivery-v3-browser-store-release.yml")]
+    [DataRow("tests/eng/test_browser_store_release_caller.py", "tests/eng/ci_workflow_shell.py")]
+    [DataRow("tests/eng/test_browser_store_release_caller.py", "global.json")]
     [DataRow("tests/eng/test_release_batch_dispatch.py",
         "eng/scripts/release_batch_dispatch.py")]
     [DataRow("tests/eng/test_release_batch_dispatch.py",

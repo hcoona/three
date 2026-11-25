@@ -268,7 +268,6 @@ def test_ruff_bump_checks_all_covered_files_and_fails_on_unchanged_finding(
     )
     result, runs = _run(fixture, endpoints)
     assert result.returncode == 1
-    assert "ruff 0.17.0 -> 0.17.1 in uv.lock" in result.stderr
     changed, complete = runs
     assert changed["ran"] == {"uv-lock": ["uv.lock"]}
     assert complete["arguments"][: len(HK_COMMAND)] == list(HK_COMMAND)

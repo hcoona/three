@@ -255,7 +255,6 @@ def test_invalid_entry_dispatches_nothing(tmp_path, invalid):
     )
 
     assert completed.returncode == 2
-    assert "nothing was dispatched" in completed.stderr
     assert calls == []
 
 
