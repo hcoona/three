@@ -17,15 +17,18 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     public async Task PeersSelectWorkCommunicateAndIntegrateIndependentlyReviewedChanges()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(testContext, token).ConfigureAwait(false);
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
+            .CreateAsync(testContext, token, ownedHosts: false)
+            .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
+                Coordinator inspector = state.Coordinator("status");
                 _ = state.Start();
-                Phase7Sessions.Turn first = await state
+                ControlledSessionPool.Turn first = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
-                Phase7Sessions.Turn second = await state
+                ControlledSessionPool.Turn second = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 JsonObject task1 = state.Invoke(
@@ -112,15 +115,17 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     reply["id"]!.GetValue<long>(),
                     thread["items"]![1]!["id"]!.GetValue<long>()
                 );
-                Assert.AreEqual(
-                    2L,
-                    state.Number(
-                        (
-                            "SELECT COUNT(DISTINCT actor) FROM board_history WHERE type='CLAIM' "
-                            + "AND content=$content;"
-                        ),
-                        ("$content", $"Cooperating on #{taskId}")
-                    )
+                JsonObject claimedTask = state.Invoke(
+                    "owner",
+                    "task_read",
+                    new() { ["id"] = taskId }
+                );
+                CollectionAssert.AreEqual(
+                    peerActors,
+                    claimedTask["assignees"]!
+                        .AsArray()
+                        .Select(item => item!.GetValue<string>())
+                        .ToArray()
                 );
 
                 (JsonObject change1, _) = await SubmitReviewedAsync(
@@ -151,9 +156,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 state.ObserveWorkerCompletion = null;
                 await state
                     .WaitDurableAsync(
-                        () =>
-                            state.Number("SELECT COUNT(*) FROM changes WHERE state='integrated';")
-                            == 2,
+                        () => IntegratedChanges(state, token).Count == 2,
                         state.WorkDeadline,
                         token
                     )
@@ -183,34 +186,39 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 );
                 foreach (JsonObject change in new[] { change1, change2 })
                 {
-                    Assert.IsGreaterThan(
-                        0L,
-                        state.Number(
-                            (
-                                "SELECT COUNT(*) FROM checks WHERE change_id=$id AND "
-                                + "status='passed' AND exit_code=0;"
-                            ),
-                            ("$id", change["id"]!.GetValue<long>())
+                    JsonObject detailed = await state
+                        .GitToolAsync(
+                            "owner",
+                            "change_read",
+                            new() { ["id"] = change["id"]!.GetValue<long>() },
+                            token
                         )
+                        .ConfigureAwait(false);
+                    Assert.AreEqual("integrated", detailed["state"]!.GetValue<string>());
+                    JsonObject check = Assert.ContainsSingle(
+                        detailed["checks"]!.AsArray().OfType<JsonObject>()
+                    );
+                    Assert.AreEqual("passed", check["status"]!.GetValue<string>());
+                    Assert.AreEqual(0, check["exitCode"]!.GetValue<int>());
+                    JsonObject review = Assert.ContainsSingle(
+                        detailed["reviews"]!.AsArray().OfType<JsonObject>()
+                    );
+                    Assert.AreNotEqual(
+                        change["author"]!.GetValue<string>(),
+                        review["actor"]!.GetValue<string>()
                     );
                     Assert.AreEqual(
-                        1L,
-                        state.Number(
-                            (
-                                "SELECT COUNT(*) FROM reviews WHERE change_id=$id AND "
-                                + "actor!=$author AND decision='approve' AND stale=0;"
-                            ),
-                            ("$id", change["id"]!.GetValue<long>()),
-                            ("$author", change["author"]!.GetValue<string>())
-                        )
+                        change["head"]!.GetValue<string>(),
+                        review["head"]!.GetValue<string>()
                     );
+                    Assert.AreEqual("approve", review["decision"]!.GetValue<string>());
                 }
                 first.Complete();
                 second.Complete();
-                Phase7Sessions.Turn context1 = await state
+                ControlledSessionPool.Turn context1 = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
-                Phase7Sessions.Turn context2 = await state
+                ControlledSessionPool.Turn context2 = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 Assert.Contains(direct["body"]!.GetValue<string>(), context1.Text);
@@ -219,7 +227,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 Assert.Contains("Cooperating on #", context2.Text);
                 long batch1 = state.SendingBatch("worker1");
                 long batch2 = state.SendingBatch("worker2");
-                Phase7Clock.ObservedPoll ownerPoll = await state
+                ObservedManualClock.ObservedPoll ownerPoll = await state
                     .ObserveOwnerPollAsync(token)
                     .ConfigureAwait(false);
                 context1.Complete();
@@ -231,10 +239,9 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         .StopRunningAsync("pause", ownerPoll, token)
                         .ConfigureAwait(false)
                 );
-                Assert.AreEqual(
-                    "owner-pause",
-                    state.Database.ReadMetadata("lifecycle:stop_reason")
-                );
+                JsonObject status = StatusData(inspector);
+                Assert.AreEqual("paused", status["lifecycle"]!.GetValue<string>());
+                Assert.AreEqual("owner-pause", status["stopReason"]!.GetValue<string>());
             })
             .ConfigureAwait(false);
     }
@@ -272,10 +279,14 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     {
         bool integrate = candidate == PlannerCandidate.Passing;
         bool reject = candidate == PlannerCandidate.Rejected;
-        Phase7Run state = await Phase7Run
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
             .CreateAsync(
-                testContext, token, planning: 10, interval: interval, allocation: "shared",
-                ownedHosts: !reject,
+                testContext,
+                token,
+                planning: 10,
+                interval: interval,
+                allocation: "shared",
+                ownedHosts: false,
                 configuredCheck: reject
                     ? (_, arguments, _, _, _) => Task.FromResult(
                         new ProcessResult(
@@ -301,7 +312,8 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         }
                     );
                 }
-                using Phase7Handoff handoff = new();
+                Coordinator inspector = state.Coordinator("status");
+                using WorkerHandoffControl handoff = new();
                 state.Handoff = handoff;
                 TaskCompletionSource<DateTimeOffset> plannerReady = new(
                     TaskCreationOptions.RunContinuationsAsynchronously
@@ -325,9 +337,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     }
                     else if (session.Worker == "worker2")
                     {
-                        // This timestamp belongs to the actual typed Open entry,
-                        // not to a later channel-reader continuation.
-                        Phase7Sessions.Host host = state.Sessions.Hosts.Single(item =>
+                        ControlledSessionPool.Host host = state.Sessions.Hosts.Single(item =>
                             item.Sessions.Contains(session)
                         );
                         followerIdentity = new()
@@ -338,11 +348,6 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                             ["reservationId"] = state.Reservation("worker2").Id,
                             ["backedAllowance"] = state.Reservation("worker2").Allowance,
                         };
-                        if (!reject)
-                        {
-                            followerIdentity["pid"] = host.Ready!.Pid;
-                            followerIdentity["birthTicks"] = host.Ready.BirthTicks;
-                        }
                         followerEntry.TrySetResult(state.Clock.GetUtcNow());
                     }
                 };
@@ -351,7 +356,8 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     if (
                         session.Worker == "worker1"
                         && session.CompletedTurns == 0
-                        && state.Database.ReadMetadata("worker:worker1:lifecycle") == "ready"
+                        && WorkerStatus(inspector, "worker1")["lifecycle"]!.GetValue<string>()
+                            == "ready"
                     )
                     {
                         plannerReady.TrySetResult(state.Clock.GetUtcNow());
@@ -365,7 +371,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 await ObserveLivePlannerPollAsync("the first pre-release planner progress poll")
                     .ConfigureAwait(false);
                 state.Clock.Advance(TimeSpan.FromSeconds(20));
-                Assert.IsNull(state.Database.ReadMetadata("worker:worker2:session"));
+                Assert.IsNull(WorkerStatus(inspector, "worker2")["sessionId"]);
                 Assert.AreEqual(0m, state.Reservation("worker2").Allowance);
                 // While the actual Open is still held, wait for registered progress
                 // again. No successful first admission can yet have been consumed.
@@ -373,7 +379,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     .ConfigureAwait(false);
                 DateTimeOffset openedAt = state.Clock.GetUtcNow();
                 release.TrySetResult();
-                Phase7Handoff.Startup plannerStart = await state
+                WorkerHandoffControl.Startup plannerStart = await state
                     .FixedAsync(next => handoff.FirstStarting.Task.WaitAsync(next), token)
                     .ConfigureAwait(false);
                 await state.FixedAsync(plannerStart.Operation, token).ConfigureAwait(false);
@@ -384,27 +390,12 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     .ConfigureAwait(false);
                 Assert.AreEqual(admittedAt, readyAt);
                 DateTimeOffset planningDeadline = admittedAt.AddSeconds(10);
-                Phase7Sessions.Turn planner = await state
+                ControlledSessionPool.Turn planner = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 long plannerBatch = state.SendingBatch("worker1");
                 DateTimeOffset eligibleAt = admittedAt.AddSeconds(interval);
-                long nativeLeases = state.Number(
-                    "SELECT COUNT(*) FROM process_leases WHERE kind LIKE 'native:%';"
-                );
                 Assert.IsLessThan(planningDeadline, state.Clock.GetUtcNow());
-                Console.WriteLine(
-                    "PHASE7_PLANNER_READY "
-                        + new JsonObject
-                        {
-                            ["typedPreparationReadyAt"] = readyAt.ToString("O"),
-                            ["consumedAdmissionPhaseAt"] = admittedAt.ToString("O"),
-                            ["turnObservedAt"] = state.Clock.GetUtcNow().ToString("O"),
-                            ["strictPlanningCutoff"] = planningDeadline.ToString("O"),
-                            ["intervalSeconds"] = interval,
-                            ["eligibleAt"] = eligibleAt,
-                        }.ToJsonString()
-                );
                 Assert.Contains("initial planner", planner.Text);
                 TaskCompletionSource healthPass = new(
                     TaskCreationOptions.RunContinuationsAsynchronously
@@ -442,33 +433,16 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 );
                 Assert.IsGreaterThan(readyAt, state.Clock.GetUtcNow());
                 Assert.IsLessThan(planningDeadline, state.Clock.GetUtcNow());
-                Assert.AreNotEqual("true", state.Database.ReadMetadata("git:plan_integrated"));
+                Assert.IsEmpty(IntegratedChanges(state, token));
                 if (interval == 0)
                 {
                     Assert.IsGreaterThanOrEqualTo(eligibleAt, state.Clock.GetUtcNow());
                 }
-                Console.WriteLine(
-                    "PHASE7_PLANNER_CLOSED "
-                        + new JsonObject
-                        {
-                            ["intervalSeconds"] = interval,
-                            ["eligibleAt"] = eligibleAt,
-                            ["observedAt"] = state.Clock.GetUtcNow(),
-                            ["planningDeadline"] = planningDeadline,
-                            ["healthCheckedAt"] = Convert.ToString(
-                                state.Value("SELECT checked_at FROM git_health;")
-                            ),
-                            ["nativeLeaseCount"] = nativeLeases,
-                            ["worker2Allowance"] = state.Reservation("worker2").Allowance,
-                            ["worker2GrantOpen"] = state.Reservation("worker2").GrantOpen,
-                            ["worker2StartupObserved"] = handoff.SecondStarting.Task.IsCompleted,
-                            ["worker2OpenObserved"] = followerEntry.Task.IsCompleted,
-                        }.ToJsonString()
-                );
-                Phase7Clock.ObservedPoll? rejectionPoll = null;
+
+                ObservedManualClock.ObservedPoll? rejectionPoll = null;
                 if (candidate != PlannerCandidate.None)
                 {
-                    Phase7Clock.ObservedPoll? requestPoll = reject
+                    ObservedManualClock.ObservedPoll? requestPoll = reject
                         ? await ObservePlanningPollAsync().ConfigureAwait(false)
                         : null;
                     DateTimeOffset submittedAt = state.Clock.GetUtcNow();
@@ -491,7 +465,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                             .ConfigureAwait(false);
                     }
                 }
-                Phase7Clock.ObservedPoll? timeoutStartupPoll = null;
+                ObservedManualClock.ObservedPoll? timeoutStartupPoll = null;
                 long? timeoutKickoff = null;
                 if (integrate)
                 {
@@ -505,17 +479,17 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     state.ObserveWorkerCompletion = null;
                     await state
                         .WaitDurableAsync(
-                            () => state.Database.ReadMetadata("git:plan_integrated") == "true",
+                            () => IntegratedChanges(state, token).Count == 1,
                             planningDeadline,
                             token
                         )
                         .ConfigureAwait(false);
-                    Assert.AreEqual("true", state.Database.ReadMetadata("git:plan_integrated"));
+                    Assert.ContainsSingle(IntegratedChanges(state, token));
                     Assert.IsLessThan(planningDeadline, state.Clock.GetUtcNow());
                 }
                 else
                 {
-                    Phase7Clock.ObservedPoll edgePoll;
+                    ObservedManualClock.ObservedPoll edgePoll;
                     if (rejectionPoll is { } afterFailure)
                     {
                         // The failed request is durable. Wake a new decision while
@@ -543,18 +517,14 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     }
                     else
                     {
-                        Assert.AreEqual(
-                            0L, state.Number("SELECT COUNT(*) FROM integration_requests;")
-                        );
+                        Assert.IsEmpty(AllChanges(state, token));
                         edgePoll = await ObservePlanningPollAsync().ConfigureAwait(false);
                     }
                     AssertColdPeer();
                     Assert.IsNull(PeerKickoff(), "No peer kickoff is due before planning timeout.");
                     if (reject)
                     {
-                        Assert.AreNotEqual(
-                            "true", state.Database.ReadMetadata("git:plan_integrated")
-                        );
+                        Assert.IsEmpty(IntegratedChanges(state, token));
                     }
                     state.Clock.Advance(
                         edgePoll, state.WorkDeadline, token, through: planningDeadline
@@ -597,17 +567,17 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         AssertColdPeer();
                     }
                 }
-                Phase7Handoff.Startup? eligibleStartup = null;
+                WorkerHandoffControl.Startup? eligibleStartup = null;
                 if (interval > 0)
                 {
                     // The positive representative still owes the interval from the
                     // preceding COMPLETED admission, despite earlier planning release.
                     DateTimeOffset probe = eligibleAt.AddSeconds(-1);
                     Task<JsonObject> run = state.Active;
-                    Task<Phase7Handoff.Startup> target = handoff.SecondStarting.Task;
-                    await Phase7Run.RequireColdRampTargetAsync(target, run, eligibleAt)
+                    Task<WorkerHandoffControl.Startup> target = handoff.SecondStarting.Task;
+                    await CoordinatorScenarioRun.RequireColdRampTargetAsync(target, run, eligibleAt)
                         .ConfigureAwait(false);
-                    Phase7Clock.ObservedPoll wake = await state.ObserveRampProbePollAsync(
+                    ObservedManualClock.ObservedPoll wake = await state.ObserveRampProbePollAsync(
                         target, run, eligibleAt, registeredAfter: 0, token
                     ).ConfigureAwait(false);
                     try
@@ -617,14 +587,16 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     catch (Exception error) when (error is InvalidOperationException
                         or OperationCanceledException)
                     {
-                        await Phase7Run.RequireColdRampTargetAsync(target, run, eligibleAt)
+                        await CoordinatorScenarioRun
+                            .RequireColdRampTargetAsync(target, run, eligibleAt)
                             .ConfigureAwait(false);
                         throw;
                     }
-                    Phase7Clock.ObservedPoll eligiblePoll = await state.ObserveRampProbePollAsync(
+                    ObservedManualClock.ObservedPoll eligiblePoll = await state
+                        .ObserveRampProbePollAsync(
                         target, run, eligibleAt, wake.TimerId, token
                     ).ConfigureAwait(false);
-                    await Phase7Run.RequireColdRampTargetAsync(target, run, eligibleAt)
+                    await CoordinatorScenarioRun.RequireColdRampTargetAsync(target, run, eligibleAt)
                         .ConfigureAwait(false);
                     Assert.AreEqual(probe, state.Clock.GetUtcNow());
                     AssertColdPeer();
@@ -633,7 +605,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     );
                     using CancellationTokenSource observation =
                         CancellationTokenSource.CreateLinkedTokenSource(token);
-                    Task<Phase7Clock.ObservedPoll> freshPoll = state.Clock.WaitForPollAsync(
+                    Task<ObservedManualClock.ObservedPoll> freshPoll = state.Clock.WaitForPollAsync(
                         observation.Token, state.WorkDeadline,
                         registeredAfter: eligiblePoll.TimerId
                     );
@@ -680,7 +652,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 // Its integrated release MUST actually dispatch before timeout.
                 DateTimeOffset releaseCutoff =
                     integrate && interval == 0 ? planningDeadline : state.WorkDeadline;
-                Phase7Handoff.Startup startup;
+                WorkerHandoffControl.Startup startup;
                 if (eligibleStartup is not null)
                 {
                     startup = eligibleStartup;
@@ -690,7 +662,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     // Release is already committed. Only the next eligibility
                     // poll may advance time; native startup gets fixed-clock I/O.
                     releaseCutoff = planningDeadline.AddSeconds(1);
-                    Task<Phase7Handoff.Startup> targetStart = handoff.SecondStarting.Task;
+                    Task<WorkerHandoffControl.Startup> targetStart = handoff.SecondStarting.Task;
                     if (!targetStart.IsCompleted && !state.Active.IsCompleted)
                     {
                         try
@@ -721,8 +693,6 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 Assert.AreEqual(state.Reservation("worker2").Id, startup.ReservationId);
                 Assert.AreEqual(state.WorkerPath("worker2"), startup.Cwd);
                 DateTimeOffset startupCapturedAt = state.Clock.GetUtcNow();
-                // Now the prerequisite really is non-clock startup. Observe its
-                // ACTUAL task, including faults/cancellation, not a success-only flag.
                 await state.FixedAsync(startup.Operation, token).ConfigureAwait(false);
                 Assert.AreEqual(startupCapturedAt, state.Clock.GetUtcNow());
                 DateTimeOffset enteredAt = await state
@@ -733,25 +703,18 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 if (!integrate)
                 {
                     Assert.IsGreaterThanOrEqualTo(planningDeadline, enteredAt);
-                    Assert.AreNotEqual("true", state.Database.ReadMetadata("git:plan_integrated"));
+                    Assert.IsEmpty(IntegratedChanges(state, token));
                     if (!reject)
                     {
-                        Assert.AreEqual(
-                            0L, state.Number("SELECT COUNT(*) FROM integration_requests;")
-                        );
+                        Assert.IsEmpty(AllChanges(state, token));
                     }
                 }
-                // Startup completion still isn't consumption. A queued kickoff may
-                // predate admission; a real sending batch means the admitted loop
-                // has CLAIMED work before its asynchronous bootstrap Git operation.
                 await state
                     .WaitDurableAsync(
                         () =>
                             state.Number(
-                                (
-                                    "SELECT COUNT(*) FROM delivery_batches WHERE "
-                                    + "recipient='worker2' AND state='sending';"
-                                )
+                                "SELECT COUNT(*) FROM delivery_batches "
+                                    + "WHERE recipient='worker2' AND state='sending';"
                             ) == 1,
                         releaseCutoff,
                         token
@@ -766,18 +729,11 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     );
                 }
                 DateTimeOffset claimedAt = state.Clock.GetUtcNow();
-                Phase7Sessions.Turn peer = await state
+                ControlledSessionPool.Turn peer = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 Assert.AreEqual(claimedAt, state.Clock.GetUtcNow());
                 Assert.IsLessThan(releaseCutoff, claimedAt);
-                Assert.AreEqual(
-                    "sending",
-                    state.Value(
-                        "SELECT state FROM delivery_batches WHERE id=$id;",
-                        ("$id", followerBatch)
-                    )
-                );
                 Assert.AreEqual(
                     TimeSpan.FromSeconds(state.Database.Configuration.DurationSeconds),
                     peer.Timeout
@@ -796,23 +752,9 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     followerIdentity["leaseId"]!.GetValue<long>(),
                     peer.Session.Metadata["runtimeLeaseId"]!.GetValue<long>()
                 );
-                if (reject)
-                {
-                    Assert.IsNull(peer.Session.Metadata["pid"]);
-                    Assert.IsNull(peer.Session.Metadata["birthTicks"]);
-                    Assert.IsGreaterThan(0L, state.Dispatches(startup.ReservationId));
-                }
-                else
-                {
-                    Assert.AreEqual(
-                        followerIdentity["pid"]!.GetValue<int>(),
-                        peer.Session.Metadata["pid"]!.GetValue<int>()
-                    );
-                    Assert.AreEqual(
-                        followerIdentity["birthTicks"]!.GetValue<long>(),
-                        peer.Session.Metadata["birthTicks"]!.GetValue<long>()
-                    );
-                }
+                Assert.IsNull(peer.Session.Metadata["pid"]);
+                Assert.IsNull(peer.Session.Metadata["birthTicks"]);
+                Assert.IsGreaterThan(0L, state.Dispatches(startup.ReservationId));
                 Assert.AreEqual(
                     state.Reservation("worker2").Id,
                     followerIdentity["reservationId"]!.GetValue<string>()
@@ -823,31 +765,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 Assert.DoesNotContain("You are the initial planner", peer.Text);
                 Assert.Contains("Planner release", peer.Text);
                 Assert.AreNotEqual(planner.Session.SessionId, peer.Session.SessionId);
-                Console.WriteLine(
-                    "PHASE7_PLANNER_FOLLOWER "
-                        + new JsonObject
-                        {
-                            ["integrate"] = integrate,
-                            ["rejectedPlan"] = reject,
-                            ["intervalSeconds"] = interval,
-                            ["admittedAt"] = admittedAt,
-                            ["typedPlannerReadyAt"] = readyAt,
-                            ["planningDeadline"] = planningDeadline,
-                            ["eligibleAt"] = eligibleAt,
-                            ["actualFollowerOpenAt"] = enteredAt,
-                            ["actualStartupCapturedAt"] = startupCapturedAt,
-                            ["actualStartupTaskStatus"] = startup.Operation.Status.ToString(),
-                            ["startupWorker"] = startup.Worker,
-                            ["startupReservationId"] = startup.ReservationId,
-                            ["startupCwd"] = startup.Cwd,
-                            ["claimedBatch"] = followerBatch,
-                            ["claimedBatchObservedAt"] = claimedAt,
-                            ["turnObservedAt"] = state.Clock.GetUtcNow(),
-                            ["strictReleaseCutoff"] = releaseCutoff,
-                            ["originalPerCallTimeoutSeconds"] = peer.Timeout.TotalSeconds,
-                            ["identity"] = followerIdentity.DeepClone(),
-                        }.ToJsonString()
-                );
+
                 // End this journey at the real work deadline; the already-dispatched
                 // turns finish inside grace, without a fixture-owned control watcher.
                 await ObserveLivePlannerPollAsync("the pre-drain progress poll")
@@ -863,7 +781,13 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     .ConfigureAwait(false);
                 await state.Active.WaitAsync(token).ConfigureAwait(false);
                 GitScenarioState.Data(await state.Active.ConfigureAwait(false));
-                Assert.AreEqual("deadline", state.Database.ReadMetadata("lifecycle:stop_reason"));
+                JsonObject status = StatusData(inspector);
+                Assert.AreEqual("finalized", status["lifecycle"]!.GetValue<string>());
+                Assert.AreEqual("deadline", status["stopReason"]!.GetValue<string>());
+                Assert.AreEqual(
+                    "completed",
+                    status["deadlineDrain"]!["outcome"]!.GetValue<string>()
+                );
                 Assert.AreEqual(10m, state.Reservation("worker1").Actual);
                 Assert.AreEqual(10m, state.Reservation("worker2").Actual);
                 Assert.IsFalse(state.Reservation("worker1").GrantOpen);
@@ -875,30 +799,15 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         state.Database.Configuration.RunAiCreditAllowance
                     )["runCommitted"]!.GetValue<decimal>()
                 );
-                foreach (long batch in new[] { plannerBatch, followerBatch })
-                {
-                    Assert.AreEqual(
-                        "sent",
-                        state.Value(
-                            "SELECT state FROM delivery_batches WHERE id=$id;",
-                            ("$id", batch)
-                        )
-                    );
-                    Assert.AreEqual(
-                        "acknowledged",
-                        state.Value(
-                            "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
-                            ("$id", batch)
-                        )
-                    );
-                }
 
                 long? PeerKickoff() =>
                     (long?)state.Value(
                         "SELECT id FROM events WHERE recipient='worker2' AND kind='kickoff';"
                     );
 
-                Task<Phase7Clock.ObservedPoll> ObservePlanningPollAsync(long registeredAfter = 0) =>
+                Task<ObservedManualClock.ObservedPoll> ObservePlanningPollAsync(
+                    long registeredAfter = 0
+                ) =>
                     state.FixedAsync(
                         next => state.Clock.WaitForPollAsync(
                             next, planningDeadline, requireSingle: true,
@@ -951,14 +860,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                             secondary.Add(error);
                         }
                     }
-                    foreach (Exception error in secondary)
-                    {
-                        Console.Error.WriteLine(
-                            "PHASE7_READINESS_SECONDARY " + Json.ExceptionDetails(error)
-                        );
-                    }
 
-                    // Prefer a known terminal producer to a ready poll or racing case cancellation.
                     if (
                         producer.IsCompleted
                         && (primary is null
@@ -983,7 +885,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     Assert.IsFalse(handoff.SecondStarting.Task.IsCompleted);
                     Assert.IsFalse(followerEntry.Task.IsCompleted);
                     Assert.IsNull(followerIdentity);
-                    Assert.IsNull(state.Database.ReadMetadata("worker:worker2:session"));
+                    Assert.IsNull(WorkerStatus(inspector, "worker2")["sessionId"]);
                     Assert.AreEqual(0m, state.Reservation("worker2").Allowance);
                     Assert.IsFalse(state.Reservation("worker2").GrantOpen);
                     Assert.AreEqual(0L, state.Dispatches(state.Reservation("worker2").Id));
@@ -992,12 +894,6 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                             .Sessions.Hosts.Where(host => host.Operation == "run")
                             .SelectMany(host => host.Sessions)
                             .Where(session => session.Worker == "worker2")
-                    );
-                    Assert.AreEqual(
-                        nativeLeases,
-                        state.Number(
-                            "SELECT COUNT(*) FROM process_leases WHERE kind LIKE 'native:%';"
-                        )
                     );
                 }
             })
@@ -1016,12 +912,13 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     )
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
-            .CreateAsync(testContext, token, workers: 1)
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
+            .CreateAsync(testContext, token, workers: 1, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
+                Coordinator inspector = state.Coordinator("status");
                 byte[] instructions = File.ReadAllBytes(
                     Path.Combine(state.Git.Repository, "AGENTS.md")
                 );
@@ -1050,7 +947,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 byte[] global = File.ReadAllBytes(state.Git.GlobalConfig);
                 byte[] system = File.ReadAllBytes(state.Git.SystemConfig);
                 _ = state.Start();
-                Phase7Sessions.Turn turn = await state
+                ControlledSessionPool.Turn turn = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 Assert.Contains("Never overwrite AGENTS.md", turn.Text);
@@ -1059,7 +956,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     turn.Text
                 );
                 long batch = state.SendingBatch("worker1");
-                Phase7Clock.ObservedPoll ownerPoll = await state
+                ObservedManualClock.ObservedPoll ownerPoll = await state
                     .ObserveOwnerPollAsync(token)
                     .ConfigureAwait(false);
                 turn.Complete();
@@ -1069,8 +966,9 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         .StopRunningAsync(action, ownerPoll, token)
                         .ConfigureAwait(false)
                 );
-                Assert.AreEqual(reason, state.Database.ReadMetadata("lifecycle:stop_reason"));
-                Assert.AreEqual(lifecycle, state.Database.ReadMetadata("lifecycle"));
+                JsonObject status = StatusData(inspector);
+                Assert.AreEqual(reason, status["stopReason"]!.GetValue<string>());
+                Assert.AreEqual(lifecycle, status["lifecycle"]!.GetValue<string>());
                 Assert.AreEqual(
                     "Target instructions",
                     File.ReadAllLines(Path.Combine(state.Git.Repository, "AGENTS.md"))[0]
@@ -1088,7 +986,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 Assert.IsTrue(global.SequenceEqual(File.ReadAllBytes(state.Git.GlobalConfig)));
                 Assert.IsTrue(system.SequenceEqual(File.ReadAllBytes(state.Git.SystemConfig)));
                 foreach (
-                    Phase7Sessions.Session session in state
+                    ControlledSessionPool.Session session in state
                         .Sessions.Hosts.SelectMany(host => host.Sessions)
                         .Where(session => session.HasSession)
                 )
@@ -1102,23 +1000,8 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         Directory.Exists(session.Metadata["workingDirectory"]!.GetValue<string>())
                     );
                 }
-                Console.WriteLine(
-                    "PHASE7_APPLICATION_NONMUTATION "
-                        + new JsonObject
-                        {
-                            ["action"] = action,
-                            ["protectedOwnedPolicyFiles"] = protectedFiles.Length,
-                            ["targetInstructionsByteExact"] = true,
-                            ["globalAndSystemGitConfigByteExact"] = true,
-                            ["nativePolicyEffectivenessClaimed"] = false,
-                        }.ToJsonString()
-                );
                 Assert.AreEqual(10m, state.Reservation("worker1").Actual);
                 Assert.IsTrue(Directory.Exists(state.Database.StatePath));
-                Assert.AreEqual(
-                    "sent",
-                    state.Value("SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch))
-                );
                 Assert.AreEqual(
                     state.Git.BaseCommit,
                     (
@@ -1140,20 +1023,12 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 string financial = state
                     .Ledger.Status(state.Database.RunId, 207.25m)
                     .ToJsonString();
-                const string resourcesSql = (
-                    "SELECT json_group_array(json_object(\n    "
-                    + "'ref',ref,'path',path,'originalCommit',original_commit,'state',state"
-                    + ",'retained',retained))\nFROM (SELECT * FROM git_resources ORDER BY "
-                    + "ref);"
-                );
-                object? resources = state.Value(resourcesSql);
                 string worktreeHead = await state
                     .Git.GitAsync(ownedWorktree, token, "rev-parse", "HEAD")
                     .ConfigureAwait(false);
                 string refs = await state
                     .Git.GitAsync(state.Git.Repository, token, "show-ref")
                     .ConfigureAwait(false);
-                string? finalized = state.Database.ReadMetadata("git:finalized");
                 JsonObject cleanupResult = await state
                     .Coordinator()
                     .CleanupAsync(token)
@@ -1166,10 +1041,9 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         "Inspect and finalize retained delivery before explicit cleanup.",
                         cleanupResult["message"]!.GetValue<string>()
                     );
-                    Assert.AreEqual("paused", state.Database.ReadMetadata("lifecycle"));
-                    Assert.AreNotEqual("true", state.Database.ReadMetadata("git:finalized"));
-                    Assert.AreEqual(finalized, state.Database.ReadMetadata("git:finalized"));
-                    Assert.AreEqual(resources, state.Value(resourcesSql));
+                    JsonObject pausedStatus = StatusData(inspector);
+                    Assert.AreEqual("paused", pausedStatus["lifecycle"]!.GetValue<string>());
+                    Assert.IsNull(pausedStatus["delivery"]);
                     Assert.AreEqual(ownedWorktree, state.WorkerPath("worker1"));
                     Assert.IsTrue(Directory.Exists(ownedWorktree));
                     Assert.AreEqual(
@@ -1190,15 +1064,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     JsonObject cleanup = GitScenarioState.Data(cleanupResult);
                     Assert.IsNotEmpty(cleanup["removed"]!.AsArray());
                     Assert.IsFalse(Directory.Exists(ownedWorktree));
-                    Assert.AreEqual(
-                        0L,
-                        state.Number(
-                            (
-                                "SELECT COUNT(*) FROM git_resources WHERE path IS NOT NULL AND "
-                                + "state<>'removed';"
-                            )
-                        )
-                    );
+                    Assert.IsNotNull(StatusData(inspector)["delivery"]);
                 }
                 Assert.AreEqual(
                     "Owned fixture sentinel outside the recorded resource set.\n",
@@ -1217,24 +1083,8 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     financial,
                     state.Ledger.Status(state.Database.RunId, 207.25m).ToJsonString()
                 );
-                Assert.AreEqual(
-                    "sent",
-                    state.Value("SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch))
-                );
                 Assert.IsTrue(global.SequenceEqual(File.ReadAllBytes(state.Git.GlobalConfig)));
                 Assert.IsTrue(system.SequenceEqual(File.ReadAllBytes(state.Git.SystemConfig)));
-                Console.WriteLine(
-                    "PHASE7_EXPLICIT_CLEANUP "
-                        + new JsonObject
-                        {
-                            ["action"] = action,
-                            ["publicResult"] = cleanupResult.DeepClone(),
-                            ["retainedWhenPaused"] =
-                                action == "pause" && Directory.Exists(ownedWorktree),
-                            ["unregisteredSentinelRetained"] = File.Exists(unrelated),
-                            ["financialDeliveryAndProtectedFilesUnchanged"] = true,
-                        }.ToJsonString()
-                );
             })
             .ConfigureAwait(false);
     }
@@ -1245,17 +1095,19 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     public async Task PeerTaskClosureDoesNotClosePeerWorkOrTheRun()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(testContext, token, ownedHosts: false)
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
+            .CreateAsync(testContext, token, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
+                Coordinator inspector = state.Coordinator("status");
                 _ = state.Start();
-                Phase7Sessions.Turn one = await state
+                ControlledSessionPool.Turn one = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 long ownBatch = state.SendingBatch("worker1");
-                Phase7Sessions.Turn two = await state
+                ControlledSessionPool.Turn two = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 JsonObject own = state.Invoke(
@@ -1278,6 +1130,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         ["body"] = "Must remain open.",
                     }
                 );
+                long peerTaskId = peer["id"]!.GetValue<long>();
                 state.Invoke(
                     "worker1",
                     "task_write",
@@ -1286,93 +1139,98 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 await state.StepAsync(state.WorkDeadline, token).ConfigureAwait(false);
                 Assert.AreEqual(
                     "open",
-                    state.Value(
-                        "SELECT state FROM tasks WHERE id=$id;",
-                        ("$id", peer["id"]!.GetValue<long>())
-                    )
+                    state.Invoke("owner", "task_read", new() { ["id"] = peerTaskId })[
+                        "state"
+                    ]!.GetValue<string>()
                 );
-                Assert.IsNull(state.Database.ReadMetadata("lifecycle:root_closed_by"));
-                Assert.IsNull(state.Database.ReadMetadata("lifecycle:stop_reason"));
+                JsonObject runningStatus = StatusData(inspector);
+                Assert.AreEqual("running", runningStatus["lifecycle"]!.GetValue<string>());
+                Assert.IsNull(runningStatus["stopReason"]);
                 Assert.IsFalse(one.Token.IsCancellationRequested);
                 Assert.IsFalse(two.Token.IsCancellationRequested);
+
                 JsonObject closedRoot = state.Invoke(
                     "worker1",
                     "task_write",
                     new() { ["action"] = "close", ["id"] = 1 }
                 );
                 Assert.AreEqual("closed", closedRoot["state"]!.GetValue<string>());
-                Assert.AreEqual("worker1", state.Value("SELECT closed_by FROM tasks WHERE id=1;"));
-                await state.UntilAsync(
-                    () => (string?)state.Value("SELECT state FROM tasks WHERE id=1;") == "open",
-                    state.WorkDeadline,
-                    token
-                ).ConfigureAwait(false);
-                Assert.AreEqual("worker1", state.Database.ReadMetadata("lifecycle:root_closed_by"));
-                Assert.AreEqual("worker1", state.Value("SELECT closed_by FROM tasks WHERE id=1;"));
-                JsonObject reopened = JsonNode.Parse((string)state.Value(
-                    "SELECT payload FROM events WHERE recipient='worker2' AND kind='task_reopened';"
-                )!)!.AsObject();
-                Assert.AreEqual(1L, reopened["taskId"]!.GetValue<long>());
-                Assert.AreEqual("worker1", reopened["closedBy"]!.GetValue<string>());
-                Assert.IsNull(state.Database.ReadMetadata("lifecycle:stop_reason"));
+                Assert.AreEqual("worker1", closedRoot["closedBy"]!.GetValue<string>());
+                await state
+                    .UntilAsync(
+                        () =>
+                            state.Invoke("owner", "task_read", new() { ["id"] = 1 })[
+                                "state"
+                            ]!.GetValue<string>() == "open",
+                        state.WorkDeadline,
+                        token
+                    )
+                    .ConfigureAwait(false);
+                JsonObject reopenedRoot = state.Invoke("owner", "task_read", new() { ["id"] = 1 });
+                Assert.AreEqual("open", reopenedRoot["state"]!.GetValue<string>());
+                Assert.AreEqual("worker1", reopenedRoot["closedBy"]!.GetValue<string>());
+                Assert.IsNull(StatusData(inspector)["stopReason"]);
                 Assert.IsFalse(one.Token.IsCancellationRequested);
                 Assert.IsFalse(two.Token.IsCancellationRequested);
+
                 long peerBatch = state.SendingBatch("worker2");
                 two.Complete();
                 await state.WaitAckAsync(peerBatch, state.WorkDeadline, token)
                     .ConfigureAwait(false);
-                Phase7Sessions.Turn followup = await state.FixedAsync(
-                    next => state.Sessions.NextTurnAsync("worker2", next), token
-                ).ConfigureAwait(false);
+                ControlledSessionPool.Turn followup = await state
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
+                    .ConfigureAwait(false);
                 long followupBatch = state.SendingBatch("worker2");
                 Assert.AreEqual(two.Session.SessionId, followup.Session.SessionId);
-                Assert.Contains("task_reopened", followup.Text);
+                JsonObject reopenedEvent = PromptEvents(followup.Text)
+                    .Single(item => item["kind"]!.GetValue<string>() == "task_reopened");
+                Assert.AreEqual(1L, reopenedEvent["payload"]!["taskId"]!.GetValue<long>());
+                Assert.AreEqual(
+                    "worker1",
+                    reopenedEvent["payload"]!["closedBy"]!.GetValue<string>()
+                );
                 Assert.AreEqual(1, two.Session.CompletedTurns);
                 Assert.AreEqual(
                     "open",
-                    state.Value(
-                        "SELECT state FROM tasks WHERE id=$id;",
-                        ("$id", peer["id"]!.GetValue<long>())
-                    )
+                    state.Invoke("owner", "task_read", new() { ["id"] = peerTaskId })[
+                        "state"
+                    ]!.GetValue<string>()
                 );
-                state.Invoke(
-                    "owner",
-                    "task_write",
-                    new() { ["action"] = "close", ["id"] = 1 }
-                );
-                await state.UntilAsync(
-                    state.Handoff!.OwnerStopped.Task, state.WorkDeadline, token
-                ).ConfigureAwait(false);
+
+                state.Invoke("owner", "task_write", new() { ["action"] = "close", ["id"] = 1 });
+                await state
+                    .UntilAsync(state.Handoff!.OwnerStopped.Task, state.WorkDeadline, token)
+                    .ConfigureAwait(false);
                 await state.Active.WaitAsync(token).ConfigureAwait(false);
                 JsonObject result = await state.Active.ConfigureAwait(false);
                 Assert.IsFalse(result["ok"]!.GetValue<bool>());
                 Assert.AreEqual(
-                    "ownership_or_usage_unresolved", result["code"]!.GetValue<string>()
+                    "ownership_or_usage_unresolved",
+                    result["code"]!.GetValue<string>()
                 );
+                JsonObject finalStatus = StatusData(inspector);
+                Assert.AreEqual("unresolved", finalStatus["lifecycle"]!.GetValue<string>());
                 Assert.AreEqual(
-                    "owner-root-closure", state.Database.ReadMetadata("lifecycle:stop_reason")
+                    "owner-root-closure",
+                    finalStatus["stopReason"]!.GetValue<string>()
                 );
-                Assert.AreEqual("owner", state.Database.ReadMetadata("lifecycle:root_closed_by"));
-                Assert.AreEqual("owner", state.Value("SELECT closed_by FROM tasks WHERE id=1;"));
-                Assert.AreEqual("closed", state.Value("SELECT state FROM tasks WHERE id=1;"));
-                Assert.AreEqual("unresolved", state.Database.ReadMetadata("lifecycle"));
-                Assert.AreEqual(0L, state.Number(
-                    "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;"
-                ));
-                Assert.AreEqual("owner-root-closure", state.Value(
-                    "SELECT stop_reason FROM coordinator_segments ORDER BY id DESC LIMIT 1;"
-                ));
+                Assert.IsFalse(finalStatus["active"]!.GetValue<bool>());
+                Assert.IsNull(finalStatus["delivery"]);
+                JsonObject ownerClosedRoot = state.Invoke(
+                    "owner",
+                    "task_read",
+                    new() { ["id"] = 1 }
+                );
+                Assert.AreEqual("closed", ownerClosedRoot["state"]!.GetValue<string>());
+                Assert.AreEqual("owner", ownerClosedRoot["closedBy"]!.GetValue<string>());
                 Assert.IsTrue(one.Token.IsCancellationRequested);
                 Assert.IsTrue(followup.Token.IsCancellationRequested);
                 foreach (long heldBatch in new[] { ownBatch, followupBatch })
                 {
-                    Assert.AreEqual("failed", state.Value(
-                        "SELECT state FROM delivery_batches WHERE id=$id;", ("$id", heldBatch)
-                    ));
                     Assert.AreEqual(
-                        "Turn interrupted by coordinator stop; durable replay may repeat actions.",
+                        "failed",
                         state.Value(
-                            "SELECT last_error FROM delivery_batches WHERE id=$id;",
+                            "SELECT state FROM delivery_batches WHERE id=$id;",
                             ("$id", heldBatch)
                         )
                     );
@@ -1383,9 +1241,6 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 Assert.IsNull(state.Reservation("worker1").Actual);
                 Assert.AreEqual("uncertain", state.Reservation("worker2").State);
                 Assert.AreEqual(10m, state.Reservation("worker2").Actual);
-                Assert.AreEqual(
-                    0L, state.Number("SELECT COUNT(*) FROM checks WHERE kind='final';")
-                );
             })
             .ConfigureAwait(false);
     }
@@ -1398,22 +1253,22 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     public async Task GenuineExactLoadFailureFallsBackOnlyWithFreshBacking(bool minimumBacking)
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7OwnedCreator creator = await Phase7OwnedCreator
+        InterruptedRunCreator creator = await InterruptedRunCreator
             .OpenAsync(testContext, minimumBacking, token)
             .ConfigureAwait(false);
         await creator
             .RunOwnedAsync(async () =>
             {
-                Phase7Run state = Phase7Run.Attach(creator, token);
+                CoordinatorScenarioRun state = CoordinatorScenarioRun.Attach(creator, token);
                 await state
                     .RunBodyAsync(async () =>
                     {
-                        string originalSession = creator.SessionId,
-                            originalReservation = creator.ReservationId;
-                        string originalJournal = Phase6OwnedCreator.Hash(creator.JournalPath);
+                        string originalSession = creator.SessionId;
+                        string originalReservation = creator.ReservationId;
+                        string originalJournal = OwnedCreatorProcess.Hash(creator.JournalPath);
                         Assert.AreEqual(
                             "true",
-                            state.Database.ReadMetadata("native:bootstrap:" + originalSession)
+                            creator.Checkpoint["confirmation"]!.GetValue<string>()
                         );
                         Assert.AreEqual(
                             minimumBacking ? 30m : 200m,
@@ -1421,6 +1276,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         );
                         Assert.AreEqual(10m, state.Reservation("worker1").Actual);
                         await creator.CrashAsync(token).ConfigureAwait(false);
+                        Coordinator inspector = state.Coordinator("status");
                         bool exactLoadEntered = false;
                         state.Sessions.BeforeOpen = (session, next) =>
                         {
@@ -1428,8 +1284,6 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                             if (session.ExactSession == originalSession)
                             {
                                 exactLoadEntered = true;
-                                // Supported typed dependency response, not an altered
-                                // application association or manufactured native history.
                                 throw new OperationException(
                                     "session_load_failed",
                                     "Controlled original session load is unavailable."
@@ -1444,30 +1298,18 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                             JsonObject denied = await state.Active.ConfigureAwait(false);
                             Assert.IsFalse(denied["ok"]!.GetValue<bool>());
                             Assert.AreEqual("credit_exhausted", denied["code"]!.GetValue<string>());
+                            JsonObject status = StatusData(inspector);
+                            Assert.AreEqual("stopped", status["lifecycle"]!.GetValue<string>());
                             Assert.AreEqual(
                                 "credit_exhausted",
-                                state.Database.ReadMetadata("lifecycle:stop_reason")
+                                status["stopReason"]!.GetValue<string>()
                             );
-                            Assert.AreEqual(
-                                0L,
-                                state.Number(
-                                    (
-                                        "SELECT COUNT(*) FROM coordinator_segments WHERE "
-                                        + "ended_at IS NULL;"
-                                    )
-                                )
-                            );
+                            Assert.IsFalse(status["active"]!.GetValue<bool>());
                             Assert.HasCount(2, state.Ledger.Reservations(state.Database.RunId));
                             Assert.AreEqual(originalReservation, state.Reservation("worker1").Id);
                             Assert.AreEqual("reconciled", state.Reservation("worker1").State);
                             Assert.AreEqual(10m, state.Reservation("worker1").Actual);
                             Assert.AreEqual(1L, state.Dispatches(originalReservation));
-                            Assert.AreEqual(
-                                0L,
-                                state.Number(
-                                    "SELECT COUNT(*) FROM delivery_batches WHERE state='sending';"
-                                )
-                            );
                             Assert.IsEmpty(
                                 state
                                     .Sessions.Hosts.SelectMany(host => host.Sessions)
@@ -1475,36 +1317,36 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                             );
                             Assert.AreEqual(
                                 originalJournal,
-                                Phase6OwnedCreator.Hash(creator.JournalPath)
+                                OwnedCreatorProcess.Hash(creator.JournalPath)
                             );
                         }
                         else
                         {
-                            Phase7Sessions.Turn fallback = await state
+                            ControlledSessionPool.Turn fallback = await state
                                 .FixedAsync(
                                     next => state.Sessions.NextTurnAsync("worker1", next),
                                     token
                                 )
                                 .ConfigureAwait(false);
                             CreditReservation replacement = state.Reservation("worker1");
+                            JsonObject workerStatus = WorkerStatus(inspector, "worker1");
                             Assert.AreNotEqual(originalSession, fallback.Session.SessionId);
                             Assert.AreNotEqual(originalReservation, replacement.Id);
                             Assert.AreEqual(190m, replacement.Allowance);
                             Assert.IsNull(replacement.Actual);
                             Assert.AreEqual(
+                                fallback.Session.SessionId,
+                                workerStatus["sessionId"]!.GetValue<string>()
+                            );
+                            Assert.AreEqual(
                                 "fresh-summary-fallback: exact-session load unavailable or failed",
-                                state.Database.ReadMetadata("worker:worker1:recovery")
+                                workerStatus["recovery"]!.GetValue<string>()
                             );
                             Assert.Contains(
                                 "Goal: " + state.Database.Configuration.Goal,
                                 fallback.Text
                             );
                             Assert.Contains("==== DURABLE CHANGES ====", fallback.Text);
-                            Assert.IsNull(
-                                state.Database.ReadMetadata(
-                                    "native:bootstrap:" + fallback.Session.SessionId
-                                )
-                            );
                             JsonObject fresh = state.Sessions.Journal!.Snapshot(
                                 fallback.Session.SessionId
                             );
@@ -1518,19 +1360,13 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                             );
                             Assert.IsNull(fresh["generations"]![0]!["exactSession"]);
                             long batch = state.SendingBatch("worker1");
-                            Phase7Clock.ObservedPoll ownerPoll = await state
+                            ObservedManualClock.ObservedPoll ownerPoll = await state
                                 .ObserveOwnerPollAsync(token)
                                 .ConfigureAwait(false);
                             fallback.Complete();
                             await state
                                 .WaitAckAsync(batch, state.WorkDeadline, token)
                                 .ConfigureAwait(false);
-                            Assert.AreEqual(
-                                "true",
-                                state.Database.ReadMetadata(
-                                    "native:bootstrap:" + fallback.Session.SessionId
-                                )
-                            );
                             Assert.AreEqual(
                                 10m,
                                 state
@@ -1544,6 +1380,15 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                                 await state
                                     .StopRunningAsync("pause", ownerPoll, token)
                                     .ConfigureAwait(false)
+                            );
+                            JsonObject pausedStatus = StatusData(inspector);
+                            Assert.AreEqual(
+                                "paused",
+                                pausedStatus["lifecycle"]!.GetValue<string>()
+                            );
+                            Assert.AreEqual(
+                                "owner-pause",
+                                pausedStatus["stopReason"]!.GetValue<string>()
                             );
                             Assert.AreEqual(10m, state.Reservation("worker1").Actual);
                             Assert.AreEqual(
@@ -1566,22 +1411,6 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                                 "requests"
                             ]!.GetValue<long>()
                         );
-                        Console.WriteLine(
-                            "PHASE7_EXACT_FALLBACK "
-                                + new JsonObject
-                                {
-                                    ["budgetDenied"] = minimumBacking,
-                                    ["originalSession"] = originalSession,
-                                    ["originalReservation"] = originalReservation,
-                                    ["originalHistory"] = state.Sessions.Journal.Snapshot(
-                                        originalSession
-                                    ),
-                                    ["financial"] = state.Ledger.Status(
-                                        state.Database.RunId,
-                                        state.Database.Configuration.RunAiCreditAllowance
-                                    ),
-                                }.ToJsonString()
-                        );
                     })
                     .ConfigureAwait(false);
             })
@@ -1594,14 +1423,15 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     public async Task ExplicitResumeCreatesNewSessionSegmentAndDurableBootstrap()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
-            .CreateAsync(testContext, token, workers: 1)
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
+            .CreateAsync(testContext, token, workers: 1, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
+                Coordinator inspector = state.Coordinator("status");
                 _ = state.Start();
-                Phase7Sessions.Turn original = await state
+                ControlledSessionPool.Turn original = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 string retainedHead = await state.Git.CommitAsync(
@@ -1625,19 +1455,19 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 long originalBatch = state.SendingBatch("worker1");
                 original.Complete();
                 await state
-                   .WaitAckAsync(originalBatch, state.WorkDeadline, token)
-                   .ConfigureAwait(false);
-                Phase7Sessions.Turn changeNotice = await state
-                   .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
-                   .ConfigureAwait(false);
+                    .WaitAckAsync(originalBatch, state.WorkDeadline, token)
+                    .ConfigureAwait(false);
+                ControlledSessionPool.Turn changeNotice = await state
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
+                    .ConfigureAwait(false);
                 Assert.Contains("Retained resume witness", changeNotice.Text);
                 long changeBatch = state.SendingBatch("worker1");
-                Phase7Clock.ObservedPoll originalOwnerPoll = await state
+                ObservedManualClock.ObservedPoll originalOwnerPoll = await state
                     .ObserveOwnerPollAsync(token)
                     .ConfigureAwait(false);
                 changeNotice.Complete();
                 await state
-                   .WaitAckAsync(changeBatch, state.WorkDeadline, token)
+                    .WaitAckAsync(changeBatch, state.WorkDeadline, token)
                     .ConfigureAwait(false);
                 GitScenarioState.Data(
                     await state
@@ -1655,65 +1485,63 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     }
                 );
                 _ = state.Start("resume");
-                Phase7Sessions.Turn resumed = await state
-                   .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
-                   .ConfigureAwait(false);
+                ControlledSessionPool.Turn resumed = await state
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
+                    .ConfigureAwait(false);
+                JsonObject workerStatus = WorkerStatus(inspector, "worker1");
                 Assert.AreNotEqual(original.Session.SessionId, resumed.Session.SessionId);
                 Assert.AreEqual(
-                   "fresh-session-with-durable-summary",
-                   state.Database.ReadMetadata("worker:worker1:recovery")
+                    resumed.Session.SessionId,
+                    workerStatus["sessionId"]!.GetValue<string>()
+                );
+                Assert.AreEqual(
+                    "fresh-session-with-durable-summary",
+                    workerStatus["recovery"]!.GetValue<string>()
                 );
                 const string changesHeading = "==== DURABLE CHANGES ====\n";
                 int changesStart = resumed.Text.IndexOf(changesHeading, StringComparison.Ordinal);
                 Assert.IsGreaterThan(-1, changesStart);
                 changesStart += changesHeading.Length;
                 int changesEnd = resumed.Text.IndexOf(
-                   "\n\n==== EVENTS ====\n", changesStart, StringComparison.Ordinal
+                    "\n\n==== EVENTS ====\n", changesStart, StringComparison.Ordinal
                 );
                 Assert.IsGreaterThan(changesStart, changesEnd);
                 JsonObject changes = Assert.IsInstanceOfType<JsonObject>(
-                   JsonNode.Parse(resumed.Text[changesStart..changesEnd])
+                    JsonNode.Parse(resumed.Text[changesStart..changesEnd])
                 );
                 JsonObject retainedSummary = Assert.ContainsSingle(
-                   changes["data"]!["items"]!.AsArray().OfType<JsonObject>()
-                       .Where(item => item["id"]!.GetValue<long>() == retainedId)
+                    changes["data"]!["items"]!.AsArray().OfType<JsonObject>()
+                        .Where(item => item["id"]!.GetValue<long>() == retainedId)
                 );
                 Assert.AreEqual(retainedHead, retainedSummary["head"]!.GetValue<string>());
                 Assert.AreEqual(
-                   "Retained resume witness", retainedSummary["title"]!.GetValue<string>()
+                    "Retained resume witness", retainedSummary["title"]!.GetValue<string>()
                 );
                 Assert.AreEqual("open", retainedSummary["state"]!.GetValue<string>());
                 Assert.Contains("Retained decision for the next segment.", resumed.Text);
                 Assert.Contains("Goal: " + state.Database.Configuration.Goal, resumed.Text);
-                Assert.AreEqual(2L, state.Number("SELECT COUNT(*) FROM coordinator_segments;"));
                 Assert.AreEqual(
-                   20m,
-                   state
-                       .Ledger.Reservations(state.Database.RunId)
-                       .Single(row => row.Id == old.Id)
-                       .Actual
-                );
-                Assert.IsNull(
-                   state.Database.ReadMetadata("native:bootstrap:" + resumed.Session.SessionId)
+                    20m,
+                    state
+                        .Ledger.Reservations(state.Database.RunId)
+                        .Single(row => row.Id == old.Id)
+                        .Actual
                 );
                 Assert.AreEqual(180m, state.Reservation("worker1").Allowance);
                 long resumedBatch = state.SendingBatch("worker1");
-                Phase7Clock.ObservedPoll resumedOwnerPoll = await state
+                ObservedManualClock.ObservedPoll resumedOwnerPoll = await state
                     .ObserveOwnerPollAsync(token)
                     .ConfigureAwait(false);
                 resumed.Complete();
                 await state
                     .WaitAckAsync(resumedBatch, state.WorkDeadline, token)
                     .ConfigureAwait(false);
-                Assert.AreEqual(
-                    "true",
-                    state.Database.ReadMetadata("native:bootstrap:" + resumed.Session.SessionId)
-                );
                 GitScenarioState.Data(
                     await state
                         .StopRunningAsync("pause", resumedOwnerPoll, token)
                         .ConfigureAwait(false)
                 );
+                string settledStatus = StatusData(inspector).ToJsonString();
                 string settledFinancial = state
                     .Ledger.Status(
                         state.Database.RunId,
@@ -1727,11 +1555,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 Assert.IsFalse(ineligible["ok"]!.GetValue<bool>());
                 Assert.AreEqual("conflict", ineligible["code"]!.GetValue<string>());
                 Assert.Contains("unfinished segment", ineligible["message"]!.GetValue<string>());
-                Assert.AreEqual(2L, state.Number("SELECT COUNT(*) FROM coordinator_segments;"));
-                Assert.AreEqual(
-                    0L,
-                    state.Number("SELECT COUNT(*) FROM delivery_batches WHERE state='sending';")
-                );
+                Assert.AreEqual(settledStatus, StatusData(inspector).ToJsonString());
                 Assert.AreEqual(
                     settledFinancial,
                     state
@@ -1752,8 +1576,51 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
         Rejected,
     }
 
+    private static JsonObject StatusData(Coordinator inspector) =>
+        GitScenarioState.Data(inspector.Status());
+
+    private static JsonObject WorkerStatus(Coordinator inspector, string worker) =>
+        StatusData(inspector)["workers"]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .Single(item => item["id"]!.GetValue<string>() == worker);
+
+    private static JsonArray AllChanges(CoordinatorScenarioRun state, CancellationToken token) =>
+        GitScenarioState.Data(
+            state.Operations.InvokeAsync("owner", "change_list", new(), token)
+                .GetAwaiter()
+                .GetResult()
+        )["items"]!.AsArray();
+
+    private static JsonArray IntegratedChanges(
+        CoordinatorScenarioRun state,
+        CancellationToken token
+    ) =>
+        GitScenarioState.Data(
+            state
+                .Operations.InvokeAsync(
+                    "owner",
+                    "change_list",
+                    new() { ["state"] = "integrated" },
+                    token
+                )
+                .GetAwaiter()
+                .GetResult()
+        )["items"]!.AsArray();
+
+    private static JsonObject[] PromptEvents(string prompt)
+    {
+        const string separator = "==== EVENTS ====\n";
+        int index = prompt.LastIndexOf(separator, StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(0, index);
+        return JsonNode.Parse(prompt[(index + separator.Length)..])!["events"]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .ToArray();
+    }
+
     private static async Task AssertRejectedPlannerCandidateAsync(
-        Phase7Run state,
+        CoordinatorScenarioRun state,
         JsonObject submitted,
         JsonObject queued,
         CancellationToken token
@@ -1795,13 +1662,14 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
         Assert.AreEqual(
             state.Git.BaseCommit,
             await state.Git.ResolveAsync(
-                state.Database.ReadMetadata("git:integration_branch")!, token
+                $"refs/heads/lite-agensh/{state.Database.RunId}/integration",
+                token
             ).ConfigureAwait(false)
         );
     }
 
     private static async Task<(JsonObject Change, JsonObject Request)> SubmitReviewedAsync(
-        Phase7Run state,
+        CoordinatorScenarioRun state,
         string author,
         string reviewer,
         string file,

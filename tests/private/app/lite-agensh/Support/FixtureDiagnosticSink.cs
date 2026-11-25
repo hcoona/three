@@ -6,7 +6,7 @@ using Microsoft.Data.Sqlite;
 
 namespace LiteAgensh.Tests.Support;
 
-internal sealed class Phase7Evidence : IDisposable
+internal sealed class FixtureDiagnosticSink : IDisposable
 {
     private const int MaximumRecords = 65_536;
     private const long MaximumBytes = 32 * 1024 * 1024;
@@ -48,7 +48,7 @@ internal sealed class Phase7Evidence : IDisposable
     private int records, dropped, unsupported, exportFailures, collectionFailures;
     private bool disposed, exportUnavailable;
 
-    internal Phase7Evidence(
+    internal FixtureDiagnosticSink(
         string id,
         string participant,
         string? resultsRoot,
@@ -63,7 +63,7 @@ internal sealed class Phase7Evidence : IDisposable
         this.report = report ?? Console.WriteLine;
         DirectoryPath = string.IsNullOrWhiteSpace(resultsRoot)
             ? Path.Combine(Path.GetTempPath(), "lite-agensh-evidence-" + id)
-            : Path.Combine(resultsRoot, "LiteAgensh.Tests", "phase7", id);
+            : Path.Combine(resultsRoot, "LiteAgensh.Tests", "diagnostics", id);
         FilePath = Path.Combine(
             DirectoryPath, $"{participant}-{Environment.ProcessId}-{birthTicks}.jsonl"
         );
@@ -116,18 +116,18 @@ internal sealed class Phase7Evidence : IDisposable
             source = "controlled-fixture-and-existing-LiteAgensh-activities",
             resultsRootConfigured = !string.IsNullOrWhiteSpace(resultsRoot),
         });
-        Report($"PHASE7_EVIDENCE fixture={Id} participant={participant} file={FilePath}");
+        Report($"FIXTURE_EVIDENCE fixture={Id} participant={participant} file={FilePath}");
     }
 
     internal string Id { get; }
     internal string DirectoryPath { get; }
     internal string FilePath { get; }
 
-    internal Phase7Evidence Follow(string role) =>
+    internal FixtureDiagnosticSink Follow(string role) =>
         new(Id, role, resultsRoot, testIdentity, report);
 
     internal Activity BeginScope() =>
-        new Activity("phase7.fixture")
+        new Activity("fixture.scope")
             .SetIdFormat(ActivityIdFormat.W3C)
             .SetParentId(traceId, parentId, ActivityTraceFlags.Recorded)
             .Start();
@@ -350,7 +350,7 @@ internal sealed class Phase7Evidence : IDisposable
             if (Interlocked.Increment(ref collectionFailures) == 1)
             {
                 Report(
-                    $"PHASE7_EVIDENCE_COLLECTION_UNAVAILABLE fixture={Id} "
+                    $"FIXTURE_EVIDENCE_COLLECTION_UNAVAILABLE fixture={Id} "
                     + $"type={error.GetType().FullName} hresult={error.HResult}"
                 );
             }
@@ -461,7 +461,7 @@ internal sealed class Phase7Evidence : IDisposable
         if (Interlocked.Increment(ref exportFailures) == 1)
         {
             Report(
-                $"PHASE7_EVIDENCE_UNAVAILABLE fixture={Id} "
+                $"FIXTURE_EVIDENCE_UNAVAILABLE fixture={Id} "
                 + $"type={error.GetType().FullName} hresult={error.HResult}"
             );
         }

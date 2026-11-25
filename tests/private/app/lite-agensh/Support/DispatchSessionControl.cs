@@ -7,7 +7,7 @@ namespace LiteAgensh.Tests.Support;
 
 // Adds dependency-owned work/settlement transitions to the existing typed guard.
 // No native client, transport, model or historical recovery is implemented here.
-internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
+internal sealed class DispatchSessionControl : INativeSdkHost, IAsyncDisposable
 {
     private static readonly TimeSpan HeldFactoryBound = TimeSpan.FromSeconds(5);
     private readonly TaskCompletionSource release = Signal();
@@ -20,7 +20,7 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
     private bool heldFactoryObservedByCase;
     private bool heldFactoryWaitExpired;
 
-    internal Phase4SessionControl(
+    internal DispatchSessionControl(
         TypedHostControl? state = null,
         TimeProvider? settlementTimeProvider = null
     )
@@ -50,8 +50,6 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
     internal TaskCompletionSource HostEntered { get; } = Signal();
 
     internal bool HoldHost { get; set; }
-
-    internal bool ReportSettlement { get; init; }
 
     internal OperationException? HostFailure { get; set; }
 
@@ -103,17 +101,13 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
         return session;
     }
 
-    internal void ReleaseHost()
-    {
-        bool signalled = release.TrySetResult();
-        ReportSettlementBoundary(signalled ? "release-signalled" : "release-already-signalled");
-    }
+    internal void ReleaseHost() => release.TrySetResult();
 
     internal void BeginHeldFactoryCompletion()
     {
         if (heldFactoryIo is not null)
         {
-            throw new InvalidOperationException("The held Phase4 factory already has an owner.");
+            throw new InvalidOperationException("The held dispatch factory already has an owner.");
         }
         heldFactoryIo = new();
         heldFactoryOutcome = ObserveOutcomeAsync(Factory.CompleteAsync());
@@ -133,7 +127,7 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
         {
             heldFactoryWaitExpired = true;
             throw new TimeoutException(
-                $"Timed out observing the original Phase4 factory for runtime {Id}.", bound
+                $"Timed out observing the original dispatch factory for runtime {Id}.", bound
             );
         }
         heldFactoryObservedByCase = true;
@@ -148,21 +142,11 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
         // The factory invokes this boundary after its worker stop attempts.
         StopAtHostEntry ??= ReadStopAtHostEntry?.Invoke();
         HostEntered.TrySetResult();
-        ReportSettlementBoundary("host-entered");
         if (HoldHost)
         {
-            try
-            {
-                await release
-                    .Task.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
-            catch (TimeoutException exception)
-            {
-                ReportSettlementBoundary("release-gate-expired", exception);
-                throw;
-            }
-            ReportSettlementBoundary("release-gate-returned");
+            await release
+                .Task.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
+                .ConfigureAwait(false);
         }
         if (HostFailure is not null)
         {
@@ -178,7 +162,6 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
                 .ReleaseAsync(exit.Token)
                 .ConfigureAwait(false);
             await process!.WaitForExitAsync(exit.Token).ConfigureAwait(false);
-            ReportSettlementBoundary("runtime-exit-observed");
             if (process.ExitCode != 0)
             {
                 throw new InvalidOperationException(
@@ -189,7 +172,6 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
             RecordRuntime("settled");
         }
         settled = true;
-        ReportSettlementBoundary("host-completed");
     }
 
     internal async Task CleanupAsync(bool preserveState = false)
@@ -324,13 +306,13 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
             {
                 string root = State.Cwd(string.Empty);
                 Console.Error.WriteLine(
-                    $"PHASE4_DEFERRED_CLEANUP runtime={Id}; factoryStatus={outcome?.Status}; "
+                    $"DISPATCH_DEFERRED_CLEANUP runtime={Id}; factoryStatus={outcome?.Status}; "
                         + $"root={root}; exists={Directory.Exists(root)}; failures={failures.Count}"
                 );
                 foreach (Exception error in failures)
                 {
                     Console.Error.WriteLine(
-                        $"PHASE4_DEFERRED_CLEANUP_FAILURE runtime={Id}; {error}");
+                        $"DISPATCH_DEFERRED_CLEANUP_FAILURE runtime={Id}; {error}");
                 }
             });
         }
@@ -383,34 +365,11 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
             {
                 ["runtimeId"] = Id,
                 ["runtimeLeaseId"] = LeaseId,
-                ["runtimeVersion"] = Phase6NativeControl.RuntimeVersion,
+                ["runtimeVersion"] = OfflineNativeControl.RuntimeVersion,
                 ["state"] = state,
                 ["evidenceKind"] = "controlled-native-dependency",
             }.ToJsonString()
         );
-
-    private void ReportSettlementBoundary(string boundary, Exception? error = null)
-    {
-        if (!ReportSettlement)
-        {
-            return;
-        }
-        Console.WriteLine(
-            "PHASE4_HOST_SETTLEMENT "
-                + new JsonObject
-                {
-                    ["runtimeId"] = Id,
-                    ["runtimeLeaseId"] = LeaseId,
-                    ["pid"] = ReadyIdentity?.Pid,
-                    ["boundary"] = boundary,
-                    ["timestamp"] = Stopwatch.GetTimestamp(),
-                    ["timestampFrequency"] = Stopwatch.Frequency,
-                    ["releaseSignalled"] = release.Task.IsCompletedSuccessfully,
-                    ["settled"] = settled,
-                    ["error"] = error is null ? null : Json.ExceptionDetails(error),
-                }.ToJsonString()
-        );
-    }
 
     internal static TaskCompletionSource Signal() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -422,7 +381,7 @@ internal sealed class Phase4SessionControl : INativeSdkHost, IAsyncDisposable
     );
 
     internal sealed class Session(
-        Phase4SessionControl host,
+        DispatchSessionControl host,
         TypedHostControl.TypedSession inner,
         string cwd,
         bool isolated

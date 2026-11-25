@@ -8,7 +8,7 @@ namespace LiteAgensh.Tests.Support;
 
 // SYNTHETIC CONTRACT-GUARD declarations, never historical/native provenance.
 // The actual creator owner/runtime IDs, readings and history are not rewritten.
-internal sealed class Phase6LegacyGuardInput
+internal sealed class CancellationGuardInput
 {
     private const string Subject = "3805a50490afbdd6c53ec4e3c6e8c64a3150858f";
     private const string Sdk = "1.0.28+845c22879d426535d97901908014b807e0b68d0f";
@@ -29,17 +29,17 @@ internal sealed class Phase6LegacyGuardInput
     private byte[] envelopeBytes = [];
     internal string EvidencePath => Path.Combine(root, "legacy-contract-envelope.json");
 
-    private Phase6LegacyGuardInput(string root) => this.root = root;
+    private CancellationGuardInput(string root) => this.root = root;
 
-    internal static async Task<Phase6LegacyGuardInput> CreateAsync(
-        Phase6OwnedCreator creator,
+    internal static async Task<CancellationGuardInput> CreateAsync(
+        UnresolvedRunCreator creator,
         CancellationToken token
     )
     {
         RunDatabase database = creator.Database;
         CreditReservation row = creator.Target;
-        Phase6LegacyGuardInput input = new(Path.GetDirectoryName(database.StatePath)!);
-        JsonObject before = Phase6State.History(database);
+        CancellationGuardInput input = new(Path.GetDirectoryName(database.StatePath)!);
+        JsonObject before = RunStateQueries.History(database);
         JsonObject diagnostic = JsonNode
             .Parse(database.ReadMetadata($"native:session:{row.SessionId}")!)!
             .AsObject();
@@ -85,7 +85,7 @@ internal sealed class Phase6LegacyGuardInput
         {
             Backup(source, input.PathFor("run-after.evidence-only.sqlite"));
         }
-        using (SqliteConnection source = Phase6State.OpenCampaign(database))
+        using (SqliteConnection source = RunStateQueries.OpenCampaign(database))
         {
             Backup(source, input.PathFor("campaign-after.evidence-only.sqlite"));
         }
@@ -142,17 +142,8 @@ internal sealed class Phase6LegacyGuardInput
         };
         input.envelopeBytes = Encoding.UTF8.GetBytes(envelope.ToJsonString());
         File.WriteAllBytes(input.EvidencePath, input.envelopeBytes);
-        Console.WriteLine(
-            "PHASE6_SYNTHETIC_CONTRACT_DELTA "
-                + new JsonObject
-                {
-                    ["classification"] = "SYNTHETIC CONTRACT ONLY; NOT HISTORICAL/NATIVE PROOF",
-                    ["originalLabels"] = originalLabels,
-                    ["historyBefore"] = before,
-                    ["historyAfter"] = Phase6State.History(database),
-                    ["envelope"] = envelope,
-                }.ToJsonString()
-        );
+        _ = originalLabels;
+        _ = before;
         return input;
     }
 
@@ -191,7 +182,7 @@ internal sealed class Phase6LegacyGuardInput
         else if (selection == "A")
         {
             string path = PathFor("run-after.evidence-only.sqlite");
-            using (SqliteConnection frozen = Phase6State.OpenFile(path))
+            using (SqliteConnection frozen = RunStateQueries.OpenFile(path))
             {
                 Assert.AreEqual(
                     1,

@@ -7,7 +7,7 @@ namespace LiteAgensh.Tests.Support;
 
 // Controlled supported session boundary, shared only by Phase6 public consumers
 // and their separate original-owner executable. Never native authorization.
-internal sealed class Phase6NativeControl(RunDatabase database) : IAsyncDisposable
+internal sealed class OfflineNativeControl(RunDatabase database) : IAsyncDisposable
 {
     // Controlled provenance shared with the offline owner, not a CLI selection.
     internal const string RuntimeVersion = "1.0.107";
@@ -168,7 +168,6 @@ internal sealed class Phase6NativeControl(RunDatabase database) : IAsyncDisposab
                 // the disposed Process wrapper to infer financial settlement.
                 await child.DisposeAsync().ConfigureAwait(false);
                 wrapperDisposed = true;
-                Console.WriteLine("PHASE6_RUNTIME_CLEANUP " + Witness.ToJsonString());
             }
         }
     }
@@ -360,7 +359,7 @@ internal sealed class Phase6NativeControl(RunDatabase database) : IAsyncDisposab
             failPaidStop && Worker == "calibration"
                 ? ValueTask.FromException(
                     new OperationException(
-                        "phase6_stop_unsettled",
+                        "controlled_stop_unsettled",
                         "Controlled paid session stop did not establish settlement."
                     )
                 )

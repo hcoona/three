@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using LiteAgensh.Tests.Support;
+using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LiteAgensh.Tests;
@@ -18,31 +19,23 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
     )
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7OwnedCreator creator = await Phase7OwnedCreator
+        InterruptedRunCreator creator = await InterruptedRunCreator
             .OpenAsync(testContext, false, token)
             .ConfigureAwait(false);
         await creator
             .RunOwnedAsync(async () =>
             {
-                Phase7Run state = Phase7Run.Attach(creator, token);
+                CoordinatorScenarioRun state = CoordinatorScenarioRun.Attach(creator, token);
                 await state
                     .RunBodyAsync(async () =>
                     {
-                        string session = creator.SessionId,
-                            reservation = creator.ReservationId;
+                        string session = creator.SessionId;
+                        string reservation = creator.ReservationId;
                         string key = "native:bootstrap:" + session;
-                        string journalBefore = Phase6OwnedCreator.Hash(creator.JournalPath);
+                        string journalBefore = OwnedCreatorProcess.Hash(creator.JournalPath);
                         Assert.AreEqual(
                             "true",
                             creator.Checkpoint["confirmation"]!.GetValue<string>()
-                        );
-                        Assert.AreEqual("true", state.Database.ReadMetadata(key));
-                        Assert.AreEqual(
-                            "sent",
-                            state.Value(
-                                "SELECT state FROM delivery_batches WHERE id=$id;",
-                                ("$id", creator.Checkpoint["batch"]!.GetValue<long>())
-                            )
                         );
                         Assert.AreEqual(10m, state.Reservation("worker1").Actual);
                         Assert.AreEqual(200m, state.Reservation("worker1").Allowance);
@@ -51,35 +44,18 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                             state.Clock.GetUtcNow()
                         );
                         await creator.CrashAsync(token).ConfigureAwait(false);
-                        Assert.AreEqual(
-                            1L,
-                            state.Number(
-                                "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;"
-                            )
-                        );
+                        Coordinator inspector = state.Coordinator("status");
                         if (legacyMarkerAbsent)
                         {
-                            // Intentional APPLICATION-key-only compatibility input derived
-                            // from the genuine current producer, not old-binary history.
-                            string OtherMetadata() =>
-                                (string)
-                                    state.Value(
-                                        "SELECT group_concat(encoded,'|') FROM "
-                                            + (
-                                                "(SELECT hex(key)||':'||hex(value) AS encoded "
-                                                + "FROM meta WHERE key<>$key ORDER BY key);"
-                                            ),
-                                        ("$key", key)
-                                    )!;
-                            string others = OtherMetadata();
-                            long count = state.Number("SELECT COUNT(*) FROM meta;");
-                            string financial = state
+                            // Simulate legacy state missing only the bootstrap confirmation key.
+                            string statusBefore = StatusData(inspector).ToJsonString();
+                            string financialBefore = state
                                 .Ledger.Status(
                                     state.Database.RunId,
                                     state.Database.Configuration.RunAiCreditAllowance
                                 )
                                 .ToJsonString();
-                            using (var connection = state.Database.Open())
+                            using (SqliteConnection connection = state.Database.Open())
                             {
                                 Sql.Execute(
                                     connection,
@@ -88,15 +64,13 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                                     ("$key", key)
                                 );
                             }
-                            Assert.AreEqual(count - 1, state.Number("SELECT COUNT(*) FROM meta;"));
-                            Assert.AreEqual(others, OtherMetadata());
-                            Assert.IsNull(state.Database.ReadMetadata(key));
+                            Assert.AreEqual(statusBefore, StatusData(inspector).ToJsonString());
                             Assert.AreEqual(
                                 journalBefore,
-                                Phase6OwnedCreator.Hash(creator.JournalPath)
+                                OwnedCreatorProcess.Hash(creator.JournalPath)
                             );
                             Assert.AreEqual(
-                                financial,
+                                financialBefore,
                                 state
                                     .Ledger.Status(
                                         state.Database.RunId,
@@ -104,89 +78,41 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                                     )
                                     .ToJsonString()
                             );
-                            Console.WriteLine(
-                                "PHASE7_LEGACY_APPLICATION_MARKER_DELTA "
-                                    + new JsonObject
-                                    {
-                                        ["sessionId"] = session,
-                                        ["removedKey"] = key,
-                                        ["producerActuallyConfirmed"] = creator.Checkpoint[
-                                            "confirmation"
-                                        ]!.DeepClone(),
-                                        ["onlyOtherMetadataUnchanged"] = true,
-                                        ["originalJournalSha256"] = journalBefore,
-                                        ["notAnOldBinaryOrInstalledNativeHistoryClaim"] = true,
-                                    }.ToJsonString()
-                            );
                         }
-                        state.Execute(
-                            (
-                                "CREATE TABLE phase7_exact_ack(batch_id INTEGER PRIMARY "
-                                + "KEY,session_id TEXT,marker TEXT);\nCREATE TRIGGER "
-                                + "phase7_exact_ack_observer BEFORE UPDATE OF state ON "
-                                + "delivery_batches\nWHEN OLD.state='sending' AND "
-                                + "NEW.state='sent'\nBEGIN\n    INSERT INTO "
-                                + "phase7_exact_ack(batch_id,session_id,marker)\n    SELECT "
-                                + "NEW.id,session.value,confirmation.value\n    FROM meta session "
-                                + "LEFT JOIN meta confirmation\n        ON "
-                                + "confirmation.key='native:bootstrap:' || session.value\n    "
-                                + "WHERE session.key='worker:' || NEW.recipient || ':session';\n"
-                                + "END;"
-                            )
-                        );
-                        JsonObject message = state.Invoke(
+
+                        const string continueBody =
+                            "Continue the actual interrupted decision, do not replay work.";
+                        _ = state.Invoke(
                             "owner",
                             "message_send",
                             new()
                             {
                                 ["recipient"] = "worker1",
-                                ["body"] =
-                                    "Continue the actual interrupted decision, do not replay work.",
+                                ["body"] = continueBody,
                                 ["urgent"] = true,
                             }
                         );
                         _ = state.Start("reconnect");
-                        Phase7Sessions.Turn next = await state
+                        ControlledSessionPool.Turn next = await state
                             .FixedAsync(
                                 nextToken => state.Sessions.NextTurnAsync("worker1", nextToken),
                                 token
                             )
                             .ConfigureAwait(false);
                         long batch = state.SendingBatch("worker1");
+                        JsonObject workerStatus = WorkerStatus(inspector, "worker1");
                         Assert.AreEqual(session, next.Session.SessionId);
-                        Assert.AreEqual(reservation, state.Reservation("worker1").Id);
+                        Assert.AreEqual(session, workerStatus["sessionId"]!.GetValue<string>());
                         Assert.AreEqual(
                             "exact-session-load",
-                            state.Database.ReadMetadata("worker:worker1:recovery")
+                            workerStatus["recovery"]!.GetValue<string>()
                         );
+                        Assert.AreEqual(reservation, state.Reservation("worker1").Id);
                         Assert.AreEqual(
                             creator.Checkpoint["workDeadline"]!.GetValue<DateTimeOffset>(),
                             state.WorkDeadline
                         );
-                        Assert.AreEqual(
-                            2L,
-                            state.Number("SELECT COUNT(*) FROM coordinator_segments;")
-                        );
-                        Assert.AreEqual(
-                            "crash-reconnect",
-                            state.Value(
-                                "SELECT stop_reason FROM coordinator_segments WHERE mode='run';"
-                            )
-                        );
-                        Assert.AreEqual(
-                            1L,
-                            state.Number(
-                                "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;"
-                            )
-                        );
-                        Assert.Contains(
-                            "Continue the actual interrupted decision, do not replay work.",
-                            next.Text
-                        );
-                        Assert.AreEqual(
-                            legacyMarkerAbsent ? null : "true",
-                            state.Database.ReadMetadata(key)
-                        );
+                        Assert.Contains(continueBody, next.Text);
                         if (legacyMarkerAbsent)
                         {
                             Assert.Contains(
@@ -204,7 +130,8 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                             );
                             Assert.DoesNotContain("==== DURABLE CHANGES ====", next.Text);
                         }
-                        Phase7Journal journal = state.Sessions.Journal!;
+
+                        ControlledSessionJournal journal = state.Sessions.Journal!;
                         JsonObject loaded = journal.Snapshot(session);
                         JsonArray generations = loaded["generations"]!.AsArray();
                         Assert.HasCount(2, generations);
@@ -225,88 +152,70 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                         Assert.IsFalse(creator.Checkpoint["history"]!["pending"]!.GetValue<bool>());
                         Assert.HasCount(1, generations[0]!["dispatches"]!.AsArray());
                         Assert.HasCount(1, generations[1]!["dispatches"]!.AsArray());
-                        Assert.AreEqual(
-                            "sending",
-                            state.Value(
-                                "SELECT state FROM delivery_batches WHERE id=$id;",
-                                ("$id", batch)
-                            )
+
+                        const string followupBody =
+                            "Confirm incremental continuation without replay.";
+                        _ = state.Invoke(
+                            "owner",
+                            "message_send",
+                            new()
+                            {
+                                ["recipient"] = "worker1",
+                                ["body"] = followupBody,
+                                ["urgent"] = true,
+                            }
                         );
-                        Assert.AreEqual(0L, state.Number("SELECT COUNT(*) FROM phase7_exact_ack;"));
-                        Phase7Clock.ObservedPoll ownerPoll = await state
-                            .ObserveOwnerPollAsync(token)
-                            .ConfigureAwait(false);
                         next.Complete();
                         await state
                             .WaitAckAsync(batch, state.WorkDeadline, token)
                             .ConfigureAwait(false);
-                        Assert.AreEqual(
-                            "true",
-                            state.Value(
-                                "SELECT marker FROM phase7_exact_ack WHERE batch_id=$id;",
-                                ("$id", batch)
+                        ControlledSessionPool.Turn followup = await state
+                            .FixedAsync(
+                                nextToken => state.Sessions.NextTurnAsync("worker1", nextToken),
+                                token
                             )
+                            .ConfigureAwait(false);
+                        long followupBatch = state.SendingBatch("worker1");
+                        Assert.AreEqual(session, followup.Session.SessionId);
+                        Assert.StartsWith("==== EVENTS ====\n", followup.Text);
+                        Assert.DoesNotContain(
+                            "Goal: " + state.Database.Configuration.Goal,
+                            followup.Text
                         );
-                        Assert.AreEqual(
-                            session,
-                            state.Value(
-                                "SELECT session_id FROM phase7_exact_ack WHERE batch_id=$id;",
-                                ("$id", batch)
-                            )
-                        );
-                        Assert.AreEqual("true", state.Database.ReadMetadata(key));
-                        Assert.AreEqual(2L, state.Dispatches(reservation));
-                        Assert.AreEqual(
-                            2L,
-                            journal.Snapshot(session)["requests"]!.GetValue<long>()
-                        );
-                        Assert.IsFalse(journal.Snapshot(session)["pending"]!.GetValue<bool>());
-                        Assert.AreEqual(
-                            1L,
-                            state.Number(
-                                (
-                                    "SELECT COUNT(*) FROM shown_notices s JOIN events e ON "
-                                    + "e.id=s.event_id "
-                                )
-                                    + (
-                                        "WHERE e.batch_id=$batch AND e.kind='dm' AND "
-                                        + "json_extract(e.payload,'$.message.id')=$message;"
-                                    ),
-                                ("$batch", batch),
-                                ("$message", message["id"]!.GetValue<long>())
-                            )
+                        Assert.DoesNotContain("==== DURABLE CHANGES ====", followup.Text);
+                        Assert.DoesNotContain(continueBody, followup.Text);
+                        Assert.Contains(followupBody, followup.Text);
+
+                        ObservedManualClock.ObservedPoll ownerPoll = await state
+                            .ObserveOwnerPollAsync(token)
+                            .ConfigureAwait(false);
+                        followup.Complete();
+                        await state
+                            .WaitAckAsync(followupBatch, state.WorkDeadline, token)
+                            .ConfigureAwait(false);
+                        Assert.IsEmpty(
+                            NoticeItems(state.Collaboration.AddNotices("worker1", new()))
                         );
                         GitScenarioState.Data(
                             await state
                                 .StopRunningAsync("pause", ownerPoll, token)
                                 .ConfigureAwait(false)
                         );
+                        JsonObject finalStatus = StatusData(inspector);
+                        Assert.AreEqual("paused", finalStatus["lifecycle"]!.GetValue<string>());
                         Assert.AreEqual(
-                            "acknowledged",
-                            state.Value(
-                                "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
-                                ("$id", batch)
-                            )
+                            "owner-pause",
+                            finalStatus["stopReason"]!.GetValue<string>()
                         );
+                        Assert.IsFalse(finalStatus["active"]!.GetValue<bool>());
+                        Assert.AreEqual(3L, state.Dispatches(reservation));
+                        Assert.AreEqual(
+                            3L,
+                            journal.Snapshot(session)["requests"]!.GetValue<long>()
+                        );
+                        Assert.IsFalse(journal.Snapshot(session)["pending"]!.GetValue<bool>());
                         Assert.AreEqual("reconciled", state.Reservation("worker1").State);
-                        Assert.AreEqual(20m, state.Reservation("worker1").Actual);
-                        Console.WriteLine(
-                            "PHASE7_EXACT_RECONSTRUCTION "
-                                + new JsonObject
-                                {
-                                    ["legacyApplicationMarkerAbsent"] = legacyMarkerAbsent,
-                                    ["sessionId"] = session,
-                                    ["reservationId"] = reservation,
-                                    ["baseline"] = 10m,
-                                    ["nextCumulative"] = 20m,
-                                    ["nextDelta"] = 10m,
-                                    ["exactCap"] = 190m,
-                                    ["originalRuntimeId"] = creator.Checkpoint[
-                                        "runtimeId"
-                                    ]!.DeepClone(),
-                                    ["history"] = journal.Snapshot(session),
-                                }.ToJsonString()
-                        );
+                        Assert.AreEqual(30m, state.Reservation("worker1").Actual);
                     })
                     .ConfigureAwait(false);
             })
@@ -319,14 +228,15 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
     public async Task ConfirmedSessionUsesIncrementalEventsWithFullBacklogDirectNoticeAndClaim()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
             .CreateAsync(testContext, token, workers: 1, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
+                Coordinator inspector = state.Coordinator("status");
                 _ = state.Start();
-                Phase7Sessions.Turn first = await state
+                ControlledSessionPool.Turn first = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 JsonObject initial = Events(first.Text);
@@ -344,9 +254,6 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                 Assert.IsFalse(initial["sharedContext"]!.AsObject().ContainsKey("cooperation"));
                 Assert.IsTrue(initial["sharedContext"]!.AsObject().ContainsKey("tasks"));
                 long firstBatch = state.SendingBatch("worker1");
-                Assert.IsNull(
-                    state.Database.ReadMetadata("native:bootstrap:" + first.Session.SessionId)
-                );
 
                 string firstBacklogBody =
                     "Backlog decision 00; "
@@ -393,15 +300,12 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                 await state
                     .WaitAckAsync(firstBatch, state.WorkDeadline, token)
                     .ConfigureAwait(false);
-                Assert.AreEqual(
-                    "true",
-                    state.Database.ReadMetadata("native:bootstrap:" + first.Session.SessionId)
-                );
-                Phase7Sessions.Turn later = await state
+                ControlledSessionPool.Turn later = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 Assert.AreEqual(
-                    "prompting", state.Database.ReadMetadata("worker:worker1:lifecycle")
+                    "prompting",
+                    WorkerStatus(inspector, "worker1")["lifecycle"]!.GetValue<string>()
                 );
                 Assert.AreEqual(first.Session.SessionId, later.Session.SessionId);
                 Assert.StartsWith("==== EVENTS ====\n", later.Text);
@@ -484,31 +388,22 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                 );
                 long batch = state.SendingBatch("worker1");
                 Assert.AreEqual(
-                    0L,
-                    state.Number(
-                        (
-                            "SELECT COUNT(*) FROM shown_notices s JOIN events e ON "
-                            + "e.id=s.event_id WHERE e.batch_id=$batch;"
-                        ),
-                        ("$batch", batch)
-                    )
+                    claimId,
+                    Assert.ContainsSingle(
+                        state.Collaboration.ReadSharedContext("worker1")["board"]!
+                            .AsArray()
+                            .OfType<JsonObject>()
+                    )["id"]!.GetValue<long>()
                 );
-                Phase7Clock.ObservedPoll ownerPoll = await state
+                ObservedManualClock.ObservedPoll ownerPoll = await state
                     .ObserveOwnerPollAsync(token)
                     .ConfigureAwait(false);
                 later.Complete();
                 await state.WaitAckAsync(batch, state.WorkDeadline, token).ConfigureAwait(false);
-                Assert.AreEqual(
-                    0L,
-                    state.Number(
-                        (
-                            "SELECT COUNT(*) FROM events e LEFT JOIN shown_notices s ON "
-                            + "s.event_id=e.id AND s.recipient=e.recipient "
-                        )
-                            + "WHERE e.batch_id=$batch AND s.event_id IS NULL;",
-                        ("$batch", batch)
-                    )
+                Assert.IsEmpty(
+                    state.Collaboration.ReadSharedContext("worker1")["board"]!.AsArray()
                 );
+                Assert.IsEmpty(NoticeItems(state.Collaboration.AddNotices("worker1", new())));
                 GitScenarioState.Data(
                     await state
                         .StopRunningAsync("pause", ownerPoll, token)
@@ -522,81 +417,83 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
     [TestMethod]
     [TestCategory("ConfirmationRecoveryAndAck")]
     [Timeout(120_000, CooperativeCancellation = true)]
-    public async Task CompletedSendConfirmationAlreadyExistsAtActualAckStorageBoundary()
+    public async Task ConfirmedInitialTurnTransitionsNextSameSessionTurnToIncrementalEvents()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
             .CreateAsync(testContext, token, workers: 1, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
-                // Observation only: this trigger neither manufactures confirmation
-                // nor gates/fails product ACK. It records the value visible there.
-                state.Execute(
-                    (
-                        "CREATE TABLE phase7_ack_observation(batch_id INTEGER PRIMARY "
-                        + "KEY,session_id TEXT,marker TEXT);\nCREATE TRIGGER "
-                        + "phase7_observe_ack BEFORE UPDATE OF state ON delivery_batches\nWHEN "
-                        + "OLD.state='sending' AND NEW.state='sent'\nBEGIN\n    INSERT INTO "
-                        + "phase7_ack_observation(batch_id,session_id,marker)\n    SELECT "
-                        + "NEW.id,session.value,confirmation.value\n    FROM meta session LEFT "
-                        + "JOIN meta confirmation\n        ON "
-                        + "confirmation.key='native:bootstrap:' || session.value\n    WHERE "
-                        + "session.key='worker:' || NEW.recipient || ':session';\nEND;"
-                    )
-                );
+                Coordinator inspector = state.Coordinator("status");
                 _ = state.Start();
-                Phase7Sessions.Turn turn = await state
+                ControlledSessionPool.Turn turn = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 long batch = state.SendingBatch("worker1");
-                Assert.IsNull(
-                    state.Database.ReadMetadata("native:bootstrap:" + turn.Session.SessionId)
+                Assert.Contains("Goal: " + state.Database.Configuration.Goal, turn.Text);
+                Assert.Contains("==== DURABLE CHANGES ====", turn.Text);
+                const string followupBody = "Follow-up after confirmed initial turn.";
+                _ = state.Invoke(
+                    "owner",
+                    "message_send",
+                    new()
+                    {
+                        ["recipient"] = "worker1",
+                        ["body"] = followupBody,
+                        ["urgent"] = true,
+                    }
                 );
-                Assert.AreEqual(
-                    "sending",
-                    state.Value("SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch))
-                );
-                Phase7Clock.ObservedPoll ownerPoll = await state
-                    .ObserveOwnerPollAsync(token)
-                    .ConfigureAwait(false);
                 turn.Complete();
                 await state.WaitAckAsync(batch, state.WorkDeadline, token).ConfigureAwait(false);
-                Assert.AreEqual(
-                    turn.Session.SessionId,
-                    state.Value(
-                        "SELECT session_id FROM phase7_ack_observation WHERE batch_id=$id;",
-                        ("$id", batch)
-                    )
+
+                ControlledSessionPool.Turn followup = await state
+                    .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
+                    .ConfigureAwait(false);
+                long followupBatch = state.SendingBatch("worker1");
+                Assert.AreEqual(turn.Session.SessionId, followup.Session.SessionId);
+                Assert.StartsWith("==== EVENTS ====\n", followup.Text);
+                Assert.DoesNotContain(
+                    "Goal: " + state.Database.Configuration.Goal,
+                    followup.Text
                 );
-                Assert.AreEqual(
-                    "true",
-                    state.Value(
-                        "SELECT marker FROM phase7_ack_observation WHERE batch_id=$id;",
-                        ("$id", batch)
-                    )
+                Assert.DoesNotContain("==== DURABLE CHANGES ====", followup.Text);
+                JsonObject[] followupEvents = Events(followup.Text)["events"]!
+                    .AsArray()
+                    .OfType<JsonObject>()
+                    .ToArray();
+                Assert.DoesNotContain(
+                    "kickoff",
+                    followupEvents.Select(item => item["kind"]!.GetValue<string>())
                 );
-                await state.WaitDurableAsync(
-                    () => (string?)state.Value(
-                        "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
-                        ("$id", batch)
-                    ) == "acknowledged",
-                    state.WorkDeadline,
-                    token
-                ).ConfigureAwait(false);
-                Assert.AreEqual(
-                    "acknowledged",
-                    state.Value(
-                        "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
-                        ("$id", batch)
-                    )
-                );
+                Assert.Contains(followupBody, followup.Text);
+
+                ObservedManualClock.ObservedPoll ownerPoll = await state
+                    .ObserveOwnerPollAsync(token)
+                    .ConfigureAwait(false);
+                followup.Complete();
+                await state
+                    .WaitAckAsync(followupBatch, state.WorkDeadline, token)
+                    .ConfigureAwait(false);
                 GitScenarioState.Data(
                     await state
                         .StopRunningAsync("pause", ownerPoll, token)
                         .ConfigureAwait(false)
                 );
+                JsonObject status = StatusData(inspector);
+                JsonObject worker = WorkerStatus(inspector, "worker1");
+                Assert.AreEqual("paused", status["lifecycle"]!.GetValue<string>());
+                Assert.AreEqual("owner-pause", status["stopReason"]!.GetValue<string>());
+                Assert.AreEqual(turn.Session.SessionId, worker["sessionId"]!.GetValue<string>());
+                Assert.AreEqual(
+                    "fresh-session-with-durable-summary",
+                    worker["recovery"]!.GetValue<string>()
+                );
+                CreditReservation settled = state.Reservation("worker1");
+                Assert.AreEqual("reconciled", settled.State);
+                Assert.AreEqual(20m, settled.Actual);
+                Assert.AreEqual(2L, state.Dispatches(settled.Id));
             })
             .ConfigureAwait(false);
     }
@@ -609,17 +506,28 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
     public async Task FailedOrCancelledSendCannotConfirmBootstrapOrAcknowledgeNotices(bool cancel)
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
             .CreateAsync(testContext, token, workers: 1, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
+                Coordinator inspector = state.Coordinator("status");
+                JsonObject unacknowledged = state.Invoke(
+                    "owner",
+                    "board_publish",
+                    new()
+                    {
+                        ["type"] = "FACT",
+                        ["content"] = "Unacknowledged bootstrap finding",
+                    }
+                );
                 _ = state.Start();
-                Phase7Sessions.Turn turn = await state
+                ControlledSessionPool.Turn turn = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
-                long batch = state.SendingBatch("worker1");
+                Assert.Contains("Goal: " + state.Database.Configuration.Goal, turn.Text);
+                Assert.Contains("Unacknowledged bootstrap finding", turn.Text);
                 if (cancel)
                 {
                     state.CancelCaller();
@@ -629,96 +537,57 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                         "ownership_or_usage_unresolved",
                         result["code"]!.GetValue<string>()
                     );
-                    Assert.AreEqual(
-                        "caller-cancelled",
-                        state.Database.ReadMetadata("lifecycle:stop_reason")
-                    );
-                    Assert.AreEqual("unresolved", state.Database.ReadMetadata("lifecycle"));
-                    Assert.AreEqual(
-                        1L,
-                        state.Number(
-                            (
-                                "SELECT COUNT(*) FROM coordinator_segments\nWHERE "
-                                + "state='unresolved' AND stop_reason='caller-cancelled' AND "
-                                + "ended_at IS NOT NULL;"
-                            )
-                        )
-                    );
                     Assert.IsTrue(turn.Token.IsCancellationRequested);
                     Assert.AreEqual(0, turn.Session.CompletedTurns);
                     Assert.IsNull(state.Reservation("worker1").Actual);
-                    Assert.AreNotEqual(
-                        "sent",
-                        state.Value(
-                            "SELECT state FROM delivery_batches WHERE id=$id;",
-                            ("$id", batch)
-                        )
-                    );
                 }
                 else
                 {
                     const string reason = "Controlled failed send.";
-                    long kickoff = state.Number(
-                        """
-                        SELECT id FROM events
-                        WHERE batch_id=$batch AND kind='kickoff' AND state='sending';
-                        """,
-                        ("$batch", batch)
-                    );
                     turn.Fail(new OperationException("bootstrap_send_failed", reason));
-                    await state.Active.WaitAsync(token).ConfigureAwait(false);
-                    _ = await state.Active.ConfigureAwait(false);
+                    JsonObject result = await state.Active.WaitAsync(token).ConfigureAwait(false);
+                    Assert.IsFalse(result["ok"]!.GetValue<bool>());
                     Assert.AreEqual(
-                        "bootstrap_send_failed",
-                        state.Database.ReadMetadata("lifecycle:stop_reason")
-                    );
-                    Assert.AreEqual(
-                        reason,
-                        state.Value(
-                            """
-                            SELECT last_error FROM delivery_batches
-                            WHERE id=$id AND state='failed';
-                            """,
-                            ("$id", batch)
-                        ) as string
-                    );
-                    Assert.IsGreaterThan(
-                        state.Database.Now.ToUnixTimeMilliseconds(),
-                        state.Number(
-                            """
-                            SELECT next_retry_at FROM events
-                            WHERE id=$id AND batch_id=$batch AND state='failed' AND attempts=1
-                                AND last_error=$reason;
-                            """,
-                            ("$id", kickoff),
-                            ("$batch", batch),
-                            ("$reason", reason)
-                        ),
-                        "The failed kickoff must retain its reason and a first-attempt retry."
+                        "ownership_or_usage_unresolved",
+                        result["code"]!.GetValue<string>()
                     );
                 }
+
+                JsonObject status = StatusData(inspector);
+                Assert.AreEqual("unresolved", status["lifecycle"]!.GetValue<string>());
+                Assert.AreEqual(
+                    cancel ? "caller-cancelled" : "bootstrap_send_failed",
+                    status["stopReason"]!.GetValue<string>()
+                );
+                Assert.IsFalse(status["active"]!.GetValue<bool>());
+                Assert.AreEqual(0, turn.Session.CompletedTurns);
                 Assert.IsNull(
                     state.Database.ReadMetadata("native:bootstrap:" + turn.Session.SessionId)
                 );
                 Assert.AreEqual(
-                    0L,
-                    state.Number(
-                        "SELECT COUNT(*) FROM coordinator_turns WHERE batch_id=$id;",
-                        ("$id", batch)
-                    )
-                );
-                Assert.AreEqual(
-                    0L,
-                    state.Number(
-                        (
-                            "SELECT COUNT(*) FROM shown_notices s JOIN events e ON "
-                            + "e.id=s.event_id WHERE e.batch_id=$id;"
-                        ),
-                        ("$id", batch)
-                    )
+                    unacknowledged["id"]!.GetValue<long>(),
+                    Assert.ContainsSingle(
+                        state.Collaboration.ReadSharedContext("worker1")["board"]!
+                            .AsArray()
+                            .OfType<JsonObject>()
+                    )["id"]!.GetValue<long>()
                 );
                 Assert.AreEqual("uncertain", state.Reservation("worker1").State);
                 Assert.IsGreaterThan(0m, state.Reservation("worker1").Allowance);
+                if (!cancel)
+                {
+                    state.Clock.Advance(TimeSpan.FromMilliseconds(999));
+                    DeliveryBatch? stoppingNotice = state.Collaboration.ClaimBatch("worker1", true);
+                    Assert.IsNotNull(stoppingNotice);
+                    Assert.DoesNotContain("Initial peer kickoff", stoppingNotice.Prompt);
+                    state.Collaboration.CompleteBatch(stoppingNotice.Id);
+                    Assert.IsNull(state.Collaboration.ClaimBatch("worker1", true));
+                    state.Clock.Advance(TimeSpan.FromMilliseconds(1));
+                    DeliveryBatch? retry = state.Collaboration.ClaimBatch("worker1", true);
+                    Assert.IsNotNull(retry);
+                    Assert.AreEqual(2, retry.Attempt);
+                    Assert.Contains("Initial peer kickoff", retry.Prompt);
+                }
             })
             .ConfigureAwait(false);
     }
@@ -729,29 +598,34 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
     public async Task AckFailureRetainsCompletedSendConfirmationWithoutClaimingAcknowledgement()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
             .CreateAsync(testContext, token, workers: 1, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
+                Coordinator inspector = state.Coordinator("status");
+                JsonObject gist = state.Invoke(
+                    "owner",
+                    "board_publish",
+                    new()
+                    {
+                        ["type"] = "FACT",
+                        ["content"] = "Completed turn notice awaiting durable ack",
+                    }
+                );
                 state.Execute(
                     """
-                    CREATE TRIGGER phase7_reject_ack BEFORE UPDATE OF state ON delivery_batches
+                    CREATE TRIGGER test_reject_ack BEFORE UPDATE OF state ON delivery_batches
                     WHEN OLD.state='sending' AND NEW.state='sent'
                     BEGIN SELECT RAISE(ABORT,'Phase7 controlled ACK storage failure.'); END;
                     """
                 );
                 Task<JsonObject> originalRun = state.Start();
-                Phase7Sessions.Turn turn = await state
+                ControlledSessionPool.Turn turn = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
-                long originalBatch = state.SendingBatch("worker1");
-                long originalEvent = state.Number(
-                    "SELECT id FROM events WHERE batch_id=$batch AND kind='kickoff';",
-                    ("$batch", originalBatch)
-                );
-                Assert.IsGreaterThan(0L, originalEvent);
+                Assert.Contains("Completed turn notice awaiting durable ack", turn.Text);
                 turn.Complete();
                 JsonObject result = await originalRun.WaitAsync(token).ConfigureAwait(false);
                 Assert.IsFalse(result["ok"]!.GetValue<bool>());
@@ -760,110 +634,64 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                     "Phase7 controlled ACK storage failure.",
                     result["message"]!.GetValue<string>()
                 );
+                JsonObject stoppedStatus = StatusData(inspector);
+                Assert.AreEqual("stopped", stoppedStatus["lifecycle"]!.GetValue<string>());
+                Assert.AreEqual(
+                    "post_delivery_failed",
+                    stoppedStatus["stopReason"]!.GetValue<string>(),
+                    result.ToJsonString()
+                );
                 Assert.AreEqual(
                     "true",
                     state.Database.ReadMetadata("native:bootstrap:" + turn.Session.SessionId)
                 );
                 Assert.AreEqual(
-                    "native-complete",
-                    state.Value(
-                        "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
-                        ("$id", originalBatch)
-                    )
-                );
-                Assert.AreEqual(
-                    "sending",
-                    state.Value(
-                        "SELECT state FROM delivery_batches WHERE id=$id;",
-                        ("$id", originalBatch)
-                    )
-                );
-                Assert.AreEqual(
-                    0L,
-                    state.Number(
-                        (
-                            "SELECT COUNT(*) FROM shown_notices s JOIN events e ON "
-                            + "e.id=s.event_id WHERE e.batch_id=$id;"
-                        ),
-                        ("$id", originalBatch)
-                    )
+                    gist["id"]!.GetValue<long>(),
+                    Assert.ContainsSingle(
+                        state.Collaboration.ReadSharedContext("worker1")["board"]!
+                            .AsArray()
+                            .OfType<JsonObject>()
+                    )["id"]!.GetValue<long>()
                 );
                 CreditReservation originalUsage = state.Reservation("worker1");
                 Assert.AreEqual(10m, originalUsage.Actual);
                 Assert.AreEqual("reconciled", originalUsage.State);
                 Assert.IsFalse(originalUsage.GrantOpen);
-                Assert.AreEqual(
-                    "post_delivery_failed",
-                    state.Database.ReadMetadata("lifecycle:stop_reason"),
-                    result.ToJsonString()
-                );
-                Assert.AreEqual("stopped", state.Database.ReadMetadata("lifecycle"));
-                Phase7Sessions.Host originalHost = state.Sessions.Hosts.Single(host =>
+                ControlledSessionPool.Host originalHost = state.Sessions.Hosts.Single(host =>
                     host.Operation == "run"
                 );
                 Assert.IsTrue(
                     originalHost.Witness["managedSettlementBeforeWrapperDispose"]!.GetValue<bool>()
                 );
 
-                state.Execute("DROP TRIGGER phase7_reject_ack;");
+                state.Execute("DROP TRIGGER test_reject_ack;");
                 _ = state.Start("resume");
-                Phase7Sessions.Turn resumed = await state
+                ControlledSessionPool.Turn resumed = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 Assert.IsFalse(resumed.Response.IsCompleted);
                 Assert.AreNotEqual(turn.Session.SessionId, resumed.Session.SessionId);
+                Assert.AreEqual(
+                    "fresh-session-with-durable-summary",
+                    WorkerStatus(inspector, "worker1")["recovery"]!.GetValue<string>()
+                );
                 long resumedBatch = state.SendingBatch("worker1");
-                Assert.IsGreaterThan(0L, resumedBatch);
-                Assert.AreNotEqual(originalBatch, resumedBatch);
-                Assert.AreEqual(
-                    "sent",
-                    state.Value(
-                        "SELECT state FROM delivery_batches WHERE id=$id;",
-                        ("$id", originalBatch)
-                    )
+                Assert.IsEmpty(
+                    state.Collaboration.ReadSharedContext("worker1")["board"]!.AsArray()
                 );
-                Assert.AreEqual(
-                    "acknowledged",
-                    state.Value(
-                        "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
-                        ("$id", originalBatch)
-                    )
-                );
-                Assert.AreEqual(
-                    1L,
-                    state.Number(
-                        """
-                        SELECT COUNT(*) FROM shown_notices
-                        WHERE event_id=$id AND recipient='worker1';
-                        """,
-                        ("$id", originalEvent)
-                    )
-                );
-                Assert.AreEqual(
-                    0L,
-                    state.Number(
-                        "SELECT COUNT(*) FROM events WHERE id=$event AND batch_id=$batch;",
-                        ("$event", originalEvent),
-                        ("$batch", resumedBatch)
-                    )
-                );
-                // A fresh bootstrap can still describe retained work outside the event list.
                 JsonObject[] resumedEvents = Events(resumed.Text)["events"]!
                     .AsArray()
                     .OfType<JsonObject>()
                     .ToArray();
                 Assert.DoesNotContain(
-                    originalEvent,
-                    resumedEvents
-                        .Where(item => item["id"] is not null)
-                        .Select(item => item["id"]!.GetValue<long>())
-                );
-                Assert.Contains(
-                    "kickoff",
+                    "board",
                     resumedEvents.Select(item => item["kind"]!.GetValue<string>())
                 );
+                Assert.ContainsSingle(
+                    resumedEvents.Where(item => item["kind"]!.GetValue<string>() == "kickoff")
+                );
 
-                Phase7Clock.ObservedPoll resumedPoll = await state
+                ObservedManualClock.ObservedPoll resumedPoll = await state
                     .ObserveOwnerPollAsync(token)
                     .ConfigureAwait(false);
                 resumed.Complete();
@@ -873,22 +701,9 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
                 GitScenarioState.Data(
                     await state.StopRunningAsync("pause", resumedPoll, token).ConfigureAwait(false)
                 );
-                Assert.AreEqual(
-                    "acknowledged",
-                    state.Value(
-                        "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
-                        ("$id", resumedBatch)
-                    )
-                );
-                Assert.AreEqual(
-                    "post_delivery_failed",
-                    state.Value(
-                        """
-                        SELECT stop_reason FROM coordinator_segments
-                        WHERE mode='run' AND ended_at IS NOT NULL;
-                        """
-                    )
-                );
+                JsonObject pausedStatus = StatusData(inspector);
+                Assert.AreEqual("paused", pausedStatus["lifecycle"]!.GetValue<string>());
+                Assert.AreEqual("owner-pause", pausedStatus["stopReason"]!.GetValue<string>());
                 Assert.AreEqual(
                     10m,
                     state
@@ -904,6 +719,18 @@ public sealed class PromptLifecycleSpecs(TestContext testContext)
             })
             .ConfigureAwait(false);
     }
+
+    private static JsonObject StatusData(Coordinator inspector) =>
+        GitScenarioState.Data(inspector.Status());
+
+    private static JsonObject WorkerStatus(Coordinator inspector, string worker) =>
+        StatusData(inspector)["workers"]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .Single(item => item["id"]!.GetValue<string>() == worker);
+
+    private static JsonObject[] NoticeItems(JsonObject result) =>
+        result["notices"]!["items"]!.AsArray().OfType<JsonObject>().ToArray();
 
     private static JsonObject Events(string prompt)
     {

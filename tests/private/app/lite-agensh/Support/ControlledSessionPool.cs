@@ -7,12 +7,12 @@ namespace LiteAgensh.Tests.Support;
 // Supported typed-session input/output control for Phase7. The coordinator,
 // NativeWorker, ledger, dispatch fence, turn ACK and host settlement stay real.
 // Scripted usage/terminal responses are application-contract evidence only.
-internal sealed class Phase7Sessions(
+internal sealed class ControlledSessionPool(
     RunDatabase database,
     string? hostRole,
-    Phase7Journal? journal = null,
+    ControlledSessionJournal? journal = null,
     bool ownedHosts = true,
-    Phase7Evidence? evidence = null
+    FixtureDiagnosticSink? evidence = null
 ) : IAsyncDisposable
 {
     private readonly Dictionary<string, Channel<Turn>> turns = new(StringComparer.Ordinal);
@@ -20,8 +20,8 @@ internal sealed class Phase7Sessions(
     internal List<Host> Hosts { get; } = [];
     internal Func<Session, CancellationToken, Task>? BeforeOpen { get; set; }
     internal Func<Session, CancellationToken, Task>? BeforeRead { get; set; }
-    internal Phase7Journal? Journal { get; } = journal;
-    internal Phase7Evidence? Evidence { get; } = evidence;
+    internal ControlledSessionJournal? Journal { get; } = journal;
+    internal FixtureDiagnosticSink? Evidence { get; } = evidence;
 
     private static void Require(bool condition, string message)
     {
@@ -104,14 +104,14 @@ internal sealed class Phase7Sessions(
     }
 
     internal sealed class Host(
-        Phase7Sessions control,
+        ControlledSessionPool control,
         RunDatabase database,
         string operation,
         string? role,
         bool owned
     ) : INativeSdkHost
     {
-        private readonly Phase7Evidence? evidence = control.Evidence;
+        private readonly FixtureDiagnosticSink? evidence = control.Evidence;
         private readonly OwnedChildControl? child = owned ? new() : null;
         private readonly SemaphoreSlim startup = new(1, 1);
         private Process? process;
@@ -211,7 +211,7 @@ internal sealed class Phase7Sessions(
                 {
                     ["runtimeId"] = Id,
                     ["runtimeLeaseId"] = LeaseId,
-                    ["runtimeVersion"] = Phase6NativeControl.RuntimeVersion,
+                    ["runtimeVersion"] = OfflineNativeControl.RuntimeVersion,
                     ["state"] = state,
                     ["evidenceKind"] = child is null
                         ? "controlled-managed-dependency" : "controlled-native-dependency",
@@ -227,7 +227,6 @@ internal sealed class Phase7Sessions(
                     evidence?.Host("shared-host-settlement", "started", Id, null, null, true);
                     managedSettled = true;
                     Record("settled");
-                    Console.WriteLine("PHASE7_MANAGED_HOST_SETTLED " + Witness.ToJsonString());
                     evidence?.Host("shared-host-settlement", "completed", Id, null, null, true);
                 }
                 return;
@@ -257,7 +256,6 @@ internal sealed class Phase7Sessions(
             {
                 control.Journal?.NormalHostExit(session.SessionId, Id, Witness, database.Now);
             }
-            Console.WriteLine("PHASE7_HOST_NORMAL_EXIT " + Witness.ToJsonString());
         }
 
         internal async Task CleanupAsync()
@@ -316,13 +314,8 @@ internal sealed class Phase7Sessions(
                     control.Journal?.WrapperDisposed(session.SessionId, Id);
                 }
             }
-            JsonObject receipt = Witness;
-            receipt["childCleanupAttempted"] = child is not null;
-            receipt["childCleanupSucceeded"] = childCleaned;
-            receipt["startupDisposeAttempted"] = true;
-            receipt["startupDisposed"] = startupDisposed;
-            receipt["failureCount"] = failures.Count;
-            Console.WriteLine("PHASE7_HOST_CLEANUP " + receipt.ToJsonString());
+            _ = childCleaned;
+            _ = startupDisposed;
             foreach (Exception error in failures)
             {
                 evidence?.Host(
@@ -342,13 +335,13 @@ internal sealed class Phase7Sessions(
     }
 
     internal sealed class Session(
-        Phase7Sessions control,
+        ControlledSessionPool control,
         RunDatabase database,
         Host host,
         string cwd
     ) : INativeSdkSession
     {
-        private readonly Phase7Evidence? evidence = control.Evidence;
+        private readonly FixtureDiagnosticSink? evidence = control.Evidence;
         private readonly NativeUsageFence fence = new();
         private NativeUsage? usage;
         private decimal cap;
@@ -407,7 +400,7 @@ internal sealed class Phase7Sessions(
                     ["appliedLimit"] = NativeSdkSession.NativeLimit(cap),
                     ["runtimeId"] = host.Id,
                     ["runtimeLeaseId"] = host.LeaseId,
-                    ["runtimeVersion"] = Phase6NativeControl.RuntimeVersion,
+                    ["runtimeVersion"] = OfflineNativeControl.RuntimeVersion,
                     ["sdkVersion"] = NativeSdkSession.SdkVersion,
                 };
                 if (host.Ready is { } ready)

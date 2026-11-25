@@ -4,7 +4,7 @@ namespace LiteAgensh.Tests.Support;
 
 // Observe actual operation boundaries, not scheduling or native responses.
 // In particular ACK is not treated as financial settlement.
-internal sealed class Phase7Handoff : IDisposable
+internal sealed class WorkerHandoffControl : IDisposable
 {
     private bool followingUp;
     private bool observingOwner;
@@ -58,7 +58,7 @@ internal sealed class Phase7Handoff : IDisposable
             _ => null,
         };
 
-    private sealed class Worker(Phase7Handoff observation, INativeWorker inner, string name)
+    private sealed class Worker(WorkerHandoffControl observation, INativeWorker inner, string name)
         : INativeWorker
     {
         private int prompts;
@@ -137,7 +137,8 @@ internal sealed class Phase7Handoff : IDisposable
         public ValueTask DisposeAsync() => inner.DisposeAsync();
     }
 
-    private sealed class Host(Phase7Handoff observation, INativeSdkHost inner) : INativeSdkHost
+    private sealed class Host(WorkerHandoffControl observation, INativeSdkHost inner)
+        : INativeSdkHost
     {
         public string Id => inner.Id;
         public long LeaseId => inner.LeaseId;
@@ -148,7 +149,7 @@ internal sealed class Phase7Handoff : IDisposable
         public ValueTask DisposeAsync() => inner.DisposeAsync();
     }
 
-    private sealed class Session(Phase7Handoff observation, INativeSdkSession inner)
+    private sealed class Session(WorkerHandoffControl observation, INativeSdkSession inner)
         : INativeSdkSession
     {
         private string worker = "";

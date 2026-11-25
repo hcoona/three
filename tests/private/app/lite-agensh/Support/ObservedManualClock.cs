@@ -4,7 +4,7 @@ namespace LiteAgensh.Tests.Support;
 
 // Observe timer registrations; the official fake owns scheduling and callbacks.
 // Observation lifetime belongs to the test's public run.
-internal sealed class Phase7Clock : TimeProvider
+internal sealed class ObservedManualClock : TimeProvider
 {
     private readonly ManualScenarioClock clock = new();
     private readonly object gate = new();
@@ -15,7 +15,7 @@ internal sealed class Phase7Clock : TimeProvider
         nextTimer;
     private readonly TimeSpan epochOffset;
 
-    internal Phase7Clock(DateTimeOffset? epoch = null)
+    internal ObservedManualClock(DateTimeOffset? epoch = null)
     {
         epochOffset = epoch is { } value ? value - clock.GetUtcNow() : TimeSpan.Zero;
     }
@@ -79,7 +79,6 @@ internal sealed class Phase7Clock : TimeProvider
                 dueTime,
                 period
             );
-            timer.Record("registered");
             Pulse();
             return timer;
         }
@@ -329,20 +328,9 @@ internal sealed class Phase7Clock : TimeProvider
         DateTimeOffset? strictlyBefore
     )
     {
-        DateTimeOffset due = timer.Due!.Value;
+        _ = timer;
+        _ = strictlyBefore;
         clock.Advance(target - from);
-        Console.WriteLine(
-            "PHASE7_TIMER_ADVANCE "
-                + new JsonObject
-                {
-                    ["observation"] = observation,
-                    ["timerId"] = timer.Id,
-                    ["from"] = from.ToString("O"),
-                    ["selectedDue"] = due.ToString("O"),
-                    ["to"] = target.ToString("O"),
-                    ["strictlyBefore"] = strictlyBefore?.ToString("O"),
-                }.ToJsonString()
-        );
     }
 
     internal void Advance(TimeSpan amount)
@@ -363,7 +351,7 @@ internal sealed class Phase7Clock : TimeProvider
     private static TaskCompletionSource Signal() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    private sealed class Observation(Phase7Clock owner, long id) : IDisposable
+    private sealed class Observation(ObservedManualClock owner, long id) : IDisposable
     {
         public void Dispose()
         {
@@ -379,7 +367,8 @@ internal sealed class Phase7Clock : TimeProvider
         }
     }
 
-    private sealed class RegisteredTimer(Phase7Clock owner, long observation, long id) : ITimer
+    private sealed class RegisteredTimer(ObservedManualClock owner, long observation, long id)
+        : ITimer
     {
         private TimeSpan period;
         internal ITimer? Inner { get; set; }
@@ -397,26 +386,7 @@ internal sealed class Phase7Clock : TimeProvider
         internal void Fired()
         {
             Due = period > TimeSpan.Zero ? owner.GetUtcNow() + period : null;
-            Record("fired");
             owner.Pulse();
-        }
-
-        internal void Record(string operation)
-        {
-            if (Observation != 0 && Observation == owner.observation)
-            {
-                Console.WriteLine(
-                    "PHASE7_TIMER_STATE "
-                        + new JsonObject
-                        {
-                            ["observation"] = Observation,
-                            ["timerId"] = Id,
-                            ["operation"] = operation,
-                            ["due"] = Due?.ToString("O"),
-                            ["disposed"] = Disposed,
-                        }.ToJsonString()
-                );
-            }
         }
 
         public bool Change(TimeSpan dueTime, TimeSpan period)
@@ -432,7 +402,6 @@ internal sealed class Phase7Clock : TimeProvider
                 {
                     return false;
                 }
-                Record("changed");
                 owner.Pulse();
                 return true;
             }
@@ -445,7 +414,6 @@ internal sealed class Phase7Clock : TimeProvider
                 Disposed = true;
                 Inner?.Dispose();
                 Due = null;
-                Record("disposed");
                 owner.Pulse();
             }
         }

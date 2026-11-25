@@ -14,7 +14,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
     [DataRow("unsettled-stop")]
     public async Task ControlledReceiptAdmissionBoundary(string scenario)
     {
-        Phase6PublicRun state = await Phase6PublicRun.CreateAsync(1, context.CancellationToken);
+        PublicBoundaryRun state = await PublicBoundaryRun.CreateAsync(1, context.CancellationToken);
         await state.RunBodyAsync(async () =>
         {
             state.MissingLimitCapability = scenario == "missing-capability";
@@ -27,15 +27,19 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                     "native_probe_failed", preflight["code"]!.GetValue<string>(),
                     preflight.ToJsonString()
                 );
-                Assert.IsNull(state.Database.ReadMetadata("native:controlled_preflight_receipt"));
+                Assert.IsNull(StatusData(state.Reopen())["nativePreflight"]);
                 Assert.IsEmpty(state.Ledger.Reservations(state.Database.RunId));
-                Assert.IsNull(state.Database.ReadMetadata("native:sdk_preflight_receipt"));
+                CollaborationOperations nativeCollaboration = new(state.Database);
+                Coordinator native = new(
+                    state.Database,
+                    nativeCollaboration,
+                    new(state.Database, nativeCollaboration)
+                );
+                Assert.IsNull(StatusData(native)["nativePreflight"]);
                 return;
             }
             GitScenarioState.Data(preflight);
-            JsonObject receipt = JsonNode
-                .Parse(state.Database.ReadMetadata("native:controlled_preflight_receipt")!)!
-                .AsObject();
+            JsonObject receipt = StatusData(state.Reopen())["nativePreflight"]!.AsObject();
             Assert.AreEqual(
                 "controlled-native-dependency",
                 receipt["nativeEvidenceKind"]!.GetValue<string>()
@@ -47,8 +51,8 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             Assert.AreEqual(30d, receipt["sessions"]![0]!["appliedLimit"]!.GetValue<double>());
             if (scenario == "controlled")
             {
-                JsonObject preflightHistory = Phase6State.History(state.Database);
-                JsonObject preflightMoney = Phase6State.Financial(state.Database, state.Ledger);
+                JsonObject preflightHistory = RunStateQueries.History(state.Database);
+                JsonObject preflightMoney = RunStateQueries.Financial(state.Database, state.Ledger);
                 Assert.IsEmpty(preflightHistory["coordinator_segments"]!.AsArray());
                 Assert.IsEmpty(preflightHistory["coordinator_turns"]!.AsArray());
                 Assert.IsEmpty(preflightMoney["rows"]!.AsArray());
@@ -63,10 +67,10 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                     uncalibrated["message"]!.GetValue<string>()
                 );
                 Assert.IsTrue(JsonNode.DeepEquals(
-                    preflightHistory, Phase6State.History(state.Database)
+                    preflightHistory, RunStateQueries.History(state.Database)
                 ));
                 Assert.IsTrue(JsonNode.DeepEquals(
-                    preflightMoney, Phase6State.Financial(state.Database, state.Ledger)
+                    preflightMoney, RunStateQueries.Financial(state.Database, state.Ledger)
                 ));
             }
             JsonObject calibrated = await state.Reopen().CalibrateAsync(context.CancellationToken);
@@ -82,25 +86,23 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                 );
                 Assert.AreEqual("uncertain", calibration.State);
                 Assert.AreEqual(7.25m, calibration.Actual);
-                Assert.IsNull(state.Database.ReadMetadata("native:controlled_billing_receipt"));
-                Assert.IsTrue(
-                    state.Ledger.Status(state.Database.RunId, 207.25m)[
-                        "uncertain"
-                    ]!.GetValue<bool>()
-                );
+                JsonObject unsettledStatus = StatusData(state.Reopen());
+                Assert.AreEqual("unresolved", unsettledStatus["lifecycle"]!.GetValue<string>());
+                Assert.IsNull(unsettledStatus["nativeBillingCalibration"]);
+                Assert.IsTrue(unsettledStatus["credits"]!["uncertain"]!.GetValue<bool>());
                 return;
             }
             GitScenarioState.Data(calibrated);
             Assert.AreEqual(7.25m, calibration.Actual);
-            string billingBytes = state.Database.ReadMetadata("native:controlled_billing_receipt")!;
-            JsonObject billing = JsonNode.Parse(billingBytes)!.AsObject();
+            JsonObject billing = StatusData(state.Reopen())["nativeBillingCalibration"]!.AsObject();
+            string billingJson = billing.ToJsonString();
             Assert.AreEqual(calibration.Id, billing["reservationId"]!.GetValue<string>());
             Assert.AreEqual(calibration.SessionId, billing["sessionId"]!.GetValue<string>());
             Assert.AreEqual(
                 "controlled-native-dependency",
                 billing["nativeEvidenceKind"]!.GetValue<string>()
             );
-            JsonObject before = Phase6State.Financial(state.Database, state.Ledger);
+            JsonObject before = RunStateQueries.Financial(state.Database, state.Ledger);
             CollaborationOperations collaboration = new(state.Database);
             Coordinator nativeAdmission = new(
                 state.Database,
@@ -113,17 +115,17 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             Assert.Contains("preflight", rejected["message"]!.GetValue<string>());
             Assert.AreEqual(
                 before.ToJsonString(),
-                Phase6State.Financial(state.Database, state.Ledger).ToJsonString()
+                RunStateQueries.Financial(state.Database, state.Ledger).ToJsonString()
             );
             Assert.AreEqual(
                 0L,
-                Phase6State.Number(state.Database, "SELECT COUNT(*) FROM coordinator_segments;")
+                RunStateQueries.Number(state.Database, "SELECT COUNT(*) FROM coordinator_segments;")
             );
             Assert.AreEqual(
-                billingBytes,
-                state.Database.ReadMetadata("native:controlled_billing_receipt")
+                billingJson,
+                StatusData(state.Reopen())["nativeBillingCalibration"]!.ToJsonString()
             );
-            Assert.IsNull(state.Database.ReadMetadata("native:sdk_billing_receipt"));
+            Assert.IsNull(StatusData(nativeAdmission)["nativeBillingCalibration"]);
         });
     }
 
@@ -133,7 +135,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
     [DataRow(true)]
     public async Task ControlledReceiptAdmissionUnknownAssociationPreservesBacking(bool mismatch)
     {
-        Phase6PublicRun state = await Phase6PublicRun.CreateAsync(1, context.CancellationToken);
+        PublicBoundaryRun state = await PublicBoundaryRun.CreateAsync(1, context.CancellationToken);
         await state.RunBodyAsync(async () =>
         {
             CreditReservation reservation = state.Ledger.Reserve(
@@ -164,9 +166,12 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             Assert.AreEqual("uncertain", retained.State);
             Assert.AreEqual(30m, retained.Allowance);
             Assert.IsNull(retained.Actual);
-            Assert.IsNull(state.Database.ReadMetadata("native:controlled_billing_receipt"));
-            using var campaign = Phase6State.OpenCampaign(state.Database);
-            Assert.IsEmpty(Phase6State.Rows(campaign, "SELECT * FROM credit_reports;"));
+            JsonObject status = StatusData(state.Coordinator);
+            Assert.IsNull(status["nativeBillingCalibration"]);
+            JsonObject credits = status["credits"]!.AsObject();
+            Assert.IsTrue(credits["uncertain"]!.GetValue<bool>());
+            Assert.AreEqual(0m, credits["actualReported"]!.GetValue<decimal>());
+            Assert.IsFalse(state.Ledger.HasCompleteSdkUsage(retained.Id));
         });
     }
 
@@ -174,7 +179,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task ClosedFailedRunUsageOnly()
     {
-        Phase6PublicRun state = await Phase6PublicRun.CreateAsync(1, context.CancellationToken);
+        PublicBoundaryRun state = await PublicBoundaryRun.CreateAsync(1, context.CancellationToken);
         await state.RunBodyAsync(async () =>
         {
             CreditReservation unrelated = state.Ledger.Reserve(
@@ -195,8 +200,8 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                     NativeArguments = ["--reasoning-effort=low"],
                 }
             );
-            JsonObject history = Phase6State.History(state.Database);
-            JsonObject before = Phase6State.Financial(state.Database, state.Ledger);
+            JsonObject history = RunStateQueries.History(state.Database);
+            JsonObject before = RunStateQueries.Financial(state.Database, state.Ledger);
             JsonObject unrelatedBefore = UnrelatedFinancial(before);
             state.Reader = (row, token) =>
             {
@@ -228,9 +233,9 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             Assert.AreEqual(140m, settled.Actual!.Value - original.Actual!.Value);
             Assert.AreEqual(
                 history.ToJsonString(),
-                Phase6State.History(state.Database).ToJsonString()
+                RunStateQueries.History(state.Database).ToJsonString()
             );
-            JsonObject after = Phase6State.Financial(state.Database, state.Ledger);
+            JsonObject after = RunStateQueries.Financial(state.Database, state.Ledger);
             AssertOldReportsPreserved(before, after);
             Assert.IsTrue(JsonNode.DeepEquals(unrelatedBefore, UnrelatedFinancial(after)));
             OperationException paidGate = Assert.ThrowsExactly<OperationException>(() =>
@@ -247,11 +252,11 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             Assert.AreEqual(result.ToJsonString(), repeated.ToJsonString());
             Assert.AreEqual(
                 after.ToJsonString(),
-                Phase6State.Financial(state.Database, state.Ledger).ToJsonString()
+                RunStateQueries.Financial(state.Database, state.Ledger).ToJsonString()
             );
             Assert.AreEqual(
                 history.ToJsonString(),
-                Phase6State.History(state.Database).ToJsonString()
+                RunStateQueries.History(state.Database).ToJsonString()
             );
 
             JsonObject UnrelatedFinancial(JsonObject financial)
@@ -282,7 +287,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
     [DataRow("missing-start-first")]
     public async Task MixedRecoveryPreservesPaidGates(string rejection)
     {
-        Phase6PublicRun state = await Phase6PublicRun.CreateAsync(2, context.CancellationToken);
+        PublicBoundaryRun state = await PublicBoundaryRun.CreateAsync(2, context.CancellationToken);
         await state.RunBodyAsync(async () =>
         {
             await state.FailOriginalAsync(context.CancellationToken);
@@ -326,8 +331,8 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                     Sql.Execute(connection, "DELETE FROM meta WHERE key=$key;", null, ("$key", key))
                 );
             }
-            JsonObject history = Phase6State.History(state.Database);
-            JsonObject before = Phase6State.Financial(state.Database, state.Ledger);
+            JsonObject history = RunStateQueries.History(state.Database);
+            JsonObject before = RunStateQueries.Financial(state.Database, state.Ledger);
             const string readerCause =
                 "Controlled generic recovery reader failed before a settled result.";
             if (rejection == "reader-error")
@@ -362,11 +367,11 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                 Assert.IsFalse(laterReaderEntered);
                 Assert.AreEqual(
                     before.ToJsonString(),
-                    Phase6State.Financial(state.Database, state.Ledger).ToJsonString()
+                    RunStateQueries.Financial(state.Database, state.Ledger).ToJsonString()
                 );
                 Assert.AreEqual(
                     history.ToJsonString(),
-                    Phase6State.History(state.Database).ToJsonString()
+                    RunStateQueries.History(state.Database).ToJsonString()
                 );
                 Assert.AreEqual(
                     "credit_unknown",
@@ -451,7 +456,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             Assert.AreEqual("uncertain", rejectedAfter.State);
             Assert.AreEqual(80m, rejectedAfter.Actual);
             Assert.AreEqual(rejected.Allowance, rejectedAfter.Allowance);
-            JsonObject after = Phase6State.Financial(state.Database, state.Ledger);
+            JsonObject after = RunStateQueries.Financial(state.Database, state.Ledger);
             AssertOldReportsPreserved(before, after);
             Assert.AreEqual(
                 before["reports"]!.AsArray().Count + 1,
@@ -528,7 +533,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             );
             Assert.AreEqual(
                 history.ToJsonString(),
-                Phase6State.History(state.Database).ToJsonString()
+                RunStateQueries.History(state.Database).ToJsonString()
             );
             if (missingStart)
             {
@@ -540,11 +545,11 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                 Assert.AreEqual(rejected.Id, Assert.ContainsSingle(readerEntries));
                 Assert.AreEqual(
                     after.ToJsonString(),
-                    Phase6State.Financial(state.Database, state.Ledger).ToJsonString()
+                    RunStateQueries.Financial(state.Database, state.Ledger).ToJsonString()
                 );
                 Assert.AreEqual(
                     history.ToJsonString(),
-                    Phase6State.History(state.Database).ToJsonString()
+                    RunStateQueries.History(state.Database).ToJsonString()
                 );
             }
             JsonObject resume = await state.Reopen().RunAsync("resume", context.CancellationToken);
@@ -552,7 +557,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             Assert.AreEqual("conflict", resume["code"]!.GetValue<string>());
             Assert.AreEqual(
                 history.ToJsonString(),
-                Phase6State.History(state.Database).ToJsonString()
+                RunStateQueries.History(state.Database).ToJsonString()
             );
         });
 
@@ -565,7 +570,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
     }
 
     private static void AssertRecoveryFailure(
-        Phase6PublicRun state,
+        PublicBoundaryRun state,
         CreditReservation reservation,
         string phase,
         string cause
@@ -573,7 +578,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
     {
         using var connection = state.Database.Open();
         JsonObject detail = Assert.ContainsSingle(
-            Phase6State.Rows(
+            RunStateQueries.Rows(
                 connection,
                 "SELECT value FROM meta WHERE key LIKE 'native:recovery_failure_details:%';"
             )
@@ -608,10 +613,10 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task MixedRecoveryUnfinishedCrashAndFreshResumeDoNotFallback()
     {
-        Phase6PublicRun fresh = await Phase6PublicRun.CreateAsync(1, context.CancellationToken);
+        PublicBoundaryRun fresh = await PublicBoundaryRun.CreateAsync(1, context.CancellationToken);
         await fresh.RunBodyAsync(async () =>
         {
-            JsonObject history = Phase6State.History(fresh.Database);
+            JsonObject history = RunStateQueries.History(fresh.Database);
             JsonObject noSegment = await fresh.Coordinator.RunAsync(
                 "reconnect",
                 context.CancellationToken
@@ -619,15 +624,16 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             Assert.AreEqual("conflict", noSegment["code"]!.GetValue<string>());
             Assert.AreEqual(
                 history.ToJsonString(),
-                Phase6State.History(fresh.Database).ToJsonString()
+                RunStateQueries.History(fresh.Database).ToJsonString()
             );
         });
-        Phase6OwnedCreator crash = await Phase6OwnedCreator.OpenAsync(context.CancellationToken);
+        UnresolvedRunCreator crash = await UnresolvedRunCreator
+            .OpenAsync(context.CancellationToken);
         await crash.RunBodyAsync(async () =>
         {
             Assert.AreEqual(
                 1L,
-                Phase6State.Number(
+                RunStateQueries.Number(
                     crash.Database,
                     "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;"
                 )
@@ -653,18 +659,18 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
             Assert.AreEqual(before.Allowance, crash.Target.Allowance);
             Assert.AreEqual(
                 1L,
-                Phase6State.Number(crash.Database, "SELECT COUNT(*) FROM coordinator_segments;")
+                RunStateQueries.Number(crash.Database, "SELECT COUNT(*) FROM coordinator_segments;")
             );
             Assert.AreEqual(
                 1L,
-                Phase6State.Number(
+                RunStateQueries.Number(
                     crash.Database,
                     "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;"
                 )
             );
             Assert.AreEqual(
                 0L,
-                Phase6State.Number(crash.Database, "SELECT COUNT(*) FROM coordinator_turns;")
+                RunStateQueries.Number(crash.Database, "SELECT COUNT(*) FROM coordinator_turns;")
             );
         });
 
@@ -703,7 +709,7 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task MixedRecoveryFreshResumeRetainsStalePaidGate()
     {
-        Phase6PublicRun state = await Phase6PublicRun.CreateAsync(1, context.CancellationToken);
+        PublicBoundaryRun state = await PublicBoundaryRun.CreateAsync(1, context.CancellationToken);
         await state.RunBodyAsync(async () =>
         {
             await state.PauseOriginalAsync(context.CancellationToken);
@@ -713,19 +719,22 @@ public sealed class ReconnectSettlementSpecs(TestContext context)
                     NativeArguments = ["--reasoning-effort=low"],
                 }
             );
-            JsonObject history = Phase6State.History(state.Database);
-            JsonObject money = Phase6State.Financial(state.Database, state.Ledger);
+            JsonObject history = RunStateQueries.History(state.Database);
+            JsonObject money = RunStateQueries.Financial(state.Database, state.Ledger);
             JsonObject result = await state.Reopen().RunAsync("resume", context.CancellationToken);
             Assert.AreEqual("unavailable", result["code"]!.GetValue<string>());
             Assert.Contains("preflight", result["message"]!.GetValue<string>());
             Assert.AreEqual(
                 history.ToJsonString(),
-                Phase6State.History(state.Database).ToJsonString()
+                RunStateQueries.History(state.Database).ToJsonString()
             );
             Assert.AreEqual(
                 money.ToJsonString(),
-                Phase6State.Financial(state.Database, state.Ledger).ToJsonString()
+                RunStateQueries.Financial(state.Database, state.Ledger).ToJsonString()
             );
         });
     }
+
+    private static JsonObject StatusData(Coordinator coordinator) =>
+        GitScenarioState.Data(coordinator.Status());
 }

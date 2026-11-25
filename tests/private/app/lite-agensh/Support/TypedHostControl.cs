@@ -287,7 +287,7 @@ internal sealed class TypedHostControl : INativeSdkHost, IDisposable
                 ["appliedLimit"] = snapshot.SessionLimits.MaxAiCredits,
                 ["runtimeId"] = host.Id,
                 ["runtimeLeaseId"] = host.LeaseId,
-                ["runtimeVersion"] = Phase6NativeControl.RuntimeVersion,
+                ["runtimeVersion"] = OfflineNativeControl.RuntimeVersion,
                 ["sdkVersion"] = NativeSdkSession.SdkVersion,
             };
 #pragma warning restore GHCP001

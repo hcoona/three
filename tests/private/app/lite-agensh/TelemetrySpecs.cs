@@ -17,7 +17,7 @@ public sealed class TelemetrySpecs(TestContext context)
     {
         context.CancellationToken.ThrowIfCancellationRequested();
         using ScratchDirectory results = new();
-        using Phase7Evidence evidence = new(
+        using FixtureDiagnosticSink evidence = new(
             Guid.NewGuid().ToString("N"), "test-owner", results.PathFor("results"),
             report: message => context.WriteLine(message)
         );
@@ -140,7 +140,7 @@ public sealed class TelemetrySpecs(TestContext context)
         string directory = results.PathFor("sqlite-sources");
         Directory.CreateDirectory(directory);
         File.WriteAllText(Path.Combine(directory, "activity-00.json"), sourceText);
-        using Phase7Evidence evidence = new(
+        using FixtureDiagnosticSink evidence = new(
             Guid.NewGuid().ToString("N"), "test-owner", results.PathFor("results"),
             report: message => context.WriteLine(message)
         );
@@ -173,7 +173,7 @@ public sealed class TelemetrySpecs(TestContext context)
         string blocked = results.PathFor("not-a-directory");
         File.WriteAllText(blocked, "owned export obstruction");
         List<string> warnings = [];
-        using Phase7Evidence evidence = new(
+        using FixtureDiagnosticSink evidence = new(
             Guid.NewGuid().ToString("N"), "test-owner", blocked, report: warnings.Add
         );
         using Activity scope = evidence.BeginScope();
@@ -194,7 +194,7 @@ public sealed class TelemetrySpecs(TestContext context)
         Assert.AreSame(original, observed);
         Assert.AreEqual(10, observed.SqliteErrorCode);
         Assert.IsTrue(warnings.Any(line => line.StartsWith(
-            "PHASE7_EVIDENCE_UNAVAILABLE", StringComparison.Ordinal
+            "FIXTURE_EVIDENCE_UNAVAILABLE", StringComparison.Ordinal
         )));
         Assert.DoesNotContain(secret, string.Join("\n", warnings));
         Assert.IsTrue(File.Exists(Assert.IsInstanceOfType<string>(
@@ -207,12 +207,14 @@ public sealed class TelemetrySpecs(TestContext context)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task CreatorEvidenceSurvivesDeliberateInterruptionBeforeOwnershipScopeEnds()
     {
-        Phase7OwnedCreator creator = await Phase7OwnedCreator.OpenAsync(
+        InterruptedRunCreator creator = await InterruptedRunCreator.OpenAsync(
             context, false, context.CancellationToken
         );
         await creator.RunOwnedAsync(async () =>
         {
-            Phase7Run state = Phase7Run.Attach(creator, context.CancellationToken);
+            CoordinatorScenarioRun state = CoordinatorScenarioRun.Attach(
+                creator, context.CancellationToken
+            );
             await state.RunBodyAsync(async () =>
             {
                 await creator.CrashAsync(context.CancellationToken);
