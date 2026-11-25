@@ -2,7 +2,6 @@
 
 import json
 import shlex
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -202,19 +201,12 @@ def test_workflow_selected_control_executable_reaches_caller(
     workflow, tmp_path, job_name, stage
 ):
     """Committed runtime setup supplies each job's first control invocation."""
-    lock = tomllib.loads((ROOT / "mise.lock").read_text())["tools"]
     arguments = selected_control_call(
         workflow,
         job_name,
         root=ROOT,
         cwd=tmp_path,
-        committed={
-            "dotnet": json.loads((ROOT / "global.json").read_text())["sdk"][
-                "version"
-            ],
-            "python": lock["python"][0]["version"],
-            "uv": lock["uv"][0]["version"],
-        },
+        tools=("python", "uv"),
     )
     assert arguments == [
         str(tmp_path / "control/WorkflowDelivery.dll"),

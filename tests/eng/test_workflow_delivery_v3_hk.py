@@ -11,6 +11,9 @@ from typing import Any
 
 import pytest
 
+from .ci_workflow_shell import executable as _executable
+from .ci_workflow_shell import load_script
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HELPER = REPO_ROOT / "eng/scripts/workflow_delivery_v3_hk.py"
 SEEDED = "SEEDED_FINDING"
@@ -121,12 +124,6 @@ sys.exit(int(any(
     if Path(item).exists()
 )))
 """
-
-
-def _executable(path: Path, body: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"#!{sys.executable}\n{body}\n", encoding="utf-8")
-    path.chmod(0o755)
 
 
 def _git(repository: Path, *arguments: str) -> str:
@@ -357,3 +354,95 @@ def test_unresolved_mapping_widens_when_a_tool_lock_changes(
     changed, complete = runs
     assert f"--skip-step={step}" in changed["arguments"]
     assert list(complete["ran"]) == [step]
+
+
+# HK scope drift in native profiles
+
+hk_scope_drift = load_script(REPO_ROOT / "eng/scripts/hk_scope_drift.py")
+
+
+@pytest.mark.parametrize(
+    ("pattern", "suffixes", "expected"),
+    [
+        ("**/.github/**", [".sh", ".bash"], True),
+        (".agents/**", [".sh", ".bash"], True),
+        ("**/*.sh", [".sh", ".bash"], True),
+        ("tools/build.bash", [".sh", ".bash"], True),
+        ("**/specs/**/*.md", [".sh", ".bash"], False),
+        ("global.json", [".sh", ".bash"], False),
+        ("**/mise.lock", [".sh", ".bash"], False),
+        ("eng/scripts/release_*", [".sh", ".bash"], True),
+        ("legacy-*", [".sh", ".bash"], True),
+        ("eng/x?", [".sh", ".bash"], True),
+        ("foo.sh*", [".sh", ".bash"], True),
+        ("*.s?", [".sh", ".bash"], True),
+        ("**/gen-*.[sb]*", [".sh", ".bash"], True),
+        ("**/*.md", [".sh", ".bash"], False),
+        ("**/*.sh.bak", [".sh", ".bash"], False),
+        ("src/private/lib/scan-restoration/skills/**", [".py"], True),
+        ("**/*.py", [".py"], True),
+        ("tools/build.py", [".py"], True),
+        ("**/*.sh", [".py"], False),
+        ("uv.lock", [".py"], False),
+    ],
+)
+def test_hk_scope_exclusion_relevance(pattern, suffixes, expected):
+    """Only exclusions whose final segment can name a copied file count."""
+    assert hk_scope_drift.can_exclude(pattern, suffixes) is expected
+
+
+def _scope_step(profiles, globs, excludes):
+    return {"profiles": profiles, "glob": globs, "exclude": list(excludes)}
+
+
+def test_hk_scope_drift_reports_each_difference():
+    """Profile, glob and exclusion drift each fail the conformance step."""
+    rules = {
+        "shell": {
+            "steps": ["shellcheck"],
+            "directory": None,
+            "suffixes": [".sh"],
+            "exclusions": ["**/generated/**"],
+        }
+    }
+    good = _scope_step(["small"], ["**/*.sh"], ["**/generated/**", "uv.lock"])
+    assert hk_scope_drift.drift({"shellcheck": good}, rules, {"small"}) == []
+    for steps, profiles in (
+        ({}, {"small"}),
+        ({"shellcheck": good}, {"large"}),
+        (
+            {
+                "shellcheck": _scope_step(
+                    ["small"], ["**/*.bash"], good["exclude"]
+                )
+            },
+            {"small"},
+        ),
+        (
+            {
+                "shellcheck": _scope_step(
+                    ["small"], ["**/*.sh"], ["**/.github/**"]
+                )
+            },
+            {"small"},
+        ),
+    ):
+        assert hk_scope_drift.drift(steps, rules, profiles)
+
+
+def test_hk_scope_drift_reports_a_wildcard_shell_exclusion():
+    """A new wildcard exclusion such as release_* can hide copied scripts."""
+    rules = {
+        "native-hk-shell-lint": {
+            "steps": ["shellcheck"],
+            "directory": None,
+            "suffixes": [".sh", ".bash"],
+            "exclusions": ["**/generated/**"],
+        }
+    }
+    step = _scope_step(
+        ["small"],
+        ["**/*.sh", "**/*.bash"],
+        ["**/generated/**", "eng/scripts/release_*"],
+    )
+    assert hk_scope_drift.drift({"shellcheck": step}, rules, {"small"})
