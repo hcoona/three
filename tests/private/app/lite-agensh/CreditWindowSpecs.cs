@@ -8,6 +8,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace LiteAgensh.Tests;
 
 [TestClass]
+[DoNotParallelize]
 public sealed class CreditWindowSpecs
 {
     private readonly TestContext context;
@@ -30,13 +31,7 @@ public sealed class CreditWindowSpecs
         Assert.AreEqual(0m, state.Read(cold.Id).Allowance);
         Assert.IsFalse(state.Read(cold.Id).GrantOpen);
         Assert.AreEqual("reserved", state.Read(cold.Id).State);
-        Assert.AreEqual(
-            0L,
-            state.Count(
-                "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
-                ("$id", cold.Id)
-            )
-        );
+        Assert.AreEqual(0L, Dispatches(state, cold.Id));
         // A saved session identity is not a started native session or permission to dispatch.
         Assert.AreEqual(
             "credit_unknown",
@@ -126,8 +121,7 @@ public sealed class CreditWindowSpecs
         CreditReservation unrelated = state.Unrelated();
         CreditReservation first = state.Reserve("worker1");
         CreditReservation second = state.Reserve("worker2");
-        using CancellationTokenSource cancellation =
-            CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+        await using ContenderScope contenders = new(context);
         ActivityTraceId traceId = ActivityTraceId.CreateRandom();
         TaskCompletionSource<Activity> leftRequest = new(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -164,82 +158,57 @@ public sealed class CreditWindowSpecs
         };
         ActivitySource.AddActivityListener(listener);
 
-        Task<CreditReservation>? left = null;
-        Task<CreditReservation>? right = null;
-        try
+        Task<Activity[]> requests = Task.WhenAll(leftRequest.Task, rightRequest.Task);
+        Task<CreditReservation> left;
+        Task<CreditReservation> right;
+        Task observed;
+        using (SqliteDiagnostics.UseActor("owner"))
+        using (SqliteConnection writer = Sql.Open(
+            new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = state.LedgerPath,
+                Mode = SqliteOpenMode.ReadWrite,
+                Pooling = false,
+            }.ToString()),
+            "campaign"
+        ))
+        using (Sql.BeginTransaction(writer, deferred: false, operation: "HeldWriter"))
         {
-            Task<Activity[]> requests = Task.WhenAll(leftRequest.Task, rightRequest.Task);
-            Task observed;
-            using (SqliteDiagnostics.UseActor("owner"))
-            using (SqliteConnection writer = Sql.Open(
-                new SqliteConnection(new SqliteConnectionStringBuilder
-                {
-                    DataSource = state.LedgerPath,
-                    Mode = SqliteOpenMode.ReadWrite,
-                    Pooling = false,
-                }.ToString()),
-                "campaign"
-            ))
-            using (Sql.BeginTransaction(writer, deferred: false, operation: "HeldWriter"))
-            {
-                left = Acquire(first);
-                right = Acquire(second);
-                observed = await Task.WhenAny(requests, left, right)
-                    .WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            if (!ReferenceEquals(observed, requests))
-            {
-                await observed.ConfigureAwait(false);
-                Assert.Fail("An acquisition returned before both request entries were observed.");
-            }
-
-            CreditReservation[] granted = await Task.WhenAll(left, right).ConfigureAwait(false);
-            Activity[] entries = await requests.ConfigureAwait(false);
-            Assert.AreEqual("TryAcquireSharedWindow", entries[0].GetTagItem("db.operation.name"));
-            Assert.AreEqual(first.Worker, entries[0].GetTagItem("liteagensh.actor"));
-            Assert.AreEqual("TryAcquireSharedWindow", entries[1].GetTagItem("db.operation.name"));
-            Assert.AreEqual(second.Worker, entries[1].GetTagItem("liteagensh.actor"));
-
-            CreditReservation[] durable = state.Ledger.Reservations("run").ToArray();
-            decimal[] grantedAmounts = durable.Select(row => row.Allowance).Order().ToArray();
-            Assert.HasCount(2, grantedAmounts);
-            Assert.AreEqual(50m, grantedAmounts[0]);
-            Assert.AreEqual(100m, grantedAmounts[1]);
-            Assert.AreEqual(granted[0], state.Read(first.Id));
-            Assert.AreEqual(granted[1], state.Read(second.Id));
-            Assert.IsTrue(
-                durable.All(row => row.Shared && row.GrantOpen && row.State == "reserved")
-            );
-            Assert.AreEqual(0L, state.Count("SELECT SUM(dispatch_count) FROM credit_sdk_usage;"));
-            state.AssertAccounting(180, 150, 0, 150);
-            Assert.AreEqual(0m, state.RunAllowance - durable.Sum(row => row.Allowance));
-            Assert.AreEqual(unrelated, state.Read(unrelated.Id));
+            left = contenders.Track(Acquire(first));
+            right = contenders.Track(Acquire(second));
+            observed = await Task.WhenAny(requests, left, right)
+                .WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken)
+                .ConfigureAwait(false);
         }
-        catch (Exception primary)
+
+        if (!ReferenceEquals(observed, requests))
         {
-            try
-            {
-                await Task.WhenAll(
-                    cancellation.CancelAsync(),
-                    (Task?)left ?? Task.CompletedTask,
-                    (Task?)right ?? Task.CompletedTask
-                ).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-            {
-            }
-            catch (Exception secondary)
-            {
-                if (!ReferenceEquals(secondary, primary))
-                {
-                    primary.Data["CreditWindowAdmissionsCleanup"] =
-                        Json.ExceptionDetails(secondary);
-                }
-            }
-            throw;
+            await observed.ConfigureAwait(false);
+            Assert.Fail("An acquisition returned before both request entries were observed.");
         }
+
+        CreditReservation[] granted = await Task.WhenAll(left, right).ConfigureAwait(false);
+        Activity[] entries = await requests.ConfigureAwait(false);
+        Assert.AreEqual("TryAcquireSharedWindow", entries[0].GetTagItem("db.operation.name"));
+        Assert.AreEqual(first.Worker, entries[0].GetTagItem("liteagensh.actor"));
+        Assert.AreEqual("TryAcquireSharedWindow", entries[1].GetTagItem("db.operation.name"));
+        Assert.AreEqual(second.Worker, entries[1].GetTagItem("liteagensh.actor"));
+
+        CreditReservation[] durable = state.Ledger.Reservations("run").ToArray();
+        decimal[] grantedAmounts = durable.Select(row => row.Allowance).Order().ToArray();
+        Assert.HasCount(2, grantedAmounts);
+        Assert.AreEqual(50m, grantedAmounts[0]);
+        Assert.AreEqual(100m, grantedAmounts[1]);
+        Assert.AreEqual(granted[0], state.Read(first.Id));
+        Assert.AreEqual(granted[1], state.Read(second.Id));
+        Assert.IsTrue(
+            durable.All(row => row.Shared && row.GrantOpen && row.State == "reserved")
+        );
+        Assert.AreEqual(0L, TotalRunDispatches(state));
+        state.AssertAccounting(180, 150, 0, 150);
+        Assert.AreEqual(0m, state.RunAllowance - durable.Sum(row => row.Allowance));
+        Assert.AreEqual(unrelated, state.Read(unrelated.Id));
+        contenders.Complete();
 
         Task<CreditReservation> Acquire(CreditReservation row) =>
             Task.Run(
@@ -252,10 +221,10 @@ public sealed class CreditWindowSpecs
                         ).Start();
                     using IDisposable actor = SqliteDiagnostics.UseActor(row.Worker);
                     return await state
-                        .Ledger.AcquireSharedWindowAsync(row.Id, cancellation.Token)
+                        .Ledger.AcquireSharedWindowAsync(row.Id, contenders.Token)
                         .ConfigureAwait(false);
                 },
-                cancellation.Token
+                contenders.Token
             );
     }
 
@@ -286,7 +255,8 @@ public sealed class CreditWindowSpecs
         Assert.AreEqual("credit_exhausted", error.Code);
         Assert.AreEqual(contender, state.Read(contender.Id));
         Assert.AreEqual(unrelated, state.Read(unrelated.Id));
-        Assert.AreEqual(1L, state.Count("SELECT COUNT(*) FROM credit_reports;"));
+        Assert.IsTrue(state.Ledger.HasCompleteSdkUsage(first.Id));
+        Assert.IsFalse(state.Ledger.HasCompleteSdkUsage(contender.Id));
         state.AssertAccounting(110, 80, 80, 0);
     }
 
@@ -312,53 +282,46 @@ public sealed class CreditWindowSpecs
         Assert.AreEqual(100m, state.RunAllowance);
         Assert.AreEqual(0m, contender.Allowance);
         Assert.IsFalse(contender.GrantOpen);
-        using CancellationTokenSource cancellation =
-            CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
-        Task<CreditReservation>? pending = null;
-        try
+        await using ContenderScope contenders = new(context);
+        Task<CreditReservation> pending;
+        using (SqliteDiagnostics.UseActor("worker2"))
         {
-            using (SqliteDiagnostics.UseActor("worker2"))
-            {
-                pending = state.Ledger.AcquireSharedWindowAsync(contender.Id, cancellation.Token);
-            }
-            if (spent)
-            {
-                OperationException error = await Assert.ThrowsExactlyAsync<OperationException>(
-                    () => pending.WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken)
-                );
-                Assert.AreEqual("credit_exhausted", error.Code);
-                Assert.AreEqual(contender, state.Read(contender.Id));
-                Assert.AreEqual(1L, state.Count("SELECT COUNT(*) FROM credit_reports;"));
-                state.AssertAccounting(95, 0, 0, 0);
-            }
-            else
-            {
-                JsonObject witness = AssertCommittedContenderAttempt(state);
-                context.WriteLine("Campaign-bound wait witness: " + witness.ToJsonString());
-                Assert.AreEqual(other, state.Read(other.Id));
-                Assert.AreEqual(contender, state.Read(contender.Id));
-                Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM credit_reports;"));
-                state.AssertAccounting(100, 0, 0, 0);
+            pending = contenders.Track(
+                state.Ledger.AcquireSharedWindowAsync(contender.Id, contenders.Token)
+            );
+        }
+        if (spent)
+        {
+            OperationException error = await Assert.ThrowsExactlyAsync<OperationException>(
+                () => pending.WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken)
+            );
+            Assert.AreEqual("credit_exhausted", error.Code);
+            Assert.AreEqual(contender, state.Read(contender.Id));
+            Assert.IsTrue(state.Ledger.HasCompleteSdkUsage(other.Id));
+            Assert.IsFalse(state.Ledger.HasCompleteSdkUsage(contender.Id));
+            state.AssertAccounting(95, 0, 0, 0);
+        }
+        else
+        {
+            JsonObject witness = AssertCommittedContenderAttempt(state);
+            context.WriteLine("Campaign-bound wait witness: " + witness.ToJsonString());
+            Assert.AreEqual(other, state.Read(other.Id));
+            Assert.AreEqual(contender, state.Read(contender.Id));
+            Assert.IsFalse(state.Ledger.HasCompleteSdkUsage(other.Id));
+            Assert.IsFalse(state.Ledger.HasCompleteSdkUsage(contender.Id));
+            state.AssertAccounting(100, 0, 0, 0);
 
-                state.Ledger.ReleaseUnstarted(other.Id);
-                CreditReservation granted = await pending.WaitAsync(
-                    TimeSpan.FromSeconds(5), context.CancellationToken
-                );
-                Assert.AreEqual(contender.Id, granted.Id);
-                Assert.AreEqual(100m, granted.Allowance);
-                Assert.IsTrue(granted.GrantOpen);
-                Assert.AreEqual("released", state.Read(other.Id).State);
-                state.AssertAccounting(100, 100, 0, 100);
-            }
+            state.Ledger.ReleaseUnstarted(other.Id);
+            CreditReservation granted = await pending.WaitAsync(
+                TimeSpan.FromSeconds(5), context.CancellationToken
+            );
+            Assert.AreEqual(contender.Id, granted.Id);
+            Assert.AreEqual(100m, granted.Allowance);
+            Assert.IsTrue(granted.GrantOpen);
+            Assert.AreEqual("released", state.Read(other.Id).State);
+            state.AssertAccounting(100, 100, 0, 100);
         }
-        finally
-        {
-            await cancellation.CancelAsync();
-            if (pending is not null)
-            {
-                await Drain(pending);
-            }
-        }
+        contenders.Complete();
     }
 
     [TestMethod]
@@ -386,11 +349,8 @@ public sealed class CreditWindowSpecs
         Assert.AreEqual(grant, state.Read(contender.Id));
         Assert.AreEqual(other, state.Read(other.Id));
         state.AssertAccounting(130, 30, 0, 30);
-        Assert.AreEqual(0L, state.Count(
-            "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
-            ("$id", grant.Id)
-        ));
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM credit_reports;"));
+        Assert.AreEqual(0L, Dispatches(state, grant.Id));
+        Assert.IsFalse(state.Ledger.HasCompleteSdkUsage(grant.Id));
     }
 
     [TestMethod]
@@ -404,12 +364,11 @@ public sealed class CreditWindowSpecs
         CreditReservation unrelated = state.Unrelated();
         CreditReservation holder = state.Reserve("worker1");
         CreditReservation contender = state.Reserve("worker2");
-        using CancellationTokenSource cancellation =
-            CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+        await using ContenderScope contenders = new(context);
         using (SqliteDiagnostics.UseActor("worker1"))
         {
             CreditReservation granted = await state
-                .Ledger.AcquireSharedWindowAsync(holder.Id, cancellation.Token)
+                .Ledger.AcquireSharedWindowAsync(holder.Id, contenders.Token)
                 .ConfigureAwait(false);
             Assert.AreEqual(100m, granted.Allowance);
         }
@@ -418,83 +377,68 @@ public sealed class CreditWindowSpecs
         Assert.IsTrue(held.GrantOpen);
         Assert.IsNull(held.Actual);
         Assert.AreEqual(contender, state.Read(contender.Id));
-        Assert.AreEqual(0L, state.Count("SELECT SUM(dispatch_count) FROM credit_sdk_usage;"));
-        Assert.AreEqual(
-            3L,
-            state.Count(
-                """
-                SELECT COUNT(*) FROM credit_reservations r JOIN credit_sdk_usage u
-                    ON u.reservation_id=r.id AND u.session_id=r.session_id
-                JOIN credit_sdk_owners o ON o.reservation_id=r.id
-                WHERE r.state='reserved' AND u.dispatch_count=0;
-                """
-            )
-        );
+        Assert.AreEqual(0L, TotalRunDispatches(state));
+        foreach (CreditReservation row in new[] { unrelated, held, contender })
+        {
+            Assert.IsTrue(state.Ledger.HasSdkAssociation(row.Id));
+            Assert.IsGreaterThan(0, state.Ledger.ReadSdkOwner(row.Id)["pid"]!.GetValue<int>());
+        }
         state.AssertAccounting(130, 100, 0, 100);
         // Actual remaining=100, but available backing=100-100=0; contender reclaim=0.
         Assert.AreEqual(100m, state.RunAllowance - (held.Actual ?? 0));
         Assert.AreEqual(0m, state.RunAllowance - held.Allowance - contender.Allowance);
-        Assert.IsFalse(cancellation.IsCancellationRequested);
-        Task<CreditReservation>? pending = null;
-        try
+        Assert.IsFalse(contenders.Token.IsCancellationRequested);
+        Task<CreditReservation> pending;
+        using (SqliteDiagnostics.UseActor("worker2"))
         {
-            using (SqliteDiagnostics.UseActor("worker2"))
-            {
-                // Deliberately direct: its synchronous transaction prefix precedes the first await.
-                pending = state.Ledger.AcquireSharedWindowAsync(contender.Id, cancellation.Token);
-            }
-            JsonObject witness = AssertCommittedContenderAttempt(state);
-            context.WriteLine("Committed credit wait witness: " + witness.ToJsonString());
+            // Deliberately direct: its synchronous transaction prefix precedes the first await.
+            pending = contenders.Track(
+                state.Ledger.AcquireSharedWindowAsync(contender.Id, contenders.Token)
+            );
+        }
+        JsonObject witness = AssertCommittedContenderAttempt(state);
+        context.WriteLine("Committed credit wait witness: " + witness.ToJsonString());
+        Assert.AreEqual(held, state.Read(holder.Id));
+        Assert.AreEqual(contender, state.Read(contender.Id));
+        state.AssertAccounting(130, 100, 0, 100);
+        if (cancel)
+        {
+            await contenders.CancelAsync().ConfigureAwait(false);
+            OperationCanceledException error = await Assert
+                .ThrowsAsync<OperationCanceledException>(async () =>
+                    await pending.ConfigureAwait(false)
+                )
+                .ConfigureAwait(false);
+            Assert.AreEqual(contenders.Token, error.CancellationToken);
+            Assert.IsTrue(pending.IsCanceled);
+            Assert.IsFalse(context.CancellationToken.IsCancellationRequested);
             Assert.AreEqual(held, state.Read(holder.Id));
             Assert.AreEqual(contender, state.Read(contender.Id));
             state.AssertAccounting(130, 100, 0, 100);
-            if (cancel)
-            {
-                await cancellation.CancelAsync().ConfigureAwait(false);
-                OperationCanceledException error = await Assert
-                    .ThrowsAsync<OperationCanceledException>(async () =>
-                        await pending.ConfigureAwait(false)
-                    )
-                    .ConfigureAwait(false);
-                Assert.AreEqual(cancellation.Token, error.CancellationToken);
-                Assert.IsTrue(pending.IsCanceled);
-                Assert.IsFalse(context.CancellationToken.IsCancellationRequested);
-                Assert.AreEqual(held, state.Read(holder.Id));
-                Assert.AreEqual(contender, state.Read(contender.Id));
-                state.AssertAccounting(130, 100, 0, 100);
-                state.Ledger.ReleaseUnstarted(holder.Id);
-                CreditReservation replacement = state.Reserve("worker3");
-                CreditReservation admitted = await state
-                    .Ledger.AcquireSharedWindowAsync(replacement.Id, context.CancellationToken)
-                    .ConfigureAwait(false);
-                Assert.AreEqual(100m, admitted.Allowance);
-                Assert.AreEqual(contender, state.Read(contender.Id));
-                state.AssertAccounting(130, 100, 0, 100);
-            }
-            else
-            {
-                state.Ledger.ReleaseUnstarted(holder.Id);
-                CreditReservation admitted = await pending.ConfigureAwait(false);
-                Assert.AreEqual(contender.Id, admitted.Id);
-                Assert.AreEqual(contender.SessionId, admitted.SessionId);
-                Assert.AreEqual(100m, admitted.Allowance);
-                Assert.IsTrue(state.Read(contender.Id).GrantOpen);
-                Assert.AreEqual("released", state.Read(holder.Id).State);
-                Assert.IsFalse(state.Read(holder.Id).GrantOpen);
-                state.AssertAccounting(130, 100, 0, 100);
-            }
-            Assert.AreEqual(unrelated, state.Read(unrelated.Id));
-            Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM credit_reports;"));
+            state.Ledger.ReleaseUnstarted(holder.Id);
+            CreditReservation replacement = state.Reserve("worker3");
+            CreditReservation admitted = await state
+                .Ledger.AcquireSharedWindowAsync(replacement.Id, context.CancellationToken)
+                .ConfigureAwait(false);
+            Assert.AreEqual(100m, admitted.Allowance);
+            Assert.AreEqual(contender, state.Read(contender.Id));
+            state.AssertAccounting(130, 100, 0, 100);
         }
-        finally
+        else
         {
-            // Even a missing diagnostic/assertion failure must drain before scratch deletion.
-            await cancellation.CancelAsync().ConfigureAwait(false);
-            if (pending is not null)
-            {
-                await Drain(pending).ConfigureAwait(false);
-            }
+            state.Ledger.ReleaseUnstarted(holder.Id);
+            CreditReservation admitted = await pending.ConfigureAwait(false);
+            Assert.AreEqual(contender.Id, admitted.Id);
+            Assert.AreEqual(contender.SessionId, admitted.SessionId);
+            Assert.AreEqual(100m, admitted.Allowance);
+            Assert.IsTrue(state.Read(contender.Id).GrantOpen);
+            Assert.AreEqual("released", state.Read(holder.Id).State);
+            Assert.IsFalse(state.Read(holder.Id).GrantOpen);
+            state.AssertAccounting(130, 100, 0, 100);
         }
+        Assert.AreEqual(unrelated, state.Read(unrelated.Id));
+        Assert.IsTrue(state.Ledger.Reservations().All(row => row.Actual is null));
+        contenders.Complete();
     }
 
     [TestMethod]
@@ -560,16 +504,17 @@ public sealed class CreditWindowSpecs
         Assert.IsFalse(state.Read(holder.Id).GrantOpen);
         Assert.IsNull(state.Read(holder.Id).Actual);
         Assert.AreEqual(100m, state.Read(reservation.Id).Allowance);
-        Assert.AreEqual(2, state.Ledger.Reservations("run").Count);
+        Assert.HasCount(2, state.Ledger.Reservations("run"));
         state.AssertAccounting(130, 100, 0, 0);
+        JsonObject cancelled = Assert.ContainsSingle(
+            Status(state)["cancellations"]!.AsArray()
+        )!.AsObject();
+        Assert.AreEqual(holder.Id, cancelled["reservationId"]!.GetValue<string>());
         Assert.AreEqual(
-            1L,
-            state.Count(
-                "SELECT COUNT(*) FROM credit_cancellations WHERE reservation_id=$id;",
-                ("$id", holder.Id)
-            )
+            "verified-before-first-dispatch",
+            cancelled["classification"]!.GetValue<string>()
         );
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM credit_reports;"));
+        Assert.IsTrue(state.Ledger.Reservations().All(row => row.Actual is null));
         Assert.AreEqual(unrelated, state.Read(unrelated.Id));
         Assert.IsTrue(
             state.Ledger.CancelBeforeDispatch(holder, proof, "controlled-ledger-boundary")[
@@ -645,13 +590,8 @@ public sealed class CreditWindowSpecs
             Assert.AreEqual("credit_unknown", await dispatch.ConfigureAwait(false));
             Assert.AreEqual("released", state.Read(holder.Id).State);
             Assert.IsFalse(state.Read(holder.Id).GrantOpen);
-            Assert.AreEqual(
-                0L,
-                state.Count(
-                    "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
-                    ("$id", holder.Id)
-                )
-            );
+            Assert.AreEqual(0L, Dispatches(state, holder.Id));
+            Assert.HasCount(1, Status(state)["cancellations"]!.AsArray());
             state.AssertAccounting(30, 0, 0, 0);
             CreditReservation granted = await state
                 .Ledger.AcquireSharedWindowAsync(contender.Id, context.CancellationToken)
@@ -665,13 +605,8 @@ public sealed class CreditWindowSpecs
             Assert.AreEqual("dispatched", await dispatch.ConfigureAwait(false));
             Assert.AreEqual("active", state.Read(holder.Id).State);
             Assert.IsTrue(state.Read(holder.Id).GrantOpen);
-            Assert.AreEqual(
-                1L,
-                state.Count(
-                    "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
-                    ("$id", holder.Id)
-                )
-            );
+            Assert.AreEqual(1L, Dispatches(state, holder.Id));
+            Assert.IsEmpty(Status(state)["cancellations"]!.AsArray());
             Assert.AreEqual(contender, state.Read(contender.Id));
             Assert.AreEqual(
                 "credit_exhausted",
@@ -684,7 +619,7 @@ public sealed class CreditWindowSpecs
             state.AssertAccounting(130, 100, 0, 100);
         }
         Assert.IsNull(state.Read(holder.Id).Actual);
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM credit_reports;"));
+        Assert.IsTrue(state.Ledger.Reservations().All(row => row.Actual is null));
         Assert.AreEqual(unrelated, state.Read(unrelated.Id));
     }
 
@@ -733,11 +668,10 @@ public sealed class CreditWindowSpecs
         );
         Assert.AreEqual(before with { State = "uncertain" }, state.Read(reservation.Id));
         state.AssertAccounting(130, 100, 35, 65, uncertain: true);
+        JsonObject reported = ReportedUsage(state, reservation.Id);
+        Assert.AreEqual(reservation.SessionId, reported["sessionId"]!.GetValue<string>());
         if (kind is "partial" or "unavailable" or "absent")
         {
-            JsonObject reported = Assert.ContainsSingle(
-                state.Ledger.Status("run", state.RunAllowance)["reported"]!.AsArray()
-            )!.AsObject();
             string? nano = reported["reportedNanoAiu"]?.GetValue<string>();
             double? reportedNano = nano is null
                 ? null
@@ -746,17 +680,6 @@ public sealed class CreditWindowSpecs
             Assert.AreEqual(invalid.Status, reported["status"]?.GetValue<string>());
         }
         Assert.IsTrue(state.Ledger.HasSdkAssociation(reservation.Id));
-        Assert.AreEqual(
-            1L,
-            state.Count(
-                (
-                    "SELECT COUNT(*) FROM credit_sdk_usage WHERE reservation_id=$id AND "
-                    + "session_id=$session;"
-                ),
-                ("$id", reservation.Id),
-                ("$session", reservation.SessionId)
-            )
-        );
         Assert.AreEqual(
             1L,
             state.Count(
@@ -874,14 +797,9 @@ public sealed class CreditWindowSpecs
         );
         Assert.AreEqual(unknown, state.Read(original.Id));
         Assert.AreEqual(freshBefore, state.Read(fresh.Id));
-        Assert.AreEqual(
-            0L,
-            state.Count(
-                "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
-                ("$id", fresh.Id)
-            )
-        );
-        Assert.AreEqual(1L, state.Count("SELECT COUNT(*) FROM credit_reports;"));
+        Assert.AreEqual(0L, Dispatches(state, fresh.Id));
+        Assert.IsFalse(state.Ledger.HasCompleteSdkUsage(fresh.Id));
+        Assert.IsNull(state.Read(fresh.Id).Actual);
         Assert.AreEqual(unrelated, state.Read(unrelated.Id));
         state.AssertAccounting(230, 200, 35, 0, uncertain: true);
     }
@@ -938,13 +856,7 @@ public sealed class CreditWindowSpecs
                 ("$id", reservation.Id)
             )
         );
-        Assert.AreEqual(
-            1L,
-            state.Count(
-                "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
-                ("$id", reservation.Id)
-            )
-        );
+        Assert.AreEqual(1L, Dispatches(state, reservation.Id));
         state.AssertAccounting(30 + total, total, total, 0);
         Assert.AreEqual(
             (decimal)overshoot,
@@ -1118,13 +1030,7 @@ public sealed class CreditWindowSpecs
             "credit_unknown",
             Assert.ThrowsExactly<OperationException>(() => state.Dispatch(reservation)).Code
         );
-        Assert.AreEqual(
-            0L,
-            state.Count(
-                "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
-                ("$id", reservation.Id)
-            )
-        );
+        Assert.AreEqual(0L, Dispatches(state, reservation.Id));
         state.Ledger.AttachSession(reservation.Id, reservation.SessionId!);
         state.Dispatch(reservation);
         state.Ledger.RecordSdkUsage(reservation.Id, Usage(reservation, 25, 1), final: true);
@@ -1141,7 +1047,7 @@ public sealed class CreditWindowSpecs
         using CreditWindowState state = new(100m, 100m);
         CreditReservation reserved = state.Reserve("worker2");
         state.AssertAccounting(0m, 0m, 0m, 0m);
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM credit_reports;"));
+        Assert.IsNull(state.Read(reserved.Id).Actual);
         ManualScenarioClock clock = new();
         Activity acquisition = await AssertAdmissionCancelsAtWriterHandoffAsync(
             state, clock, reserved.Worker, "TryAcquireSharedWindow",
@@ -1176,8 +1082,8 @@ public sealed class CreditWindowSpecs
         Assert.AreEqual(reserved, state.Read(reserved.Id));
         Assert.HasCount(1, state.Ledger.Reservations("run"));
         state.AssertAccounting(0m, 0m, 0m, 0m);
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM credit_reports;"));
-        Assert.AreEqual(0L, state.Count("SELECT SUM(dispatch_count) FROM credit_sdk_usage;"));
+        Assert.IsNull(state.Read(reserved.Id).Actual);
+        Assert.AreEqual(0L, TotalRunDispatches(state));
 
         using WorkAdmission open = new(
             clock, clock.GetUtcNow().AddMinutes(1), CancellationToken.None
@@ -1189,7 +1095,7 @@ public sealed class CreditWindowSpecs
         Assert.AreEqual(100m, granted.Allowance);
         Assert.IsTrue(state.Read(reserved.Id).GrantOpen);
         state.AssertAccounting(100m, 100m, 0m, 100m);
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM credit_reports;"));
+        Assert.IsNull(state.Read(reserved.Id).Actual);
     }
 
     [TestMethod]
@@ -1232,25 +1138,13 @@ public sealed class CreditWindowSpecs
         {
             Assert.AreEqual(backed, state.Read(seat.Id));
             Assert.AreEqual(unrelated, state.Read(unrelated.Id));
-            Assert.AreEqual(
-                1L,
-                state.Count(
-                    """
-                    SELECT COUNT(*) FROM credit_sdk_usage u
-                    JOIN credit_sdk_owners o ON o.reservation_id=u.reservation_id
-                    WHERE u.reservation_id=$id AND u.session_id=$session
-                        AND u.dispatch_count=$dispatches AND u.status IS $status
-                        AND u.reported_nano_aiu IS NULL AND u.reported_requests IS NULL;
-                    """,
-                    ("$id", seat.Id),
-                    ("$session", seat.SessionId),
-                    ("$dispatches", dispatches),
-                    ("$status", status)
-                ),
-                $"Expected the associated usage row with {dispatches} dispatches, "
-                    + $"status {status ?? "NULL"} and no usage reading."
-            );
-            Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM credit_reports;"));
+            JsonObject reported = ReportedUsage(state, seat.Id);
+            Assert.AreEqual(seat.SessionId, reported["sessionId"]!.GetValue<string>());
+            Assert.AreEqual(dispatches, reported["dispatches"]!.GetValue<long>());
+            Assert.AreEqual(status, reported["status"]?.GetValue<string>());
+            Assert.IsNull(reported["reportedNanoAiu"]);
+            Assert.IsGreaterThan(0, state.Ledger.ReadSdkOwner(seat.Id)["pid"]!.GetValue<int>());
+            Assert.IsFalse(state.Ledger.HasCompleteSdkUsage(seat.Id));
             state.AssertAccounting(130m, 100m, 0m, 100m);
         }
     }
@@ -1267,8 +1161,7 @@ public sealed class CreditWindowSpecs
             clock, clock.GetUtcNow().AddSeconds(1), CancellationToken.None
         );
         CancellationToken admitted = admission.Token;
-        using CancellationTokenSource cancellation =
-            CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+        await using ContenderScope contenders = new(context);
         ActivityTraceId traceId = ActivityTraceId.CreateRandom();
         TaskCompletionSource<Activity> requested = new(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -1291,114 +1184,158 @@ public sealed class CreditWindowSpecs
             },
         };
         ActivitySource.AddActivityListener(listener);
-        Task? pending = null;
-        try
-        {
-            string heldTransaction;
-            using (SqliteDiagnostics.UseActor("owner"))
-            using (SqliteConnection writer = Sql.Open(
-                new SqliteConnection(new SqliteConnectionStringBuilder
-                {
-                    DataSource = state.LedgerPath,
-                    Mode = SqliteOpenMode.ReadWrite,
-                    Pooling = false,
-                }.ToString()),
-                "campaign"
-            ))
-            using (SqliteTransactionScope held = Sql.BeginTransaction(
-                writer, deferred: false, operation: "HeldWriter"
-            ))
-            {
-                heldTransaction = held.Id;
-                pending = Task.Run(async () =>
-                {
-                    using Activity scope = new Activity(operation)
-                        .SetIdFormat(ActivityIdFormat.W3C)
-                        .SetParentId(
-                            traceId, ActivitySpanId.CreateRandom(), ActivityTraceFlags.Recorded
-                        ).Start();
-                    using IDisposable actor = SqliteDiagnostics.UseActor(worker);
-                    await contend(admission, cancellation.Token).ConfigureAwait(false);
-                });
-                Task first = await Task.WhenAny(requested.Task, pending)
-                    .WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken)
-                    .ConfigureAwait(false);
-                if (ReferenceEquals(first, pending))
-                {
-                    await pending.ConfigureAwait(false);
-                    Assert.Fail($"{operation} returned before its writer entry was observed.");
-                }
-                Assert.IsFalse(pending.IsCompleted);
-                Assert.IsFalse(admitted.IsCancellationRequested);
-                Assert.IsFalse(cancellation.IsCancellationRequested);
-                clock.Advance(TimeSpan.FromSeconds(1));
-                Assert.IsTrue(admitted.IsCancellationRequested);
-                Assert.IsFalse(cancellation.IsCancellationRequested);
-            }
 
-            OperationCanceledException error = await Assert.ThrowsAsync<OperationCanceledException>(
-                async () => await pending.ConfigureAwait(false)
-            ).ConfigureAwait(false);
-            Assert.AreEqual(admitted, error.CancellationToken);
-            Assert.IsFalse(context.CancellationToken.IsCancellationRequested);
-            Activity acquisition = await requested.Task.ConfigureAwait(false);
-            Assert.AreEqual(operation, acquisition.GetTagItem("db.operation.name"));
-            Assert.AreEqual(worker, acquisition.GetTagItem("liteagensh.actor"));
-            string transactionId = Assert.IsInstanceOfType<string>(
-                acquisition.GetTagItem("liteagensh.sqlite.transaction_id")
-            );
-            Assert.IsNotEmpty(transactionId);
-            Assert.AreNotEqual(heldTransaction, transactionId);
-            ActivityEvent acquired = Assert.ContainsSingle(
-                acquisition.Events.Where(item => item.Name == "acquisition-succeeded")
-            );
-            Assert.AreEqual(false, acquired.Tags.Single(
-                item => item.Key == "liteagensh.sqlite.deferred"
-            ).Value);
-            Assert.AreEqual(true, acquired.Tags.Single(
-                item => item.Key == "liteagensh.sqlite.write_acquisition_observed"
-            ).Value);
-            return acquisition;
-        }
-        catch (Exception primary)
+        Task pending;
+        string heldTransaction;
+        using (SqliteDiagnostics.UseActor("owner"))
+        using (SqliteConnection writer = Sql.Open(
+            new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = state.LedgerPath,
+                Mode = SqliteOpenMode.ReadWrite,
+                Pooling = false,
+            }.ToString()),
+            "campaign"
+        ))
+        using (SqliteTransactionScope held = Sql.BeginTransaction(
+            writer, deferred: false, operation: "HeldWriter"
+        ))
         {
-            try
+            heldTransaction = held.Id;
+            pending = contenders.Track(Task.Run(async () =>
             {
-                await Task.WhenAll(cancellation.CancelAsync(), pending ?? Task.CompletedTask)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+                using Activity scope = new Activity(operation)
+                    .SetIdFormat(ActivityIdFormat.W3C)
+                    .SetParentId(
+                        traceId, ActivitySpanId.CreateRandom(), ActivityTraceFlags.Recorded
+                    ).Start();
+                using IDisposable actor = SqliteDiagnostics.UseActor(worker);
+                await contend(admission, contenders.Token).ConfigureAwait(false);
+            }));
+            Task first = await Task.WhenAny(requested.Task, pending)
+                .WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken)
+                .ConfigureAwait(false);
+            if (ReferenceEquals(first, pending))
             {
+                await pending.ConfigureAwait(false);
+                Assert.Fail($"{operation} returned before its writer entry was observed.");
             }
-            catch (Exception secondary)
-            {
-                if (!ReferenceEquals(primary, secondary))
-                {
-                    primary.Data["CreditWindowContenderCleanup"] = Json.ExceptionDetails(secondary);
-                }
-            }
-
-            throw;
+            Assert.IsFalse(pending.IsCompleted);
+            Assert.IsFalse(admitted.IsCancellationRequested);
+            Assert.IsFalse(contenders.Token.IsCancellationRequested);
+            clock.Advance(TimeSpan.FromSeconds(1));
+            Assert.IsTrue(admitted.IsCancellationRequested);
+            Assert.IsFalse(contenders.Token.IsCancellationRequested);
         }
+
+        OperationCanceledException error = await Assert.ThrowsAsync<OperationCanceledException>(
+            async () => await pending.ConfigureAwait(false)
+        ).ConfigureAwait(false);
+        Assert.AreEqual(admitted, error.CancellationToken);
+        Assert.IsFalse(context.CancellationToken.IsCancellationRequested);
+        Activity acquisition = await requested.Task.ConfigureAwait(false);
+        Assert.AreEqual(operation, acquisition.GetTagItem("db.operation.name"));
+        Assert.AreEqual(worker, acquisition.GetTagItem("liteagensh.actor"));
+        string transactionId = Assert.IsInstanceOfType<string>(
+            acquisition.GetTagItem("liteagensh.sqlite.transaction_id")
+        );
+        Assert.IsNotEmpty(transactionId);
+        Assert.AreNotEqual(heldTransaction, transactionId);
+        ActivityEvent acquired = Assert.ContainsSingle(
+            acquisition.Events.Where(item => item.Name == "acquisition-succeeded")
+        );
+        Assert.AreEqual(false, acquired.Tags.Single(
+            item => item.Key == "liteagensh.sqlite.deferred"
+        ).Value);
+        Assert.AreEqual(true, acquired.Tags.Single(
+            item => item.Key == "liteagensh.sqlite.write_acquisition_observed"
+        ).Value);
+        contenders.Complete();
+        return acquisition;
     }
 
     private static NativeUsage Usage(CreditReservation row, decimal credits, long requests) =>
         new(row.SessionId!, (double)(credits * 1_000_000_000m), "complete", requests);
 
-    private static async Task Drain(Task task)
+    private static JsonObject Status(CreditWindowState state) =>
+        state.Ledger.Status("run", state.RunAllowance);
+
+    private static JsonObject ReportedUsage(CreditWindowState state, string reservationId) =>
+        Status(state)["reported"]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .Single(row => row["reservationId"]!.GetValue<string>() == reservationId);
+
+    private static long Dispatches(CreditWindowState state, string reservationId) =>
+        ReportedUsage(state, reservationId)["dispatches"]!.GetValue<long>();
+
+    private static long TotalRunDispatches(CreditWindowState state) =>
+        Status(state)["reported"]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .Sum(row => row["dispatches"]!.GetValue<long>());
+
+    private sealed class ContenderScope(TestContext context) : IAsyncDisposable
     {
-        try
+        private readonly CancellationTokenSource cancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+        private readonly List<Task> tasks = [];
+        private bool completed;
+
+        internal CancellationToken Token => cancellation.Token;
+
+        internal Task CancelAsync() => cancellation.CancelAsync();
+
+        internal Task<T> Track<T>(Task<T> task)
         {
-            await task.ConfigureAwait(false);
+            tasks.Add(task);
+            return task;
         }
-        catch (OperationCanceledException)
+
+        internal Task Track(Task task)
         {
-            // Cleanup only. The scenario asserts cancellation or success before this boundary.
+            tasks.Add(task);
+            return task;
         }
-        catch (OperationException)
+
+        internal void Complete() => completed = true;
+
+        public async ValueTask DisposeAsync()
         {
-            // Preserve the original assertion/fault; never leave an acquisition using deleted
-            // state.
+            List<Exception> unexpected = [];
+            try
+            {
+                await cancellation.CancelAsync().ConfigureAwait(false);
+            }
+            catch (Exception error)
+            {
+                unexpected.Add(error);
+            }
+            foreach (Task task in tasks)
+            {
+                try
+                {
+                    await task.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) { }
+                catch (OperationException) { }
+                catch (Exception error)
+                {
+                    unexpected.Add(error);
+                }
+            }
+            cancellation.Dispose();
+            if (unexpected.Count != 0)
+            {
+                if (completed)
+                {
+                    throw new AggregateException("Contender cleanup failed.", unexpected);
+                }
+                foreach (Exception secondary in unexpected)
+                {
+                    context.WriteLine("Secondary contender cleanup failure: {0}", secondary);
+                }
+            }
         }
     }
 

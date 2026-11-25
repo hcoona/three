@@ -82,25 +82,12 @@ internal sealed class SerializedToolHost : IAsyncDisposable
             }
             birthTicks = process.StartTime.ToUniversalTime().Ticks;
             error = process.StandardError.ReadToEndAsync();
-            Console.WriteLine(
-                "PHASE8_PRODUCT_STARTED "
-                    + new JsonObject
-                    {
-                        ["pid"] = process.Id,
-                        ["birthTicks"] = birthTicks,
-                        ["actor"] = actor,
-                        ["mode"] = arguments[0],
-                        ["state"] = statePath,
-                        ["productSha256"] = Convert.ToHexString(
-                            SHA256.HashData(File.ReadAllBytes(typeof(Program).Assembly.Location))
-                        ),
-                    }.ToJsonString()
-            );
         }
         catch (Exception primary)
         {
-            Console.Error.WriteLine("PHASE8_CONSTRUCTOR_PRIMARY " + Json.ExceptionDetails(primary));
-            Console.WriteLine("PHASE8_PRESERVED_STATE " + statePath);
+            Console.Error.WriteLine(
+                "TOOL_HOST_CONSTRUCTOR_PRIMARY " + Json.ExceptionDetails(primary)
+            );
             try
             {
                 if (started && !process.HasExited)
@@ -115,7 +102,7 @@ internal sealed class SerializedToolHost : IAsyncDisposable
             catch (Exception secondary)
             {
                 Console.Error.WriteLine(
-                    "PHASE8_CONSTRUCTOR_SECONDARY " + Json.ExceptionDetails(secondary)
+                    "TOOL_HOST_CONSTRUCTOR_SECONDARY " + Json.ExceptionDetails(secondary)
                 );
             }
             finally
@@ -156,8 +143,7 @@ internal sealed class SerializedToolHost : IAsyncDisposable
         catch (Exception exception)
         {
             host.primary = exception;
-            Console.Error.WriteLine("PHASE8_PRIMARY " + Json.ExceptionDetails(exception));
-            Console.WriteLine("PHASE8_PRESERVED_STATE " + database.StatePath);
+            Console.Error.WriteLine("TOOL_HOST_PRIMARY " + Json.ExceptionDetails(exception));
             throw;
         }
         finally
@@ -184,15 +170,6 @@ internal sealed class SerializedToolHost : IAsyncDisposable
         );
         JsonObject envelope = JsonNode.Parse(text.Text)!.AsObject();
         Assert.AreEqual(envelope["ok"]!.GetValue<bool>(), wire.IsError != true, text.Text);
-        Console.WriteLine(
-            "PHASE8_TOOL_RESULT "
-                + new JsonObject
-                {
-                    ["actor"] = actor,
-                    ["operation"] = name,
-                    ["envelope"] = envelope.DeepClone(),
-                }.ToJsonString()
-        );
         return envelope;
     }
 
@@ -339,27 +316,24 @@ internal sealed class SerializedToolHost : IAsyncDisposable
             await Stage(() => disposing.WaitAsync(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
         }
         int? exit = process.HasExited ? process.ExitCode : null;
-        Console.WriteLine(
-            "PHASE8_PRODUCT_CLEANUP "
-                + new JsonObject
-                {
-                    ["pid"] = process.Id,
-                    ["birthTicks"] = birthTicks,
-                    ["actor"] = actor,
-                    ["state"] = statePath,
-                    ["joined"] = process.HasExited,
-                    ["exitCode"] = exit,
-                    ["expectedExitCode"] = expectedExit,
-                    ["stderrDrained"] = error.IsCompleted,
-                    ["stderr"] = stderr,
-                    ["forced"] = forced,
-                    ["secondaryCount"] = failures.Count,
-                }.ToJsonString()
-        );
+        _ = birthTicks;
+        _ = statePath;
+        bool failed =
+            primary is not null
+            || failures.Count != 0
+            || forced
+            || exit != expectedExit;
+        if (failed && !string.IsNullOrWhiteSpace(stderr))
+        {
+            Console.Error.WriteLine("TOOL_HOST_STDERR " + stderr);
+            primary?.Data["ToolHostStandardError"] = stderr;
+        }
         process.Dispose();
         foreach (Exception failure in failures)
         {
-            Console.Error.WriteLine("PHASE8_CLEANUP_SECONDARY " + Json.ExceptionDetails(failure));
+            Console.Error.WriteLine(
+                "TOOL_HOST_CLEANUP_SECONDARY " + Json.ExceptionDetails(failure)
+            );
         }
         if (primary is null)
         {

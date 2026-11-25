@@ -11,173 +11,112 @@ namespace LiteAgensh.Tests;
 [DoNotParallelize]
 public sealed class TrustedBoundarySpecs(TestContext context)
 {
-    private static readonly string[] PreflightBusinessTables =
-    [
-        "tasks",
-        "task_comments",
-        "messages",
-        "board_history",
-        "board_recent",
-        "events",
-        "delivery_batches",
-        "batch_gists",
-        "shown_notices",
-        "shown_gists",
-        "notice_cursors",
-        "coordinator_segments",
-        "coordinator_turns",
-        "coordinator_controls",
-        "native_sessions",
-        "native_attempts",
-    ];
-
     [TestMethod]
     [TestCategory("HostTrust")]
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task HostTrustPreservesOwnedFilesAndCheckout()
     {
-        GitScenarioState state = await GitScenarioState
+        using GitScenarioState state = await GitScenarioState
             .CreateAsync(context.CancellationToken)
             .ConfigureAwait(false);
-        bool completed = false;
-        try
-        {
-            string home = Path.Combine(state.Database.StatePath, "phase8-owned-home");
-            string settings = Path.Combine(home, ".copilot", "settings.json");
-            Directory.CreateDirectory(Path.GetDirectoryName(settings)!);
-            const string credential = "PHASE8_OWNED_CREDENTIAL_NOT_A_REAL_SECRET_76430";
-            string[] files =
-            [
-                Path.Combine(state.Repository, "AGENTS.md"),
-                Path.Combine(home, "credentials.json"),
-                settings,
-                Path.Combine(home, ".copilot", "policy.json"),
-                state.GlobalConfig,
-                state.SystemConfig,
-            ];
-            File.AppendAllText(
-                files[0],
-                "\nPreserve the owned trust sentinel; never rewrite target instructions.\n"
-            );
-            File.WriteAllText(files[1], new JsonObject { ["token"] = credential }.ToJsonString());
-            File.WriteAllText(settings, """{"phase8":"owned-settings","autoUpdate":false}""");
-            File.WriteAllText(
-                files[3],
-                """{"phase8":"owned-policy","allowRemoteDelivery":false}"""
-            );
-            Dictionary<string, string> before = files.ToDictionary(file => file, Digest);
-            string head = await state
-                .GitAsync(state.Repository, context.CancellationToken, "rev-parse", "HEAD")
-                .ConfigureAwait(false);
-            string status = await state
-                .GitAsync(state.Repository, context.CancellationToken, "status", "--porcelain=v1")
-                .ConfigureAwait(false);
-            await state.Operations.InitializeAsync(context.CancellationToken).ConfigureAwait(false);
-            await SerializedToolHost
-                .RunAsync(
-                    state.Database,
-                    "worker1",
-                    async host =>
-                    {
-                        JsonObject result = await host.DataAsync(
-                                "run_info",
-                                new(),
-                                context.CancellationToken
-                            )
-                            .ConfigureAwait(false);
-                        Assert.AreEqual(
-                            state.Repository,
-                            result["repositoryPath"]!.GetValue<string>()
-                        );
-                        Assert.DoesNotContain(credential, result.ToJsonString());
-                        JsonObject rejected = await host.InvokeAsync(
-                                "task_write",
-                                new()
-                                {
-                                    ["action"] = "create",
-                                    ["title"] = "Rejected sentinel",
-                                    ["body"] = "Otherwise valid synthetic task body.",
-                                    ["credential"] = credential,
-                                },
-                                context.CancellationToken
-                            )
-                            .ConfigureAwait(false);
-                        Assert.IsFalse(rejected["ok"]!.GetValue<bool>());
-                        Assert.AreEqual("invalid_arguments", rejected["code"]!.GetValue<string>());
-                        Assert.DoesNotContain(credential, rejected.ToJsonString());
-                        Assert.AreEqual(1L, state.Number("SELECT COUNT(*) FROM tasks;"));
-                    },
-                    context.CancellationToken
-                )
-                .ConfigureAwait(false);
-            foreach ((string file, string digest) in before)
-            {
-                Assert.AreEqual(digest, Digest(file), file);
-            }
-            Assert.AreEqual(
-                head,
-                await state
-                    .GitAsync(state.Repository, context.CancellationToken, "rev-parse", "HEAD")
-                    .ConfigureAwait(false)
-            );
-            Assert.AreEqual(
-                status,
-                await state
-                    .GitAsync(
+        string home = Path.Combine(state.Database.StatePath, "phase8-owned-home");
+        string settings = Path.Combine(home, ".copilot", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(settings)!);
+        const string credential = "OWNED_CREDENTIAL_NOT_A_REAL_SECRET_76430";
+        string[] files =
+        [
+            Path.Combine(state.Repository, "AGENTS.md"),
+            Path.Combine(home, "credentials.json"),
+            settings,
+            Path.Combine(home, ".copilot", "policy.json"),
+            state.GlobalConfig,
+            state.SystemConfig,
+        ];
+        File.AppendAllText(
+            files[0],
+            "\nPreserve the owned trust sentinel; never rewrite target instructions.\n"
+        );
+        File.WriteAllText(files[1], new JsonObject { ["token"] = credential }.ToJsonString());
+        File.WriteAllText(settings, """{"phase8":"owned-settings","autoUpdate":false}""");
+        File.WriteAllText(
+            files[3],
+            """{"phase8":"owned-policy","allowRemoteDelivery":false}"""
+        );
+        Dictionary<string, string> before = files.ToDictionary(file => file, Digest);
+        string head = await state
+            .GitAsync(state.Repository, context.CancellationToken, "rev-parse", "HEAD")
+            .ConfigureAwait(false);
+        string status = await state
+            .GitAsync(state.Repository, context.CancellationToken, "status", "--porcelain=v1")
+            .ConfigureAwait(false);
+        await state.Operations.InitializeAsync(context.CancellationToken).ConfigureAwait(false);
+        await SerializedToolHost
+            .RunAsync(
+                state.Database,
+                "worker1",
+                async host =>
+                {
+                    JsonObject result = await host.DataAsync(
+                            "run_info",
+                            new(),
+                            context.CancellationToken
+                        )
+                        .ConfigureAwait(false);
+                    Assert.AreEqual(
                         state.Repository,
-                        context.CancellationToken,
-                        "status",
-                        "--porcelain=v1"
-                    )
-                    .ConfigureAwait(false)
-            );
-
-            Console.WriteLine(
-                "PHASE8_TRUST_EFFECTS "
-                    + new JsonObject
-                    {
-                        ["ownedFiles"] = new JsonArray(
-                            before
-                                .Select(item =>
-                                    (JsonNode)
-                                        new JsonObject
-                                        {
-                                            ["path"] = item.Key,
-                                            ["beforeSha256"] = item.Value,
-                                            ["afterSha256"] = Digest(item.Key),
-                                        }
-                                )
-                                .ToArray()
-                        ),
-                        ["checkoutHeadPreserved"] = true,
-                        ["checkoutStatusPreserved"] = true,
-                        ["installedNativeReadback"] = false,
-                        ["nativePolicyEffectivenessObserved"] = false,
-                    }.ToJsonString()
-            );
-            completed = true;
-        }
-        finally
-        {
-            if (completed)
-            {
-                state.Dispose();
-            }
-            else
-            {
-                try
-                {
-                    GitScenarioState.AssertEnvironmentUnchanged();
-                }
-                catch (Exception secondary)
-                {
-                    Console.Error.WriteLine(
-                        "PHASE8_ENVIRONMENT_SECONDARY " + Json.ExceptionDetails(secondary)
+                        result["repositoryPath"]!.GetValue<string>()
                     );
-                }
-                Console.WriteLine("PHASE8_PRESERVED_STATE " + state.Database.StatePath);
-            }
+                    Assert.DoesNotContain(credential, result.ToJsonString());
+                    JsonObject rejected = await host.InvokeAsync(
+                            "task_write",
+                            new()
+                            {
+                                ["action"] = "create",
+                                ["title"] = "Rejected sentinel",
+                                ["body"] = "Otherwise valid synthetic task body.",
+                                ["credential"] = credential,
+                            },
+                            context.CancellationToken
+                        )
+                        .ConfigureAwait(false);
+                    Assert.IsFalse(rejected["ok"]!.GetValue<bool>());
+                    Assert.AreEqual("invalid_arguments", rejected["code"]!.GetValue<string>());
+                    Assert.DoesNotContain(credential, rejected.ToJsonString());
+                    JsonObject tasks = await host.DataAsync(
+                            "task_list",
+                            new(),
+                            context.CancellationToken
+                        )
+                        .ConfigureAwait(false);
+                    Assert.AreEqual(
+                        1L,
+                        Assert.ContainsSingle(tasks["items"]!.AsArray())!["id"]!.GetValue<long>()
+                    );
+                },
+                context.CancellationToken
+            )
+            .ConfigureAwait(false);
+        foreach ((string file, string digest) in before)
+        {
+            Assert.AreEqual(digest, Digest(file), file);
         }
+        Assert.AreEqual(
+            head,
+            await state
+                .GitAsync(state.Repository, context.CancellationToken, "rev-parse", "HEAD")
+                .ConfigureAwait(false)
+        );
+        Assert.AreEqual(
+            status,
+            await state
+                .GitAsync(
+                    state.Repository,
+                    context.CancellationToken,
+                    "status",
+                    "--porcelain=v1"
+                )
+                .ConfigureAwait(false)
+        );
     }
 
     [TestMethod]
@@ -250,63 +189,67 @@ public sealed class TrustedBoundarySpecs(TestContext context)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task MissingOriginalLedgerRefusesPublicRecoveryWithoutReplacement(string command)
     {
-        BoardDeliveryState state = new();
-        bool completed = false;
-        try
+        using BoardDeliveryState state = new();
+        state.Send("owner", "worker1", "Retain the run whose original ledger is missing.");
+        LocalTools tools = new(state.Database);
+        _ = new Coordinator(state.Database, tools.Collaboration, tools.Git);
+        string ledgerPath = state.Database.Configuration.CampaignLedgerPath;
+        CreditLedger ledger = new(
+            ledgerPath,
+            state.Database.Configuration.CampaignAiCreditAllowance
+        );
+        CreditReservation reservation = ledger.Reserve(
+            state.Database.RunId,
+            "worker1",
+            30,
+            state.Database.Configuration.RunAiCreditAllowance,
+            Path.Combine(state.Database.StatePath, "uncalled.usage")
+        );
+        string runId = state.Database.RunId;
+        string binding = state.Database.ReadMetadata("native:ledger_binding")!;
+        Assert.IsNotNull(binding);
+        JsonObject before = CaptureCollaborationSnapshot(state.Operations);
+        using (SqliteConnection ownedPool = new(Sql.ConnectionStringFor(ledgerPath)))
         {
-            state.Send("owner", "worker1", "Retain the run whose original ledger is missing.");
-            LocalTools tools = new(state.Database);
-            _ = new Coordinator(state.Database, tools.Collaboration, tools.Git);
-            string ledgerPath = state.Database.Configuration.CampaignLedgerPath;
-            CreditLedger ledger = new(
-                ledgerPath, state.Database.Configuration.CampaignAiCreditAllowance
-            );
-            CreditReservation reservation = ledger.Reserve(
-                state.Database.RunId, "worker1", 30,
-                state.Database.Configuration.RunAiCreditAllowance,
-                Path.Combine(state.Database.StatePath, "uncalled.usage")
-            );
-            string binding = state.Database.ReadMetadata("native:ledger_binding")!;
-            Assert.IsNotNull(binding);
-            JsonObject before = RetainedRunProjection(state.Database);
-            using (SqliteConnection ownedPool = new(Sql.ConnectionStringFor(ledgerPath)))
-            {
-                SqliteConnection.ClearPool(ownedPool);
-            }
-            string retainedLedger = ledgerPath + ".retained";
-            File.Move(ledgerPath, retainedLedger);
-            string originalDigest = Digest(retainedLedger);
-            Assert.IsFalse(File.Exists(ledgerPath));
-
-            JsonObject result = await SerializedToolHost.RejectRetainedRecoveryAsync(
-                state.Database, command, reservation.Id, context.CancellationToken
-            );
-
-            Assert.IsFalse(result["ok"]!.GetValue<bool>());
-            Assert.AreEqual("credit_unknown", result["code"]!.GetValue<string>());
-            Assert.Contains(
-                "requires its original campaign ledger", result["message"]!.GetValue<string>()
-            );
-            Assert.AreEqual(
-                before.ToJsonString(), RetainedRunProjection(state.Database).ToJsonString()
-            );
-            Assert.AreEqual(binding, state.Database.ReadMetadata("native:ledger_binding"));
-            Assert.IsFalse(File.Exists(ledgerPath));
-            Assert.AreEqual(originalDigest, Digest(retainedLedger));
-            Assert.IsFalse(File.Exists(Path.Combine(state.Database.StatePath, "coordinator.lock")));
-            completed = true;
+            SqliteConnection.ClearPool(ownedPool);
         }
-        finally
-        {
-            if (completed)
-            {
-                state.Dispose();
-            }
-            else
-            {
-                Console.WriteLine("PHASE8_PRESERVED_STATE " + state.Database.StatePath);
-            }
-        }
+        string retainedLedger = ledgerPath + ".retained";
+        File.Move(ledgerPath, retainedLedger);
+        string originalDigest = Digest(retainedLedger);
+        Assert.IsFalse(File.Exists(ledgerPath));
+
+        JsonObject result = await SerializedToolHost
+            .RejectRetainedRecoveryAsync(
+                state.Database,
+                command,
+                reservation.Id,
+                context.CancellationToken
+            )
+            .ConfigureAwait(false);
+
+        Assert.IsFalse(result["ok"]!.GetValue<bool>());
+        Assert.AreEqual("credit_unknown", result["code"]!.GetValue<string>());
+        Assert.Contains(
+            "requires its original campaign ledger",
+            result["message"]!.GetValue<string>()
+        );
+        Assert.IsTrue(
+            JsonNode.DeepEquals(before, CaptureCollaborationSnapshot(state.Operations))
+        );
+        DeliveryBatch retainedPending =
+            state.Operations.ClaimBatch("worker1", false)
+            ?? throw new AssertFailedException(
+                "Expected pending message to remain queued after rejected recovery."
+            );
+        Assert.AreEqual(
+            "Retain the run whose original ledger is missing.",
+            SinglePromptMessageBody(retainedPending)
+        );
+        Assert.AreEqual(runId, state.Database.RunId);
+        Assert.AreEqual(binding, state.Database.ReadMetadata("native:ledger_binding"));
+        Assert.IsFalse(File.Exists(ledgerPath));
+        Assert.AreEqual(originalDigest, Digest(retainedLedger));
+        Assert.IsFalse(File.Exists(Path.Combine(state.Database.StatePath, "coordinator.lock")));
     }
 
     [TestMethod]
@@ -348,56 +291,42 @@ public sealed class TrustedBoundarySpecs(TestContext context)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task IncompatibleOwnedStateRejectedAtPublicLaunchWithoutRecreation()
     {
-        BoardDeliveryState state = new();
-        bool completed = false;
-        try
-        {
-            state.Send("owner", "worker1", "Retain the incompatible run's existing message.");
-            state.Database.WriteMetadata("phase8:sentinel", "owned-existing-state");
-            state.Database.WriteMetadata("schema_version", "999");
-            string sentinel = Path.Combine(
-                state.Database.StatePath,
-                "owned-incompatible-sentinel.txt"
+        using BoardDeliveryState state = new();
+        state.Send("owner", "worker1", "Retain the incompatible run's existing message.");
+        state.Database.WriteMetadata("phase8:sentinel", "owned-existing-state");
+        state.Database.WriteMetadata("schema_version", "999");
+        string sentinel = Path.Combine(
+            state.Database.StatePath,
+            "owned-incompatible-sentinel.txt"
+        );
+        File.WriteAllText(sentinel, "Do not replace this owned run.\n");
+        string beforeFile = Digest(sentinel);
+        string runId = state.Database.RunId;
+        JsonObject before = CaptureCollaborationSnapshot(state.Operations);
+        JsonObject result = await SerializedToolHost
+            .RejectIncompatiblePreflightAsync(state.Database, context.CancellationToken)
+            .ConfigureAwait(false);
+        Assert.IsFalse(result["ok"]!.GetValue<bool>());
+        Assert.AreEqual("failed", result["code"]!.GetValue<string>());
+        Assert.Contains("Unsupported run schema 999", result["message"]!.GetValue<string>());
+        Assert.Contains("state has not been recreated", result["message"]!.GetValue<string>());
+        Assert.IsTrue(
+            JsonNode.DeepEquals(before, CaptureCollaborationSnapshot(state.Operations))
+        );
+        DeliveryBatch retainedPending =
+            state.Operations.ClaimBatch("worker1", false)
+            ?? throw new AssertFailedException(
+                "Expected pending message to remain queued after rejected preflight."
             );
-            File.WriteAllText(sentinel, "Do not replace this owned run.\n");
-            string beforeFile = Digest(sentinel);
-            JsonObject before = RetainedRunProjection(state.Database);
-            JsonObject result = await SerializedToolHost
-                .RejectIncompatiblePreflightAsync(state.Database, context.CancellationToken)
-                .ConfigureAwait(false);
-            Assert.IsFalse(result["ok"]!.GetValue<bool>());
-            Assert.AreEqual("failed", result["code"]!.GetValue<string>());
-            Assert.Contains("Unsupported run schema 999", result["message"]!.GetValue<string>());
-            Assert.Contains("state has not been recreated", result["message"]!.GetValue<string>());
-            JsonObject after = RetainedRunProjection(state.Database);
-            Assert.AreEqual(before.ToJsonString(), after.ToJsonString());
-            Assert.AreEqual(beforeFile, Digest(sentinel));
-            Assert.AreEqual("999", state.Database.ReadMetadata("schema_version"));
-            Assert.IsFalse(File.Exists(Path.Combine(state.Database.StatePath, "coordinator.lock")));
-            Console.WriteLine(
-                "PHASE8_INCOMPATIBLE_PRESERVATION "
-                    + new JsonObject
-                    {
-                        ["state"] = state.Database.StatePath,
-                        ["before"] = before,
-                        ["after"] = after,
-                        ["result"] = result,
-                        ["sentinelSha256"] = beforeFile,
-                    }.ToJsonString()
-            );
-            completed = true;
-        }
-        finally
-        {
-            if (completed)
-            {
-                state.Dispose();
-            }
-            else
-            {
-                Console.WriteLine("PHASE8_PRESERVED_STATE " + state.Database.StatePath);
-            }
-        }
+        Assert.AreEqual(
+            "Retain the incompatible run's existing message.",
+            SinglePromptMessageBody(retainedPending)
+        );
+        Assert.AreEqual(runId, state.Database.RunId);
+        Assert.AreEqual("owned-existing-state", state.Database.ReadMetadata("phase8:sentinel"));
+        Assert.AreEqual(beforeFile, Digest(sentinel));
+        Assert.AreEqual("999", state.Database.ReadMetadata("schema_version"));
+        Assert.IsFalse(File.Exists(Path.Combine(state.Database.StatePath, "coordinator.lock")));
     }
 
     [TestMethod]
@@ -405,13 +334,15 @@ public sealed class TrustedBoundarySpecs(TestContext context)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task MissingCapabilityPreservesBusinessStateAndReleasesOperationOwnership()
     {
-        Phase6PublicRun state = await Phase6PublicRun
+        PublicBoundaryRun state = await PublicBoundaryRun
             .CreateAsync(1, context.CancellationToken)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
                 CollaborationOperations collaboration = new(state.Database);
+                GitOperations git = new(state.Database, collaboration);
+                ProcessRunner processes = new(state.Database);
                 JsonObject create = collaboration.Invoke(
                     "worker1",
                     "task_write",
@@ -467,130 +398,209 @@ public sealed class TrustedBoundarySpecs(TestContext context)
                     collaboration.Invoke(
                         "owner",
                         "message_send",
-                        new() { ["recipient"] = "worker1", ["body"] = "Retained pending delivery." }
+                        new()
+                        {
+                            ["recipient"] = "worker1",
+                            ["body"] = "Retained pending delivery.",
+                        }
                     )
                 );
 
-                JsonObject Projection()
+                async Task<string> ResolveRefAsync(string path, string revision)
                 {
-                    using SqliteConnection connection = state.Database.Open();
-                    JsonObject projection = new()
-                    {
-                        ["identityConfigurationAssociations"] = Phase6State.Rows(
-                            connection,
-                            (
-                                "SELECT key,value FROM meta WHERE key IN "
-                                + "('run_id','configuration','native:ledger_binding') "
-                            )
-                                + "OR key LIKE 'git:%' OR key LIKE 'worktree:%' ORDER BY key;"
-                        ),
-                        ["financial"] = Phase6State.Financial(state.Database, state.Ledger),
-                    };
-                    foreach (string table in PreflightBusinessTables)
-                    {
-                        projection[table] = Phase6State.Rows(
-                            connection,
-                            $"SELECT * FROM {table} ORDER BY rowid;"
-                        );
-                    }
-                    return projection;
+                    ProcessResult resolved = await processes
+                        .RunAsync(
+                            "git",
+                            ["rev-parse", "--verify", revision],
+                            path,
+                            TimeSpan.FromSeconds(30),
+                            context.CancellationToken
+                        )
+                        .ConfigureAwait(false);
+                    Assert.IsFalse(resolved.TimedOut);
+                    Assert.AreEqual(0, resolved.ExitCode, resolved.StandardError);
+                    return resolved.StandardOutput.Trim();
                 }
+
+                async Task<JsonObject> CaptureDomainAsync()
+                {
+                    string repository = state.Database.Configuration.RepositoryPath;
+                    string runId = state.Database.RunId;
+                    string workerPath = git.GetWorkerPath("worker1");
+                    JsonObject runInfo = GitScenarioState
+                        .Data(collaboration.Invoke("owner", "run_info", new()))
+                        .DeepClone()
+                        .AsObject();
+                    runInfo.Remove("lifecycle");
+                    JsonObject agents = GitScenarioState
+                        .Data(collaboration.Invoke("owner", "agent_list", new()))
+                        .DeepClone()
+                        .AsObject();
+                    foreach (JsonObject agent in agents["items"]!.AsArray().OfType<JsonObject>())
+                    {
+                        if (agent["id"]!.GetValue<string>() == "owner")
+                        {
+                            agent.Remove("lifecycle");
+                        }
+                    }
+                    return new JsonObject
+                    {
+                        ["runInfo"] = runInfo,
+                        ["agents"] = agents,
+                        ["collaboration"] = CaptureCollaborationSnapshot(collaboration),
+                        ["boardSearch"] = GitScenarioState
+                            .Data(
+                                collaboration.Invoke(
+                                    "owner",
+                                    "board_search",
+                                    new() { ["query"] = "decoder.cs" }
+                                )
+                            )
+                            .DeepClone(),
+                        ["changes"] = GitScenarioState
+                            .Data(
+                                await git.InvokeAsync(
+                                        "owner",
+                                        "change_list",
+                                        new(),
+                                        context.CancellationToken
+                                    )
+                                    .ConfigureAwait(false)
+                            )
+                            .DeepClone(),
+                        ["repositoryHead"] = await ResolveRefAsync(repository, "HEAD")
+                            .ConfigureAwait(false),
+                        ["integrationRef"] = await ResolveRefAsync(
+                                repository,
+                                $"refs/heads/lite-agensh/{runId}/integration"
+                            )
+                            .ConfigureAwait(false),
+                        ["workerRef"] = await ResolveRefAsync(
+                                repository,
+                                $"refs/heads/lite-agensh/{runId}/worker1"
+                            )
+                            .ConfigureAwait(false),
+                        ["workerHead"] = await ResolveRefAsync(workerPath, "HEAD")
+                            .ConfigureAwait(false),
+                    };
+                }
+
                 JsonObject beforeStatus = GitScenarioState.Data(state.Coordinator.Status());
-                string beforeLifecycle = beforeStatus["lifecycle"]!.GetValue<string>();
-                Assert.AreEqual("initialized", beforeLifecycle);
+                Assert.AreEqual("initialized", beforeStatus["lifecycle"]!.GetValue<string>());
                 Assert.IsFalse(beforeStatus["active"]!.GetValue<bool>());
                 Assert.IsNull(beforeStatus["failure"]);
+                Assert.IsNull(beforeStatus["nativePreflight"]);
+                Assert.IsNull(beforeStatus["nativeBillingCalibration"]);
                 Assert.IsEmpty(beforeStatus["settlementFailures"]!.AsArray());
-                Assert.IsFalse(beforeStatus["credits"]!["uncertain"]!.GetValue<bool>());
-                Assert.AreEqual(
-                    0L,
-                    Phase6State.Number(state.Database, "SELECT COUNT(*) FROM coordinator_segments;")
+                JsonObject beforeCredits = state.Ledger.Status(
+                    state.Database.RunId,
+                    state.Database.Configuration.RunAiCreditAllowance
                 );
+                Assert.IsFalse(beforeCredits["uncertain"]!.GetValue<bool>());
                 Assert.IsEmpty(state.Ledger.Reservations(state.Database.RunId));
-                Assert.IsNull(state.Database.ReadMetadata("native:controlled_preflight_receipt"));
-                Assert.IsNull(state.Database.ReadMetadata("native:sdk_preflight_receipt"));
-                JsonObject before = Projection();
-                Assert.HasCount(2, before["tasks"]!.AsArray());
-                Assert.HasCount(2, before["messages"]!.AsArray());
-                Assert.HasCount(1, before["delivery_batches"]!.AsArray());
+                JsonObject before = await CaptureDomainAsync().ConfigureAwait(false);
+                Assert.HasCount(2, before["collaboration"]!["tasks"]!["items"]!.AsArray());
+                Assert.HasCount(2, before["collaboration"]!["messages"]!["items"]!.AsArray());
+                Assert.HasCount(1, before["collaboration"]!["board"]!["items"]!.AsArray());
+
                 state.MissingLimitCapability = true;
                 JsonObject result = await state
                     .Reopen()
                     .PreflightAsync(context.CancellationToken)
                     .ConfigureAwait(false);
+
                 Assert.IsFalse(result["ok"]!.GetValue<bool>());
                 Assert.AreEqual("native_probe_failed", result["code"]!.GetValue<string>());
                 Assert.IsNotEmpty(result["message"]!.GetValue<string>());
-                JsonObject after = Projection();
-                Assert.AreEqual(before.ToJsonString(), after.ToJsonString());
-                Assert.AreEqual("stopped", state.Database.ReadMetadata("lifecycle"));
-                Assert.IsNull(state.Database.ReadMetadata("native:controlled_preflight_receipt"));
-                Assert.IsNull(state.Database.ReadMetadata("native:sdk_preflight_receipt"));
-                Assert.IsEmpty(state.Ledger.Reservations(state.Database.RunId));
-                Assert.AreEqual(
-                    0L,
-                    Phase6State.Number(state.Database, "SELECT COUNT(*) FROM native_sessions;")
-                );
-                Assert.AreEqual(
-                    0L,
-                    Phase6State.Number(state.Database, "SELECT COUNT(*) FROM native_attempts;")
-                );
-                Assert.AreEqual(
-                    0L,
-                    Phase6State.Number(state.Database, "SELECT COUNT(*) FROM coordinator_segments;")
-                );
-                using (
-                    FileStream ownership = new(
-                        Path.Combine(state.Database.StatePath, "coordinator.lock"),
-                        FileMode.Open,
-                        FileAccess.ReadWrite,
-                        FileShare.None
+                JsonObject after = await CaptureDomainAsync().ConfigureAwait(false);
+                Assert.IsTrue(JsonNode.DeepEquals(before, after));
+                JsonObject afterStatus = GitScenarioState.Data(state.Reopen().Status());
+                Assert.AreEqual("stopped", afterStatus["lifecycle"]!.GetValue<string>());
+                Assert.IsFalse(afterStatus["active"]!.GetValue<bool>());
+                Assert.IsNull(afterStatus["stopReason"]);
+                Assert.IsNull(afterStatus["deadlineDrain"]);
+                Assert.IsNull(afterStatus["failure"]);
+                Assert.IsNull(afterStatus["nativePreflight"]);
+                Assert.IsNull(afterStatus["nativeBillingCalibration"]);
+                Assert.IsNull(afterStatus["delivery"]);
+                Assert.IsEmpty(afterStatus["settlementFailures"]!.AsArray());
+                Assert.IsTrue(JsonNode.DeepEquals(beforeStatus["workers"], afterStatus["workers"]));
+                Assert.IsTrue(JsonNode.DeepEquals(beforeCredits, afterStatus["credits"]));
+                Assert.IsTrue(
+                    JsonNode.DeepEquals(
+                        beforeCredits,
+                        state.Ledger.Status(
+                            state.Database.RunId,
+                            state.Database.Configuration.RunAiCreditAllowance
+                        )
                     )
-                )
-                {
-                    Assert.IsTrue(ownership.CanWrite);
-                }
-                Console.WriteLine(
-                    "PHASE8_MISSING_CAPABILITY_PRESERVATION "
-                        + new JsonObject
-                        {
-                            ["state"] = state.Database.StatePath,
-                            ["before"] = before,
-                            ["after"] = after,
-                            ["beforeLifecycle"] = beforeLifecycle,
-                            ["afterLifecycle"] = state.Database.ReadMetadata("lifecycle"),
-                            ["operationOwnershipReleased"] = true,
-                            ["result"] = result,
-                            ["allowedEffects"] =
-                                (
-                                    "temporary ownership; owned Git preparation; preflight "
-                                    + "lifecycle/diagnostics; successfully settled controlled "
-                                    + "probe"
-                                ),
-                            ["installedNativeObserved"] = false,
-                        }.ToJsonString()
                 );
+                Assert.IsNull(
+                    GitScenarioState.Data(
+                        new Coordinator(state.Database, collaboration, git).Status()
+                    )["nativePreflight"]
+                );
+                Assert.IsEmpty(state.Ledger.Reservations());
+                DeliveryBatch retainedPending =
+                    collaboration.ClaimBatch("worker1", false)
+                    ?? throw new AssertFailedException(
+                        "Expected pending message to remain queued after failed preflight."
+                    );
+                Assert.Contains("Retained pending delivery.", retainedPending.Prompt);
+                Assert.DoesNotContain("Retained completed delivery.", retainedPending.Prompt);
+                Assert.DoesNotContain("decoder.cs line 17", retainedPending.Prompt);
+                // Coordinator execution tables have no public list reader; confirm zero rows.
+                Assert.AreEqual(
+                    0L,
+                    RunStateQueries.Number(state.Database, "SELECT COUNT(*) FROM native_sessions;")
+                );
+                Assert.AreEqual(
+                    0L,
+                    RunStateQueries.Number(state.Database, "SELECT COUNT(*) FROM native_attempts;")
+                );
+                Assert.AreEqual(
+                    0L,
+                    RunStateQueries.Number(
+                        state.Database, "SELECT COUNT(*) FROM coordinator_segments;"
+                    )
+                );
+                using FileStream ownership = new(
+                    Path.Combine(state.Database.StatePath, "coordinator.lock"),
+                    FileMode.Open,
+                    FileAccess.ReadWrite,
+                    FileShare.None
+                );
+                Assert.IsTrue(ownership.CanWrite);
             })
             .ConfigureAwait(false);
     }
 
-    private static JsonObject RetainedRunProjection(RunDatabase database)
-    {
-        using SqliteConnection connection = database.Open();
-        return new()
+    private static JsonObject CaptureCollaborationSnapshot(CollaborationOperations collaboration) =>
+        new()
         {
-            ["metadata"] = Phase6State.Rows(
-                connection, "SELECT key,value FROM meta ORDER BY key;"
-            ),
-            ["schema"] = Phase6State.Rows(
-                connection,
-                "SELECT name,sql FROM sqlite_master WHERE type='table' ORDER BY name;"
-            ),
-            ["tasks"] = Phase6State.Rows(connection, "SELECT * FROM tasks ORDER BY id;"),
-            ["messages"] = Phase6State.Rows(connection, "SELECT * FROM messages ORDER BY id;"),
-            ["events"] = Phase6State.Rows(connection, "SELECT * FROM events ORDER BY id;"),
+            ["tasks"] = GitScenarioState
+                .Data(collaboration.Invoke("owner", "task_list", new()))
+                .DeepClone(),
+            ["messages"] = GitScenarioState
+                .Data(
+                    collaboration.Invoke(
+                        "owner",
+                        "message_read",
+                        new() { ["channelId"] = "dm:owner:worker1" }
+                    )
+                )
+                .DeepClone(),
+            ["board"] = GitScenarioState
+                .Data(collaboration.Invoke("owner", "board_recent", new()))
+                .DeepClone(),
         };
-    }
+
+    private static string SinglePromptMessageBody(DeliveryBatch batch) =>
+        JsonNode
+            .Parse(batch.Prompt)!["events"]!
+            .AsArray()
+            .Single()!["payload"]!["message"]!["body"]!
+            .GetValue<string>();
 
     private static string Digest(string file) =>
         Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(file)));

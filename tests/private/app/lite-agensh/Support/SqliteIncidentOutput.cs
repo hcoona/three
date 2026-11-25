@@ -35,7 +35,7 @@ internal static class SqliteIncidentOutput
             try
             {
                 JsonNode? incident = JsonNode.Parse(File.ReadAllText(path));
-                output.WriteLine("PHASE5_SQLITE_INCIDENT " + incident!.ToJsonString());
+                output.WriteLine("SQLITE_INCIDENT " + incident!.ToJsonString());
             }
             catch (Exception exception)
             {

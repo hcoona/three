@@ -145,54 +145,36 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
             {
                 Assert.AreEqual(startBytes, state.Database.ReadMetadata(startKey), fault);
                 Assert.AreEqual(sessionBytes, state.Database.ReadMetadata(sessionKey), fault);
-                Exception? primary = null;
-                try
-                {
-                    state.DamageSavedObservation(fault);
-                    var failure = await Assert.ThrowsExactlyAsync<OperationException>(() =>
-                        state.RecoverAsync(context.CancellationToken)
-                    );
-                    Assert.Contains(
-                        fault == "missing-start"
-                            ? "Required original native limit evidence is missing"
-                            : "compatible original zero-origin and verified cap evidence",
-                        failure.ToString(),
-                        message: fault
-                    );
-                    Assert.HasCount(
-                        1,
-                        state.RecoveryHosts,
-                        $"{fault} must reject before another host or exact activation."
-                    );
-                    Assert.AreEqual(before, state.FinancialSnapshot.ToJsonString(), fault);
-                    Assert.AreSame(state.OriginalFailure, state.Original.FirstFailure, fault);
-                }
-                catch (Exception failure)
-                {
-                    primary = failure;
-                    throw;
-                }
-                finally
-                {
-                    try
-                    {
-                        state.Database.WriteMetadata(startKey, startBytes);
-                        state.Database.WriteMetadata(sessionKey, sessionBytes);
-                        Assert.AreEqual(startBytes, state.Database.ReadMetadata(startKey), fault);
-                        Assert.AreEqual(
-                            sessionBytes,
-                            state.Database.ReadMetadata(sessionKey),
-                            fault
-                        );
-                    }
-                    catch (Exception restoration) when (primary is not null)
-                    {
-                        primary.Data["SavedObservationRestorationFailure"] = restoration;
-                        Console.Error.WriteLine(
-                            $"SAVED_OBSERVATION_RESTORATION_SECONDARY {fault} {restoration}"
-                        );
-                    }
-                }
+                using SavedObservationScope guard = new(
+                    context,
+                    state.Database,
+                    fault,
+                    startKey,
+                    startBytes,
+                    sessionKey,
+                    sessionBytes
+                );
+                state.DamageSavedObservation(fault);
+
+                var failure = await Assert.ThrowsExactlyAsync<OperationException>(() =>
+                    state.RecoverAsync(context.CancellationToken)
+                );
+
+                Assert.Contains(
+                    fault == "missing-start"
+                        ? "Required original native limit evidence is missing"
+                        : "compatible original zero-origin and verified cap evidence",
+                    failure.ToString(),
+                    message: fault
+                );
+                Assert.HasCount(
+                    1,
+                    state.RecoveryHosts,
+                    $"{fault} must reject before another host or exact activation."
+                );
+                Assert.AreEqual(before, state.FinancialSnapshot.ToJsonString(), fault);
+                Assert.AreSame(state.OriginalFailure, state.Original.FirstFailure, fault);
+                guard.Complete();
             }
         });
     }
@@ -440,4 +422,37 @@ public sealed class ClosedWindowRecoverySpecs(TestContext context)
         Assert.AreEqual(before, state.Accounting.ToJsonString());
     }
 
+    private sealed class SavedObservationScope(
+        TestContext context,
+        RunDatabase database,
+        string fault,
+        string startKey,
+        string startBytes,
+        string sessionKey,
+        string sessionBytes
+    ) : IDisposable
+    {
+        private bool completed;
+
+        internal void Complete() => completed = true;
+
+        public void Dispose()
+        {
+            try
+            {
+                database.WriteMetadata(startKey, startBytes);
+                database.WriteMetadata(sessionKey, sessionBytes);
+                Assert.AreEqual(startBytes, database.ReadMetadata(startKey), fault);
+                Assert.AreEqual(sessionBytes, database.ReadMetadata(sessionKey), fault);
+            }
+            catch (Exception restoration) when (!completed)
+            {
+                context.WriteLine(
+                    "Secondary saved observation restoration failure ({0}): {1}",
+                    fault,
+                    restoration
+                );
+            }
+        }
+    }
 }

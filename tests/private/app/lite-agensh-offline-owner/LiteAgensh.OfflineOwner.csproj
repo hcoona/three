@@ -18,11 +18,11 @@
     <ProjectReference Include="..\..\..\..\src\private\app\lite-agensh\LiteAgensh.csproj" />
     <ProjectReference Include="..\lite-agensh-test-process\LiteAgensh.TestProcess.csproj" />
     <Compile Include="..\lite-agensh\Support\OwnedChildControl.cs" Link="Support\OwnedChildControl.cs" />
-    <Compile Include="..\lite-agensh\Support\Phase6NativeControl.cs" Link="Support\Phase6NativeControl.cs" />
-    <Compile Include="..\lite-agensh\Support\Phase7Clock.cs" Link="Support\Phase7Clock.cs" />
+    <Compile Include="..\lite-agensh\Support\OfflineNativeControl.cs" Link="Support\OfflineNativeControl.cs" />
+    <Compile Include="..\lite-agensh\Support\ObservedManualClock.cs" Link="Support\ObservedManualClock.cs" />
     <Compile Include="..\lite-agensh\Support\ManualScenarioClock.cs" Link="Support\ManualScenarioClock.cs" />
-    <Compile Include="..\lite-agensh\Support\Phase7Sessions.cs" Link="Support\Phase7Sessions.cs" />
-    <Compile Include="..\lite-agensh\Support\Phase7Journal.cs" Link="Support\Phase7Journal.cs" />
-    <Compile Include="..\lite-agensh\Support\Phase7Evidence.cs" Link="Support\Phase7Evidence.cs" />
+    <Compile Include="..\lite-agensh\Support\ControlledSessionPool.cs" Link="Support\ControlledSessionPool.cs" />
+    <Compile Include="..\lite-agensh\Support\ControlledSessionJournal.cs" Link="Support\ControlledSessionJournal.cs" />
+    <Compile Include="..\lite-agensh\Support\FixtureDiagnosticSink.cs" Link="Support\FixtureDiagnosticSink.cs" />
   </ItemGroup>
 </Project>

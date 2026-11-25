@@ -74,7 +74,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         );
     internal List<Host> RecoveryHosts { get; } = [];
     internal string RecoveryCase { get; set; } = "";
-    internal string RecoveryVersion { get; set; } = Phase6NativeControl.RuntimeVersion;
+    internal string RecoveryVersion { get; set; } = OfflineNativeControl.RuntimeVersion;
     internal double FreshNano { get; set; } = 247_000_000_000d;
     internal ManualScenarioClock HistoryClock { get; } = new();
     internal string Cwd => Original.Cwd;
@@ -111,7 +111,6 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
             await state.Coordinator.PreflightAsync(token).ConfigureAwait(false);
             await state.Coordinator.CalibrateAsync(token).ConfigureAwait(false);
             JsonObject run = await state.Coordinator.RunAsync("run", token).ConfigureAwait(false);
-            Console.WriteLine("PHASE5_ORIGINAL_RUN " + run.ToJsonString());
             return state;
         }
         catch (Exception primaryFailure)
@@ -139,7 +138,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                 ? originalVersion
                 : recovery
                     ? RecoveryVersion
-                    : Phase6NativeControl.RuntimeVersion,
+                    : OfflineNativeControl.RuntimeVersion,
             holdNormalStop
         );
         hosts.Add(host);
@@ -272,34 +271,7 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
                 )!
         );
         Assert.AreEqual(Original.SessionId, Reservation.SessionId);
-        Console.WriteLine(
-            "PHASE5_ORIGINAL_IDENTITY "
-                + System.Text.Json.JsonSerializer.Serialize(
-                    new
-                    {
-                        runId = Database.RunId,
-                        original = Reservation,
-                        peer = Peer,
-                        runtime = OriginalHost.Id,
-                        lease = OriginalHost.LeaseId,
-                        segment = OriginalHost.CreationSegment,
-                        ready = OriginalHost.Ready,
-                        current = Original.Current,
-                        originalVersion,
-                        metadata = Original.Metadata,
-                        start = JsonNode.Parse(
-                            (string)
-                                Sql.Scalar(
-                                    connection,
-                                    "SELECT value FROM meta WHERE key=$key;",
-                                    null,
-                                    ("$key", NoDispatchCancellation.Marker(Reservation.Id))
-                                )!
-                        ),
-                        root = Root,
-                    }
-                )
-        );
+        _ = originalVersion;
     }
 
     internal JsonObject FinancialSnapshot =>
@@ -408,41 +380,17 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
         {
             cleanupFailures.Add(exception);
         }
-        try
-        {
-            Console.WriteLine(
-                "PHASE5_CLEANUP "
-                    + System.Text.Json.JsonSerializer.Serialize(
-                        new
-                        {
-                            root = Root,
-                            rootAbsent = !Directory.Exists(Root),
-                            capturedTestEnvironmentUnchanged = environment.All(pair =>
-                                Environment.GetEnvironmentVariable(pair.Key) == pair.Value
-                            ),
-                            owned = hosts
-                                .Select(host => host.CleanupWitness)
-                                .Where(witness => witness is not null)
-                                .ToArray(),
-                        }
-                    )
-            );
-        }
-        catch (Exception exception)
-        {
-            cleanupFailures.Add(exception);
-        }
         if (cleanupFailures.Count != 0)
         {
             // Preserve the actual primary object, without consulting framework outcome state.
             if (primaryFailure is not null)
             {
-                primaryFailure.Data["Phase5CleanupFailures"] = cleanupFailures.ToArray();
+                primaryFailure.Data["RecoveryCleanupFailures"] = cleanupFailures.ToArray();
             }
             try
             {
-                Console.WriteLine(
-                    "PHASE5_SECONDARY_CLEANUP_FAILURES "
+                Console.Error.WriteLine(
+                    "RECOVERY_SECONDARY_CLEANUP_FAILURES "
                         + System.Text.Json.JsonSerializer.Serialize(
                             new
                             {
@@ -1235,9 +1183,6 @@ internal sealed class RecoveryLifetimeControl : IAsyncDisposable
             CancellationToken token
         )
         {
-            Console.WriteLine(
-                "PHASE5_FACTORY_ORIGIN " + System.Text.Json.JsonSerializer.Serialize(origin)
-            );
             OriginalNativeShutdown? result = null;
             // One supported probe budget surrounds ALL typed pages. This does not
             // execute the concrete NativeSdkSession host acquisition/file wrapper.

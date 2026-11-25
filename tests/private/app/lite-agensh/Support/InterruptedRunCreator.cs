@@ -9,7 +9,7 @@ namespace LiteAgensh.Tests.Support;
 
 // Only the interrupted original owner. The native hosts have normally exited
 // before CHECKPOINT; killing this exact owner must never substitute for that.
-internal sealed class Phase7OwnedCreator : IAsyncDisposable
+internal sealed class InterruptedRunCreator : IAsyncDisposable
 {
     private readonly string nonce;
     private readonly NamedPipeServerStream pipe;
@@ -17,18 +17,16 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
     private Process? process;
     private StreamReader? reader;
     private StreamWriter? writer;
-    private Phase6OwnedCreator.CreatorOutput? stdout,
+    private OwnedCreatorProcess.OutputCapture? stdout,
         stderr;
     private bool startMayHaveBeenDelivered,
         checkpointVerified,
-        joined,
-        deliberateCrash;
+        joined;
     private long? verifiedBirthTicks;
     private int? observedExitCode;
     private Task? cleanupTask;
     internal GitScenarioState Git { get; }
-    internal Phase7Evidence Evidence { get; }
-    internal Dictionary<string, string?> Environment { get; }
+    internal FixtureDiagnosticSink Evidence { get; }
     internal RunConfiguration Configuration { get; }
     internal JsonObject Hello { get; private set; } = new();
     internal JsonObject Checkpoint { get; private set; } = new();
@@ -38,18 +36,16 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
         Checkpoint["target"]![nameof(CreditReservation.SessionId)]!.GetValue<string>();
     internal string ReservationId => Checkpoint["target"]!["Id"]!.GetValue<string>();
 
-    private Phase7OwnedCreator(
+    private InterruptedRunCreator(
         GitScenarioState git,
-        Dictionary<string, string?> environment,
         bool minimum,
-        Phase7Evidence evidence
+        FixtureDiagnosticSink evidence
     )
     {
         Git = git;
         Evidence = evidence;
         nonce = evidence.Id;
-        Environment = environment;
-        string root = git.PathFor("phase7-original");
+        string root = git.PathFor("interrupted-original");
         Directory.CreateDirectory(root);
         Configuration = git.Database.Configuration with
         {
@@ -64,7 +60,7 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
             CampaignAiCreditAllowance = 407.25m,
         };
         pipe = new(
-            "lite-phase7-creator-" + nonce,
+            "lite-interrupted-creator-" + nonce,
             PipeDirection.InOut,
             1,
             PipeTransmissionMode.Byte,
@@ -72,21 +68,22 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
         );
     }
 
-    internal static async Task<Phase7OwnedCreator> OpenAsync(
+    internal static async Task<InterruptedRunCreator> OpenAsync(
         TestContext context, bool minimum, CancellationToken token
     )
     {
-        Dictionary<string, string?> environment = Phase6State.CaptureEnvironment();
-        Phase7Evidence evidence = Phase7Run.CreateEvidence(context, Guid.NewGuid().ToString("N"));
+        FixtureDiagnosticSink evidence = CoordinatorScenarioRun.CreateEvidence(
+            context, Guid.NewGuid().ToString("N")
+        );
         using Activity observation = evidence.BeginScope();
         GitScenarioState? git = null;
-        Phase7OwnedCreator? creator = null;
+        InterruptedRunCreator? creator = null;
         try
         {
             evidence.Phase("git-setup", "started");
             git = await GitScenarioState.CreateAsync(token).ConfigureAwait(false);
             evidence.Phase("git-setup", "completed");
-            creator = new(git, environment, minimum, evidence);
+            creator = new(git, minimum, evidence);
             await creator.StartAsync(token).ConfigureAwait(false);
             return creator;
         }
@@ -94,7 +91,7 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
         {
             evidence.Phase("original-owner-setup", "failed", error: primary);
             Console.Error.WriteLine(
-                "PHASE7_ORIGINAL_SETUP_PRIMARY " + Json.ExceptionDetails(primary)
+                "INTERRUPTED_CREATOR_SETUP_PRIMARY " + Json.ExceptionDetails(primary)
             );
             List<Exception> secondary = [];
             if (creator is not null)
@@ -110,12 +107,19 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
             }
             if (git is not null)
             {
-                VerifyFailedEnvironment(git, environment, secondary);
+                try
+                {
+                    GitScenarioState.AssertEnvironmentUnchanged();
+                }
+                catch (Exception error)
+                {
+                    secondary.Add(error);
+                }
             }
             foreach (Exception error in secondary)
             {
                 Console.Error.WriteLine(
-                    "PHASE7_ORIGINAL_SETUP_SECONDARY " + Json.ExceptionDetails(error)
+                    "INTERRUPTED_CREATOR_SETUP_SECONDARY " + Json.ExceptionDetails(error)
                 );
             }
             evidence.Dispose();
@@ -123,9 +127,6 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
         }
     }
 
-    // Own the acquisition edge BEFORE Attach. The inner fixture still settles
-    // this creator before Git disposal; this cached fallback also covers an
-    // Attach/prelude failure without letting cleanup replace its primary.
     internal async Task RunOwnedAsync(Func<Task> body)
     {
         using Activity observation = Evidence.BeginScope();
@@ -142,7 +143,7 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
             primary = error;
             Evidence.Phase("original-owner-scenario", "failed", error: error);
             Console.Error.WriteLine(
-                "PHASE7_ORIGINAL_LIFETIME_PRIMARY " + Json.ExceptionDetails(error)
+                "INTERRUPTED_CREATOR_PRIMARY " + Json.ExceptionDetails(error)
             );
             throw;
         }
@@ -158,76 +159,27 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
             }
             if (primary is not null || secondary.Count != 0)
             {
-                VerifyFailedEnvironment(Git, Environment, secondary);
+                try
+                {
+                    GitScenarioState.AssertEnvironmentUnchanged();
+                }
+                catch (Exception error)
+                {
+                    secondary.Add(error);
+                }
             }
             foreach (Exception error in secondary)
             {
                 Console.Error.WriteLine(
-                    "PHASE7_ORIGINAL_LIFETIME_SECONDARY " + Json.ExceptionDetails(error)
+                    "INTERRUPTED_CREATOR_SECONDARY " + Json.ExceptionDetails(error)
                 );
             }
             Evidence.Dispose();
         }
-        // A primary rethrows through finally; only a successful body reaches
-        // this cleanup-failure propagation.
         if (secondary.Count != 0)
         {
             throw new AggregateException("Original owner lifetime cleanup failed.", secondary);
         }
-    }
-
-    private static void VerifyFailedEnvironment(
-        GitScenarioState git,
-        Dictionary<string, string?> expected,
-        List<Exception> secondary
-    )
-    {
-        bool unchanged = false,
-            verified = false;
-        try
-        {
-            GitScenarioState.AssertEnvironmentUnchanged();
-            unchanged = true;
-        }
-        catch (Exception error)
-        {
-            secondary.Add(error);
-        }
-        try
-        {
-            foreach ((string name, string? value) in expected)
-            {
-                if (
-                    !string.Equals(
-                        value,
-                        System.Environment.GetEnvironmentVariable(name),
-                        StringComparison.Ordinal
-                    )
-                )
-                {
-                    throw new InvalidOperationException(
-                        "Git environment baseline mismatch: " + name
-                    );
-                }
-            }
-            verified = true;
-        }
-        catch (Exception error)
-        {
-            secondary.Add(error);
-        }
-        Console.WriteLine(
-            "PHASE7_ORIGINAL_ENVIRONMENT_CLEANUP "
-                + new JsonObject
-                {
-                    ["inheritedEnvironmentCheckAttempted"] = true,
-                    ["inheritedEnvironmentUnchanged"] = unchanged,
-                    ["baselineVerificationAttempted"] = true,
-                    ["baselineVerified"] = verified,
-                    ["rootPreserved"] = git.Repository,
-                    ["rootDisposalAttempted"] = false,
-                }.ToJsonString()
-        );
     }
 
     private async Task StartAsync(CancellationToken token)
@@ -241,7 +193,7 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
                 configurationPath, JsonSerializer.Serialize(Configuration, Json.Options)
             );
             Evidence.Phase("creator-configuration", "completed");
-            ProcessStartInfo start = new(Phase6OwnedCreator.Executable)
+            ProcessStartInfo start = new(OwnedCreatorProcess.Executable)
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
@@ -251,8 +203,8 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
             foreach (
                 string argument in new[]
                 {
-                "phase7-exact",
-                "lite-phase7-creator-" + nonce,
+                "interrupted-exact",
+                "lite-interrupted-creator-" + nonce,
                 nonce,
                 configurationPath,
                 }
@@ -278,7 +230,7 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
             )
             {
                 Task accept = pipe.WaitForConnectionAsync(connection.Token);
-                await Phase6OwnedCreator
+                await OwnedCreatorProcess
                     .ObservePipeStageAsync(accept, connection, TimeSpan.FromSeconds(5), token)
                     .ConfigureAwait(false);
             }
@@ -289,15 +241,15 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
             Hello = await ReceiveAsync("HELLO", token).ConfigureAwait(false);
             phase = "creator-identity";
             Evidence.Phase(phase, "started");
-            Assert.AreEqual("phase7-interrupted-owner-setup", Hello["role"]!.GetValue<string>());
+            Assert.AreEqual("interrupted-owner-setup", Hello["role"]!.GetValue<string>());
             verifiedBirthTicks = VerifyCreatorIdentity(process);
             Evidence.Process("creator-identity", "observed", process.Id, verifiedBirthTicks);
             Assert.AreEqual(
-                Phase6OwnedCreator.Hash(Phase6OwnedCreator.AssemblyPath),
+                OwnedCreatorProcess.Hash(OwnedCreatorProcess.AssemblyPath),
                 Hello["moduleSha256"]!.GetValue<string>()
             );
             Assert.AreEqual(
-                Phase6OwnedCreator.Hash(typeof(Coordinator).Assembly.Location),
+                OwnedCreatorProcess.Hash(typeof(Coordinator).Assembly.Location),
                 Hello["productSha256"]!.GetValue<string>()
             );
             Evidence.Phase(phase, "completed");
@@ -310,7 +262,6 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
                 ["stage"] = "START",
             }.ToJsonString();
             token.ThrowIfCancellationRequested();
-            // A failed write or flush is not proof that START did not arrive.
             startMayHaveBeenDelivered = true;
             await writer.WriteLineAsync(startFrame.AsMemory(), token).ConfigureAwait(false);
             Evidence.Phase("creator-start", "completed");
@@ -338,16 +289,6 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
             checkpointVerified = true;
             Evidence.Phase("creator-checkpoint-validation", "completed");
             Evidence.Flush();
-            Console.WriteLine(
-                "PHASE7_ORIGINAL_CHECKPOINT "
-                    + new JsonObject
-                    {
-                        ["root"] = Root,
-                        ["hello"] = Hello.DeepClone(),
-                        ["checkpoint"] = Checkpoint.DeepClone(),
-                        ["journalSha256"] = Phase6OwnedCreator.Hash(JournalPath),
-                    }.ToJsonString()
-            );
         }
         catch (Exception error)
         {
@@ -363,29 +304,14 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
         Assert.IsNotNull(process);
         long birthTicks = VerifyCreatorIdentity(process);
         Assert.IsFalse(process.HasExited);
-        // All actual native host processes were normally joined before this
-        // point. Kill only the creator identity, not an anonymous process name.
         Evidence.Process("creator-crash", "requested", process.Id, birthTicks);
         Evidence.Flush();
         process.Kill();
-        await Phase6OwnedCreator.WaitForCreatorExitAsync(process, token).ConfigureAwait(false);
+        await OwnedCreatorProcess.WaitForExitAsync(process, token).ConfigureAwait(false);
         joined = true;
         observedExitCode = process.ExitCode;
         Assert.AreNotEqual(0, observedExitCode);
-        deliberateCrash = true;
         Evidence.Process("creator-crash", "joined", process.Id, birthTicks, observedExitCode);
-        Console.WriteLine(
-            "PHASE7_EXPECTED_CREATOR_CRASH "
-                + new JsonObject
-                {
-                    ["pid"] = process.Id,
-                    ["birthTicks"] = birthTicks,
-                    ["nonce"] = nonce,
-                    ["exitCode"] = observedExitCode,
-                    ["joined"] = joined,
-                    ["nativeNormalSettlementWasEarlier"] = true,
-                }.ToJsonString()
-        );
     }
 
     private long VerifyCreatorIdentity(Process creator)
@@ -402,24 +328,17 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
         Evidence.Phase(phase, "started");
         try
         {
-            using CancellationTokenSource reading = CancellationTokenSource.CreateLinkedTokenSource(
-                token
-            );
-            Task<string?> read = reader!.ReadLineAsync(reading.Token).AsTask();
-            TimeSpan fuse =
-                stage == "CHECKPOINT" ? TimeSpan.FromSeconds(90) : TimeSpan.FromSeconds(30);
-            await Phase6OwnedCreator
-                .ObservePipeStageAsync(read, reading, fuse, token)
+            JsonObject data = await OwnedCreatorProcess
+                .ReceiveStageAsync(
+                    reader!,
+                    nonce,
+                    stage,
+                    stage == "CHECKPOINT" ? TimeSpan.FromSeconds(90) : TimeSpan.FromSeconds(30),
+                    token
+                )
                 .ConfigureAwait(false);
-            string? line = await read.ConfigureAwait(false);
-            Assert.IsNotNull(line, "Original creator disconnected before " + stage);
-            Assert.IsLessThanOrEqualTo(1_048_576, line.Length);
-            JsonObject message = JsonNode.Parse(line)!.AsObject();
-            Assert.AreEqual(1, message["version"]!.GetValue<int>());
-            Assert.AreEqual(nonce, message["nonce"]!.GetValue<string>());
-            Assert.AreEqual(stage, message["stage"]!.GetValue<string>());
             Evidence.Phase(phase, "received");
-            return message["data"]!.AsObject();
+            return data;
         }
         catch (Exception error)
         {
@@ -434,9 +353,7 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
     {
         List<Exception> errors = [];
         JsonObject stages = new();
-        int? ownedPid = process?.Id;
         bool stopCreatorTree = startMayHaveBeenDelivered && !checkpointVerified;
-        string stopOutcome = "not-requested";
         async Task Attempt(string stage, Func<Task> action)
         {
             stages[stage] = "attempted";
@@ -453,7 +370,7 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
                 errors.Add(error);
                 Evidence.Phase("cleanup-" + stage, "failed", error: error);
                 Console.Error.WriteLine(
-                    "PHASE7_ORIGINAL_CLEANUP_STAGE_ERROR "
+                    "INTERRUPTED_CREATOR_CLEANUP_STAGE_ERROR "
                         + stage
                         + " "
                         + Json.ExceptionDetails(error)
@@ -466,20 +383,13 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
             {
                 try
                 {
-                    stopOutcome = "scope-unqualified";
-                    if (creator.HasExited)
-                    {
-                        stopOutcome = "root-already-exited";
-                    }
-                    else
+                    if (!creator.HasExited)
                     {
                         if (stopCreatorTree)
                         {
                             VerifyCreatorIdentity(creator);
                         }
-                        stopOutcome = "request-failed";
                         creator.Kill(entireProcessTree: stopCreatorTree);
-                        stopOutcome = "requested";
                     }
                 }
                 catch (Exception stopFailure)
@@ -491,7 +401,7 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
                         "creatorJoin",
                         async () =>
                         {
-                            await Phase6OwnedCreator.WaitForCreatorExitAsync(
+                            await OwnedCreatorProcess.WaitForExitAsync(
                                 creator, CancellationToken.None
                             ).ConfigureAwait(false);
                             joined = true;
@@ -499,11 +409,6 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
                             Evidence.Process(
                                 "creator-cleanup", "joined", creator.Id, verifiedBirthTicks,
                                 observedExitCode
-                            );
-                            Console.WriteLine(
-                                "PHASE7_ORIGINAL_EXCEPTIONAL_EXIT "
-                                    + $"pid={creator.Id} exit={observedExitCode}; "
-                                    + "not normal native settlement"
                             );
                         }
                     )
@@ -513,8 +418,6 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
             {
                 stages["creatorJoin"] = "already-observed";
             }
-            // The registered sweep is independent of root exit and cannot qualify an
-            // unregistered helper from the post-START, pre-proof interval.
             if (startMayHaveBeenDelivered)
             {
                 await Attempt(
@@ -523,7 +426,7 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
                         {
                             if (stopCreatorTree)
                             {
-                                Phase6State.QualifyExistingCreatorStore(Configuration);
+                                RunStateQueries.QualifyExistingCreatorStore(Configuration);
                             }
                             RunDatabase database = new(Configuration.StatePath);
                             return new ProcessRunner(database)
@@ -542,8 +445,6 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
             stages["creatorJoin"] = "not-acquired";
             stages["registeredDescendants"] = "no-creator-acquired";
         }
-        // Same existing five-second cleanup budget, shared by both drains.
-        // A pending capture does not establish EOF, even after the creator joins.
         using CancellationTokenSource drains = new(TimeSpan.FromSeconds(5));
         if (stdout is { } output)
         {
@@ -556,13 +457,9 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
                     readStarted ? "stdoutDrain" : "stdoutReaderRelease",
                     async () =>
                     {
-                        string? text = await Phase6OwnedCreator.DrainCreatorOutputAsync(
+                        _ = await OwnedCreatorProcess.DrainOutputAsync(
                             output, outputCapture, "stdout", drains.Token
                         ).ConfigureAwait(false);
-                        if (text is not null)
-                        {
-                            Console.WriteLine("PHASE7_CREATOR_STDOUT " + text);
-                        }
                     }
                 )
                 .ConfigureAwait(false);
@@ -582,12 +479,12 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
                     readStarted ? "stderrDrain" : "stderrReaderRelease",
                     async () =>
                     {
-                        string? text = await Phase6OwnedCreator.DrainCreatorOutputAsync(
+                        string? text = await OwnedCreatorProcess.DrainOutputAsync(
                             error, outputCapture, "stderr", drains.Token
                         ).ConfigureAwait(false);
-                        if (text is not null)
+                        if (!string.IsNullOrWhiteSpace(text))
                         {
-                            Console.WriteLine("PHASE7_CREATOR_STDERR " + text);
+                            Console.Error.WriteLine("INTERRUPTED_CREATOR_STDERR " + text);
                         }
                     }
                 )
@@ -652,33 +549,13 @@ internal sealed class Phase7OwnedCreator : IAsyncDisposable
         {
             stages["processDispose"] = "not-acquired";
         }
-        Phase6OwnedCreator.DisposeCreatorOutputWhenTerminal(
+        OwnedCreatorProcess.DisposeOutputWhenTerminal(
             outputCapture, stdout?.Capture, stderr?.Capture
-        );
-        Console.WriteLine(
-            "PHASE7_ORIGINAL_RESOURCE_CLEANUP "
-                + new JsonObject
-                {
-                    ["pid"] = ownedPid,
-                    ["birthTicks"] = verifiedBirthTicks,
-                    ["startMayHaveBeenDelivered"] = startMayHaveBeenDelivered,
-                    ["checkpointVerified"] = checkpointVerified,
-                    ["exceptionalStopScope"] = stopCreatorTree
-                        ? "owned-creator-tree" : "root-only",
-                    ["exceptionalStopOutcome"] = stopOutcome,
-                    ["preCheckpointDescendantFinality"] = stopCreatorTree
-                        ? "unresolved" : "not-applicable",
-                    ["creatorJoinObserved"] = joined,
-                    ["observedCreatorExitCode"] = observedExitCode,
-                    ["deliberateCrashJoined"] = deliberateCrash,
-                    ["stages"] = stages,
-                    ["secondaryCount"] = errors.Count,
-                }.ToJsonString()
         );
         foreach (Exception secondary in errors)
         {
             Console.Error.WriteLine(
-                "PHASE7_ORIGINAL_CLEANUP_SECONDARY " + Json.ExceptionDetails(secondary)
+                "INTERRUPTED_CREATOR_CLEANUP_SECONDARY " + Json.ExceptionDetails(secondary)
             );
         }
         if (errors.Count != 0)

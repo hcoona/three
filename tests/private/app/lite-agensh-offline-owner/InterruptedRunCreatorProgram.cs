@@ -10,7 +10,7 @@ using LiteAgensh.Tests.Support;
 namespace LiteAgensh.Tests.OfflineOwner;
 
 // Distinct ordinary-executable arrangement. No test module or test runner.
-internal static class Phase7CreatorProgram
+internal static class InterruptedRunCreatorProgram
 {
     internal static async Task<int> RunAsync(string[] args)
     {
@@ -18,7 +18,7 @@ internal static class Phase7CreatorProgram
         {
             return 2;
         }
-        using Phase7Evidence evidence = new(
+        using FixtureDiagnosticSink evidence = new(
             args[1], "original-creator",
             Environment.GetEnvironmentVariable("ThreeTestResultsDirectory")
         );
@@ -31,7 +31,7 @@ internal static class Phase7CreatorProgram
         NamedPipeClientStream? ownedPipe = null;
         StreamReader? ownedReader = null;
         StreamWriter? ownedWriter = null;
-        Phase7Sessions? sessionsToDispose = null;
+        ControlledSessionPool? sessionsToDispose = null;
         Task<JsonObject>? active = null;
         using CancellationTokenSource caller = CancellationTokenSource.CreateLinkedTokenSource(
             token
@@ -62,10 +62,12 @@ internal static class Phase7CreatorProgram
                     "HELLO",
                     new()
                     {
-                        ["role"] = "phase7-interrupted-owner-setup",
+                        ["role"] = "interrupted-owner-setup",
                         ["pid"] = self.Id,
                         ["birthTicks"] = self.StartTime.ToUniversalTime().Ticks,
-                        ["moduleSha256"] = Hash(typeof(Phase7CreatorProgram).Assembly.Location),
+                        ["moduleSha256"] = Hash(
+                            typeof(InterruptedRunCreatorProgram).Assembly.Location
+                        ),
                         ["productSha256"] = Hash(typeof(Coordinator).Assembly.Location),
                     }
                 )
@@ -123,14 +125,16 @@ internal static class Phase7CreatorProgram
             evidence.Phase(phase, "completed");
             phase = "fixture-state";
             evidence.Phase(phase, "started");
-            Phase7Clock clock = new(DateTimeOffset.UtcNow);
+            ObservedManualClock clock = new(DateTimeOffset.UtcNow);
             RunDatabase database = new(configuration.StatePath, configuration, clock);
             CreditLedger ledger = new(
                 configuration.CampaignLedgerPath,
                 configuration.CampaignAiCreditAllowance
             );
-            Phase7Journal journal = new(Path.Combine(root, "controlled-operations.json"));
-            Phase7Sessions control = new(
+            ControlledSessionJournal journal = new(
+                Path.Combine(root, "controlled-operations.json")
+            );
+            ControlledSessionPool control = new(
                 database,
                 OwnedChildControl.ControlledNativeHostRole,
                 journal,
@@ -163,7 +167,7 @@ internal static class Phase7CreatorProgram
                                 {
                                     // Real factory Complete settled the common host and usage.
                                     // Take wrapper cleanup before awaiting its single attempt.
-                                    Phase7Sessions closing = sessionsToDispose
+                                    ControlledSessionPool closing = sessionsToDispose
                                         ?? throw new InvalidOperationException(
                                             "Original session cleanup ownership was already taken."
                                         );
@@ -221,8 +225,8 @@ internal static class Phase7CreatorProgram
             using CancellationTokenSource read = CancellationTokenSource.CreateLinkedTokenSource(
                 token
             );
-            Task<Phase7Sessions.Turn> entered = control.NextTurnAsync("worker1", read.Token);
-            Phase7Sessions.Turn first;
+            Task<ControlledSessionPool.Turn> entered = control.NextTurnAsync("worker1", read.Token);
+            ControlledSessionPool.Turn first;
             try
             {
                 await WaitFixedAsync(entered).ConfigureAwait(false);
@@ -276,7 +280,8 @@ internal static class Phase7CreatorProgram
                     catch (Exception error) when (acknowledgementFailure is not null)
                     {
                         Console.Error.WriteLine(
-                            "PHASE7_READINESS_SECONDARY " + LiteAgensh.Json.ExceptionDetails(error)
+                            "SCENARIO_READINESS_SECONDARY "
+                                + LiteAgensh.Json.ExceptionDetails(error)
                         );
                     }
                 }
@@ -360,7 +365,7 @@ internal static class Phase7CreatorProgram
                 "Checkpoint does not retain real exclusive coordinator ownership."
             );
             evidence.Phase(phase, "completed", clock.GetUtcNow());
-            Phase7Sessions.Host host = control.Hosts.Single(item => item.Operation == "run");
+            ControlledSessionPool.Host host = control.Hosts.Single(item => item.Operation == "run");
             JsonObject history = journal.Snapshot(sessionId);
             Require(
                 !history["pending"]!.GetValue<bool>() && history["requests"]!.GetValue<long>() == 1,
@@ -454,7 +459,7 @@ internal static class Phase7CreatorProgram
                     {
                         evidence.Phase("creator-join", "failed", error: error);
                         Console.Error.WriteLine(
-                            "PHASE7_CREATOR_JOIN_SECONDARY "
+                            "CREATOR_JOIN_SECONDARY "
                             + LiteAgensh.Json.ExceptionDetails(error)
                         );
                     }
@@ -471,7 +476,7 @@ internal static class Phase7CreatorProgram
                     cleanupFailed = true;
                     evidence.Phase("creator-session-cleanup", "failed", error: error);
                     Console.Error.WriteLine(
-                        "PHASE7_CREATOR_CLEANUP_SECONDARY "
+                        "CREATOR_CLEANUP_SECONDARY "
                             + LiteAgensh.Json.ExceptionDetails(error)
                     );
                 }
@@ -497,7 +502,7 @@ internal static class Phase7CreatorProgram
                     {
                         evidence.Phase("creator-cleanup", "pipe-dispose-failed", error: error);
                         Console.Error.WriteLine(
-                            "PHASE7_CREATOR_PIPE_CLEANUP_SECONDARY "
+                            "CREATOR_PIPE_CLEANUP_SECONDARY "
                                 + LiteAgensh.Json.ExceptionDetails(error)
                         );
                     }
@@ -511,7 +516,7 @@ internal static class Phase7CreatorProgram
             primary = error;
             evidence.Phase(phase, "failed", error: error);
             Console.Error.WriteLine(
-                "PHASE7_CREATOR_PRIMARY " + LiteAgensh.Json.ExceptionDetails(error)
+                "CREATOR_PRIMARY " + LiteAgensh.Json.ExceptionDetails(error)
             );
         }
     }

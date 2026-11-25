@@ -9,7 +9,7 @@ namespace LiteAgensh.Tests.Support;
 // Controlled dependency persistence, NOT an application ledger or native proof.
 // The creator and reconnect have disjoint process lifetimes. Records are flushed
 // at the operations which produce them; the checkpoint pins the original host.
-internal sealed class Phase7Journal(string path)
+internal sealed class ControlledSessionJournal(string path)
 {
     private readonly object gate = new();
     internal string? PinnedRuntime { get; set; }
@@ -115,14 +115,13 @@ internal sealed class Phase7Journal(string path)
                         Producer = "controlled-session-events",
                         Version = 1,
                         SessionId = id,
-                        CopilotVersion = Phase6NativeControl.RuntimeVersion,
+                        CopilotVersion = OfflineNativeControl.RuntimeVersion,
                         AlreadyInUse = false,
                         StartTime = now,
                     },
                 }
             );
             Save(document);
-            Console.WriteLine("PHASE7_JOURNAL_OPEN " + generation.ToJsonString());
             return (state["nano"]!.GetValue<double>(), state["requests"]!.GetValue<long>());
         }
     }

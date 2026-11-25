@@ -1,70 +1,13 @@
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 
 namespace LiteAgensh.Tests.Support;
 
-// Explicit Phase6 historical projections, never DB/WAL byte comparisons.
-internal static class Phase6State
+// Explicit SQLite test projections, never DB/WAL byte comparisons.
+internal static class RunStateQueries
 {
-    private static readonly string[] gitEnvironmentVariables =
-    [
-        "GIT_CONFIG_GLOBAL",
-        "GIT_CONFIG_SYSTEM",
-        "GIT_CONFIG_NOSYSTEM",
-        "HOME",
-        "USERPROFILE",
-        "XDG_CONFIG_HOME",
-        "GIT_CONFIG",
-        "GIT_CONFIG_COUNT",
-        "GIT_CONFIG_PARAMETERS",
-        "GIT_DIR",
-        "GIT_COMMON_DIR",
-        "GIT_WORK_TREE",
-        "GIT_INDEX_FILE",
-        "GIT_OBJECT_DIRECTORY",
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-        "GIT_NAMESPACE",
-        "GIT_CEILING_DIRECTORIES",
-    ];
-
-    internal static Dictionary<string, string?> CaptureEnvironment() =>
-        gitEnvironmentVariables.ToDictionary(
-            name => name,
-            Environment.GetEnvironmentVariable,
-            StringComparer.Ordinal
-        );
-
-    internal static void VerifyEnvironment(Dictionary<string, string?> before)
-    {
-        JsonObject receipt = new();
-        bool matches = true;
-        foreach ((string name, string? original) in before)
-        {
-            string? actual = Environment.GetEnvironmentVariable(name);
-            bool equal = string.Equals(original, actual, StringComparison.Ordinal);
-            matches &= equal;
-            static string? Digest(string? value) =>
-                value is null
-                    ? null
-                    : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
-            receipt[name] = new JsonObject
-            {
-                ["beforeSha256"] = Digest(original),
-                ["afterSha256"] = Digest(actual),
-                ["exactOrdinalEquality"] = equal,
-            };
-        }
-        Console.WriteLine("PHASE6_ENVIRONMENT_RESTORATION " + receipt.ToJsonString());
-        if (!matches)
-        {
-            throw new InvalidOperationException("Owned Phase6 Git environment was not restored.");
-        }
-    }
-
     internal static SqliteConnection OpenCampaign(RunDatabase database) =>
         OpenFile(database.Configuration.CampaignLedgerPath);
 

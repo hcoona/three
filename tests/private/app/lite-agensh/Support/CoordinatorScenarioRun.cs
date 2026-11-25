@@ -12,54 +12,30 @@ namespace LiteAgensh.Tests.Support;
 
 // Public coordinator arrangement. Git setup and typed native behavior are
 // separate collaborators; this class does not implement product control logic.
-internal sealed class Phase7Run
+internal sealed class CoordinatorScenarioRun
 {
-    private static readonly string[] GitEnvironment =
-    [
-        "GIT_CONFIG_GLOBAL",
-        "GIT_CONFIG_SYSTEM",
-        "GIT_CONFIG_NOSYSTEM",
-        "HOME",
-        "USERPROFILE",
-        "XDG_CONFIG_HOME",
-        "GIT_CONFIG",
-        "GIT_CONFIG_COUNT",
-        "GIT_CONFIG_PARAMETERS",
-        "GIT_DIR",
-        "GIT_COMMON_DIR",
-        "GIT_WORK_TREE",
-        "GIT_INDEX_FILE",
-        "GIT_OBJECT_DIRECTORY",
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-        "GIT_NAMESPACE",
-        "GIT_CEILING_DIRECTORIES",
-    ];
-    private readonly Dictionary<string, string?> environment;
     private readonly CancellationTokenSource owner;
     private Task<JsonObject>? active;
     private IDisposable? clockObservation;
-    private ActivityListener? ownershipObservation;
-    private Phase7Handoff? currentHandoff;
+    private WorkerHandoffControl? currentHandoff;
     private TaskCompletionSource<long> ownerPolling = new(
         TaskCreationOptions.RunContinuationsAsynchronously
     );
     private int ownerPollWorkers;
 
-    private Phase7Run(
+    private CoordinatorScenarioRun(
         GitScenarioState git,
         RunDatabase database,
-        Dictionary<string, string?> environment,
-        Phase7Evidence evidence,
+        FixtureDiagnosticSink evidence,
         string? hostRole,
-        Phase7Clock clock,
-        Phase7Journal? journal,
+        ObservedManualClock clock,
+        ControlledSessionJournal? journal,
         CancellationToken token,
         bool ownedHosts = true,
         ConfiguredCheckInvocation? configuredCheck = null
     )
     {
         Git = git;
-        this.environment = environment;
         Evidence = evidence;
         Clock = clock;
         Database = database;
@@ -75,17 +51,17 @@ internal sealed class Phase7Run
     }
 
     internal GitScenarioState Git { get; }
-    internal Phase7Evidence Evidence { get; }
-    internal Phase7Clock Clock { get; }
+    internal FixtureDiagnosticSink Evidence { get; }
+    internal ObservedManualClock Clock { get; }
     internal Func<Task>? BeforeGitCleanup { get; private set; }
     internal RunDatabase Database { get; }
     internal CreditLedger Ledger { get; }
     internal CollaborationOperations Collaboration { get; }
     internal GitOperations Operations { get; }
-    internal Phase7Sessions Sessions { get; }
+    internal ControlledSessionPool Sessions { get; }
     internal TimeProvider? SettlementTimeProvider { get; set; }
-    internal Phase7Exhaustion? Exhaustion { get; set; }
-    internal Phase7Handoff? Handoff { get; set; }
+    internal ExhaustionSessionHost? Exhaustion { get; set; }
+    internal WorkerHandoffControl? Handoff { get; set; }
     internal Action<IReadOnlyList<Task>>? ObserveWorkerCompletion { get; set; }
     internal Task<JsonObject> Active =>
         active ?? throw new InvalidOperationException("Run has not started.");
@@ -93,7 +69,7 @@ internal sealed class Phase7Run
         Clock.WorkDeadline ?? throw new InvalidOperationException("Run has no work deadline.");
     internal DateTimeOffset DrainDeadline => WorkDeadline.AddSeconds(30);
 
-    internal static async Task<Phase7Run> CreateAsync(
+    internal static async Task<CoordinatorScenarioRun> CreateAsync(
         TestContext context,
         CancellationToken token,
         int workers = 2,
@@ -107,15 +83,10 @@ internal sealed class Phase7Run
         ConfiguredCheckInvocation? configuredCheck = null
     )
     {
-        Dictionary<string, string?> environment = GitEnvironment.ToDictionary(
-            name => name,
-            Environment.GetEnvironmentVariable,
-            StringComparer.Ordinal
-        );
-        Phase7Evidence evidence = CreateEvidence(context, Guid.NewGuid().ToString("N"));
+        FixtureDiagnosticSink evidence = CreateEvidence(context, Guid.NewGuid().ToString("N"));
         using Activity observation = evidence.BeginScope();
         GitScenarioState? git = null;
-        Phase7Run? state = null;
+        CoordinatorScenarioRun? state = null;
         string phase = "git-setup";
         try
         {
@@ -126,8 +97,8 @@ internal sealed class Phase7Run
             evidence.Phase(phase, "started");
             RunConfiguration configuration = git.Database.Configuration with
             {
-                StatePath = git.PathFor("phase7-run"),
-                CampaignLedgerPath = git.PathFor("phase7-campaign.sqlite"),
+                StatePath = git.PathFor("scenario-run"),
+                CampaignLedgerPath = git.PathFor("scenario-campaign.sqlite"),
                 NativeModel = "controlled-model",
                 WorkerCount = workers,
                 WorkerStartIntervalSeconds = interval,
@@ -137,37 +108,31 @@ internal sealed class Phase7Run
                 RunAiCreditAllowance = allowance,
                 CampaignAiCreditAllowance = 407.25m,
             };
-            Phase7Clock clock = new();
+            ObservedManualClock clock = new();
             RunDatabase initialized = new(configuration.StatePath, configuration, clock);
             state = new(
-                git, initialized, environment, evidence, hostRole, clock, null, token,
+                git, initialized, evidence, hostRole, clock, null, token,
                 ownedHosts, configuredCheck
             );
             evidence.Phase(phase, "completed", clock.GetUtcNow());
             phase = "initialize";
             evidence.Phase(phase, "started", clock.GetUtcNow());
-            Console.WriteLine("PHASE7_SETUP_ENTER initialize");
             GitScenarioState.Data(
                 await state.Coordinator("initialize").InitializeAsync(token).ConfigureAwait(false)
             );
-            Console.WriteLine("PHASE7_SETUP_RETURN initialize");
             evidence.Phase(phase, "completed", clock.GetUtcNow());
             evidence.BindRun(state.Database.RunId, clock.GetUtcNow());
             phase = "preflight";
             evidence.Phase(phase, "started", clock.GetUtcNow());
-            Console.WriteLine("PHASE7_SETUP_ENTER preflight");
             GitScenarioState.Data(
                 await state.Coordinator("preflight").PreflightAsync(token).ConfigureAwait(false)
             );
-            Console.WriteLine("PHASE7_SETUP_RETURN preflight");
             evidence.Phase(phase, "completed", clock.GetUtcNow());
             phase = "calibration";
             evidence.Phase(phase, "started", clock.GetUtcNow());
-            Console.WriteLine("PHASE7_SETUP_ENTER calibration");
             GitScenarioState.Data(
                 await state.Coordinator("calibration").CalibrateAsync(token).ConfigureAwait(false)
             );
-            Console.WriteLine("PHASE7_SETUP_RETURN calibration");
             evidence.Phase(phase, "completed", clock.GetUtcNow());
             Assert.AreEqual(
                 7.25m,
@@ -181,7 +146,7 @@ internal sealed class Phase7Run
         catch (Exception primary)
         {
             evidence.Phase(phase, "failed", error: primary);
-            Console.Error.WriteLine("PHASE7_SETUP_PRIMARY " + Json.ExceptionDetails(primary));
+            Console.Error.WriteLine("SCENARIO_SETUP_PRIMARY " + Json.ExceptionDetails(primary));
             try
             {
                 if (state is not null)
@@ -190,14 +155,13 @@ internal sealed class Phase7Run
                 }
                 else
                 {
-                    Console.WriteLine("PHASE7_PRESERVED_SETUP_ROOT " + git?.Repository);
                     GitScenarioState.AssertEnvironmentUnchanged();
                 }
             }
             catch (Exception secondary)
             {
                 Console.Error.WriteLine(
-                    "PHASE7_SETUP_CLEANUP_SECONDARY " + Json.ExceptionDetails(secondary)
+                    "SCENARIO_SETUP_CLEANUP_SECONDARY " + Json.ExceptionDetails(secondary)
                 );
             }
             if (state is null)
@@ -208,7 +172,7 @@ internal sealed class Phase7Run
         }
     }
 
-    internal static Phase7Evidence CreateEvidence(TestContext context, string id) =>
+    internal static FixtureDiagnosticSink CreateEvidence(TestContext context, string id) =>
         new(
             id,
             "test-owner",
@@ -221,14 +185,17 @@ internal sealed class Phase7Run
 
     // This route deliberately performs no Initialize/Preflight/Calibrate. The
     // actual creator's configuration, campaign and advanced epoch are retained.
-    internal static Phase7Run Attach(Phase7OwnedCreator creator, CancellationToken token)
+    internal static CoordinatorScenarioRun Attach(
+        InterruptedRunCreator creator,
+        CancellationToken token
+    )
     {
-        Phase7Evidence evidence = creator.Evidence.Follow("attached-owner");
+        FixtureDiagnosticSink evidence = creator.Evidence.Follow("attached-owner");
         using Activity observation = evidence.BeginScope();
         evidence.Phase("reopen-original", "started");
         try
         {
-            Phase7Clock restoredClock = new(
+            ObservedManualClock restoredClock = new(
                 creator.Checkpoint["clock"]!.GetValue<DateTimeOffset>()
             );
             // Explicit existing-state role. Supplying configuration here means init,
@@ -251,19 +218,7 @@ internal sealed class Phase7Run
                 ),
                 "The persisted creator configuration differs; it must not be rewritten."
             );
-            Console.WriteLine(
-                "PHASE7_REOPENED_ORIGINAL "
-                    + new JsonObject
-                    {
-                        ["runId"] = reopened.RunId,
-                        ["statePath"] = reopened.StatePath,
-                        ["campaignPath"] = reopened.Configuration.CampaignLedgerPath,
-                        ["clock"] = restoredClock.GetUtcNow(),
-                        ["originalRuntimeId"] = creator.Checkpoint["runtimeId"]!.DeepClone(),
-                        ["configurationValidatedWithoutRewrite"] = true,
-                    }.ToJsonString()
-            );
-            Phase7Journal journal = new(creator.JournalPath)
+            ControlledSessionJournal journal = new(creator.JournalPath)
             {
                 PinnedRuntime = creator.Checkpoint["runtimeId"]!.GetValue<string>(),
             };
@@ -271,7 +226,6 @@ internal sealed class Phase7Run
             return new(
                 creator.Git,
                 reopened,
-                creator.Environment,
                 evidence,
                 OwnedChildControl.ControlledNativeHostRole,
                 restoredClock,
@@ -312,7 +266,6 @@ internal sealed class Phase7Run
         }
         Handoff ??= new();
         currentHandoff = Handoff;
-        ownershipObservation?.Dispose();
         clockObservation?.Dispose();
         clockObservation = Clock.BeginObservation();
         ownerPolling = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -331,87 +284,6 @@ internal sealed class Phase7Run
                 )
                 : Clock.GetUtcNow().AddSeconds(Database.Configuration.DurationSeconds);
         using Activity startup = Evidence.BeginScope();
-        ActivityTraceId traceId = startup.TraceId;
-        ActivitySpanId startupSpanId = startup.SpanId;
-        ActivitySpanId runSpanId = default;
-        ActivityListener listener = new()
-        {
-            ShouldListenTo = source => source.Name == "LiteAgensh",
-            Sample = (ref ActivityCreationOptions<ActivityContext> options) =>
-                options.Parent.TraceId == traceId
-                    && (
-                        (options.Name == "coordinator.run"
-                            && options.Parent.SpanId == startupSpanId)
-                        || (options.Name == "coordinator.ownership"
-                            && runSpanId != default && options.Parent.SpanId == runSpanId)
-                    )
-                    ? ActivitySamplingResult.AllDataAndRecorded
-                    : ActivitySamplingResult.None,
-            ActivityStarted = trace =>
-            {
-                if (trace.OperationName == "coordinator.run"
-                    && trace.TraceId == traceId && trace.ParentSpanId == startupSpanId)
-                {
-                    runSpanId = trace.SpanId;
-                }
-            },
-            ActivityStopped = trace =>
-            {
-                if (trace.TraceId != traceId)
-                {
-                    return;
-                }
-                if (trace.OperationName == "coordinator.ownership"
-                    && runSpanId != default && trace.ParentSpanId == runSpanId)
-                {
-                    Console.WriteLine(
-                        "PHASE7_OWNERSHIP_SCOPE "
-                            + JsonSerializer.Serialize(new
-                            {
-                                traceId = trace.TraceId.ToString(),
-                                spanId = trace.SpanId.ToString(),
-                                parentSpanId = trace.ParentSpanId.ToString(),
-                                processId = trace.GetTagItem("process.pid"),
-                                acquired = trace.GetTagItem("liteagensh.ownership.acquired"),
-                                acquiredAt = trace.Events.Where(
-                                        item => item.Name == "coordinator.ownership.acquired"
-                                    ).Select(item => (DateTimeOffset?)item.Timestamp)
-                                    .FirstOrDefault(),
-                                managedScopeStartedAt = trace.StartTimeUtc,
-                                managedScopeEndedAt = trace.StartTimeUtc + trace.Duration,
-                            })
-                    );
-                    return;
-                }
-                if (trace.OperationName != "coordinator.run"
-                    || trace.ParentSpanId != startupSpanId)
-                {
-                    return;
-                }
-                foreach (
-                    ActivityEvent failure in trace.Events.Where(
-                        item => item.Name == "coordinator.ownership.failed"
-                    )
-                )
-                {
-                    Console.WriteLine(
-                        "PHASE7_OWNERSHIP_FAILURE "
-                            + JsonSerializer.Serialize(new
-                            {
-                                traceId = trace.TraceId.ToString(),
-                                spanId = trace.SpanId.ToString(),
-                                type = failure.Tags
-                                    .FirstOrDefault(item => item.Key == "error.type").Value,
-                                hresult = failure.Tags.FirstOrDefault(
-                                    item => item.Key == "liteagensh.ownership.hresult"
-                                ).Value,
-                            })
-                    );
-                }
-            },
-        };
-        ownershipObservation = listener;
-        ActivitySource.AddActivityListener(listener);
         Evidence.Phase("coordinator-" + mode, "started", Clock.GetUtcNow());
         active = Coordinator(mode).RunAsync(mode, owner.Token);
         return active;
@@ -498,8 +370,8 @@ internal sealed class Phase7Run
             token
         );
 
-    internal Task<Phase7Clock.ObservedPoll> ObserveRampProbePollAsync(
-        Task<Phase7Handoff.Startup> targetStart,
+    internal Task<ObservedManualClock.ObservedPoll> ObserveRampProbePollAsync(
+        Task<WorkerHandoffControl.Startup> targetStart,
         Task<JsonObject> run,
         DateTimeOffset eligible,
         long registeredAfter,
@@ -526,12 +398,12 @@ internal sealed class Phase7Run
         );
 
     internal static async Task RequireColdRampTargetAsync(
-        Task<Phase7Handoff.Startup> targetStart,
+        Task<WorkerHandoffControl.Startup> targetStart,
         Task<JsonObject> run,
         DateTimeOffset eligible
     )
     {
-        Phase7Handoff.Startup? early = null;
+        WorkerHandoffControl.Startup? early = null;
         if (targetStart.IsCompleted)
         {
             early = await targetStart.ConfigureAwait(false);
@@ -597,7 +469,7 @@ internal sealed class Phase7Run
         }
         foreach (Exception error in secondary)
         {
-            Console.Error.WriteLine("PHASE7_READINESS_SECONDARY " + Json.ExceptionDetails(error));
+            Console.Error.WriteLine("SCENARIO_READINESS_SECONDARY " + Json.ExceptionDetails(error));
         }
         if (primary is not null)
         {
@@ -640,7 +512,9 @@ internal sealed class Phase7Run
 
     // Exclude startup waits using the actual admitted-cohort main-loop milestone.
     // Hold responses while observing its next poll, then freeze time through ACK.
-    internal Task<Phase7Clock.ObservedPoll> ObserveOwnerPollAsync(CancellationToken token) =>
+    internal Task<ObservedManualClock.ObservedPoll> ObserveOwnerPollAsync(
+        CancellationToken token
+    ) =>
         FixedAsync(
             async next =>
             {
@@ -657,7 +531,7 @@ internal sealed class Phase7Run
 
     internal async Task<JsonObject> StopRunningAsync(
         string action,
-        Phase7Clock.ObservedPoll poll,
+        ObservedManualClock.ObservedPoll poll,
         CancellationToken token
     )
     {
@@ -795,7 +669,7 @@ internal sealed class Phase7Run
         {
             primary = error;
             Evidence.Phase("scenario", "failed", Clock.GetUtcNow(), error);
-            Console.Error.WriteLine("PHASE7_PRIMARY " + Json.ExceptionDetails(error));
+            Console.Error.WriteLine("SCENARIO_PRIMARY " + Json.ExceptionDetails(error));
             throw;
         }
         finally
@@ -869,13 +743,7 @@ internal sealed class Phase7Run
             else
             {
                 GitScenarioState.AssertEnvironmentUnchanged();
-                Console.WriteLine("PHASE7_PRESERVED_ROOT " + Database.StatePath);
             }
-            foreach ((string name, string? expected) in environment)
-            {
-                Assert.AreEqual(expected, Environment.GetEnvironmentVariable(name), name);
-            }
-            Console.WriteLine("PHASE7_INHERITED_ENVIRONMENT_UNCHANGED " + environment.Count);
         }
         catch (Exception error)
         {
@@ -883,15 +751,15 @@ internal sealed class Phase7Run
         }
         finally
         {
-            ownershipObservation?.Dispose();
-            ownershipObservation = null;
             currentHandoff?.Dispose();
             clockObservation?.Dispose();
             owner.Dispose();
             foreach (Exception error in secondary)
             {
                 Evidence.Phase("cleanup", "failed", Clock.GetUtcNow(), error);
-                Console.Error.WriteLine("PHASE7_CLEANUP_SECONDARY " + Json.ExceptionDetails(error));
+                Console.Error.WriteLine(
+                    "SCENARIO_CLEANUP_SECONDARY " + Json.ExceptionDetails(error)
+                );
             }
             if (secondary.Count == 0)
             {
@@ -905,7 +773,8 @@ internal sealed class Phase7Run
         }
     }
 
-    private sealed class Factory(Phase7Run state, string operation) : INativeWorkerFactory
+    private sealed class Factory(CoordinatorScenarioRun state, string operation)
+        : INativeWorkerFactory
     {
         private readonly NativeWorkerFactory real = new(
             state.Database,

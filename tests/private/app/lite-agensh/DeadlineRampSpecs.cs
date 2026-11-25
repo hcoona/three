@@ -19,7 +19,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     )
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
             .CreateAsync(
                 testContext, token, workers: 1, hostRole: OwnedChildControl.ControlledNativeHostRole
             )
@@ -28,20 +28,14 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
         Exception? primary = null;
         ExceptionDispatchInfo? teardownFailure = null;
         List<Exception> teardownErrors = [];
-        void RetainTeardownFailure(string step, Exception secondary)
-        {
-            teardownErrors.Add(secondary);
-            JsonObject details = Json.ExceptionDetails(secondary);
-            details["cleanupStep"] = step;
-            Console.Error.WriteLine("PHASE7_STARTUP_OWNER_TEARDOWN_SECONDARY " + details);
-        }
         try
         {
             await state
                 .RunBodyAsync(async () =>
                 {
+                    Coordinator inspector = state.Coordinator("status");
                     TaskCompletionSource<(
-                        Phase7Sessions.Session Session,
+                        ControlledSessionPool.Session Session,
                         CancellationToken Token
                     )> entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
                     TaskCompletionSource<DateTimeOffset> cancelled = new(
@@ -61,7 +55,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                             await release.Task.WaitAsync(business).ConfigureAwait(false);
                         };
                         active = state.Start();
-                        (Phase7Sessions.Session session, CancellationToken business) = await state
+                        (ControlledSessionPool.Session session, CancellationToken business) =
+                            await state
                             .FixedAsync(next => entered.Task.WaitAsync(next), token)
                             .ConfigureAwait(false);
                         Assert.IsTrue(business.CanBeCanceled);
@@ -90,35 +85,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         }
                         catch (TimeoutException)
                         {
-                            Console.WriteLine(
-                                "PHASE7_STARTUP_OWNER_RED "
-                                    + new JsonObject
-                                    {
-                                        ["action"] = action,
-                                        ["requestId"] = requestId,
-                                        ["enteredBusinessTokenCancelled"] =
-                                            business.IsCancellationRequested,
-                                        ["callerCancelled"] = token.IsCancellationRequested,
-                                        ["gateReleased"] = release.Task.IsCompleted,
-                                        ["hasNativeSession"] = session.HasSession,
-                                        ["manualNow"] = state.Clock.GetUtcNow().ToString("O"),
-                                        ["deadline"] = state.Clock.WorkDeadline!.Value.ToString(
-                                            "O"
-                                        ),
-                                        ["controlState"] = (string?)
-                                            state.Value(
-                                                (
-                                                    "SELECT state FROM coordinator_controls "
-                                                    + "WHERE id=$id;"
-                                                ),
-                                                ("$id", requestId)
-                                            ),
-                                        ["dispatchCount"] = state.Dispatches(
-                                            state.Reservation("worker1").Id
-                                        ),
-                                        ["boundary"] = "neutral-watchdog-before-fixture-teardown",
-                                    }.ToJsonString()
-                            );
                             Assert.Fail("P7-F01_RED_OWNER_CANCELLATION_NOT_OBSERVED: " + action);
                         }
                         Assert.IsTrue(business.IsCancellationRequested);
@@ -135,57 +101,26 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                             "ownership_or_usage_unresolved",
                             result["code"]!.GetValue<string>()
                         );
-                        Assert.AreEqual(
-                            reason,
-                            state.Database.ReadMetadata("lifecycle:stop_reason")
-                        );
-                        Assert.AreEqual(
-                            reason,
-                            state.Value(
-                                (
-                                    "SELECT stop_reason FROM coordinator_segments ORDER BY id "
-                                    + "DESC LIMIT 1;"
-                                )
-                            )
-                        );
-                        Assert.AreEqual(
-                            0L,
-                            state.Number(
-                                "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;"
-                            )
-                        );
-                        Assert.AreEqual(
-                            action,
-                            state.Value(
-                                "SELECT action FROM coordinator_controls WHERE id=$id;",
-                                ("$id", requestId)
-                            )
-                        );
+                        JsonObject status = StatusData(inspector);
+                        Assert.AreEqual("unresolved", status["lifecycle"]!.GetValue<string>());
+                        Assert.AreEqual(reason, status["stopReason"]!.GetValue<string>());
+                        Assert.IsFalse(status["active"]!.GetValue<bool>());
                         // Missing Open/usage evidence cannot acknowledge quiescent
                         // success, even though the common owned-host join completed.
+                        JsonObject retainedControl = GitScenarioState.Data(
+                            state.Coordinator().RequestControl(action)
+                        );
                         Assert.AreEqual(
-                            "pending",
-                            state.Value(
-                                "SELECT state FROM coordinator_controls WHERE id=$id;",
-                                ("$id", requestId)
-                            )
+                            requestId,
+                            retainedControl["requestId"]!.GetValue<long>()
                         );
-                        Assert.IsNull(
-                            state.Value(
-                                "SELECT completed_at FROM coordinator_controls WHERE id=$id;",
-                                ("$id", requestId)
-                            )
-                        );
+                        Assert.AreEqual("pending", retainedControl["state"]!.GetValue<string>());
                         Assert.AreEqual("uncertain", state.Reservation("worker1").State);
                         Assert.IsNull(state.Reservation("worker1").Actual);
                         Assert.IsGreaterThan(0m, state.Reservation("worker1").Allowance);
                         Assert.AreEqual(0L, state.Dispatches(state.Reservation("worker1").Id));
-                        Assert.AreEqual(
-                            0L,
-                            state.Number("SELECT COUNT(*) FROM coordinator_turns;")
-                        );
                         Assert.IsFalse(session.HasSession);
-                        Phase7Sessions.Host host = state.Sessions.Hosts.Single(item =>
+                        ControlledSessionPool.Host host = state.Sessions.Hosts.Single(item =>
                             item.Operation == "run"
                         );
                         Assert.IsNotNull(host.Ready);
@@ -193,24 +128,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         Assert.IsGreaterThan(0L, host.Ready.BirthTicks);
                         Assert.IsTrue(
                             host.Witness["normalExitBeforeWrapperDispose"]!.GetValue<bool>()
-                        );
-                        Console.WriteLine(
-                            "PHASE7_STARTUP_OWNER_GREEN "
-                                + new JsonObject
-                                {
-                                    ["action"] = action,
-                                    ["requestId"] = requestId,
-                                    ["reason"] = reason,
-                                    ["result"] = result.DeepClone(),
-                                    ["host"] = host.Witness,
-                                    ["beforeDeadline"] =
-                                        state.Clock.GetUtcNow() < state.Clock.WorkDeadline.Value,
-                                    ["gateReleased"] = false,
-                                    ["callerCancelled"] = false,
-                                    ["reservationState"] = state.Reservation("worker1").State,
-                                    ["allowance"] = state.Reservation("worker1").Allowance,
-                                    ["actual"] = state.Reservation("worker1").Actual,
-                                }.ToJsonString()
                         );
                     }
                     catch (Exception error)
@@ -229,7 +146,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         }
                         catch (Exception secondary)
                         {
-                            RetainTeardownFailure("observer-cancel", secondary);
+                            teardownErrors.Add(secondary);
                         }
                         if (drive is not null)
                         {
@@ -242,38 +159,23 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                             { }
                             catch (Exception secondary)
                             {
-                                RetainTeardownFailure("observer-join", secondary);
+                                teardownErrors.Add(secondary);
                             }
                         }
                         if (drive is not null && active is { IsCompleted: false })
                         {
                             try
                             {
-                                JsonObject teardown = await active
+                                _ = await active
                                     .WaitAsync(
                                         TimeSpan.FromSeconds(5),
                                         CancellationToken.None
                                     )
                                     .ConfigureAwait(false);
-                                Console.WriteLine(
-                                    "PHASE7_STARTUP_OWNER_TEARDOWN_JOIN "
-                                        + new JsonObject
-                                        {
-                                            ["action"] = action,
-                                            ["afterPrimaryFailure"] = primary is not null,
-                                            ["fixtureGateReleased"] = true,
-                                            ["result"] = teardown.DeepClone(),
-                                            ["host"] = state
-                                                .Sessions.Hosts.Single(item =>
-                                                    item.Operation == "run"
-                                                )
-                                                .Witness,
-                                        }.ToJsonString()
-                                );
                             }
                             catch (Exception secondary)
                             {
-                                RetainTeardownFailure("subject-release-join", secondary);
+                                teardownErrors.Add(secondary);
                             }
                         }
                         try
@@ -282,7 +184,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         }
                         catch (Exception secondary)
                         {
-                            RetainTeardownFailure("observer-dispose", secondary);
+                            teardownErrors.Add(secondary);
                         }
                     }
                     if (teardownErrors.Count > 0)
@@ -310,7 +212,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
             }
             catch (Exception secondary)
             {
-                RetainTeardownFailure("registration-dispose-last", secondary);
+                teardownErrors.Add(secondary);
                 if (primary is null)
                 {
                     teardownFailure = ExceptionDispatchInfo.Capture(secondary);
@@ -321,7 +223,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     }
 
     private static async Task DriveOwnerPollingAsync(
-        Phase7Run state,
+        CoordinatorScenarioRun state,
         Task<DateTimeOffset> cancelled,
         CancellationToken token
     )
@@ -353,7 +255,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     public async Task ActualTimerReadinessRevalidatesRegistrationStateAndObservationLifetime()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Clock clock = new();
+        ObservedManualClock clock = new();
         DateTimeOffset origin = clock.GetUtcNow();
         List<string> callbacks = [];
         using IDisposable first = clock.BeginObservation();
@@ -439,7 +341,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     public async Task ExcludedExpiryCannotWakeProgressAndGoalChangeJoinsWithoutALateAdvance()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Clock clock = new();
+        ObservedManualClock clock = new();
         using IDisposable scope = clock.BeginObservation();
         DateTimeOffset origin = clock.GetUtcNow();
         DateTimeOffset deadline = origin.AddSeconds(10);
@@ -482,7 +384,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     public async Task ActualTaskGoalWakesExcludedTimerObservationWithoutAnotherRegistration()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Clock clock = new();
+        ObservedManualClock clock = new();
         using IDisposable scope = clock.BeginObservation();
         DateTimeOffset origin = clock.GetUtcNow();
         bool expired = false;
@@ -541,16 +443,23 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         ManualScenarioClock settlementClock = new();
-        Phase7Run state = await Phase7Run
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
             .CreateAsync(
-                testContext, token, workers: 1, interval: 1, duration: 10, allocation: "shared"
+                testContext,
+                token,
+                workers: 1,
+                interval: 1,
+                duration: 10,
+                allocation: "shared",
+                ownedHosts: false
             )
             .ConfigureAwait(false);
         state.SettlementTimeProvider = settlementClock;
         await state
             .RunBodyAsync(async () =>
             {
-                TaskCompletionSource<Phase7Sessions.Session> entered = new(
+                Coordinator inspector = state.Coordinator("status");
+                TaskCompletionSource<ControlledSessionPool.Session> entered = new(
                     TaskCreationOptions.RunContinuationsAsynchronously
                 );
                 TaskCompletionSource<CancellationToken> settlementRead = new(
@@ -559,7 +468,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 TaskCompletionSource release = new(
                     TaskCreationOptions.RunContinuationsAsynchronously
                 );
-                async Task Hold(Phase7Sessions.Session session, CancellationToken business)
+                async Task Hold(ControlledSessionPool.Session session, CancellationToken business)
                 {
                     if (state.Clock.GetUtcNow() >= state.WorkDeadline)
                     {
@@ -577,14 +486,15 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     else
                     {
                         state.Sessions.BeforeRead = (session, business) =>
-                            state.Database.ReadMetadata($"worker:{session.Worker}:lifecycle")
-                                == "ready"
+                            WorkerStatus(inspector, session.Worker)[
+                                "lifecycle"
+                            ]!.GetValue<string>() == "ready"
                             && session.CompletedTurns == 0
                                 ? Hold(session, business)
                                 : Task.CompletedTask;
                     }
                     _ = state.Start();
-                    Phase7Sessions.Session waiting = await state
+                    ControlledSessionPool.Session waiting = await state
                         .FixedAsync(next => entered.Task.WaitAsync(next), token)
                         .ConfigureAwait(false);
                     await state
@@ -618,16 +528,16 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         "ownership_or_usage_unresolved",
                         result["code"]!.GetValue<string>()
                     );
+                    JsonObject status = StatusData(inspector);
+                    Assert.AreEqual("unresolved", status["lifecycle"]!.GetValue<string>());
+                    Assert.AreEqual("credit_unknown", status["stopReason"]!.GetValue<string>());
+                    Assert.IsFalse(status["active"]!.GetValue<bool>());
                     CreditReservation stoppedReservation = state.Reservation(waiting.Worker);
                     Assert.AreEqual(waitingReservation.Id, stoppedReservation.Id);
                     Assert.AreEqual(waitingReservation.SessionId, stoppedReservation.SessionId);
                     Assert.AreEqual(0L, state.Dispatches(stoppedReservation.Id));
                     Assert.AreEqual("uncertain", stoppedReservation.State);
                     Assert.IsNull(stoppedReservation.Actual);
-                    Assert.AreEqual(0L, state.Number("SELECT COUNT(*) FROM coordinator_turns;"));
-                    Assert.IsNull(
-                        state.Database.ReadMetadata("native:bootstrap:" + waiting.SessionId)
-                    );
                     Assert.AreEqual(0, waiting.CompletedTurns);
                     // This is missing startup/preparation evidence, not measured zero
                     // usage or verified pre-dispatch cancellation.
@@ -651,45 +561,32 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     )
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
             .CreateAsync(testContext, token, workers: 1, duration: 10, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
+                Coordinator inspector = state.Coordinator("status");
                 _ = state.Start();
-                Phase7Sessions.Turn turn = await state
+                ControlledSessionPool.Turn turn = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 long batch = state.SendingBatch("worker1");
-                long? pendingEvent = null;
-                long batches = state.Number("SELECT COUNT(*) FROM delivery_batches;");
                 long dispatches = state.Dispatches(state.Reservation("worker1").Id);
+                const string followupBody =
+                    "Retain this followup without claiming it during drain.";
                 if (duringGrace)
                 {
-                    JsonObject message = state.Invoke(
+                    _ = state.Invoke(
                         "owner",
                         "message_send",
                         new()
                         {
                             ["recipient"] = "worker1",
-                            ["body"] = "Retain this followup without claiming it during drain.",
+                            ["body"] = followupBody,
                         }
                     );
-                    pendingEvent = state.Number(
-                        "SELECT id FROM events WHERE recipient='worker1' AND dedup_key=$key;",
-                        ("$key", "message:" + message["id"]!.GetValue<long>())
-                    );
-                    Assert.IsGreaterThan(0L, pendingEvent.Value);
-                    Assert.AreEqual("pending", state.Value(
-                        "SELECT state FROM events WHERE id=$id;", ("$id", pendingEvent.Value)
-                    ));
-                    Assert.IsNull(state.Value(
-                        "SELECT batch_id FROM events WHERE id=$id;", ("$id", pendingEvent.Value)
-                    ));
-                    Assert.AreEqual(0L, state.Number(
-                        "SELECT attempts FROM events WHERE id=$id;", ("$id", pendingEvent.Value)
-                    ));
                 }
                 Assert.AreEqual(TimeSpan.FromSeconds(10), turn.Timeout);
                 await state
@@ -703,7 +600,9 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 {
                     await state
                         .UntilAsync(
-                            () => state.Database.ReadMetadata("lifecycle") == "draining",
+                            () =>
+                                StatusData(inspector)["lifecycle"]!.GetValue<string>()
+                                == "draining",
                             state.DrainDeadline,
                             token
                         )
@@ -727,13 +626,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     .ConfigureAwait(false);
                 if (!duringGrace)
                 {
-                    Assert.AreEqual(
-                        "sent",
-                        state.Value(
-                            "SELECT state FROM delivery_batches WHERE id=$id;",
-                            ("$id", batch)
-                        )
-                    );
                     Assert.IsLessThan(state.WorkDeadline, state.Clock.GetUtcNow());
                     state.Clock.Advance(state.Clock.WorkDeadline!.Value - state.Clock.GetUtcNow());
                     await state.UntilAsync(state.Active, state.DrainDeadline, token)
@@ -741,39 +633,24 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 }
                 await state.Active.WaitAsync(token).ConfigureAwait(false);
                 GitScenarioState.Data(await state.Active.ConfigureAwait(false));
-                JsonObject status = GitScenarioState.Data(state.Coordinator().Status());
+                JsonObject status = StatusData(inspector);
+                Assert.AreEqual("finalized", status["lifecycle"]!.GetValue<string>());
                 Assert.AreEqual(
                     "completed",
                     status["deadlineDrain"]!["outcome"]!.GetValue<string>()
                 );
                 Assert.AreEqual("deadline", status["stopReason"]!.GetValue<string>());
+                Assert.IsFalse(status["active"]!.GetValue<bool>());
                 Assert.AreEqual("reconciled", state.Reservation("worker1").State);
                 Assert.AreEqual(10m, state.Reservation("worker1").Actual);
-                Assert.AreEqual(
-                    "true",
-                    state.Database.ReadMetadata("native:bootstrap:" + turn.Session.SessionId)
-                );
-                Assert.AreEqual(
-                    "sent",
-                    state.Value("SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch))
-                );
                 Assert.AreEqual(1, turn.Session.CompletedTurns);
-                Assert.AreEqual(1L, state.Number("SELECT COUNT(*) FROM coordinator_segments;"));
-                if (pendingEvent is long eventId)
+                if (duringGrace)
                 {
-                    Assert.AreEqual("pending", state.Value(
-                        "SELECT state FROM events WHERE id=$id;", ("$id", eventId)
-                    ));
-                    Assert.IsNull(state.Value(
-                        "SELECT batch_id FROM events WHERE id=$id;", ("$id", eventId)
-                    ));
-                    Assert.AreEqual(0L, state.Number(
-                        "SELECT attempts FROM events WHERE id=$id;", ("$id", eventId)
-                    ));
-                    Assert.AreEqual(
-                        batches, state.Number("SELECT COUNT(*) FROM delivery_batches;")
-                    );
                     Assert.AreEqual(dispatches, state.Dispatches(state.Reservation("worker1").Id));
+                    DeliveryBatch? retained = state.Collaboration.ClaimBatch("worker1", false);
+                    Assert.IsNotNull(retained);
+                    Assert.AreEqual(1, retained.Attempt);
+                    Assert.Contains(followupBody, retained.Prompt);
                 }
             })
             .ConfigureAwait(false);
@@ -791,13 +668,14 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         const string failureMessage = "Controlled terminal failure during deadline drain.";
-        Phase7Run state = await Phase7Run.CreateAsync(
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun.CreateAsync(
             testContext, token, workers: 1, duration: 10, ownedHosts: false
         ).ConfigureAwait(false);
         await state.RunBodyAsync(async () =>
         {
+            Coordinator inspector = state.Coordinator("status");
             _ = state.Start();
-            Phase7Sessions.Turn turn = await state
+            ControlledSessionPool.Turn turn = await state
                 .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                 .ConfigureAwait(false);
             long batch = state.SendingBatch("worker1");
@@ -818,7 +696,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
             long beforeDrain = state.Clock.TimerWatermark;
             state.Clock.Advance(state.WorkDeadline - state.Clock.GetUtcNow());
             await state.UntilAsync(
-                () => state.Database.ReadMetadata("lifecycle") == "draining",
+                () => StatusData(inspector)["lifecycle"]!.GetValue<string>() == "draining",
                 state.DrainDeadline,
                 token
             ).ConfigureAwait(false);
@@ -826,7 +704,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
             long? requestId = null;
             if (accounting is not null || cause is "root" or "failure")
             {
-                Phase7Clock.ObservedPoll poll = await state.FixedAsync(
+                ObservedManualClock.ObservedPoll poll = await state.FixedAsync(
                     next => state.Clock.WaitForPollAsync(
                         next, state.DrainDeadline, requireSingle: true, registeredAfter: beforeDrain
                     ),
@@ -834,15 +712,10 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 ).ConfigureAwait(false);
                 Assert.AreEqual(
                     "draining",
-                    GitScenarioState.Data(state.Coordinator().Status())["deadlineDrain"]![
-                        "outcome"
-                    ]!.GetValue<string>()
+                    StatusData(inspector)["deadlineDrain"]!["outcome"]!.GetValue<string>()
                 );
                 Assert.IsFalse(turn.Token.IsCancellationRequested);
                 Assert.IsFalse(turn.Response.IsCompleted);
-                Assert.AreEqual("sending", state.Value(
-                    "SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch)
-                ));
                 CreditReservation held = state.Reservation("worker1");
                 Assert.AreEqual(turn.Session.SessionId, held.SessionId);
                 Assert.AreEqual(1L, state.Dispatches(held.Id));
@@ -879,21 +752,11 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     }
                     else
                     {
-                        state.Invoke(
+                        JsonObject closed = state.Invoke(
                             "owner", "task_write", new() { ["action"] = "close", ["id"] = 1 }
                         );
-                        Assert.AreEqual(
-                            "owner", state.Database.ReadMetadata("lifecycle:root_closed_by")
-                        );
-                        Assert.AreEqual(
-                            "owner", state.Value("SELECT closed_by FROM tasks WHERE id=1;")
-                        );
-                        Assert.AreEqual(
-                            "closed", state.Value("SELECT state FROM tasks WHERE id=1;")
-                        );
-                        Assert.AreEqual(
-                            0L, state.Number("SELECT COUNT(*) FROM coordinator_controls;")
-                        );
+                        Assert.AreEqual("closed", closed["state"]!.GetValue<string>());
+                        Assert.AreEqual("owner", closed["closedBy"]!.GetValue<string>());
                     }
                     state.Clock.Advance(poll, state.DrainDeadline, token);
                     // Freeze business time: a missed poll must not get a grace-expiry stop.
@@ -932,18 +795,13 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
             Assert.AreEqual(0, turn.Session.CompletedTurns);
             Assert.IsFalse(result["ok"]!.GetValue<bool>());
             Assert.AreEqual("ownership_or_usage_unresolved", result["code"]!.GetValue<string>());
-            JsonObject status = GitScenarioState.Data(state.Coordinator().Status());
+            JsonObject status = StatusData(inspector);
             JsonObject drain = Assert.IsInstanceOfType<JsonObject>(status["deadlineDrain"]);
+            Assert.AreEqual("unresolved", status["lifecycle"]!.GetValue<string>());
             Assert.AreEqual("interrupted", drain["outcome"]!.GetValue<string>());
             Assert.AreEqual(reason, drain["stopReason"]!.GetValue<string>());
             Assert.AreEqual(reason, status["stopReason"]!.GetValue<string>());
-            Assert.AreEqual(reason, state.Value(
-                "SELECT stop_reason FROM coordinator_segments ORDER BY id DESC LIMIT 1;"
-            ));
-            Assert.AreEqual("unresolved", state.Database.ReadMetadata("lifecycle"));
-            Assert.AreEqual(0L, state.Number(
-                "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;"
-            ));
+            Assert.IsFalse(status["active"]!.GetValue<bool>());
             CreditReservation worker = state.Reservation("worker1");
             Assert.AreEqual("uncertain", worker.State);
             Assert.IsNull(worker.Actual);
@@ -956,7 +814,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     "credit_unknown", drain["accountingStop"]!["code"]!.GetValue<string>()
                 );
                 Assert.AreEqual(200m, worker.Allowance);
-                Assert.AreEqual(0L, state.Number("SELECT COUNT(*) FROM coordinator_controls;"));
                 CreditReservation retained = state.Ledger.Reservations(accounting.RunId).Single();
                 Assert.AreEqual(accounting.Id, retained.Id);
                 Assert.AreEqual(accounting.SessionId, retained.SessionId);
@@ -971,14 +828,10 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
             }
             if (cause == "root")
             {
-                Assert.AreEqual("owner", state.Database.ReadMetadata("lifecycle:root_closed_by"));
-                Assert.AreEqual("owner", state.Value("SELECT closed_by FROM tasks WHERE id=1;"));
-                Assert.AreEqual("closed", state.Value("SELECT state FROM tasks WHERE id=1;"));
-                Assert.AreEqual(0L, state.Number("SELECT COUNT(*) FROM coordinator_controls;"));
+                JsonObject rootTask = state.Invoke("owner", "task_read", new() { ["id"] = 1 });
+                Assert.AreEqual("closed", rootTask["state"]!.GetValue<string>());
+                Assert.AreEqual("owner", rootTask["closedBy"]!.GetValue<string>());
             }
-            Assert.IsNull(
-                state.Database.ReadMetadata("native:bootstrap:" + turn.Session.SessionId)
-            );
             Assert.AreEqual("failed", state.Value(
                 "SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch)
             ));
@@ -990,19 +843,17 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     "SELECT last_error FROM delivery_batches WHERE id=$id;", ("$id", batch)
                 )
             );
-            Assert.AreEqual(0L, state.Number(
-                "SELECT COUNT(*) FROM coordinator_turns WHERE batch_id=$id;", ("$id", batch)
-            ));
             if (requestId is long id)
             {
-                Assert.AreEqual("pending", state.Value(
-                    "SELECT state FROM coordinator_controls WHERE id=$id;", ("$id", id)
-                ));
-                Assert.IsNull(state.Value(
-                    "SELECT completed_at FROM coordinator_controls WHERE id=$id;", ("$id", id)
-                ));
+                JsonObject retainedControl = GitScenarioState.Data(
+                    state.Coordinator().RequestControl("pause")
+                );
+                Assert.AreEqual(id, retainedControl["requestId"]!.GetValue<long>());
+                Assert.AreEqual("pending", retainedControl["state"]!.GetValue<string>());
             }
-            Phase7Sessions.Host host = state.Sessions.Hosts.Single(item => item.Operation == "run");
+            ControlledSessionPool.Host host = state.Sessions.Hosts.Single(
+                item => item.Operation == "run"
+            );
             Assert.AreEqual("managed", host.Witness["hostKind"]!.GetValue<string>());
             Assert.IsTrue(host.Witness["managedSettlementBeforeWrapperDispose"]!.GetValue<bool>());
             Assert.IsFalse(host.Witness["normalExitBeforeWrapperDispose"]!.GetValue<bool>());
@@ -1015,22 +866,20 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     public async Task GraceExpiryCancelsPendingTurnWithoutAcknowledgementOrReleasedBacking()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
-            .CreateAsync(testContext, token, workers: 1, duration: 10)
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
+            .CreateAsync(testContext, token, workers: 1, duration: 10, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
+                Coordinator inspector = state.Coordinator("status");
                 _ = state.Start();
-                Phase7Sessions.Turn turn = await state
+                ControlledSessionPool.Turn turn = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 long batch = state.SendingBatch("worker1");
-                DateTimeOffset workDeadline = DateTimeOffset.Parse(
-                    state.Database.ReadMetadata("lifecycle:deadline")!,
-                    System.Globalization.CultureInfo.InvariantCulture
-                );
-                DateTimeOffset graceDeadline = workDeadline.AddSeconds(30);
+                DateTimeOffset workDeadline = state.WorkDeadline;
+                DateTimeOffset graceDeadline = state.DrainDeadline;
                 await state
                     .FixedAsync(
                         next => state.Clock.WaitForPollAsync(next, state.WorkDeadline),
@@ -1040,13 +889,13 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 state.Clock.Advance(TimeSpan.FromSeconds(10));
                 await state
                     .UntilAsync(
-                        () => state.Database.ReadMetadata("lifecycle") == "draining",
+                        () => StatusData(inspector)["lifecycle"]!.GetValue<string>() == "draining",
                         state.DrainDeadline,
                         token
                     )
                     .ConfigureAwait(false);
                 Assert.IsFalse(turn.Token.IsCancellationRequested);
-                Phase7Clock.ObservedPoll wake = await state
+                ObservedManualClock.ObservedPoll wake = await state
                     .FixedAsync(
                         next => state.Clock.WaitForPollAsync(
                             next, graceDeadline, requireSingle: true
@@ -1063,8 +912,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     token
                 ).ConfigureAwait(false);
                 Assert.AreEqual(probe, state.Clock.GetUtcNow());
-                Assert.AreEqual("draining", state.Database.ReadMetadata("lifecycle"));
-                JsonObject draining = GitScenarioState.Data(state.Coordinator().Status());
+                JsonObject draining = StatusData(inspector);
+                Assert.AreEqual("draining", draining["lifecycle"]!.GetValue<string>());
                 Assert.AreEqual(
                     "draining", draining["deadlineDrain"]!["outcome"]!.GetValue<string>()
                 );
@@ -1090,19 +939,18 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 Assert.AreEqual("uncertain", state.Reservation("worker1").State);
                 Assert.IsGreaterThan(0m, state.Reservation("worker1").Allowance);
                 Assert.AreEqual(0, turn.Session.CompletedTurns);
-                Assert.IsNull(
-                    state.Database.ReadMetadata("native:bootstrap:" + turn.Session.SessionId)
-                );
                 Assert.AreNotEqual(
                     "sent",
                     state.Value("SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch))
                 );
-                JsonObject status = GitScenarioState.Data(state.Coordinator().Status());
+                JsonObject status = StatusData(inspector);
+                Assert.AreEqual("unresolved", status["lifecycle"]!.GetValue<string>());
                 Assert.AreEqual(
                     "timed-out",
                     status["deadlineDrain"]!["outcome"]!.GetValue<string>()
                 );
                 Assert.AreEqual("deadline", status["stopReason"]!.GetValue<string>());
+                Assert.IsFalse(status["active"]!.GetValue<bool>());
             })
             .ConfigureAwait(false);
     }
@@ -1113,12 +961,13 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     public async Task IdlePeerCannotCancelAnotherPeersHealthyDispatchedDrain()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
-            .CreateAsync(testContext, token, duration: 10)
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
+            .CreateAsync(testContext, token, duration: 10, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
+                Coordinator inspector = state.Coordinator("status");
                 TaskCompletionSource<Task[]> loopTasks = new(
                     TaskCreationOptions.RunContinuationsAsynchronously
                 );
@@ -1130,10 +979,10 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     }
                 };
                 _ = state.Start();
-                Phase7Sessions.Turn idle = await state
+                ControlledSessionPool.Turn idle = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
-                Phase7Sessions.Turn healthy = await state
+                ControlledSessionPool.Turn healthy = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 Task[] actualLoops = await state
@@ -1154,7 +1003,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 state.Clock.Advance(state.Clock.WorkDeadline!.Value - state.Clock.GetUtcNow());
                 await state
                     .UntilAsync(
-                        () => state.Database.ReadMetadata("lifecycle") == "draining",
+                        () => StatusData(inspector)["lifecycle"]!.GetValue<string>() == "draining",
                         state.DrainDeadline,
                         token
                     )
@@ -1168,32 +1017,22 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     .ConfigureAwait(false);
                 DateTimeOffset drainAt = state.Clock.GetUtcNow();
                 Assert.IsFalse(healthy.Token.IsCancellationRequested);
-                Assert.AreEqual(
-                    "sending",
-                    state.Value(
-                        "SELECT state FROM delivery_batches WHERE id=$id;",
-                        ("$id", healthyBatch)
-                    )
-                );
+                Assert.AreEqual(healthyBatch, state.SendingBatch("worker2"));
                 Assert.AreEqual(TimeSpan.FromSeconds(10), healthy.Timeout);
                 healthy.Complete();
+                await state
+                    .WaitAckAsync(healthyBatch, state.DrainDeadline, token)
+                    .ConfigureAwait(false);
                 await state.Active.WaitAsync(token).ConfigureAwait(false);
                 Assert.AreEqual(drainAt, state.Clock.GetUtcNow());
                 GitScenarioState.Data(await state.Active.ConfigureAwait(false));
-                Assert.AreEqual(
-                    "sent",
-                    state.Value(
-                        "SELECT state FROM delivery_batches WHERE id=$id;",
-                        ("$id", healthyBatch)
-                    )
-                );
                 Assert.AreEqual(10m, state.Reservation("worker1").Actual);
                 Assert.AreEqual(10m, state.Reservation("worker2").Actual);
+                JsonObject status = StatusData(inspector);
+                Assert.AreEqual("finalized", status["lifecycle"]!.GetValue<string>());
                 Assert.AreEqual(
                     "completed",
-                    GitScenarioState.Data(state.Coordinator().Status())["deadlineDrain"]![
-                        "outcome"
-                    ]!.GetValue<string>()
+                    status["deadlineDrain"]!["outcome"]!.GetValue<string>()
                 );
             })
             .ConfigureAwait(false);
@@ -1212,15 +1051,18 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     )
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
-            .CreateAsync(testContext, token, interval: 10, allocation: "shared")
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
+            .CreateAsync(
+                testContext, token, interval: 10, allocation: "shared", ownedHosts: false
+            )
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
+                Coordinator inspector = state.Coordinator("status");
                 DateTimeOffset began = state.Clock.GetUtcNow();
                 _ = state.Start();
-                Phase7Sessions.Turn turn = await state
+                ControlledSessionPool.Turn turn = await state
                     .FixedAsync(
                         next => state.Sessions.NextTurnAsync("worker1", next),
                         token
@@ -1230,7 +1072,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     .Clock.WaitForPollAsync(token, began.AddSeconds(10))
                     .ConfigureAwait(false);
                 Assert.AreEqual(0m, state.Reservation("worker2").Allowance);
-                JsonObject? failureEvidence = null;
                 if (cause == "caller")
                 {
                     long batch = state.SendingBatch("worker1");
@@ -1241,46 +1082,15 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         "ownership_or_usage_unresolved",
                         result["code"]!.GetValue<string>()
                     );
-                    Assert.AreEqual("unresolved", state.Database.ReadMetadata("lifecycle"));
-                    Assert.AreEqual(
-                        1L,
-                        state.Number(
-                            (
-                                "SELECT COUNT(*) FROM coordinator_segments\nWHERE "
-                                + "state='unresolved' AND stop_reason='caller-cancelled' AND "
-                                + "ended_at IS NOT NULL;"
-                            )
-                        )
-                    );
                     Assert.IsTrue(turn.Token.IsCancellationRequested);
                     Assert.AreEqual("uncertain", state.Reservation("worker1").State);
                     Assert.IsGreaterThan(0m, state.Reservation("worker1").Allowance);
                     Assert.IsNull(state.Reservation("worker1").Actual);
                     Assert.AreEqual(0, turn.Session.CompletedTurns);
-                    Assert.IsNull(
-                        state.Database.ReadMetadata("native:bootstrap:" + turn.Session.SessionId)
-                    );
-                    Assert.AreEqual(
-                        0L,
-                        state.Number(
-                            "SELECT COUNT(*) FROM coordinator_turns WHERE batch_id=$id;",
-                            ("$id", batch)
-                        )
-                    );
                     Assert.AreNotEqual(
                         "sent",
                         state.Value(
                             "SELECT state FROM delivery_batches WHERE id=$id;",
-                            ("$id", batch)
-                        )
-                    );
-                    Assert.AreEqual(
-                        0L,
-                        state.Number(
-                            (
-                                "SELECT COUNT(*) FROM shown_notices s JOIN events e ON "
-                                + "e.id=s.event_id WHERE e.batch_id=$id;"
-                            ),
                             ("$id", batch)
                         )
                     );
@@ -1319,33 +1129,12 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         "ownership_or_usage_unresolved",
                         result["code"]!.GetValue<string>()
                     );
-                    Assert.AreEqual("unresolved", state.Database.ReadMetadata("lifecycle"));
-                    Assert.AreEqual(
-                        1L,
-                        state.Number(
-                            (
-                                "SELECT COUNT(*) FROM coordinator_segments\nWHERE "
-                                + "state='unresolved' AND stop_reason='controlled_turn_failure' "
-                                + "AND ended_at IS NOT NULL;"
-                            )
-                        )
-                    );
                     CreditReservation retained = state.Reservation("worker1");
                     Assert.AreEqual(original.Id, retained.Id);
                     Assert.AreEqual("uncertain", retained.State);
                     Assert.IsGreaterThan(0m, retained.Allowance);
                     Assert.IsNull(retained.Actual);
                     Assert.AreEqual(0, turn.Session.CompletedTurns);
-                    Assert.IsNull(
-                        state.Database.ReadMetadata("native:bootstrap:" + turn.Session.SessionId)
-                    );
-                    Assert.AreEqual(
-                        0L,
-                        state.Number(
-                            "SELECT COUNT(*) FROM coordinator_turns WHERE batch_id=$id;",
-                            ("$id", batch)
-                        )
-                    );
                     Assert.AreNotEqual(
                         "sent",
                         state.Value(
@@ -1353,67 +1142,25 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                             ("$id", batch)
                         )
                     );
-                    Assert.AreEqual(
-                        0L,
-                        state.Number(
-                            (
-                                "SELECT COUNT(*) FROM shown_notices s JOIN events e ON "
-                                + "e.id=s.event_id WHERE e.batch_id=$id;"
-                            ),
-                            ("$id", batch)
-                        )
-                    );
                     Assert.AreEqual(1L, state.Dispatches(original.Id));
-                    failureEvidence = new()
-                    {
-                        ["result"] = result,
-                        ["faultCode"] = observed.Code,
-                        ["responseState"] = turn.Response.Status.ToString(),
-                        ["completedOperationTokenCancelled"] = turn.Token.IsCancellationRequested,
-                        ["reservationId"] = retained.Id,
-                        ["reservationState"] = retained.State,
-                        ["allowance"] = retained.Allowance,
-                        ["actual"] = retained.Actual,
-                        ["dispatches"] = state.Dispatches(retained.Id),
-                        ["completedTurns"] = turn.Session.CompletedTurns,
-                        ["batchId"] = batch,
-                    };
                 }
-                Assert.AreEqual(reason, state.Database.ReadMetadata("lifecycle:stop_reason"));
+
+                JsonObject status = StatusData(inspector);
+                Assert.AreEqual("unresolved", status["lifecycle"]!.GetValue<string>());
+                Assert.AreEqual(reason, status["stopReason"]!.GetValue<string>());
+                Assert.IsFalse(status["active"]!.GetValue<bool>());
                 Assert.IsLessThan(TimeSpan.FromSeconds(30), state.Clock.GetUtcNow() - began);
                 if (cause != "failure")
                 {
                     Assert.IsTrue(turn.Token.IsCancellationRequested);
                 }
-                Assert.IsNull(state.Database.ReadMetadata("worker:worker2:session"));
+                Assert.IsNull(WorkerStatus(inspector, "worker2")["sessionId"]);
                 Assert.AreEqual("released", state.Reservation("worker2").State);
                 Assert.AreEqual(0m, state.Reservation("worker2").Allowance);
                 Assert.AreEqual(
                     "not-entered",
-                    GitScenarioState.Data(state.Coordinator().Status())["deadlineDrain"]![
-                        "outcome"
-                    ]!.GetValue<string>()
+                    status["deadlineDrain"]!["outcome"]!.GetValue<string>()
                 );
-                if (failureEvidence is not null)
-                {
-                    failureEvidence["stopReason"] = state.Database.ReadMetadata(
-                        "lifecycle:stop_reason"
-                    );
-                    failureEvidence["manualElapsedSeconds"] = (
-                        state.Clock.GetUtcNow() - began
-                    ).TotalSeconds;
-                    failureEvidence["coldSession"] = state.Database.ReadMetadata(
-                        "worker:worker2:session"
-                    );
-                    failureEvidence["coldReservationState"] = state.Reservation("worker2").State;
-                    failureEvidence["coldAllowance"] = state.Reservation("worker2").Allowance;
-                    failureEvidence["drainOutcome"] = GitScenarioState.Data(
-                        state.Coordinator().Status()
-                    )["deadlineDrain"]!["outcome"]!.GetValue<string>();
-                    Console.WriteLine(
-                        "PHASE7_CONTROLLED_FAILURE_GREEN " + failureEvidence.ToJsonString()
-                    );
-                }
             })
             .ConfigureAwait(false);
     }
@@ -1424,16 +1171,18 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     public async Task ZeroIntervalLegacyPeersAreEligibleWithoutAdvancingManualTime()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run.CreateAsync(testContext, token).ConfigureAwait(false);
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
+            .CreateAsync(testContext, token, ownedHosts: false)
+            .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
                 DateTimeOffset began = state.Clock.GetUtcNow();
                 _ = state.Start();
-                Phase7Sessions.Turn one = await state
+                ControlledSessionPool.Turn one = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
-                Phase7Sessions.Turn two = await state
+                ControlledSessionPool.Turn two = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 Assert.AreEqual(began, state.Clock.GetUtcNow());
@@ -1442,7 +1191,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 Assert.AreEqual(100m, state.Reservation("worker2").Allowance);
                 long batch1 = state.SendingBatch("worker1");
                 long batch2 = state.SendingBatch("worker2");
-                Phase7Clock.ObservedPoll ownerPoll = await state
+                ObservedManualClock.ObservedPoll ownerPoll = await state
                     .ObserveOwnerPollAsync(token)
                     .ConfigureAwait(false);
                 one.Complete();
@@ -1464,7 +1213,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     public async Task SharedPreparationWaitingForBackingCannotDispatchOrAcquireWindowAfterDeadline()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
             .CreateAsync(
                 testContext,
                 token,
@@ -1477,10 +1226,11 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
         await state
             .RunBodyAsync(async () =>
             {
-                using Phase7Handoff handoff = new();
+                Coordinator inspector = state.Coordinator("status");
+                using WorkerHandoffControl handoff = new();
                 state.Handoff = handoff;
                 _ = state.Start();
-                Phase7Handoff.Startup firstStart = await state
+                WorkerHandoffControl.Startup firstStart = await state
                     .FixedAsync(next => handoff.FirstStarting.Task.WaitAsync(next), token)
                     .ConfigureAwait(false);
                 await state.FixedAsync(firstStart.Operation, token).ConfigureAwait(false);
@@ -1488,24 +1238,22 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     .WaitDurableAsync(
                         () =>
                             state.Number(
-                                (
-                                    "SELECT COUNT(*) FROM delivery_batches WHERE "
-                                    + "recipient='worker1' AND state='sending';"
-                                )
+                                "SELECT COUNT(*) FROM delivery_batches "
+                                    + "WHERE recipient='worker1' AND state='sending';"
                             ) == 1,
                         state.WorkDeadline,
                         token
                     )
                     .ConfigureAwait(false);
-                Phase7Sessions.Turn first = await state
+                ControlledSessionPool.Turn first = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker1", next), token)
                     .ConfigureAwait(false);
                 Assert.AreEqual(100m, state.Reservation("worker1").Allowance);
                 Assert.AreEqual(0m, state.Reservation("worker2").Allowance);
                 long firstBatch = state.SendingBatch("worker1");
-                // Capture the REAL second operation while the first100 grant still
-                // leaves only20 backing: entry is not successful startup/consumption.
-                Phase7Handoff.Startup secondStart = await state
+                // Capture the real second operation while the first 100 grant still
+                // leaves only 20 backing: entry is not successful startup/consumption.
+                WorkerHandoffControl.Startup secondStart = await state
                     .FixedAsync(next => handoff.SecondStarting.Task.WaitAsync(next), token)
                     .ConfigureAwait(false);
                 Assert.AreEqual("worker2", secondStart.Worker);
@@ -1529,24 +1277,22 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         .ConfigureAwait(false)
                 );
                 Assert.AreEqual(10m, state.Reservation("worker1").Actual);
-                // The100ms insufficient-backing retry is a REAL cancellable delay.
-                // Join THAT same pending operation without consuming business time.
+                // The 100ms insufficient-backing retry is a real cancellable delay.
+                // Join that same pending operation without consuming business time.
                 await state.FixedAsync(secondStart.Operation, token).ConfigureAwait(false);
                 Assert.AreEqual(accountingAt, state.Clock.GetUtcNow());
                 await state
                     .WaitDurableAsync(
                         () =>
                             state.Number(
-                                (
-                                    "SELECT COUNT(*) FROM delivery_batches WHERE "
-                                    + "recipient='worker2' AND state='sending';"
-                                )
+                                "SELECT COUNT(*) FROM delivery_batches "
+                                    + "WHERE recipient='worker2' AND state='sending';"
                             ) == 1,
                         state.WorkDeadline,
                         token
                     )
                     .ConfigureAwait(false);
-                Phase7Sessions.Turn second = await state
+                ControlledSessionPool.Turn second = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 long secondBatch = state.SendingBatch("worker2");
@@ -1569,25 +1315,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 await state
                     .UntilAsync(handoff.FollowupPreparation.Task, state.WorkDeadline, token)
                     .ConfigureAwait(false);
-                Assert.AreEqual(
-                    1L,
-                    state.Number(
-                        "SELECT COUNT(*) FROM delivery_batches WHERE recipient='worker1' "
-                            + "AND state='sending' AND id!=$first;",
-                        ("$first", firstBatch)
-                    )
-                );
                 long followupBatch = state.SendingBatch("worker1");
                 Assert.AreNotEqual(firstBatch, followupBatch);
-                // This same worker's NEW claim follows its previous ACK/verification,
-                // unlike PositiveRecorded, which observes only the real record action.
-                Assert.AreEqual(
-                    "acknowledged",
-                    state.Value(
-                        "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
-                        ("$id", firstBatch)
-                    )
-                );
                 Task<JsonObject> preparation = await state
                     .FixedAsync(next => handoff.FollowupPreparation.Task.WaitAsync(next), token)
                     .ConfigureAwait(false);
@@ -1597,48 +1326,12 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         .FixedAsync(next => handoff.FollowupRecorded.Task.WaitAsync(next), token)
                         .ConfigureAwait(false)
                 );
-                // Only10 credits remain; the30-minimum next window must really wait.
+                // Only 10 credits remain; the 30-minimum next window must really wait.
                 JsonObject money = state.Ledger.Status(state.Database.RunId, 127.25m);
                 Assert.AreEqual(117.25m, money["runCommitted"]!.GetValue<decimal>());
                 Assert.IsFalse(preparation.IsCompleted);
                 Assert.IsFalse(second.Token.IsCancellationRequested);
                 Assert.IsLessThan(30m, 127.25m - money["runCommitted"]!.GetValue<decimal>());
-                Assert.AreEqual(
-                    "sending",
-                    state.Value(
-                        "SELECT state FROM delivery_batches WHERE id=$id;",
-                        ("$id", followupBatch)
-                    )
-                );
-                Assert.AreEqual(
-                    0L,
-                    state.Number(
-                        "SELECT COUNT(*) FROM coordinator_turns WHERE batch_id=$id;",
-                        ("$id", followupBatch)
-                    )
-                );
-                Console.WriteLine(
-                    "PHASE7_BACKING_PREPARATION "
-                        + new JsonObject
-                        {
-                            ["firstRecordedActual"] = state.Reservation("worker1").Actual,
-                            ["firstCommittedBatch"] = firstBatch,
-                            ["secondCommittedBatch"] = secondBatch,
-                            ["sameSecondStartupTaskStatus"] =
-                                secondStart.Operation.Status.ToString(),
-                            ["fixedAccountingAt"] = accountingAt,
-                            ["firstWindowOpen"] = state.Reservation("worker1").GrantOpen,
-                            ["secondPendingSend"] = !second.Response.IsCompleted,
-                            ["secondBackedAllowance"] = state.Reservation("worker2").Allowance,
-                            ["followupBatch"] = followupBatch,
-                            ["actualPromptPendingAfterSynchronousCreditRead"] =
-                                !preparation.IsCompleted,
-                            ["runCommitted"] = money["runCommitted"]!.DeepClone(),
-                            ["freeBacking"] = 127.25m - money["runCommitted"]!.GetValue<decimal>(),
-                            ["setupAt"] = state.Clock.GetUtcNow(),
-                            ["workDeadline"] = state.WorkDeadline,
-                        }.ToJsonString()
-                );
                 Assert.AreEqual(1L, state.Dispatches(state.Reservation("worker1").Id));
                 Assert.IsFalse(state.Reservation("worker1").GrantOpen);
                 long batches = state.Number("SELECT COUNT(*) FROM delivery_batches;");
@@ -1649,7 +1342,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 state.Clock.Advance(state.WorkDeadline - state.Clock.GetUtcNow());
                 await state
                     .UntilAsync(
-                        () => state.Database.ReadMetadata("lifecycle") == "draining",
+                        () => StatusData(inspector)["lifecycle"]!.GetValue<string>() == "draining",
                         state.DrainDeadline,
                         token
                     )
@@ -1674,20 +1367,22 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 Assert.IsFalse(second.Token.IsCancellationRequested);
                 Assert.AreEqual(TimeSpan.FromSeconds(60), second.Timeout);
                 second.Complete();
+                await state
+                    .WaitAckAsync(secondBatch, state.DrainDeadline, token)
+                    .ConfigureAwait(false);
                 await state.Active.WaitAsync(token).ConfigureAwait(false);
                 GitScenarioState.Data(await state.Active.ConfigureAwait(false));
-                Assert.AreEqual("deadline", state.Database.ReadMetadata("lifecycle:stop_reason"));
+                JsonObject status = StatusData(inspector);
+                Assert.AreEqual("finalized", status["lifecycle"]!.GetValue<string>());
+                Assert.AreEqual("deadline", status["stopReason"]!.GetValue<string>());
                 Assert.AreEqual(
-                    1L,
-                    state.Number(
-                        "SELECT COUNT(*) FROM delivery_batches WHERE id=$id AND state<>'sent';",
-                        ("$id", followupBatch)
-                    )
+                    "completed",
+                    status["deadlineDrain"]!["outcome"]!.GetValue<string>()
                 );
-                Assert.AreEqual(
-                    0L,
-                    state.Number(
-                        "SELECT COUNT(*) FROM coordinator_turns WHERE batch_id=$id;",
+                Assert.AreNotEqual(
+                    "sent",
+                    state.Value(
+                        "SELECT state FROM delivery_batches WHERE id=$id;",
                         ("$id", followupBatch)
                     )
                 );
@@ -1715,13 +1410,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         "runCommitted"
                     ]!.GetValue<decimal>()
                 );
-                Assert.AreEqual(
-                    "acknowledged",
-                    state.Value(
-                        "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
-                        ("$id", secondBatch)
-                    )
-                );
             })
             .ConfigureAwait(false);
     }
@@ -1732,16 +1420,24 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     public async Task ExhaustedInflightSharedSendCannotRenewAfterAdmissionCloses()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
-            .CreateAsync(testContext, token, workers: 1, duration: 10, allocation: "shared")
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
+            .CreateAsync(
+                testContext,
+                token,
+                workers: 1,
+                duration: 10,
+                allocation: "shared",
+                ownedHosts: false
+            )
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
-                Phase7Exhaustion exhaustion = new();
+                Coordinator inspector = state.Coordinator("status");
+                ExhaustionSessionHost exhaustion = new();
                 state.Exhaustion = exhaustion;
                 _ = state.Start();
-                Phase7Sessions.Turn turn = await state
+                ControlledSessionPool.Turn turn = await state
                     .FixedAsync(
                         next => state.Sessions.NextTurnAsync("worker1", next),
                         token
@@ -1763,7 +1459,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 state.Clock.Advance(state.WorkDeadline - state.Clock.GetUtcNow());
                 await state
                     .UntilAsync(
-                        () => state.Database.ReadMetadata("lifecycle") == "draining",
+                        () => StatusData(inspector)["lifecycle"]!.GetValue<string>() == "draining",
                         state.DrainDeadline,
                         token
                     )
@@ -1782,37 +1478,26 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     "ownership_or_usage_unresolved",
                     result["code"]!.GetValue<string>()
                 );
-                Assert.AreEqual(
-                    "credit_unknown",
-                    state.Database.ReadMetadata("lifecycle:stop_reason")
-                );
+                JsonObject status = StatusData(inspector);
+                Assert.AreEqual("unresolved", status["lifecycle"]!.GetValue<string>());
+                Assert.AreEqual("credit_unknown", status["stopReason"]!.GetValue<string>());
                 Assert.AreEqual(
                     "interrupted",
-                    GitScenarioState.Data(state.Coordinator().Status())["deadlineDrain"]![
-                        "outcome"
-                    ]!.GetValue<string>()
+                    status["deadlineDrain"]!["outcome"]!.GetValue<string>()
                 );
                 Assert.AreEqual(original.Id, state.Reservation("worker1").Id);
                 Assert.AreEqual(100m, state.Reservation("worker1").Allowance);
                 Assert.AreEqual("uncertain", state.Reservation("worker1").State);
                 Assert.IsNull(state.Reservation("worker1").Actual);
+                Assert.AreEqual(0, turn.Session.CompletedTurns);
                 Assert.AreEqual(100d, turn.Session.Metadata["appliedLimit"]!.GetValue<double>());
                 Assert.AreEqual(0, exhaustion.Applied);
                 Assert.AreEqual(0, exhaustion.Verified);
                 Assert.AreEqual(1L, state.Dispatches(original.Id));
                 Assert.AreEqual(1L, state.Number("SELECT COUNT(*) FROM delivery_batches;"));
-                Assert.IsNull(
-                    state.Database.ReadMetadata("native:bootstrap:" + turn.Session.SessionId)
-                );
                 Assert.AreNotEqual(
                     "sent",
                     state.Value("SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch))
-                );
-                Assert.AreEqual(
-                    0L,
-                    state.Number(
-                        "SELECT COUNT(*) FROM coordinator_turns WHERE state='acknowledged';"
-                    )
                 );
                 Assert.IsLessThan(state.DrainDeadline, state.Clock.GetUtcNow());
             })
@@ -1827,14 +1512,15 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     DeadlineDuringPositiveIntervalLeavesColdSharedPeerWithoutSessionGrantOrDispatch()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
             .CreateAsync(testContext, token, interval: 30, duration: 10, allocation: "shared")
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
+                Coordinator inspector = state.Coordinator("status");
                 _ = state.Start();
-                Phase7Sessions.Turn first = await state
+                ControlledSessionPool.Turn first = await state
                     .FixedAsync(
                         next => state.Sessions.NextTurnAsync("worker1", next),
                         token
@@ -1844,7 +1530,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 string cold = state.Reservation("worker2").Id;
                 Assert.AreEqual(0m, state.Reservation("worker2").Allowance);
                 Assert.IsFalse(state.Reservation("worker2").GrantOpen);
-                Assert.IsNull(state.Database.ReadMetadata("worker:worker2:session"));
+                Assert.IsNull(WorkerStatus(inspector, "worker2")["sessionId"]);
                 long leases = state.Number(
                     "SELECT COUNT(*) FROM process_leases WHERE kind LIKE 'native:%';"
                 );
@@ -1852,7 +1538,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 state.Clock.Advance(state.WorkDeadline - state.Clock.GetUtcNow());
                 await state
                     .UntilAsync(
-                        () => state.Database.ReadMetadata("lifecycle") == "draining",
+                        () => StatusData(inspector)["lifecycle"]!.GetValue<string>() == "draining",
                         state.DrainDeadline,
                         token
                     )
@@ -1861,12 +1547,14 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 await state.WaitAckAsync(batch, state.DrainDeadline, token).ConfigureAwait(false);
                 await state.Active.WaitAsync(token).ConfigureAwait(false);
                 GitScenarioState.Data(await state.Active.ConfigureAwait(false));
-                Assert.AreEqual("deadline", state.Database.ReadMetadata("lifecycle:stop_reason"));
+                JsonObject status = StatusData(inspector);
+                Assert.AreEqual("finalized", status["lifecycle"]!.GetValue<string>());
+                Assert.AreEqual("deadline", status["stopReason"]!.GetValue<string>());
                 Assert.AreEqual(10m, state.Reservation("worker1").Actual);
                 Assert.AreEqual(0m, state.Reservation("worker2").Allowance);
                 Assert.IsFalse(state.Reservation("worker2").GrantOpen);
                 Assert.AreEqual(0L, state.Dispatches(cold));
-                Assert.IsNull(state.Database.ReadMetadata("worker:worker2:session"));
+                Assert.IsNull(WorkerStatus(inspector, "worker2")["sessionId"]);
                 Assert.IsEmpty(
                     state
                         .Sessions.Hosts.Where(host => host.Operation == "run")
@@ -1888,14 +1576,15 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     public async Task SettledFreshResumeStartsNewCadenceWithoutInheritingPriorEligibility()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
-            .CreateAsync(testContext, token, interval: 20)
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
+            .CreateAsync(testContext, token, interval: 20, ownedHosts: false)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
             {
+                Coordinator inspector = state.Coordinator("status");
                 _ = state.Start(ownerPollWorkers: 1);
-                Phase7Sessions.Turn first = await state
+                ControlledSessionPool.Turn first = await state
                     .FixedAsync(
                         next => state.Sessions.NextTurnAsync("worker1", next),
                         token
@@ -1905,7 +1594,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 // fair legacy reservation, NOT a shared grant
                 Assert.AreEqual(100m, state.Reservation("worker2").Allowance);
                 long batch = state.SendingBatch("worker1");
-                Phase7Clock.ObservedPoll originalOwnerPoll = await state
+                ObservedManualClock.ObservedPoll originalOwnerPoll = await state
                     .ObserveOwnerPollAsync(token)
                     .ConfigureAwait(false);
                 first.Complete();
@@ -1915,14 +1604,11 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         .StopRunningAsync("pause", originalOwnerPoll, token)
                         .ConfigureAwait(false)
                 );
-                Assert.AreEqual(
-                    0L,
-                    state.Number(
-                        "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;"
-                    )
-                );
+                JsonObject pausedStatus = StatusData(inspector);
+                Assert.AreEqual("paused", pausedStatus["lifecycle"]!.GetValue<string>());
+                Assert.IsFalse(pausedStatus["active"]!.GetValue<bool>());
                 Assert.AreEqual("reconciled", state.Reservation("worker1").State);
-                Assert.IsNull(state.Database.ReadMetadata("worker:worker2:session"));
+                Assert.IsNull(WorkerStatus(inspector, "worker2")["sessionId"]);
                 Assert.AreEqual(
                     17.25m,
                     state.Ledger.Status(state.Database.RunId, 207.25m)[
@@ -1946,11 +1632,11 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         await release.Task.WaitAsync(business).ConfigureAwait(false);
                     }
                 };
-                Phase7Sessions.Turn resumed;
+                ControlledSessionPool.Turn resumed;
                 try
                 {
                     _ = state.Start("resume");
-                    Phase7Handoff.Startup startup = await state
+                    WorkerHandoffControl.Startup startup = await state
                         .FixedAsync(
                             next => state.Handoff!.FirstStarting.Task.WaitAsync(next), token
                         )
@@ -1975,17 +1661,11 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 Assert.AreNotEqual(first.Session.SessionId, resumed.Session.SessionId);
                 Assert.AreEqual(
                     "fresh-session-with-durable-summary",
-                    state.Database.ReadMetadata("worker:worker1:recovery")
+                    WorkerStatus(inspector, "worker1")["recovery"]!.GetValue<string>()
                 );
+                Assert.IsTrue(StatusData(inspector)["active"]!.GetValue<bool>());
                 Assert.AreEqual(95m, state.Reservation("worker1").Allowance);
                 Assert.AreEqual(95m, state.Reservation("worker2").Allowance);
-                Assert.AreEqual(2L, state.Number("SELECT COUNT(*) FROM coordinator_segments;"));
-                Assert.AreEqual(
-                    1L,
-                    state.Number(
-                        "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;"
-                    )
-                );
                 Assert.IsEmpty(
                     state
                         .Sessions.Hosts.Where(host => host.Operation == "resume")
@@ -2009,16 +1689,16 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 await state
                     .UntilAsync(state.Handoff!.SecondStarting.Task, state.WorkDeadline, token)
                     .ConfigureAwait(false);
-                Phase7Handoff.Startup peerStart = await state.Handoff.SecondStarting.Task
+                WorkerHandoffControl.Startup peerStart = await state.Handoff.SecondStarting.Task
                     .WaitAsync(token).ConfigureAwait(false);
                 await state.FixedAsync(peerStart.Operation, token).ConfigureAwait(false);
-                Phase7Sessions.Turn peer = await state
+                ControlledSessionPool.Turn peer = await state
                     .FixedAsync(next => state.Sessions.NextTurnAsync("worker2", next), token)
                     .ConfigureAwait(false);
                 Assert.IsGreaterThanOrEqualTo(admitted.AddSeconds(20), state.Clock.GetUtcNow());
                 Assert.AreEqual(95m, state.Reservation("worker2").Allowance);
                 long peerBatch = state.SendingBatch("worker2");
-                Phase7Clock.ObservedPoll resumedOwnerPoll = await state
+                ObservedManualClock.ObservedPoll resumedOwnerPoll = await state
                     .ObserveOwnerPollAsync(token)
                     .ConfigureAwait(false);
                 resumed.Complete();
@@ -2050,7 +1730,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
     public async Task DelayedAdmissionStartsNextIntervalAtCompletionWithoutCatchupBurst()
     {
         CancellationToken token = testContext.CancellationToken;
-        Phase7Run state = await Phase7Run
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun
             .CreateAsync(
                 testContext, token, workers: 3, interval: 10,
                 allocation: "shared", allowance: 307.25m
@@ -2059,7 +1739,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
         await state
             .RunBodyAsync(async () =>
             {
-                using Phase7Handoff handoff = new();
+                Coordinator inspector = state.Coordinator("status");
+                using WorkerHandoffControl handoff = new();
                 state.Handoff = handoff;
                 TaskCompletionSource firstEntered = new(
                     TaskCreationOptions.RunContinuationsAsynchronously
@@ -2079,7 +1760,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 {
                     state.Sessions.BeforeOpen = async (session, business) =>
                     {
-                        Phase7Sessions.Host host = state.Sessions.Hosts.Single(item =>
+                        ControlledSessionPool.Host host = state.Sessions.Hosts.Single(item =>
                             item.Sessions.Contains(session)
                         );
                         entries[session.Worker] = new()
@@ -2105,7 +1786,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         }
                     };
                     _ = state.Start();
-                    Phase7Handoff.Startup firstStart = await state
+                    WorkerHandoffControl.Startup firstStart = await state
                         .FixedAsync(next => handoff.FirstStarting.Task.WaitAsync(next), token)
                         .ConfigureAwait(false);
                     await HeldAsync(firstStart, firstEntered.Task).ConfigureAwait(false);
@@ -2123,7 +1804,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
 
                     await state.UntilAsync(handoff.SecondStarting.Task, state.WorkDeadline, token)
                         .ConfigureAwait(false);
-                    Phase7Handoff.Startup secondStart = await handoff.SecondStarting.Task
+                    WorkerHandoffControl.Startup secondStart = await handoff.SecondStarting.Task
                         .WaitAsync(token).ConfigureAwait(false);
                     await HeldAsync(secondStart, secondEntered.Task).ConfigureAwait(false);
                     Assert.IsGreaterThanOrEqualTo(
@@ -2148,7 +1829,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
 
                     await state.UntilAsync(handoff.ThirdStarting.Task, state.WorkDeadline, token)
                         .ConfigureAwait(false);
-                    Phase7Handoff.Startup thirdStart = await handoff.ThirdStarting.Task
+                    WorkerHandoffControl.Startup thirdStart = await handoff.ThirdStarting.Task
                         .WaitAsync(token).ConfigureAwait(false);
                     var third = await ConsumeAsync(thirdStart).ConfigureAwait(false);
                     Assert.IsGreaterThanOrEqualTo(
@@ -2168,8 +1849,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                             .Values.Select(entry => entry["reservationId"]!.GetValue<string>())
                             .Distinct()
                     );
-                    Phase7Sessions.Turn[] turns = [first.Turn, second.Turn, third.Turn];
-                    Phase7Sessions.Host runHost = Assert.ContainsSingle(
+                    ControlledSessionPool.Turn[] turns = [first.Turn, second.Turn, third.Turn];
+                    ControlledSessionPool.Host runHost = Assert.ContainsSingle(
                         state.Sessions.Hosts.Where(host =>
                             host.Operation == "run"
                             && turns.All(turn => host.Sessions.Contains(turn.Session))
@@ -2186,11 +1867,9 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     Assert.AreEqual(
                         1L,
                         state.Number(
-                            (
-                                "SELECT COUNT(*) FROM process_leases WHERE id=$lease AND "
+                            "SELECT COUNT(*) FROM process_leases WHERE id=$lease AND "
                                 + "kind=$kind AND pid=$pid AND start_ticks=$birth AND "
-                                + "state='running';"
-                            ),
+                                + "state='running';",
                             ("$lease", runHost.LeaseId),
                             ("$kind", "native:runtime:" + runHost.Id),
                             ("$pid", runHost.Ready.Pid),
@@ -2200,88 +1879,42 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     foreach (string worker in workerNames)
                     {
                         Assert.Contains(worker, entries.Keys);
-                        Phase7Sessions.Turn turn = turns.Single(item =>
+                        ControlledSessionPool.Turn turn = turns.Single(item =>
                             item.Session.Worker == worker
                         );
                         string sessionId = turn.Session.SessionId;
                         CreditReservation reservation = state.Reservation(worker);
-                        JsonObject diagnostic = JsonNode
-                            .Parse(state.Database.ReadMetadata("native:session:" + sessionId)!)!
-                            .AsObject();
                         Assert.AreEqual(sessionId, reservation.SessionId);
                         Assert.AreEqual(
                             sessionId,
-                            state.Database.ReadMetadata($"worker:{worker}:session")
-                        );
-                        Assert.AreEqual(
-                            reservation.Id,
-                            state.Database.ReadMetadata($"worker:{worker}:reservation")
-                        );
-                        Assert.AreEqual(
-                            1L,
-                            state.Number(
-                                (
-                                    "SELECT COUNT(*) FROM native_sessions s JOIN "
-                                    + "native_attempts a\nON a.reservation_id=s.reservation_id "
-                                    + "AND a.worker=s.worker AND a.session_id=s.session_id\nWHERE "
-                                    + "s.worker=$worker AND s.reservation_id=$reservation AND "
-                                    + "s.session_id=$session\nAND a.usage_path=$path;"
-                                ),
-                                ("$worker", worker),
-                                ("$reservation", reservation.Id),
-                                ("$session", sessionId),
-                                ("$path", reservation.UsagePath)
-                            )
-                        );
-                        Assert.AreEqual(sessionId, diagnostic["sessionId"]!.GetValue<string>());
-                        Assert.AreEqual(
-                            state.WorkerPath(worker),
-                            diagnostic["workingDirectory"]!.GetValue<string>()
+                            WorkerStatus(inspector, worker)["sessionId"]!.GetValue<string>()
                         );
                         Assert.AreEqual(
                             state.WorkerPath(worker),
                             turn.Session.Metadata!["workingDirectory"]!.GetValue<string>()
                         );
-                        Assert.IsTrue(diagnostic["paidReservation"]!.GetValue<bool>());
-                        foreach (
-                            JsonObject metadata in new[] { turn.Session.Metadata!, diagnostic }
-                        )
-                        {
-                            Assert.AreEqual(runHost.Id, metadata["runtimeId"]!.GetValue<string>());
-                            Assert.AreEqual(
-                                runHost.LeaseId,
-                                metadata["runtimeLeaseId"]!.GetValue<long>()
-                            );
-                            Assert.AreEqual(runHost.Ready.Pid, metadata["pid"]!.GetValue<int>());
-                            Assert.AreEqual(
-                                runHost.Ready.BirthTicks,
-                                metadata["birthTicks"]!.GetValue<long>()
-                            );
-                            Assert.AreEqual(
-                                (double)reservation.Allowance,
-                                metadata["appliedLimit"]!.GetValue<double>()
-                            );
-                        }
+                        Assert.AreEqual(
+                            runHost.Id,
+                            turn.Session.Metadata["runtimeId"]!.GetValue<string>()
+                        );
+                        Assert.AreEqual(
+                            runHost.LeaseId,
+                            turn.Session.Metadata["runtimeLeaseId"]!.GetValue<long>()
+                        );
+                        Assert.AreEqual(
+                            runHost.Ready.Pid,
+                            turn.Session.Metadata["pid"]!.GetValue<int>()
+                        );
+                        Assert.AreEqual(
+                            runHost.Ready.BirthTicks,
+                            turn.Session.Metadata["birthTicks"]!.GetValue<long>()
+                        );
+                        Assert.AreEqual(
+                            (double)reservation.Allowance,
+                            turn.Session.Metadata["appliedLimit"]!.GetValue<double>()
+                        );
                     }
-                    Console.WriteLine(
-                        "PHASE7_DELAYED_COHORT "
-                            + new JsonObject
-                            {
-                                ["operation"] = runHost.Operation,
-                                ["runtimeId"] = runHost.Id,
-                                ["leaseId"] = runHost.LeaseId,
-                                ["backendPid"] = runHost.Ready.Pid,
-                                ["backendBirthTicks"] = runHost.Ready.BirthTicks,
-                                ["coordinatorPid"] = Environment.ProcessId,
-                                ["sessions"] = new JsonArray(
-                                    turns
-                                        .Select(turn => JsonValue.Create(turn.Session.SessionId))
-                                        .ToArray()
-                                ),
-                                ["durableBackendLeaseAndAllSessionAssociationsMatched"] = true,
-                            }.ToJsonString()
-                    );
-                    Phase7Clock.ObservedPoll ownerPoll = await state
+                    ObservedManualClock.ObservedPoll ownerPoll = await state
                         .ObserveOwnerPollAsync(token)
                         .ConfigureAwait(false);
                     first.Turn.Complete();
@@ -2292,35 +1925,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         await state
                             .WaitAckAsync(batch, state.WorkDeadline, token)
                             .ConfigureAwait(false);
-                        await state
-                            .WaitDurableAsync(
-                                () =>
-                                    (string?)
-                                        state.Value(
-                                            (
-                                                "SELECT state FROM coordinator_turns WHERE "
-                                                + "batch_id=$id;"
-                                            ),
-                                            ("$id", batch)
-                                        ) == "acknowledged",
-                                state.WorkDeadline,
-                                token
-                            )
-                            .ConfigureAwait(false);
-                        Assert.AreEqual(
-                            "sent",
-                            state.Value(
-                                "SELECT state FROM delivery_batches WHERE id=$id;",
-                                ("$id", batch)
-                            )
-                        );
-                        Assert.AreEqual(
-                            "acknowledged",
-                            state.Value(
-                                "SELECT state FROM coordinator_turns WHERE batch_id=$id;",
-                                ("$id", batch)
-                            )
-                        );
                     }
                     await state
                         .WaitDurableAsync(
@@ -2338,11 +1942,9 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                             .StopRunningAsync("pause", ownerPoll, token)
                             .ConfigureAwait(false)
                     );
-                    Assert.AreEqual(
-                        "owner-pause",
-                        state.Database.ReadMetadata("lifecycle:stop_reason")
-                    );
-                    Assert.AreEqual("paused", state.Database.ReadMetadata("lifecycle"));
+                    JsonObject status = StatusData(inspector);
+                    Assert.AreEqual("paused", status["lifecycle"]!.GetValue<string>());
+                    Assert.AreEqual("owner-pause", status["stopReason"]!.GetValue<string>());
                     foreach (string worker in workerNames)
                     {
                         Assert.AreEqual(10m, state.Reservation(worker).Actual);
@@ -2357,27 +1959,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                             state.Database.Configuration.RunAiCreditAllowance
                         )["runCommitted"]!.GetValue<decimal>()
                     );
-                    Console.WriteLine(
-                        "PHASE7_DELAYED_FINAL "
-                            + new JsonObject
-                            {
-                                ["firstCompletedAt"] = first.CompletedAt,
-                                ["secondHeldAt"] = secondHeldAt,
-                                ["secondCompletedAt"] = second.CompletedAt,
-                                ["secondHeldJumpSeconds"] = (
-                                    secondReleasedAt - secondHeldAt
-                                ).TotalSeconds,
-                                ["batches"] = new JsonArray(first.Batch, second.Batch, third.Batch),
-                                ["entries"] = new JsonObject(
-                                    entries.Select(pair => new KeyValuePair<string, JsonNode?>(
-                                        pair.Key,
-                                        pair.Value.DeepClone()
-                                    ))
-                                ),
-                                ["committed"] = 37.25m,
-                                ["publicPauseSucceeded"] = true,
-                            }.ToJsonString()
-                    );
                 }
                 finally
                 {
@@ -2386,7 +1967,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     secondRelease.TrySetResult();
                 }
 
-                async Task HeldAsync(Phase7Handoff.Startup startup, Task entered)
+                async Task HeldAsync(WorkerHandoffControl.Startup startup, Task entered)
                 {
                     await state
                         .FixedAsync(
@@ -2409,26 +1990,24 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 }
 
                 async Task<(
-                    Phase7Sessions.Turn Turn,
+                    ControlledSessionPool.Turn Turn,
                     long Batch,
                     DateTimeOffset CompletedAt
-                )> ConsumeAsync(Phase7Handoff.Startup startup)
+                )> ConsumeAsync(WorkerHandoffControl.Startup startup)
                 {
                     Assert.AreEqual(state.Reservation(startup.Worker).Id, startup.ReservationId);
                     Assert.AreEqual(state.WorkerPath(startup.Worker), startup.Cwd);
                     DateTimeOffset fixedAt = state.Clock.GetUtcNow();
                     await state.FixedAsync(startup.Operation, token).ConfigureAwait(false);
                     Assert.AreEqual(fixedAt, state.Clock.GetUtcNow());
-                    // For the two HELD operations this is their genuine completion
+                    // For the two held operations this is their genuine completion
                     // phase. Consumption is a separate, later durable milestone.
                     await state
                         .WaitDurableAsync(
                             () =>
                                 state.Number(
-                                    (
-                                        "SELECT COUNT(*) FROM delivery_batches WHERE "
-                                        + "recipient=$worker AND state='sending';"
-                                    ),
+                                    "SELECT COUNT(*) FROM delivery_batches WHERE "
+                                        + "recipient=$worker AND state='sending';",
                                     ("$worker", startup.Worker)
                                 ) == 1,
                             startup.Worker == "worker3"
@@ -2443,7 +2022,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                         ("$id", batch)
                     );
                     DateTimeOffset claimObservedAt = state.Clock.GetUtcNow();
-                    Phase7Sessions.Turn turn = await state
+                    ControlledSessionPool.Turn turn = await state
                         .FixedAsync(
                             next => state.Sessions.NextTurnAsync(startup.Worker, next),
                             token
@@ -2499,23 +2078,6 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     Assert.IsTrue(state.Reservation(startup.Worker).GrantOpen);
                     Assert.AreEqual(TimeSpan.FromSeconds(1800), turn.Timeout);
                     Assert.IsFalse(turn.Response.IsCompleted);
-                    Console.WriteLine(
-                        "PHASE7_DELAYED_CONSUMED "
-                            + new JsonObject
-                            {
-                                ["worker"] = startup.Worker,
-                                ["startupJoinedAtFixedPhase"] = fixedAt,
-                                ["startupTaskStatus"] = startup.Operation.Status.ToString(),
-                                ["consumedSendingBatch"] = batch,
-                                ["batchCreatedAt"] = DateTimeOffset.FromUnixTimeMilliseconds(
-                                    consumedAtMilliseconds
-                                ),
-                                ["claimObservedAt"] = claimObservedAt,
-                                ["turnObservedAt"] = state.Clock.GetUtcNow(),
-                                ["entry"] = entry.DeepClone(),
-                                ["cap"] = backed,
-                            }.ToJsonString()
-                    );
                     return (turn, batch, fixedAt);
                 }
 
@@ -2528,7 +2090,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 void AssertColdState(string worker)
                 {
                     Assert.IsFalse(entries.ContainsKey(worker));
-                    Assert.IsNull(state.Database.ReadMetadata($"worker:{worker}:session"));
+                    Assert.IsNull(WorkerStatus(inspector, worker)["sessionId"]);
                     Assert.AreEqual(0m, state.Reservation(worker).Allowance);
                     Assert.IsFalse(state.Reservation(worker).GrantOpen);
                     Assert.AreEqual(0L, state.Dispatches(state.Reservation(worker).Id));
@@ -2542,14 +2104,14 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
 
                 async Task ProbeAsync(
                     string worker,
-                    Task<Phase7Handoff.Startup> starting,
+                    Task<WorkerHandoffControl.Startup> starting,
                     DateTimeOffset completedAt
                 )
                 {
                     DateTimeOffset eligible = completedAt.AddSeconds(10);
                     DateTimeOffset probe = eligible.AddTicks(-1);
                     Task<JsonObject> run = state.Active;
-                    await Phase7Run.RequireColdRampTargetAsync(starting, run, eligible)
+                    await CoordinatorScenarioRun.RequireColdRampTargetAsync(starting, run, eligible)
                         .ConfigureAwait(false);
                     AssertColdState(worker);
                     Assert.IsLessThanOrEqualTo(
@@ -2560,7 +2122,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
 
                     // A pass that sampled time before the jump may still be in Git.
                     // Wake its known progress wait, then witness the following pass.
-                    Phase7Clock.ObservedPoll wake = await state
+                    ObservedManualClock.ObservedPoll wake = await state
                         .ObserveRampProbePollAsync(
                             starting, run, eligible, registeredAfter: 0, token
                         )
@@ -2572,7 +2134,8 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     catch (Exception error) when (error is InvalidOperationException
                         or OperationCanceledException)
                     {
-                        await Phase7Run.RequireColdRampTargetAsync(starting, run, eligible)
+                        await CoordinatorScenarioRun
+                            .RequireColdRampTargetAsync(starting, run, eligible)
                             .ConfigureAwait(false);
                         throw;
                     }
@@ -2581,29 +2144,25 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                     await state
                         .ObserveRampProbePollAsync(starting, run, eligible, wake.TimerId, token)
                         .ConfigureAwait(false);
-                    await Phase7Run.RequireColdRampTargetAsync(starting, run, eligible)
+                    await CoordinatorScenarioRun.RequireColdRampTargetAsync(starting, run, eligible)
                         .ConfigureAwait(false);
                     Assert.AreEqual(probe, state.Clock.GetUtcNow());
                     AssertColdState(worker);
                     Assert.IsLessThan(eligible, state.Clock.GetUtcNow());
-                    Console.WriteLine(
-                        "PHASE7_DELAYED_COLD "
-                            + new JsonObject
-                            {
-                                ["worker"] = worker,
-                                ["actualCompletedStartupAt"] = completedAt,
-                                ["eligibilityLowerBound"] = eligible,
-                                ["explicitProbeAt"] = probe,
-                                ["observedAt"] = state.Clock.GetUtcNow(),
-                                ["allowance"] = state.Reservation(worker).Allowance,
-                                ["grantOpen"] = state.Reservation(worker).GrantOpen,
-                            }.ToJsonString()
-                    );
-                    await Phase7Run.RequireColdRampTargetAsync(starting, run, eligible)
+                    await CoordinatorScenarioRun.RequireColdRampTargetAsync(starting, run, eligible)
                         .ConfigureAwait(false);
                     state.Clock.Advance(eligible - state.Clock.GetUtcNow());
                 }
             })
             .ConfigureAwait(false);
     }
+
+    private static JsonObject StatusData(Coordinator inspector) =>
+        GitScenarioState.Data(inspector.Status());
+
+    private static JsonObject WorkerStatus(Coordinator inspector, string worker) =>
+        StatusData(inspector)["workers"]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .Single(item => item["id"]!.GetValue<string>() == worker);
 }

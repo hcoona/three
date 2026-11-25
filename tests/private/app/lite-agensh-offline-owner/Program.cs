@@ -14,22 +14,21 @@ namespace LiteAgensh.Tests.OfflineOwner;
 // Sole ordinary executable entry; never a test runner or business-test result.
 internal static class Program
 {
-    private const string ControlledStartupStopCode = "phase6_controlled_startup_stop";
+    private const string ControlledStartupStopCode = "controlled_startup_stop";
 
     private static async Task<int> Main(string[] args)
     {
-        if (args is ["phase7-exact", _, _, _])
+        if (args is ["interrupted-exact", _, _, _])
         {
-            return await Phase7CreatorProgram.RunAsync(args[1..]).ConfigureAwait(false);
+            return await InterruptedRunCreatorProgram.RunAsync(args[1..]).ConfigureAwait(false);
         }
         if (args.Length != 3 || !Guid.TryParseExact(args[1], "N", out _))
         {
             return 2;
         }
-        Console.Error.WriteLine("PHASE6_CHILD_ENTER");
-        using Phase7Evidence evidence = new(
+        using FixtureDiagnosticSink evidence = new(
             args[1],
-            "phase6-creator",
+            "unresolved-creator",
             Environment.GetEnvironmentVariable("ThreeTestResultsDirectory"),
             report: Console.Error.WriteLine
         );
@@ -47,15 +46,13 @@ internal static class Program
         );
         StreamReader? ownedReader = null;
         StreamWriter? ownedWriter = null;
-        Phase6NativeControl? control = null;
+        OfflineNativeControl? control = null;
         ExceptionDispatchInfo? startupProtocolFailure = null;
         int exitCode = 0;
         try
         {
-            Console.Error.WriteLine("PHASE6_CHILD_CONNECT_ENTER");
             await pipe.ConnectAsync(TimeSpan.FromSeconds(5), token)
                 .ConfigureAwait(false);
-            Console.Error.WriteLine("PHASE6_CHILD_CONNECT_RETURN");
             evidence.Phase(phase, "completed");
             StreamReader reader = ownedReader = new(
                 pipe, Encoding.UTF8, false, 4096, leaveOpen: true
@@ -67,7 +64,6 @@ internal static class Program
             using Process self = Process.GetCurrentProcess();
             phase = "hello";
             evidence.Phase(phase, "prepared");
-            Console.Error.WriteLine("PHASE6_CHILD_HELLO_ENTER");
             await SendAsync(
                     writer,
                     args[1],
@@ -83,11 +79,9 @@ internal static class Program
                     token
                 )
                 .ConfigureAwait(false);
-            Console.Error.WriteLine("PHASE6_CHILD_HELLO_RETURN");
             phase = "start-command";
             evidence.Phase(phase, "started");
             await ReceiveAsync(reader, args[1], "START", token).ConfigureAwait(false);
-            Console.Error.WriteLine("PHASE6_CHILD_START_RECEIVED");
             evidence.Phase(phase, "completed");
             phase = "configuration";
             evidence.Phase(phase, "started");
@@ -123,7 +117,7 @@ internal static class Program
                 configuration.CampaignLedgerPath,
                 configuration.CampaignAiCreditAllowance
             );
-            Phase6NativeControl nativeControl = new(database);
+            OfflineNativeControl nativeControl = new(database);
             control = nativeControl;
             evidence.Phase(phase, "completed");
             evidence.BindRun(database.RunId, database.Now);
@@ -133,11 +127,11 @@ internal static class Program
                 using var campaign = OpenCampaign(configuration.CampaignLedgerPath);
                 Sql.Execute(
                     campaign,
-                    "CREATE TRIGGER phase6_retain_target BEFORE UPDATE ON credit_reservations "
+                    "CREATE TRIGGER retain_target_reservation BEFORE UPDATE ON credit_reservations "
                         + "WHEN OLD.id='"
                         + reservation.Id.Replace("'", "''", StringComparison.Ordinal)
                         + "' AND NEW.state='released' BEGIN "
-                        + "SELECT RAISE(ABORT,'phase6-target-release-blocked'); END;"
+                        + "SELECT RAISE(ABORT,'target-release-blocked'); END;"
                 );
                 using CancellationTokenSource startup =
                     CancellationTokenSource.CreateLinkedTokenSource(token, admissionToken);
@@ -214,7 +208,7 @@ internal static class Program
                 || database.ReadMetadata("lifecycle:stop_reason") != ControlledStartupStopCode
                 || !factory!
                     .SettlementFailures.ToJsonString()
-                    .Contains("phase6-target-release-blocked", StringComparison.Ordinal)
+                    .Contains("target-release-blocked", StringComparison.Ordinal)
             )
             {
                 throw new InvalidOperationException(
@@ -224,11 +218,11 @@ internal static class Program
             }
             using (var campaign = OpenCampaign(configuration.CampaignLedgerPath))
             {
-                Sql.Execute(campaign, "DROP TRIGGER phase6_retain_target;");
+                Sql.Execute(campaign, "DROP TRIGGER retain_target_reservation;");
             }
             await control.DisposeAsync().ConfigureAwait(false);
             JsonArray runtimes = [];
-            foreach (Phase6NativeControl.Host host in control.Hosts)
+            foreach (OfflineNativeControl.Host host in control.Hosts)
             {
                 runtimes.Add(host.Witness);
             }
@@ -263,7 +257,7 @@ internal static class Program
             evidence.Phase(phase, "waiting");
             await ReceiveAsync(reader, args[1], "EXIT", token).ConfigureAwait(false);
             evidence.Phase(phase, "completed");
-            Console.WriteLine("PHASE6_CREATOR_SETUP_COMPLETE zero-business-credit");
+            Console.WriteLine("UNRESOLVED_CREATOR_SETUP_COMPLETE zero-business-credit");
         }
         catch (Exception error)
         {
@@ -312,7 +306,7 @@ internal static class Program
 
     private static void ReportFailure(string kind, Exception error) =>
         Console.Error.WriteLine(
-            $"PHASE6_CREATOR_{kind} " + LiteAgensh.Json.ExceptionDetails(error).ToJsonString()
+            $"UNRESOLVED_CREATOR_{kind} " + LiteAgensh.Json.ExceptionDetails(error).ToJsonString()
         );
 
     private static string Hash(string path) =>

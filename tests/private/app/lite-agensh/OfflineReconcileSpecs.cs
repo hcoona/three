@@ -19,21 +19,22 @@ public sealed class OfflineReconcileSpecs(TestContext context)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task EndedRunExclusiveProofAndRecheck()
     {
-        Phase6OwnedCreator creator = await Phase6OwnedCreator.OpenAsync(context.CancellationToken);
+        UnresolvedRunCreator creator = await UnresolvedRunCreator
+            .OpenAsync(context.CancellationToken);
         await creator.RunBodyAsync(async () =>
         {
             Coordinator accounting = creator.AccountingOnly();
-            JsonObject active = Phase6State.Financial(creator.Database, creator.Ledger);
+            JsonObject active = RunStateQueries.Financial(creator.Database, creator.Ledger);
             JsonObject conflict = accounting.Reconcile(creator.TargetId);
             Assert.AreEqual("conflict", conflict["code"]!.GetValue<string>());
             Assert.AreEqual(
                 active.ToJsonString(),
-                Phase6State.Financial(creator.Database, creator.Ledger).ToJsonString()
+                RunStateQueries.Financial(creator.Database, creator.Ledger).ToJsonString()
             );
             await creator.EndRunAsync(context.CancellationToken);
             AssertGenuineTerminal(creator);
-            JsonObject history = Phase6State.History(creator.Database);
-            JsonObject money = Phase6State.Financial(creator.Database, creator.Ledger);
+            JsonObject history = RunStateQueries.History(creator.Database);
+            JsonObject money = RunStateQueries.Financial(creator.Database, creator.Ledger);
             JsonObject live = accounting.Reconcile(creator.TargetId);
             Assert.AreEqual("credit_unknown", live["code"]!.GetValue<string>());
             Assert.AreEqual(
@@ -42,14 +43,15 @@ public sealed class OfflineReconcileSpecs(TestContext context)
             );
             Assert.AreEqual(
                 history.ToJsonString(),
-                Phase6State.History(creator.Database).ToJsonString()
+                RunStateQueries.History(creator.Database).ToJsonString()
             );
             Assert.AreEqual(
                 money.ToJsonString(),
-                Phase6State.Financial(creator.Database, creator.Ledger).ToJsonString()
+                RunStateQueries.Financial(creator.Database, creator.Ledger).ToJsonString()
             );
             await creator.ExitAsync(context.CancellationToken);
-            AssertSyntheticRuntimeIdentityRefusals(creator, accounting);
+            AssertSyntheticRuntimeIdentityRefusals(context, creator, accounting);
+            AssertCampaignBindingRefusal(context, creator, accounting);
             AssertCancellationAndRepeat(creator, accounting, null, "controlled-native-dependency");
             // Controlled local cancellation is legitimate; native PAID admission
             // must still reject the unchanged non-native receipt namespace.
@@ -59,15 +61,17 @@ public sealed class OfflineReconcileSpecs(TestContext context)
                 collaboration,
                 new(creator.Database, collaboration)
             );
-            JsonObject settled = Phase6State.Financial(creator.Database, creator.Ledger);
+            JsonObject settled = RunStateQueries.Financial(creator.Database, creator.Ledger);
             JsonObject rejected = await native.CalibrateAsync(context.CancellationToken);
             Assert.AreEqual("unavailable", rejected["code"]!.GetValue<string>());
             Assert.Contains("preflight", rejected["message"]!.GetValue<string>());
             Assert.AreEqual(
                 settled.ToJsonString(),
-                Phase6State.Financial(creator.Database, creator.Ledger).ToJsonString()
+                RunStateQueries.Financial(creator.Database, creator.Ledger).ToJsonString()
             );
-            Assert.IsNull(creator.Database.ReadMetadata("native:sdk_billing_receipt"));
+            Assert.IsNull(
+                GitScenarioState.Data(native.Status())["nativeBillingCalibration"]
+            );
         });
     }
 
@@ -75,144 +79,65 @@ public sealed class OfflineReconcileSpecs(TestContext context)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task ReusedRuntimePidLeavesCurrentHelperLiveAndReleasesUncalledBacking()
     {
-        Phase6OwnedCreator creator = await Phase6OwnedCreator.OpenAsync(context.CancellationToken);
+        UnresolvedRunCreator creator = await UnresolvedRunCreator
+            .OpenAsync(context.CancellationToken);
         await creator.RunBodyAsync(async () =>
         {
             await creator.EndRunAsync(context.CancellationToken);
             AssertGenuineTerminal(creator);
-            OwnedChildControl control = new();
-            Exception? primary = null;
-            try
-            {
-                Process live = control.StartDirect();
-                OwnedChildIdentity ready = await control.ReadReadyAsync(context.CancellationToken);
-                Assert.IsFalse(live.HasExited);
-                Assert.AreEqual(live.Id, ready.Pid);
-                Assert.AreEqual(live.StartTime.ToUniversalTime().Ticks, ready.BirthTicks);
-                long oldBirth = ready.BirthTicks - 1;
-                Assert.IsGreaterThan(0L, oldBirth);
-                await creator.ExitAsync(context.CancellationToken);
-                JsonNode diagnostic = JsonNode.Parse(
-                    creator.Database.ReadMetadata($"native:session:{creator.Target.SessionId}")!
-                )!;
-                long lease = diagnostic["runtimeLeaseId"]!.GetValue<long>();
-                using SqliteConnection connection = creator.Database.Open();
-                JsonNode original = Assert.ContainsSingle(Phase6State.Rows(
-                    connection,
-                    "SELECT pid,start_ticks FROM process_leases WHERE id=$id AND state='exited';",
-                    ("$id", lease)
-                ))!;
-                JsonObject originalHistory = Phase6State.History(creator.Database);
-                Exception? dispositionFailure = null;
-                try
-                {
-                    // Synthetic retained identity; the helper's observed birth stays unchanged.
-                    SetIdentity(ready.Pid, oldBirth);
-                    AssertCancellationAndRepeat(
-                        creator,
-                        creator.AccountingOnly(),
-                        null,
-                        "controlled-native-dependency",
-                        "SYNTHETIC RETAINED LEASE; controlled public path, NOT OS PID recycling"
-                    );
-                    Assert.IsFalse(live.HasExited);
-                    Assert.AreEqual(ready.Pid, live.Id);
-                    Assert.AreEqual(ready.BirthTicks, live.StartTime.ToUniversalTime().Ticks);
-                }
-                catch (Exception error)
-                {
-                    dispositionFailure = error;
-                    throw;
-                }
-                finally
-                {
-                    try
-                    {
-                        SetIdentity(
-                            original["pid"]!.GetValue<long>(),
-                            original["start_ticks"]!.GetValue<long>()
-                        );
-                        Assert.AreEqual(
-                            originalHistory.ToJsonString(),
-                            Phase6State.History(creator.Database).ToJsonString()
-                        );
-                    }
-                    catch (Exception secondary) when (dispositionFailure is not null)
-                    {
-                        dispositionFailure.Data["SyntheticRuntimeLeaseRestore"] =
-                            Json.ExceptionDetails(secondary);
-                    }
-                }
-                using CancellationTokenSource exit =
-                    CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
-                exit.CancelAfter(TimeSpan.FromSeconds(5));
-                await control.ReleaseAsync(exit.Token);
-                await live.WaitForExitAsync(exit.Token);
-                Assert.AreEqual(0, live.ExitCode);
-
-                void SetIdentity(long pid, long birth)
-                {
-                    using SqliteCommand update = Sql.Command(
-                        connection,
-                        "UPDATE process_leases SET pid=$pid,start_ticks=$birth "
-                            + "WHERE id=$id AND state='exited';",
-                        null,
-                        ("$pid", pid), ("$birth", birth), ("$id", lease)
-                    );
-                    Assert.AreEqual(1, update.ExecuteNonQuery());
-                }
-            }
-            catch (Exception error)
-            {
-                primary = error;
-                throw;
-            }
-            finally
-            {
-                try
-                {
-                    await control.DisposeAsync();
-                }
-                catch (Exception secondary) when (primary is not null)
-                {
-                    primary.Data["ReusedPidHelperCleanup"] = Json.ExceptionDetails(secondary);
-                }
-            }
-        });
-    }
-
-    [TestMethod]
-    [Timeout(120_000, CooperativeCancellation = true)]
-    public async Task ReconcileIdempotenceAndConservation()
-    {
-        Phase6OwnedCreator creator = await Phase6OwnedCreator.OpenAsync(context.CancellationToken);
-        await creator.RunBodyAsync(async () =>
-        {
-            await creator.EndRunAsync(context.CancellationToken);
-            AssertGenuineTerminal(creator);
+            await using OwnedChildScope child = new(context);
+            Process live = child.Control.StartDirect();
+            OwnedChildIdentity ready = await child.Control.ReadReadyAsync(
+                context.CancellationToken
+            );
+            Assert.IsFalse(live.HasExited);
+            Assert.AreEqual(live.Id, ready.Pid);
+            Assert.AreEqual(live.StartTime.ToUniversalTime().Ticks, ready.BirthTicks);
+            long oldBirth = ready.BirthTicks - 1;
+            Assert.IsGreaterThan(0L, oldBirth);
             await creator.ExitAsync(context.CancellationToken);
-            Coordinator accounting = creator.AccountingOnly();
-            string originalBinding = creator.Database.ReadMetadata("native:ledger_binding")!;
-            // Deliberate unsupported binding INPUT, not repaired setup/provenance.
-            creator.Database.WriteMetadata("native:ledger_binding", originalBinding + ".foreign");
-            JsonObject history = Phase6State.History(creator.Database);
-            JsonObject money = Phase6State.Financial(creator.Database, creator.Ledger);
-            JsonObject rejected = accounting.Reconcile(creator.TargetId);
-            Assert.AreEqual("credit_unknown", rejected["code"]!.GetValue<string>());
-            Assert.AreEqual(
-                "The retained campaign binding changed.",
-                rejected["message"]!.GetValue<string>()
-            );
-            Assert.AreEqual(
-                history.ToJsonString(),
-                Phase6State.History(creator.Database).ToJsonString()
-            );
-            Assert.AreEqual(
-                money.ToJsonString(),
-                Phase6State.Financial(creator.Database, creator.Ledger).ToJsonString()
-            );
-            creator.Database.WriteMetadata("native:ledger_binding", originalBinding);
-            AssertCancellationAndRepeat(creator, accounting, null, "controlled-native-dependency");
+            JsonNode diagnostic = JsonNode.Parse(
+                creator.Database.ReadMetadata($"native:session:{creator.Target.SessionId}")!
+            )!;
+            long lease = diagnostic["runtimeLeaseId"]!.GetValue<long>();
+            using SqliteConnection connection = creator.Database.Open();
+            JsonNode original = Assert.ContainsSingle(RunStateQueries.Rows(
+                connection,
+                "SELECT pid,start_ticks FROM process_leases WHERE id=$id AND state='exited';",
+                ("$id", lease)
+            ))!;
+            JsonObject originalHistory = RunStateQueries.History(creator.Database);
+            using (SyntheticLeaseScope leaseGuard = new(
+                context,
+                creator.Database,
+                connection,
+                lease,
+                original["pid"]!.GetValue<long>(),
+                original["start_ticks"]!.GetValue<long>(),
+                originalHistory
+            ))
+            {
+                // Synthetic retained identity; the helper's observed birth stays unchanged.
+                leaseGuard.SetIdentity(ready.Pid, oldBirth);
+                AssertCancellationAndRepeat(
+                    creator,
+                    creator.AccountingOnly(),
+                    null,
+                    "controlled-native-dependency"
+                );
+                Assert.IsFalse(live.HasExited);
+                Assert.AreEqual(ready.Pid, live.Id);
+                Assert.AreEqual(ready.BirthTicks, live.StartTime.ToUniversalTime().Ticks);
+                leaseGuard.Complete();
+            }
+
+            using CancellationTokenSource exit =
+                CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+            exit.CancelAfter(TimeSpan.FromSeconds(5));
+            await child.Control.ReleaseAsync(exit.Token);
+            await live.WaitForExitAsync(exit.Token);
+            Assert.AreEqual(0, live.ExitCode);
+            child.Complete();
         });
     }
 
@@ -220,36 +145,20 @@ public sealed class OfflineReconcileSpecs(TestContext context)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task LegacyCompatibilityContractGuards()
     {
-        Phase6OwnedCreator first = await Phase6OwnedCreator.OpenAsync(context.CancellationToken);
-        await first.RunBodyAsync(async () =>
+        UnresolvedRunCreator creator = await UnresolvedRunCreator
+            .OpenAsync(context.CancellationToken);
+        await creator.RunBodyAsync(async () =>
         {
-            await first.EndRunAsync(context.CancellationToken);
-            AssertGenuineTerminal(first);
-            await first.ExitAsync(context.CancellationToken);
-            Phase6LegacyGuardInput input = await Phase6LegacyGuardInput.CreateAsync(
-                first,
+            await creator.EndRunAsync(context.CancellationToken);
+            AssertGenuineTerminal(creator);
+            await creator.ExitAsync(context.CancellationToken);
+            CancellationGuardInput input = await CancellationGuardInput.CreateAsync(
+                creator,
                 context.CancellationToken
             );
-            AssertCancellationAndRepeat(
-                first,
-                first.AccountingOnly(),
-                input.EvidencePath,
-                "native-sdk"
-            );
-        });
-        Phase6OwnedCreator second = await Phase6OwnedCreator.OpenAsync(context.CancellationToken);
-        await second.RunBodyAsync(async () =>
-        {
-            await second.EndRunAsync(context.CancellationToken);
-            AssertGenuineTerminal(second);
-            await second.ExitAsync(context.CancellationToken);
-            Phase6LegacyGuardInput input = await Phase6LegacyGuardInput.CreateAsync(
-                second,
-                context.CancellationToken
-            );
-            Coordinator accounting = second.AccountingOnly();
-            JsonObject history = Phase6State.History(second.Database);
-            JsonObject money = Phase6State.Financial(second.Database, second.Ledger);
+            Coordinator accounting = creator.AccountingOnly();
+            JsonObject history = RunStateQueries.History(creator.Database);
+            JsonObject money = RunStateQueries.Financial(creator.Database, creator.Ledger);
             foreach (
                 (string defect, string message) in new[]
                 {
@@ -257,10 +166,8 @@ public sealed class OfflineReconcileSpecs(TestContext context)
                     ("H", "A referenced owned observation differs from the retained evidence."),
                     (
                         "A",
-                        (
-                            "The referenced native observations contradict the live retained "
+                        "The referenced native observations contradict the live retained "
                             + "associations."
-                        )
                     ),
                     (
                         "W",
@@ -270,25 +177,27 @@ public sealed class OfflineReconcileSpecs(TestContext context)
                 }
             )
             {
+                using LegacyDefectScope guard = new(context, input, defect);
                 input.Damage(defect);
-                JsonObject result = accounting.Reconcile(second.TargetId, input.EvidencePath);
+                JsonObject result = accounting.Reconcile(creator.TargetId, input.EvidencePath);
                 Assert.IsFalse(result["ok"]!.GetValue<bool>());
                 Assert.AreEqual("credit_unknown", result["code"]!.GetValue<string>());
                 Assert.AreEqual(message, result["message"]!.GetValue<string>());
                 Assert.IsNull(result["data"]);
                 Assert.AreEqual(
                     history.ToJsonString(),
-                    Phase6State.History(second.Database).ToJsonString()
+                    RunStateQueries.History(creator.Database).ToJsonString()
                 );
                 Assert.AreEqual(
                     money.ToJsonString(),
-                    Phase6State.Financial(second.Database, second.Ledger).ToJsonString()
+                    RunStateQueries.Financial(creator.Database, creator.Ledger).ToJsonString()
                 );
-                Assert.AreEqual("uncertain", second.Target.State);
-                Assert.IsNull(second.Target.Actual);
-                input.Restore(defect);
+                Assert.AreEqual("uncertain", creator.Target.State);
+                Assert.IsNull(creator.Target.Actual);
+                guard.Complete();
             }
-            AssertCancellationAndRepeat(second, accounting, input.EvidencePath, "native-sdk");
+
+            AssertCancellationAndRepeat(creator, accounting, input.EvidencePath, "native-sdk");
         });
     }
 
@@ -388,10 +297,10 @@ public sealed class OfflineReconcileSpecs(TestContext context)
         Assert.AreEqual("released", ledger.Reservations().Single().State);
         Assert.IsFalse(ledger.Reservations().Single().GrantOpen);
         JsonObject before = CoreProjection(ledger, path);
-        using SqliteConnection connection = Phase6State.OpenFile(path);
+        using SqliteConnection connection = RunStateQueries.OpenFile(path);
         const string cancellationRows =
             "SELECT * FROM credit_cancellations ORDER BY reservation_id;";
-        string stored = Phase6State.Rows(connection, cancellationRows).ToJsonString();
+        string stored = RunStateQueries.Rows(connection, cancellationRows).ToJsonString();
         JsonObject contradictory = proof.DeepClone().AsObject();
         contradictory["source"]!["applicationBuild"] = "22222222-2222-4222-8222-222222222222";
 
@@ -403,13 +312,13 @@ public sealed class OfflineReconcileSpecs(TestContext context)
             "Existing cancellation has contradictory retained evidence.", rejected.Message
         );
         Assert.AreEqual(before.ToJsonString(), CoreProjection(ledger, path).ToJsonString());
-        Assert.AreEqual(stored, Phase6State.Rows(connection, cancellationRows).ToJsonString());
+        Assert.AreEqual(stored, RunStateQueries.Rows(connection, cancellationRows).ToJsonString());
 
         JsonObject repeat = ledger.CancelBeforeDispatch(row, proof, inspection);
         Assert.IsTrue(repeat["idempotent"]!.GetValue<bool>());
         Assert.AreEqual(first["proof"]!.ToJsonString(), repeat["proof"]!.ToJsonString());
         Assert.AreEqual(before.ToJsonString(), CoreProjection(ledger, path).ToJsonString());
-        Assert.AreEqual(stored, Phase6State.Rows(connection, cancellationRows).ToJsonString());
+        Assert.AreEqual(stored, RunStateQueries.Rows(connection, cancellationRows).ToJsonString());
     }
 
     [TestMethod]
@@ -420,16 +329,11 @@ public sealed class OfflineReconcileSpecs(TestContext context)
         string path = scratch.PathFor("core.sqlite");
         CreditLedger ledger = new(path, 200);
         (CreditReservation row, JsonObject proof) = CoreOriginal(ledger, scratch.PathFor("raw"));
-        TaskCompletionSource go = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource[] ready =
-        [
-            new(TaskCreationOptions.RunContinuationsAsynchronously),
-            new(TaskCreationOptions.RunContinuationsAsynchronously),
-        ];
+        await using ContenderGateScope gate = new(context, 2);
+
         async Task<bool> CompeteAsync(int index)
         {
-            ready[index].TrySetResult();
-            await go.Task.WaitAsync(context.CancellationToken);
+            await gate.SignalReadyAndWaitAsync(index, context.CancellationToken);
             try
             {
                 if (index == 0)
@@ -448,64 +352,31 @@ public sealed class OfflineReconcileSpecs(TestContext context)
                 return false;
             }
         }
-        Task<bool> cancellation = Task.Run(() => CompeteAsync(0), context.CancellationToken);
-        Task<bool> admission = Task.Run(() => CompeteAsync(1), context.CancellationToken);
-        Exception? readinessError = null;
-        try
-        {
-            await Task.WhenAll(ready.Select(item => item.Task))
-                .WaitAsync(TimeSpan.FromSeconds(5), context.CancellationToken);
-        }
-        catch (Exception error)
-        {
-            readinessError = error;
-        }
-        finally
-        {
-            go.TrySetResult();
-        }
-        bool[] outcomes;
-        try
-        {
-            outcomes = await Task.WhenAll(cancellation, admission);
-        }
-        catch (Exception error) when (readinessError is not null)
-        {
-            throw new AggregateException(
-                "Readiness failed; both owned contenders finished.",
-                readinessError,
-                error
-            );
-        }
-        if (readinessError is not null)
-        {
-            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(readinessError).Throw();
-        }
+
+        Task<bool> cancellation = gate.Track(
+            Task.Run(() => CompeteAsync(0), context.CancellationToken)
+        );
+        Task<bool> admission = gate.Track(
+            Task.Run(() => CompeteAsync(1), context.CancellationToken)
+        );
+        await gate.ReleaseWhenAllReadyAsync(context.CancellationToken);
+        bool[] outcomes = await Task.WhenAll(cancellation, admission);
+        gate.Complete();
+
         Assert.AreEqual(1, outcomes.Count(value => value));
         CreditReservation actual = ledger.Reservations().Single();
         JsonObject status = ledger.Status(row.RunId, 200);
         Assert.AreEqual(outcomes[0] ? "released" : "active", actual.State);
         Assert.AreEqual(outcomes[0] ? 0m : 100m, status["campaignCommitted"]!.GetValue<decimal>());
         Assert.IsNull(actual.Actual);
-        using SqliteConnection connection = Phase6State.OpenFile(path);
-        Assert.AreEqual(
-            outcomes[0] ? 0L : 1L,
-            Sql.Scalar(
-                connection,
-                "SELECT dispatch_count FROM credit_sdk_usage WHERE reservation_id=$id;",
-                null,
-                ("$id", row.Id)
-            )
-        );
-        Assert.IsEmpty(Phase6State.Rows(connection, "SELECT * FROM credit_reports;"));
-        Console.WriteLine(
-            "PHASE6_CORE_LINEARIZATION "
-                + string.Join(",", outcomes)
-                + "; no physical-overlap or forced-winner claim"
-        );
+        JsonObject reported = Assert.ContainsSingle(status["reported"]!.AsArray())!.AsObject();
+        Assert.AreEqual(outcomes[0] ? 0L : 1L, reported["dispatches"]!.GetValue<long>());
+        Assert.IsFalse(ledger.HasCompleteSdkUsage(row.Id));
+        using SqliteConnection connection = RunStateQueries.OpenFile(path);
+        Assert.IsEmpty(RunStateQueries.Rows(connection, "SELECT * FROM credit_reports;"));
     }
 
-    private static void AssertGenuineTerminal(Phase6OwnedCreator creator)
+    private static void AssertGenuineTerminal(UnresolvedRunCreator creator)
     {
         RunDatabase database = creator.Database;
         CreditReservation row = creator.Target;
@@ -516,19 +387,19 @@ public sealed class OfflineReconcileSpecs(TestContext context)
         Assert.AreEqual("unresolved", database.ReadMetadata("lifecycle"));
         Assert.AreEqual(
             1L,
-            Phase6State.Number(
+            RunStateQueries.Number(
                 database,
                 "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NOT NULL;"
             )
         );
         Assert.AreEqual(
             0L,
-            Phase6State.Number(database, "SELECT COUNT(*) FROM coordinator_turns;")
+            RunStateQueries.Number(database, "SELECT COUNT(*) FROM coordinator_turns;")
         );
         Assert.AreEqual("stopped", database.ReadMetadata("worker:worker1:lifecycle"));
         Assert.AreEqual(
             1L,
-            Phase6State.Number(
+            RunStateQueries.Number(
                 database,
                 """
                 SELECT COUNT(*) FROM native_sessions n JOIN native_attempts a
@@ -567,7 +438,7 @@ public sealed class OfflineReconcileSpecs(TestContext context)
         Assert.AreEqual(lease, runtime["runtimeLeaseId"]!.GetValue<long>());
         Assert.AreEqual(
             1L,
-            Phase6State.Number(
+            RunStateQueries.Number(
                 database,
                 (
                     "SELECT COUNT(*) FROM process_leases WHERE id=$id AND state='exited' "
@@ -588,7 +459,7 @@ public sealed class OfflineReconcileSpecs(TestContext context)
         Assert.AreEqual(row.SessionId, marker["initial"]!["sessionId"]!.GetValue<string>());
         Assert.AreEqual(0L, marker["turnBaseline"]!.GetValue<long>());
         Assert.Contains(
-            "phase6-target-release-blocked",
+            "target-release-blocked",
             creator.Ended["settlementFailures"]!.ToJsonString()
         );
         Assert.HasCount(3, creator.Ended["runtimes"]!.AsArray());
@@ -603,7 +474,7 @@ public sealed class OfflineReconcileSpecs(TestContext context)
             .Single(item => item.Worker == "calibration");
         Assert.AreEqual(7.25m, calibration.Actual);
         Assert.AreEqual("reconciled", calibration.State);
-        using SqliteConnection campaign = Phase6State.OpenCampaign(database);
+        using SqliteConnection campaign = RunStateQueries.OpenCampaign(database);
         Assert.AreEqual(
             1L,
             Sql.Scalar(
@@ -632,7 +503,7 @@ public sealed class OfflineReconcileSpecs(TestContext context)
             )
         );
         Assert.IsEmpty(
-            Phase6State.Rows(
+            RunStateQueries.Rows(
                 campaign,
                 "SELECT * FROM credit_reports WHERE reservation_id=$id;",
                 ("$id", row.Id)
@@ -641,7 +512,8 @@ public sealed class OfflineReconcileSpecs(TestContext context)
     }
 
     private static void AssertSyntheticRuntimeIdentityRefusals(
-        Phase6OwnedCreator creator,
+        TestContext context,
+        UnresolvedRunCreator creator,
         Coordinator accounting
     )
     {
@@ -650,13 +522,13 @@ public sealed class OfflineReconcileSpecs(TestContext context)
         )!;
         long lease = diagnostic["runtimeLeaseId"]!.GetValue<long>();
         using SqliteConnection connection = creator.Database.Open();
-        JsonNode original = Assert.ContainsSingle(Phase6State.Rows(
+        JsonNode original = Assert.ContainsSingle(RunStateQueries.Rows(
             connection,
             "SELECT pid,start_ticks FROM process_leases WHERE id=$id AND state='exited';",
             ("$id", lease)
         ))!;
         using Process live = Process.GetCurrentProcess();
-        JsonObject originalHistory = Phase6State.History(creator.Database);
+        JsonObject originalHistory = RunStateQueries.History(creator.Database);
         foreach ((long pid, long birth, string reason) in new[]
         {
             (
@@ -671,74 +543,82 @@ public sealed class OfflineReconcileSpecs(TestContext context)
             ),
         })
         {
-            Exception? primary = null;
-            try
-            {
-                SetIdentity(pid, birth);
-                JsonObject history = Phase6State.History(creator.Database);
-                JsonObject money = Phase6State.Financial(creator.Database, creator.Ledger);
-                JsonObject rejected = accounting.Reconcile(creator.TargetId);
-                Assert.AreEqual(
-                    "credit_unknown", rejected["code"]?.GetValue<string>(), rejected.ToJsonString()
-                );
-                Assert.AreEqual(reason, rejected["message"]!.GetValue<string>());
-                Assert.AreEqual(
-                    history.ToJsonString(),
-                    Phase6State.History(creator.Database).ToJsonString()
-                );
-                Assert.AreEqual(
-                    money.ToJsonString(),
-                    Phase6State.Financial(creator.Database, creator.Ledger).ToJsonString()
-                );
-            }
-            catch (Exception error)
-            {
-                primary = error;
-                throw;
-            }
-            finally
-            {
-                try
-                {
-                    SetIdentity(
-                        original["pid"]!.GetValue<long>(),
-                        original["start_ticks"]!.GetValue<long>()
-                    );
-                    Assert.AreEqual(
-                        originalHistory.ToJsonString(),
-                        Phase6State.History(creator.Database).ToJsonString()
-                    );
-                }
-                catch (Exception secondary) when (primary is not null)
-                {
-                    primary.Data["SyntheticRuntimeLeaseRestore"] = Json.ExceptionDetails(secondary);
-                }
-            }
-        }
-
-        void SetIdentity(long pid, long birth)
-        {
-            using SqliteCommand update = Sql.Command(
+            using SyntheticLeaseScope leaseGuard = new(
+                context,
+                creator.Database,
                 connection,
-                "UPDATE process_leases SET pid=$pid,start_ticks=$birth "
-                    + "WHERE id=$id AND state='exited';",
-                null,
-                ("$pid", pid), ("$birth", birth), ("$id", lease)
+                lease,
+                original["pid"]!.GetValue<long>(),
+                original["start_ticks"]!.GetValue<long>(),
+                originalHistory
             );
-            Assert.AreEqual(1, update.ExecuteNonQuery());
+            leaseGuard.SetIdentity(pid, birth);
+            JsonObject history = RunStateQueries.History(creator.Database);
+            JsonObject money = RunStateQueries.Financial(creator.Database, creator.Ledger);
+            JsonObject rejected = accounting.Reconcile(creator.TargetId);
+            Assert.AreEqual(
+                "credit_unknown", rejected["code"]?.GetValue<string>(), rejected.ToJsonString()
+            );
+            Assert.AreEqual(reason, rejected["message"]!.GetValue<string>());
+            Assert.AreEqual(
+                history.ToJsonString(),
+                RunStateQueries.History(creator.Database).ToJsonString()
+            );
+            Assert.AreEqual(
+                money.ToJsonString(),
+                RunStateQueries.Financial(creator.Database, creator.Ledger).ToJsonString()
+            );
+            leaseGuard.Complete();
+        }
+    }
+
+    private static void AssertCampaignBindingRefusal(
+        TestContext context,
+        UnresolvedRunCreator creator,
+        Coordinator accounting
+    )
+    {
+        JsonObject originalHistory = RunStateQueries.History(creator.Database);
+        string originalBinding = creator.Database.ReadMetadata("native:ledger_binding")!;
+        using (MetadataRestoreScope restore = new(
+            context,
+            creator.Database,
+            "native:ledger_binding",
+            originalBinding,
+            originalHistory
+        ))
+        {
+            // Deliberate unsupported binding INPUT, not repaired setup/provenance.
+            creator.Database.WriteMetadata("native:ledger_binding", originalBinding + ".foreign");
+            JsonObject history = RunStateQueries.History(creator.Database);
+            JsonObject money = RunStateQueries.Financial(creator.Database, creator.Ledger);
+            JsonObject rejected = accounting.Reconcile(creator.TargetId);
+            Assert.AreEqual("credit_unknown", rejected["code"]!.GetValue<string>());
+            Assert.AreEqual(
+                "The retained campaign binding changed.",
+                rejected["message"]!.GetValue<string>()
+            );
+            Assert.AreEqual(
+                history.ToJsonString(),
+                RunStateQueries.History(creator.Database).ToJsonString()
+            );
+            Assert.AreEqual(
+                money.ToJsonString(),
+                RunStateQueries.Financial(creator.Database, creator.Ledger).ToJsonString()
+            );
+            restore.Complete();
         }
     }
 
     private static void AssertCancellationAndRepeat(
-        Phase6OwnedCreator creator,
+        UnresolvedRunCreator creator,
         Coordinator accounting,
         string? evidence,
-        string kind,
-        string? outerEvidence = null
+        string kind
     )
     {
-        JsonObject history = Phase6State.History(creator.Database);
-        JsonObject before = Phase6State.Financial(creator.Database, creator.Ledger);
+        JsonObject history = RunStateQueries.History(creator.Database);
+        JsonObject before = RunStateQueries.Financial(creator.Database, creator.Ledger);
         CreditReservation target = creator.Target;
         JsonObject first = accounting.Reconcile(target.Id, evidence);
         JsonObject result = GitScenarioState.Data(first);
@@ -778,9 +658,9 @@ public sealed class OfflineReconcileSpecs(TestContext context)
         Assert.AreEqual(0m, status["overshoot"]!.GetValue<decimal>());
         Assert.AreEqual(
             history.ToJsonString(),
-            Phase6State.History(creator.Database).ToJsonString()
+            RunStateQueries.History(creator.Database).ToJsonString()
         );
-        JsonObject after = Phase6State.Financial(creator.Database, creator.Ledger);
+        JsonObject after = RunStateQueries.Financial(creator.Database, creator.Ledger);
         Assert.AreEqual(before["reports"]!.ToJsonString(), after["reports"]!.ToJsonString());
         Assert.AreEqual(before["owners"]!.ToJsonString(), after["owners"]!.ToJsonString());
         Assert.AreEqual(before["usage"]!.ToJsonString(), after["usage"]!.ToJsonString());
@@ -810,24 +690,11 @@ public sealed class OfflineReconcileSpecs(TestContext context)
         Assert.AreEqual(result["proof"]!.ToJsonString(), repeat["proof"]!.ToJsonString());
         Assert.AreEqual(
             after.ToJsonString(),
-            Phase6State.Financial(creator.Database, creator.Ledger).ToJsonString()
+            RunStateQueries.Financial(creator.Database, creator.Ledger).ToJsonString()
         );
         Assert.AreEqual(
             history.ToJsonString(),
-            Phase6State.History(creator.Database).ToJsonString()
-        );
-        Console.WriteLine(
-            "PHASE6_CANCELLATION "
-                + new JsonObject
-                {
-                    ["outerEvidence"] = outerEvidence ?? (evidence is null
-                        ? "genuine-current-controlled-public"
-                        : "SYNTHETIC CONTRACT ONLY; literal native-sdk IS NOT native proof"),
-                    ["first"] = first,
-                    ["repeat"] = repeat.DeepClone(),
-                    ["before"] = before,
-                    ["after"] = after,
-                }.ToJsonString()
+            RunStateQueries.History(creator.Database).ToJsonString()
         );
     }
 
@@ -836,7 +703,9 @@ public sealed class OfflineReconcileSpecs(TestContext context)
         string usagePath
     )
     {
-        CreditReservation reserved = ledger.Reserve("phase6-core", "worker1", 100, 200, usagePath);
+        CreditReservation reserved = ledger.Reserve(
+            "reconcile-core", "worker1", 100, 200, usagePath
+        );
         ledger.MarkStarted(reserved.Id);
         ledger.AttachSession(reserved.Id, reserved.SessionId!);
         ledger.RecordSdkUsage(reserved.Id, new(reserved.SessionId!, 0, null, 0), final: false);
@@ -858,14 +727,200 @@ public sealed class OfflineReconcileSpecs(TestContext context)
 
     private static JsonObject CoreProjection(CreditLedger ledger, string path)
     {
-        using SqliteConnection connection = Phase6State.OpenFile(path);
+        using SqliteConnection connection = RunStateQueries.OpenFile(path);
         return new()
         {
-            ["status"] = ledger.Status("phase6-core", 200),
-            ["reservations"] = Phase6State.Rows(connection, "SELECT * FROM credit_reservations;"),
-            ["usage"] = Phase6State.Rows(connection, "SELECT * FROM credit_sdk_usage;"),
-            ["owners"] = Phase6State.Rows(connection, "SELECT * FROM credit_sdk_owners;"),
-            ["reports"] = Phase6State.Rows(connection, "SELECT * FROM credit_reports;"),
+            ["status"] = ledger.Status("reconcile-core", 200),
+            ["reservations"] = RunStateQueries.Rows(
+                connection, "SELECT * FROM credit_reservations;"
+            ),
+            ["usage"] = RunStateQueries.Rows(connection, "SELECT * FROM credit_sdk_usage;"),
+            ["owners"] = RunStateQueries.Rows(connection, "SELECT * FROM credit_sdk_owners;"),
+            ["reports"] = RunStateQueries.Rows(connection, "SELECT * FROM credit_reports;"),
         };
+    }
+
+    private sealed class OwnedChildScope(TestContext context) : IAsyncDisposable
+    {
+        private bool completed;
+
+        internal OwnedChildControl Control { get; } = new();
+
+        internal void Complete() => completed = true;
+
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                await Control.DisposeAsync();
+            }
+            catch (Exception secondary) when (!completed)
+            {
+                context.WriteLine("Secondary reused-PID helper cleanup failure: {0}", secondary);
+            }
+        }
+    }
+
+    private sealed class SyntheticLeaseScope(
+        TestContext context,
+        RunDatabase database,
+        SqliteConnection connection,
+        long lease,
+        long originalPid,
+        long originalBirthTicks,
+        JsonObject originalHistory
+    ) : IDisposable
+    {
+        private bool completed;
+
+        internal void SetIdentity(long pid, long birth)
+        {
+            using SqliteCommand update = Sql.Command(
+                connection,
+                "UPDATE process_leases SET pid=$pid,start_ticks=$birth "
+                    + "WHERE id=$id AND state='exited';",
+                null,
+                ("$pid", pid),
+                ("$birth", birth),
+                ("$id", lease)
+            );
+            Assert.AreEqual(1, update.ExecuteNonQuery());
+        }
+
+        internal void Complete() => completed = true;
+
+        public void Dispose()
+        {
+            try
+            {
+                SetIdentity(originalPid, originalBirthTicks);
+                Assert.AreEqual(
+                    originalHistory.ToJsonString(),
+                    RunStateQueries.History(database).ToJsonString()
+                );
+            }
+            catch (Exception secondary) when (!completed)
+            {
+                context.WriteLine(
+                    "Secondary synthetic runtime lease restore failure: {0}",
+                    secondary
+                );
+            }
+        }
+    }
+
+    private sealed class MetadataRestoreScope(
+        TestContext context,
+        RunDatabase database,
+        string key,
+        string originalValue,
+        JsonObject originalHistory
+    ) : IDisposable
+    {
+        private bool completed;
+
+        internal void Complete() => completed = true;
+
+        public void Dispose()
+        {
+            try
+            {
+                database.WriteMetadata(key, originalValue);
+                Assert.AreEqual(
+                    originalHistory.ToJsonString(),
+                    RunStateQueries.History(database).ToJsonString()
+                );
+            }
+            catch (Exception secondary) when (!completed)
+            {
+                context.WriteLine("Secondary metadata restore failure: {0}", secondary);
+            }
+        }
+    }
+
+    private sealed class LegacyDefectScope(
+        TestContext context,
+        CancellationGuardInput input,
+        string defect
+    ) : IDisposable
+    {
+        private bool completed;
+
+        internal void Complete() => completed = true;
+
+        public void Dispose()
+        {
+            try
+            {
+                input.Restore(defect);
+            }
+            catch (Exception secondary) when (!completed)
+            {
+                context.WriteLine(
+                    "Secondary legacy guard restore failure ({0}): {1}",
+                    defect,
+                    secondary
+                );
+            }
+        }
+    }
+
+    private sealed class ContenderGateScope(TestContext context, int count) : IAsyncDisposable
+    {
+        private readonly TaskCompletionSource go =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource[] ready =
+        [
+            .. Enumerable
+                .Range(0, count)
+                .Select(_ => new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                )),
+        ];
+        private readonly List<Task> tasks = [];
+        private bool completed;
+
+        internal Task<T> Track<T>(Task<T> task)
+        {
+            tasks.Add(task);
+            return task;
+        }
+
+        internal async Task SignalReadyAndWaitAsync(int index, CancellationToken token)
+        {
+            ready[index].TrySetResult();
+            await go.Task.WaitAsync(token);
+        }
+
+        internal async Task ReleaseWhenAllReadyAsync(CancellationToken token)
+        {
+            try
+            {
+                await Task.WhenAll(ready.Select(item => item.Task))
+                    .WaitAsync(TimeSpan.FromSeconds(5), token);
+            }
+            finally
+            {
+                go.TrySetResult();
+            }
+        }
+
+        internal void Complete() => completed = true;
+
+        public async ValueTask DisposeAsync()
+        {
+            go.TrySetResult();
+            try
+            {
+                await Task.WhenAll(tasks).WaitAsync(
+                    TimeSpan.FromSeconds(5),
+                    CancellationToken.None
+                );
+            }
+            catch (Exception secondary) when (!completed)
+            {
+                context.WriteLine("Secondary contender gate cleanup failure: {0}", secondary);
+            }
+        }
     }
 }

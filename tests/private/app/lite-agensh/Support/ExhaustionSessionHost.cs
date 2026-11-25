@@ -5,7 +5,7 @@ namespace LiteAgensh.Tests.Support;
 // One controlled exhausted-limit notification on an actual pending send.
 // The ordinary owned host/session, usage fence and real worker stay intact.
 // Use the supported typed handler with the worker's REAL renewal callback.
-internal sealed class Phase7Exhaustion
+internal sealed class ExhaustionSessionHost
 {
     private readonly TaskCompletionSource requested = new(
         TaskCreationOptions.RunContinuationsAsynchronously
@@ -21,7 +21,7 @@ internal sealed class Phase7Exhaustion
 
     internal INativeSdkHost Wrap(INativeSdkHost host) => new Host(this, host);
 
-    private sealed class Host(Phase7Exhaustion control, INativeSdkHost inner) : INativeSdkHost
+    private sealed class Host(ExhaustionSessionHost control, INativeSdkHost inner) : INativeSdkHost
     {
         public string Id => inner.Id;
         public long LeaseId => inner.LeaseId;
@@ -32,7 +32,7 @@ internal sealed class Phase7Exhaustion
         public ValueTask DisposeAsync() => inner.DisposeAsync();
     }
 
-    private sealed class Session(Phase7Exhaustion control, INativeSdkSession inner)
+    private sealed class Session(ExhaustionSessionHost control, INativeSdkSession inner)
         : INativeSdkSession
     {
         public string SessionId => inner.SessionId;
@@ -106,7 +106,7 @@ internal sealed class Phase7Exhaustion
 #pragma warning disable GHCP001
                 await NativeSdkSession
                     .HandleExhaustedLimitAsync(
-                        "phase7-exhausted",
+                        "controlled-exhausted",
                         renewLimit
                             ?? throw new InvalidOperationException(
                                 "Shared renewal callback missing."
@@ -160,7 +160,6 @@ internal sealed class Phase7Exhaustion
                 {
                     // This is the same cancelled child Send, not a second result.
                     // Its missing terminal evidence remains in the inner fence.
-                    Console.WriteLine("PHASE7_EXHAUSTED_SEND_JOIN " + Json.ExceptionDetails(error));
                 }
                 try
                 {

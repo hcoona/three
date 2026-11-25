@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Runtime.ExceptionServices;
 using System.Text.Json.Nodes;
 using LiteAgensh.Tests.Support;
 using Microsoft.Extensions.Time.Testing;
@@ -45,67 +44,32 @@ public sealed class OwnedProcessSpecs(TestContext context)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task FailedReleaseRetainsItsErrorWhileRemainingOwnedDisposalStillCompletes()
     {
-        OwnedChildControl control = new();
-        Process owned = control.StartDirect();
-        bool disposalAttempted = false;
-        Exception? primaryFailure = null;
-        try
-        {
-            OwnedChildIdentity ready = await control
-                .ReadReadyAsync(context.CancellationToken)
-                .ConfigureAwait(false);
-            AssertOriginalIdentity(owned, ready);
-            using Process observer = OpenObservedOwnedChild(ready.Pid, ready.BirthTicks);
-            Assert.IsFalse(observer.HasExited);
-            using CancellationTokenSource releaseCancellation = new();
-            await releaseCancellation.CancelAsync().ConfigureAwait(false);
-            OperationCanceledException primary = await Assert
-                .ThrowsAsync<OperationCanceledException>(async () =>
-                    await control.ReleaseAsync(releaseCancellation.Token).ConfigureAwait(false)
-                )
-                .ConfigureAwait(false);
-            Assert.AreEqual(releaseCancellation.Token, primary.CancellationToken);
-            disposalAttempted = true;
-            await control.DisposeAsync().ConfigureAwait(false);
-            Assert.IsTrue(observer.HasExited);
-            Assert.ThrowsExactly<InvalidOperationException>(
-                () => _ = owned.Id,
-                "The directly owned Process must be disposed despite the preceding release error."
-            );
-            context.WriteLine(
-                "OWNED_EXPECTED_RELEASE_FAILURE "
-                    + new System.Text.Json.Nodes.JsonObject
-                    {
-                        ["pid"] = ready.Pid,
-                        ["birthTicks"] = ready.BirthTicks,
-                        ["releasePrimary"] = Json.ExceptionDetails(primary),
-                        ["ownedExitObserved"] = observer.HasExited,
-                        ["ownedProcessDisposed"] = true,
-                        ["intentionalReleaseCancellation"] = true,
-                    }.ToJsonString()
-            );
-        }
-        catch (Exception error)
-        {
-            primaryFailure = error;
-            throw;
-        }
-        finally
-        {
-            if (!disposalAttempted)
-            {
-                try
-                {
-                    await control.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (Exception secondary) when (primaryFailure is not null)
-                {
-                    context.WriteLine(
-                        "OWNED_WITNESS_CLEANUP_SECONDARY " + Json.ExceptionDetails(secondary)
-                    );
-                }
-            }
-        }
+        await using DirectChildScope scope = new(context);
+        Process owned = scope.Control.StartDirect();
+        OwnedChildIdentity ready = await scope
+            .Control.ReadReadyAsync(context.CancellationToken)
+            .ConfigureAwait(false);
+        AssertOriginalIdentity(owned, ready);
+        using Process observer = OpenObservedOwnedChild(ready.Pid, ready.BirthTicks);
+        Assert.IsFalse(observer.HasExited);
+
+        using CancellationTokenSource releaseCancellation = new();
+        await releaseCancellation.CancelAsync().ConfigureAwait(false);
+        OperationCanceledException primary = await Assert
+            .ThrowsAsync<OperationCanceledException>(async () =>
+                await scope.Control.ReleaseAsync(releaseCancellation.Token).ConfigureAwait(false)
+            )
+            .ConfigureAwait(false);
+        Assert.AreEqual(releaseCancellation.Token, primary.CancellationToken);
+
+        await scope.DisposeControlAsync().ConfigureAwait(false);
+
+        Assert.IsTrue(observer.HasExited);
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => _ = owned.Id,
+            "The directly owned Process must be disposed despite the preceding release error."
+        );
+        scope.Complete();
     }
 
     [TestMethod]
@@ -118,46 +82,32 @@ public sealed class OwnedProcessSpecs(TestContext context)
     )
     {
         using OwnedProcessState state = new();
-        using CancellationTokenSource cancellation =
-            CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
-        Task<ProcessResult> running = state.Runner.RunAsync(
-            OwnedChildControl.ExecutablePath,
+        await using RunningCommandScope command = new(
+            context,
+            state,
             ["exit", exitCode.ToString(CultureInfo.InvariantCulture)],
-            state.WorkingDirectory,
-            TimeSpan.FromSeconds(120),
-            cancellation.Token
+            TimeSpan.FromSeconds(120)
         );
-        Exception? primaryFailure = null;
-        try
-        {
-            ProcessResult result = await running.ConfigureAwait(false);
-            OwnedLease retired = state.Lease();
 
-            Assert.AreEqual(exitCode, result.ExitCode);
-            Assert.IsFalse(result.TimedOut);
-            Assert.AreEqual(
-                $"owned check exit {exitCode}{Environment.NewLine}",
-                result.StandardOutput
-            );
-            Assert.AreEqual(
-                exitCode == 0 ? "" : $"owned check failed {exitCode}{Environment.NewLine}",
-                result.StandardError
-            );
-            Assert.IsGreaterThan(0L, retired.Id);
-            Assert.IsGreaterThan(0, retired.Pid);
-            Assert.IsGreaterThan(0L, retired.BirthTicks);
-            Assert.AreEqual("command", retired.Kind);
-            Assert.AreEqual("exited", retired.State);
-        }
-        catch (Exception error)
-        {
-            primaryFailure = error;
-            throw;
-        }
-        finally
-        {
-            await CancelAndDrainAsync(cancellation, running, primaryFailure).ConfigureAwait(false);
-        }
+        ProcessResult result = await command.Running.ConfigureAwait(false);
+        OwnedLease retired = state.Lease();
+
+        Assert.AreEqual(exitCode, result.ExitCode);
+        Assert.IsFalse(result.TimedOut);
+        Assert.AreEqual(
+            $"owned check exit {exitCode}{Environment.NewLine}",
+            result.StandardOutput
+        );
+        Assert.AreEqual(
+            exitCode == 0 ? "" : $"owned check failed {exitCode}{Environment.NewLine}",
+            result.StandardError
+        );
+        Assert.IsGreaterThan(0L, retired.Id);
+        Assert.IsGreaterThan(0, retired.Pid);
+        Assert.IsGreaterThan(0L, retired.BirthTicks);
+        Assert.AreEqual("command", retired.Kind);
+        Assert.AreEqual("exited", retired.State);
+        command.Complete();
     }
 
     [TestMethod]
@@ -168,47 +118,32 @@ public sealed class OwnedProcessSpecs(TestContext context)
         FakeTimeProvider clock = new();
         using OwnedProcessState state = new(clock);
         await using OwnedChildControl control = new();
-        using CancellationTokenSource cancellation =
-            CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
-        Task<ProcessResult> running = state.Runner.RunAsync(
-            OwnedChildControl.ExecutablePath,
+        await using RunningCommandScope command = new(
+            context,
+            state,
             control.Arguments(role: OwnedChildControl.HeldCandidateCheckRole),
-            state.WorkingDirectory,
-            TimeSpan.FromSeconds(1),
-            cancellation.Token
+            TimeSpan.FromSeconds(1)
         );
-        Exception? primaryFailure = null;
-        try
-        {
-            OwnedChildIdentity ready = await control
-                .ReadReadyAsync(running, context.CancellationToken)
-                .ConfigureAwait(false);
-            OwnedLease live = state.Lease(pid: ready.Pid);
-            using Process child = OpenObservedOwnedChild(ready.Pid, ready.BirthTicks);
-            Assert.AreEqual(ready.BirthTicks, live.BirthTicks);
-            Assert.AreEqual("running", live.State);
-            Assert.IsFalse(child.HasExited);
+        OwnedChildIdentity ready = await control
+            .ReadReadyAsync(command.Running, context.CancellationToken)
+            .ConfigureAwait(false);
+        OwnedLease live = state.Lease(pid: ready.Pid);
+        using Process child = OpenObservedOwnedChild(ready.Pid, ready.BirthTicks);
+        Assert.AreEqual(ready.BirthTicks, live.BirthTicks);
+        Assert.AreEqual("running", live.State);
+        Assert.IsFalse(child.HasExited);
 
-            clock.Advance(TimeSpan.FromSeconds(1));
-            ProcessResult result = await running.ConfigureAwait(false);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        ProcessResult result = await command.Running.ConfigureAwait(false);
 
-            Assert.IsTrue(result.TimedOut);
-            Assert.IsFalse(cancellation.IsCancellationRequested);
-            Assert.AreEqual("exited", state.Lease(id: live.Id).State);
-            Assert.IsTrue(child.HasExited);
-            Assert.Contains("owned check diagnostic stdout before READY", result.StandardOutput);
-            Assert.Contains("owned check diagnostic stderr before READY", result.StandardError);
-            Assert.DoesNotContain("owned check exit 0", result.StandardOutput);
-        }
-        catch (Exception error)
-        {
-            primaryFailure = error;
-            throw;
-        }
-        finally
-        {
-            await CancelAndDrainAsync(cancellation, running, primaryFailure).ConfigureAwait(false);
-        }
+        Assert.IsTrue(result.TimedOut);
+        Assert.IsFalse(command.IsCancellationRequested);
+        Assert.AreEqual("exited", state.Lease(id: live.Id).State);
+        Assert.IsTrue(child.HasExited);
+        Assert.Contains("owned check diagnostic stdout before READY", result.StandardOutput);
+        Assert.Contains("owned check diagnostic stderr before READY", result.StandardError);
+        Assert.DoesNotContain("owned check exit 0", result.StandardOutput);
+        command.Complete();
     }
 
     [TestMethod]
@@ -218,70 +153,52 @@ public sealed class OwnedProcessSpecs(TestContext context)
     {
         using OwnedProcessState state = new();
         await using OwnedChildControl control = new();
-        using CancellationTokenSource cancellation =
-            CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
-        Task<ProcessResult> running = state.Runner.RunAsync(
-            OwnedChildControl.ExecutablePath,
+        await using RunningCommandScope command = new(
+            context,
+            state,
             control.Arguments(role: OwnedChildControl.HeldCandidateCheckRole),
-            state.WorkingDirectory,
-            TimeSpan.FromSeconds(120),
-            cancellation.Token
+            TimeSpan.FromSeconds(120)
         );
-        Exception? primaryFailure = null;
-        try
-        {
-            OwnedChildIdentity ready = await control
-                .ReadReadyAsync(running, context.CancellationToken)
-                .ConfigureAwait(false);
-            OwnedLease live = state.Lease(pid: ready.Pid);
-            Assert.AreEqual(ready.BirthTicks, live.BirthTicks);
-            Assert.AreEqual("command", live.Kind);
-            Assert.AreEqual("running", live.State);
-            Assert.AreEqual(0, ready.DescendantPid);
-            Assert.AreEqual(0L, ready.DescendantBirthTicks);
-            using Process child = OpenObservedOwnedChild(ready.Pid, ready.BirthTicks);
-            Assert.IsFalse(child.HasExited);
-            context.WriteLine(
-                $"Owned readiness pid={ready.Pid}; birth={ready.BirthTicks}; lease={live.Id}"
-            );
+        OwnedChildIdentity ready = await control
+            .ReadReadyAsync(command.Running, context.CancellationToken)
+            .ConfigureAwait(false);
+        OwnedLease live = state.Lease(pid: ready.Pid);
+        Assert.AreEqual(ready.BirthTicks, live.BirthTicks);
+        Assert.AreEqual("command", live.Kind);
+        Assert.AreEqual("running", live.State);
+        Assert.AreEqual(0, ready.DescendantPid);
+        Assert.AreEqual(0L, ready.DescendantBirthTicks);
+        using Process child = OpenObservedOwnedChild(ready.Pid, ready.BirthTicks);
+        Assert.IsFalse(child.HasExited);
 
-            await cancellation.CancelAsync().ConfigureAwait(false);
-            OperationCanceledException error = await Assert
-                .ThrowsAsync<OperationCanceledException>(async () =>
-                    await running.ConfigureAwait(false)
-                )
-                .ConfigureAwait(false);
-            JsonNode evidence = JsonNode.Parse(Assert.IsInstanceOfType<string>(
-                error.Data[ProcessRunner.CancellationEvidenceKey]
-            ))!;
-            OwnedLease retired = state.Lease(id: live.Id);
+        await command.CancelAsync().ConfigureAwait(false);
+        OperationCanceledException error = await Assert
+            .ThrowsAsync<OperationCanceledException>(async () =>
+                await command.Running.ConfigureAwait(false)
+            )
+            .ConfigureAwait(false);
+        JsonNode evidence = JsonNode.Parse(Assert.IsInstanceOfType<string>(
+            error.Data[ProcessRunner.CancellationEvidenceKey]
+        ))!;
+        OwnedLease retired = state.Lease(id: live.Id);
 
-            Assert.AreEqual(cancellation.Token, error.CancellationToken);
-            Assert.AreEqual(live.Id, evidence["leaseId"]!.GetValue<long>());
-            Assert.AreEqual("exited", retired.State);
-            Assert.AreEqual(live.Pid, retired.Pid);
-            Assert.AreEqual(live.BirthTicks, retired.BirthTicks);
-            Assert.IsTrue(child.HasExited);
-            Assert.IsTrue(evidence["stdout"]!["complete"]!.GetValue<bool>());
-            Assert.IsTrue(evidence["stderr"]!["complete"]!.GetValue<bool>());
-            Assert.Contains(
-                "owned check diagnostic stdout before READY",
-                evidence["stdout"]!["text"]!.GetValue<string>()
-            );
-            Assert.Contains(
-                "owned check diagnostic stderr before READY",
-                evidence["stderr"]!["text"]!.GetValue<string>()
-            );
-        }
-        catch (Exception error)
-        {
-            primaryFailure = error;
-            throw;
-        }
-        finally
-        {
-            await CancelAndDrainAsync(cancellation, running, primaryFailure).ConfigureAwait(false);
-        }
+        Assert.AreEqual(command.Token, error.CancellationToken);
+        Assert.AreEqual(live.Id, evidence["leaseId"]!.GetValue<long>());
+        Assert.AreEqual("exited", retired.State);
+        Assert.AreEqual(live.Pid, retired.Pid);
+        Assert.AreEqual(live.BirthTicks, retired.BirthTicks);
+        Assert.IsTrue(child.HasExited);
+        Assert.IsTrue(evidence["stdout"]!["complete"]!.GetValue<bool>());
+        Assert.IsTrue(evidence["stderr"]!["complete"]!.GetValue<bool>());
+        Assert.Contains(
+            "owned check diagnostic stdout before READY",
+            evidence["stdout"]!["text"]!.GetValue<string>()
+        );
+        Assert.Contains(
+            "owned check diagnostic stderr before READY",
+            evidence["stderr"]!["text"]!.GetValue<string>()
+        );
+        command.Complete();
     }
 
     [TestMethod]
@@ -289,241 +206,94 @@ public sealed class OwnedProcessSpecs(TestContext context)
     [TestCategory("CancelSettleOnlyOwnedChildren")]
     public async Task CommandCancellationWithAnUnsettledInheritedPipeDurablyBlocksReplacement()
     {
-        OwnedProcessState state = new(new FakeTimeProvider());
         // A case timeout must not make the runner kill a root that still owns the holder.
-        using CancellationTokenSource callerStop = new();
         using CancellationTokenSource entry = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken
         );
         entry.CancelAfter(TimeSpan.FromSeconds(30));
-        OwnedChildControl? startControl = null;
-        OwnedChildControl? rootControl = null;
-        OwnedChildControl? holderControl = null;
-        Process? root = null;
-        Process? holder = null;
-        Task<ProcessResult>? running = null;
-        bool launchAttempted = false;
-        bool holderStartAttempted = false;
-        ExceptionDispatchInfo? primaryFailure = null;
-        InvalidOperationException? postStopFailure = null;
-        List<Exception> cleanupFailures = [];
-        try
+        await using OutputHandoffScope handoff = new(context);
+        Task<ProcessResult> command = handoff.Launch();
+
+        OwnedChildIdentity rootAtStart = await handoff
+            .StartControl.ReadReadyAsync(command, entry.Token)
+            .ConfigureAwait(false);
+        OwnedLease live = handoff.State.Lease(pid: rootAtStart.Pid);
+        Assert.AreEqual(rootAtStart.BirthTicks, live.BirthTicks);
+        Assert.AreEqual("command", live.Kind);
+        Assert.AreEqual("running", live.State);
+        Assert.AreEqual(0, rootAtStart.DescendantPid);
+        Process root = handoff.ObserveRoot(rootAtStart);
+        Assert.IsFalse(root.HasExited);
+        if (command.IsCompleted)
         {
-            startControl = new();
-            rootControl = new();
-            holderControl = new();
-            launchAttempted = true;
-            Task<ProcessResult> command = state.Runner.RunAsync(
-                OwnedChildControl.ExecutablePath,
-                [
-                    "output-handoff-root", rootControl.PipeName, "0",
-                    holderControl.PipeName, startControl.PipeName,
-                ],
-                state.WorkingDirectory,
-                TimeSpan.FromSeconds(120),
-                callerStop.Token
-            );
-            running = command;
-
-            OwnedChildIdentity rootAtStart = await startControl
-                .ReadReadyAsync(command, entry.Token)
-                .ConfigureAwait(false);
-            OwnedLease live = state.Lease(pid: rootAtStart.Pid);
-            Assert.AreEqual(rootAtStart.BirthTicks, live.BirthTicks);
-            Assert.AreEqual("command", live.Kind);
-            Assert.AreEqual("running", live.State);
-            Assert.AreEqual(0, rootAtStart.DescendantPid);
-            root = OpenObservedOwnedChild(rootAtStart.Pid, rootAtStart.BirthTicks);
-            Assert.IsFalse(root.HasExited);
-            if (command.IsCompleted)
-            {
-                await command.ConfigureAwait(false);
-                Assert.Fail("The command completed before holder startup was granted.");
-            }
-
-            // This RELEASE grants only holder startup, and a failed write may still deliver it.
-            holderStartAttempted = true;
-            await startControl.ReleaseAsync(entry.Token).ConfigureAwait(false);
-            OwnedChildIdentity rootReady = await rootControl
-                .ReadReadyAsync(command, entry.Token)
-                .ConfigureAwait(false);
-            Assert.AreEqual(rootAtStart.Pid, rootReady.Pid);
-            Assert.AreEqual(rootAtStart.BirthTicks, rootReady.BirthTicks);
-            OwnedChildIdentity holderReady = await holderControl
-                .ReadReadyAsync(command, entry.Token)
-                .ConfigureAwait(false);
-            Assert.AreEqual(rootReady.DescendantPid, holderReady.Pid);
-            Assert.AreEqual(rootReady.DescendantBirthTicks, holderReady.BirthTicks);
-            Assert.AreNotEqual(rootReady.Pid, holderReady.Pid);
-            Assert.AreEqual(0, holderReady.DescendantPid);
-            holder = OpenObservedOwnedChild(holderReady.Pid, holderReady.BirthTicks);
-            Assert.IsFalse(holder.HasExited);
-            Assert.IsFalse(root.HasExited);
-
-            await rootControl.ReleaseAsync(entry.Token).ConfigureAwait(false);
-            await JoinExitAsync(root, entry.Token).ConfigureAwait(false);
-            Assert.IsFalse(holder.HasExited);
-            Assert.IsFalse(command.IsCompleted, "The exited root must still have output to drain.");
-            Assert.AreEqual(live, state.Lease(id: live.Id));
-
-            // Leave the command clock alone; only the caller stop and real drain bound apply.
-            await callerStop.CancelAsync().ConfigureAwait(false);
-            postStopFailure = await Assert
-                .ThrowsExactlyAsync<InvalidOperationException>(async () =>
-                    await command
-                        .WaitAsync(TimeSpan.FromSeconds(15), context.CancellationToken)
-                        .ConfigureAwait(false)
-                )
-                .ConfigureAwait(false);
-            Assert.AreEqual(
-                "Owned command or inherited pipes did not settle; replacement is blocked.",
-                postStopFailure.Message
-            );
-            Assert.AreEqual(typeof(TimeoutException), postStopFailure.InnerException?.GetType());
-            OwnedLease unresolved = state.Lease(id: live.Id);
-            Assert.AreEqual(
-                live with { State = "unresolved" },
-                unresolved,
-                "The surviving runner must durably mark the exact registered command."
-            );
-
-            using CancellationTokenSource admission = new(TimeSpan.FromSeconds(5));
-            InvalidOperationException refusal = await Assert
-                .ThrowsExactlyAsync<InvalidOperationException>(async () =>
-                    await state.Runner.ResolveSurvivorsAsync(admission.Token).ConfigureAwait(false)
-                )
-                .ConfigureAwait(false);
-            Assert.AreEqual(
-                $"Process lease {live.Id} needs explicit ownership resolution.",
-                refusal.Message
-            );
-            Assert.AreEqual(unresolved, state.Lease(id: live.Id));
-            Assert.IsFalse(holder.HasExited);
-
-            await holderControl.ReleaseAsync(context.CancellationToken).ConfigureAwait(false);
-            await JoinExitAsync(holder, context.CancellationToken).ConfigureAwait(false);
+            await command.ConfigureAwait(false);
+            Assert.Fail("The command completed before holder startup was granted.");
         }
-        catch (Exception error)
-        {
-            primaryFailure = ExceptionDispatchInfo.Capture(error);
-        }
-        finally
-        {
-            // Closing (not releasing) the root channel leaves pre-handoff cleanup to the root.
-            if (startControl is { } startChannel)
-            {
-                await CleanupAsync("start-channel", () => startChannel.DisposeAsync().AsTask())
-                    .ConfigureAwait(false);
-            }
-            if (rootControl is { } rootChannel)
-            {
-                await CleanupAsync("root-channel", () => rootChannel.DisposeAsync().AsTask())
-                    .ConfigureAwait(false);
-            }
-            if (holderControl is { } holderChannel)
-            {
-                await CleanupAsync("holder-channel", () => holderChannel.DisposeAsync().AsTask())
-                    .ConfigureAwait(false);
-            }
 
-            bool exitsJoined = !launchAttempted
-                || (root is not null && (!holderStartAttempted || holder is not null));
-            foreach (
-                (Process? observer, string role) in new[] { (root, "root"), (holder, "holder") }
+        // This RELEASE grants only holder startup, and a failed write may still deliver it.
+        await handoff.ReleaseHolderStartAsync(entry.Token).ConfigureAwait(false);
+        OwnedChildIdentity rootReady = await handoff
+            .RootControl.ReadReadyAsync(command, entry.Token)
+            .ConfigureAwait(false);
+        Assert.AreEqual(rootAtStart.Pid, rootReady.Pid);
+        Assert.AreEqual(rootAtStart.BirthTicks, rootReady.BirthTicks);
+        OwnedChildIdentity holderReady = await handoff
+            .HolderControl.ReadReadyAsync(command, entry.Token)
+            .ConfigureAwait(false);
+        Assert.AreEqual(rootReady.DescendantPid, holderReady.Pid);
+        Assert.AreEqual(rootReady.DescendantBirthTicks, holderReady.BirthTicks);
+        Assert.AreNotEqual(rootReady.Pid, holderReady.Pid);
+        Assert.AreEqual(0, holderReady.DescendantPid);
+        Process holder = handoff.ObserveHolder(holderReady);
+        Assert.IsFalse(holder.HasExited);
+        Assert.IsFalse(root.HasExited);
+
+        await handoff.RootControl.ReleaseAsync(entry.Token).ConfigureAwait(false);
+        await JoinExitAsync(root, entry.Token).ConfigureAwait(false);
+        Assert.IsFalse(holder.HasExited);
+        Assert.IsFalse(command.IsCompleted, "The exited root must still have output to drain.");
+        Assert.AreEqual(live, handoff.State.Lease(id: live.Id));
+
+        // Leave the command clock alone; only the caller stop and real drain bound apply.
+        await handoff.CallerStop.CancelAsync().ConfigureAwait(false);
+        InvalidOperationException postStopFailure = await Assert
+            .ThrowsExactlyAsync<InvalidOperationException>(async () =>
+                await command
+                    .WaitAsync(TimeSpan.FromSeconds(15), context.CancellationToken)
+                    .ConfigureAwait(false)
             )
-            {
-                if (observer is not null)
-                {
-                    exitsJoined &= await CleanupAsync(
-                        $"{role}-exit", () => JoinExitAsync(observer, CancellationToken.None)
-                    ).ConfigureAwait(false);
-                    await CleanupAsync($"{role}-observer-dispose", () => DisposeAsync(observer))
-                        .ConfigureAwait(false);
-                }
-            }
-            bool runnerJoined = !launchAttempted || postStopFailure is not null;
-            if (running is { } command && !runnerJoined)
-            {
-                await CleanupAsync(
-                    "runner-join",
-                    async () =>
-                    {
-                        try
-                        {
-                            await command.WaitAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(false);
-                        }
-                        catch (Exception) when (command.IsCompleted)
-                        {
-                            // Observe the actual task even if its completion raced the watchdog.
-                            runnerJoined = true;
-                            try
-                            {
-                                await command.ConfigureAwait(false);
-                            }
-                            catch (Exception error) when (
-                                ReferenceEquals(error, primaryFailure?.SourceException)
-                            )
-                            { }
-                        }
-                        runnerJoined = true;
-                    }
-                ).ConfigureAwait(false);
-            }
-            if (exitsJoined && runnerJoined)
-            {
-                await CleanupAsync("state-dispose", () => DisposeAsync(state))
-                    .ConfigureAwait(false);
-            }
-            else
-            {
-                cleanupFailures.Add(new InvalidOperationException(
-                    "Kept owned handoff state because a participant identity or join is unproved."
-                ));
-            }
-        }
-        if (cleanupFailures.Count != 0)
-        {
-            AggregateException cleanup = new(
-                "Owned output handoff cleanup failed.", cleanupFailures
-            );
-            if (primaryFailure is null)
-            {
-                throw cleanup;
-            }
-            primaryFailure.SourceException.Data["OwnedOutputHandoffCleanup"] = cleanup;
-        }
-        primaryFailure?.Throw();
+            .ConfigureAwait(false);
+        handoff.MarkPostStopObserved();
+        Assert.AreEqual(
+            "Owned command or inherited pipes did not settle; replacement is blocked.",
+            postStopFailure.Message
+        );
+        Assert.AreEqual(typeof(TimeoutException), postStopFailure.InnerException?.GetType());
+        OwnedLease unresolved = handoff.State.Lease(id: live.Id);
+        Assert.AreEqual(
+            live with { State = "unresolved" },
+            unresolved,
+            "The surviving runner must durably mark the exact registered command."
+        );
 
-        async Task<bool> CleanupAsync(string step, Func<Task> action)
-        {
-            try
-            {
-                await action().ConfigureAwait(false);
-                return true;
-            }
-            catch (Exception error)
-            {
-                error.Data["OwnedOutputHandoffCleanupStep"] = step;
-                cleanupFailures.Add(error);
-                return false;
-            }
-        }
+        using CancellationTokenSource admission = new(TimeSpan.FromSeconds(5));
+        InvalidOperationException refusal = await Assert
+            .ThrowsExactlyAsync<InvalidOperationException>(async () =>
+                await handoff
+                    .State.Runner.ResolveSurvivorsAsync(admission.Token)
+                    .ConfigureAwait(false)
+            )
+            .ConfigureAwait(false);
+        Assert.AreEqual(
+            $"Process lease {live.Id} needs explicit ownership resolution.",
+            refusal.Message
+        );
+        Assert.AreEqual(unresolved, handoff.State.Lease(id: live.Id));
+        Assert.IsFalse(holder.HasExited);
 
-        static Task DisposeAsync(IDisposable owned)
-        {
-            owned.Dispose();
-            return Task.CompletedTask;
-        }
-
-        static async Task JoinExitAsync(Process process, CancellationToken cancellationToken)
-        {
-            using CancellationTokenSource exit = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken
-            );
-            exit.CancelAfter(TimeSpan.FromSeconds(5));
-            await process.WaitForExitAsync(exit.Token).ConfigureAwait(false);
-            Assert.IsTrue(process.HasExited);
-        }
+        await handoff.HolderControl.ReleaseAsync(context.CancellationToken).ConfigureAwait(false);
+        await JoinExitAsync(holder, context.CancellationToken).ConfigureAwait(false);
+        handoff.Complete();
     }
 
     [TestMethod]
@@ -540,77 +310,58 @@ public sealed class OwnedProcessSpecs(TestContext context)
             .ReadReadyAsync(context.CancellationToken)
             .ConfigureAwait(false);
         AssertOriginalIdentity(sentinel, sentinelReady);
-        using CancellationTokenSource cancellation =
-            CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
-        Task<ProcessResult> running = state.Runner.RunAsync(
-            OwnedChildControl.ExecutablePath,
+        await using RunningCommandScope command = new(
+            context,
+            state,
             rootControl.Arguments(descendantPipe: leafControl.PipeName),
-            state.WorkingDirectory,
-            TimeSpan.FromSeconds(120),
-            cancellation.Token
+            TimeSpan.FromSeconds(120)
         );
-        Exception? primaryFailure = null;
-        try
-        {
-            OwnedChildIdentity rootReady = await rootControl
-                .ReadReadyAsync(running, context.CancellationToken)
-                .ConfigureAwait(false);
-            OwnedChildIdentity leafReady = await leafControl
-                .ReadReadyAsync(running, context.CancellationToken)
-                .ConfigureAwait(false);
-            Assert.AreEqual(rootReady.DescendantPid, leafReady.Pid);
-            Assert.AreEqual(rootReady.DescendantBirthTicks, leafReady.BirthTicks);
-            Assert.AreNotEqual(rootReady.Pid, leafReady.Pid);
-            OwnedLease lease = state.Lease(pid: rootReady.Pid);
-            Assert.AreEqual(rootReady.BirthTicks, lease.BirthTicks);
-            Assert.AreEqual("running", lease.State);
-            using Process root = OpenObservedOwnedChild(rootReady.Pid, rootReady.BirthTicks);
-            using Process leaf = OpenObservedOwnedChild(leafReady.Pid, leafReady.BirthTicks);
-            Assert.IsFalse(root.HasExited);
-            Assert.IsFalse(leaf.HasExited);
-            context.WriteLine(
-                $"Owned root={rootReady.Pid}/{rootReady.BirthTicks}; "
-                    + $"descendant={leafReady.Pid}/{leafReady.BirthTicks}; lease={lease.Id}"
-            );
+        OwnedChildIdentity rootReady = await rootControl
+            .ReadReadyAsync(command.Running, context.CancellationToken)
+            .ConfigureAwait(false);
+        OwnedChildIdentity leafReady = await leafControl
+            .ReadReadyAsync(command.Running, context.CancellationToken)
+            .ConfigureAwait(false);
+        Assert.AreEqual(rootReady.DescendantPid, leafReady.Pid);
+        Assert.AreEqual(rootReady.DescendantBirthTicks, leafReady.BirthTicks);
+        Assert.AreNotEqual(rootReady.Pid, leafReady.Pid);
+        OwnedLease lease = state.Lease(pid: rootReady.Pid);
+        Assert.AreEqual(rootReady.BirthTicks, lease.BirthTicks);
+        Assert.AreEqual("running", lease.State);
+        using Process root = OpenObservedOwnedChild(rootReady.Pid, rootReady.BirthTicks);
+        using Process leaf = OpenObservedOwnedChild(leafReady.Pid, leafReady.BirthTicks);
+        Assert.IsFalse(root.HasExited);
+        Assert.IsFalse(leaf.HasExited);
 
-            await cancellation.CancelAsync().ConfigureAwait(false);
-            OperationCanceledException failure = await Assert
-                .ThrowsAsync<OperationCanceledException>(async () =>
-                    await running.ConfigureAwait(false)
-                )
-                .ConfigureAwait(false);
+        await command.CancelAsync().ConfigureAwait(false);
+        OperationCanceledException failure = await Assert
+            .ThrowsAsync<OperationCanceledException>(async () =>
+                await command.Running.ConfigureAwait(false)
+            )
+            .ConfigureAwait(false);
 
-            Assert.AreEqual(cancellation.Token, failure.CancellationToken);
-            Assert.IsTrue(
-                root.HasExited,
-                "RunAsync must settle the root before returning cancellation."
-            );
-            Assert.IsTrue(
-                leaf.HasExited,
-                "RunAsync must settle the owned descendant before returning cancellation."
-            );
-            Assert.AreEqual("exited", state.Lease(id: lease.Id).State);
-            await RequireExitAsync(root).ConfigureAwait(false);
-            await RequireExitAsync(leaf).ConfigureAwait(false);
-            Assert.IsTrue(running.IsCanceled);
-            await state
-                .Runner.ResolveSurvivorsAsync(context.CancellationToken)
-                .ConfigureAwait(false);
-            Assert.IsFalse(sentinel.HasExited);
-            AssertOriginalIdentity(sentinel, sentinelReady);
-            await sentinelControl.ReleaseAsync(context.CancellationToken).ConfigureAwait(false);
-            await RequireExitAsync(sentinel).ConfigureAwait(false);
-            Assert.AreEqual(0, sentinel.ExitCode);
-        }
-        catch (Exception error)
-        {
-            primaryFailure = error;
-            throw;
-        }
-        finally
-        {
-            await CancelAndDrainAsync(cancellation, running, primaryFailure).ConfigureAwait(false);
-        }
+        Assert.AreEqual(command.Token, failure.CancellationToken);
+        Assert.IsTrue(
+            root.HasExited,
+            "RunAsync must settle the root before returning cancellation."
+        );
+        Assert.IsTrue(
+            leaf.HasExited,
+            "RunAsync must settle the owned descendant before returning cancellation."
+        );
+        Assert.AreEqual("exited", state.Lease(id: lease.Id).State);
+        await RequireExitAsync(root).ConfigureAwait(false);
+        await RequireExitAsync(leaf).ConfigureAwait(false);
+        Assert.IsTrue(command.Running.IsCanceled);
+        await state
+            .Runner.ResolveSurvivorsAsync(context.CancellationToken)
+            .ConfigureAwait(false);
+        Assert.IsFalse(sentinel.HasExited);
+        AssertOriginalIdentity(sentinel, sentinelReady);
+        await sentinelControl.ReleaseAsync(context.CancellationToken).ConfigureAwait(false);
+        await RequireExitAsync(sentinel).ConfigureAwait(false);
+        Assert.AreEqual(0, sentinel.ExitCode);
+        command.Complete();
     }
 
     [TestMethod]
@@ -863,49 +614,269 @@ public sealed class OwnedProcessSpecs(TestContext context)
         Assert.IsTrue(process.HasExited);
     }
 
-    private static async Task CancelAndDrainAsync(
-        CancellationTokenSource cancellation,
-        Task<ProcessResult> running,
-        Exception? primaryFailure
-    )
+    private static async Task JoinExitAsync(Process process, CancellationToken cancellationToken)
     {
-        bool cancellationRequestedOnEntry = cancellation.IsCancellationRequested;
-        try
+        using CancellationTokenSource exit = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken
+        );
+        exit.CancelAfter(TimeSpan.FromSeconds(5));
+        await process.WaitForExitAsync(exit.Token).ConfigureAwait(false);
+        Assert.IsTrue(process.HasExited);
+    }
+
+    private sealed class DirectChildScope(TestContext context) : IAsyncDisposable
+    {
+        private bool disposed;
+        private bool completed;
+
+        internal OwnedChildControl Control { get; } = new();
+
+        internal async Task DisposeControlAsync()
         {
-            await cancellation.CancelAsync().ConfigureAwait(false);
-            ProcessResult result = await running.ConfigureAwait(false);
-            Console.WriteLine(
-                "OWNED_COMMAND_TERMINAL "
-                    + new System.Text.Json.Nodes.JsonObject
-                    {
-                        ["exitCode"] = result.ExitCode,
-                        ["timedOut"] = result.TimedOut,
-                        ["stdout"] = result.StandardOutput,
-                        ["stderr"] = result.StandardError,
-                    }.ToJsonString()
-            );
+            disposed = true;
+            await Control.DisposeAsync().ConfigureAwait(false);
         }
-        catch (OperationCanceledException error) when (cancellation.IsCancellationRequested)
+
+        internal void Complete() => completed = true;
+
+        public async ValueTask DisposeAsync()
         {
-            if (primaryFailure is not null)
+            if (disposed)
             {
-                string? evidence = (string?)error.Data[ProcessRunner.CancellationEvidenceKey];
-                primaryFailure.Data["OwnedCommandCleanupCancellation"] = evidence;
-                Console.Error.WriteLine(
-                    "OWNED_COMMAND_CLEANUP_CANCELLED "
-                        + new JsonObject
-                        {
-                            ["cancellationRequestedOnEntry"] = cancellationRequestedOnEntry,
-                            ["cancellationEvidence"] = evidence,
-                        }.ToJsonString()
-                );
+                return;
+            }
+            try
+            {
+                disposed = true;
+                await Control.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception secondary) when (!completed)
+            {
+                context.WriteLine("Secondary owned child cleanup failure: {0}", secondary);
             }
         }
-        catch (Exception secondary) when (primaryFailure is not null)
+    }
+
+    private sealed class RunningCommandScope : IAsyncDisposable
+    {
+        private readonly TestContext context;
+        private readonly CancellationTokenSource cancellation;
+        private bool completed;
+
+        internal RunningCommandScope(
+            TestContext context,
+            OwnedProcessState state,
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout
+        )
         {
-            string details = Json.ExceptionDetails(secondary).ToJsonString();
-            primaryFailure.Data["OwnedCommandCleanupFailure"] = details;
-            Console.Error.WriteLine("OWNED_COMMAND_CLEANUP_SECONDARY " + details);
+            this.context = context;
+            cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                context.CancellationToken
+            );
+            Running = state.Runner.RunAsync(
+                OwnedChildControl.ExecutablePath,
+                arguments,
+                state.WorkingDirectory,
+                timeout,
+                cancellation.Token
+            );
+        }
+
+        internal Task<ProcessResult> Running { get; }
+
+        internal CancellationToken Token => cancellation.Token;
+
+        internal bool IsCancellationRequested => cancellation.IsCancellationRequested;
+
+        internal Task CancelAsync() => cancellation.CancelAsync();
+
+        internal void Complete() => completed = true;
+
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                await cancellation.CancelAsync().ConfigureAwait(false);
+                await Running.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+            }
+            catch (Exception secondary) when (!completed)
+            {
+                context.WriteLine(
+                    "Secondary command cleanup failure: {0}",
+                    Json.ExceptionDetails(secondary).ToJsonString()
+                );
+            }
+            finally
+            {
+                cancellation.Dispose();
+            }
+        }
+    }
+
+    private sealed class OutputHandoffScope(TestContext context) : IAsyncDisposable
+    {
+        private Process? root;
+        private Process? holder;
+        private Task<ProcessResult>? running;
+        private bool launchAttempted;
+        private bool holderStartAttempted;
+        private bool postStopObserved;
+        private bool completed;
+
+        internal OwnedProcessState State { get; } = new(new FakeTimeProvider());
+
+        internal CancellationTokenSource CallerStop { get; } = new();
+
+        internal OwnedChildControl StartControl { get; } = new();
+
+        internal OwnedChildControl RootControl { get; } = new();
+
+        internal OwnedChildControl HolderControl { get; } = new();
+
+        internal Task<ProcessResult> Launch()
+        {
+            launchAttempted = true;
+            running = State.Runner.RunAsync(
+                OwnedChildControl.ExecutablePath,
+                [
+                    "output-handoff-root",
+                    RootControl.PipeName,
+                    "0",
+                    HolderControl.PipeName,
+                    StartControl.PipeName,
+                ],
+                State.WorkingDirectory,
+                TimeSpan.FromSeconds(120),
+                CallerStop.Token
+            );
+            return running;
+        }
+
+        internal Process ObserveRoot(OwnedChildIdentity ready) =>
+            root = OpenObservedOwnedChild(ready.Pid, ready.BirthTicks);
+
+        internal Task ReleaseHolderStartAsync(CancellationToken token)
+        {
+            holderStartAttempted = true;
+            return StartControl.ReleaseAsync(token);
+        }
+
+        internal Process ObserveHolder(OwnedChildIdentity ready) =>
+            holder = OpenObservedOwnedChild(ready.Pid, ready.BirthTicks);
+
+        internal void MarkPostStopObserved() => postStopObserved = true;
+
+        internal void Complete() => completed = true;
+
+        public async ValueTask DisposeAsync()
+        {
+            List<Exception> cleanupFailures = [];
+            // Closing (not releasing) the root channel leaves pre-handoff cleanup to the root.
+            await AttemptAsync("start-channel", () => StartControl.DisposeAsync().AsTask())
+                .ConfigureAwait(false);
+            await AttemptAsync("root-channel", () => RootControl.DisposeAsync().AsTask())
+                .ConfigureAwait(false);
+            await AttemptAsync("holder-channel", () => HolderControl.DisposeAsync().AsTask())
+                .ConfigureAwait(false);
+
+            bool exitsJoined = !launchAttempted
+                || (root is not null && (!holderStartAttempted || holder is not null));
+            foreach (
+                (Process? observer, string role) in new[] { (root, "root"), (holder, "holder") }
+            )
+            {
+                if (observer is not null)
+                {
+                    exitsJoined &= await AttemptAsync(
+                        $"{role}-exit",
+                        () => JoinExitAsync(observer, CancellationToken.None)
+                    ).ConfigureAwait(false);
+                    await AttemptAsync($"{role}-observer-dispose", () => DisposeOwned(observer))
+                        .ConfigureAwait(false);
+                }
+            }
+
+            bool runnerJoined = !launchAttempted || postStopObserved;
+            if (running is { } command && !runnerJoined)
+            {
+                await AttemptAsync(
+                    "runner-join",
+                    async () =>
+                    {
+                        try
+                        {
+                            await command
+                                .WaitAsync(TimeSpan.FromSeconds(15), CancellationToken.None)
+                                .ConfigureAwait(false);
+                        }
+                        catch (Exception) when (command.IsCompleted)
+                        {
+                            runnerJoined = true;
+                            try
+                            {
+                                await command.ConfigureAwait(false);
+                            }
+                            catch (Exception) when (!completed)
+                            {
+                            }
+                        }
+                        runnerJoined = true;
+                    }
+                ).ConfigureAwait(false);
+            }
+
+            await AttemptAsync("caller-stop-dispose", () => DisposeOwned(CallerStop))
+                .ConfigureAwait(false);
+
+            if (exitsJoined && runnerJoined)
+            {
+                await AttemptAsync("state-dispose", () => DisposeOwned(State))
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                cleanupFailures.Add(new InvalidOperationException(
+                    "Kept owned handoff state because a participant identity or join is unproved."
+                ));
+            }
+
+            if (cleanupFailures.Count != 0)
+            {
+                AggregateException cleanup = new(
+                    "Owned output handoff cleanup failed.",
+                    cleanupFailures
+                );
+                if (completed)
+                {
+                    throw cleanup;
+                }
+                context.WriteLine("Secondary output handoff cleanup failure: {0}", cleanup);
+            }
+
+            async Task<bool> AttemptAsync(string step, Func<Task> action)
+            {
+                try
+                {
+                    await action().ConfigureAwait(false);
+                    return true;
+                }
+                catch (Exception error)
+                {
+                    error.Data["OwnedOutputHandoffCleanupStep"] = step;
+                    cleanupFailures.Add(error);
+                    return false;
+                }
+            }
+
+            static Task DisposeOwned(IDisposable owned)
+            {
+                owned.Dispose();
+                return Task.CompletedTask;
+            }
         }
     }
 }

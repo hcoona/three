@@ -5,11 +5,10 @@ namespace LiteAgensh.Tests.Support;
 
 // Original public journey and the validated-reader collaborator boundary only.
 // Native recovery provenance/finality remains at the qualified Ph4/5 boundary.
-internal sealed class Phase6PublicRun : IAsyncDisposable
+internal sealed class PublicBoundaryRun : IAsyncDisposable
 {
     private readonly GitScenarioState git;
-    private readonly Dictionary<string, string?> environment;
-    private readonly Phase6NativeControl control;
+    private readonly OfflineNativeControl control;
     private readonly TaskCompletionSource[] recorded;
     private Exception? primary;
     internal RunDatabase Database { get; }
@@ -34,18 +33,13 @@ internal sealed class Phase6PublicRun : IAsyncDisposable
         set => control.FailPaidStop = value;
     }
 
-    private Phase6PublicRun(
-        GitScenarioState git,
-        int workers,
-        Dictionary<string, string?> environment
-    )
+    private PublicBoundaryRun(GitScenarioState git, int workers)
     {
         this.git = git;
-        this.environment = environment;
         RunConfiguration configuration = git.Database.Configuration with
         {
-            StatePath = git.PathFor("phase6-public"),
-            CampaignLedgerPath = git.PathFor("phase6-public-campaign.sqlite"),
+            StatePath = git.PathFor("public-run"),
+            CampaignLedgerPath = git.PathFor("public-campaign.sqlite"),
             NativeModel = "controlled-model",
             WorkerCount = workers,
             RunAiCreditAllowance = 207.25m,
@@ -71,14 +65,13 @@ internal sealed class Phase6PublicRun : IAsyncDisposable
         );
     }
 
-    internal static async Task<Phase6PublicRun> CreateAsync(int workers, CancellationToken token)
+    internal static async Task<PublicBoundaryRun> CreateAsync(int workers, CancellationToken token)
     {
-        Dictionary<string, string?> environment = Phase6State.CaptureEnvironment();
         GitScenarioState git = await GitScenarioState.CreateAsync(token).ConfigureAwait(false);
-        Phase6PublicRun? state = null;
+        PublicBoundaryRun? state = null;
         try
         {
-            state = new(git, workers, environment);
+            state = new(git, workers);
             GitScenarioState.Data(
                 await state.Coordinator.InitializeAsync(token).ConfigureAwait(false)
             );
@@ -93,19 +86,7 @@ internal sealed class Phase6PublicRun : IAsyncDisposable
             }
             else
             {
-                try
-                {
-                    GitScenarioState.AssertEnvironmentUnchanged();
-                    Phase6State.VerifyEnvironment(environment);
-                }
-                catch (Exception secondary)
-                {
-                    Console.Error.WriteLine(
-                        "PHASE6_PUBLIC_CONSTRUCTOR_CLEANUP_SECONDARY "
-                            + Json.ExceptionDetails(secondary)
-                    );
-                }
-                Console.WriteLine("PHASE6_PRESERVED_PUBLIC_CONSTRUCTOR_ROOT " + git.Repository);
+                GitScenarioState.AssertEnvironmentUnchanged();
             }
             throw;
         }
@@ -138,12 +119,11 @@ internal sealed class Phase6PublicRun : IAsyncDisposable
         }
         Assert.AreEqual(
             0L,
-            Phase6State.Number(
+            RunStateQueries.Number(
                 Database,
                 "SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;"
             )
         );
-        Console.WriteLine("PHASE6_PUBLIC_ORIGINAL " + Original.ToJsonString());
     }
 
     internal async Task PauseOriginalAsync(CancellationToken token)
@@ -193,7 +173,7 @@ internal sealed class Phase6PublicRun : IAsyncDisposable
         {
             secondary = error;
             Console.Error.WriteLine(
-                "PHASE6_PUBLIC_CLEANUP_SECONDARY " + Json.ExceptionDetails(error)
+                "PUBLIC_RUN_CLEANUP_SECONDARY " + Json.ExceptionDetails(error)
             );
         }
         try
@@ -205,23 +185,13 @@ internal sealed class Phase6PublicRun : IAsyncDisposable
             else
             {
                 GitScenarioState.AssertEnvironmentUnchanged();
-                Console.WriteLine("PHASE6_PRESERVED_PUBLIC_ROOT " + Database.StatePath);
             }
         }
         catch (Exception error)
         {
             Console.Error.WriteLine(
-                "PHASE6_PUBLIC_GIT_CLEANUP_SECONDARY " + Json.ExceptionDetails(error)
+                "PUBLIC_RUN_GIT_CLEANUP_SECONDARY " + Json.ExceptionDetails(error)
             );
-            secondary = secondary is null ? error : new AggregateException(secondary, error);
-        }
-        try
-        {
-            Phase6State.VerifyEnvironment(environment);
-        }
-        catch (Exception error)
-        {
-            Console.Error.WriteLine("PHASE6_ENVIRONMENT_SECONDARY " + Json.ExceptionDetails(error));
             secondary = secondary is null ? error : new AggregateException(secondary, error);
         }
         if (primary is null && secondary is not null)
@@ -230,7 +200,7 @@ internal sealed class Phase6PublicRun : IAsyncDisposable
         }
     }
 
-    private sealed class Factory(Phase6PublicRun state) : INativeWorkerFactory
+    private sealed class Factory(PublicBoundaryRun state) : INativeWorkerFactory
     {
         private readonly NativeWorkerFactory real = new(
             state.Database,
@@ -268,7 +238,7 @@ internal sealed class Phase6PublicRun : IAsyncDisposable
             )(reservation, token);
     }
 
-    private sealed class FailedTurn(Phase6PublicRun state, INativeWorker real, string worker)
+    private sealed class FailedTurn(PublicBoundaryRun state, INativeWorker real, string worker)
         : INativeWorker
     {
         public string? SessionId => real.SessionId;
@@ -311,7 +281,7 @@ internal sealed class Phase6PublicRun : IAsyncDisposable
                 token.ThrowIfCancellationRequested();
                 throw new InvalidOperationException("Pause did not cancel its original request.");
             }
-            Phase6NativeControl.Session session = state
+            OfflineNativeControl.Session session = state
                 .control.Hosts.SelectMany(host => host.Sessions)
                 .Single(item => item.SessionId == SessionId);
             session.FinalOverride = new(SessionId!, 90_000_000_000d, "partial", 1);
@@ -321,7 +291,7 @@ internal sealed class Phase6PublicRun : IAsyncDisposable
                 .WaitAsync(TimeSpan.FromSeconds(5), token)
                 .ConfigureAwait(false);
             throw new OperationException(
-                "phase6_original_failed",
+                "public_original_failed",
                 "Controlled original failed after durable usage; partial stop is not finality."
             );
         }
