@@ -1540,3 +1540,67 @@ def test_s0_touch_ledger_single_line_claim_atomicity(tmp_path: Path) -> None:
         open_reading_masks_sha256="ms",
     )
     assert (ta2, tb2) == (5, 6)
+
+
+def test_cross_category_expression_edit_preserves_recall_and_layout() -> None:
+    """Cross-category editexpression preserves constituent recall and layout."""
+    from sheet_music_omr.comparison import compare_layout  # noqa: PLC0415
+
+    # Case 1: Trill + fermata in Y vs. trill + mordent in T -> ornament 1/1
+    ref_xml = _one_part_grand_staff_xml(
+        [
+            _grand_measure(
+                1,
+                first=True,
+                beam_tag=(
+                    "<notations><ornaments><trill-mark/></ornaments>"
+                    '<fermata type="upright"/></notations>'
+                ),
+            )
+        ]
+    )
+    cand_xml = _one_part_grand_staff_xml(
+        [
+            _grand_measure(
+                1,
+                first=True,
+                beam_tag=(
+                    "<notations><ornaments><trill-mark/><mordent/></ornaments>"
+                    "</notations>"
+                ),
+            )
+        ]
+    )
+    res = score_prediction(cand_xml, ref_xml)
+    assert res.parse_valid is True
+    m1 = res.measures[0]
+    assert m1.layer1_counts["ornament"] == 1
+    assert m1.layer1_counts["articulation_fermata"] == 1
+    assert m1.element_totals["ornament"] == 1
+    assert m1.element_identical_layer1["ornament"] == 1
+    assert m1.element_identical_layer1["articulation_fermata"] == 0
+
+    # Case 2: Placed trill aligned with inverted fermata -> 0 layout extras
+    ref_inv = _one_part_grand_staff_xml(
+        [
+            _grand_measure(
+                1,
+                first=True,
+                beam_tag='<notations><fermata type="inverted"/></notations>',
+            )
+        ]
+    )
+    cand_placed = _one_part_grand_staff_xml(
+        [
+            _grand_measure(
+                1,
+                first=True,
+                beam_tag=(
+                    '<notations><ornaments><trill-mark placement="above"/>'
+                    "</ornaments></notations>"
+                ),
+            )
+        ]
+    )
+    lay = compare_layout(cand_placed, ref_inv)
+    assert lay.extras == ()
