@@ -942,8 +942,18 @@ def _score_aligned(  # noqa: C901, PLR0912, PLR0913, PLR0915
             if cat in LAYER1_CATEGORIES and not is_sym_ts and ref_m_count > 0:
                 l1_by_m[m_idx][cat] += 1
         if diff.y_object is not None and not is_sym_ts and ref_m_count > 0:
+            if diff.t_item is not None and diff.y_item is None:
+                y_loss_syms: tuple[str, ...] = ()
+            elif (
+                diff.t_item is not None
+                and diff.y_item is not None
+                and len(diff.symbols) == 2  # noqa: PLR2004
+            ):
+                y_loss_syms = (diff.symbols[1],)
+            else:
+                y_loss_syms = diff.symbols
             elem_loss = loss_by_y_elem.setdefault(id(diff.y_object), Counter())
-            for sym in diff.symbols:
+            for sym in y_loss_syms:
                 if sym in LAYER1_CATEGORIES:
                     elem_loss[sym] += 1
 

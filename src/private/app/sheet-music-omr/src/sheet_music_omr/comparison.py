@@ -4738,13 +4738,13 @@ def _assign(
         message = f"operation {name!r} has no assignment"
         raise ProtocolDefectError(message)
     differences: list[Difference] = []
-    for symbol, change in _note_pair_symbols(name, t_obj, y_obj, pending):
+    for symbols, change in _note_pair_symbols(name, t_obj, y_obj, pending):
         if change is None:
-            differences.append(Difference((symbol,), y_obj, t_obj, (record,)))
+            differences.append(Difference(symbols, y_obj, t_obj, (record,)))
             continue
         differences.append(
             Difference(
-                (symbol,),
+                symbols,
                 y_obj,
                 t_obj,
                 (record,),
@@ -4764,49 +4764,47 @@ def _note_pair_symbols(
     t_note: AnnNote,
     y_note: AnnNote,
     pending: _PendingChanges,
-) -> list[tuple[str, _ItemChange | None]]:
+) -> list[tuple[tuple[str, ...], _ItemChange | None]]:
     if name in _NOTE_PAIR_OPERATIONS:
-        return [(_NOTE_PAIR_OPERATIONS[name], None)]
+        return [((_NOTE_PAIR_OPERATIONS[name],), None)]
     if name == "pitchnameedit":
         both_rests = _is_rest(t_note) and _is_rest(y_note)
-        return [(LAYOUT if both_rests else _PITCH, None)]
+        return [((LAYOUT if both_rests else _PITCH,), None)]
     if name in {"insbeam", "delbeam", "editbeam"}:
         if _duration_type(t_note) != _duration_type(y_note):
-            return [(_RHYTHM, None)]
+            return [((_RHYTHM,), None)]
         both_rests = _is_rest(t_note) and _is_rest(y_note)
-        return [(DISREGARDED if both_rests else _BEAM, None)]
+        return [((DISREGARDED if both_rests else _BEAM,), None)]
     for which, categorize in (
         ("articulation", _articulation_category),
         ("expression", _expression_category),
     ):
         if name in {"ins" + which, "del" + which, "edit" + which}:
             change = _aligned_change(name, (t_note, y_note, which), pending)
-            return [(_attached_symbol(change, categorize), change)]
+            return [(_attached_symbols(change, categorize), change)]
     if name in _TUPLET_OPERATIONS:
         change = _aligned_change(name, (t_note, y_note, "tuplet"), pending)
-        return [(_tuplet_symbol(change, t_note, y_note), change)]
+        return [((_tuplet_symbol(change, t_note, y_note),), change)]
     message = f"operation {name!r} has no assignment"
     raise ProtocolDefectError(message)
 
 
-def _attached_symbol(
+def _attached_symbols(
     change: _ItemChange,
     categorize: Callable[[str], str],
-) -> str:
-    """Assign an articulation or expression change.
-
-    The change is ``layout`` when only the placement or fermata shape
-    differs, unless an item is disregarded.
-    """
+) -> tuple[str, ...]:
+    """Assign an attached change, keeping both categories on cross-edits."""
     items = (change.t_item, change.y_item)
-    if (
-        change.t_item is not None
-        and change.y_item is not None
-        and DISREGARDED not in {categorize(i) for i in items if i is not None}
-        and _layout_base(change.t_item) == _layout_base(change.y_item)
-    ):
-        return LAYOUT
-    return _change_category(items, categorize)
+    if change.t_item is not None and change.y_item is not None:
+        t_cat = categorize(change.t_item)
+        y_cat = categorize(change.y_item)
+        if DISREGARDED not in {t_cat, y_cat} and _layout_base(
+            change.t_item
+        ) == _layout_base(change.y_item):
+            return (LAYOUT,)
+        if len({t_cat, y_cat} - {DISREGARDED}) > 1:
+            return (t_cat, y_cat)
+    return (_change_category(items, categorize),)
 
 
 def _tuplet_symbol(
