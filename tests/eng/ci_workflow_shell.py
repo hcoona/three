@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from pathlib import Path
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 SHELL_ENV = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TERM")
 CONDITION_TERM = re.compile(
@@ -18,6 +20,27 @@ CONDITION_TERM = re.compile(
     r"|(?P<reference>(?:inputs|needs)(?:\.[\w-]+)+)\s*"
     r"(?P<operator>==|!=)\s*(?P<literal>true|false|'[^']*')"
 )
+COMMAND_RECORDER = r"""
+import json
+import os
+import sys
+from pathlib import Path
+
+command = [Path(sys.argv[0]).name, *sys.argv[1:]]
+with Path(os.environ["COMMAND_LOG"]).open("a", encoding="utf-8") as stream:
+    stream.write(json.dumps({
+        "command": command,
+        "cwd": str(Path.cwd()),
+        "profile": os.environ.get("HK_PROFILE"),
+        "auto_install": os.environ.get("MISE_TASK_RUN_AUTO_INSTALL"),
+        "disabled_tools": os.environ.get("MISE_DISABLE_TOOLS"),
+    }) + "\n")
+failure = json.loads(os.environ.get("FAIL_COMMAND", "[]"))
+if failure and command[:len(failure)] == failure:
+    sys.exit(73)
+if "--version" in command:
+    print("fixture-version")
+"""
 
 
 def condition(
@@ -150,12 +173,74 @@ def executable(path: Path, body: str) -> None:
     path.chmod(0o755)
 
 
+def load_script(path: Path):
+    """Load a checked-in standalone engineering script for local tests."""
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def fixture_path(bin_dir: Path, *commands: str) -> str:
+    """Expose only the specified host utilities alongside fixture tools."""
+    for name in commands:
+        command = shutil.which(name)
+        assert command is not None, name
+        (bin_dir / name).symlink_to(command)
+    return str(bin_dir)
+
+
+def recorded_commands(cwd: Path, *tools: str) -> dict[str, str]:
+    """Give child commands an isolated PATH and a shared observation log."""
+    bin_dir = cwd / "setup tools"
+    for name in tools:
+        executable(bin_dir / name, COMMAND_RECORDER)
+    return {
+        "PATH": fixture_path(bin_dir, "bash"),
+        "COMMAND_LOG": str(cwd / "commands.jsonl"),
+        "GITHUB_ENV": str(cwd / "github-env"),
+        "GITHUB_OUTPUT": str(cwd / "github-output"),
+        "GITHUB_EVENT_NAME": "pull_request",
+        "RUNNER_TEMP": str(cwd / "runner-state"),
+        "GITHUB_WORKSPACE": str(cwd),
+    }
+
+
+def command_log(path: Path) -> list[dict[str, Any]]:
+    """Read observations, including an empty log when no tool ran."""
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+def output_values(path: Path) -> dict[str, str]:
+    """Read the single-line values written to an Actions runner file."""
+    outputs = {}
+    if path.exists():
+        for line in path.read_text().splitlines():
+            key, separator, value = line.partition("=")
+            assert separator, line
+            outputs[key] = value
+    return outputs
+
+
 def resolve(value: str, bindings: dict[str, str]) -> str:
     """Require explicit fixture values for every consumed Actions expression."""
     return re.sub(
         r"\$\{\{\s*(.*?)\s*\}\}",
         lambda match: bindings[match.group(1)],
         value,
+    )
+
+
+def effective_env(workflow, job, step):
+    """Apply Actions environment precedence before resolving expressions."""
+    return (
+        (workflow.get("env") or {})
+        | (job.get("env") or {})
+        | (step.get("env") or {})
     )
 
 
@@ -175,16 +260,16 @@ def run_step(  # noqa: PLR0913
     process_env.update(env)
     shell = None
     directory = "."
-    merged_env: dict[str, Any] = {}
     for scope in (workflow or {}, job or {}, step):
-        merged_env.update(scope.get("env", {}))
         defaults = scope.get("defaults", {}).get("run", {})
         shell = defaults.get("shell", shell)
         directory = defaults.get("working-directory", directory)
     process_env.update(
         {
             key: resolve(str(value), bindings)
-            for key, value in merged_env.items()
+            for key, value in effective_env(
+                workflow or {}, job or {}, step
+            ).items()
         }
     )
     shell = step.get("shell", shell)
@@ -206,15 +291,55 @@ def run_step(  # noqa: PLR0913
     )
 
 
+@dataclass(frozen=True)
+class WorkflowShell:
+    """Run scenarios with common bindings and actual workflow defaults."""
+
+    workflow: dict[str, Any]
+    cwd: Path
+    bindings: dict[str, str]
+
+    def run(self, name, step, *, env=None, bindings=None):
+        """Run one checked-in step with optional scenario overrides."""
+        return run_step(
+            step,
+            cwd=self.cwd,
+            env=env or {},
+            bindings=self.bindings | (bindings or {}),
+            workflow=self.workflow,
+            job=self.workflow["jobs"][name],
+        )
+
+    def run_required(self, name, steps, *, env, bindings):
+        """Carry GITHUB_ENV across selected bodies and stop at first failure."""
+        result = None
+        for step in steps:
+            result = self.run(name, step, env=env, bindings=bindings)
+            if result.returncode:
+                break
+            updates = output_values(Path(env["GITHUB_ENV"]))
+            assert all(key.isidentifier() for key in updates)
+            env.update(updates)
+        assert result is not None
+        return result
+
+
 def selected_control_call(
     workflow: dict[str, Any],
     job_name: str,
     *,
     root: Path,
     cwd: Path,
-    committed: dict[str, str],
+    tools: tuple[str, ...],
 ) -> list[str]:
     """Run runtime setup and the first control command across GITHUB_ENV."""
+    lock = tomllib.loads((root / "mise.lock").read_text())["tools"]
+    committed = {
+        name: lock[name][0]["version"] for name in tools if name != "dotnet"
+    }
+    committed["dotnet"] = json.loads((root / "global.json").read_text())["sdk"][
+        "version"
+    ]
     jobs = workflow["jobs"]
     job = jobs[job_name]
     defaults = {"defaults": workflow.get("defaults", {})}
@@ -288,10 +413,7 @@ def selected_control_call(
         for tool, version in committed.items()
         if tool == "dotnet" or job_name == "prepare" or tool in {"python", "uv"}
     }
-    env.update(
-        line.split("=", 1)
-        for line in (cwd / "github-env").read_text().splitlines()
-    )
+    env.update(output_values(cwd / "github-env"))
     result = run_step(
         {"run": "set -u\n" + command},
         cwd=cwd,

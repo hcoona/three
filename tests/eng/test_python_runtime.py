@@ -1,6 +1,5 @@
 """One mise runtime authority for local and CI consumers."""
 
-import importlib.util
 import json
 import os
 import re
@@ -13,14 +12,16 @@ from pathlib import Path
 import pytest
 import yaml
 
-ROOT = Path(__file__).resolve().parents[2]
-SPEC = importlib.util.spec_from_file_location(
-    "sync_python_version", ROOT / "eng/scripts/sync_python_version.py"
+from .ci_workflow_shell import (
+    action_steps,
+    load_script,
+    output_values,
+    resolve,
+    run_step,
 )
-assert SPEC is not None
-assert SPEC.loader is not None
-runtime = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(runtime)
+
+ROOT = Path(__file__).resolve().parents[2]
+runtime = load_script(ROOT / "eng/scripts/sync_python_version.py")
 
 
 @pytest.mark.parametrize("uv", ["0.10.9", "0.12.19"])
@@ -141,13 +142,7 @@ VERSION_KEY = re.compile(
     r"[\w-]*VERSION\Z"
 )
 NUMERIC = re.compile(r"\A\d+(?:\.(?:\d+|x|\*))*\Z")
-VERSIONS = importlib.util.spec_from_file_location(
-    "locked_tool_versions", ROOT / "eng/scripts/locked_tool_versions.py"
-)
-assert VERSIONS is not None
-assert VERSIONS.loader is not None
-locked = importlib.util.module_from_spec(VERSIONS)
-VERSIONS.loader.exec_module(locked)
+locked = load_script(ROOT / "eng/scripts/locked_tool_versions.py")
 
 
 def test_framework_provider_does_not_select_the_native_sdk(tmp_path):
@@ -211,6 +206,102 @@ def test_workflows_take_tool_versions_from_committed_configuration():
         text = path.read_text()
         found = literal_tool_versions(text, yaml.safe_load(text))
         assert found == [], path
+
+
+@pytest.mark.parametrize(
+    ("name", "actions"),
+    [
+        (
+            "conformance",
+            (
+                ("actions/setup-node", "node"),
+                ("pnpm/action-setup", "pnpm"),
+                ("ruby/setup-ruby", "ruby"),
+            ),
+        ),
+        ("node-tests", (("pnpm/action-setup", "pnpm"),)),
+        ("ruby-group", (("ruby/setup-ruby", "ruby"),)),
+    ],
+)
+def test_ci_setup_actions_consume_committed_versions(tmp_path, name, actions):
+    """Setup actions consume the intended tool's version from the lock."""
+    locked_tools = tomllib.loads((ROOT / "mise.lock").read_text())["tools"]
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    job = workflow["jobs"][name]
+    reader = next(s for s in job["steps"] if s.get("id") == "tools")
+    output = tmp_path / "versions"
+    result = run_step(
+        reader, cwd=ROOT, env={"GITHUB_OUTPUT": str(output)}, bindings={}
+    )
+    assert result.returncode == 0, result.stderr
+    bindings = {
+        f"steps.tools.outputs.{key}": value
+        for key, value in output_values(output).items()
+    }
+    for action, tool in actions:
+        (step,) = action_steps(job, action)
+        (version,) = {entry["version"] for entry in locked_tools[tool]}
+        value = step["with"][SETUP_VERSION_INPUTS[action]]
+        assert resolve(value, bindings) == version
+
+
+def _read_scope_provider(cwd, output):
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    scope = workflow["jobs"]["scope"]
+    reader = next(s for s in scope["steps"] if s.get("id") == "tools")
+    result = run_step(
+        reader,
+        cwd=cwd,
+        env={"GITHUB_OUTPUT": str(output)},
+        bindings={},
+        workflow=workflow,
+        job=scope,
+    )
+    return workflow["jobs"], result
+
+
+def test_framework_provider_reaches_every_native_sdk_root(tmp_path):
+    """Prepare existing frameworks without replacing native SDK selection."""
+    output = tmp_path / "outputs"
+    jobs, result = _read_scope_provider(ROOT, output)
+    assert result.returncode == 0, result.stderr
+    provider = output_values(output)["dotnet-frameworks"]
+    lock = ROOT / "eng/dotnet-frameworks/mise.lock"
+    (expected,) = {
+        entry["version"]
+        for entry in tomllib.loads(lock.read_text())["tools"]["dotnet"]
+    }
+    assert provider == expected
+    assert jobs["scope"]["outputs"]["dotnet_frameworks"] == (
+        "${{ steps.tools.outputs.dotnet-frameworks }}"
+    )
+    bindings = {
+        "steps.tools.outputs.dotnet-frameworks": provider,
+        "needs.scope.outputs.dotnet_frameworks": provider,
+    }
+    for job in jobs.values():
+        for step in action_steps(job, "actions/setup-dotnet"):
+            assert resolve(step["with"]["dotnet-version"], bindings) == provider
+            assert "global-json-file" in step["with"]
+
+
+@pytest.mark.parametrize("defect", ["missing", "malformed"])
+def test_scope_framework_metadata_cannot_fall_back_to_native_sdk(
+    tmp_path, defect
+):
+    """Reject missing provider metadata before dependent setup can run."""
+    script = tmp_path / "eng/scripts/locked_tool_versions.py"
+    script.parent.mkdir(parents=True)
+    shutil.copyfile(ROOT / "eng/scripts/locked_tool_versions.py", script)
+    (tmp_path / "global.json").write_text('{"sdk": {"version": "11.2.3"}}')
+    if defect == "malformed":
+        profile = tmp_path / "eng/dotnet-frameworks/mise.lock"
+        profile.parent.mkdir(parents=True)
+        profile.write_text("version =\n")
+    output = tmp_path / "outputs"
+    _, result = _read_scope_provider(tmp_path, output)
+    assert result.returncode != 0
+    assert output.read_text() == ""
 
 
 def _step(uses, inputs):
@@ -281,7 +372,7 @@ def test_native_full_launcher_rejects_invalid_source_before_bootstrap(
     assert native_bash is not None
 
     def git(*arguments):
-        subprocess.run(  # noqa: S603 - Native Git and this test's owned fixture.
+        subprocess.run(  # noqa: S603 - Native Git on an isolated fixture.
             [native_git, "-C", str(root), *arguments],
             check=True,
         )
@@ -333,7 +424,7 @@ def test_native_full_launcher_reports_complete_worktree_cleanup(tmp_path):
     assert native_bash is not None
 
     def git(*arguments):
-        return subprocess.run(  # noqa: S603 - Native Git and this test's owned fixture.
+        return subprocess.run(  # noqa: S603 - Native Git on a fixture.
             [native_git, "-C", str(root), *arguments],
             check=True,
             capture_output=True,

@@ -1,8 +1,6 @@
 """Browser-store Release workflow credential, gate and transfer contracts."""
 
-import json
 import re
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -99,7 +97,9 @@ def test_only_the_publisher_holds_environment_secrets_and_write_scope(
                     )
             assert step["with"]["create_credentials_file"] is False
             assert step["with"]["export_environment_variables"] is False
-            assert step["with"]["token_format"] == "access_token"  # noqa: S105 - Output kind, not a secret.
+            assert step["with"]["token_format"] == (
+                "access_token"  # noqa: S105 - Output kind, not a secret.
+            )
             assert step["with"]["access_token_scopes"] == (
                 WRITE_SCOPE if name == "publish" else READ_SCOPE
             )
@@ -208,19 +208,12 @@ def test_selected_control_executable_reaches_caller(
     workflow, tmp_path, job_name, stage
 ):
     """Every stage invokes the selected runtime on the transferred control."""
-    lock = tomllib.loads((ROOT / "mise.lock").read_text())["tools"]
     arguments = selected_control_call(
         workflow,
         job_name,
         root=ROOT,
         cwd=tmp_path,
-        committed={
-            "dotnet": json.loads((ROOT / "global.json").read_text())["sdk"][
-                "version"
-            ],
-            "node": lock["node"][0]["version"],
-            "pnpm": lock["pnpm"][0]["version"],
-        },
+        tools=("node", "pnpm"),
     )
     assert arguments == [
         str(tmp_path / "control/WorkflowDelivery.dll"),

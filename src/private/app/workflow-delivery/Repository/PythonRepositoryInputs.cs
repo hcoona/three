@@ -128,6 +128,14 @@ internal static class PythonRepositoryInputs
     }
 
     private static bool Special(string target, string path) =>
+        (path == "tests/eng/ci_workflow_shell.py" && target is
+            "tests/eng/test_browser_store_release_caller.py" or
+            "tests/eng/test_general_ci_workflow.py" or
+            "tests/eng/test_node_release_schedule.py" or
+            "tests/eng/test_python_release_caller.py" or
+            "tests/eng/test_python_runtime.py" or
+            "tests/eng/test_release_batch_dispatch.py" or
+            "tests/eng/test_workflow_delivery_v3_hk.py") ||
         (target == "tests/eng/test_python_runtime.py" && (path is "renovate.json" or
             "global.json" || IsWorkflow(path))) ||
         (target == "tests/private/app/workflow-delivery/Native/Python" &&
@@ -135,8 +143,7 @@ internal static class PythonRepositoryInputs
              Under(path, "src/public/lib/nbgv-python"))) ||
         (target.StartsWith(AzureRoots[0] + "/", StringComparison.Ordinal) && Azure(path)) ||
         (target == "tests/eng/test_general_ci_workflow.py" &&
-            (path is "tests/eng/ci_workflow_shell.py" or
-                ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml" ||
+            (path == ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml" ||
              BuddyGuardInputs.Contains(path, StringComparer.Ordinal))) ||
         (target == "tests/eng/test_typos_config.py" && path == ".typos.toml") ||
         (target == "tests/eng/test_node_release_schedule.py" &&
@@ -144,10 +151,10 @@ internal static class PythonRepositoryInputs
                 "eng/node-release-schedule.json") ||
         (target == "tests/eng/test_python_release_caller.py" &&
             path is ".github/workflows/workflow-delivery-v3-python-release.yml" or
-                "tests/eng/ci_workflow_shell.py" or "global.json") ||
+                "global.json") ||
         (target == "tests/eng/test_browser_store_release_caller.py" &&
             path is ".github/workflows/workflow-delivery-v3-browser-store-release.yml" or
-                "tests/eng/ci_workflow_shell.py" or "global.json") ||
+                "global.json") ||
         (target == "tests/eng/test_release_batch_dispatch.py" &&
             (path == "eng/scripts/release_batch_dispatch.py" || IsReleaseCallerWorkflow(path))) ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import re
 from pathlib import Path
 
 import pytest
+
+from .ci_workflow_shell import load_script
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEDULE = "eng/node-release-schedule.json"
@@ -15,15 +16,7 @@ COMMIT = "0123456789abcdef0123456789abcdef01234567"
 
 
 def _load_script():
-    path = ROOT / "eng/scripts/update_node_release_schedule.py"
-    spec = importlib.util.spec_from_file_location(
-        "update_node_release_schedule", path
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_script(ROOT / "eng/scripts/update_node_release_schedule.py")
 
 
 def _renovate() -> dict:

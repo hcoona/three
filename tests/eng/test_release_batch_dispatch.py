@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from .ci_workflow_shell import command_log, executable
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "eng/scripts/release_batch_dispatch.py"
 
@@ -73,13 +75,9 @@ def created(run_id):
 def batch(tmp_path, state, *arguments):
     """Run the entry point with a fake gh first on PATH."""
     bin_directory = tmp_path / "bin"
-    bin_directory.mkdir()
-    fake = bin_directory / "gh"
-    fake.write_text(f"#!{sys.executable}\n{FAKE_GH}", encoding="utf-8")
-    fake.chmod(0o755)
+    executable(bin_directory / "gh", FAKE_GH)
     (tmp_path / "state.json").write_text(json.dumps(state), encoding="utf-8")
     log = tmp_path / "gh.jsonl"
-    log.touch()
     environment = {
         **os.environ,
         "PATH": f"{bin_directory}{os.pathsep}{os.environ['PATH']}",
@@ -93,8 +91,7 @@ def batch(tmp_path, state, *arguments):
         env=environment,
         check=False,
     )
-    calls = [json.loads(line) for line in log.read_text().splitlines()]
-    return completed, calls
+    return completed, command_log(log)
 
 
 def summary(stdout):
@@ -233,7 +230,10 @@ def test_runs_without_a_known_success_fail_the_batch(
         "python:unit=nbgv-python,registry=npmjs,dry-run=true",
         "python:unit=nbgv-python,registry=testpypi,dry-run=yes",
         "python:unit=nbgv-python,registry=testpypi,dry-run=true,channel=buddy",
-        "python:unit=nbgv-python,unit=nbgv-python,registry=testpypi,dry-run=true",
+        (
+            "python:unit=nbgv-python,unit=nbgv-python,"
+            "registry=testpypi,dry-run=true"
+        ),
         "python:unit=nbgv-python,registry=testpypi,dry-run",
         "python",
     ],
