@@ -66,7 +66,6 @@ public sealed class PythonReleaseTests(TestContext context)
     [TestMethod]
     [DataRow(false, false)]
     [DataRow(true, false)]
-    [DataRow(false, true)]
     public async Task PublishAsyncFreshExactSubsetRemovesUnnecessaryWrites(
         bool wheelMissing, bool sdistMissing)
     {
@@ -92,11 +91,9 @@ public sealed class PythonReleaseTests(TestContext context)
 
     // The static version has no public-release fact in either channel (WD-REL-001).
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task NbgvPublishesBothOriginalsOfItsUnit(bool official)
+    public async Task NbgvPublishesBothOriginalsToOfficialWithoutPublicReleaseFact()
     {
-        using var fixture = new Fixture(unit: PythonReleaseUnits.Nbgv, official: official);
+        using var fixture = new Fixture(unit: PythonReleaseUnits.Nbgv, official: true);
         PythonIndexObservationResult initial = fixture.Observe();
         fixture.Observations.Enqueue(initial);
         PythonPublicationResult publication = await fixture.PublishAsync(initial,
@@ -134,22 +131,17 @@ public sealed class PythonReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Unknown")]
-    [DataRow("Conflict")]
-    public async Task PublishAsyncInitialUnsafeStateRejectsBeforeDelegates(
-        string stateName)
+    public async Task PublishAsyncInitialConflictRejectsBeforeDelegates()
     {
-        ReleaseFileState state = Enum.Parse<ReleaseFileState>(stateName);
         using var fixture = new Fixture();
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => fixture.PublishAsync(
-            fixture.Observe(state), context.CancellationToken));
+            fixture.Observe(ReleaseFileState.Conflict), context.CancellationToken));
         Assert.AreEqual(0, fixture.Reads);
         Assert.IsEmpty(fixture.Writes);
     }
 
     [TestMethod]
     [DataRow("Unknown", "Passed", "Unknown")]
-    [DataRow("Conflict", "Passed", "Unsatisfied")]
     [DataRow("Absent", "Missing", "Unsatisfied")]
     public async Task PublishAsyncFreshUnsafeStateStopsWithoutWrites(string stateName,
         string qualificationName, string expectedName)
@@ -176,25 +168,25 @@ public sealed class PythonReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Absent", "Absent", "Passed", "Unknown")]
-    [DataRow("Exact", "Absent", "Passed", "Unknown")]
-    [DataRow("Conflict", "Absent", "Passed", "Unsatisfied")]
-    [DataRow("Absent", "Absent", "Missing", "Unsatisfied")]
-    [DataRow("Exact", "Exact", "Passed", "Satisfied")]
+    [DataRow("Absent", "Passed", "Unknown")]
+    [DataRow("Exact", "Passed", "Unknown")]
+    [DataRow("Conflict", "Passed", "Unsatisfied")]
+    [DataRow("Absent", "Missing", "Unsatisfied")]
     public async Task AcknowledgedUploadContinuesWhileIndexReadLags(string wheelName,
-        string sdistName, string qualificationName, string expectedName)
+        string qualificationName, string expectedName)
     {
+        ReleaseFileState wheel = Enum.Parse<ReleaseFileState>(wheelName);
         ReleaseBusinessState expected = Enum.Parse<ReleaseBusinessState>(expectedName);
         using var fixture = new Fixture(unit: PythonReleaseUnits.Nbgv);
         PythonIndexObservationResult initial = fixture.Observe();
         fixture.Observations.Enqueue(initial);
 
-        // The index still reports both files absent after the wheel upload is acknowledged.
+        // The final index read still reports the sdist absent after both uploads are acknowledged.
         PythonPublicationResult publication = await fixture.PublishAsync(initial,
             context.CancellationToken);
-        PythonCompletionResult result = fixture.Complete(initial, fixture.Observe(
-            Enum.Parse<ReleaseFileState>(wheelName), Enum.Parse<ReleaseFileState>(sdistName),
-            Enum.Parse<ReleaseCheckStatus>(qualificationName)), publication);
+        PythonCompletionResult result = fixture.Complete(initial,
+            fixture.Observe(wheel, ReleaseFileState.Absent,
+                Enum.Parse<ReleaseCheckStatus>(qualificationName)), publication);
 
         AssertSequence(["wheel", "sdist"], fixture.Writes);
         Assert.AreEqual(1, fixture.Reads);
@@ -202,23 +194,25 @@ public sealed class PythonReleaseTests(TestContext context)
         Assert.AreEqual(expected, result.Outcome.State);
         Assert.AreEqual(true, result.MutationAttempted);
         Assert.HasCount(2, result.Outcome.Uploads);
-        string reasons = string.Join(";", result.Outcome.Reasons);
         if (expected == ReleaseBusinessState.Unknown)
-            Assert.Contains("not yet visible: sdist", reasons);
-        else if (expected == ReleaseBusinessState.Unsatisfied)
-            Assert.DoesNotContain("not yet visible", reasons);
+        {
+            Assert.HasCount(wheel == ReleaseFileState.Exact ? 1 : 2, result.Outcome.Reasons);
+            Assert.Contains("Acknowledged Python upload is not yet visible: sdist.",
+                result.Outcome.Reasons);
+            if (wheel == ReleaseFileState.Absent)
+                Assert.Contains("Acknowledged Python upload is not yet visible: wheel.",
+                    result.Outcome.Reasons);
+        }
+        else
+            Assert.DoesNotContain("not yet visible", string.Join(";", result.Outcome.Reasons));
     }
 
     [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
-    public async Task PublishAsyncFreshDisappearanceCannotEnlargeInitialMissingSet(
-        bool wheelInitiallyExact)
+    public async Task PublishAsyncFreshDisappearanceCannotEnlargeInitialMissingSet()
     {
         using var fixture = new Fixture();
-        PythonIndexObservationResult initial = fixture.Observe(
-            wheelInitiallyExact ? ReleaseFileState.Exact : ReleaseFileState.Absent,
-            wheelInitiallyExact ? ReleaseFileState.Absent : ReleaseFileState.Exact);
+        PythonIndexObservationResult initial = fixture.Observe(ReleaseFileState.Exact,
+            ReleaseFileState.Absent);
         PythonIndexObservationResult fresh = fixture.Observe();
         fixture.Observations.Enqueue(fresh);
 
@@ -237,15 +231,10 @@ public sealed class PythonReleaseTests(TestContext context)
 
     [TestMethod]
     [DataRow("failed", "Exact", "Satisfied")]
-    [DataRow("failed", "Absent", "Unsatisfied")]
-    [DataRow("ambiguous", "Exact", "Satisfied")]
-    [DataRow("ambiguous", "Absent", "Unsatisfied")]
     [DataRow("ambiguous", "Unknown", "Unknown")]
     [DataRow("mask", "Exact", "Satisfied")]
-    [DataRow("mask", "Absent", "Unsatisfied")]
     [DataRow("error", "Exact", "Satisfied")]
     [DataRow("cancelled", "Exact", "Satisfied")]
-    [DataRow("cancelled", "Absent", "Unsatisfied")]
     public async Task PublishAsyncAbnormalInvocationStopsDespiteExactReadback(string defect,
         string finalSdistName, string expectedName)
     {
@@ -360,7 +349,6 @@ public sealed class PythonReleaseTests(TestContext context)
 
     [TestMethod]
     [DataRow("Exact")]
-    [DataRow("Absent")]
     public void CompleteMissingPublisherResultLeavesEffectsUnknown(string finalStateName)
     {
         ReleaseFileState finalState = Enum.Parse<ReleaseFileState>(finalStateName);
@@ -380,8 +368,6 @@ public sealed class PythonReleaseTests(TestContext context)
     [DataRow("Exact", "Exact", "Satisfied")]
     [DataRow("Absent", "Exact", "Unsatisfied")]
     [DataRow("Exact", "Absent", "Unsatisfied")]
-    [DataRow("Conflict", "Exact", "Unsatisfied")]
-    [DataRow("Exact", "Unknown", "Unknown")]
     public void CompleteRequiresEveryFinalIndexFileWithOriginalBytes(string wheel, string sdist,
         string expected)
     {

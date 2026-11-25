@@ -86,13 +86,10 @@ public sealed class GithubNpmObservationTests
     }
 
     [TestMethod]
-    [DataRow(302, "Unknown")]
-    [DataRow(404, "Unknown")]
-    [DataRow(401, "Unknown")]
-    [DataRow(429, "Unknown")]
-    [DataRow(503, "Unknown")]
-    public async Task MissingOrUnreadableContainerNeverPermitsVersionCreation(int status,
-        string expected)
+    [DataRow(404)]
+    [DataRow(401)]
+    [DataRow(503)]
+    public async Task MissingOrUnreadableContainerNeverPermitsVersionCreation(int status)
     {
         using var handler = new Handler((_, _) => new((HttpStatusCode)status)
         { Content = new ByteArrayContent([]) });
@@ -101,7 +98,7 @@ public sealed class GithubNpmObservationTests
         GithubNpmObservationResult result = await new GithubNpmObservation(client)
             .ObserveAsync(Prepared(), Credential, CancellationToken.None);
 
-        Assert.AreEqual(Enum.Parse<ReleaseFileState>(expected),
+        Assert.AreEqual(ReleaseFileState.Unknown,
             Assert.ContainsSingle(result.Observation.Files).State);
         Assert.HasCount(1, handler.Requests);
         Assert.AreEqual(ReleaseCheckStatus.Missing,

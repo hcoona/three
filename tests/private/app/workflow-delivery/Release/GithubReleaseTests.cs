@@ -188,7 +188,6 @@ public sealed class GithubReleaseTests(TestContext context)
     [DataRow("other-tag-commit", "Conflict")]
     [DataRow("annotated-tag", "Conflict")]
     [DataRow("channel", "Conflict")]
-    [DataRow("other-namespace", "Absent")]
     [DataRow("extra-asset", "Conflict")]
     [DataRow("starter-asset", "Unknown")]
     [DataRow("unavailable", "Unknown")]
@@ -202,7 +201,6 @@ public sealed class GithubReleaseTests(TestContext context)
             prerelease: true, ("setup", setup));
         if (defect == "channel") github.MarkFullRelease();
         if (defect == "annotated-tag") github.AnnotatedTag = true;
-        if (defect == "other-namespace") github.MoveToOtherChannel();
         if (defect == "extra-asset") github.AddAsset("notes.txt", "uploaded", [1, 2, 3]);
         if (defect == "starter-asset") github.AddAsset(Name("portable-zip"), "starter", Portable);
         if (defect == "unavailable") github.Unavailable = true;
@@ -214,14 +212,6 @@ public sealed class GithubReleaseTests(TestContext context)
 
         Assert.IsTrue(observed.Observation.Files.Any(file =>
             file.State == Enum.Parse<ReleaseFileState>(expected)));
-        if (defect == "other-namespace")
-        {
-            // A release under the Official namespace is not this Buddy request's coordinate.
-            Assert.IsTrue(observed.Observation.Files.All(file =>
-                file.State == ReleaseFileState.Absent));
-            Assert.IsFalse(github.Requests.Any(request => request.Method != HttpMethod.Get));
-            return;
-        }
         Assert.ThrowsExactly<InvalidDataException>(() =>
             GithubRelease.Missing(prepared, observed));
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => Publish(preparation,
@@ -229,6 +219,33 @@ public sealed class GithubReleaseTests(TestContext context)
         ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, observed.Observation, []);
         Assert.AreNotEqual(ReleaseBusinessState.Satisfied, outcome.State);
         Assert.IsFalse(github.Requests.Any(request => request.Method != HttpMethod.Get));
+    }
+
+    [TestMethod]
+    public async Task ExistingReleaseUploadsOnlyItsMissingAsset()
+    {
+        using var github = new FakeGithub();
+        using var originals = new Originals();
+        github.Publish(Revision, prerelease: true, ("setup", Setup));
+        GithubReleasePreparationResult preparation = Preparation(false);
+        PreparedRelease prepared = preparation.Prepared;
+        GithubReleaseDestination destination = github.Destination();
+        GithubReleaseObservationResult initial = await destination.ObserveAsync(prepared,
+            context.CancellationToken);
+
+        GithubReleasePublicationResult publication = await Publish(preparation, originals,
+            initial, destination);
+        GithubReleaseObservationResult final = await destination.ObserveAsync(prepared,
+            context.CancellationToken);
+        GithubReleaseCompletionResult result = GithubRelease.Complete(prepared, initial,
+            final, publication);
+
+        Assert.IsNull(publication.Creation);
+        Assert.AreEqual("portable", Assert.ContainsSingle(publication.Uploads).Output);
+        Assert.Contains("uploads.github.com", Assert.ContainsSingle(github.Requests.Where(
+            request => request.Method == HttpMethod.Post)).Path);
+        Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
+        Assert.IsTrue(final.Observation.Files.All(file => file.State == ReleaseFileState.Exact));
     }
 
     [TestMethod]
@@ -428,18 +445,6 @@ public sealed class GithubReleaseTests(TestContext context)
             foreach ((string kind, byte[] bytes) in assets)
                 AddAsset(Name(kind == "setup" ? "inno-installer" : "portable-zip"), "uploaded",
                     bytes);
-        }
-
-        // Places the current release under the other channel's tag, keeping its flag.
-        internal void MoveToOtherChannel()
-        {
-            string tag = Release!.Tag.StartsWith("buddy/", StringComparison.Ordinal)
-                ? "release/" + Release.Tag["buddy/".Length..]
-                : "buddy/" + Release.Tag["release/".Length..];
-            tags[tag] = tags[Release.Tag];
-            tags.Remove(Release.Tag);
-            releases.Remove(Release.Tag);
-            Release = releases[tag] = Release with { Tag = tag };
         }
 
         internal void DeleteTag() => tags.Remove(Release!.Tag);

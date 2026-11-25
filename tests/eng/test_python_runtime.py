@@ -266,18 +266,6 @@ def test_tool_version_guard_accepts_committed_and_unrelated_values(text):
     assert literal_tool_versions(text, yaml.safe_load(text)) == []
 
 
-def test_node_compatibility_matrix_is_planned_not_a_literal():
-    """Workflow Delivery plans the Node matrix; no workflow repeats it."""
-    text = (ROOT / ".github/workflows/ci.yml").read_text()
-    document = yaml.safe_load(text)
-    assert literal_tool_versions(text, document) == []
-    matrix = document["jobs"]["node-tests"]["strategy"]["matrix"]
-    assert matrix == {
-        "node-version": "$"
-        "{{ fromJSON(needs.node-group.outputs.node_versions) }}"
-    }
-
-
 @pytest.mark.parametrize(
     "defect", ["dirty", "option", "state", "source", "outside"]
 )

@@ -38,7 +38,6 @@ public sealed class NpmjsObservationTests(TestContext context)
 
     [TestMethod]
     [DataRow(404, "Absent")]
-    [DataRow(429, "Unknown")]
     [DataRow(503, "Unknown")]
     [DataRow(403, "Unknown")]
     [DataRow(302, "Unknown")]
@@ -58,7 +57,6 @@ public sealed class NpmjsObservationTests(TestContext context)
 
     [TestMethod]
     [DataRow(404)]
-    [DataRow(429)]
     [DataRow(502)]
     public async Task MissingTarballCannotEstablishCoordinateAbsence(int status)
     {

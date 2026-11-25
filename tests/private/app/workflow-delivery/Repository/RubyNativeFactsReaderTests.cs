@@ -7,6 +7,51 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class RubyNativeFactsReaderTests
 {
+    [TestMethod]
+    [DataRow("context", "gemfile", "other/Gemfile")]
+    [DataRow("context", "bundler_version", "2.4.20")]
+    [DataRow("context", "locked_bundler_version", null)]
+    [DataRow("context", "lockfile", "relative.lock")]
+    [DataRow("version", "gemspec", "other/native.gemspec")]
+    [DataRow("version", "raw", "other-version")]
+    [DataRow("version", "version", null)]
+    [DataRow("version", "literal", null)]
+    public void PreparationRejectsIncompleteOrSubstitutedNativeAnswers(string operation,
+        string field, string? replacement)
+    {
+        string gemfile = NativePath("bundle/Gemfile");
+        string gemspec = NativePath("source/native.gemspec");
+        const string raw = "1.2.3-beta.4+gabcdef0";
+        JsonObject answer = operation == "context"
+            ? new()
+            {
+                ["gemfile"] = gemfile,
+                ["lockfile"] = gemfile + ".lock",
+                ["bundler_version"] = "2.7.2",
+                ["locked_bundler_version"] = "2.4.20"
+            }
+            : new()
+            {
+                ["gemspec"] = gemspec,
+                ["raw"] = raw,
+                ["version"] = "1.2.3.pre.beta.4",
+                ["literal"] = "\"1.2.3.pre.beta.4\""
+            };
+        if (replacement is null)
+            answer.Remove(field);
+        else
+            answer[field] = field is "gemfile" or "gemspec"
+                ? NativePath(replacement) : replacement;
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+        {
+            if (operation == "context")
+                RubyNativeFactsReader.ParseContext(answer.ToJsonString(), gemfile, "2.7.2");
+            else
+                RubyNativeFactsReader.ParseVersion(answer.ToJsonString(), gemspec, raw);
+        });
+    }
+
     private static string NativePath(string path) =>
         Path.GetFullPath(
             Path.Combine("native-ruby-fixtures", path.Replace('/', Path.DirectorySeparatorChar))

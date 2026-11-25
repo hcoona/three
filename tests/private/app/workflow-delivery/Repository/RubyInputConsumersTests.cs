@@ -91,41 +91,63 @@ public sealed class RubyInputConsumersTests
     }
 
     [TestMethod]
-    public void ProjectBundleCanConsumeAnEvaluatedInputOutsideItsDirectory()
+    public void ChangedEvaluatedBundleInputSelectsItsAdoptedProject()
     {
+        const string changed = "shared/dependencies.rb";
         RubyBundleFacts bundle = new(Absolute("src/gem/Gemfile"),
             Absolute("src/gem/Gemfile.lock"), "2.4.20",
-            [Absolute("src/gem/Gemfile"), Absolute("shared/dependencies.rb")], [], []);
-        RubyRepositoryInputs result = Map(Revision("src/gem/Gemfile", "src/gem/Gemfile.lock",
-            "shared/dependencies.rb"), bundles: [bundle]);
-        CollectionAssert.AreEqual(ParentOnly, result.Inputs.Single(input =>
-            input.Path == "shared/dependencies.rb").Consumers);
-        Assert.IsEmpty(Assert.ContainsSingle(result.Graph.Bundles).Producers);
+            [Absolute("src/gem/Gemfile"), Absolute(changed)], [], []);
+        const string declaration = "src/gem/workflow-delivery.quality.yml";
+        GitRevision revision = Revision("src/gem/Gemfile", "src/gem/Gemfile.lock",
+            declaration, changed);
+        var selection = new QualitySelection(RubyProjectChecks.Preset, declaration);
+        RubyRepositoryInputs native = Map(revision, bundles: [bundle],
+            quality: new() { ["src/gem"] = selection });
+        var owner = new ProjectFacts("ruby:src/gem", "src/gem", [], [], null,
+            selection.Preset, RubyProjectChecks.Expand(selection, "src/gem"));
+        var endpoint = new RubyFactsEndpoint(revision, native, [owner], []);
+        RubyFactAssembly assembly = RubyFactsAssembler.Assemble(endpoint, endpoint,
+            [changed], false);
+
+        PlannedCheck check = Assert.ContainsSingle(
+            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+        Assert.AreEqual(new CheckKey("src/gem", "ruby/project-rspec-v1", "default"),
+            check.Work.Key);
+        Assert.AreEqual(new SelectionReason(changed, "candidate", "ruby:src/gem"),
+            Assert.ContainsSingle(check.Reasons));
     }
 
     [TestMethod]
-    public void OnlyNativeBundleConsumersDoNotInventRubyOwners()
+    [DataRow("missing-source")]
+    [DataRow("missing-bundle")]
+    [DataRow("duplicate-source")]
+    [DataRow("duplicate-bundle")]
+    [DataRow("foreign-source")]
+    [DataRow("foreign-bundle")]
+    public void IncompleteOrSubstitutedNativeInventoryCannotSupplyInputConsumers(string defect)
     {
-        var revision = new GitRevision("candidate", [
-            new("node/client/Gemfile", "100644", "blob"),
-            new("node/client/Gemfile.lock", "100644", "blob")]);
-        RubyBundleFacts bundle = new(Absolute("node/client/Gemfile"),
-            Absolute("node/client/Gemfile.lock"), "2.7.2",
-            [Absolute("node/client/Gemfile")], [], []);
-        RubyRepositoryInputs result = Map(revision, [], [bundle], quality: Quality());
-        Assert.IsEmpty(result.Graph.Projects);
-        Assert.IsEmpty(result.Inputs);
-        Assert.AreEqual("node/client", Assert.ContainsSingle(result.Graph.Bundles).Directory);
-    }
+        GitRevision revision = Revision("src/gem/Gemfile", "src/gem/Gemfile.lock");
+        RubySourceGemFacts source = Source();
+        RubyBundleFacts bundle = new(Absolute("src/gem/Gemfile"),
+            Absolute("src/gem/Gemfile.lock"), "2.7.2", [Absolute("src/gem/Gemfile")], [], []);
+        RubySourceGemFacts[] sources = defect switch
+        {
+            "missing-source" => [],
+            "duplicate-source" => [source, source],
+            "foreign-source" => [source with { Gemspec = Absolute("other/native.gemspec") }],
+            _ => [source]
+        };
+        RubyBundleFacts[] bundles = defect switch
+        {
+            "missing-bundle" => [],
+            "duplicate-bundle" => [bundle, bundle],
+            "foreign-bundle" => [bundle with { Gemfile = Absolute("other/Gemfile") }],
+            _ => [bundle]
+        };
 
-    [TestMethod]
-    public void AbsentRubyEntryPointsProduceAnExplainableEmptyInputSet()
-    {
-        RubyRepositoryInputs result = Map(new("candidate", [
-            new("docs/guide.md", "100644", "blob")]), [], quality: Quality());
-        Assert.IsEmpty(result.Graph.Projects);
-        Assert.IsEmpty(result.Graph.Bundles);
-        Assert.IsEmpty(result.Inputs);
+        InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
+            Map(revision, sources, bundles));
+        Assert.Contains("omit or substitute an entry point", failure.Message);
     }
 
     [TestMethod]

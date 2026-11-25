@@ -20,7 +20,6 @@ public sealed class NuGetOrgObservationTests(TestContext context)
     // nuget.org repository-signs every accepted package and its versions are immutable, so
     // WD-REL-009 completes on the exact normalized version and never reads the archive.
     [TestMethod]
-    [DataRow("listed", "Available")]
     [DataRow("listed-unnormalized", "Available")]
     [DataRow("not-listed", "Absent")]
     [DataRow("no-versions", "Absent")]
@@ -50,7 +49,7 @@ public sealed class NuGetOrgObservationTests(TestContext context)
                 "listed-unnormalized" => Json("{\"versions\":[\"0.9.0\",\"1.0.0.0\"]}"),
                 "duplicate" => Json("{\"versions\":[\"1.0.0\",\"1.0.0\"]}"),
                 "malformed" => Json("{\"versions\":\"1.0.0\"}"),
-                _ => Json("{\"versions\":[\"0.9.0\",\"1.0.0\"]}"),
+                _ => throw new AssertFailedException("Unvalidated service index was followed."),
             },
             var other => throw new AssertFailedException("Unexpected read: " + other),
         });

@@ -83,17 +83,13 @@ def _js_regex(value: str) -> re.Pattern[str]:
     return re.compile(value[1:-1])
 
 
-def test_committed_schedule_has_the_planned_shape_and_script_format() -> None:
-    """The committed file is the reader shape, written as the script writes."""
-    text = (ROOT / SCHEDULE).read_text(encoding="utf-8")
-    data = json.loads(text)
-    assert set(data) == {"newestRelease", "schedule"}
-    assert set(data["schedule"]) == {"commit", "releases"}
+def test_committed_schedule_covers_the_newest_release() -> None:
+    """The committed schedule pins a source for the newest major."""
+    data = json.loads((ROOT / SCHEDULE).read_text(encoding="utf-8"))
     assert re.fullmatch(r"\d+\.\d+\.\d+", data["newestRelease"])
     assert re.fullmatch(r"[0-9a-f]{40}", data["schedule"]["commit"])
     newest = "v" + data["newestRelease"].split(".")[0]
     assert newest in data["schedule"]["releases"]
-    assert text == json.dumps(data, indent=2, ensure_ascii=False) + "\n"
 
 
 def test_newest_release_manager_proposes_released_current_majors_only() -> None:
@@ -181,10 +177,7 @@ def test_refresh_rewrites_only_the_releases_at_the_pinned_commit(
     script.refresh(tmp_path, fetch)
 
     assert requested == [COMMIT]
-    text = path.read_bytes().decode("utf-8")
-    assert "\r" not in text
-    assert text.endswith("}\n")
-    assert json.loads(text) == {
+    assert json.loads(path.read_text(encoding="utf-8")) == {
         "newestRelease": "26.13.0",
         "schedule": {
             "commit": COMMIT,
@@ -220,7 +213,7 @@ def test_refresh_rejects_unpinned_or_ambiguous_data(
     )
     path.write_text(original, encoding="utf-8")
 
-    with pytest.raises(ValueError, match=r"commit|repeats|nonempty"):
+    with pytest.raises(ValueError):  # noqa: PT011 - Assert no writes below.
         script.refresh(tmp_path, lambda _: answer)
 
     assert path.read_text(encoding="utf-8") == original

@@ -1,7 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Repository;
-using WorkflowDelivery.Tests.CI;
 
 namespace WorkflowDelivery.Tests.Repository;
 
@@ -90,28 +89,33 @@ public sealed class NodeInputConsumersTests
     }
 
     [TestMethod]
-    public void MapDeduplicatesAndOrdersInputs()
+    public async Task VersionAndLocalInputsSelectEachConsumerOnceWithoutRequiringVersionFacts()
     {
-        GitRevision revision = Revision(Source, "shared/data.txt", "src/a/" + Declaration,
-            "src/b/" + Declaration);
-        NbgvInputs[] projects = [new(Source, "src/b", ["shared/data.txt"], ["shared/data.txt"]),
-            new(Source, "src/a", ["shared/data.txt"], ["shared/data.txt"])];
+        const string path = "archives/input.tgz";
+        NodeRevisionInputs Endpoint(string revision)
+        {
+            NodeRevisionInputs inputs = NodeScenario.Inputs(revision,
+                NodeScenario.Project("src/a"), NodeScenario.Project("src/b"),
+                NodeScenario.Project("src/unrelated"));
+            return inputs with
+            {
+                Revision = inputs.Revision with
+                {
+                    Entries = [.. inputs.Revision.Entries,
+                    NodeScenario.File(path)]
+                },
+                Versions = [inputs.Versions[0] with { Paths = [path] }],
+                Graph = inputs.Graph with { LocalInputs = [new(path, false, ["src/a", "src/b"])] }
+            };
+        }
+        CiPlan plan = await NodeScenario.Plan(Endpoint(Source), Endpoint(Next), path);
 
-        SharedInput[] inputs = NodeInputConsumers.Map(revision,
-            projects.Select(project => project.Directory).ToArray(), projects,
-            LeafSelections("src/b", "src/a"), [new("shared/data.txt", false, ["src/b", "src/a"])]);
-
-        string[] expected = ["shared/data.txt", "src/a/" + Declaration, "src/b/" + Declaration];
-        CollectionAssert.AreEqual(expected, inputs.Select(input => input.Path).ToArray());
-        AssertConsumers(inputs, "shared/data.txt", "src/a", "src/b");
-    }
-
-    [TestMethod]
-    public void MapRejectsMismatchedSourceRevision()
-    {
-        Assert.ThrowsExactly<InvalidDataException>(() => NodeInputConsumers.Map(
-            Revision(Next, "src/a/" + Declaration), ["src/a"], [Project("src/a")],
-            LeafSelections("src/a"), []));
+        CheckKey[] expected = [new("src/a", "node/project-build-v1", "default"),
+            new("src/a", "node/project-test-v1", "default"),
+            new("src/b", "node/project-build-v1", "default"),
+            new("src/b", "node/project-test-v1", "default")];
+        CollectionAssert.AreEquivalent(expected, plan.Checks.Select(check => check.Work.Key)
+            .ToArray());
     }
 
     [TestMethod]
@@ -177,62 +181,37 @@ public sealed class NodeInputConsumersTests
     }
 
     [TestMethod]
-    public void MappedInputsKeepDeletedAndRenamedConsumers()
+    public async Task ChangedVersionFilesKeepOnlyTheirActualEndpointConsumers()
     {
         string[] directories = ["src/a", "src/b", "src/unrelated"];
-        GitRevision basis = Revision(Source, "shared/old.txt", "src/a/" + Declaration,
-            "src/b/" + Declaration, "src/unrelated/" + Declaration);
-        GitRevision candidate = Revision(Next, "shared/new.txt", "src/a/" + Declaration,
-            "src/b/" + Declaration, "src/unrelated/" + Declaration);
-        NbgvInputs[] before = [new(Source, "src/a", [], ["shared/old.txt"]),
-            Project("src/b"), Project("src/unrelated")];
-        NbgvInputs[] after = [new(Next, "src/a", [], []),
-            new(Next, "src/b", [], ["shared/new.txt"]), new(Next, "src/unrelated", [], [])];
-        ProjectFacts[] projects = directories.Select(directory =>
-            Scenario.Project(directory, directory: directory)).ToArray();
-        Dictionary<string, QualitySelection?> quality = LeafSelections(directories);
-        RepositoryFacts oldFacts = Scenario.Facts(Source, projects) with
+        NodeRevisionInputs Endpoint(string revision, string path, string consumer)
         {
-            SharedInputs = NodeInputConsumers.Map(basis, directories, before, quality, []),
-        };
-        RepositoryFacts newFacts = Scenario.Facts(Next, projects) with
+            NodeRevisionInputs inputs = NodeScenario.Inputs(revision,
+                directories.Select(directory => NodeScenario.Project(directory)).ToArray());
+            return inputs with
+            {
+                Revision = inputs.Revision with
+                {
+                    Entries = [.. inputs.Revision.Entries,
+                    NodeScenario.File(path)]
+                },
+                Versions = [new(revision, consumer, [], [path])]
+            };
+        }
+        CiPlan plan = await NodeScenario.Plan(Endpoint(Source, "shared/old.txt", "src/a"),
+            Endpoint(Next, "shared/new.txt", "src/b"), "shared/old.txt", "shared/new.txt");
+
+        CollectionAssert.AreEquivalent(ExpectedVersionConsumers,
+            plan.Checks.Select(check => check.Work.Key.Target).Distinct().ToArray());
+        foreach (PlannedCheck check in plan.Checks)
         {
-            SharedInputs = NodeInputConsumers.Map(candidate, directories, after, quality, []),
-        };
-
-        CiPlan plan = ImpactPlanner.Plan(new(oldFacts, newFacts,
-            ["shared/old.txt", "shared/new.txt"], false));
-
-        CheckKey[] expected = [new("src/a", "test", "default"),
-            new("src/b", "test", "default")];
-        CollectionAssert.AreEquivalent(expected,
-            plan.Checks.Select(check => check.Work.Key).ToArray());
-        Assert.DoesNotContain("src/unrelated", plan.Checks.Select(check => check.Work.Key.Target));
-        PlannedCheck a = Assert.ContainsSingle(plan.Checks.Where(check =>
-            check.Work.Key.Target == "src/a"));
-        PlannedCheck b = Assert.ContainsSingle(plan.Checks.Where(check =>
-            check.Work.Key.Target == "src/b"));
-        Assert.AreEqual(new SelectionReason("shared/old.txt", Source, "src/a"),
-            Assert.ContainsSingle(a.Reasons));
-        Assert.AreEqual(new SelectionReason("shared/new.txt", Next, "src/b"),
-            Assert.ContainsSingle(b.Reasons));
+            SelectionReason reason = check.Work.Key.Target == "src/a"
+                ? new("shared/old.txt", Source, "src/a") : new("shared/new.txt", Next, "src/b");
+            Assert.AreEqual(reason, Assert.ContainsSingle(check.Reasons));
+        }
     }
 
-    [TestMethod]
-    public void MapKeepsProjectQualityAndLocalInputsWithoutNbgvAnswer()
-    {
-        GitRevision revision = Revision(Source, "src/a/" + Declaration,
-            "src/b/" + Declaration, "archives/input.tgz");
-
-        SharedInput[] inputs = NodeInputConsumers.Map(revision, ["src/a", "src/b"],
-            [Project("src/a")], LeafSelections("src/a", "src/b"),
-            [new("archives/input.tgz", false, ["src/b"])]);
-
-        AssertConsumers(inputs, "src/a/" + Declaration, "src/a");
-        AssertConsumers(inputs, "src/b/" + Declaration, "src/b");
-        AssertConsumers(inputs, "archives/input.tgz", "src/b");
-        Assert.HasCount(3, inputs);
-    }
+    private static readonly string[] ExpectedVersionConsumers = ["src/a", "src/b"];
 
     [TestMethod]
     [DataRow("unknown")]

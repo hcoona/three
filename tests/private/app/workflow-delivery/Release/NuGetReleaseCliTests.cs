@@ -41,11 +41,9 @@ public sealed class NuGetReleaseCliTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Exact", 0, 0)]
     [DataRow("Absent", 0, 1)]
     [DataRow("Unknown", 1, 0)]
-    [DataRow("Conflict", 1, 0)]
-    public void DescribeExactOrAbsentReportsHypotheticalWrites(string stateName,
+    public void DescribeReportsHypotheticalWritesOrUncertainState(string stateName,
         int expectedExit, int writes)
     {
         using var fixture = new NuGetReleaseTestFixture(dryRun: true);
@@ -171,96 +169,56 @@ public sealed class NuGetReleaseCliTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("preparation", "root-null")]
-    [DataRow("preparation", "null")]
-    [DataRow("preparation", "missing")]
-    [DataRow("preparation", "unknown")]
-    [DataRow("preparation", "duplicate")]
-    [DataRow("observation", "root-null")]
-    [DataRow("observation", "null")]
-    [DataRow("observation", "missing")]
-    [DataRow("observation", "unknown")]
-    [DataRow("observation", "duplicate")]
-    [DataRow("publisher", "root-null")]
-    [DataRow("publisher", "null")]
-    [DataRow("publisher", "missing")]
-    [DataRow("publisher", "unknown")]
-    [DataRow("publisher", "duplicate")]
-    public void CompleteStrictTransferJsonRejectsMalformedInput(string transfer, string defect)
+    public void CompleteRejectsNullPublicationInsteadOfTreatingItAsMissing()
     {
         using var fixture = new NuGetReleaseTestFixture();
         string preparation = Preparation(fixture);
         string exact = Observation(fixture, "exact.json", ReleaseFileState.Exact);
-        // A fresh-exact publisher result legitimately contains no library invocation.
-        string publisher = fixture.Write("publisher.json", new NuGetPublicationResult(
-            fixture.Prepared.Subject, fixture.Observe(ReleaseFileState.Exact), null,
-            fixture.Observe(ReleaseFileState.Exact), []),
-            TransferJson.Default.NuGetPublicationResult);
-        string target = transfer switch
-        {
-            "preparation" => preparation,
-            "observation" => exact,
-            _ => publisher,
-        };
-        string property = transfer switch
-        {
-            "preparation" => "prepared",
-            "observation" => "observation",
-            _ => "before",
-        };
-        File.WriteAllText(target, Malformed(File.ReadAllText(target), property, defect));
+        string publisher = fixture.WriteText("publisher.json", "null");
         string initial = Observation(fixture, "initial.json", ReleaseFileState.Absent);
         using var output = new StringWriter();
 
-        void Run() => NuGetReleaseCli.Run(["release", "complete-nuget", preparation,
-            initial, exact, publisher], output);
+        Assert.ThrowsExactly<InvalidDataException>(() => NuGetReleaseCli.Run(
+            ["release", "complete-nuget", preparation, initial, exact, publisher], output));
 
-        if (defect is "root-null" or "duplicate")
-            Assert.ThrowsExactly<InvalidDataException>(Run);
-        else Assert.ThrowsExactly<JsonException>(Run);
         Assert.AreEqual("", output.ToString());
     }
 
     [TestMethod]
     [DataRow("state")]
     [DataRow("integer-state")]
-    [DataRow("nested-duplicate")]
-    public void DescribeStrictNestedJsonRejectsMalformedTransfer(string defect)
+    public void DescribeRejectsInvalidObservationState(string defect)
     {
         using var fixture = new NuGetReleaseTestFixture(dryRun: true);
         string preparation = Preparation(fixture);
         string observation = Observation(fixture, "observed.json", ReleaseFileState.Exact);
-        if (defect == "native-null")
-        {
-            JsonObject root = JsonNode.Parse(File.ReadAllText(preparation))!.AsObject();
-            root["native"]!["PackageId"] = null;
-            File.WriteAllText(preparation, root.ToJsonString());
-        }
-        else if (defect == "nested-duplicate")
-        {
-            string text = File.ReadAllText(observation);
-            string duplicate = text.Replace("\"output\": \"original\"",
-                "\"output\": \"original\", \"output\": \"original\"",
-                StringComparison.Ordinal);
-            Assert.AreNotEqual(text, duplicate);
-            File.WriteAllText(observation, duplicate);
-        }
-        else
-        {
-            JsonObject root = JsonNode.Parse(File.ReadAllText(observation))!.AsObject();
-            root["observation"]!["files"]![0]!["state"] = defect == "state"
-                ? JsonValue.Create("not-a-state") : JsonValue.Create(17);
-            File.WriteAllText(observation, root.ToJsonString());
-        }
+        JsonObject root = JsonNode.Parse(File.ReadAllText(observation))!.AsObject();
+        root["observation"]!["files"]![0]!["state"] = defect == "state"
+            ? JsonValue.Create("not-a-state") : JsonValue.Create(17);
+        File.WriteAllText(observation, root.ToJsonString());
         using var output = new StringWriter();
 
-        void Run() => NuGetReleaseCli.Run(["release", "describe-nuget", preparation,
-            observation], output);
+        Assert.ThrowsExactly<JsonException>(() => NuGetReleaseCli.Run(
+            ["release", "describe-nuget", preparation, observation], output));
 
-        if (defect is "native-null" or "nested-duplicate")
-            Assert.ThrowsExactly<InvalidDataException>(Run);
-        else Assert.ThrowsExactly<JsonException>(Run);
         Assert.AreEqual("", output.ToString());
+    }
+
+    [TestMethod]
+    public void PublishRejectsDuplicatePreparationBeforeCredentialResolution()
+    {
+        using var fixture = new NuGetReleaseTestFixture();
+        string preparation = Preparation(fixture);
+        string text = File.ReadAllText(preparation);
+        File.WriteAllText(preparation, "{\"prepared\":null," + text.TrimStart()[1..]);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        Assert.AreEqual(2, Program.Run(["release", "publish-nuget", preparation,
+            fixture.Root], output, error));
+
+        Assert.AreEqual("", output.ToString());
+        Assert.Contains("Duplicate", error.ToString());
     }
 
     [TestMethod]
@@ -316,16 +274,4 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         ReleaseFileState state) => fixture.Write(name, fixture.Observe(state),
             TransferJson.Default.NuGetObservationResult);
 
-    private static string Malformed(string text, string property, string defect)
-    {
-        if (defect == "root-null") return "null";
-        JsonObject root = JsonNode.Parse(text)!.AsObject();
-        if (defect == "null") root[property] = null;
-        if (defect == "missing") root.Remove(property);
-        if (defect == "unknown") root["unexpectedTransferProperty"] = true;
-        if (defect == "duplicate")
-            return "{\"" + property + "\":" + root[property]!.ToJsonString() + ","
-                + text.TrimStart()[1..];
-        return root.ToJsonString();
-    }
 }

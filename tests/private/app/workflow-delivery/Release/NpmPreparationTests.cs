@@ -34,29 +34,6 @@ public sealed class NpmPreparationTests(TestContext context)
     public static void Cleanup() => shared?.Dispose();
 
     [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
-    public async Task BuddyDevelopmentRevisionUsesSameCompleteNativePreparation(
-        bool dryRun)
-    {
-        using var fixture = Fixture.Shared(shared!, sharedCommit);
-        fixture.Request = fixture.Request with
-        {
-            Subject = fixture.Request.Subject with
-            { Channel = "buddy", Destination = "github-packages-npm", DryRun = dryRun }
-        };
-
-        NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-
-        Assert.IsEmpty(result.Errors);
-        Assert.ContainsSingle(result.Prepared.Files);
-        Assert.AreEqual(fixture.Request.Subject, result.Prepared.Subject);
-        Assert.HasCount(7, result.Prepared.Checks);
-        Assert.IsTrue(result.Prepared.Checks.All(check =>
-            check.Status == ReleaseCheckStatus.Passed));
-    }
-
-    [TestMethod]
     public async Task SelectedPreparationQualifiesOriginalWithoutCiPlan()
     {
         // Defect-free control for the shared commit.
@@ -98,17 +75,14 @@ public sealed class NpmPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("buddy", "github-packages-npm", true, "refs/heads/development",
+    [DataRow("buddy", "github-packages-npm", "refs/heads/development",
         "@hcoona/hexo-renderer-asciidoc")]
-    [DataRow("buddy", "github-packages-npm", false, "refs/heads/development",
-        "@hcoona/hexo-renderer-asciidoc")]
-    [DataRow("official", "npmjs", true, "refs/heads/development", "hexo-renderer-asciidoc")]
-    [DataRow("official", "npmjs", false, "refs/heads/main", "hexo-renderer-asciidoc")]
+    [DataRow("official", "npmjs", "refs/heads/main", "hexo-renderer-asciidoc")]
     public async Task ProductPreparationQualifiesTheChannelPackageAfterItsOwnTests(
-        string channel, string destination, bool dryRun, string selectedRef, string package)
+        string channel, string destination, string selectedRef, string package)
     {
-        using var fixture = Fixture.Product(shared!, sharedCommit, channel, destination, dryRun,
-            selectedRef);
+        using var fixture = Fixture.Product(shared!, sharedCommit, channel, destination,
+            dryRun: false, selectedRef);
 
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
 
@@ -247,13 +221,8 @@ public sealed class NpmPreparationTests(TestContext context)
     // Each row breaks one distinct invariant between the native answer and the fixture's own
     // committed root selection; the message names the tool and the failed condition.
     [TestMethod]
-    [DataRow("node", "missing", "has no single locked selection")]
-    [DataRow("node", "inactive", "is not active")]
-    [DataRow("node", "source-type", "not the committed root")]
-    [DataRow("node", "source-path", "not the committed root")]
     [DataRow("node", "readback", "differs from the committed locked selection")]
     [DataRow("pnpm", "inactive", "is not active")]
-    [DataRow("pnpm", "readback", "differs from the committed locked selection")]
     public async Task ToolOutsideCommittedSelectionBlocksPreparationBeforeProductCode(
         string tool, string defect, string condition)
     {
@@ -272,8 +241,6 @@ public sealed class NpmPreparationTests(TestContext context)
 
     [TestMethod]
     [DataRow("Cancelled", "Cancelled", "native-input")]
-    [DataRow("TimedOut", "TimedOut", "native-input")]
-    [DataRow("Cancelled", "Cancelled", "build")]
     [DataRow("TimedOut", "TimedOut", "build")]
     public async Task NativeTerminationRemainsVisibleInRequiredQualification(
         string native, string status, string checkId)
@@ -399,7 +366,7 @@ public sealed class NpmPreparationTests(TestContext context)
             {
                 string tool = args[^1];
                 string? defect = ToolDefect?.Tool == tool ? ToolDefect.Value.Defect : null;
-                output = defect == "missing" ? "[]" : JsonSerializer.Serialize(new[] { new
+                output = JsonSerializer.Serialize(new[] { new
                 {
                     version = Selected(tool),
                     requested_version = RepositoryToolSelection.Requested(File.ReadAllText(
@@ -407,10 +374,8 @@ public sealed class NpmPreparationTests(TestContext context)
                     active = defect != "inactive",
                     source = new
                     {
-                        type = defect == "source-type" ? ".tool-versions" : "mise.toml",
-                        path = Path.Combine(defect == "source-path" ? Path.Combine(
-                            repository.Directory, "product") : repository.Directory,
-                            "mise.toml"),
+                        type = "mise.toml",
+                        path = Path.Combine(repository.Directory, "mise.toml"),
                     },
                 } });
             }

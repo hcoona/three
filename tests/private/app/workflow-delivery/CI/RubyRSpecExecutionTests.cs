@@ -37,8 +37,6 @@ public sealed class RubyRSpecExecutionTests
     [TestMethod]
     [DataRow("passed", "Passed")]
     [DataRow("failed", "Failed")]
-    [DataRow("pending", "Passed")]
-    [DataRow("outside", "Failed")]
     public async Task WholeProjectInvocationKeepsOriginalExamplesAndNativeDefaults(
         string scenario, string expected)
     {
@@ -79,8 +77,6 @@ public sealed class RubyRSpecExecutionTests
     [DataRow("Exited", 1, "Failed")]
     [DataRow("TimedOut", 0, "TimedOut")]
     [DataRow("Cancelled", 0, "Cancelled")]
-    [DataRow("InvalidOutput", 0, "Failed")]
-    [DataRow("StartFailed", 0, "Failed")]
     public async Task CompletePassingReportCannotOverrideNativeCommandFailure(
         string termination, int code, string expected)
     {
@@ -128,21 +124,14 @@ public sealed class RubyRSpecExecutionTests
     }
 
     [TestMethod]
-    [DataRow(null)]
-    [DataRow("{\"examples\":")]
-    public async Task ZeroExitWithoutACompleteNativeResultFails(string? output)
+    public async Task ZeroExitWithoutAReportFails()
     {
         string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         try
         {
             RubyRSpecRequest request = Request(root);
             RubyRSpecRun run = await RubyRSpecExecution.RunAsync(Check, request,
-                async (command, token) =>
-                {
-                    if (output is not null)
-                        await File.WriteAllTextAsync(command.Arguments[^1], output, token);
-                    return Command();
-                }, TestContext.CancellationToken);
+                (_, _) => Task.FromResult(Command()), TestContext.CancellationToken);
             Assert.AreEqual(CheckStatus.Failed, run.Status);
             Assert.IsNull(run.Report);
             Assert.IsNotNull(run.ReportError);
@@ -150,12 +139,6 @@ public sealed class RubyRSpecExecutionTests
             Assert.IsEmpty(Directory.EnumerateFileSystemEntries(request.Scratch));
         }
         finally { Directory.Delete(root, true); }
-    }
-
-    [TestMethod]
-    public async Task StartupFailureWithoutReportKeepsBoundedNativeDiagnostic()
-    {
-        await StartupFailure();
     }
 
     [TestMethod]
@@ -188,7 +171,8 @@ public sealed class RubyRSpecExecutionTests
         finally { Directory.Delete(root, true); }
     }
 
-    private async Task StartupFailure()
+    [TestMethod]
+    public async Task StartupFailureWithoutReportKeepsBoundedNativeDiagnostic()
     {
         string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         try

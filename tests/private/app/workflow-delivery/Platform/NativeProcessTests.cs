@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using Microsoft.Extensions.Time.Testing;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Tests.Platform;
@@ -35,62 +34,76 @@ public sealed class NativeProcessTests
         string removed = OperatingSystem.IsWindows() ? "USERPROFILE" : "HOME";
         Assert.IsNotNull(Environment.GetEnvironmentVariable(removed));
         Assert.IsNotNull(Environment.GetEnvironmentVariable("PATH"));
-        Dictionary<string, string?> inherited = TestProcess.Environment();
-        inherited[marker] = "set";
-        inherited[removed] = null;
+        Dictionary<string, string?> removal = TestProcess.Environment();
+        removal[removed] = null;
         Dictionary<string, string?> isolated = TestProcess.Environment();
         isolated[marker] = "kept";
         // Only what the apphost needs to locate the runtime crosses the cleared boundary.
         foreach (string name in (string[])["DOTNET_ROOT", "SystemRoot"])
             if (Environment.GetEnvironmentVariable(name) is { } value) isolated[name] = value;
-        string[] arguments = TestProcess.Arguments("variables", marker, removed, "PATH");
-
         NativeCommandResult applied = await NativeProcess.ExecuteAsync(new(
-            TestProcess.Executable, Path.GetTempPath(), arguments, 30, inherited),
+            TestProcess.Executable, Path.GetTempPath(), TestProcess.Arguments("variables", removed),
+            30, removal),
             TestContext.CancellationToken);
         NativeCommandResult cleared = await NativeProcess.ExecuteAsync(new(
-            TestProcess.Executable, Path.GetTempPath(), arguments, 30, isolated,
+            TestProcess.Executable, Path.GetTempPath(),
+            TestProcess.Arguments("variables", marker, removed, "PATH"), 30, isolated,
             InheritEnvironment: false), TestContext.CancellationToken);
 
         Assert.IsTrue(applied.Succeeded, applied.Stderr);
-        Assert.AreEqual("set||" + Environment.GetEnvironmentVariable("PATH"), applied.Stdout);
+        Assert.IsEmpty(applied.Stdout);
         Assert.IsTrue(cleared.Succeeded, cleared.Stderr);
         Assert.AreEqual("kept||", cleared.Stdout);
     }
 
     [TestMethod]
-    [DataRow("short")]
-    [DataRow("long")]
-    [DataRow("empty")]
-    public async Task RunFailureIncludesOperationExitAndBoundedNativeOutput(string output)
+    public async Task RunTranslatesFailedExitWithBoundedNativeDiagnostics()
     {
-        string prefix = output == "long" ? "omitted-head" + new string('x', 5000) : "";
-        string stdout = output == "empty" ? "" : prefix + "stdout-cause";
-        string stderr = output == "empty" ? "" : prefix + "stderr-cause";
+        string prefix = "omitted-head" + new string('x', 5000);
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(
             () => NativeProcess.RunAsync(TestProcess.Executable, Path.GetTempPath(),
-                TestProcess.Arguments("exit", "7", stdout, stderr),
+                TestProcess.Arguments("exit", "7", prefix + "stdout-cause",
+                    prefix + "stderr-cause"),
                 TestContext.CancellationToken, Guard()));
 
         Assert.Contains(Path.GetFileNameWithoutExtension(TestProcess.Executable) + " exit",
             error.Message);
         Assert.Contains("Exited, exit 7.", error.Message);
-        if (output == "empty")
-        {
-            Assert.DoesNotContain("stdout:", error.Message);
-            Assert.DoesNotContain("stderr:", error.Message);
-        }
-        else
-        {
-            Assert.Contains("stdout-cause", error.Message);
-            Assert.Contains("stderr-cause", error.Message);
-        }
-        if (output == "long")
-        {
-            Assert.Contains("[truncated]", error.Message);
-            Assert.DoesNotContain("omitted-head", error.Message);
-            Assert.IsLessThan(2 * NativeDiagnostic.TailLength + 512, error.Message.Length);
-        }
+        Assert.Contains("stdout-cause", error.Message);
+        Assert.Contains("stderr-cause", error.Message);
+        Assert.Contains("[truncated]", error.Message);
+        Assert.DoesNotContain("omitted-head", error.Message);
+        Assert.IsLessThan(2 * NativeDiagnostic.TailLength + 512, error.Message.Length);
+    }
+
+    [TestMethod]
+    public async Task RunTranslatesInvalidUtf8ToDecoderFailure()
+    {
+        await Assert.ThrowsExactlyAsync<DecoderFallbackException>(() =>
+            NativeProcess.RunAsync(TestProcess.Executable, Path.GetTempPath(),
+                TestProcess.Arguments("bytes", "wyg=", ""), TestContext.CancellationToken,
+                Guard()));
+    }
+
+    [TestMethod]
+    public async Task RunPreservesLeadingUtf8BomAsNativeData()
+    {
+        const string expected = "\uFEFFsnow";
+        string output = await NativeProcess.RunAsync(TestProcess.Executable, Path.GetTempPath(),
+            TestProcess.Arguments("bytes", TestProcess.Base64(expected), ""),
+            TestContext.CancellationToken, Guard());
+
+        Assert.AreEqual(expected, output);
+    }
+
+    [TestMethod]
+    public async Task RunRejectsStdoutBeyondQueryOutputLimit()
+    {
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            NativeProcess.RunAsync(TestProcess.Executable, Path.GetTempPath(),
+                TestProcess.Arguments("flood", "stdout"), TestContext.CancellationToken, Guard()));
+
+        Assert.AreEqual("Native query output exceeded 33,554,432 characters.", error.Message);
     }
 
     [TestMethod]
@@ -110,32 +123,6 @@ public sealed class NativeProcessTests
         Assert.Contains("30-second deadline", error.Message);
         Assert.IsInstanceOfType<OperationCanceledException>(error.InnerException);
     }
-
-    [TestMethod]
-    public async Task RunPreservesLeadingUtf8BomAsNativeData()
-    {
-        const string expected = "\uFEFF雪\0";
-
-        string output = await RunRawOutputAsync(TestProcess.Base64(expected),
-            TestContext.CancellationToken);
-
-        Assert.AreEqual(expected, output);
-    }
-
-    // One invalid sequence and one BOM prove strict UTF-8 without BOM detection; the other
-    // BOM forms exercise only StreamReader's documented detection.
-    [TestMethod]
-    [DataRow("wyg=")]
-    [DataRow("//5BAA==")]
-    public async Task RunRejectsInvalidUtf8WithoutSwitchingEncoding(string bytes)
-    {
-        await Assert.ThrowsExactlyAsync<DecoderFallbackException>(
-            () => RunRawOutputAsync(bytes, TestContext.CancellationToken));
-    }
-
-    private static Task<string> RunRawOutputAsync(string payload, CancellationToken token) =>
-        NativeProcess.RunAsync(TestProcess.Executable, Path.GetTempPath(),
-            TestProcess.Arguments("bytes", payload, ""), token, Guard());
 
     private static Dictionary<string, string> Guard() =>
         new() { [TestProcess.GuardVariable] = "1" };
@@ -241,19 +228,5 @@ public sealed class NativeProcessTests
             }
         }
         if (failure is not null) ExceptionDispatchInfo.Capture(failure).Throw();
-    }
-
-    [TestMethod]
-    public async Task RunOutputLimitStopsQueryBeforeItsDeadline()
-    {
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            TestContext.CancellationToken);
-        cancellation.CancelAfter(TimeSpan.FromSeconds(15));
-
-        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(
-            () => NativeProcess.RunAsync(TestProcess.Executable, Path.GetTempPath(),
-                TestProcess.Arguments("flood", "stdout"), cancellation.Token, Guard()));
-
-        Assert.Contains("characters", error.Message);
     }
 }

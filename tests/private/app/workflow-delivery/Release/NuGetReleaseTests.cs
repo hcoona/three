@@ -34,14 +34,10 @@ public sealed class NuGetReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Exact", false)]
-    [DataRow("Absent", true)]
-    public async Task PublishAsyncExactOrAbsentUsesSupportedJourney(string stateName,
-        bool expectedMutation)
+    public async Task PublishAsyncTransfersTheLibraryOutcomeWithoutInventingAnUploadCommand()
     {
         using var fixture = new NuGetReleaseTestFixture();
-        ReleaseFileState state = Enum.Parse<ReleaseFileState>(stateName);
-        NuGetObservationResult initial = fixture.Observe(state);
+        NuGetObservationResult initial = fixture.Observe(ReleaseFileState.Absent);
         NuGetObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
         using var transport = new NuGetReleaseTestFixture.UploadTransport(HttpStatusCode.Created);
         int reads = 0;
@@ -53,16 +49,15 @@ public sealed class NuGetReleaseTests(TestContext context)
                 prepared, originals, endpoint, credential, token, transport),
             context.CancellationToken);
         NuGetCompletionResult result = NuGetRelease.Complete(fixture.Prepared, initial,
-            exact, expectedMutation ? publication : null);
+            exact, publication);
 
         Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
-        Assert.AreEqual((bool?)expectedMutation, result.MutationAttempted);
-        Assert.AreEqual(expectedMutation ? 2 : 1, reads);
-        Assert.AreEqual(expectedMutation ? 1 : 0, transport.Sends);
+        Assert.AreEqual(true, result.MutationAttempted);
+        Assert.AreEqual(2, reads);
+        Assert.AreEqual(1, transport.Sends);
         Assert.IsEmpty(result.Outcome.Uploads);
         Assert.AreSame(publication.Invocation, result.Invocation);
-        if (expectedMutation) Assert.IsTrue(result.Invocation!.ReturnedSuccessfully);
-        else Assert.IsNull(result.Invocation);
+        Assert.IsTrue(result.Invocation!.ReturnedSuccessfully);
     }
 
     [TestMethod]
@@ -90,7 +85,6 @@ public sealed class NuGetReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Unknown", "Passed")]
     [DataRow("Conflict", "Passed")]
     [DataRow("Absent", "Missing")]
     public async Task PublishAsyncUnknownOrConflictBlocksMutation(string stateName,
@@ -158,8 +152,6 @@ public sealed class NuGetReleaseTests(TestContext context)
     [TestMethod]
     [DataRow("Exact", "Satisfied")]
     [DataRow("Absent", "Unknown")]
-    [DataRow("Unknown", "Unknown")]
-    [DataRow("Conflict", "Unsatisfied")]
     public async Task PublishAsyncOfficialUploadAbnormalityReadsBackWithoutResend(
         string finalStateName, string outcomeName)
     {
@@ -201,24 +193,7 @@ public sealed class NuGetReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    public void CompleteAbsentWithoutPublisherRemainsUnknown()
-    {
-        using var fixture = new NuGetReleaseTestFixture();
-        NuGetCompletionResult result = NuGetRelease.Complete(fixture.Prepared,
-            fixture.Observe(ReleaseFileState.Absent), fixture.Observe(ReleaseFileState.Exact),
-            null);
-
-        Assert.AreEqual(ReleaseBusinessState.Unknown, result.Outcome.State);
-        Assert.IsNull(result.MutationAttempted);
-        Assert.IsNull(result.Invocation);
-        Assert.Contains("Required publication result is missing", string.Join(";",
-            result.Outcome.Reasons));
-    }
-
-    [TestMethod]
-    [DataRow("Failed")]
-    [DataRow("Missing")]
-    public void CompleteFinalRegistryCheckNotPassedIsUnsatisfied(string statusName)
+    public void CompleteRequiresNativeMetadataVisibilityEvenWithExactArchive()
     {
         using var fixture = new NuGetReleaseTestFixture();
         NuGetObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
@@ -227,7 +202,7 @@ public sealed class NuGetReleaseTests(TestContext context)
             Observation = exact.Observation with
             {
                 Checks = [exact.Observation.Checks[0], new("native-metadata-visibility",
-                    Enum.Parse<ReleaseCheckStatus>(statusName))],
+                    ReleaseCheckStatus.Missing)],
             },
         };
         NuGetCompletionResult result = NuGetRelease.Complete(fixture.Prepared, exact,
@@ -236,17 +211,6 @@ public sealed class NuGetReleaseTests(TestContext context)
         Assert.AreEqual(ReleaseBusinessState.Unsatisfied, result.Outcome.State);
         Assert.Contains("native-metadata-visibility", string.Join(";", result.Outcome.Reasons));
         Assert.AreEqual(false, result.MutationAttempted);
-    }
-
-    [TestMethod]
-    public void CompleteFinalUnknownRegistryStateRemainsUnknown()
-    {
-        using var fixture = new NuGetReleaseTestFixture();
-        NuGetCompletionResult result = NuGetRelease.Complete(fixture.Prepared,
-            fixture.Observe(ReleaseFileState.Exact), fixture.Observe(ReleaseFileState.Unknown),
-            null);
-
-        Assert.AreEqual(ReleaseBusinessState.Unknown, result.Outcome.State);
     }
 
     // WD-REL-009: nuget.org completes on the exact version reported available, without

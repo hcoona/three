@@ -1,7 +1,6 @@
 using System.Text.Json;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Repository;
-using WorkflowDelivery.Tests.Repository;
 
 namespace WorkflowDelivery.Tests.CI;
 
@@ -61,6 +60,7 @@ public sealed class RubyCliTests
                 return Task.FromResult(new RubyGroupReadback(Plan(), Inputs(), Inputs()));
             });
         Assert.AreEqual(0, exit, error.ToString());
+        Assert.IsEmpty(error.ToString());
         RubyGroupReadback readback = JsonSerializer.Deserialize(output.ToString(),
             TransferJson.Default.RubyGroupReadback)!;
         Assert.AreEqual(Candidate, readback.Plan.Candidate);
@@ -107,31 +107,25 @@ public sealed class RubyCliTests
     }
 
     [TestMethod]
-    [DataRow("null")]
-    [DataRow("{}")]
-    [DataRow("{\"candidate\":null}")]
-    public void InvalidRubyRequestCannotDispatch(string json)
+    public void InvalidRubyRequestCannotDispatch()
     {
         using var files = new DriverFiles();
         string path = Path.Combine(files.Root, "request.json");
-        File.WriteAllText(path, json);
+        File.WriteAllText(path, "null");
         using var output = new StringWriter();
         using var error = new StringWriter();
         int exit = Program.Run(["ci", "prepare-ruby-group", path], output, error,
             prepareRubyGroup: (_, _) =>
-            {
-                Assert.Fail("An incomplete request cannot dispatch preparation.");
-                return Task.FromResult<RubyGroupPreparationResult>(null!);
-            });
+                throw new AssertFailedException("Invalid transfer reached preparation."));
         Assert.AreEqual(2, exit);
         Assert.AreEqual("", output.ToString());
-        Assert.IsFalse(string.IsNullOrEmpty(error.ToString()));
+        Assert.IsNotEmpty(error.ToString());
     }
+
     private sealed class DriverFiles : IDisposable
     {
         internal string Root { get; } = Directory.CreateDirectory(Path.Combine(
             Path.GetTempPath(), "ruby-cli-" + Guid.NewGuid())).FullName;
         public void Dispose() => Directory.Delete(Root, recursive: true);
     }
-
 }

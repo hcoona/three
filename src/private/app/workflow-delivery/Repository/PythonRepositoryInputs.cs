@@ -144,9 +144,10 @@ internal static class PythonRepositoryInputs
                 "eng/node-release-schedule.json") ||
         (target == "tests/eng/test_python_release_caller.py" &&
             path is ".github/workflows/workflow-delivery-v3-python-release.yml" or
-                "global.json") ||
+                "tests/eng/ci_workflow_shell.py" or "global.json") ||
         (target == "tests/eng/test_browser_store_release_caller.py" &&
-            path == ".github/workflows/workflow-delivery-v3-browser-store-release.yml") ||
+            path is ".github/workflows/workflow-delivery-v3-browser-store-release.yml" or
+                "tests/eng/ci_workflow_shell.py" or "global.json") ||
         (target == "tests/eng/test_release_batch_dispatch.py" &&
             (path == "eng/scripts/release_batch_dispatch.py" || IsReleaseCallerWorkflow(path))) ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&

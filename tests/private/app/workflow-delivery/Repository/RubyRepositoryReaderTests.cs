@@ -190,6 +190,10 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
             }, context.CancellationToken);
         CollectionAssert.AreEquivalent(NestedOwnerDirectories,
             result.Facts.Owners.Select(owner => owner.Directory).ToArray());
+        RubyProjectDependencies producer = Assert.ContainsSingle(result.Facts.Native.Graph
+            .Projects);
+        Assert.AreEqual("asciidoctor-latexmath", producer.Name);
+        Assert.IsEmpty(producer.Ordinary);
         ProjectFacts suite = result.Facts.Owners.Single(owner =>
             owner.Directory == "tests/suite");
         Assert.Contains("tests/suite/spec/a_spec.rb", suite.OwnedPaths!);
@@ -203,26 +207,37 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task NativeCollectorsUseLockedBundleWithoutInventingOwner()
+    [DataRow("node/Gemfile", "node/Gemfile.lock")]
+    [DataRow("node/gems.rb", "node/gems.locked")]
+    public async Task NativeCollectorsUseLockedBundleWithoutInventingOwner(string entry,
+        string locked)
     {
-        // Defect-free control for the shared bundle commit.
-        GitFixture repo = sharedBundle!;
+        using GitFixture? alternate = entry == "node/Gemfile" ? null :
+            await GitFixture.CreateAsync(context.CancellationToken);
         GitMaterialization checkout = sharedBundleCheckout!;
         using var scratch = new Scratch();
         RubyRepositoryRequest request = SharedRequest(scratch.Directory);
+        if (alternate is not null)
+        {
+            await alternate.SetAsync(entry);
+            await alternate.SetAsync(locked);
+            checkout = await BindAsync(alternate);
+            request = Request(scratch.Directory);
+        }
+        string gemfile = Path.Combine(checkout.Root, entry);
+        string lockfile = Path.Combine(checkout.Root, locked);
         RubyRevisionInputs result = await RubyRepositoryReader.ReadAsync(checkout, request,
             async (command, token) =>
             {
                 using JsonDocument input = JsonDocument.Parse(
                     await File.ReadAllTextAsync(command.Arguments[^1], token));
-                string gemfile = Path.Combine(repo.Directory, "node/Gemfile");
                 Assert.AreEqual(gemfile, input.RootElement.GetProperty("path").GetString());
                 Assert.IsFalse(command.InheritEnvironment);
                 if (input.RootElement.GetProperty("operation").GetString() == "bundle-context")
                     return Answer(new
                     {
                         gemfile,
-                        lockfile = gemfile + ".lock",
+                        lockfile,
                         bundler_version = "2.7.2",
                         locked_bundler_version = "2.4.20"
                     });
@@ -232,7 +247,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
                 return Answer(new
                 {
                     gemfile,
-                    lockfile = gemfile + ".lock",
+                    lockfile,
                     bundler_version = "2.4.20",
                     locked_bundler_version = "2.4.20",
                     gemfiles = new[] { gemfile },
@@ -243,7 +258,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         Assert.IsEmpty(result.Sources);
         Assert.IsEmpty(result.Facts.Owners);
         Assert.IsEmpty(result.Facts.Native.Graph.Projects);
-        Assert.AreEqual("node/Gemfile", Assert.ContainsSingle(result.Facts.Native.Graph.Bundles)
+        Assert.AreEqual(entry, Assert.ContainsSingle(result.Facts.Native.Graph.Bundles)
             .Gemfile);
         Assert.AreEqual("2.4.20", Assert.ContainsSingle(result.Bundles).BundlerVersion);
         Assert.IsTrue(result.Facts.OperationInputs.All(input => input.Consumers.Length == 0));

@@ -8,8 +8,36 @@ public sealed class DotNetGroupReaderTests(TestContext context)
 {
     private const string Fixture = "tests/control/fixtures/node";
     private const string Parent = "tests/control/control.csproj";
+    private const string ControlSource = "control/Source.cs";
     private static readonly string[] NativeOwners = ["node", "dotnet"];
     private static readonly string[] NativeProjects = ["product/A.csproj", "product/B.csproj"];
+    private static DotNetEndpointFixture? shared;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        var fixture = await DotNetEndpointFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            foreach (string path in new[] { NodeGroupReader.ControlProject,
+                         ControlTestInputs.Project, ControlSource,
+                         "src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs",
+                         ".config/dotnet-tools.json", "mise.toml", "mise.lock",
+                         "eng/dotnet-frameworks/mise.toml", "eng/dotnet-frameworks/mise.lock",
+                         ".github/workflows/ci.yml", CiScope.SkippedTestSummary })
+                await fixture.Repo.SetAsync(path);
+            await fixture.CommitAsync();
+            shared = fixture;
+        }
+        catch
+        {
+            fixture.Dispose();
+            throw;
+        }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
 
     [TestMethod]
     public void NodeOnlyFixtureDoesNotSelectExcludedDotNetParent()
@@ -165,26 +193,6 @@ public sealed class DotNetGroupReaderTests(TestContext context)
         Assert.Contains("clean tracked checkout", error.Message);
     }
 
-    [TestMethod]
-    public async Task BoundSelectionPreservesNativeVariantsAndKnownOutsideChanges()
-    {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        DotNetRevisionInputs native = await fixture.BindAsync();
-        RepositoryFacts facts = DotNetFactsAssembler.Assemble(native, []) with
-        { UnaffectedPaths = ["docs/guide.md"] };
-        var request = new PlanRequest(facts, facts, ["linked/data.txt", "docs/guide.md"], false);
-        DotNetSelection selected = DotNetFactsAssembler.Select(request, native);
-        Assert.AreSame(request, selected.Request);
-        CiPlan plan = DotNetFactsAssembler.Complete(selected, context.CancellationToken);
-        Assert.HasCount(2, plan.Checks);
-        foreach (PlannedCheck item in plan.Checks)
-        {
-            Assert.AreEqual("product/A.csproj", item.Work.Key.Target);
-            Assert.AreEqual(CheckOrigin.NativeRetained, Assert.ContainsSingle(item.Origins));
-            Assert.AreEqual("linked/data.txt", Assert.ContainsSingle(item.Reasons).Path);
-        }
-    }
-
     // Caller sources include the pin files of the repository pin contracts, so a pin change
     // selects the control test project and its default test work, which asserts them.
     [TestMethod]
@@ -198,53 +206,35 @@ public sealed class DotNetGroupReaderTests(TestContext context)
     [DataRow(CiScope.SkippedTestSummary)]
     public async Task ControlInputsReachAllActualDotNetConsumers(string caller)
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        const string source = "control/Source.cs";
-        await fixture.Repo.SetAsync(NodeGroupReader.ControlProject, "<Project />");
-        await fixture.Repo.SetAsync(ControlTestInputs.Project, "<Project />");
-        await fixture.Repo.SetAsync(source);
-        await fixture.Repo.SetAsync(caller);
-        await fixture.CommitAsync();
-        fixture.Graph = fixture.Response(testProject: ControlTestInputs.Project);
-        DotNetRevisionInputs inputs = await fixture.BindAsync();
+        DotNetEndpointFixture fixture = shared!;
+        DotNetRevisionInputs inputs = await fixture.BindAsync(
+            fixture.Response(testProject: ControlTestInputs.Project), context.CancellationToken);
         var control = new ControlInputFacts(inputs.Revision.Commit, NodeGroupReader.ControlProject,
-            [new(source, "Sources", true)]);
+            [new(ControlSource, "Sources", true)]);
         DotNetRevisionInputs joined = DotNetGroupReader.WithControlInputs(inputs, control, true);
-        RepositoryFacts facts = DotNetFactsAssembler.Assemble(joined, []);
-        string[] consumers = [.. NativeProjects, ControlTestInputs.Project];
-        foreach (string path in new[] { source, caller })
-        {
-            CollectionAssert.AreEquivalent(consumers,
-                ImpactPlanner.DirectConsumers(facts, path));
-        }
         CiPlan plan = DotNetFactsAssembler.Complete(DotNetFactsAssembler.Select(joined, joined,
             [caller], false, [], []), context.CancellationToken);
+        string[] expected = [.. NativeProjects, ControlTestInputs.Project];
+        CollectionAssert.AreEquivalent(expected,
+            plan.Checks.Select(item => item.Work.Key.Target).Distinct().ToArray());
         PlannedCheck test = Assert.ContainsSingle(plan.Checks.Where(item =>
             item.Work.Key.Target == ControlTestInputs.Project &&
             item.Work.Key.Check == DotNetChecks.Test));
         Assert.Contains(new SelectionReason(caller, inputs.Revision.Commit,
             ControlTestInputs.Project), test.Reasons);
-        Assert.ThrowsExactly<InvalidDataException>(() =>
-            DotNetGroupReader.WithControlInputs(inputs, null, true));
-        Assert.ThrowsExactly<InvalidDataException>(() => DotNetGroupReader.WithControlInputs(inputs,
-            control with { Revision = NodeScenario.Basis }, true));
     }
 
     [TestMethod]
     public async Task ControlRunInputsAreReportedApartFromNativeConsumers()
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        const string source = "control/Source.cs";
+        DotNetEndpointFixture fixture = shared!;
+        const string source = ControlSource;
         const string caller = "mise.toml";
         const string node = "src/adopted";
-        await fixture.Repo.SetAsync(NodeGroupReader.ControlProject, "<Project />");
-        await fixture.Repo.SetAsync(source);
-        await fixture.Repo.SetAsync(caller);
-        await fixture.CommitAsync();
-        fixture.Graph = fixture.Response();
         // Product A natively consumes the control source; B and Node reach it only as a
         // control-run input.
-        DotNetRevisionInputs inputs = await fixture.BindAsync();
+        DotNetRevisionInputs inputs = await fixture.BindAsync(fixture.Response(),
+            context.CancellationToken);
         GitRevision candidate = inputs.Revision with
         {
             Entries = [.. inputs.Revision.Entries, .. NodeScenario.Inputs(inputs.Revision.Commit,
@@ -267,6 +257,10 @@ public sealed class DotNetGroupReaderTests(TestContext context)
         }
         var control = new ControlInputFacts(candidate.Commit, NodeGroupReader.ControlProject,
             [new(source, "Sources", true)]);
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            DotNetGroupReader.WithControlInputs(inputs, null, true));
+        Assert.ThrowsExactly<InvalidDataException>(() => DotNetGroupReader.WithControlInputs(
+            inputs, control with { Revision = NodeScenario.Basis }, true));
         (GroupEndpointFacts before, _) = DotNetGroupReader.Facts(inputs with { Revision = basis },
             Node(basis), null, false);
         (GroupEndpointFacts after, _) = DotNetGroupReader.Facts(inputs, Node(candidate), control,

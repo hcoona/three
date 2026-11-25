@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -20,11 +19,11 @@ public sealed class RubyPackageExecutionTests(TestContext context)
     private static readonly string[] RequirePaths = ["lib"];
     private const string DirectoryName = "src/hcoona-release-smoke-ruby";
 
-    // Defect rows read one class-owned commit. Native source preparation writes the generated
-    // version.rb into the product directory, so each shared row gets its own committed lane.
-    private const int LaneCount = 7;
+    // Builds write version.rb in separate lanes of a detached worktree, not the read-only seed.
+    private const int LaneCount = 6;
     private static GitFixture? shared;
     private static string sharedCandidate = "";
+    private static string sharedBuildCheckout = "";
     private static int nextLane = -1;
 
     [ClassInitialize]
@@ -35,9 +34,13 @@ public sealed class RubyPackageExecutionTests(TestContext context)
         {
             for (int lane = 0; lane < LaneCount; lane++)
                 await StageAsync(repo, Lane(lane));
+            await StageAsync(repo, DirectoryName);
             await repo.SetAsync("src/unrelated/asciidoctor-latexmath.gemspec");
             sharedCandidate = await repo.CommitAsync();
             await repo.GitAsync("reset", "--hard", sharedCandidate);
+            sharedBuildCheckout = Path.Combine(Path.GetDirectoryName(repo.Directory)!, "build");
+            await repo.GitAsync("worktree", "add", "--detach", sharedBuildCheckout,
+                sharedCandidate);
             shared = repo;
         }
         catch { repo.Dispose(); throw; }
@@ -52,10 +55,14 @@ public sealed class RubyPackageExecutionTests(TestContext context)
     {
         int lane = Interlocked.Increment(ref nextLane);
         Assert.IsLessThan(LaneCount, lane, "Raise LaneCount for the added shared rows.");
-        var (plan, request) = Request(shared!, sharedCandidate, Lane(lane),
+        var (plan, request) = Request(sharedBuildCheckout, sharedCandidate, Lane(lane),
             System.IO.Directory.CreateTempSubdirectory("workflow-ruby-gem-").FullName);
         return (plan, request, Lane(lane));
     }
+
+    private static (CiPlan Plan, RubyPackageRequest Request) SharedReadOnly() =>
+        Request(shared!.Directory, sharedCandidate, DirectoryName,
+            System.IO.Directory.CreateTempSubdirectory("workflow-ruby-gem-").FullName);
 
     private static NativeCommandResult Answer(object value) =>
         new(NativeTermination.Exited, 0, JsonSerializer.Serialize(value), "", 0, null);
@@ -76,14 +83,14 @@ public sealed class RubyPackageExecutionTests(TestContext context)
         await repo.GitAsync("reset", "--hard", candidate);
         string scratch = Path.Combine(Path.GetDirectoryName(repo.Directory)!, "gem-output");
         System.IO.Directory.CreateDirectory(scratch);
-        return Request(repo, candidate, DirectoryName, scratch);
+        return Request(repo.Directory, candidate, DirectoryName, scratch);
     }
 
-    private static (CiPlan Plan, RubyPackageRequest Request) Request(GitFixture repo,
+    private static (CiPlan Plan, RubyPackageRequest Request) Request(string checkout,
         string candidate, string directory, string scratch)
     {
         var source = new RubySourceGemFacts(
-            Path.Combine(repo.Directory, directory, "hcoona-release-smoke-ruby.gemspec"),
+            Path.Combine(checkout, directory, "hcoona-release-smoke-ruby.gemspec"),
             new("hcoona-release-smoke-ruby", "1.2.3", "ruby", RequirePaths, Files, [])
         );
         var unit = new ReleaseUnitDeclaration(
@@ -100,7 +107,7 @@ public sealed class RubyPackageExecutionTests(TestContext context)
         );
         CheckSpec[] checks = RubyPackageChecks.Expand(
             unit,
-            repo.Directory,
+            checkout,
             new Dictionary<string, RubySourceGemFacts> { [directory] = source }
         );
         var plan = new CiPlan(
@@ -119,17 +126,17 @@ public sealed class RubyPackageExecutionTests(TestContext context)
         return (
             plan,
             new(
-                repo.Directory,
+                checkout,
                 scratch,
                 new(
-                    Path.Combine(repo.Directory, "ruby"),
-                    Path.Combine(repo.Directory, "facts.rb"),
+                    Path.Combine(checkout, "ruby"),
+                    Path.Combine(checkout, "facts.rb"),
                     scratch,
                     new Dictionary<string, string?> { ["PATH"] = "native tools" },
                     30
                 ),
-                Path.Combine(repo.Directory, "gem"),
-                Path.Combine(repo.Directory, "nbgv")
+                Path.Combine(checkout, "gem"),
+                Path.Combine(checkout, "nbgv")
             )
         );
     }
@@ -254,13 +261,16 @@ public sealed class RubyPackageExecutionTests(TestContext context)
     [TestMethod]
     public async Task OriginalGemExecutesCompleteChecksInCleanConsumer()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        var (plan, request) = await PrepareAsync(repo);
-        plan = JsonSerializer.Deserialize<CiPlan>(JsonSerializer.Serialize(plan))!;
+        var (plan, request, directory) = SharedLane();
+        using var scratch = new Scratch(request.Scratch);
+        CiPlan? transferredPlan = JsonSerializer.Deserialize(
+            JsonSerializer.Serialize(plan, TransferJson.Default.CiPlan),
+            TransferJson.Default.CiPlan);
+        Assert.IsNotNull(transferredPlan);
         RubyPackageRun result = await RubyPackageExecution.RunAsync(
-            plan,
+            transferredPlan,
             request,
-            (command, token) => NativeAsync(request, command, "", token),
+            (command, token) => NativeAsync(request, command, "", token, directory),
             context.CancellationToken
         );
         Assert.IsTrue(ResultCollector.Collect(plan, result.Results).Satisfied);
@@ -274,23 +284,6 @@ public sealed class RubyPackageExecutionTests(TestContext context)
         NativeCommand consumer = result.Commands.Last().Command;
         Assert.StartsWith(request.Scratch, consumer.Directory);
         Assert.DoesNotContain(request.Checkout, consumer.Arguments);
-    }
-
-    [TestMethod]
-    public async Task SharedLaneExecutesCompleteChecks()
-    {
-        // Defect-free control: a shared lane satisfies every package obligation.
-        var (plan, request, directory) = SharedLane();
-        using var scratch = new Scratch(request.Scratch);
-        RubyPackageRun result = await RubyPackageExecution.RunAsync(
-            plan,
-            request,
-            (command, token) => NativeAsync(request, command, "", token, directory),
-            context.CancellationToken
-        );
-        Assert.IsTrue(ResultCollector.Collect(plan, result.Results).Satisfied);
-        Assert.ContainsSingle(result.Gems);
-        Assert.IsEmpty(result.Failures);
     }
 
     private sealed class Scratch(string directory) : IDisposable
@@ -307,7 +300,8 @@ public sealed class RubyPackageExecutionTests(TestContext context)
     [DataRow("consumer-failed")]
     public async Task FailedBuildContentsOrConsumerCannotPass(string defect)
     {
-        var (plan, request, directory) = SharedLane();
+        var (plan, request, directory) = defect == "source-failed"
+            ? ReadOnlyLane() : SharedLane();
         using var scratch = new Scratch(request.Scratch);
         RubyPackageRun result = await RubyPackageExecution.RunAsync(
             plan,
@@ -341,14 +335,20 @@ public sealed class RubyPackageExecutionTests(TestContext context)
         }
     }
 
+    private static (CiPlan Plan, RubyPackageRequest Request, string Directory) ReadOnlyLane()
+    {
+        var (plan, request) = SharedReadOnly();
+        return (plan, request, DirectoryName);
+    }
+
     private static readonly string LongGemStderr = "controlled gem head " +
         new string('x', NativeDiagnostic.TailLength) + " controlled gem build error";
 
     [TestMethod]
     public async Task EmptySelectionPerformsNoProductPreparation()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        var (plan, request) = await PrepareAsync(repo);
+        var (plan, request) = SharedReadOnly();
+        using var scratch = new Scratch(request.Scratch);
         RubyPackageRun result = await RubyPackageExecution.RunAsync(
             plan with
             {
@@ -394,8 +394,8 @@ public sealed class RubyPackageExecutionTests(TestContext context)
     [TestMethod]
     public async Task UnsupportedOrIncompleteGemPlanFailsBeforeEffects()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        var (plan, request) = await PrepareAsync(repo);
+        var (plan, request) = SharedReadOnly();
+        using var scratch = new Scratch(request.Scratch);
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             RubyPackageExecution.RunAsync(
                 plan with

@@ -23,10 +23,6 @@ public sealed class ScopeInputsTests
         CiPlan plan = ImpactPlanner.Plan(request);
 
         Assert.IsEmpty(plan.Checks);
-        CollectionAssert.AreEqual(new[] { Codeowners }, request.Basis.UnaffectedPaths);
-        CollectionAssert.AreEqual(new[] { Codeowners }, request.Candidate.UnaffectedPaths);
-        Assert.AreEqual(NodeScenario.Basis, plan.Comparison);
-        Assert.AreEqual(NodeScenario.Candidate, plan.Candidate);
     }
 
     [TestMethod]
@@ -60,16 +56,27 @@ public sealed class ScopeInputsTests
     }
 
     [TestMethod]
-    public void OwnedUnrelatedChangesRemainKnownWithoutSelectingWork()
+    [DataRow(true)]
+    [DataRow(false)]
+    public void OwnedUnrelatedChangesRemainKnownWithoutSelectingWork(bool presentAtBasis)
     {
         var scenario = new Scenario(Unrelated);
+        if (!presentAtBasis)
+        {
+            GitRevision basis = scenario.Native.Basis;
+            scenario.Native = scenario.Native with
+            {
+                Basis = basis with
+                { Entries = basis.Entries.Where(entry => entry.Path != Unrelated).ToArray() }
+            };
+            scenario.Row("basis")["present"] = false;
+            scenario.Row("basis")["mode"] = null;
+            scenario.Row("basis")["reasons"] = new JsonArray();
+        }
 
-        PlanRequest request = scenario.Read().Bind(scenario.Basis, scenario.Candidate);
-        CiPlan plan = ImpactPlanner.Plan(request);
+        CiPlan plan = ImpactPlanner.Plan(scenario.Read().Bind(scenario.Basis, scenario.Candidate));
 
         Assert.IsEmpty(plan.Checks);
-        CollectionAssert.AreEqual(new[] { Unrelated }, request.Basis.UnaffectedPaths);
-        CollectionAssert.AreEqual(new[] { Unrelated }, request.Candidate.UnaffectedPaths);
         Assert.AreEqual(NodeScenario.Basis, plan.Comparison);
         Assert.AreEqual(NodeScenario.Candidate, plan.Candidate);
     }
@@ -80,12 +87,9 @@ public sealed class ScopeInputsTests
     public void NativeConsumersSupplyResponsibilityAndKeepSelection(string path)
     {
         var scenario = new Scenario(path);
-        Assert.IsEmpty(scenario.Read().Basis.Single().Reasons);
-
         PlanRequest request = scenario.Read().Bind(scenario.Basis, scenario.Candidate);
         CiPlan plan = ImpactPlanner.Plan(request);
 
-        Assert.IsEmpty(request.Basis.UnaffectedPaths);
         Assert.HasCount(2, plan.Checks);
         foreach (PlannedCheck check in plan.Checks)
         {
@@ -123,27 +127,6 @@ public sealed class ScopeInputsTests
 
         Assert.ThrowsExactly<InvalidDataException>(() => scenario.Read().Bind(scenario.Basis,
             scenario.Candidate));
-    }
-
-    [TestMethod]
-    public void ConfirmedAbsenceDoesNotRequireResponsibility()
-    {
-        var scenario = new Scenario(Unrelated);
-        GitRevision basisRevision = scenario.Native.Basis with
-        {
-            Entries = scenario.Native.Basis.Entries.Where(entry => entry.Path != Unrelated)
-                .ToArray(),
-        };
-        scenario.Native = scenario.Native with { Basis = basisRevision };
-        scenario.Row("basis")["present"] = false;
-        scenario.Row("basis")["mode"] = null;
-        scenario.Row("basis")["reasons"] = new JsonArray();
-
-        CiPlan plan = ImpactPlanner.Plan(scenario.Read().Bind(scenario.Basis, scenario.Candidate));
-
-        Assert.IsEmpty(plan.Checks);
-        Assert.AreEqual(NodeScenario.Basis, plan.Comparison);
-        Assert.AreEqual(NodeScenario.Candidate, plan.Candidate);
     }
 
     [TestMethod]

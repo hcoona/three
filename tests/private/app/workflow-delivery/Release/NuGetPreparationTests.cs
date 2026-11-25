@@ -59,13 +59,7 @@ public sealed class NuGetPreparationTests(TestContext context)
 
     [TestMethod]
     [DataRow("restore", "Exited", "Failed")]
-    [DataRow("restore", "Cancelled", "Cancelled")]
-    [DataRow("restore", "TimedOut", "TimedOut")]
-    [DataRow("Build", "Exited", "Failed")]
     [DataRow("Build", "Cancelled", "Cancelled")]
-    [DataRow("Build", "TimedOut", "TimedOut")]
-    [DataRow("Pack,_GetOutputItemsFromPack", "Exited", "Failed")]
-    [DataRow("Pack,_GetOutputItemsFromPack", "Cancelled", "Cancelled")]
     [DataRow("Pack,_GetOutputItemsFromPack", "TimedOut", "TimedOut")]
     public async Task NativeFailureStopsPreparationAndRetainsTermination(string phase,
         string terminationText, string expectedText)

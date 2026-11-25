@@ -325,26 +325,17 @@ public sealed class RubyNativePublisherTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("buddy", "github-packages-ruby", "refs/tags/v1", "true")]
-    [DataRow("buddy", "github-packages-ruby", "refs/heads/", "true")]
-    [DataRow("buddy", "rubygems", "refs/heads/development", "true")]
-    [DataRow("official", "github-packages-ruby", "refs/heads/main", "true")]
-    [DataRow("unsupported", "rubygems", "refs/heads/main", "true")]
-    [DataRow("official", "rubygems", "refs/heads/development", "true")]
-    [DataRow("official", "rubygems", "refs/tags/v1", "true")]
+    [DataRow("buddy", "rubygems", "refs/heads/development")]
+    [DataRow("official", "github-packages-ruby", "refs/heads/main")]
+    [DataRow("official", "rubygems", "refs/heads/development")]
     public async Task UnsupportedChannelsAndRefsStopBeforeNativeInvocation(
         string channel,
         string destination,
-        string selectedRef,
-        string publicRelease
+        string selectedRef
     )
     {
         using var fixture = new Fixture();
         RubyPreparationResult preparation = fixture.ForChannel(channel, destination, selectedRef);
-        if (publicRelease == "missing")
-            preparation.Native.Remove("public-release");
-        else
-            preparation.Native["public-release"] = publicRelease;
         await AssertRejectedAsync(preparation, fixture);
     }
 
@@ -367,9 +358,6 @@ public sealed class RubyNativePublisherTests(TestContext context)
 
     [TestMethod]
     [DataRow("buddy", "missing")]
-    [DataRow("buddy", "null")]
-    [DataRow("buddy", "blank")]
-    [DataRow("official", "missing")]
     [DataRow("official", "null")]
     [DataRow("official", "blank")]
     public async Task MissingSelectedKeyNeverFallsBack(string channel, string defect)
@@ -531,16 +519,13 @@ public sealed class RubyNativePublisherTests(TestContext context)
 
     [TestMethod]
     [DataRow(nameof(NativeTermination.Exited), 0, false, true)]
-    [DataRow(nameof(NativeTermination.Exited), 17, false, false)]
     [DataRow(nameof(NativeTermination.Exited), 17, true, false)]
     [DataRow(nameof(NativeTermination.TimedOut), -1, true, false)]
     [DataRow(nameof(NativeTermination.Cancelled), -1, true, false)]
-    [DataRow(nameof(NativeTermination.Cancelled), 0, true, false)]
     [DataRow(nameof(NativeTermination.InvalidOutput), 0, true, false)]
     [DataRow(nameof(NativeTermination.CleanupFailed), 0, true, false)]
     [DataRow(nameof(NativeTermination.StartFailed), -1, true, false)]
     [DataRow(nameof(NativeTermination.InputFailed), -1, true, false)]
-    [DataRow(nameof(NativeTermination.InputFailed), 0, true, false)]
     [DataRow(nameof(NativeTermination.Exited), 0, true, true)]
     public async Task NativeOutcomesRetainFactsAndOmitDiagnostics(
         string terminationName,

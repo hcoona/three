@@ -3,14 +3,23 @@ using Microsoft.Build.Evaluation;
 using Microsoft.Build.Execution;
 using Microsoft.Build.Framework;
 using Microsoft.Build.ObjectModelRemoting;
+using WorkflowDelivery.CI;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Tests.Repository;
 
 [TestClass]
-public sealed class DotNetNativeInputsTests
+public sealed class DotNetNativeInputsTests(TestContext context)
 {
     private const string Locator = "Microsoft.NET.SDK.WorkloadAutoImportPropsLocator";
+    private static DotNetEndpointFixture? shared;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext) =>
+        shared = await DotNetEndpointFixture.CreateAsync(classContext.CancellationToken);
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
 
     [TestMethod]
     [DataRow(Locator, "", false, "Import")]
@@ -18,7 +27,7 @@ public sealed class DotNetNativeInputsTests
     [DataRow("microsoft.net.sdk.workloadautoimportpropslocator", "", true, "AdditionalFiles")]
     [DataRow("MICROSOFT.NET.SDK.WORKLOADAUTOIMPORTPROPSLOCATOR", "native-version", false,
         "Analyzer")]
-    public void ClassifyObservedAutoImportClassifiesSiblingWithSdkIdentity(
+    public async Task ObservedWorkloadImportAdmitsSiblingWithoutSelectingItAsSource(
         string identity, string version, bool trailingSeparator, string role)
     {
         using var fixture = new InputFixture();
@@ -34,7 +43,23 @@ public sealed class DotNetNativeInputsTests
         DotNetGraphInput actual = inputs.Classify(input);
 
         Assert.AreEqual(new DotNetInputProvider("Sdk", pack, identity, version), actual.Provider);
-        Assert.AreEqual(input, actual with { Provider = null });
+        DotNetEndpointFixture checkout = shared!;
+        DotNetGraphResponse graph = checkout.Response();
+        graph = graph with
+        {
+            Inputs = [.. graph.Inputs,
+            actual with { Consumer = graph.Nodes[2].Identity }]
+        };
+        DotNetRevisionInputs bound = await checkout.BindAsync(graph, context.CancellationToken);
+        CiPlan plan = DotNetFactsAssembler.Complete(DotNetFactsAssembler.Select(bound, bound,
+            ["linked/data.txt"], false, [], []), context.CancellationToken);
+
+        Assert.IsNotEmpty(plan.Checks);
+        foreach (PlannedCheck check in plan.Checks)
+        {
+            Assert.AreEqual("product/A.csproj", check.Work.Key.Target);
+            Assert.AreEqual("linked/data.txt", Assert.ContainsSingle(check.Reasons).Path);
+        }
     }
 
     [TestMethod]
@@ -65,7 +90,6 @@ public sealed class DotNetNativeInputsTests
             DotNetInputProvider? expected = observed[index]
                 ? new("Sdk", packs[index], Locator, "native-version") : null;
             Assert.AreEqual(expected, actual.Provider, packs[index]);
-            Assert.AreEqual(sibling, actual with { Provider = null });
             DotNetGraphInput direct = fixture.Input(
                 InputFixture.FileAt(roots[index], "Direct.props"));
             Assert.AreEqual(new DotNetInputProvider("Sdk", roots[index], Locator,
@@ -134,7 +158,6 @@ public sealed class DotNetNativeInputsTests
         DotNetGraphInput actual = inputs.Classify(sibling);
 
         Assert.AreEqual(expected, actual.Provider);
-        Assert.AreEqual(sibling, actual with { Provider = null });
         if (scenario == "failed")
             Assert.IsNull(inputs.Classify(fixture.Input(InputFixture.FileAt(root, "Direct.props")))
                 .Provider);
@@ -191,7 +214,7 @@ public sealed class DotNetNativeInputsTests
         Assert.IsNull(actual.Provider);
         Assert.AreEqual(input with { Provider = null }, actual);
         if (preclassified)
-            Assert.AreSame(prior, fixture.Inputs([import]).Classify(input).Provider);
+            Assert.AreEqual(prior, fixture.Inputs([import]).Classify(input).Provider);
     }
 
     [TestMethod]
@@ -219,8 +242,7 @@ public sealed class DotNetNativeInputsTests
 
         DotNetGraphInput actual = inputs.Classify(input);
 
-        Assert.AreSame(input, actual);
-        Assert.AreEqual(prior, actual.Provider);
+        Assert.AreEqual(input, actual);
     }
 
     [TestMethod]

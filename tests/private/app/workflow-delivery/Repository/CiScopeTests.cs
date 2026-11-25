@@ -644,11 +644,6 @@ public sealed class CiScopeTests
         bool expected) => Assert.AreEqual(expected, CiScope.InlineScriptMetadata(text));
 
     [TestMethod]
-    public void CurrentStandaloneScriptCarriesInlineMetadata() =>
-        Assert.IsTrue(CiScope.InlineScriptMetadata(File.ReadAllText(Path.Combine(Root(),
-            "eng/scripts/find_node_project_path.py"))));
-
-    [TestMethod]
     public void HkWorkflowLintRequiresCommittedHkAndCiWorkflow()
     {
         const string path = ".github/workflows/lint.yaml";

@@ -60,7 +60,6 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     [TestMethod]
     [DataRow(404, "Conflict")]
     [DataRow(401, "Unknown")]
-    [DataRow(503, "Unknown")]
     public async Task UnavailableChromeStatusEstablishesNoAbsence(int status, string state)
     {
         using var handler = new Handler((_, _) => Response(status, "{}"));
@@ -224,16 +223,25 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         });
         using var client = new HttpClient(handler);
         using var files = new Originals(["edge-zip"]);
-        var operations = new List<StoreOperation>();
-        var store = new EdgeAddons(client, Subject("edge-addons"), Target("edge-addons"),
+        BrowserStorePreparationResult preparation = files.Preparation("edge-addons", live: true);
+        var store = new EdgeAddons(client, preparation.Prepared.Subject, preparation.Target,
             Version, "key", "client", (_, _) => Task.CompletedTask, attempts: 2);
 
-        Assert.AreEqual(StoreState.Unobserved, (await store.ObserveAsync(
-            context.CancellationToken)).State);
-        StoreObservation? final = await store.PublishAsync(files.Files, operations,
-            context.CancellationToken);
+        StoreObservation initial = await store.ObserveAsync(context.CancellationToken);
+        Assert.AreEqual(StoreState.Unobserved, initial.State);
+        Assert.IsEmpty(handler.Requests);
+        BrowserStorePublicationResult publication = await BrowserStoreRelease.PublishAsync(
+            preparation, files.Files, initial, store, context.CancellationToken);
+        BrowserStoreCompletionResult completion = BrowserStoreRelease.Complete(preparation,
+            initial, null, publication);
 
-        Assert.AreEqual(Enum.Parse<StoreState>(state), final!.State);
+        Assert.AreEqual(Enum.Parse<StoreState>(state), completion.State);
+        Assert.AreEqual(state switch
+        {
+            "Received" => ReleaseBusinessState.Satisfied,
+            "Conflict" => ReleaseBusinessState.Unsatisfied,
+            _ => ReleaseBusinessState.Unknown
+        }, completion.Outcome.State);
         Assert.AreEqual("https://api.addons.microsoftedge.microsoft.com/v1/products/item/" +
             "submissions/draft/package", handler.Requests[0].Uri);
         Assert.AreEqual("https://api.addons.microsoftedge.microsoft.com/v1/products/item/" +
@@ -271,7 +279,8 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
                 using var output = new StringWriter();
                 Assert.AreEqual(0, BrowserStoreReleaseCli.Run(["release", .. args], output,
                     store: (_, _, _) => { factory++; throw new InvalidOperationException(); },
-                    environment: _ => null));
+                    environment: name => throw new AssertFailedException(
+                        "A dry run must not resolve store credentials: " + name)));
                 return output.ToString();
             }
             string observation = Path.Combine(root, "observation.json");

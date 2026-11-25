@@ -33,34 +33,49 @@ public sealed class RubyPackageChecksTests
     [TestMethod]
     [DataRow("src/original", "1.2.3")]
     [DataRow("src/moved", "1.2.3.pre.beta.4")]
-    public void StandaloneGemRetainsCompleteChecksAndOriginalNativeSubject(
+    public void ChangedStandaloneGemPlansAllPackageChecksForTheOriginalNativeSubject(
         string directory, string expectedVersion)
     {
         ReleaseUnitDeclaration unit = Unit(directory);
+        string entry = directory + "/hcoona-release-smoke-ruby.gemspec";
         var sources = new Dictionary<string, RubySourceGemFacts>
         {
             [directory] = Source(directory, expectedVersion)
         };
-        CheckSpec[] checks = RubyPackageChecks.Expand(unit, Root, sources);
-        CollectionAssert.AreEqual(RubyPackageChecks.Kinds,
+        var revision = new GitRevision("candidate",
+            [new(entry, "100644", "blob"), new(unit.SourcePath, "100644", "blob")]);
+        var owner = new ProjectFacts("ruby:" + directory, directory, [], [], unit.Id,
+            RubyPackageChecks.Preset, RubyPackageChecks.Expand(unit, Root, sources));
+        RubyDependencyGraph graph = RubyRepositoryInventory.Discover(revision).Bind(Root,
+            sources.Values.ToArray(), []);
+        var endpoint = new RubyFactsEndpoint(revision, new(graph, []), [owner],
+            [new(unit.SourcePath, [owner.Id])]);
+        RubyFactAssembly assembly = RubyFactsAssembler.Assemble(endpoint, endpoint,
+            [unit.SourcePath], false);
+        CheckSpec[] checks = ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons)
+            .Checks.Select(check => check.Work).ToArray();
+
+        CollectionAssert.AreEquivalent(RubyPackageChecks.Kinds,
             checks.Select(check => check.Key.Check).ToArray());
         Assert.IsTrue(checks.All(check => check.Required && check.Runner == "ubuntu-latest" &&
             check.Key.Target == "release/hcoona-release-smoke-ruby/ruby-gem" &&
             check.Key.Variant == "default"));
-        PackageTarget subject = checks[0].Package!;
+        CheckSpec build = checks.Single(check => check.Key.Check == RubyPackageChecks.Build);
+        CheckSpec contents = checks.Single(check => check.Key.Check == RubyPackageChecks.Contents);
+        CheckSpec install = checks.Single(check => check.Key.Check == RubyPackageChecks.Consumer);
+        PackageTarget subject = build.Package!;
         Assert.AreEqual(directory, subject.Directory);
         Assert.AreEqual(expectedVersion, subject.ExpectedVersion);
         Assert.AreEqual(unit.SourcePath, subject.Declaration);
-        Assert.AreEqual(directory + "/hcoona-release-smoke-ruby.gemspec", subject.EntryPoint);
+        Assert.AreEqual(entry, subject.EntryPoint);
         Assert.AreEqual("ruby/gem-v1", subject.Definition);
         Assert.IsNull(subject.PublishDirectory);
         Assert.AreEqual(new PackageOutput("gem", "primary-package", "ruby-gem"),
             Assert.ContainsSingle(subject.Outputs));
         Assert.IsTrue(checks.All(check => check.Package == subject));
-        Assert.IsEmpty(checks[0].Prerequisites);
-        CollectionAssert.AreEqual(new[] { checks[0].Key }, checks[1].Prerequisites);
-        CollectionAssert.AreEqual(new[] { checks[0].Key, checks[1].Key },
-            checks[2].Prerequisites);
+        Assert.IsEmpty(build.Prerequisites);
+        Assert.AreEqual(build.Key, Assert.ContainsSingle(contents.Prerequisites));
+        CollectionAssert.AreEquivalent(new[] { build.Key, contents.Key }, install.Prerequisites);
     }
 
     [TestMethod]

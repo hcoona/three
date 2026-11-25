@@ -11,104 +11,62 @@ namespace WorkflowDelivery.Tests.Release;
 public sealed class ReleaseCliTests
 {
     [TestMethod]
-    [DataRow("Exact", false, 0, "Satisfied")]
-    [DataRow("Conflict", false, 1, "Unsatisfied")]
-    [DataRow("Unknown", false, 1, "Unknown")]
-    [DataRow("Exact", true, 1, "Unknown")]
-    public void ActualGithubCompletionUsesFinalRegistryObservationOfOriginalBytes(
-        string finalState, bool initiallyAbsent, int expectedExit, string expectedState)
+    [DataRow("github-npm", "Exact", "Conflict", 1, "Unsatisfied")]
+    [DataRow("github-npm", "Exact", "Exact", 0, "Satisfied")]
+    [DataRow("npmjs", "Absent", "Exact", 1, "Unknown")]
+    [DataRow("npmjs", "Exact", "Exact", 0, "Satisfied")]
+    public void ActualCompletionBindsTheRegistryTransfer(string registry, string initialState,
+        string finalState, int expectedExit, string expectedState)
     {
         using var files = new Files();
+        bool github = registry == "github-npm";
         PreparedRelease prepared = files.Prepared with
         {
             Subject = files.Prepared.Subject with
-            { Channel = "buddy", Destination = "github-packages-npm", DryRun = false }
+            {
+                Channel = github ? "buddy" : "official",
+                Destination = github ? "github-packages-npm" : "npmjs",
+                DryRun = false
+            }
         };
         ReleaseFile file = prepared.Files[0];
-        string preparation = files.Write("buddy-prepared.json", JsonSerializer.Serialize(
+        string preparation = files.Write("prepared.json", JsonSerializer.Serialize(
             new NpmPreparationResult(prepared, [], []), TransferJson.Default.NpmPreparationResult));
-        var exact = new GithubNpmObservationResult(new(prepared.Subject,
-            [new(file.Output, file.Name, file.Version, ReleaseFileState.Exact,
-                file.Size, file.Sha256)],
-            ["visibility"], [new("visibility", ReleaseCheckStatus.Passed)]), []);
-        ReleaseFileState state = Enum.Parse<ReleaseFileState>(finalState);
-        string observation = files.Write("buddy-observed.json", JsonSerializer.Serialize(exact with
-        {
-            Observation = exact.Observation with
-            {
-                Files = [exact.Observation.Files[0] with
-            { State = state, Size = state == ReleaseFileState.Exact ? file.Size : null,
-                Sha256 = state == ReleaseFileState.Exact ? file.Sha256 : null }]
-            }
-        },
-            TransferJson.Default.GithubNpmObservationResult));
-        string initial = files.Write("buddy-initial.json", JsonSerializer.Serialize(exact with
-        {
-            Observation = exact.Observation with
-            {
-                Files = [exact.Observation.Files[0] with
-            { State = initiallyAbsent ? ReleaseFileState.Absent : ReleaseFileState.Exact,
-                Size = initiallyAbsent ? null : file.Size,
-                Sha256 = initiallyAbsent ? null : file.Sha256 }]
-            }
-        },
-            TransferJson.Default.GithubNpmObservationResult));
+        string initial = WriteObservation("initial.json", initialState);
+        string final = WriteObservation("final.json", finalState);
         using var output = new StringWriter();
         using var error = new StringWriter();
 
-        Assert.AreEqual(expectedExit, Program.Run(["release", "complete-github-npm", preparation,
-            initial, observation, "-"], output, error), error.ToString());
+        Assert.AreEqual(expectedExit, Program.Run(["release", "complete-" + registry, preparation,
+            initial, final, "-"], output, error), error.ToString());
 
         ReleaseOutcome result = JsonSerializer.Deserialize(output.ToString(),
             TransferJson.Default.ReleaseOutcome)!;
         Assert.AreEqual(prepared.Subject, result.Subject);
         Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expectedState), result.State);
         Assert.IsEmpty(result.Uploads);
+        Assert.AreEqual("", error.ToString());
+
+        string WriteObservation(string path, string stateName)
+        {
+            ReleaseFileState state = Enum.Parse<ReleaseFileState>(stateName);
+            string check = github ? "visibility" : "metadata";
+            ReleaseObservation observed = new(prepared.Subject,
+                [new(file.Output, file.Name, file.Version, state,
+                    state == ReleaseFileState.Exact ? file.Size : null,
+                    state == ReleaseFileState.Exact ? file.Sha256 : null)],
+                [check], [new(check, ReleaseCheckStatus.Passed)]);
+            return files.Write(path, github
+                ? JsonSerializer.Serialize(new GithubNpmObservationResult(observed, []),
+                    TransferJson.Default.GithubNpmObservationResult)
+                : JsonSerializer.Serialize(new NpmjsObservationResult(observed, []),
+                    TransferJson.Default.NpmjsObservationResult));
+        }
     }
 
     [TestMethod]
-    [DataRow("Exact", false, 0, "Satisfied")]
-    [DataRow("Absent", true, 1, "Unknown")]
-    [DataRow("Conflict", false, 1, "Unsatisfied")]
-    [DataRow("Exact", true, 1, "Unknown")]
-    public void ActualNpmjsCompletionUsesFinalRegistryObservationOfOriginalBytes(
-        string finalState, bool initiallyAbsent, int expectedExit, string expectedState)
-    {
-        using var files = new Files();
-        PreparedRelease prepared = files.Prepared with
-        { Subject = files.Prepared.Subject with { DryRun = false } };
-        ReleaseFile file = prepared.Files[0];
-        string preparation = files.Write("official-prepared.json", JsonSerializer.Serialize(
-            new NpmPreparationResult(prepared, [], []), TransferJson.Default.NpmPreparationResult));
-        NpmjsObservationResult Observed(ReleaseFileState state) => new(new(prepared.Subject,
-            [new(file.Output, file.Name, file.Version, state,
-                state == ReleaseFileState.Exact ? file.Size : null,
-                state == ReleaseFileState.Exact ? file.Sha256 : null)],
-            ["metadata"], [new("metadata", ReleaseCheckStatus.Passed)]), []);
-        string initial = files.Write("official-initial.json", JsonSerializer.Serialize(
-            Observed(initiallyAbsent ? ReleaseFileState.Absent : ReleaseFileState.Exact),
-            TransferJson.Default.NpmjsObservationResult));
-        string observation = files.Write("official-final.json", JsonSerializer.Serialize(
-            Observed(Enum.Parse<ReleaseFileState>(finalState)),
-            TransferJson.Default.NpmjsObservationResult));
-        using var output = new StringWriter();
-        using var error = new StringWriter();
-
-        Assert.AreEqual(expectedExit, Program.Run(["release", "complete-npmjs", preparation,
-            initial, observation, "-"], output, error), error.ToString());
-
-        ReleaseOutcome result = JsonSerializer.Deserialize(output.ToString(),
-            TransferJson.Default.ReleaseOutcome)!;
-        Assert.AreEqual(prepared.Subject, result.Subject);
-        Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expectedState), result.State);
-        Assert.IsEmpty(result.Uploads);
-    }
-
-    [TestMethod]
-    [DataRow("Exact", 0, 0)]
     [DataRow("Absent", 0, 1)]
     [DataRow("Conflict", 1, 0)]
-    [DataRow("Unknown", 1, 0)]
     public void ActualDryRunCommandReportsHypotheticalWorkAndFailure(string stateName,
         int exit, int writes)
     {
@@ -155,6 +113,24 @@ public sealed class ReleaseCliTests
 
         Assert.AreEqual("", output.ToString());
         Assert.IsNotEmpty(error.ToString());
+    }
+
+    [TestMethod]
+    [DataRow("publish-github-npm")]
+    [DataRow("publish-npmjs")]
+    public void ActualPublisherRejectsSubstitutedOriginalBeforeOtherInputs(string command)
+    {
+        using var files = new Files();
+        string archive = Path.Combine(files.Root, files.Prepared.Files[0].Path);
+        File.WriteAllBytes(archive, [4, 5, 6]);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        Assert.AreEqual(2, Program.Run(["release", command, files.Preparation, files.Root,
+            "unused-scratch", "unused-toolchain"], output, error));
+
+        Assert.AreEqual("", output.ToString());
+        Assert.Contains("Original release transfer differs from preparation.", error.ToString());
     }
 
     [TestMethod]

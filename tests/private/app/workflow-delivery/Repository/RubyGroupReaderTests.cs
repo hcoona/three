@@ -10,6 +10,7 @@ namespace WorkflowDelivery.Tests.Repository;
 public sealed class RubyGroupReaderTests(TestContext context)
 {
     private const string Spec = "src/input/spec/one_spec.rb";
+    private const string Quality = "src/input/workflow-delivery.quality.yml";
     private const string Other = "src/other/code.cs";
     private const string Unresolved = "unresolved.txt";
 
@@ -19,6 +20,8 @@ public sealed class RubyGroupReaderTests(TestContext context)
     private static GitFixture? shared;
     private static Fixture.Pair? sharedSpec;
     private static readonly Dictionary<string, Fixture.Pair> SharedCallers =
+        new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, Fixture.Pair> SharedPresets =
         new(StringComparer.Ordinal);
 
     [ClassInitialize]
@@ -30,6 +33,10 @@ public sealed class RubyGroupReaderTests(TestContext context)
             (sharedSpec, Fixture.Pair[] callers) = await Fixture.CommitSharedAsync(shared,
                 [.. RubyRepositoryReader.CallerSources, Other, Unresolved]);
             foreach (Fixture.Pair pair in callers) SharedCallers.Add(pair.Changed, pair);
+            foreach (string preset in new[] { "", "ruby/unknown-v1",
+                         "node/hcoona-release-smoke-npm-v1" })
+                SharedPresets.Add(preset, await Fixture.CommitPresetAsync(shared, sharedSpec,
+                    preset, SharedPresets.Count));
         }
         catch { shared.Dispose(); throw; }
     }
@@ -40,13 +47,19 @@ public sealed class RubyGroupReaderTests(TestContext context)
     [TestMethod]
     public async Task SharedEndpointsQualifyPairedSelection()
     {
-        // Defect-free control: the shared pair itself selects the changed Ruby check.
-        using var fixture = await Fixture.SharedAsync(sharedSpec!, false,
+        using var fixture = await Fixture.SharedAsync(sharedSpec!, true,
             context.CancellationToken);
         RubyGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
         PlannedCheck check = Assert.ContainsSingle(result.Plan.Checks);
         Assert.Contains(new SelectionReason(Spec, result.Plan.Comparison, "ruby:src/input"),
             check.Reasons);
+        Assert.AreEqual(new CheckKey("src/input", "ruby/project-rspec-v1", "default"),
+            check.Work.Key);
+        Assert.IsTrue(check.Work.Required);
+        Assert.AreEqual("ubuntu-latest", check.Work.Runner);
+        Assert.IsEmpty(check.Work.Dimensions);
+        Assert.IsEmpty(check.Work.Prerequisites);
+        Assert.IsNull(check.Work.Package);
         AssertCandidateContext(fixture, result, check);
     }
 
@@ -137,14 +150,32 @@ public sealed class RubyGroupReaderTests(TestContext context)
         RubyGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
         PlannedCheck check = Assert.ContainsSingle(result.Plan.Checks);
         Assert.AreEqual(RubyProjectChecks.RSpec, check.Work.Key.Check);
-        Assert.HasCount(2, check.Reasons);
-        Assert.Contains(new SelectionReason(path, result.Plan.Comparison, "ruby:src/input"),
-            check.Reasons);
-        Assert.Contains(new SelectionReason(path, result.Plan.Candidate, "ruby:src/input"),
-            check.Reasons);
-        foreach (RubyRevisionInputs endpoint in new[] { result.Basis, result.Candidate })
-            Assert.AreEqual("ruby:src/input", Assert.ContainsSingle(endpoint.Facts.OperationInputs
-                .Single(input => input.Path == path).Consumers));
+        CollectionAssert.AreEquivalent(new[]
+        {
+            new SelectionReason(path, result.Plan.Comparison, "ruby:src/input"),
+            new SelectionReason(path, result.Plan.Candidate, "ruby:src/input")
+        }, check.Reasons);
+    }
+
+    [TestMethod]
+    [DataRow("", false)]
+    [DataRow("ruby/unknown-v1", true)]
+    [DataRow("node/hcoona-release-smoke-npm-v1", false)]
+    public async Task DiscoveryCannotInventARequiredRSpecCheck(string preset, bool invalid)
+    {
+        using var fixture = await Fixture.SharedAsync(SharedPresets[preset], true,
+            context.CancellationToken, "ruby");
+        if (invalid)
+        {
+            InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+                () => fixture.ReadAsync(context.CancellationToken));
+            Assert.Contains("Unsupported adopted Ruby quality", failure.Message);
+        }
+        else
+        {
+            RubyGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
+            Assert.IsEmpty(result.Plan.Checks);
+        }
     }
 
     [TestMethod]
@@ -254,7 +285,7 @@ public sealed class RubyGroupReaderTests(TestContext context)
             if (actualCollection)
             {
                 await repo.SetAsync("src/input/version.json", "{\"version\":\"1.2\"}");
-                await repo.SetAsync("src/input/workflow-delivery.quality.yml",
+                await repo.SetAsync(Quality,
                     "schema: workflow-delivery/v3/quality-selection\necosystems:\n" +
                     "  ruby:\n    preset: ruby/rspec-v1\n");
             }
@@ -281,6 +312,25 @@ public sealed class RubyGroupReaderTests(TestContext context)
                 await repo.SetAsync(changed);
             }
             return (pairs[0], pairs.Skip(1).ToArray());
+        }
+
+        internal static async Task<Pair> CommitPresetAsync(GitFixture repo, Pair adopted,
+            string preset, int index)
+        {
+            if (preset.Length == 0) await repo.RemoveAsync(Quality);
+            else await repo.SetAsync(Quality, "schema: workflow-delivery/v3/quality-selection\n" +
+                "ecosystems:\n  " + preset[..preset.IndexOf('/')] + ":\n    preset: " +
+                preset + "\n");
+            string basis = await repo.CommitAsync(adopted.Basis);
+            string parent = Path.GetDirectoryName(repo.Directory)!;
+            string basisRoot = Path.Combine(parent, "preset-basis-" + index);
+            await repo.GitAsync("worktree", "add", "--detach", basisRoot, basis);
+            await repo.SetAsync(Spec, "changed");
+            string candidate = await repo.CommitAsync(basis);
+            string candidateRoot = Path.Combine(parent, "preset-candidate-" + index);
+            await repo.GitAsync("worktree", "add", "--detach", candidateRoot, candidate);
+            await repo.SetAsync(Spec);
+            return new(Spec, basis, basisRoot, candidate, candidateRoot);
         }
 
         // Reads class-owned endpoints; the row owns only its scope and native scratch.

@@ -117,6 +117,8 @@ public sealed class RubyGroupPreparationTests(TestContext context)
         {
             string gemspec = input.RootElement.GetProperty("path").GetString()!;
             if (operation == "version")
+            {
+                Assert.AreEqual("1.2.3-beta.4", input.RootElement.GetProperty("raw").GetString());
                 return Answer(new
                 {
                     gemspec,
@@ -124,6 +126,7 @@ public sealed class RubyGroupPreparationTests(TestContext context)
                     version = "1.2.3.pre.beta.4",
                     literal = "\"1.2.3.pre.beta.4\""
                 });
+            }
             return Answer(new
             {
                 gemspec,
@@ -137,6 +140,9 @@ public sealed class RubyGroupPreparationTests(TestContext context)
         }
         Assert.AreEqual("bundle-context", operation);
         string gemfile = Path.Combine(request.Candidate.Directory, "node/Gemfile");
+        Assert.AreEqual("2.7.2", command.Arguments[2]);
+        Assert.AreEqual(gemfile, command.Environment["BUNDLE_GEMFILE"]);
+        Assert.AreEqual("1", command.Environment["BUNDLE_FROZEN"]);
         return Answer(new
         {
             gemfile,
@@ -149,7 +155,6 @@ public sealed class RubyGroupPreparationTests(TestContext context)
     [TestMethod]
     public async Task NativePreparationUsesOriginalPinAndOwnedEndpointContexts()
     {
-        // Defect-free control for the shared commit.
         using var state = new SharedState();
         RubyGroupPreparationRequest request = await state.RequestAsync(context.CancellationToken);
         RubyGroupPreparationResult result = await RubyGroupPreparation.PrepareAsync(request,
@@ -164,7 +169,8 @@ public sealed class RubyGroupPreparationTests(TestContext context)
         Assert.AreEqual(result.Request.Basis.Collection.Nbgv,
             result.Request.Candidate.Collection.Nbgv);
         Assert.IsTrue(File.Exists(result.Request.Candidate.Collection.Nbgv));
-        Assert.IsTrue(result.Commands.All(command => command.Result.Succeeded));
+        Assert.IsEmpty(Directory.GetFiles(before.Scratch));
+        Assert.IsEmpty(Directory.GetFiles(after.Scratch));
     }
 
     [TestMethod]
