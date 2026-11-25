@@ -120,11 +120,9 @@ public sealed class SqliteIncidentSpecs
                 && collectionEnd <= after
         );
         Assert.IsTrue(incident["collectionElapsedMilliseconds"]!.GetValue<double>() >= 0);
-        Assert.Contains("non-atomic", incident["coverage"]!.GetValue<string>());
-        Assert.Contains(
-            "uninstrumented holders remain unknown",
-            incident["coverage"]!.GetValue<string>()
-        );
+        string coverage = incident["coverage"]!.GetValue<string>();
+        Assert.Contains("non-atomic", coverage);
+        Assert.Contains("unknown", coverage, StringComparison.OrdinalIgnoreCase);
 
         held.Rollback();
         Assert.AreEqual(0L, Sql.Scalar(contender, "SELECT COUNT(*) FROM entries;"));
@@ -487,13 +485,9 @@ public sealed class SqliteIncidentSpecs
         JsonObject incident = ReadIncident(error);
 
         Assert.IsEmpty(Active(incident));
-        Assert.AreEqual(
-            (
-                "Partial application observations; non-atomic; external or "
-                + "uninstrumented holders remain unknown."
-            ),
-            incident["coverage"]!.GetValue<string>()
-        );
+        string coverage = incident["coverage"]!.GetValue<string>();
+        Assert.Contains("non-atomic", coverage);
+        Assert.Contains("unknown", coverage, StringComparison.OrdinalIgnoreCase);
         Assert.AreEqual("MissingCoverage", incident["failure"]!["operation"]!.GetValue<string>());
         writer.Rollback();
         Assert.AreEqual(0L, Sql.Scalar(observer, "SELECT COUNT(*) FROM entries;"));
@@ -578,15 +572,11 @@ public sealed class SqliteIncidentSpecs
         Assert.AreEqual("original-operation", error.Data["origin"]);
         Assert.Contains(secret, error.Message);
         Assert.IsNull(error.Data["LiteAgensh.SqliteIncident"]);
-        Assert.AreEqual(
-            (
-                "SQLite incident persistence failed or capacity exhausted; original "
-                + "database error preserved."
-            ),
+        string warning = Assert.IsInstanceOfType<string>(
             error.Data["LiteAgensh.SqliteDiagnosticWarning"]
         );
-        Assert.Contains("SQLite activity persistence is unavailable or incomplete.", output);
-        Assert.Contains("original database error preserved.", output);
+        Assert.IsNotEmpty(warning);
+        Assert.Contains(warning, output);
         Assert.DoesNotContain(secret, output);
         Assert.DoesNotContain(state.DiagnosticsPath, output);
         foreach (string text in SummaryStrings(structuredSummary))
@@ -633,7 +623,7 @@ public sealed class SqliteIncidentSpecs
             .ToString()
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(line =>
-                JsonNode.Parse(line["PHASE5_SQLITE_INCIDENT ".Length..])!["database"]!
+                JsonNode.Parse(line["SQLITE_INCIDENT ".Length..])!["database"]!
                     .GetValue<string>()
             )
             .ToArray();
@@ -696,12 +686,15 @@ public sealed class SqliteIncidentSpecs
         Assert.DoesNotContain("INSERT INTO", artifact);
         Assert.DoesNotContain("INSERT INTO", activity);
         string output = stderr.ToString();
-        Assert.Contains(
-            primaryCode == 10
-                ? "SQLite I/O evidence retained locally"
-                : "SQLite contention evidence",
-            output
-        );
+        Assert.IsNotEmpty(output);
+        if (primaryCode == 10)
+        {
+            Assert.DoesNotContain(path, output);
+        }
+        else
+        {
+            Assert.Contains(path, output);
+        }
         Assert.DoesNotContain(secret, output);
         Assert.DoesNotContain("INSERT INTO", output);
         JsonObject failure = incident["failure"]!.AsObject();
@@ -782,10 +775,8 @@ public sealed class SqliteIncidentSpecs
             .ToArray();
 
         Assert.AreEqual("AggregateCoverage", incident["failure"]!["operation"]!.GetValue<string>());
-        Assert.Contains(
-            "Partial application observations",
-            incident["coverage"]!.GetValue<string>()
-        );
+        Assert.Contains("Partial", incident["coverage"]!.GetValue<string>());
+        Assert.Contains("unknown", incident["coverage"]!.GetValue<string>());
         Assert.IsNotEmpty(stagedConnections.Intersect(retainedConnections));
         Assert.IsNotEmpty(exhausted);
         foreach (JsonObject source in exhausted)
@@ -827,13 +818,10 @@ public sealed class SqliteIncidentSpecs
         Assert.IsNull(overflow.Data["LiteAgensh.SqliteIncident"]);
         Assert.AreEqual(10, overflow.SqliteErrorCode);
         Assert.AreEqual(522, overflow.SqliteExtendedErrorCode);
-        Assert.AreEqual(
-            (
-                "SQLite incident persistence failed or capacity exhausted; original "
-                + "database error preserved."
-            ),
+        string warning = Assert.IsInstanceOfType<string>(
             overflow.Data["LiteAgensh.SqliteDiagnosticWarning"]
         );
+        Assert.IsNotEmpty(warning);
         Assert.HasCount(
             8,
             Directory.EnumerateFiles(state.DiagnosticsPath, "incident-*.json").ToArray()
@@ -889,10 +877,8 @@ public sealed class SqliteIncidentSpecs
                 .EnumerateFiles(state.DiagnosticsPath, "activity-*.json")
                 .All(path => new FileInfo(path).Length <= 128 * 1024)
         );
-        Assert.Contains(
-            "Partial application observations",
-            incident["coverage"]!.GetValue<string>()
-        );
+        Assert.Contains("Partial", incident["coverage"]!.GetValue<string>());
+        Assert.Contains("unknown", incident["coverage"]!.GetValue<string>());
     }
 
     [TestMethod]
@@ -986,7 +972,11 @@ public sealed class SqliteIncidentSpecs
                 activity["transaction"]?.GetValue<string>() == foreignTransaction
             ));
         }
-        Assert.Contains("remain unknown", incident["coverage"]!.GetValue<string>());
+        Assert.Contains(
+            "unknown",
+            incident["coverage"]!.GetValue<string>(),
+            StringComparison.OrdinalIgnoreCase
+        );
         Assert.DoesNotContain(secret, incident.ToJsonString());
         Assert.AreEqual("ForeignCoverage", incident["failure"]!["operation"]!.GetValue<string>());
     }

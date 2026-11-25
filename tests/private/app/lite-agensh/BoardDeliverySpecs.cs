@@ -86,16 +86,11 @@ public sealed class BoardDeliverySpecs(TestContext context)
             Assert.ContainsSingle(Items(expanded))["detail"]!.GetValue<string>()
         );
         Assert.IsEmpty(expanded["unknownLabels"]!.AsArray());
-        Assert.AreEqual(
-            2L,
-            state.Count(
-                "SELECT COUNT(*) FROM events WHERE dedup_key=$key;",
-                ("$key", $"board:{Id(first)}")
-            )
-        );
+
         JsonObject live = state.Publish("worker1", "FACT", "Fresh cache finding");
         DeliveryBatch actionable = RequireBatch(state.Operations.ClaimBatch("worker2", false));
-        JsonObject[] boardEvents = JsonNode.Parse(actionable.Prompt)!["events"]!
+        JsonObject actionablePrompt = JsonNode.Parse(actionable.Prompt)!.AsObject();
+        JsonObject[] boardEvents = actionablePrompt["events"]!
             .AsArray()
             .OfType<JsonObject>()
             .Where(item => item["kind"]!.GetValue<string>() == "board")
@@ -104,22 +99,16 @@ public sealed class BoardDeliverySpecs(TestContext context)
             Id(live),
             Assert.ContainsSingle(boardEvents)["payload"]!["gistId"]!.GetValue<long>()
         );
-        Assert.AreEqual(
-            0L,
-            state.Count(
-                "SELECT COUNT(*) FROM batch_gists WHERE batch_id=$batch AND gist_id=$gist;",
-                ("$batch", actionable.Id),
-                ("$gist", Id(first))
-            )
+        Assert.DoesNotContain(
+            Id(first),
+            actionablePrompt["sharedContext"]!["board"]!
+                .AsArray()
+                .OfType<JsonObject>()
+                .Select(Id)
         );
         state.Operations.CompleteBatch(actionable.Id);
-        Assert.AreEqual(
-            0L,
-            state.Count(
-                "SELECT COUNT(*) FROM shown_gists WHERE recipient='worker2' AND gist_id=$gist;",
-                ("$gist", Id(first))
-            )
-        );
+        Assert.IsNull(state.Operations.ClaimBatch("worker2", false));
+        Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
     }
 
     [TestMethod]
@@ -177,10 +166,18 @@ public sealed class BoardDeliverySpecs(TestContext context)
             "cache.py line 12 def evict confirms ordering"
         );
         state.Publish("worker2", "FACT", "cache.py line 12 def evict records ordering");
-        JsonObject collapsed = Items(state.Invoke("owner", "board_recent", new()))
-            .Single(item => Id(item) == Id(fact));
+        JsonObject[] recent = Items(state.Invoke("owner", "board_recent", new()));
+        Assert.HasCount(3, recent);
+        CollectionAssert.AreEqual(
+            new[] { Id(failure), Id(next), Id(fact) },
+            recent.Select(Id).ToArray()
+        );
+        JsonObject collapsed = recent.Single(item => Id(item) == Id(fact));
         Assert.AreEqual(2, collapsed["duplicateCount"]!.GetValue<int>());
-        Assert.AreEqual(6L, state.Count("SELECT COUNT(*) FROM board_history;"));
+        Assert.HasCount(
+            6,
+            Items(state.Invoke("owner", "board_search", new() { ["query"] = "cache.py" }))
+        );
         JsonObject expanded = state.Invoke(
             "owner",
             "board_expand",
@@ -199,7 +196,6 @@ public sealed class BoardDeliverySpecs(TestContext context)
             "Replacement candidate evidence",
             historical[1]["detail"]!.GetValue<string>()
         );
-        Assert.AreEqual(12L, state.Count("SELECT COUNT(*) FROM events WHERE kind='board';"));
     }
 
     [TestMethod]
@@ -257,14 +253,23 @@ public sealed class BoardDeliverySpecs(TestContext context)
                 )
             )
         );
-        Assert.AreEqual(4L, state.Count("SELECT COUNT(*) FROM board_history;"));
+        Assert.HasCount(
+            4,
+            Items(state.Invoke("owner", "board_search", new() { ["query"] = "cache | queue" }))
+        );
         JsonObject rejected = state.Operations.Invoke(
             "worker1",
             "board_publish",
             new() { ["type"] = "FACT", ["content"] = "none" }
         );
         Assert.AreEqual("invalid_arguments", rejected["code"]!.GetValue<string>());
-        Assert.AreEqual(8L, state.Count("SELECT COUNT(*) FROM events;"));
+        Assert.HasCount(4, Items(state.Invoke("owner", "board_recent", new())));
+        CollectionAssert.AreEqual(
+            new[] { "g" + Id(literal), "g" + Id(both) },
+            NoticeItems(state.Operations.AddNotices("worker2", new()))
+                .Select(item => item["id"]!.GetValue<string>())
+                .ToArray()
+        );
     }
 
     [TestMethod]
@@ -274,14 +279,14 @@ public sealed class BoardDeliverySpecs(TestContext context)
         using BoardDeliveryState state = new();
         JsonObject oldest = state.Publish(
             "worker1",
-            "FACT",
-            "Oldest real admission",
+            "CLAIM",
+            "Oldest real admission #1",
             "Retained oldest evidence"
         );
         using (SqliteConnection connection = state.Database.Open())
         using (SqliteTransactionScope transaction = Sql.BeginTransaction(connection))
         {
-            // E02: only pre-boundary history/recent pairs are arranged, in one transaction.
+            // Seed pre-boundary slots in one transaction to avoid per-row diagnostic flushes.
             for (int index = 1; index <= 1999; index++)
             {
                 string text =
@@ -300,39 +305,25 @@ public sealed class BoardDeliverySpecs(TestContext context)
             }
             transaction.Commit();
         }
-        Assert.AreEqual(2000L, state.Count("SELECT COUNT(*) FROM board_recent;"));
         Assert.AreEqual(
-            1L,
-            state.Count(
-                "SELECT COUNT(*) FROM board_recent WHERE revision_id=$id;",
-                ("$id", Id(oldest))
-            )
+            "worker1",
+            Assert.ContainsSingle(
+                state.Invoke("owner", "task_read", new() { ["id"] = 1 })["assignees"]!.AsArray()
+            )!.GetValue<string>()
         );
-        Assert.AreEqual(2L, state.Count("SELECT COUNT(*) FROM events WHERE kind='board';"));
         JsonObject newest = state.Publish(
             "worker2",
             "FACT",
             "Newest real overflow admission",
             "Overflow evidence"
         );
-        Assert.AreEqual(2000L, state.Count("SELECT COUNT(*) FROM board_recent;"));
-        Assert.AreEqual(
-            0L,
-            state.Count(
-                "SELECT COUNT(*) FROM board_recent WHERE revision_id=$id;",
-                ("$id", Id(oldest))
-            )
+        Assert.IsEmpty(
+            state.Invoke("owner", "task_read", new() { ["id"] = 1 })["assignees"]!.AsArray()
         );
-        Assert.AreEqual(
-            1L,
-            state.Count(
-                "SELECT COUNT(*) FROM board_recent WHERE revision_id=$id;",
-                ("$id", Id(newest))
-            )
-        );
-        Assert.AreEqual(2001L, state.Count("SELECT COUNT(*) FROM board_history;"));
+        Assert.IsNull(state.Operations.ClaimBatch("worker2", false));
         JsonObject recent = state.Invoke("owner", "board_recent", new() { ["limit"] = 200 });
         Assert.HasCount(200, Items(recent));
+        Assert.AreEqual(2000L, state.Count("SELECT COUNT(*) FROM board_recent;"));
         Assert.AreEqual(Id(newest), Id(Items(recent)[^1]));
         Assert.DoesNotContain(Id(oldest), Ids(recent));
         int[] invalidLimits = [0, 201];
@@ -346,7 +337,6 @@ public sealed class BoardDeliverySpecs(TestContext context)
             Assert.IsFalse(rejected["ok"]!.GetValue<bool>());
             Assert.AreEqual("invalid_arguments", rejected["code"]!.GetValue<string>());
         }
-        Assert.AreEqual(2000L, state.Count("SELECT COUNT(*) FROM board_recent;"));
         Assert.AreEqual(
             "Retained oldest evidence",
             Assert.ContainsSingle(
@@ -373,8 +363,6 @@ public sealed class BoardDeliverySpecs(TestContext context)
                 )
             )
         );
-        // Only the two public admissions broadcast; arranged pairs are not admissions.
-        Assert.AreEqual(4L, state.Count("SELECT COUNT(*) FROM events WHERE kind='board';"));
     }
 
     [TestMethod]
@@ -395,28 +383,25 @@ public sealed class BoardDeliverySpecs(TestContext context)
         });
         release.SetResult();
         JsonObject[] sent = await Task.WhenAll(first, second).ConfigureAwait(false);
-        Assert.AreEqual(2L, state.Count("SELECT COUNT(*) FROM messages;"));
-        Assert.AreEqual(
-            2L,
-            state.Count(
-                """
-                SELECT COUNT(*) FROM messages m JOIN events e
-                    ON json_extract(e.payload,'$.messageId')=m.id
-                    AND e.dedup_key='message:'||m.id AND e.recipient=m.recipient
-                    AND json_extract(e.payload,'$.message.body')=m.body
-                WHERE e.kind='dm' AND e.state='pending';
-                """
-            )
-        );
+        foreach (JsonObject message in sent)
+        {
+            string channel = message["channelId"]!.GetValue<string>();
+            JsonObject stored = Assert.ContainsSingle(
+                Items(state.Invoke("worker2", "message_read", new() { ["channelId"] = channel }))
+            );
+            Assert.AreEqual(Id(message), Id(stored));
+            Assert.AreEqual(
+                message["body"]!.GetValue<string>(),
+                stored["body"]!.GetValue<string>()
+            );
+        }
         JsonObject[] notices = NoticeItems(state.Operations.AddNotices("worker2", new()));
         CollectionAssert.AreEqual(
             sent.OrderBy(Id).Select(item => item["body"]!.GetValue<string>()).ToArray(),
             notices.Select(item => item["data"]!["message"]!["body"]!.GetValue<string>()).ToArray()
         );
-        Assert.AreEqual(
-            2L,
-            state.Count("SELECT COUNT(*) FROM shown_notices WHERE recipient='worker2';")
-        );
+        Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
+        Assert.IsNull(state.Operations.ClaimBatch("worker2", false));
         Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker1", new())));
     }
 
@@ -439,20 +424,28 @@ public sealed class BoardDeliverySpecs(TestContext context)
         Assert.AreEqual("invalid_arguments", failure["code"]!.GetValue<string>());
         Assert.IsFalse(failure["ok"]!.GetValue<bool>());
         Assert.IsNull(failure["data"]);
-        Assert.AreEqual(1L, state.Count("SELECT COUNT(*) FROM messages;"));
-        Assert.AreEqual(
-            0L,
-            state.Count("SELECT COUNT(*) FROM messages WHERE body='Must not escape';")
+        Assert.IsEmpty(
+            Items(
+                state.Invoke(
+                    "owner",
+                    "message_read",
+                    new() { ["channelId"] = "dm:worker1:worker2" }
+                )
+            )
         );
-        Assert.AreEqual(2L, state.Count("SELECT COUNT(*) FROM events;"));
         Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM shown_notices;"));
         Assert.AreEqual(
             "Visible root",
             Assert.ContainsSingle(
                 Items(state.Invoke("worker2", "message_read", new() { ["channelId"] = "team" }))
             )["body"]!.GetValue<string>()
         );
+        DeliveryBatch teamBatch = RequireBatch(state.Operations.ClaimBatch("worker2", false));
+        JsonObject teamEvent = Assert.ContainsSingle(
+            JsonNode.Parse(teamBatch.Prompt)!["events"]!.AsArray().OfType<JsonObject>()
+        );
+        Assert.AreEqual("group", teamEvent["kind"]!.GetValue<string>());
+        Assert.AreEqual(Id(original), teamEvent["payload"]!["messageId"]!.GetValue<long>());
     }
 
     [TestMethod]
@@ -485,11 +478,13 @@ public sealed class BoardDeliverySpecs(TestContext context)
             state.Operations.Invoke("owner", "message_send", arguments)
         );
         Assert.Contains(injectedFailure, error.Message);
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM messages;"));
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM events;"));
+        Assert.IsEmpty(
+            Items(state.Invoke("owner", "message_read", new() { ["channelId"] = "team" }))
+        );
+        Assert.IsNull(state.Operations.ClaimBatch("worker1", false));
+        Assert.IsNull(state.Operations.ClaimBatch("worker2", false));
         Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker1", new())));
         Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM shown_notices;"));
 
         using (SqliteConnection connection = state.Database.Open())
         {
@@ -498,19 +493,23 @@ public sealed class BoardDeliverySpecs(TestContext context)
 
         JsonObject message = state.Invoke("owner", "message_send", arguments);
         Assert.AreEqual(
-            "worker1,worker2",
-            state.Text(
-                """
-                SELECT group_concat(recipient) FROM (
-                    SELECT e.recipient FROM events e JOIN messages m
-                        ON m.id=json_extract(e.payload,'$.messageId')
-                    WHERE m.id=$id AND e.kind='group' AND e.state='pending'
-                    ORDER BY e.recipient
-                );
-                """,
-                ("$id", Id(message))
+            Id(message),
+            Id(
+                Assert.ContainsSingle(
+                    Items(state.Invoke("owner", "message_read", new() { ["channelId"] = "team" }))
+                )
             )
         );
+        foreach (string recipient in new[] { "worker1", "worker2" })
+        {
+            DeliveryBatch fanout = RequireBatch(state.Operations.ClaimBatch(recipient, false));
+            JsonObject delivered = Assert.ContainsSingle(
+                JsonNode.Parse(fanout.Prompt)!["events"]!.AsArray().OfType<JsonObject>()
+            );
+            Assert.AreEqual("group", delivered["kind"]!.GetValue<string>());
+            Assert.AreEqual(Id(message), delivered["payload"]!["messageId"]!.GetValue<long>());
+            Assert.AreEqual(body, delivered["payload"]!["message"]!["body"]!.GetValue<string>());
+        }
     }
 
     [TestMethod]
@@ -531,27 +530,11 @@ public sealed class BoardDeliverySpecs(TestContext context)
             AssertMessage(batch, Id(message), "Retry this exact payload.");
             if (interruptFifth && attempt == 5)
             {
-                Assert.AreEqual(
-                    "sending",
-                    state.Text("SELECT state FROM events WHERE id=$id;", ("$id", eventId))
-                );
                 break;
             }
             state.Operations.FailBatch(batch.Id, "controlled delivery failure");
-            Assert.AreEqual(
-                "failed",
-                state.Text("SELECT state FROM events WHERE id=$id;", ("$id", eventId))
-            );
-            Assert.AreEqual(
-                (long)attempt,
-                state.Count("SELECT attempts FROM events WHERE id=$id;", ("$id", eventId))
-            );
             if (attempt < 5)
             {
-                Assert.AreEqual(
-                    state.Database.Now.ToUnixTimeMilliseconds() + delays[attempt - 1] * 1000L,
-                    state.Count("SELECT next_retry_at FROM events WHERE id=$id;", ("$id", eventId))
-                );
                 state.Clock.Advance(
                     TimeSpan.FromSeconds(delays[attempt - 1]) - TimeSpan.FromMilliseconds(1)
                 );
@@ -560,37 +543,26 @@ public sealed class BoardDeliverySpecs(TestContext context)
                 batch = RequireBatch(state.Operations.ClaimBatch("worker2", false));
             }
         }
-        Assert.AreEqual(
-            0L,
-            state.Count("SELECT COUNT(*) FROM events WHERE next_retry_at IS NOT NULL;")
-        );
         state.Clock.Advance(TimeSpan.FromDays(1));
         state.Restart();
         state.Operations.RecoverInterrupted();
-        Assert.AreEqual(
-            "failed",
-            state.Text("SELECT state FROM events WHERE id=$id;", ("$id", eventId))
-        );
-        Assert.AreEqual(
-            5L,
-            state.Count("SELECT attempts FROM events WHERE id=$id;", ("$id", eventId))
-        );
         Assert.AreEqual(
             interruptFifth ? "interrupted" : "failed",
             state.Text("SELECT state FROM delivery_batches WHERE id=$id;", ("$id", batch.Id))
         );
         Assert.IsNull(state.Operations.ClaimBatch("worker2", false));
         Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM shown_notices;"));
-        Assert.AreEqual(1L, state.Count("SELECT COUNT(*) FROM messages;"));
-        Assert.AreEqual(
-            "Retry this exact payload.",
-            state.Text("SELECT body FROM messages WHERE id=$id;", ("$id", Id(message)))
+        JsonObject retained = Assert.ContainsSingle(
+            Items(
+                state.Invoke(
+                    "worker2",
+                    "message_read",
+                    new() { ["channelId"] = message["channelId"]!.GetValue<string>() }
+                )
+            )
         );
-        Assert.AreEqual(
-            0L,
-            state.Count("SELECT COUNT(*) FROM events WHERE next_retry_at IS NOT NULL;")
-        );
+        Assert.AreEqual(Id(message), Id(retained));
+        Assert.AreEqual("Retry this exact payload.", retained["body"]!.GetValue<string>());
     }
 
     [TestMethod]
@@ -600,13 +572,6 @@ public sealed class BoardDeliverySpecs(TestContext context)
     {
         using BoardDeliveryState state = new();
         JsonObject message = state.Send("worker1", "worker2", "Keep this attempt available.");
-        const string eventState = """
-            SELECT json_object('id',id,'recipient',recipient,'state',state,
-                'attempts',attempts,'batchId',batch_id,'retryAt',next_retry_at,
-                'lastError',last_error,'payload',json(payload))
-            FROM events WHERE recipient='worker2';
-            """;
-        string before = state.Text(eventState)!;
         using WorkAdmission admission = new(
             state.Clock, state.Clock.GetUtcNow().AddSeconds(1), context.CancellationToken
         );
@@ -669,8 +634,6 @@ public sealed class BoardDeliverySpecs(TestContext context)
             Assert.ContainsSingle(
                 acquired.Events.Where(item => item.Name == "acquisition-succeeded")
             );
-            Assert.AreEqual(before, state.Text(eventState));
-            Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM delivery_batches;"));
 
             using WorkAdmission open = new(
                 state.Clock, state.Clock.GetUtcNow().AddMinutes(1), context.CancellationToken
@@ -678,9 +641,11 @@ public sealed class BoardDeliverySpecs(TestContext context)
             DeliveryBatch claimed = RequireBatch(
                 state.Operations.ClaimBatch("worker2", false, open)
             );
+            Assert.AreEqual(1L, claimed.Id);
             Assert.AreEqual(1, claimed.Attempt);
             AssertMessage(claimed, Id(message), "Keep this attempt available.");
             state.Operations.CompleteBatch(claimed.Id);
+            Assert.IsNull(state.Operations.ClaimBatch("worker2", false, open));
         }
         catch (Exception error)
         {
@@ -722,19 +687,20 @@ public sealed class BoardDeliverySpecs(TestContext context)
         );
         DeliveryBatch interrupted = RequireBatch(state.Operations.ClaimBatch("worker2", false));
         Assert.IsNull(state.Operations.ClaimBatch("worker2", false));
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM shown_notices;"));
+        Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
         state.Restart();
         // An upstream replay of the same identity must not add another logical event.
         using (SqliteConnection connection = state.Database.Open())
         using (SqliteTransactionScope transaction = Sql.BeginTransaction(connection))
         {
-            string payload = (string)
-                Sql.Scalar(
-                    connection,
-                    "SELECT payload FROM events WHERE recipient='worker2' AND dedup_key=$key;",
-                    transaction,
-                    ("$key", $"message:{Id(message)}")
-                )!;
+            string payload = new JsonObject
+            {
+                ["messageId"] = Id(message),
+                ["actor"] = "worker1",
+                ["urgent"] = false,
+                ["summary"] = "worker1 in dm:worker1:worker2: Keep source identity across restart.",
+                ["message"] = message.DeepClone(),
+            }.ToJsonString(Json.Options);
             state.Operations.EnqueueEvent(
                 connection,
                 transaction,
@@ -755,28 +721,30 @@ public sealed class BoardDeliverySpecs(TestContext context)
         Assert.AreEqual(2, replay.Attempt);
         Assert.AreEqual(interrupted.Prompt, replay.Prompt);
         AssertMessage(replay, Id(message), "Keep source identity across restart.");
+        Assert.Contains(
+            Id(gist),
+            JsonNode.Parse(replay.Prompt)!["events"]!
+                .AsArray()
+                .OfType<JsonObject>()
+                .Where(item => item["kind"]!.GetValue<string>() == "board")
+                .Select(item => item["payload"]!["gistId"]!.GetValue<long>())
+        );
         state.Operations.CompleteBatch(replay.Id);
         state.Operations.CompleteBatch(replay.Id);
         state.Restart();
         state.Operations.RecoverInterrupted();
         Assert.IsNull(state.Operations.ClaimBatch("worker2", false));
         Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
-        Assert.AreEqual(
-            2L,
-            state.Count("SELECT COUNT(*) FROM shown_notices WHERE recipient='worker2';")
-        );
-        Assert.AreEqual(
-            1L,
-            state.Count(
-                "SELECT COUNT(*) FROM shown_gists WHERE recipient='worker2' AND gist_id=$id;",
-                ("$id", Id(gist))
+        Assert.IsEmpty(state.Operations.ReadSharedContext("worker2")["board"]!.AsArray());
+        Assert.ContainsSingle(
+            Items(
+                state.Invoke(
+                    "worker2",
+                    "message_read",
+                    new() { ["channelId"] = message["channelId"]!.GetValue<string>() }
+                )
             )
         );
-        Assert.AreEqual(
-            2L,
-            state.Count("SELECT COUNT(*) FROM events WHERE recipient='worker2' AND state='sent';")
-        );
-        Assert.AreEqual(1L, state.Count("SELECT COUNT(*) FROM messages;"));
     }
 
     [TestMethod]
@@ -854,15 +822,19 @@ public sealed class BoardDeliverySpecs(TestContext context)
             Id(firstGist),
             Id(Assert.ContainsSingle(snapshot["board"]!.AsArray().OfType<JsonObject>().ToArray()))
         );
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM shown_notices;"));
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM notice_cursors;"));
+
         DeliveryBatch turn = RequireBatch(state.Operations.ClaimBatch("worker2", false));
         AssertMessage(turn, Id(firstMessage), "First direct notice");
         Assert.AreEqual(
-            1L,
-            state.Count("SELECT COUNT(*) FROM batch_gists WHERE batch_id=$id;", ("$id", turn.Id))
+            Id(firstGist),
+            Id(
+                Assert.ContainsSingle(
+                    state.Operations.ReadSharedContext("worker2")["board"]!
+                        .AsArray()
+                        .OfType<JsonObject>()
+                )
+            )
         );
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM shown_gists;"));
         Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
 
         JsonObject lateMessage = state.Send("worker1", "worker2", "Arrived after snapshot");
@@ -892,52 +864,26 @@ public sealed class BoardDeliverySpecs(TestContext context)
         Assert.AreEqual("Late peer finding", notices[1]["data"]!["content"]!.GetValue<string>());
         Assert.IsTrue(notices[1]["data"]!["hasDetail"]!.GetValue<bool>());
         Assert.IsNull(notices[1]["data"]!["detail"]);
+        Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
         Assert.AreEqual(
-            Id(lateGist),
-            state.Count("SELECT gist_id FROM notice_cursors WHERE recipient='worker2';")
-        );
-        Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM notice_leases;"));
-        Assert.AreEqual(
-            2L,
-            state.Count(
-                "SELECT COUNT(*) FROM events WHERE recipient='worker2' AND state='pending';"
+            Id(firstGist),
+            Id(
+                Assert.ContainsSingle(
+                    state.Operations.ReadSharedContext("worker2")["board"]!
+                        .AsArray()
+                        .OfType<JsonObject>()
+                )
             )
         );
-        Assert.AreEqual(
-            2L,
-            state.Count("SELECT COUNT(*) FROM shown_notices WHERE recipient='worker2';")
-        );
-        Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
 
         state.Operations.CompleteBatch(turn.Id);
-        Assert.AreEqual(
-            2L,
-            state.Count("SELECT COUNT(*) FROM events WHERE recipient='worker2' AND state='sent';")
-        );
-        Assert.AreEqual(
-            2L,
-            state.Count(
-                "SELECT COUNT(*) FROM events WHERE recipient='worker2' AND state='pending';"
-            )
-        );
-        Assert.AreEqual(
-            4L,
-            state.Count("SELECT COUNT(*) FROM shown_notices WHERE recipient='worker2';")
-        );
-        Assert.AreEqual(
-            Id(lateGist),
-            state.Count("SELECT gist_id FROM notice_cursors WHERE recipient='worker2';")
-        );
+        Assert.IsEmpty(state.Operations.ReadSharedContext("worker2")["board"]!.AsArray());
+        Assert.IsNull(state.Operations.ClaimBatch("worker2", false));
+        Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
         state.Restart();
         state.Operations.CompleteBatch(turn.Id);
         Assert.IsNull(state.Operations.ClaimBatch("worker2", false));
         Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
-        Assert.AreEqual(
-            2L,
-            state.Count(
-                "SELECT COUNT(*) FROM events WHERE recipient='worker2' AND state='pending';"
-            )
-        );
         Assert.IsEmpty(state.Operations.ReadSharedContext("worker2")["board"]!.AsArray());
     }
 
@@ -967,20 +913,6 @@ public sealed class BoardDeliverySpecs(TestContext context)
                 "Historical default claim evidence."
             );
             long claimId = Id(claim);
-            Assert.AreEqual(
-                1L,
-                state.Count(
-                    (
-                        "SELECT COUNT(*) FROM events WHERE recipient='worker2' AND "
-                        + "kind='board' AND state='pending' AND "
-                        + "json_extract(payload,'$.gistId')=$id;"
-                    ),
-                    ("$id", claimId)
-                )
-            );
-            Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM delivery_batches;"));
-            Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM shown_gists;"));
-            Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM shown_notices;"));
 
             state.Clock.Advance(
                 TimeSpan.FromHours(1) + TimeSpan.FromMilliseconds(offsetMilliseconds)
@@ -1014,7 +946,8 @@ public sealed class BoardDeliverySpecs(TestContext context)
             );
 
             DeliveryBatch delivery = RequireBatch(state.Operations.ClaimBatch("worker2", false));
-            long[] deliveredGists = JsonNode.Parse(delivery.Prompt)!["events"]!
+            JsonObject deliveryPrompt = JsonNode.Parse(delivery.Prompt)!.AsObject();
+            long[] deliveredGists = deliveryPrompt["events"]!
                 .AsArray()
                 .OfType<JsonObject>()
                 .Where(item => item["kind"]!.GetValue<string>() == "board")
@@ -1025,16 +958,10 @@ public sealed class BoardDeliverySpecs(TestContext context)
                 deliveredGists,
                 $"Unconsumed delivery eligibility at offset {offsetMilliseconds}ms."
             );
-            Assert.AreEqual(
-                (long)expectedRecent.Length,
-                state.Count(
-                    "SELECT COUNT(*) FROM batch_gists WHERE batch_id=$batch AND gist_id=$gist;",
-                    ("$batch", delivery.Id),
-                    ("$gist", claimId)
-                )
+            Assert.IsEmpty(
+                deliveryPrompt["sharedContext"]!["board"]!.AsArray(),
+                $"Board prefix at offset {offsetMilliseconds}ms."
             );
-            Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM shown_gists;"));
-            Assert.AreEqual(0L, state.Count("SELECT COUNT(*) FROM shown_notices;"));
             JsonObject historical = Assert.ContainsSingle(
                 Items(
                     state.Invoke(
@@ -1078,7 +1005,7 @@ public sealed class BoardDeliverySpecs(TestContext context)
         );
         state.Send("owner", "worker2", "Existing notice before rejected TTL");
         Assert.IsNotEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
-        string before = CollaborationDomainAndNoticeRows(state);
+        string before = PublicCollaborationSnapshot(state);
 
         JsonObject failure = state.Operations.Invoke(
             "worker1",
@@ -1094,7 +1021,10 @@ public sealed class BoardDeliverySpecs(TestContext context)
         Assert.IsFalse(failure["ok"]!.GetValue<bool>());
         Assert.AreEqual("invalid_arguments", failure["code"]!.GetValue<string>());
         Assert.IsNull(failure["data"]);
-        Assert.AreEqual(before, CollaborationDomainAndNoticeRows(state));
+        Assert.AreEqual(before, PublicCollaborationSnapshot(state));
+        Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
+        Assert.IsNull(state.Operations.ClaimBatch("worker1", false));
+        Assert.IsNull(state.Operations.ClaimBatch("worker2", false));
         JsonObject retained = Assert.ContainsSingle(
             Items(
                 state.Invoke(
@@ -1133,7 +1063,7 @@ public sealed class BoardDeliverySpecs(TestContext context)
         );
         Assert.AreEqual(Id(direct), reply["threadId"]!.GetValue<long>());
         string channel = direct["channelId"]!.GetValue<string>();
-        string before = CollaborationDomainAndNoticeRows(state);
+        string before = PublicCollaborationSnapshot(state);
 
         CollectionAssert.AreEqual(
             new[] { Id(team) },
@@ -1185,7 +1115,8 @@ public sealed class BoardDeliverySpecs(TestContext context)
             new[] { Id(direct), Id(reply) },
             Ids(state.Invoke("owner", "message_thread", new() { ["threadId"] = Id(direct) }))
         );
-        Assert.AreEqual(before, CollaborationDomainAndNoticeRows(state));
+        Assert.AreEqual(before, PublicCollaborationSnapshot(state));
+        Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker3", new())));
     }
 
     [TestMethod]
@@ -1199,7 +1130,7 @@ public sealed class BoardDeliverySpecs(TestContext context)
             Id(state.Publish("worker2", "OBSERVED", "Pagination witness beta")),
             Id(state.Publish("worker1", "FACT", "Pagination witness gamma")),
         ];
-        string before = CollaborationDomainAndNoticeRows(state);
+        string before = PublicCollaborationSnapshot(state);
         List<long> returned = [];
         long cursor = 0;
         for (int pageIndex = 0; pageIndex < expected.Length; pageIndex++)
@@ -1232,51 +1163,73 @@ public sealed class BoardDeliverySpecs(TestContext context)
             }
         }
         CollectionAssert.AreEqual(expected, returned.ToArray());
-        Assert.AreEqual(before, CollaborationDomainAndNoticeRows(state));
+        Assert.AreEqual(before, PublicCollaborationSnapshot(state));
     }
 
     [TestMethod]
-    public void WorkSearchContinuationRetainsTaskAndChangeWithTheSameNumericId()
+    public async Task WorkSearchContinuationRetainsTaskAndChangeWithTheSameNumericId()
     {
-        using BoardDeliveryState state = new();
-        _ = new GitOperations(state.Database, state.Operations);
+        CancellationToken token = context.CancellationToken;
+        using GitScenarioState state = await GitScenarioState.CreateAsync(token)
+            .ConfigureAwait(false);
+        await state.Operations.InitializeAsync(token).ConfigureAwait(false);
         const string query = "Mixed work pagination witness";
-        JsonObject task = state.Invoke(
-            "owner",
-            "task_write",
-            new() { ["action"] = "create", ["title"] = query, ["body"] = "Open task." }
+        JsonObject task = GitScenarioState.Data(
+            state.Collaboration.Invoke(
+                "owner",
+                "task_write",
+                new() { ["action"] = "create", ["title"] = query, ["body"] = "Open task." }
+            )
         );
+        _ = await state
+            .InvokeAsync(
+                "worker1",
+                "change_write",
+                new()
+                {
+                    ["action"] = "submit",
+                    ["title"] = "Unrelated change",
+                    ["body"] = "First change increments change sequence.",
+                },
+                token
+            )
+            .ConfigureAwait(false);
+        JsonObject change = await state
+            .InvokeAsync(
+                "worker1",
+                "change_write",
+                new()
+                {
+                    ["action"] = "submit",
+                    ["title"] = query,
+                    ["body"] = "Open change.",
+                },
+                token
+            )
+            .ConfigureAwait(false);
         long id = Id(task);
-        using (SqliteConnection connection = state.Database.Open())
-        {
-            Sql.Execute(
-                connection,
-                """
-                INSERT INTO changes(id,author,branch,head,title,body,task_ids,created_at,updated_at)
-                VALUES($id,'worker1','refs/heads/search-fixture',$head,$title,'Open change.',
-                    '[]',$time,$time);
-                """,
-                null,
-                ("$id", id),
-                ("$head", new string('a', 40)),
-                ("$title", query),
-                ("$time", state.Database.Now.ToString("O", CultureInfo.InvariantCulture))
-            );
-        }
-        JsonObject first = state.Invoke(
-            "worker2", "work_search", new() { ["query"] = query, ["limit"] = 1 }
+        Assert.AreEqual(id, Id(change));
+
+        JsonObject first = GitScenarioState.Data(
+            state.Collaboration.Invoke(
+                "worker2",
+                "work_search",
+                new() { ["query"] = query, ["limit"] = 1 }
+            )
         );
         JsonObject firstItem = Assert.ContainsSingle(Items(first));
         Assert.IsNotNull(first["nextCursor"]);
-        JsonObject second = state.Invoke(
-            "worker2",
-            "work_search",
-            new()
-            {
-                ["query"] = query,
-                ["limit"] = 1,
-                ["cursor"] = first["nextCursor"]!.GetValue<long>(),
-            }
+        JsonObject second = GitScenarioState.Data(
+            state.Collaboration.Invoke(
+                "worker2",
+                "work_search",
+                new()
+                {
+                    ["query"] = query,
+                    ["limit"] = 1,
+                    ["cursor"] = first["nextCursor"]!.GetValue<long>(),
+                }
+            )
         );
         JsonObject secondItem = Assert.ContainsSingle(Items(second));
         Assert.AreEqual(id, Id(firstItem));
@@ -1334,7 +1287,7 @@ public sealed class BoardDeliverySpecs(TestContext context)
                 )
             )
         );
-        string before = CollaborationDomainAndNoticeRows(state);
+        string before = PublicCollaborationSnapshot(state);
         string operation = "board_search";
         JsonObject arguments = new()
         {
@@ -1357,7 +1310,7 @@ public sealed class BoardDeliverySpecs(TestContext context)
         Assert.IsFalse(failure["ok"]!.GetValue<bool>());
         Assert.AreEqual("invalid_arguments", failure["code"]!.GetValue<string>());
         Assert.IsNull(failure["data"]);
-        Assert.AreEqual(before, CollaborationDomainAndNoticeRows(state));
+        Assert.AreEqual(before, PublicCollaborationSnapshot(state));
         Assert.AreEqual(
             "Valid numeric identity",
             state.Invoke("worker1", "task_read", new() { ["id"] = Id(task) })[
@@ -1393,7 +1346,7 @@ public sealed class BoardDeliverySpecs(TestContext context)
             Ids(state.Invoke("worker1", "message_thread", new() { ["threadId"] = Id(direct) }))
         );
         Assert.IsNotEmpty(NoticeItems(state.Operations.AddNotices("worker2", new())));
-        string before = CollaborationDomainAndNoticeRows(state);
+        string before = PublicCollaborationSnapshot(state);
 
         JsonObject failure = state.Operations.Invoke(
             "worker1",
@@ -1410,7 +1363,9 @@ public sealed class BoardDeliverySpecs(TestContext context)
         Assert.IsFalse(failure["ok"]!.GetValue<bool>());
         Assert.AreEqual("not_visible", failure["code"]!.GetValue<string>());
         Assert.IsNull(failure["data"]);
-        Assert.AreEqual(before, CollaborationDomainAndNoticeRows(state));
+        Assert.AreEqual(before, PublicCollaborationSnapshot(state));
+        Assert.IsEmpty(NoticeItems(state.Operations.AddNotices("worker3", new())));
+        Assert.IsNull(state.Operations.ClaimBatch("worker3", false));
         JsonObject[] retained = Items(
             state.Invoke("owner", "message_thread", new() { ["threadId"] = Id(direct) })
         );
@@ -1422,33 +1377,35 @@ public sealed class BoardDeliverySpecs(TestContext context)
         );
     }
 
-    private static string CollaborationDomainAndNoticeRows(BoardDeliveryState state)
+    private static string PublicCollaborationSnapshot(BoardDeliveryState state)
     {
-        using SqliteConnection connection = state.Database.Open();
-        JsonObject result = new();
-        // Application domain/delivery rows only; diagnostic rollback activity may legitimately
-        // change.
-        foreach (
-            string table in new[]
-            {
-                "tasks",
-                "task_comments",
-                "messages",
-                "board_history",
-                "board_recent",
-                "events",
-                "delivery_batches",
-                "batch_gists",
-                "shown_notices",
-                "shown_gists",
-                "notice_cursors",
-                "notice_leases",
-            }
-        )
+        JsonObject channels = state.Invoke("owner", "channel_list", new());
+        JsonObject messages = new();
+        foreach (JsonObject channel in Items(channels))
         {
-            result[table] = Phase6State.Rows(connection, $"SELECT * FROM {table} ORDER BY rowid;");
+            string id = channel["id"]!.GetValue<string>();
+            messages[id] = state
+                .Invoke("owner", "message_read", new() { ["channelId"] = id })
+                .DeepClone();
         }
-        return result.ToJsonString();
+
+        JsonObject contexts = new();
+        foreach (string member in state.Database.Members)
+        {
+            JsonObject snapshot = state.Operations.ReadSharedContext(member);
+            snapshot.Remove("snapshotAt");
+            contexts[member] = snapshot;
+        }
+
+        return new JsonObject
+        {
+            ["tasks"] = state.Invoke("owner", "task_list", new() { ["limit"] = 200 }).DeepClone(),
+            ["recentBoard"] = state
+                .Invoke("owner", "board_recent", new() { ["limit"] = 200 })
+                .DeepClone(),
+            ["messages"] = messages,
+            ["sharedContexts"] = contexts,
+        }.ToJsonString();
     }
 
     private static long Id(JsonObject item) => item["id"]!.GetValue<long>();

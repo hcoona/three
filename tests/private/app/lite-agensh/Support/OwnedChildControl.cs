@@ -429,23 +429,14 @@ internal sealed class OwnedChildControl : IAsyncDisposable
         {
             receipt["inspectionError"] = Json.ExceptionDetails(inspectionError);
         }
-        Console.WriteLine("OWNED_CHILD_PROTOCOL " + receipt.ToJsonString());
     }
 
     public async ValueTask DisposeAsync()
     {
         List<Exception> failures = [];
-        bool readerDisposed = false,
-            pipeDisposed = false;
-        bool exitObserved = false,
-            processDisposed = false,
-            stopAttempted = false;
-        int? pid = null;
-        long? birth = null;
         try
         {
             reader?.Dispose();
-            readerDisposed = true;
         }
         catch (Exception error)
         {
@@ -455,7 +446,6 @@ internal sealed class OwnedChildControl : IAsyncDisposable
         try
         {
             await pipe.DisposeAsync().ConfigureAwait(false);
-            pipeDisposed = true;
         }
         catch (Exception error)
         {
@@ -466,8 +456,8 @@ internal sealed class OwnedChildControl : IAsyncDisposable
         {
             try
             {
-                pid = directProcess.Id;
-                birth = directProcess.StartTime.ToUniversalTime().Ticks;
+                _ = directProcess.Id;
+                _ = directProcess.StartTime.ToUniversalTime().Ticks;
             }
             catch (Exception error)
             {
@@ -478,7 +468,6 @@ internal sealed class OwnedChildControl : IAsyncDisposable
             {
                 if (!directProcess.HasExited)
                 {
-                    stopAttempted = true;
                     directProcess.Kill(entireProcessTree: true);
                 }
             }
@@ -493,7 +482,6 @@ internal sealed class OwnedChildControl : IAsyncDisposable
                 await directProcess
                     .WaitForExitAsync(exit.Token)
                     .ConfigureAwait(false);
-                exitObserved = directProcess.HasExited;
                 ObservedExitCode = directProcess.ExitCode;
             }
             catch (Exception error)
@@ -504,7 +492,6 @@ internal sealed class OwnedChildControl : IAsyncDisposable
             try
             {
                 directProcess.Dispose();
-                processDisposed = true;
             }
             catch (Exception error)
             {
@@ -512,27 +499,8 @@ internal sealed class OwnedChildControl : IAsyncDisposable
                 failures.Add(error);
             }
         }
-        Console.WriteLine(
-            "OWNED_CHILD_CLEANUP "
-                + new JsonObject
-                {
-                    ["pipe"] = PipeName,
-                    ["directlyOwned"] = directProcess is not null,
-                    ["pid"] = pid,
-                    ["birthTicks"] = birth,
-                    ["role"] = directRole,
-                    ["ageMilliseconds"] = directlyStarted is { } began
-                        ? Stopwatch.GetElapsedTime(began).TotalMilliseconds
-                        : null,
-                    ["observedExitCode"] = ObservedExitCode,
-                    ["readerDisposed"] = readerDisposed,
-                    ["pipeDisposed"] = pipeDisposed,
-                    ["stopAttempted"] = stopAttempted,
-                    ["ownedExitObserved"] = exitObserved,
-                    ["ownedProcessDisposed"] = processDisposed,
-                    ["failureCount"] = failures.Count,
-                }.ToJsonString()
-        );
+        _ = directRole;
+        _ = directlyStarted;
         if (failures.Count != 0)
         {
             throw new AggregateException("Owned helper cleanup failed.", failures);

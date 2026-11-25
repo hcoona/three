@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Runtime.ExceptionServices;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using LiteAgensh.Tests.Support;
@@ -20,6 +18,18 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         "XDG_CONFIG_HOME",
     ];
 
+    private static readonly ConfiguredCheckInvocation PassConfiguredCheckAsync = (
+        _,
+        _,
+        _,
+        _,
+        cancellationToken
+    ) =>
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new ProcessResult(0, "controlled check exit 0", "", false));
+    };
+
     [TestMethod]
     [TestCategory("DirtyCheckoutIsolation")]
     public async Task DirtyCheckoutRemainsByteExactThroughCheckedDelivery()
@@ -31,7 +41,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             StringComparer.Ordinal
         );
         using GitScenarioState state = await GitScenarioState
-            .CreateAsync(token)
+            .CreateAsync(token, configuredCheck: PassConfiguredCheckAsync)
             .ConfigureAwait(false);
         string tracked = Path.Combine(state.Repository, "tracked.txt");
         File.WriteAllText(tracked, "staged owned edit\n");
@@ -164,7 +174,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 .ResolveAsync($"refs/heads/lite-agensh/{state.Database.RunId}/worker1", token)
                 .ConfigureAwait(false)
         );
-        foreach ((string _, string path) in state.Worktrees())
+        foreach (string path in OwnedWorktreePaths(state))
         {
             CollectionAssert.AreEqual(
                 instructions,
@@ -375,10 +385,13 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     )
     {
         CancellationToken token = testContext.CancellationToken;
-        using GitScenarioState state = await GitScenarioState.CreateAsync(
-            token,
-            protectedPaths: ["protected.txt"]
-        ).ConfigureAwait(false);
+        using GitScenarioState state = await GitScenarioState
+            .CreateAsync(
+                token,
+                protectedPaths: ["protected.txt"],
+                configuredCheck: PassConfiguredCheckAsync
+            )
+            .ConfigureAwait(false);
         await state.Operations.InitializeAsync(token).ConfigureAwait(false);
         string head = await state.CommitAsync(
             state.Operations.GetWorkerPath("worker1"),
@@ -498,10 +511,9 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         Assert.AreEqual(candidate, check["commit"]!.GetValue<string>());
         Assert.AreEqual("passed", check["status"]!.GetValue<string>());
         Assert.AreEqual(0, check["exitCode"]!.GetValue<int>());
-        Assert.Contains(
-            "owned check exit 0",
-            File.ReadAllText(check["logPath"]!.GetValue<string>())
-        );
+        string checkLog = File.ReadAllText(check["logPath"]!.GetValue<string>());
+        Assert.Contains("Configured check execution: controlled.", checkLog);
+        Assert.Contains("controlled check exit 0", checkLog);
         foreach ((JsonObject review, string actor, string decision) in new[]
         {
             (firstReview, firstReviewer, "approve"), (secondReview, "owner", "approve"),
@@ -559,7 +571,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             : denied;
         RunDatabase database = new(configuration.StatePath, configuration);
         CollaborationOperations collaboration = new(database);
-        GitOperations operations = new(database, collaboration);
+        GitOperations operations = new(database, collaboration, PassConfiguredCheckAsync);
         ProcessRunner processes = new(database);
         try
         {
@@ -571,6 +583,9 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 Assert.AreEqual("unavailable", error.Code);
                 Assert.Contains("explicitly authorized empty directory", error.Message);
                 Assert.IsFalse(Directory.Exists(Path.Combine(repository, ".git")));
+                Assert.IsFalse(
+                    Directory.Exists(Path.Combine(configuration.StatePath, "worktrees"))
+                );
                 if (hasExistingFile)
                 {
                     CollectionAssert.AreEqual(existingBytes, File.ReadAllBytes(existingFile));
@@ -583,11 +598,21 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 {
                     Assert.IsEmpty(Directory.EnumerateFileSystemEntries(repository));
                 }
-                Assert.IsNull(database.ReadMetadata("git:initialized"));
-                using var connection = database.Open();
-                Assert.AreEqual(0L, (long)Sql.Scalar(
-                    connection, "SELECT COUNT(*) FROM git_resources;", null
-                )!);
+                JsonObject uninitialized = await operations
+                    .InvokeAsync(
+                        "worker1",
+                        "change_write",
+                        new()
+                        {
+                            ["action"] = "submit",
+                            ["title"] = "Uninitialized",
+                            ["body"] = "Must reject before Git initialization.",
+                        },
+                        token
+                    )
+                    .ConfigureAwait(false);
+                Assert.IsFalse(uninitialized["ok"]!.GetValue<bool>());
+                Assert.AreEqual("unavailable", uninitialized["code"]!.GetValue<string>());
                 return;
             }
 
@@ -603,43 +628,50 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             }
             string head = (await ReadGitAsync(repository, "rev-parse", "--verify", "HEAD^{commit}")
                 .ConfigureAwait(false)).Trim();
+            JsonObject runInfo = GitScenarioState.Data(
+                collaboration.Invoke("owner", "run_info", new())
+            );
+            Assert.AreEqual(head, runInfo["baseCommit"]!.GetValue<string>());
             Assert.AreEqual(head, database.Configuration.BaseRevision);
-            Assert.AreEqual(head, database.ReadMetadata("git:base_commit"));
-            Assert.AreEqual("true", database.ReadMetadata("git:initialized"));
             Assert.IsEmpty(await ReadGitAsync(repository, "ls-tree", "-r", "--name-only", head)
                 .ConfigureAwait(false));
-            List<(string Ref, string Path)> resources = [];
-            using (var connection = database.Open())
-            using (var command = Sql.Command(
-                connection, "SELECT ref,path FROM git_resources WHERE state='ready' AND retained=0;"
-            ))
-            using (var reader = Sql.Reader(command))
-            {
-                while (reader.Read())
-                {
-                    resources.Add((reader.GetString(0), reader.GetString(1)));
-                }
-            }
-            Assert.HasCount(configuration.WorkerCount + 1, resources);
-            Assert.Contains(
-                database.ReadMetadata("git:integration_path")!,
-                resources.Select(item => item.Path)
+            JsonObject agents = GitScenarioState.Data(
+                collaboration.Invoke("owner", "agent_list", new())
             );
+            (string Ref, string Path)[] expectedWorktrees =
+            [
+                (
+                    $"refs/heads/lite-agensh/{database.RunId}/integration",
+                    Path.Combine(configuration.StatePath, "worktrees", "integration")
+                ),
+                .. configuration.WorkerIds.Select(worker => (
+                    $"refs/heads/lite-agensh/{database.RunId}/{worker}",
+                    operations.GetWorkerPath(worker)
+                )),
+            ];
             foreach (string worker in configuration.WorkerIds)
             {
-                Assert.Contains(
+                JsonObject agent = agents["items"]!
+                    .AsArray()
+                    .OfType<JsonObject>()
+                    .Single(item => item["id"]!.GetValue<string>() == worker);
+                Assert.AreEqual(
                     operations.GetWorkerPath(worker),
-                    resources.Select(item => item.Path)
+                    agent["worktreePath"]!.GetValue<string>()
                 );
             }
-            foreach ((string reference, string path) in resources)
+            foreach ((string reference, string path) in expectedWorktrees)
             {
-                Assert.AreEqual(head, (await ReadGitAsync(
-                    repository, "rev-parse", "--verify", reference
-                )
-                    .ConfigureAwait(false)).Trim());
-                Assert.AreEqual(head, (await ReadGitAsync(path, "rev-parse", "HEAD")
-                    .ConfigureAwait(false)).Trim());
+                Assert.IsTrue(Directory.Exists(path), path);
+                Assert.AreEqual(
+                    head,
+                    (await ReadGitAsync(repository, "rev-parse", "--verify", reference)
+                        .ConfigureAwait(false)).Trim()
+                );
+                Assert.AreEqual(
+                    head,
+                    (await ReadGitAsync(path, "rev-parse", "HEAD").ConfigureAwait(false)).Trim()
+                );
             }
         }
         finally
@@ -674,7 +706,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         };
         RunDatabase database = new(configuration.StatePath, configuration);
         CollaborationOperations collaboration = new(database);
-        GitOperations operations = new(database, collaboration);
+        GitOperations operations = new(database, collaboration, PassConfiguredCheckAsync);
         ProcessRunner processes = new(database);
         async Task<string> GitAsync(bool expectSuccess, params string[] arguments)
         {
@@ -740,11 +772,16 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 await GitAsync(true, "ls-files", "--stage", "-z").ConfigureAwait(false)
             );
             await GitAsync(false, "rev-parse", "--verify", "HEAD").ConfigureAwait(false);
-            Assert.IsNull(database.ReadMetadata("git:initialized"));
-            using var connection = database.Open();
-            Assert.AreEqual(0L, (long)Sql.Scalar(
-                connection, "SELECT COUNT(*) FROM git_resources;", null
-            )!);
+            Assert.IsFalse(Directory.Exists(Path.Combine(configuration.StatePath, "worktrees")));
+            Assert.IsEmpty(
+                await GitAsync(
+                        true,
+                        "for-each-ref",
+                        "--format=%(refname)",
+                        "refs/heads/lite-agensh/"
+                    )
+                    .ConfigureAwait(false)
+            );
         }
         finally
         {
@@ -764,7 +801,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         using GitScenarioState state = await GitScenarioState
-            .CreateAsync(token)
+            .CreateAsync(token, configuredCheck: PassConfiguredCheckAsync)
             .ConfigureAwait(false);
         await state.Operations.InitializeAsync(token).ConfigureAwait(false);
         string firstHead = await state
@@ -859,7 +896,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         using GitScenarioState state = await GitScenarioState
-            .CreateAsync(token)
+            .CreateAsync(token, configuredCheck: PassConfiguredCheckAsync)
             .ConfigureAwait(false);
         await state.Operations.InitializeAsync(token).ConfigureAwait(false);
         string worker = state.Operations.GetWorkerPath("worker1");
@@ -948,13 +985,8 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         Assert.IsEmpty(read["checks"]!.AsArray());
         if (mutation == "review")
         {
-            Assert.AreEqual(
-                1L,
-                state.Number(
-                    "SELECT stale FROM reviews WHERE id=$id;",
-                    ("$id", review["id"]!.GetValue<long>())
-                )
-            );
+            // Reverting to oldHead proves via change_read refusal that superseded approvals stay
+            // historical and cannot re-authorize integration without a fresh review.
             string branch = change["branch"]!.GetValue<string>();
             await state.GitAsync(worker, token, "branch", "retained-unreviewed", newHead)
                 .ConfigureAwait(false);
@@ -989,12 +1021,12 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 )
             )!.AsObject();
             AssertRefusal(read, returnedRequest, "review_required", reason);
+            JsonObject historicalReview = Assert
+                .ContainsSingle(read["reviews"]!.AsArray())!
+                .AsObject();
             Assert.AreEqual(
-                1L,
-                state.Number(
-                    "SELECT stale FROM reviews WHERE id=$id;",
-                    ("$id", review["id"]!.GetValue<long>())
-                )
+                review["id"]!.GetValue<long>(),
+                historicalReview["id"]!.GetValue<long>()
             );
             Assert.IsEmpty(read["checks"]!.AsArray());
             Assert.AreEqual(
@@ -1020,417 +1052,226 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task HeldCheckCannotAuthorizeChangedCandidate(string mutation, string code)
     {
-        // Enforce the existing case budget at entry, including all prelaunch preparation.
-        using CancellationTokenSource deadline = new(120_000);
-        long began = Stopwatch.GetTimestamp();
-        using CancellationTokenSource cancellation =
-            CancellationTokenSource.CreateLinkedTokenSource(
-                testContext.CancellationToken,
-                deadline.Token
-            );
-        CancellationToken token = cancellation.Token;
-        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        GitScenarioState? ownedState = null;
-        Task? processing = null;
-        long? ownedRequest = null, ownedChange = null;
-        Exception? primary = null;
-        AggregateException? cleanupFailure = null;
-        bool producerJoined = false;
-        try
-        {
-            CheckCommand held = new()
-            {
-                Executable = "controlled-candidate-check",
-            };
-            GitScenarioState state = await GitScenarioState
+        await using HeldCheckScope held = new(testContext.CancellationToken);
+        CancellationToken token = held.Token;
+        GitScenarioState state = held.Own(
+            await GitScenarioState
                 .CreateAsync(
                     token,
-                    [held],
-                    configuredCheck: async (_, _, _, _, checkToken) =>
-                    {
-                        entered.SetResult();
-                        await release.Task.WaitAsync(checkToken).ConfigureAwait(false);
-                        return new(0, "controlled check exit 0", "", false);
-                    }
+                    [new() { Executable = "controlled-candidate-check" }],
+                    configuredCheck: (_, _, _, _, checkToken) =>
+                        held.WaitCheckAsync("controlled check exit 0", checkToken)
                 )
-                .ConfigureAwait(false);
-            ownedState = state;
-            await state.Operations.InitializeAsync(token).ConfigureAwait(false);
-            string worker = state.Operations.GetWorkerPath("worker1");
-            string submitted = await state
-                .CommitAsync(worker, "alpha.txt", "exact reviewed alpha\n", token)
-                .ConfigureAwait(false);
-            JsonObject change = await state
-                .SubmitAsync("worker1", "Held alpha", token)
-                .ConfigureAwait(false);
-            ownedChange = change["id"]!.GetValue<long>();
-            JsonObject review = await state
-                .ReviewAsync("worker2", change, token)
-                .ConfigureAwait(false);
-            JsonObject queued = await state.QueueAsync(change, token).ConfigureAwait(false);
-            long requestId = queued["requestId"]!.GetValue<long>();
-            ownedRequest = requestId;
-            string path = Path.Combine(
-                state.Database.StatePath,
-                "worktrees",
-                "candidate-" + requestId.ToString(CultureInfo.InvariantCulture)
+                .ConfigureAwait(false)
+        );
+        await state.Operations.InitializeAsync(token).ConfigureAwait(false);
+        string worker = state.Operations.GetWorkerPath("worker1");
+        string submitted = await state
+            .CommitAsync(worker, "alpha.txt", "exact reviewed alpha\n", token)
+            .ConfigureAwait(false);
+        JsonObject change = await state
+            .SubmitAsync("worker1", "Held alpha", token)
+            .ConfigureAwait(false);
+        JsonObject review = await state
+            .ReviewAsync("worker2", change, token)
+            .ConfigureAwait(false);
+        JsonObject queued = await state.QueueAsync(change, token).ConfigureAwait(false);
+        long requestId = queued["requestId"]!.GetValue<long>();
+        string path = Path.Combine(
+            state.Database.StatePath,
+            "worktrees",
+            "candidate-" + requestId.ToString(CultureInfo.InvariantCulture)
+        );
+        _ = held.Start(() => state.Operations.ProcessPendingAsync(held.ProducerToken));
+        await held.AwaitEntryAsync().ConfigureAwait(false);
+        string candidate = await state
+            .ResolveAsync(
+                $"refs/heads/lite-agensh/{state.Database.RunId}/candidate-{requestId}",
+                token
+            )
+            .ConfigureAwait(false);
+        string candidateTree = await state
+            .ResolveAsync(candidate + "^{tree}", token)
+            .ConfigureAwait(false);
+        string preservedIntegration = state.BaseCommit;
+        string preservedWorker = submitted;
+        if (mutation is "tracked-tree" or "index")
+        {
+            string originalShared = File.ReadAllText(Path.Combine(path, "shared.txt"));
+            File.WriteAllText(
+                Path.Combine(path, "shared.txt"),
+                "changed during controlled check\n"
             );
-            processing = Task.Run(() => state.Operations.ProcessPendingAsync(cancellation.Token));
-            await AwaitCheckEntryAsync(entered.Task, processing, token).ConfigureAwait(false);
-            string candidate = state.Text(
-                "SELECT candidate_commit FROM integration_requests WHERE id=$id;",
-                ("$id", requestId)
-            )!;
-            Assert.IsNotNull(candidate);
-            string candidateTree = await state
-                .ResolveAsync(candidate + "^{tree}", token)
-                .ConfigureAwait(false);
-            string preservedIntegration = state.BaseCommit;
-            string preservedWorker = submitted;
-            if (mutation is "tracked-tree" or "index")
-            {
-                string originalShared = File.ReadAllText(Path.Combine(path, "shared.txt"));
-                File.WriteAllText(
-                    Path.Combine(path, "shared.txt"),
-                    "changed during controlled check\n"
-                );
-                if (mutation == "index")
-                {
-                    await state
-                        .GitAsync(path, token, "add", "--", "shared.txt")
-                        .ConfigureAwait(false);
-                    File.WriteAllText(Path.Combine(path, "shared.txt"), originalShared);
-                    Assert.AreEqual(
-                        "",
-                        await state.GitAsync(path, token, "diff", "--name-only", "HEAD", "--")
-                            .ConfigureAwait(false)
-                    );
-                    Assert.AreEqual(
-                        "shared.txt",
-                        (await state.GitAsync(
-                            path, token, "diff", "--cached", "--name-only", "HEAD", "--"
-                        ).ConfigureAwait(false)).Trim()
-                    );
-                    Assert.AreEqual(
-                        candidate,
-                        (await state.GitAsync(path, token, "rev-parse", "HEAD")
-                            .ConfigureAwait(false)).Trim()
-                    );
-                }
-            }
-            else if (mutation == "candidate-head")
+            if (mutation == "index")
             {
                 await state
-                    .CommitAsync(path, "late.txt", "unchecked candidate commit\n", token)
+                    .GitAsync(path, token, "add", "--", "shared.txt")
                     .ConfigureAwait(false);
-            }
-            else if (mutation == "worker-head")
-            {
-                preservedWorker = await state
-                    .CommitAsync(worker, "late.txt", "worker moved during check\n", token)
-                    .ConfigureAwait(false);
-            }
-            else if (mutation == "integration-tree")
-            {
-                File.WriteAllText(
-                    Path.Combine(state.IntegrationPath, "shared.txt"),
-                    "uncommitted integration work during check\n"
+                File.WriteAllText(Path.Combine(path, "shared.txt"), originalShared);
+                Assert.AreEqual(
+                    "",
+                    await state.GitAsync(path, token, "diff", "--name-only", "HEAD", "--")
+                        .ConfigureAwait(false)
+                );
+                Assert.AreEqual(
+                    "shared.txt",
+                    (await state.GitAsync(
+                        path, token, "diff", "--cached", "--name-only", "HEAD", "--"
+                    ).ConfigureAwait(false)).Trim()
+                );
+                Assert.AreEqual(
+                    candidate,
+                    (await state.GitAsync(path, token, "rev-parse", "HEAD")
+                        .ConfigureAwait(false)).Trim()
                 );
             }
-            else
-            {
-                preservedIntegration = await state
-                    .CommitAsync(
-                        state.IntegrationPath,
-                        "external.txt",
-                        "integration moved during check\n",
-                        token
-                    )
-                    .ConfigureAwait(false);
-            }
+        }
+        else if (mutation == "candidate-head")
+        {
+            await state
+                .CommitAsync(path, "late.txt", "unchecked candidate commit\n", token)
+                .ConfigureAwait(false);
+        }
+        else if (mutation == "worker-head")
+        {
+            preservedWorker = await state
+                .CommitAsync(worker, "late.txt", "worker moved during check\n", token)
+                .ConfigureAwait(false);
+        }
+        else if (mutation == "integration-tree")
+        {
+            File.WriteAllText(
+                Path.Combine(state.IntegrationPath, "shared.txt"),
+                "uncommitted integration work during check\n"
+            );
+        }
+        else
+        {
+            preservedIntegration = await state
+                .CommitAsync(
+                    state.IntegrationPath,
+                    "external.txt",
+                    "integration moved during check\n",
+                    token
+                )
+                .ConfigureAwait(false);
+        }
 
-            string retainedHead = (
-                await state.GitAsync(path, token, "rev-parse", "HEAD").ConfigureAwait(false)
-            ).Trim();
-            string retainedIndex = await state
-                .GitAsync(path, token, "ls-files", "--stage")
-                .ConfigureAwait(false);
-            string retainedShared = File.ReadAllText(Path.Combine(path, "shared.txt"));
-            string preservedIntegrationTree = await state
-                .ResolveAsync(preservedIntegration + "^{tree}", token)
-                .ConfigureAwait(false);
-            (string Index, string Shared)? integrationWorktree = null;
-            if (mutation == "integration-tree")
+        string retainedHead = (
+            await state.GitAsync(path, token, "rev-parse", "HEAD").ConfigureAwait(false)
+        ).Trim();
+        string retainedIndex = await state
+            .GitAsync(path, token, "ls-files", "--stage")
+            .ConfigureAwait(false);
+        string retainedShared = File.ReadAllText(Path.Combine(path, "shared.txt"));
+        string preservedIntegrationTree = await state
+            .ResolveAsync(preservedIntegration + "^{tree}", token)
+            .ConfigureAwait(false);
+        (string Index, string Shared)? integrationWorktree = null;
+        if (mutation == "integration-tree")
+        {
+            integrationWorktree = (
+                await state.GitAsync(state.IntegrationPath, token, "ls-files", "--stage")
+                    .ConfigureAwait(false),
+                File.ReadAllText(Path.Combine(state.IntegrationPath, "shared.txt"))
+            );
+        }
+        await held.ReleaseAndJoinAsync().ConfigureAwait(false);
+        JsonObject read = await state.ReadAsync(change, token).ConfigureAwait(false);
+        JsonObject request = Assert
+            .ContainsSingle(read["integrationRequests"]!.AsArray())!
+            .AsObject();
+        AssertRefusal(
+            read,
+            request,
+            code,
+            mutation switch
             {
-                integrationWorktree = (
-                    await state.GitAsync(
-                        state.IntegrationPath, token, "ls-files", "--stage"
-                    ).ConfigureAwait(false),
-                    File.ReadAllText(Path.Combine(state.IntegrationPath, "shared.txt"))
-                );
+                "integration-head" => "Integration or candidate moved",
+                "integration-tree" => "Checked commit or tracked tree/index changed",
+                "worker-head" => "submitted worker head changed",
+                _ => "Candidate checks failed",
             }
-            release.SetResult();
-            await processing.ConfigureAwait(false);
-            JsonObject read = await state.ReadAsync(change, token).ConfigureAwait(false);
-            JsonObject request = Assert
-                .ContainsSingle(read["integrationRequests"]!.AsArray())!
+        );
+        Assert.AreEqual(
+            preservedIntegration,
+            await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
+        );
+        Assert.AreEqual(
+            preservedIntegration,
+            (
+                await state
+                    .GitAsync(state.IntegrationPath, token, "rev-parse", "HEAD")
+                    .ConfigureAwait(false)
+            ).Trim()
+        );
+        Assert.AreEqual(
+            preservedIntegrationTree,
+            await state
+                .ResolveAsync(state.IntegrationRef + "^{tree}", token)
+                .ConfigureAwait(false)
+        );
+        if (integrationWorktree is { } preservedWorktree)
+        {
+            Assert.AreEqual(
+                preservedWorktree.Index,
+                await state.GitAsync(state.IntegrationPath, token, "ls-files", "--stage")
+                    .ConfigureAwait(false)
+            );
+            Assert.AreEqual(
+                preservedWorktree.Shared,
+                File.ReadAllText(Path.Combine(state.IntegrationPath, "shared.txt"))
+            );
+        }
+        Assert.AreEqual(
+            retainedHead,
+            (await state.GitAsync(path, token, "rev-parse", "HEAD").ConfigureAwait(false)).Trim()
+        );
+        Assert.AreEqual(
+            retainedIndex,
+            await state.GitAsync(path, token, "ls-files", "--stage").ConfigureAwait(false)
+        );
+        Assert.AreEqual(retainedShared, File.ReadAllText(Path.Combine(path, "shared.txt")));
+        Assert.AreEqual(
+            preservedWorker,
+            await state
+                .ResolveAsync(change["branch"]!.GetValue<string>(), token)
+                .ConfigureAwait(false)
+        );
+        if (mutation == "worker-head")
+        {
+            Assert.AreEqual(candidate, retainedHead);
+            Assert.AreEqual(submitted, read["head"]!.GetValue<string>());
+            JsonObject retainedReview = Assert
+                .ContainsSingle(read["reviews"]!.AsArray())!
                 .AsObject();
-            AssertRefusal(
-                read,
-                request,
-                code,
-                mutation switch
-                {
-                    "integration-head" => "Integration or candidate moved",
-                    "integration-tree" => "Checked commit or tracked tree/index changed",
-                    "worker-head" => "submitted worker head changed",
-                    _ => "Candidate checks failed",
-                }
-            );
             Assert.AreEqual(
-                preservedIntegration,
-                await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
+                review["id"]!.GetValue<long>(),
+                retainedReview["id"]!.GetValue<long>()
             );
-            Assert.AreEqual(
-                preservedIntegration,
-                (
-                    await state
-                        .GitAsync(state.IntegrationPath, token, "rev-parse", "HEAD")
-                        .ConfigureAwait(false)
-                ).Trim()
-            );
-            Assert.AreEqual(
-                preservedIntegrationTree,
-                await state
-                    .ResolveAsync(state.IntegrationRef + "^{tree}", token)
-                    .ConfigureAwait(false)
-            );
-            if (integrationWorktree is { } preservedWorktree)
-            {
-                Assert.AreEqual(
-                    preservedWorktree.Index,
-                    await state.GitAsync(state.IntegrationPath, token, "ls-files", "--stage")
-                        .ConfigureAwait(false)
-                );
-                Assert.AreEqual(
-                    preservedWorktree.Shared,
-                    File.ReadAllText(Path.Combine(state.IntegrationPath, "shared.txt"))
-                );
-            }
-            Assert.AreEqual(
-                retainedHead,
-                (
-                    await state.GitAsync(path, token, "rev-parse", "HEAD").ConfigureAwait(false)
-                ).Trim()
-            );
-            Assert.AreEqual(
-                retainedIndex,
-                await state.GitAsync(path, token, "ls-files", "--stage").ConfigureAwait(false)
-            );
-            Assert.AreEqual(retainedShared, File.ReadAllText(Path.Combine(path, "shared.txt")));
-            Assert.AreEqual(
-                preservedWorker,
-                await state
-                    .ResolveAsync(change["branch"]!.GetValue<string>(), token)
-                    .ConfigureAwait(false)
-            );
-            if (mutation == "worker-head")
-            {
-                Assert.AreEqual(candidate, retainedHead);
-                Assert.AreEqual(submitted, read["head"]!.GetValue<string>());
-                JsonObject retainedReview = Assert
-                    .ContainsSingle(read["reviews"]!.AsArray())!
-                    .AsObject();
-                Assert.AreEqual(
-                    review["id"]!.GetValue<long>(),
-                    retainedReview["id"]!.GetValue<long>()
-                );
-                Assert.AreEqual(submitted, retainedReview["head"]!.GetValue<string>());
-                Assert.AreEqual("approve", retainedReview["decision"]!.GetValue<string>());
-            }
+            Assert.AreEqual(submitted, retainedReview["head"]!.GetValue<string>());
+            Assert.AreEqual("approve", retainedReview["decision"]!.GetValue<string>());
+        }
 
-            JsonObject check = Assert.ContainsSingle(read["checks"]!.AsArray())!.AsObject();
-            Assert.AreEqual(candidate, check["commit"]!.GetValue<string>());
-            Assert.AreEqual(candidateTree, check["tree"]!.GetValue<string>());
-            Assert.AreEqual(0, check["exitCode"]!.GetValue<int>());
-            Assert.AreEqual("candidate", check["kind"]!.GetValue<string>());
-            bool candidateChanged = mutation is "tracked-tree" or "index" or "candidate-head";
-            Assert.AreEqual(
-                candidateChanged ? "failed" : "passed",
-                check["status"]!.GetValue<string>()
-            );
-            string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
-            Assert.Contains("Configured check execution: controlled.", log);
-            Assert.Contains("controlled check exit 0", log);
-            if (candidateChanged)
-            {
-                Assert.Contains("Candidate identity failure:", log);
-                Assert.Contains("old check evidence cannot advance integration", log);
-            }
-
-            Assert.AreEqual(
-                0L,
-                state.Number(
-                    "SELECT ready FROM integration_requests WHERE id=$id;",
-                    ("$id", requestId)
-                )
-            );
-        }
-        catch (Exception error)
+        JsonObject check = Assert.ContainsSingle(read["checks"]!.AsArray())!.AsObject();
+        Assert.AreEqual(candidate, check["commit"]!.GetValue<string>());
+        Assert.AreEqual(candidateTree, check["tree"]!.GetValue<string>());
+        Assert.AreEqual(0, check["exitCode"]!.GetValue<int>());
+        Assert.AreEqual("candidate", check["kind"]!.GetValue<string>());
+        bool candidateChanged = mutation is "tracked-tree" or "index" or "candidate-head";
+        Assert.AreEqual(
+            candidateChanged ? "failed" : "passed",
+            check["status"]!.GetValue<string>()
+        );
+        string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
+        Assert.Contains("Configured check execution: controlled.", log);
+        Assert.Contains("controlled check exit 0", log);
+        if (candidateChanged)
         {
-            primary = error;
-            throw;
+            Assert.Contains("Candidate identity failure:", log);
+            Assert.Contains("old check evidence cannot advance integration", log);
         }
-        finally
-        {
-            List<Exception> failures = [];
-            try
-            {
-                await cancellation.CancelAsync().ConfigureAwait(false);
-            }
-            catch (Exception error)
-            {
-                failures.Add(error);
-            }
-            // Join orchestration before disposing its owned SQLite/Git state.
-            if (processing is not null)
-            {
-                try
-                {
-                    await processing.ConfigureAwait(false);
-                    producerJoined = true;
-                }
-                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-                {
-                    producerJoined = true;
-                }
-                catch (Exception error)
-                {
-                    producerJoined = processing.IsCompleted;
-                    if (!ReferenceEquals(error, primary))
-                    {
-                        failures.Add(error);
-                    }
-                }
-            }
-            if (primary is not null)
-            {
-                CaptureCandidateAfterJoin(
-                    ownedState, ownedRequest, ownedChange, processing, producerJoined, began,
-                    primary, testContext.CancellationToken
-                );
-            }
-            try
-            {
-                ownedState?.Dispose();
-            }
-            catch (Exception error)
-            {
-                failures.Add(error);
-            }
-            if (failures.Count != 0)
-            {
-                AggregateException cleanup = new("Held-check owned cleanup failed.", failures);
-                if (primary is null)
-                {
-                    cleanupFailure = cleanup;
-                }
-                else
-                {
-                    primary.Data["HeldCheckCleanupError"] = cleanup.ToString();
-                    try
-                    {
-                        Console.Error.WriteLine("HELD_CHECK_SECONDARY " + cleanup);
-                    }
-                    catch (Exception loggingError)
-                    {
-                        primary.Data["HeldCheckCleanupLoggingError"] = loggingError.ToString();
-                    }
-                }
-            }
-        }
-        if (cleanupFailure is not null)
-        {
-            throw cleanupFailure;
-        }
-    }
-
-    private static void CaptureCandidateAfterJoin(
-        GitScenarioState? state,
-        long? request,
-        long? change,
-        Task? producer,
-        bool joined,
-        long began,
-        Exception primary,
-        CancellationToken caseToken
-    )
-    {
-        JsonObject receipt = new()
-        {
-            ["requestId"] = request,
-            ["changeId"] = change,
-            ["producerTaskStatus"] = producer?.Status.ToString(),
-            ["producerJoinEstablished"] = joined,
-            ["producerCleanupError"] =
-                (primary.Data["CandidateProducerCleanupError"] as JsonNode)?.DeepClone(),
-        };
-        try
-        {
-            // The producer token was cancelled for cleanup. The case-entry budget still
-            // reserves both existing five-second SQLite busy stages for this one snapshot.
-            TimeSpan remaining =
-                TimeSpan.FromMilliseconds(120_000) - Stopwatch.GetElapsedTime(began);
-            if (joined && state is not null && request is not null && change is not null
-                && !caseToken.IsCancellationRequested && remaining >= TimeSpan.FromSeconds(5 + 5))
-            {
-                JsonNode? snapshot = JsonNode.Parse(state.Text(
-                    "SELECT json_object("
-                        + "'request',json((SELECT json_object('id',id,'state',state,"
-                        + "'resultCode',result_code,'ready',ready,'candidate',candidate_commit) "
-                        + "FROM integration_requests WHERE id=$request)),"
-                        + "'check',json((SELECT json_object('id',id,'status',status,"
-                        + "'exitCode',exit_code,'logPath',log_path) FROM checks "
-                        + "WHERE change_id=$change AND kind='candidate' ORDER BY id DESC LIMIT 1)),"
-                        + "'leaseCount',(SELECT count(*) FROM process_leases),"
-                        + "'leases',json((SELECT json_group_array(json_object('id',id,'pid',pid,"
-                        + "'birthTicks',start_ticks,'kind',kind,'state',state)) "
-                        + "FROM (SELECT id,pid,start_ticks,kind,state FROM process_leases "
-                        + "ORDER BY state!='exited' DESC,id DESC LIMIT 8))));",
-                    ("$request", request), ("$change", change)
-                ) ?? "null");
-                receipt["persistedOwnedState"] = snapshot;
-                receipt["leaseSelection"] =
-                    "up to eight rows, unsettled first then latest; not process liveness";
-                if (snapshot?["check"]?["logPath"]?.GetValue<string>() is { } logPath)
-                {
-                    using StreamReader reader = new(logPath);
-                    char[] buffer = new char[131_073];
-                    int read = reader.ReadBlock(buffer, 0, buffer.Length);
-                    receipt["privateCheckLog"] = new string(buffer, 0, Math.Min(read, 131_072));
-                    receipt["privateCheckLogTruncated"] = read > 131_072;
-                }
-            }
-            else
-            {
-                receipt["persistedOwnedState"] =
-                    "unknown: producer join, owned row or remaining case budget unestablished";
-            }
-        }
-        catch (Exception secondary)
-        {
-            receipt["captureError"] = Json.ExceptionDetails(secondary);
-            primary.Data["CandidateAfterJoinCaptureError"] = Json.ExceptionDetails(secondary);
-        }
-        try
-        {
-            Console.Error.WriteLine("CANDIDATE_AFTER_PRODUCER_JOIN " + receipt.ToJsonString());
-        }
-        catch (Exception secondary)
-        {
-            primary.Data["CandidateAfterJoinLoggingError"] = Json.ExceptionDetails(secondary);
-        }
+        held.Complete();
     }
 
     [TestMethod]
@@ -1439,7 +1280,22 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         using GitScenarioState state = await GitScenarioState
-            .CreateAsync(token, [GitScenarioState.ExitCheck(23)])
+            .CreateAsync(
+                token,
+                [new() { Executable = "controlled-failing-check" }],
+                configuredCheck: (_, _, _, _, checkToken) =>
+                {
+                    checkToken.ThrowIfCancellationRequested();
+                    return Task.FromResult(
+                        new ProcessResult(
+                            23,
+                            "controlled check exit 23",
+                            "controlled check failed 23",
+                            TimedOut: false
+                        )
+                    );
+                }
+            )
             .ConfigureAwait(false);
         await state.Operations.InitializeAsync(token).ConfigureAwait(false);
         string submitted = await state
@@ -1481,8 +1337,9 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             check["tree"]!.GetValue<string>()
         );
         string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
-        Assert.Contains("owned check exit 23", log);
-        Assert.Contains("owned check failed 23", log);
+        Assert.Contains("Configured check execution: controlled.", log);
+        Assert.Contains("controlled check exit 23", log);
+        Assert.Contains("controlled check failed 23", log);
         Assert.AreEqual(
             state.BaseCommit,
             await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
@@ -1588,25 +1445,17 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task CancelledActualCandidateCheckRetainsEvidenceAndSettlesItsOwnedLease()
     {
-        using CancellationTokenSource deadline = new(120_000);
-        long began = Stopwatch.GetTimestamp();
-        using CancellationTokenSource lifetime =
-            CancellationTokenSource.CreateLinkedTokenSource(
-                testContext.CancellationToken,
-                deadline.Token
-            );
-        CancellationToken token = lifetime.Token;
-        await using OwnedChildControl control = new();
-        CheckCommand held = new()
+        await using HeldCheckScope held = new(testContext.CancellationToken);
+        CancellationToken token = held.Token;
+        OwnedChildControl control = held.OwnAsync(new OwnedChildControl());
+        CheckCommand checkCommand = new()
         {
             Executable = OwnedChildControl.ExecutablePath,
             Arguments = control.Arguments(role: OwnedChildControl.HeldCandidateCheckRole),
         };
-        using GitScenarioState state = await GitScenarioState
-            .CreateAsync(token, [held])
-            .ConfigureAwait(false);
-        using CancellationTokenSource cancellation =
-            CancellationTokenSource.CreateLinkedTokenSource(token);
+        GitScenarioState state = held.Own(
+            await GitScenarioState.CreateAsync(token, [checkCommand]).ConfigureAwait(false)
+        );
         await state.Operations.InitializeAsync(token).ConfigureAwait(false);
         string submitted = await state
             .CommitAsync(
@@ -1620,107 +1469,58 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             .SubmitAsync("worker1", "Cancelled alpha", token)
             .ConfigureAwait(false);
         await state.ReviewAsync("worker2", change, token).ConfigureAwait(false);
-        JsonObject queued = await state.QueueAsync(change, token).ConfigureAwait(false);
-        long requestId = queued["requestId"]!.GetValue<long>();
-        Task processing = Task.Run(() => state.Operations.ProcessPendingAsync(cancellation.Token));
-        Exception? primary = null;
-        bool producerJoined = false;
-        ExceptionDispatchInfo? producerCleanupFailure = null;
-        try
-        {
-            OwnedChildIdentity identity = await control
-                .ReadReadyAsync(processing, token)
-                .ConfigureAwait(false);
-            await cancellation.CancelAsync().ConfigureAwait(false);
-            await Assert
-                .ThrowsAsync<OperationCanceledException>(async () =>
-                    await processing.ConfigureAwait(false)
-                )
-                .ConfigureAwait(false);
-            JsonObject read = await state.ReadAsync(change, token).ConfigureAwait(false);
-            JsonObject request = Assert
-                .ContainsSingle(read["integrationRequests"]!.AsArray())!
-                .AsObject();
-            AssertRefusal(read, request, "unavailable", "Integration cancelled");
-            JsonObject check = Assert.ContainsSingle(read["checks"]!.AsArray())!.AsObject();
-            Assert.AreEqual("cancelled", check["status"]!.GetValue<string>());
-            Assert.IsNull(check["exitCode"]);
-            Assert.AreEqual("candidate", check["kind"]!.GetValue<string>());
-            string candidate = check["commit"]!.GetValue<string>();
-            Assert.AreEqual(
-                submitted,
-                await state.ResolveAsync(candidate + "^2", token).ConfigureAwait(false)
-            );
-            Assert.AreEqual(
-                await state.ResolveAsync(candidate + "^{tree}", token).ConfigureAwait(false),
-                check["tree"]!.GetValue<string>()
-            );
-            string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
-            Assert.Contains("Caller cancelled the check", log);
-            Assert.Contains("owned check diagnostic stdout before READY", log);
-            Assert.Contains("owned check diagnostic stderr before READY", log);
-            Assert.AreEqual(
-                state.BaseCommit,
-                await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
-            );
-            Assert.AreEqual(
-                submitted,
-                await state
-                    .ResolveAsync(read["branch"]!.GetValue<string>(), token)
-                    .ConfigureAwait(false)
-            );
-            Assert.AreEqual(
-                "exited",
-                state.Text(
-                    "SELECT state FROM process_leases WHERE pid=$pid AND start_ticks=$birth;",
-                    ("$pid", identity.Pid),
-                    ("$birth", identity.BirthTicks)
-                )
-            );
-        }
-        catch (Exception error)
-        {
-            primary = error;
-            throw;
-        }
-        finally
-        {
-            try
-            {
-                await cancellation.CancelAsync().ConfigureAwait(false);
-                try
-                {
-                    await processing.ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-                {
-                }
-                finally
-                {
-                    producerJoined = processing.IsCompleted;
-                }
-            }
-            catch (Exception secondary)
-            {
-                if (primary is null)
-                {
-                    producerCleanupFailure = ExceptionDispatchInfo.Capture(secondary);
-                }
-                else
-                {
-                    primary.Data["CandidateProducerCleanupError"] =
-                        Json.ExceptionDetails(secondary);
-                }
-            }
-            if (primary is not null)
-            {
-                CaptureCandidateAfterJoin(
-                    state, requestId, change["id"]!.GetValue<long>(), processing,
-                    producerJoined, began, primary, testContext.CancellationToken
-                );
-            }
-        }
-        producerCleanupFailure?.Throw();
+        await state.QueueAsync(change, token).ConfigureAwait(false);
+        Task processing = held.Start(
+            () => state.Operations.ProcessPendingAsync(held.ProducerToken)
+        );
+
+        OwnedChildIdentity identity = await control
+            .ReadReadyAsync(processing, token)
+            .ConfigureAwait(false);
+        await held.CancelAndAssertCancelledAsync().ConfigureAwait(false);
+
+        JsonObject read = await state.ReadAsync(change, token).ConfigureAwait(false);
+        JsonObject request = Assert
+            .ContainsSingle(read["integrationRequests"]!.AsArray())!
+            .AsObject();
+        AssertRefusal(read, request, "unavailable", "Integration cancelled");
+        JsonObject check = Assert.ContainsSingle(read["checks"]!.AsArray())!.AsObject();
+        Assert.AreEqual("cancelled", check["status"]!.GetValue<string>());
+        Assert.IsNull(check["exitCode"]);
+        Assert.AreEqual("candidate", check["kind"]!.GetValue<string>());
+        string candidate = check["commit"]!.GetValue<string>();
+        Assert.AreEqual(
+            submitted,
+            await state.ResolveAsync(candidate + "^2", token).ConfigureAwait(false)
+        );
+        Assert.AreEqual(
+            await state.ResolveAsync(candidate + "^{tree}", token).ConfigureAwait(false),
+            check["tree"]!.GetValue<string>()
+        );
+        string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
+        Assert.Contains("Caller cancelled the check", log);
+        Assert.Contains("owned check diagnostic stdout before READY", log);
+        Assert.Contains("owned check diagnostic stderr before READY", log);
+        Assert.AreEqual(
+            state.BaseCommit,
+            await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
+        );
+        Assert.AreEqual(
+            submitted,
+            await state
+                .ResolveAsync(read["branch"]!.GetValue<string>(), token)
+                .ConfigureAwait(false)
+        );
+        // Physical child lease settlement has no public reader; verify directly.
+        Assert.AreEqual(
+            "exited",
+            state.Text(
+                "SELECT state FROM process_leases WHERE pid=$pid AND start_ticks=$birth;",
+                ("$pid", identity.Pid),
+                ("$birth", identity.BirthTicks)
+            )
+        );
+        held.Complete();
     }
 
     [TestMethod]
@@ -1728,14 +1528,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task ReportedCheckTimeoutRetainsEvidenceWithoutAuthorizingDelivery()
     {
-        long began = Stopwatch.GetTimestamp();
-        using CancellationTokenSource deadline = new(120_000);
-        using CancellationTokenSource lifetime =
-            CancellationTokenSource.CreateLinkedTokenSource(
-                testContext.CancellationToken,
-                deadline.Token
-            );
-        CancellationToken token = lifetime.Token;
+        CancellationToken token = testContext.CancellationToken;
         CheckCommand configured = new()
         {
             Executable = "controlled-candidate-check",
@@ -1768,65 +1561,48 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             .SubmitAsync("worker1", "Timeout is not authorization", token)
             .ConfigureAwait(false);
         await state.ReviewAsync("worker2", change, token).ConfigureAwait(false);
-        JsonObject queued = await state.QueueAsync(change, token).ConfigureAwait(false);
-        long requestId = queued["requestId"]!.GetValue<long>();
-        Task processing = state.Operations.ProcessPendingAsync(token);
-        try
-        {
-            await processing.ConfigureAwait(false);
-            JsonObject read = await state.ReadAsync(change, token).ConfigureAwait(false);
-            JsonObject request = Assert
-                .ContainsSingle(read["integrationRequests"]!.AsArray())!
-                .AsObject();
-            AssertRefusal(read, request, "check_failed", "Candidate checks failed");
-            JsonObject check = Assert.ContainsSingle(read["checks"]!.AsArray())!.AsObject();
-            Assert.AreEqual("timed-out", check["status"]!.GetValue<string>());
-            Assert.AreEqual(0, check["exitCode"]!.GetValue<int>());
-            Assert.AreEqual(1, check["command"]!["timeoutSeconds"]!.GetValue<int>());
-            Assert.AreEqual(TimeSpan.FromSeconds(1), effectiveTimeout);
-            Assert.AreEqual("candidate", check["kind"]!.GetValue<string>());
-            string candidate = check["commit"]!.GetValue<string>();
-            Assert.AreEqual(
-                state.BaseCommit,
-                await state.ResolveAsync(candidate + "^1", token).ConfigureAwait(false)
-            );
-            Assert.AreEqual(
-                submitted,
-                await state.ResolveAsync(candidate + "^2", token).ConfigureAwait(false)
-            );
-            Assert.AreEqual(
-                await state.ResolveAsync(candidate + "^{tree}", token).ConfigureAwait(false),
-                check["tree"]!.GetValue<string>()
-            );
-            Assert.AreEqual(
-                state.BaseCommit,
-                await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
-            );
-            Assert.AreEqual(
-                submitted,
-                await state
-                    .ResolveAsync(read["branch"]!.GetValue<string>(), token)
-                    .ConfigureAwait(false)
-            );
-            string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
-            Assert.Contains("Configured check execution: controlled.", log);
-            Assert.Contains("controlled reported timeout", log);
-            Assert.DoesNotContain("Command cancellation evidence:", log);
-        }
-        catch (Exception error)
-        {
-            CaptureCandidateAfterJoin(
-                state,
-                requestId,
-                change["id"]!.GetValue<long>(),
-                processing,
-                processing.IsCompleted,
-                began,
-                error,
-                testContext.CancellationToken
-            );
-            throw;
-        }
+        await state.QueueAsync(change, token).ConfigureAwait(false);
+
+        await state.Operations.ProcessPendingAsync(token).ConfigureAwait(false);
+
+        JsonObject read = await state.ReadAsync(change, token).ConfigureAwait(false);
+        JsonObject request = Assert
+            .ContainsSingle(read["integrationRequests"]!.AsArray())!
+            .AsObject();
+        AssertRefusal(read, request, "check_failed", "Candidate checks failed");
+        JsonObject check = Assert.ContainsSingle(read["checks"]!.AsArray())!.AsObject();
+        Assert.AreEqual("timed-out", check["status"]!.GetValue<string>());
+        Assert.AreEqual(0, check["exitCode"]!.GetValue<int>());
+        Assert.AreEqual(1, check["command"]!["timeoutSeconds"]!.GetValue<int>());
+        Assert.AreEqual(TimeSpan.FromSeconds(1), effectiveTimeout);
+        Assert.AreEqual("candidate", check["kind"]!.GetValue<string>());
+        string candidate = check["commit"]!.GetValue<string>();
+        Assert.AreEqual(
+            state.BaseCommit,
+            await state.ResolveAsync(candidate + "^1", token).ConfigureAwait(false)
+        );
+        Assert.AreEqual(
+            submitted,
+            await state.ResolveAsync(candidate + "^2", token).ConfigureAwait(false)
+        );
+        Assert.AreEqual(
+            await state.ResolveAsync(candidate + "^{tree}", token).ConfigureAwait(false),
+            check["tree"]!.GetValue<string>()
+        );
+        Assert.AreEqual(
+            state.BaseCommit,
+            await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
+        );
+        Assert.AreEqual(
+            submitted,
+            await state
+                .ResolveAsync(read["branch"]!.GetValue<string>(), token)
+                .ConfigureAwait(false)
+        );
+        string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
+        Assert.Contains("Configured check execution: controlled.", log);
+        Assert.Contains("controlled reported timeout", log);
+        Assert.DoesNotContain("Command cancellation evidence:", log);
     }
 
     [TestMethod]
@@ -1838,39 +1614,29 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         string outcome
     )
     {
-        using CancellationTokenSource deadline = new(120_000);
-        using CancellationTokenSource lifetime =
-            CancellationTokenSource.CreateLinkedTokenSource(
-                testContext.CancellationToken,
-                deadline.Token
-            );
-        CancellationToken token = lifetime.Token;
-        using CancellationTokenSource cancellation =
-            CancellationTokenSource.CreateLinkedTokenSource(token);
-        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource settled = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource cleanupEntered = new(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-        TaskCompletionSource cleanupRelease = new(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
+        await using HeldCheckScope held = new(testContext.CancellationToken);
+        CancellationToken token = held.Token;
+        TaskCompletionSource settled = held.CreateBarrier();
+        TaskCompletionSource cleanupEntered = held.CreateBarrier();
+        TaskCompletionSource cleanupRelease = held.CreateBarrier();
         TaskCompletionSource<Task<ProcessResult>> invocationStarted = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
-        using GitScenarioState state = await GitScenarioState
-            .CreateAsync(
-                token,
-                [new() { Executable = "controlled-candidate-check" }],
-                configuredCheck: (_, _, _, _, checkToken) =>
-                {
-                    Task<ProcessResult> invocation = InvokeAsync(checkToken);
-                    invocationStarted.SetResult(invocation);
-                    return invocation;
-                }
-            )
-            .ConfigureAwait(false);
+        GitScenarioState state = held.Own(
+            await GitScenarioState
+                .CreateAsync(
+                    token,
+                    [new() { Executable = "controlled-candidate-check" }],
+                    configuredCheck: (_, _, _, _, checkToken) =>
+                    {
+                        Task<ProcessResult> invocation = InvokeAsync(checkToken);
+                        held.Track(invocation, outcome == "failed" ? typeof(IOException) : null);
+                        invocationStarted.SetResult(invocation);
+                        return invocation;
+                    }
+                )
+                .ConfigureAwait(false)
+        );
         await state.Operations.InitializeAsync(token).ConfigureAwait(false);
         string submitted = await state
             .CommitAsync(
@@ -1886,147 +1652,96 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         await state.ReviewAsync("worker2", change, token).ConfigureAwait(false);
         JsonObject queued = await state.QueueAsync(change, token).ConfigureAwait(false);
         long requestId = queued["requestId"]!.GetValue<long>();
-        Task processing = Task.Run(() => state.Operations.ProcessPendingAsync(cancellation.Token));
-        Exception? primary = null;
-        try
-        {
-            await AwaitCheckEntryAsync(entered.Task, processing, token).ConfigureAwait(false);
-            Task<ProcessResult> invocation = await invocationStarted.Task.WaitAsync(token)
-                .ConfigureAwait(false);
-            Task<bool> earlyPublication = PublishedBeforeInvocationAsync(invocation, processing);
-            if (outcome == "cancelled")
-            {
-                await cancellation.CancelAsync().ConfigureAwait(false);
-                await AwaitCheckEntryAsync(cleanupEntered.Task, processing, token)
-                    .ConfigureAwait(false);
-                try
-                {
-                    Assert.AreEqual(
-                        "running",
-                        state.Text(
-                            "SELECT state FROM integration_requests WHERE id=$id;",
-                            ("$id", requestId)
-                        )
-                    );
-                    Assert.AreEqual(0L, state.Number("SELECT COUNT(*) FROM checks;"));
-                    Assert.IsFalse(invocation.IsCompleted);
-                    Assert.IsFalse(processing.IsCompleted);
-                }
-                finally
-                {
-                    cleanupRelease.TrySetResult();
-                }
-                await Assert.ThrowsAsync<OperationCanceledException>(async () =>
-                    await processing.ConfigureAwait(false)
-                ).ConfigureAwait(false);
-            }
-            else
-            {
-                release.SetResult();
-                await processing.ConfigureAwait(false);
-            }
+        Task processing = held.Start(
+            () => state.Operations.ProcessPendingAsync(held.ProducerToken)
+        );
 
-            Assert.IsFalse(await earlyPublication.ConfigureAwait(false));
-            Assert.IsTrue(settled.Task.IsCompletedSuccessfully);
-            JsonObject read = await state.ReadAsync(change, token).ConfigureAwait(false);
-            JsonObject request = Assert.ContainsSingle(read["integrationRequests"]!.AsArray())!
+        await held.AwaitEntryAsync().ConfigureAwait(false);
+        Task<ProcessResult> activeInvocation = await invocationStarted.Task
+            .WaitAsync(token)
+            .ConfigureAwait(false);
+        Task<bool> earlyPublication = PublishedBeforeInvocationAsync(activeInvocation, processing);
+        if (outcome == "cancelled")
+        {
+            await held.CancelProducerAsync().ConfigureAwait(false);
+            await held.AwaitBarrierAsync(cleanupEntered.Task).ConfigureAwait(false);
+            JsonObject running = await state.ReadAsync(change, token).ConfigureAwait(false);
+            JsonObject activeRequest = Assert
+                .ContainsSingle(running["integrationRequests"]!.AsArray())!
                 .AsObject();
-            AssertRefusal(
-                read,
-                request,
-                outcome == "cancelled" ? "unavailable" : "check_failed",
-                outcome == "cancelled" ? "Integration cancelled" : "Candidate checks failed"
-            );
-            JsonObject check = Assert.ContainsSingle(read["checks"]!.AsArray())!.AsObject();
-            Assert.AreEqual(outcome, check["status"]!.GetValue<string>());
-            Assert.IsNull(check["exitCode"]);
-            string candidate = check["commit"]!.GetValue<string>();
-            Assert.AreEqual(
-                state.BaseCommit,
-                await state.ResolveAsync(candidate + "^1", token).ConfigureAwait(false)
-            );
-            Assert.AreEqual(
-                submitted,
-                await state.ResolveAsync(candidate + "^2", token).ConfigureAwait(false)
-            );
-            Assert.AreEqual(
-                await state.ResolveAsync(candidate + "^{tree}", token).ConfigureAwait(false),
-                check["tree"]!.GetValue<string>()
-            );
-            Assert.AreEqual(
-                state.BaseCommit,
-                await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
-            );
-            Assert.AreEqual(
-                submitted,
-                await state.ResolveAsync(read["branch"]!.GetValue<string>(), token)
-                    .ConfigureAwait(false)
-            );
-            string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
-            Assert.Contains("Configured check execution: controlled.", log);
-            Assert.Contains(
-                outcome == "cancelled"
-                    ? "the controlled invocation joined its owned operation"
-                    : "Controlled configured invocation failed.",
-                log
-            );
-            Assert.DoesNotContain("ProcessRunner settled owned execution", log);
-            Assert.DoesNotContain("Command cancellation evidence:", log);
-            Assert.DoesNotContain("\"leaseId\"", log);
-        }
-        catch (Exception error)
-        {
-            primary = error;
-            throw;
-        }
-        finally
-        {
+            Assert.AreEqual(requestId, activeRequest["requestId"]!.GetValue<long>());
+            Assert.AreEqual("running", activeRequest["state"]!.GetValue<string>());
+            Assert.IsEmpty(running["checks"]!.AsArray());
+            Assert.IsFalse(activeInvocation.IsCompleted);
+            Assert.IsFalse(processing.IsCompleted);
             cleanupRelease.TrySetResult();
-            try
-            {
-                await cancellation.CancelAsync().ConfigureAwait(false);
-                try
-                {
-                    await processing.ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-                {
-                }
-            }
-            catch (Exception secondary) when (primary is not null)
-            {
-                primary.Data["CandidateProducerCleanupError"] = Json.ExceptionDetails(secondary);
-            }
-            finally
-            {
-                if (invocationStarted.Task.IsCompletedSuccessfully)
-                {
-                    try
-                    {
-                        await invocationStarted.Task.Result.ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-                    {
-                    }
-                    catch (IOException) when (outcome == "failed")
-                    {
-                    }
-                    catch (Exception secondary) when (primary is not null)
-                    {
-                        primary.Data["CandidateInvocationCleanupError"] =
-                            Json.ExceptionDetails(secondary);
-                    }
-                }
-            }
+            await Assert
+                .ThrowsAsync<OperationCanceledException>(async () =>
+                    await processing.ConfigureAwait(false)
+                )
+                .ConfigureAwait(false);
         }
+        else
+        {
+            await held.ReleaseAndJoinAsync().ConfigureAwait(false);
+        }
+
+        Assert.IsFalse(await earlyPublication.ConfigureAwait(false));
+        Assert.IsTrue(settled.Task.IsCompletedSuccessfully);
+        JsonObject read = await state.ReadAsync(change, token).ConfigureAwait(false);
+        JsonObject request = Assert.ContainsSingle(read["integrationRequests"]!.AsArray())!
+            .AsObject();
+        AssertRefusal(
+            read,
+            request,
+            outcome == "cancelled" ? "unavailable" : "check_failed",
+            outcome == "cancelled" ? "Integration cancelled" : "Candidate checks failed"
+        );
+        JsonObject check = Assert.ContainsSingle(read["checks"]!.AsArray())!.AsObject();
+        Assert.AreEqual(outcome, check["status"]!.GetValue<string>());
+        Assert.IsNull(check["exitCode"]);
+        string candidate = check["commit"]!.GetValue<string>();
+        Assert.AreEqual(
+            state.BaseCommit,
+            await state.ResolveAsync(candidate + "^1", token).ConfigureAwait(false)
+        );
+        Assert.AreEqual(
+            submitted,
+            await state.ResolveAsync(candidate + "^2", token).ConfigureAwait(false)
+        );
+        Assert.AreEqual(
+            await state.ResolveAsync(candidate + "^{tree}", token).ConfigureAwait(false),
+            check["tree"]!.GetValue<string>()
+        );
+        Assert.AreEqual(
+            state.BaseCommit,
+            await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
+        );
+        Assert.AreEqual(
+            submitted,
+            await state.ResolveAsync(read["branch"]!.GetValue<string>(), token)
+                .ConfigureAwait(false)
+        );
+        string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
+        Assert.Contains("Configured check execution: controlled.", log);
+        Assert.Contains(
+            outcome == "cancelled"
+                ? "the controlled invocation joined its owned operation"
+                : "Controlled configured invocation failed.",
+            log
+        );
+        Assert.DoesNotContain("ProcessRunner settled owned execution", log);
+        Assert.DoesNotContain("Command cancellation evidence:", log);
+        Assert.DoesNotContain("\"leaseId\"", log);
+        held.Complete();
 
         async Task<ProcessResult> InvokeAsync(CancellationToken checkToken)
         {
-            entered.SetResult();
+            held.SignalEntered();
             bool cancelled = false;
             try
             {
-                await release.Task.WaitAsync(checkToken).ConfigureAwait(false);
+                await held.Release.WaitAsync(checkToken).ConfigureAwait(false);
                 throw new IOException("Controlled configured invocation failed.");
             }
             catch (OperationCanceledException) when (checkToken.IsCancellationRequested)
@@ -2041,7 +1756,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                     cleanupEntered.TrySetResult();
                     await cleanupRelease.Task.ConfigureAwait(false);
                 }
-                settled.SetResult();
+                settled.TrySetResult();
             }
         }
 
@@ -2057,21 +1772,18 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task RunningCandidateFreezesExactHeadReviewUntilCheckedIntegration()
     {
-        CancellationToken token = testContext.CancellationToken;
-        using CancellationTokenSource cancellation =
-            CancellationTokenSource.CreateLinkedTokenSource(token);
-        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        using GitScenarioState state = await GitScenarioState.CreateAsync(
-            token,
-            [new() { Executable = "controlled-review-freeze-check" }],
-            configuredCheck: async (_, _, _, _, checkToken) =>
-            {
-                entered.SetResult();
-                await release.Task.WaitAsync(checkToken).ConfigureAwait(false);
-                return new(0, "Review-freeze check completed.", "", false);
-            }
-        ).ConfigureAwait(false);
+        await using HeldCheckScope held = new(testContext.CancellationToken);
+        CancellationToken token = held.Token;
+        GitScenarioState state = held.Own(
+            await GitScenarioState
+                .CreateAsync(
+                    token,
+                    [new() { Executable = "controlled-review-freeze-check" }],
+                    configuredCheck: (_, _, _, _, checkToken) =>
+                        held.WaitCheckAsync("Review-freeze check completed.", checkToken)
+                )
+                .ConfigureAwait(false)
+        );
         await state.Operations.InitializeAsync(token).ConfigureAwait(false);
         string submitted = await state.CommitAsync(
             state.Operations.GetWorkerPath("worker1"),
@@ -2085,107 +1797,80 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             .ConfigureAwait(false);
         JsonObject queued = await state.QueueAsync(change, token).ConfigureAwait(false);
         long requestId = queued["requestId"]!.GetValue<long>();
-        Task processing = Task.Run(() => state.Operations.ProcessPendingAsync(cancellation.Token));
-        Exception? primary = null;
-        try
-        {
-            await AwaitCheckEntryAsync(entered.Task, processing, token).ConfigureAwait(false);
-            JsonObject running = await state.ReadAsync(change, token).ConfigureAwait(false);
-            Assert.AreEqual("open", running["state"]!.GetValue<string>());
-            Assert.AreEqual(submitted, running["head"]!.GetValue<string>());
-            JsonObject active = Assert.ContainsSingle(
-                running["integrationRequests"]!.AsArray()
-            )!.AsObject();
-            Assert.AreEqual(requestId, active["requestId"]!.GetValue<long>());
-            Assert.AreEqual("running", active["state"]!.GetValue<string>());
-            Assert.IsNull(active["resultCode"]);
-            Assert.IsNull(active["integratedCommit"]);
-            AssertReviewRetained(running);
+        _ = held.Start(() => state.Operations.ProcessPendingAsync(held.ProducerToken));
 
-            JsonObject rejected = await state.Operations.InvokeAsync(
-                "worker2",
-                "change_review",
-                new()
-                {
-                    ["id"] = change["id"]!.GetValue<long>(),
-                    ["head"] = submitted,
-                    ["decision"] = "request-changes",
-                    ["body"] = "Withdraw approval of this unchanged submitted commit.",
-                },
-                token
-            ).ConfigureAwait(false);
-            Assert.IsFalse(rejected["ok"]!.GetValue<bool>());
-            Assert.AreEqual("conflict", rejected["code"]!.GetValue<string>());
-            Assert.AreEqual(
-                "Candidate identity/reviews are frozen while the coordinator integrates it.",
-                rejected["message"]!.GetValue<string>()
-            );
-            JsonObject stillRunning = await state.ReadAsync(change, token).ConfigureAwait(false);
-            AssertReviewRetained(stillRunning);
-            Assert.AreEqual(
-                "running",
-                Assert.ContainsSingle(stillRunning["integrationRequests"]!.AsArray())![
-                    "state"
-                ]!.GetValue<string>()
-            );
-            Assert.AreEqual(
-                state.BaseCommit,
-                await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
-            );
+        await held.AwaitEntryAsync().ConfigureAwait(false);
+        JsonObject running = await state.ReadAsync(change, token).ConfigureAwait(false);
+        Assert.AreEqual("open", running["state"]!.GetValue<string>());
+        Assert.AreEqual(submitted, running["head"]!.GetValue<string>());
+        JsonObject active = Assert.ContainsSingle(
+            running["integrationRequests"]!.AsArray()
+        )!.AsObject();
+        Assert.AreEqual(requestId, active["requestId"]!.GetValue<long>());
+        Assert.AreEqual("running", active["state"]!.GetValue<string>());
+        Assert.IsNull(active["resultCode"]);
+        Assert.IsNull(active["integratedCommit"]);
+        AssertReviewRetained(running);
 
-            release.SetResult();
-            await processing.ConfigureAwait(false);
-            JsonObject integrated = await state.ReadAsync(change, token).ConfigureAwait(false);
-            Assert.AreEqual("integrated", integrated["state"]!.GetValue<string>());
-            AssertReviewRetained(integrated);
-            JsonObject request = Assert.ContainsSingle(
-                integrated["integrationRequests"]!.AsArray()
-            )!.AsObject();
-            Assert.AreEqual(requestId, request["requestId"]!.GetValue<long>());
-            Assert.AreEqual("succeeded", request["state"]!.GetValue<string>());
-            Assert.AreEqual("ok", request["resultCode"]!.GetValue<string>());
-            string merged = request["integratedCommit"]!.GetValue<string>();
-            Assert.AreEqual(
-                merged, await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
-            );
-            JsonObject check = Assert.ContainsSingle(integrated["checks"]!.AsArray())!.AsObject();
-            Assert.AreEqual("candidate", check["kind"]!.GetValue<string>());
-            Assert.AreEqual("passed", check["status"]!.GetValue<string>());
-            Assert.AreEqual(0, check["exitCode"]!.GetValue<int>());
-            Assert.AreEqual(merged, check["commit"]!.GetValue<string>());
-            Assert.AreEqual(
-                await state.ResolveAsync(merged + "^{tree}", token).ConfigureAwait(false),
-                check["tree"]!.GetValue<string>()
-            );
-            Assert.Contains(
-                "Configured check execution: controlled.",
-                File.ReadAllText(check["logPath"]!.GetValue<string>())
-            );
-        }
-        catch (Exception error)
-        {
-            primary = error;
-            throw;
-        }
-        finally
-        {
-            release.TrySetResult();
-            try
+        JsonObject rejected = await state.Operations.InvokeAsync(
+            "worker2",
+            "change_review",
+            new()
             {
-                await cancellation.CancelAsync().ConfigureAwait(false);
-                try
-                {
-                    await processing.ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-                {
-                }
-            }
-            catch (Exception secondary) when (primary is not null)
-            {
-                primary.Data["ReviewFreezeProducerCleanup"] = Json.ExceptionDetails(secondary);
-            }
-        }
+                ["id"] = change["id"]!.GetValue<long>(),
+                ["head"] = submitted,
+                ["decision"] = "request-changes",
+                ["body"] = "Withdraw approval of this unchanged submitted commit.",
+            },
+            token
+        ).ConfigureAwait(false);
+        Assert.IsFalse(rejected["ok"]!.GetValue<bool>());
+        Assert.AreEqual("conflict", rejected["code"]!.GetValue<string>());
+        Assert.AreEqual(
+            "Candidate identity/reviews are frozen while the coordinator integrates it.",
+            rejected["message"]!.GetValue<string>()
+        );
+        JsonObject stillRunning = await state.ReadAsync(change, token).ConfigureAwait(false);
+        AssertReviewRetained(stillRunning);
+        Assert.AreEqual(
+            "running",
+            Assert.ContainsSingle(stillRunning["integrationRequests"]!.AsArray())![
+                "state"
+            ]!.GetValue<string>()
+        );
+        Assert.AreEqual(
+            state.BaseCommit,
+            await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
+        );
+
+        await held.ReleaseAndJoinAsync().ConfigureAwait(false);
+        JsonObject integrated = await state.ReadAsync(change, token).ConfigureAwait(false);
+        Assert.AreEqual("integrated", integrated["state"]!.GetValue<string>());
+        AssertReviewRetained(integrated);
+        JsonObject request = Assert.ContainsSingle(
+            integrated["integrationRequests"]!.AsArray()
+        )!.AsObject();
+        Assert.AreEqual(requestId, request["requestId"]!.GetValue<long>());
+        Assert.AreEqual("succeeded", request["state"]!.GetValue<string>());
+        Assert.AreEqual("ok", request["resultCode"]!.GetValue<string>());
+        string merged = request["integratedCommit"]!.GetValue<string>();
+        Assert.AreEqual(
+            merged, await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
+        );
+        JsonObject check = Assert.ContainsSingle(integrated["checks"]!.AsArray())!.AsObject();
+        Assert.AreEqual("candidate", check["kind"]!.GetValue<string>());
+        Assert.AreEqual("passed", check["status"]!.GetValue<string>());
+        Assert.AreEqual(0, check["exitCode"]!.GetValue<int>());
+        Assert.AreEqual(merged, check["commit"]!.GetValue<string>());
+        Assert.AreEqual(
+            await state.ResolveAsync(merged + "^{tree}", token).ConfigureAwait(false),
+            check["tree"]!.GetValue<string>()
+        );
+        Assert.Contains(
+            "Configured check execution: controlled.",
+            File.ReadAllText(check["logPath"]!.GetValue<string>())
+        );
+        held.Complete();
 
         void AssertReviewRetained(JsonObject read)
         {
@@ -2296,22 +1981,6 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         Assert.DoesNotContain("\"leaseId\"", log);
     }
 
-    private static async Task AwaitCheckEntryAsync(
-        Task entered,
-        Task producer,
-        CancellationToken token
-    )
-    {
-        Task completed = await Task.WhenAny(entered, producer).WaitAsync(token)
-            .ConfigureAwait(false);
-        if (ReferenceEquals(completed, producer))
-        {
-            await producer.ConfigureAwait(false);
-            Assert.Fail("Candidate processing ended before the configured check was entered.");
-        }
-        await entered.WaitAsync(token).ConfigureAwait(false);
-    }
-
     private static void AssertRefusal(
         JsonObject change,
         JsonObject request,
@@ -2334,7 +2003,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         using GitScenarioState state = await GitScenarioState
-            .CreateAsync(token)
+            .CreateAsync(token, configuredCheck: PassConfiguredCheckAsync)
             .ConfigureAwait(false);
         await state.Operations.InitializeAsync(token).ConfigureAwait(false);
         JsonObject task = GitScenarioState.Data(
@@ -2362,10 +2031,9 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             .SubmitAsync("worker1", "Linked candidate", token, taskId)
             .ConfigureAwait(false);
         long id = change["id"]!.GetValue<long>();
-        string expectedLinks = new JsonArray(taskId).ToJsonString();
         Assert.AreEqual(
-            expectedLinks,
-            state.Text("SELECT task_ids FROM changes WHERE id=$id;", ("$id", id))
+            taskId,
+            Assert.ContainsSingle(change["taskIds"]!.AsArray())!.GetValue<long>()
         );
         Assert.AreEqual(
             taskId,
@@ -2378,7 +2046,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 .GetValue<long>()
         );
 
-        await state
+        JsonObject updated = await state
             .InvokeAsync(
                 "worker1",
                 "change_write",
@@ -2391,6 +2059,10 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 token
             )
             .ConfigureAwait(false);
+        Assert.AreEqual(
+            taskId,
+            Assert.ContainsSingle(updated["taskIds"]!.AsArray())!.GetValue<long>()
+        );
 
         JsonObject omitted = await state.ReadAsync(change, token).ConfigureAwait(false);
         Assert.AreEqual(id, omitted["id"]!.GetValue<long>());
@@ -2401,12 +2073,8 @@ public sealed class GitCandidateSpecs(TestContext testContext)
             taskId,
             Assert.ContainsSingle(omitted["taskIds"]!.AsArray())!.GetValue<long>()
         );
-        Assert.AreEqual(
-            expectedLinks,
-            state.Text("SELECT task_ids FROM changes WHERE id=$id;", ("$id", id))
-        );
 
-        await state
+        JsonObject clearedWrite = await state
             .InvokeAsync(
                 "worker1",
                 "change_write",
@@ -2419,6 +2087,7 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 token
             )
             .ConfigureAwait(false);
+        Assert.IsEmpty(clearedWrite["taskIds"]!.AsArray());
 
         JsonObject cleared = await state.ReadAsync(change, token).ConfigureAwait(false);
         Assert.AreEqual(id, cleared["id"]!.GetValue<long>());
@@ -2426,9 +2095,11 @@ public sealed class GitCandidateSpecs(TestContext testContext)
         Assert.AreEqual("Linked candidate", cleared["title"]!.GetValue<string>());
         Assert.AreEqual("Omitted links retained", cleared["body"]!.GetValue<string>());
         Assert.IsEmpty(cleared["taskIds"]!.AsArray());
-        Assert.AreEqual(
-            "[]",
-            state.Text("SELECT task_ids FROM changes WHERE id=$id;", ("$id", id))
+        JsonObject listed = await state
+            .InvokeAsync("owner", "change_list", new(), token)
+            .ConfigureAwait(false);
+        Assert.IsEmpty(
+            Assert.ContainsSingle(listed["items"]!.AsArray())!["taskIds"]!.AsArray()
         );
         Assert.AreEqual(
             "open",
@@ -2436,6 +2107,215 @@ public sealed class GitCandidateSpecs(TestContext testContext)
                 "state"
             ]!.GetValue<string>()
         );
+    }
+
+    private static string[] OwnedWorktreePaths(GitScenarioState state) =>
+    [
+        state.IntegrationPath,
+        .. state.Database.Configuration.WorkerIds.Select(state.Operations.GetWorkerPath),
+    ];
+
+    private sealed class HeldCheckScope : IAsyncDisposable
+    {
+        private readonly CancellationTokenSource _deadline = new(120_000);
+        private readonly CancellationTokenSource _lifetime;
+        private readonly CancellationTokenSource _producerCancellation;
+        private readonly List<TaskCompletionSource> _barriers = [];
+        private readonly List<(Task Task, Type? AllowedError)> _trackedTasks = [];
+        private readonly List<Func<ValueTask>> _disposables = [];
+        private readonly TaskCompletionSource _entered;
+        private readonly TaskCompletionSource _release;
+        private Task? _producer;
+        private bool _completed;
+
+        internal HeldCheckScope(CancellationToken caseToken)
+        {
+            _lifetime = CancellationTokenSource.CreateLinkedTokenSource(
+                caseToken,
+                _deadline.Token
+            );
+            _producerCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                _lifetime.Token
+            );
+            _entered = CreateBarrier();
+            _release = CreateBarrier();
+        }
+
+        internal CancellationToken Token => _lifetime.Token;
+
+        internal CancellationToken ProducerToken => _producerCancellation.Token;
+
+        internal Task Release => _release.Task;
+
+        internal void SignalEntered() => _entered.TrySetResult();
+
+        internal TaskCompletionSource CreateBarrier()
+        {
+            TaskCompletionSource barrier = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            _barriers.Add(barrier);
+            return barrier;
+        }
+
+        internal T Own<T>(T resource)
+            where T : IDisposable
+        {
+            _disposables.Add(() =>
+            {
+                resource.Dispose();
+                return ValueTask.CompletedTask;
+            });
+            return resource;
+        }
+
+        internal T OwnAsync<T>(T resource)
+            where T : IAsyncDisposable
+        {
+            _disposables.Add(resource.DisposeAsync);
+            return resource;
+        }
+
+        internal void Track(Task task, Type? allowedError = null) =>
+            _trackedTasks.Add((task, allowedError));
+
+        internal Task Start(Func<Task> producer)
+        {
+            _producer = Task.Run(producer);
+            return _producer;
+        }
+
+        internal async Task<ProcessResult> WaitCheckAsync(
+            string output,
+            CancellationToken checkToken
+        )
+        {
+            _entered.TrySetResult();
+            await _release.Task.WaitAsync(checkToken).ConfigureAwait(false);
+            return new(0, output, "", false);
+        }
+
+        internal Task AwaitEntryAsync() => AwaitBarrierAsync(_entered.Task);
+
+        internal async Task AwaitBarrierAsync(Task barrier)
+        {
+            Task producer =
+                _producer
+                ?? throw new InvalidOperationException("Held producer has not started.");
+            Task completed = await Task.WhenAny(barrier, producer)
+                .WaitAsync(Token)
+                .ConfigureAwait(false);
+            if (ReferenceEquals(completed, producer))
+            {
+                await producer.ConfigureAwait(false);
+                Assert.Fail("Candidate processing ended before the held barrier was entered.");
+            }
+            await barrier.WaitAsync(Token).ConfigureAwait(false);
+        }
+
+        internal async Task ReleaseAndJoinAsync()
+        {
+            Task producer =
+                _producer
+                ?? throw new InvalidOperationException("Held producer has not started.");
+            _release.TrySetResult();
+            await producer.ConfigureAwait(false);
+        }
+
+        internal Task CancelProducerAsync() => _producerCancellation.CancelAsync();
+
+        internal async Task CancelAndAssertCancelledAsync()
+        {
+            Task producer =
+                _producer
+                ?? throw new InvalidOperationException("Held producer has not started.");
+            await _producerCancellation.CancelAsync().ConfigureAwait(false);
+            await Assert
+                .ThrowsAsync<OperationCanceledException>(async () =>
+                    await producer.ConfigureAwait(false)
+                )
+                .ConfigureAwait(false);
+        }
+
+        internal void Complete() => _completed = true;
+
+        public async ValueTask DisposeAsync()
+        {
+            List<Exception> failures = [];
+            foreach (TaskCompletionSource barrier in _barriers)
+            {
+                barrier.TrySetResult();
+            }
+            try
+            {
+                await _producerCancellation.CancelAsync().ConfigureAwait(false);
+            }
+            catch (Exception error)
+            {
+                failures.Add(error);
+            }
+            if (_producer is not null)
+            {
+                try
+                {
+                    await _producer.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                    when (_producerCancellation.IsCancellationRequested)
+                {
+                }
+                catch (Exception error)
+                {
+                    failures.Add(error);
+                }
+            }
+            foreach ((Task tracked, Type? allowedError) in _trackedTasks)
+            {
+                try
+                {
+                    await tracked.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                    when (_producerCancellation.IsCancellationRequested)
+                {
+                }
+                catch (Exception error)
+                    when (allowedError?.IsInstanceOfType(error) == true)
+                {
+                }
+                catch (Exception error)
+                {
+                    failures.Add(error);
+                }
+            }
+            for (int index = _disposables.Count - 1; index >= 0; index--)
+            {
+                try
+                {
+                    await _disposables[index]().ConfigureAwait(false);
+                }
+                catch (Exception error)
+                {
+                    failures.Add(error);
+                }
+            }
+            _producerCancellation.Dispose();
+            _lifetime.Dispose();
+            _deadline.Dispose();
+            if (failures.Count != 0)
+            {
+                if (_completed)
+                {
+                    throw new AggregateException("Held-check cleanup failed.", failures);
+                }
+                foreach (Exception error in failures)
+                {
+                    Console.Error.WriteLine(
+                        "HELD_CHECK_CLEANUP_SECONDARY " + Json.ExceptionDetails(error)
+                    );
+                }
+            }
+        }
     }
 
     private static async Task<string> AssertExactIntegrationAsync(

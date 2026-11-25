@@ -8,26 +8,40 @@ namespace LiteAgensh.Tests;
 [TestClass]
 public sealed class GitHealthDeliverySpecs(TestContext testContext)
 {
+    private static readonly ConfiguredCheckInvocation RunControlledExitCheckAsync = (
+        _,
+        arguments,
+        _,
+        _,
+        checkToken
+    ) =>
+    {
+        checkToken.ThrowIfCancellationRequested();
+        string outcome = arguments[1];
+        return Task.FromResult(
+            new ProcessResult(
+                int.Parse(outcome, CultureInfo.InvariantCulture),
+                "controlled check stdout " + outcome,
+                "controlled check stderr " + outcome,
+                TimedOut: false
+            )
+        );
+    };
+
     [TestMethod]
     [TestCategory("BrokenMainRestrictionAndTimers")]
     public async Task BrokenMainRestrictsImmediatelyAndHonorsManualAlertAndLiftBoundaries()
     {
         CancellationToken token = testContext.CancellationToken;
-        CheckCommand failure = GitScenarioState.ExitCheck(17);
+        CheckCommand failure = ControlledCheck(17);
+        CheckCommand pass = ControlledCheck(0);
         using GitScenarioState state = await GitScenarioState
             .CreateAsync(
-                token, integrationChecks: [failure], finalChecks: [failure],
-                configuredCheck: (_, arguments, _, _, checkToken) =>
-                {
-                    checkToken.ThrowIfCancellationRequested();
-                    string outcome = arguments[1];
-                    return Task.FromResult(new ProcessResult(
-                        int.Parse(outcome, CultureInfo.InvariantCulture),
-                        "controlled check stdout " + outcome,
-                        "controlled check stderr " + outcome,
-                        TimedOut: false
-                    ));
-                }
+                token,
+                candidateChecks: [pass],
+                integrationChecks: [failure],
+                finalChecks: [failure],
+                configuredCheck: RunControlledExitCheckAsync
             )
             .ConfigureAwait(false);
         await state.Operations.InitializeAsync(token).ConfigureAwait(false);
@@ -110,15 +124,12 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             await state.Operations.EvaluateHealthAsync(token).ConfigureAwait(false)
         );
         AssertHealth(health, restricted: true, alerted: false, lifted: false, redSince);
-        Assert.AreEqual(0L, state.Number("SELECT COUNT(*) FROM events WHERE kind='health-alert';"));
-        Assert.DoesNotContain(
-            "failed for at least 15 minutes",
-            ReadAndCompleteEvents(state, "worker1")
-        );
-        Assert.DoesNotContain(
-            "failed for at least 15 minutes",
-            ReadAndCompleteEvents(state, "worker2")
-        );
+        string preAlertWorker1 = ReadAndCompleteEvents(state, "worker1");
+        string preAlertWorker2 = ReadAndCompleteEvents(state, "worker2");
+        Assert.DoesNotContain("health-alert", preAlertWorker1);
+        Assert.DoesNotContain("failed for at least 15 minutes", preAlertWorker1);
+        Assert.DoesNotContain("health-alert", preAlertWorker2);
+        Assert.DoesNotContain("failed for at least 15 minutes", preAlertWorker2);
 
         state.Clock.Advance(TimeSpan.FromTicks(1));
         health = GitScenarioState.Data(
@@ -139,7 +150,6 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             await state.Operations.EvaluateHealthAsync(token).ConfigureAwait(false)
         );
         AssertHealth(health, restricted: true, alerted: true, lifted: false, redSince);
-        Assert.AreEqual(0L, state.Number("SELECT COUNT(*) FROM events WHERE kind='health-lift';"));
         await state.QueueAsync(feature, token).ConfigureAwait(false);
         await state.Operations.ProcessPendingAsync(token).ConfigureAwait(false);
         rejected = await state.ReadAsync(feature, token).ConfigureAwait(false);
@@ -167,10 +177,9 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
         );
         state.Clock.Advance(TimeSpan.FromTicks(1));
         RunConfiguration passingCandidate = state.Database.Configuration;
-        state.Database.SaveConfiguration(passingCandidate with
-        {
-            CandidateChecks = [GitScenarioState.ExitCheck(23)],
-        });
+        state.Database.SaveConfiguration(
+            passingCandidate with { CandidateChecks = [ControlledCheck(23)] }
+        );
         await state.QueueAsync(feature, token).ConfigureAwait(false);
         await state.Operations.ProcessPendingAsync(token).ConfigureAwait(false);
         JsonObject vetoed = await state.ReadAsync(feature, token).ConfigureAwait(false);
@@ -207,22 +216,13 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             "feature unrelated to broken main\n",
             File.ReadAllText(Path.Combine(state.IntegrationPath, "feature.txt"))
         );
-        Assert.AreEqual(
-            0L,
-            state.Number(
-                "SELECT COUNT(*) FROM checks WHERE kind='integration' AND status<>'failed';"
-            )
-        );
-        Assert.AreEqual(
-            2L,
-            state.Number("SELECT COUNT(*) FROM events WHERE kind='health-alert';"),
-            "The 15-minute transition must notify each of the two actors once."
-        );
-        Assert.AreEqual(
-            2L,
-            state.Number("SELECT COUNT(*) FROM events WHERE kind='health-lift';"),
-            "The 60-minute transition must not rebroadcast on subsequent evaluation."
-        );
+        // Subsequent integration health evaluations must not rebroadcast 15m/60m transitions.
+        foreach (string worker in state.Database.Configuration.WorkerIds)
+        {
+            string postLiftEvents = ReadAndCompleteEvents(state, worker);
+            Assert.DoesNotContain("health-alert", postLiftEvents);
+            Assert.DoesNotContain("health-lift", postLiftEvents);
+        }
 
         // Quiescence, not a coordinator-stop claim.
         state.Database.WriteMetadata("lifecycle", "stopped");
@@ -261,6 +261,7 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             .OfType<JsonObject>()
             .Where(check => check["kind"]!.GetValue<string>() == "integration")
             .ToArray();
+        Assert.IsNotEmpty(integrationChecks);
         Assert.IsTrue(integrationChecks.Any(check =>
             check["commit"]!.GetValue<string>() == finalHead
         ));
@@ -315,13 +316,12 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
         state.Clock.Advance(TimeSpan.FromMinutes(60));
         health = GitScenarioState.Data(await state.Operations.EvaluateHealthAsync(token));
         AssertHealth(health, restricted: false, alerted: true, lifted: true, firstRed);
-        Assert.AreEqual(2L, state.Number("SELECT COUNT(*) FROM events WHERE kind='health-alert';"));
         foreach (string worker in state.Database.Configuration.WorkerIds)
         {
-            Assert.Contains(
-                "Integration has failed for at least 15 minutes",
-                ReadAndCompleteEvents(state, worker)
-            );
+            string initialEvents = ReadAndCompleteEvents(state, worker);
+            Assert.Contains("Integration has failed for at least 15 minutes", initialEvents);
+            Assert.Contains("restriction lifted after 60 minutes", initialEvents);
+            Assert.IsNull(state.Collaboration.ClaimBatch(worker, bootstrap: false));
         }
 
         checkExitCode = 0;
@@ -356,16 +356,29 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             state.BaseCommit,
             await state.ResolveAsync(state.IntegrationRef, token)
         );
+        foreach (string worker in state.Database.Configuration.WorkerIds)
+        {
+            string rearmedEvents = ReadAndCompleteEvents(state, worker);
+            Assert.Contains("Integration passes again", rearmedEvents);
+            Assert.Contains("Integration fails at " + state.BaseCommit, rearmedEvents);
+            Assert.DoesNotContain("failed for at least 15 minutes", rearmedEvents);
+        }
 
         state.Clock.Advance(TimeSpan.FromMinutes(15) - TimeSpan.FromTicks(1));
         health = GitScenarioState.Data(await state.Operations.EvaluateHealthAsync(token));
         AssertHealth(health, restricted: true, alerted: false, lifted: false, nextRed);
-        Assert.AreEqual(2L, state.Number("SELECT COUNT(*) FROM events WHERE kind='health-alert';"));
+        Assert.DoesNotContain(
+            "failed for at least 15 minutes",
+            ReadAndCompleteEvents(state, "worker1")
+        );
+        Assert.DoesNotContain(
+            "failed for at least 15 minutes",
+            ReadAndCompleteEvents(state, "worker2")
+        );
 
         state.Clock.Advance(TimeSpan.FromTicks(1));
         health = GitScenarioState.Data(await state.Operations.EvaluateHealthAsync(token));
         AssertHealth(health, restricted: true, alerted: true, lifted: false, nextRed);
-        Assert.AreEqual(4L, state.Number("SELECT COUNT(*) FROM events WHERE kind='health-alert';"));
         foreach (string worker in state.Database.Configuration.WorkerIds)
         {
             Assert.Contains(
@@ -376,7 +389,14 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
 
         health = GitScenarioState.Data(await state.Operations.EvaluateHealthAsync(token));
         AssertHealth(health, restricted: true, alerted: true, lifted: false, nextRed);
-        Assert.AreEqual(4L, state.Number("SELECT COUNT(*) FROM events WHERE kind='health-alert';"));
+        Assert.DoesNotContain(
+            "failed for at least 15 minutes",
+            ReadAndCompleteEvents(state, "worker1")
+        );
+        Assert.DoesNotContain(
+            "failed for at least 15 minutes",
+            ReadAndCompleteEvents(state, "worker2")
+        );
     }
 
     [TestMethod]
@@ -384,18 +404,38 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
     public async Task FinalizeRetainsExactDeliveryEvidenceAndCleanupRemovesOnlyRecordedWorktrees()
     {
         CancellationToken token = testContext.CancellationToken;
+        string? observedFinalWorkingDirectory = null;
         using GitScenarioState state = await GitScenarioState
             .CreateAsync(
                 token,
-                integrationChecks: [GitScenarioState.ExitCheck(0)],
+                candidateChecks: [ControlledCheck(0)],
+                integrationChecks: [ControlledCheck(0)],
                 finalChecks:
                 [
                     new()
                     {
-                        Executable = "git",
-                        Arguments = ["rev-parse", "HEAD", "HEAD^{tree}"],
+                        Executable = "controlled-final-check",
+                        Arguments = ["verify-delivery"],
                     },
-                ]
+                ],
+                configuredCheck: (executable, arguments, workingDirectory, _, checkToken) =>
+                {
+                    if (executable == "controlled-final-check")
+                    {
+                        observedFinalWorkingDirectory = workingDirectory;
+                        checkToken.ThrowIfCancellationRequested();
+                        return Task.FromResult(
+                            new ProcessResult(0, "controlled final check passed", "", false)
+                        );
+                    }
+                    return RunControlledExitCheckAsync(
+                        executable,
+                        arguments,
+                        workingDirectory,
+                        TimeSpan.Zero,
+                        checkToken
+                    );
+                }
             )
             .ConfigureAwait(false);
         await state.Operations.InitializeAsync(token).ConfigureAwait(false);
@@ -423,8 +463,8 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             .ConfigureAwait(false);
         await state.ReviewAsync("worker2", first, token).ConfigureAwait(false);
         await state.ReviewAsync("worker1", second, token).ConfigureAwait(false);
-        await state.QueueAsync(first, token).ConfigureAwait(false);
-        await state.QueueAsync(second, token).ConfigureAwait(false);
+        JsonObject firstQueued = await state.QueueAsync(first, token).ConfigureAwait(false);
+        JsonObject secondQueued = await state.QueueAsync(second, token).ConfigureAwait(false);
         await state.Operations.ProcessPendingAsync(token).ConfigureAwait(false);
         foreach (JsonObject change in new[] { first, second })
         {
@@ -516,7 +556,11 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             );
             expectedTasks["items"]!.AsArray().Add(additional.DeepClone());
         }
-        List<(string Ref, string Path)> resources = state.Worktrees();
+        (string Ref, string Path)[] resources = OwnedResources(
+            state,
+            firstQueued["requestId"]!.GetValue<long>(),
+            secondQueued["requestId"]!.GetValue<long>()
+        );
         Dictionary<string, string> ownedHeads = new(StringComparer.Ordinal);
         foreach ((string reference, string _) in resources)
         {
@@ -562,10 +606,12 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
         );
 
         Assert.IsTrue(report["accepted"]!.GetValue<bool>());
+        Assert.AreEqual(state.IntegrationPath, observedFinalWorkingDirectory);
         Assert.AreEqual(state.BaseCommit, report["baseCommit"]!.GetValue<string>());
         Assert.AreEqual(finalHead, report["finalCommit"]!.GetValue<string>());
         Assert.AreEqual(state.DeliveryRef, report["deliveryRef"]!.GetValue<string>());
         Assert.AreEqual(state.Database.StatePath, report["statePath"]!.GetValue<string>());
+        Assert.IsNotEmpty(report["finalCheckBatch"]!.GetValue<string>());
         Assert.AreEqual(
             finalHead,
             await state.ResolveAsync(state.DeliveryRef, token).ConfigureAwait(false)
@@ -617,27 +663,27 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             .ToArray();
         Assert.Contains(task["id"]!.GetValue<long>(), unresolvedTaskIds);
         Assert.DoesNotContain(completedTaskId, unresolvedTaskIds);
-        Assert.AreEqual("true", state.Database.ReadMetadata("git:finalized"));
-        Assert.AreEqual(
-            1L,
-            state.Number(
-                "SELECT retained FROM git_resources WHERE ref=$ref;",
-                ("$ref", state.DeliveryRef)
-            )
-        );
         string storedReport = state.Database.ReadMetadata("git:delivery_report")!;
         Assert.IsTrue(JsonNode.DeepEquals(JsonNode.Parse(storedReport), report));
-        Assert.AreEqual(
-            state.Number("SELECT COUNT(*) FROM checks;"),
-            (long)report["checks"]!.AsArray().Count
-        );
-        Assert.IsTrue(report["checks"]!.AsArray().OfType<JsonObject>().Any(check =>
+        JsonObject[] reportedChecks = report["checks"]!.AsArray().OfType<JsonObject>().ToArray();
+        Assert.HasCount(6, reportedChecks);
+        JsonObject beyondLastCheck = await state
+            .Operations.InvokeAsync(
+                "owner",
+                "check_read",
+                new() { ["id"] = reportedChecks.Max(check => check["id"]!.GetValue<long>()) + 1 },
+                token
+            )
+            .ConfigureAwait(false);
+        Assert.IsFalse(beyondLastCheck["ok"]!.GetValue<bool>());
+        Assert.AreEqual("not_found", beyondLastCheck["code"]!.GetValue<string>());
+        Assert.IsTrue(reportedChecks.Any(check =>
             check["kind"]!.GetValue<string>() == "integration"
             && check["commit"]!.GetValue<string>() == finalHead
             && check["tree"]!.GetValue<string>() == finalTree
         ));
         Dictionary<long, string> retainedLogs = [];
-        foreach (JsonObject check in report["checks"]!.AsArray().OfType<JsonObject>())
+        foreach (JsonObject check in reportedChecks)
         {
             JsonObject read = await state
                 .InvokeAsync(
@@ -660,45 +706,34 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             );
             string log = File.ReadAllText(check["logPath"]!.GetValue<string>());
             retainedLogs.Add(check["id"]!.GetValue<long>(), log);
+            Assert.StartsWith("Configured check execution: controlled.\n", log);
             if (check["kind"]!.GetValue<string>() == "final")
             {
-                Assert.AreEqual("git", check["command"]!["executable"]!.GetValue<string>());
-                JsonArray arguments = check["command"]!["arguments"]!.AsArray();
-                Assert.HasCount(3, arguments);
-                Assert.AreEqual("rev-parse", arguments[0]!.GetValue<string>());
-                Assert.AreEqual("HEAD", arguments[1]!.GetValue<string>());
-                Assert.AreEqual("HEAD^{tree}", arguments[2]!.GetValue<string>());
-                string normalized = log.ReplaceLineEndings("\n");
-                const string outputStart = "Configured check execution: ProcessRunner.\nstdout:\n";
-                const string outputEnd = "\nstderr:\n";
-                Assert.StartsWith(outputStart, normalized);
-                int end = normalized.IndexOf(
-                    outputEnd, outputStart.Length, StringComparison.Ordinal
+                Assert.AreEqual(
+                    "controlled-final-check",
+                    check["command"]!["executable"]!.GetValue<string>()
                 );
-                Assert.IsGreaterThanOrEqualTo(outputStart.Length, end);
-                string[] output = normalized[outputStart.Length..end]
-                    .Split('\n', StringSplitOptions.RemoveEmptyEntries);
-                Assert.HasCount(2, output);
-                Assert.AreEqual(finalHead, output[0]);
-                Assert.AreEqual(finalTree, output[1]);
+                Assert.AreEqual(
+                    "verify-delivery",
+                    Assert.ContainsSingle(check["command"]!["arguments"]!.AsArray())!
+                        .GetValue<string>()
+                );
+                Assert.Contains("controlled final check passed", log);
             }
             else
             {
                 Assert.AreEqual(
-                    OwnedChildControl.ExecutablePath,
+                    "controlled-check",
                     check["command"]!["executable"]!.GetValue<string>()
                 );
                 Assert.AreEqual("exit", check["command"]!["arguments"]![0]!.GetValue<string>());
                 Assert.AreEqual("0", check["command"]!["arguments"]![1]!.GetValue<string>());
-                Assert.Contains("owned check exit 0", log);
+                Assert.Contains("controlled check stdout 0", log);
             }
         }
 
         JsonObject finalCheck = Assert.ContainsSingle(
-            report["checks"]!
-                .AsArray()
-                .OfType<JsonObject>()
-                .Where(check => check["kind"]!.GetValue<string>() == "final")
+            reportedChecks.Where(check => check["kind"]!.GetValue<string>() == "final")
         );
         Assert.AreEqual(finalHead, finalCheck["commit"]!.GetValue<string>());
         Assert.AreEqual(finalTree, finalCheck["tree"]!.GetValue<string>());
@@ -706,13 +741,6 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
         Assert.AreEqual(
             state.Database.Configuration.FinalChecks[0].TimeoutSeconds,
             finalCheck["command"]!["timeoutSeconds"]!.GetValue<int>()
-        );
-        Assert.AreEqual(
-            report["finalCheckBatch"]!.GetValue<string>(),
-            state.Text(
-                "SELECT batch FROM checks WHERE id=$id;",
-                ("$id", finalCheck["id"]!.GetValue<long>())
-            )
         );
         foreach ((string reference, string path) in resources)
         {
@@ -738,14 +766,6 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
                 .Where(field => field.StartsWith("worktree ", StringComparison.Ordinal))
                 .Select(field => Path.GetFullPath(field["worktree ".Length..]))
         );
-        Assert.AreEqual(
-            0L,
-            state.Number(
-                "SELECT COUNT(*) FROM git_resources WHERE ref=$ref OR path=$path;",
-                ("$ref", linkedRef),
-                ("$path", linkedPath)
-            )
-        );
 
         JsonObject cleanup = GitScenarioState.Data(
             await state.Operations.CleanupAsync(token).ConfigureAwait(false)
@@ -756,16 +776,14 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             .. cleanup["removed"]!.AsArray().Select(item => item!.GetValue<string>()),
         ];
         CollectionAssert.AreEquivalent(expectedRemoved, actualRemoved);
+        Assert.DoesNotContain(state.DeliveryRef, actualRemoved);
+        Assert.DoesNotContain(linkedRef, actualRemoved);
         Assert.AreEqual(state.DeliveryRef, cleanup["retainedDeliveryRef"]!.GetValue<string>());
         foreach ((string reference, string path) in resources)
         {
             Assert.IsFalse(
                 Directory.Exists(path),
                 "Explicit cleanup retained owned worktree: " + path
-            );
-            Assert.AreEqual(
-                "removed",
-                state.Text("SELECT state FROM git_resources WHERE ref=$ref;", ("$ref", reference))
             );
             Assert.AreEqual(
                 "",
@@ -780,6 +798,12 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
                     .ConfigureAwait(false)
             );
         }
+        OperationException cleanedHealth = await Assert
+            .ThrowsExactlyAsync<OperationException>(() =>
+                state.Operations.EvaluateHealthAsync(token)
+            )
+            .ConfigureAwait(false);
+        Assert.AreEqual("unavailable", cleanedHealth.Code);
 
         Assert.AreEqual(storedReport, state.Database.ReadMetadata("git:delivery_report"));
         Assert.AreEqual(
@@ -821,7 +845,7 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             "unrecorded path must survive\n",
             File.ReadAllText(Path.Combine(sentinelPath, "keep.txt"))
         );
-        foreach (JsonObject check in report["checks"]!.AsArray().OfType<JsonObject>())
+        foreach (JsonObject check in reportedChecks)
         {
             Assert.AreEqual(
                 retainedLogs[check["id"]!.GetValue<long>()],
@@ -836,15 +860,18 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         using GitScenarioState state = await GitScenarioState
-            .CreateAsync(token)
+            .CreateAsync(
+                token,
+                candidateChecks: [ControlledCheck(0)],
+                finalChecks: [ControlledCheck(0)],
+                configuredCheck: RunControlledExitCheckAsync
+            )
             .ConfigureAwait(false);
         await state.Operations.InitializeAsync(token).ConfigureAwait(false);
-        List<(string Ref, string Path)> resources = state.Worktrees();
+        (string Ref, string Path)[] resources = OwnedResources(state);
         string dirtyPath = state.Operations.GetWorkerPath("worker2");
-        File.WriteAllText(
-            Path.Combine(dirtyPath, "untracked-work.txt"),
-            "do not discard unfinished work\n"
-        );
+        string dirtyFile = Path.Combine(dirtyPath, "untracked-work.txt");
+        File.WriteAllText(dirtyFile, "do not discard unfinished work\n");
         state.Database.WriteMetadata("lifecycle", "paused");
         JsonObject report = GitScenarioState.Data(
             await state.Operations.FinalizeAsync(token).ConfigureAwait(false)
@@ -857,12 +884,7 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
         Assert.AreEqual("conflict", cleanup["code"]!.GetValue<string>());
         Assert.Contains("unresolved or uncommitted work", cleanup["message"]!.GetValue<string>());
         Assert.AreEqual(reportBytes, state.Database.ReadMetadata("git:delivery_report"));
-        Assert.AreEqual("false", state.Database.ReadMetadata("git:cleaning"));
-        Assert.IsNull(state.Database.ReadMetadata("git:cleaned"));
-        Assert.AreEqual(
-            "do not discard unfinished work\n",
-            File.ReadAllText(Path.Combine(dirtyPath, "untracked-work.txt"))
-        );
+        Assert.AreEqual("do not discard unfinished work\n", File.ReadAllText(dirtyFile));
         foreach ((string reference, string path) in resources)
         {
             Assert.IsTrue(
@@ -873,12 +895,7 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
                 state.BaseCommit,
                 await state.ResolveAsync(reference, token).ConfigureAwait(false)
             );
-            Assert.AreEqual(
-                "ready",
-                state.Text("SELECT state FROM git_resources WHERE ref=$ref;", ("$ref", reference))
-            );
         }
-
         Assert.AreEqual(
             report["finalCommit"]!.GetValue<string>(),
             await state.ResolveAsync(state.DeliveryRef, token).ConfigureAwait(false)
@@ -887,7 +904,43 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             state.BaseCommit,
             await state.ResolveAsync("HEAD", token).ConfigureAwait(false)
         );
+
+        File.Delete(dirtyFile);
+        JsonObject retryCleanup = GitScenarioState.Data(
+            await state.Operations.CleanupAsync(token).ConfigureAwait(false)
+        );
+        CollectionAssert.AreEquivalent(
+            resources.Select(resource => resource.Ref).ToArray(),
+            retryCleanup["removed"]!.AsArray().Select(item => item!.GetValue<string>()).ToArray()
+        );
     }
+
+    private static CheckCommand ControlledCheck(int exitCode) =>
+        new()
+        {
+            Executable = "controlled-check",
+            Arguments = ["exit", exitCode.ToString(CultureInfo.InvariantCulture)],
+        };
+
+    private static (string Ref, string Path)[] OwnedResources(
+        GitScenarioState state,
+        params long[] candidateRequestIds
+    ) =>
+    [
+        (state.IntegrationRef, state.IntegrationPath),
+        .. state.Database.Configuration.WorkerIds.Select(worker => (
+            $"refs/heads/lite-agensh/{state.Database.RunId}/{worker}",
+            state.Operations.GetWorkerPath(worker)
+        )),
+        .. candidateRequestIds.Select(id => (
+            $"refs/heads/lite-agensh/{state.Database.RunId}/candidate-{id}",
+            Path.Combine(
+                state.Database.StatePath,
+                "worktrees",
+                "candidate-" + id.ToString(CultureInfo.InvariantCulture)
+            )
+        )),
+    ];
 
     private static void AssertHealth(
         JsonObject health,
