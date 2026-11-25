@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import logging
@@ -2051,6 +2052,18 @@ import verovio
 
 assert version("verovio") == sys.argv[4]
 assert version("resvg") == sys.argv[5]
+max_scratch_bytes = int(sys.argv[6]) if len(sys.argv) > 6 and sys.argv[6] else 0
+written_bytes = 0
+
+
+def _write_checked(path: Path, payload: bytes) -> None:
+    global written_bytes
+    written_bytes += len(payload)
+    if max_scratch_bytes > 0 and written_bytes > max_scratch_bytes:
+        sys.exit(93)
+    path.write_bytes(payload)
+
+
 raw_opts = json.loads(sys.argv[1])
 xml_data = Path(sys.argv[2]).read_text(encoding="utf-8")
 tool = verovio.toolkit()
@@ -2060,10 +2073,10 @@ assert tool.loadData(xml_data)
 count = tool.getPageCount()
 assert 0 < count <= int(sys.argv[3])
 for page in range(1, count + 1):
-    Path(f"score-{page}.svg").write_text(
-        tool.renderToSVG(page), encoding="utf-8"
+    _write_checked(
+        Path(f"score-{page}.svg"), tool.renderToSVG(page).encode("utf-8")
     )
-Path("score.mei").write_text(tool.getMEI(), encoding="utf-8")
+_write_checked(Path("score.mei"), tool.getMEI().encode("utf-8"))
 
 clean_tool = verovio.toolkit()
 clean_opts = dict(
@@ -2082,8 +2095,11 @@ for page in range(1, count + 1):
         (1.0, 0.0, 0.0, 0.0, 1.0, 0.0),
         bg_color=(255, 255, 255, 255),
     )
-    Path(f"score-{page}.png").write_bytes(bytes(png))
+    _write_checked(Path(f"score-{page}.png"), bytes(png))
 """
+
+
+SCRATCH_RESERVATION_FILE = ".w6-scratch-reservation.json"
 
 
 def _rendered_raster_count(directory: Path) -> int:
@@ -2102,6 +2118,7 @@ def _run_verovio(  # noqa: PLR0913
     *,
     max_pages: int,
     count_rasters: Callable[[int], None] | None,
+    max_scratch_bytes: int | None = None,
 ) -> tuple[str, tuple[tuple[str, bytes], ...]]:
     verify_loopback_only_unshare()
     scratch_root = scratch_root.resolve()
@@ -2109,25 +2126,44 @@ def _run_verovio(  # noqa: PLR0913
     python = downloads.resolve() / "w4-synth-venv" / "bin" / "python"
     rendered: list[tuple[str, bytes]] = []
     mei = ""
+    xml_bytes = xml.encode("utf-8")
+    inner_budget = 0
+    if max_scratch_bytes is not None:
+        inner_budget = max_scratch_bytes - 2 * len(xml_bytes) - 1024 * 1024
+        if inner_budget <= 0:
+            msg = "Verovio scratch budget exhausted before subprocess launch"
+            raise StopConditionError(msg)
     # Stage MusicXML under an opaque name, like page-only detector inputs.
     staged = scratch_root / f"verovio-input-{uuid4().hex}.musicxml"
-    with staged.open("x", encoding="utf-8") as handle:
-        handle.write(xml)
+    with staged.open("xb") as handle:
+        handle.write(xml_bytes)
+    reservation_file: Path | None = None
+    if max_scratch_bytes is not None:
+        reservation_file = scratch_root / SCRATCH_RESERVATION_FILE
+        with reservation_file.open("x", encoding="utf-8") as handle:
+            handle.write(f'{{"reserved_bytes":{max_scratch_bytes}}}\n')
 
     def collect(scratch: Path) -> None:
         nonlocal mei
+        if reservation_file is not None:
+            reservation_file.unlink(missing_ok=True)
+        rasters = _rendered_raster_count(scratch)
         if count_rasters is not None:
-            count_rasters(_rendered_raster_count(scratch))
+            count_rasters(rasters)
         reexport = scratch / "score.mei"
-        if reexport.is_file():
-            mei = reexport.read_text(encoding="utf-8")
-            rendered.extend(
-                (
-                    (scratch / f"score-{page}.svg").read_text(encoding="utf-8"),
-                    png,
+        if reexport.is_file() and rasters > 0:
+            with contextlib.suppress(RenderRejected, OSError):
+                pngs = _numbered_pngs(scratch)
+                mei = reexport.read_text(encoding="utf-8")
+                rendered.extend(
+                    (
+                        (scratch / f"score-{page}.svg").read_text(
+                            encoding="utf-8"
+                        ),
+                        png,
+                    )
+                    for page, png in enumerate(pngs, 1)
                 )
-                for page, png in enumerate(_numbered_pngs(scratch), 1)
-            )
 
     try:
         result = run_offline_isolated_subprocess(
@@ -2140,6 +2176,7 @@ def _run_verovio(  # noqa: PLR0913
                 str(max_pages),
                 VEROVIO_VERSION,
                 RESVG_VERSION,
+                str(inner_budget),
             ],
             scratch_root=scratch_root,
             input_page_png=staged,
@@ -2149,6 +2186,9 @@ def _run_verovio(  # noqa: PLR0913
         )
     finally:
         staged.unlink()
+    if result.returncode == 93:  # noqa: PLR2004
+        msg = "Verovio scratch output exceeded pre-dispatch byte bound"
+        raise StopConditionError(msg)
     if result.returncode or not mei or not rendered:
         msg = f"Verovio W4 job failed or was incomplete ({result.returncode})"
         raise RenderRejected(msg)
@@ -2203,7 +2243,18 @@ def render_synthetic_probe_png(
     return pages[0][1]
 
 
-def render_verovio(  # noqa: PLR0913
+@dataclass(frozen=True, slots=True)
+class StagedVerovio:
+    """Subprocess outputs ready for pure-Python SVG and MEI verification."""
+
+    encoded: str
+    ids: tuple[str, ...]
+    categories: frozenset[str]
+    mei: str
+    rendered: tuple[tuple[str, bytes], ...]
+
+
+def stage_verovio_subprocess(  # noqa: PLR0913
     x_inj: str,
     style: LayoutStyle,
     downloads_dir: Path,
@@ -2212,8 +2263,9 @@ def render_verovio(  # noqa: PLR0913
     *,
     max_pages: int = 5_000,
     count_rasters: Callable[[int], None] | None = None,
-) -> RenderResult:
-    """Render and admit a sample only with exact SVG and symbolic gates."""
+    max_scratch_bytes: int | None = None,
+) -> RenderResult | StagedVerovio:
+    """Run the isolated Verovio subprocess and return raw SVG/PNG/MEI data."""
     engine = "verovio"
     _require_ledger(ledger, engine)
     categories: set[str] = set()
@@ -2241,11 +2293,30 @@ def render_verovio(  # noqa: PLR0913
             scratch_root,
             max_pages=max_pages,
             count_rasters=count_rasters,
+            max_scratch_bytes=max_scratch_bytes,
         )
-        pages = _verovio_pages(rendered, ids)
-        diff = _musicdiff_mei(encoded, mei) + compare_mei_supplementary(
-            encoded, mei
+    except _SAMPLE_ERRORS:
+        return _result(
+            engine,
+            ledger,
+            categories,
+            RenderGate("dropped", reason="render_structure_or_conversion"),
         )
+    return StagedVerovio(encoded, ids, frozenset(categories), mei, rendered)
+
+
+def verify_verovio_outputs(
+    staged: StagedVerovio, ledger: RenderGateLedger
+) -> RenderResult:
+    """Verify staged Verovio SVG geometry and MEI round-trip in pure Python."""
+    engine = "verovio"
+    _require_ledger(ledger, engine)
+    categories = set(staged.categories)
+    try:
+        pages = _verovio_pages(staged.rendered, staged.ids)
+        diff = _musicdiff_mei(
+            staged.encoded, staged.mei
+        ) + compare_mei_supplementary(staged.encoded, staged.mei)
         if diff:
             return _result(
                 engine,
@@ -2254,7 +2325,7 @@ def render_verovio(  # noqa: PLR0913
                 RenderGate("dropped", diff, "mei_roundtrip"),
             )
         layout = SystemLayout(
-            len(ids),
+            len(staged.ids),
             tuple(
                 SystemStart(a - 1, p, s)
                 for p, s, a, _ in _rendered_spans(
@@ -2262,7 +2333,9 @@ def render_verovio(  # noqa: PLR0913
                 )
             ),
         )
-        texts = _system_texts(encode_layout_breaks(encoded, layout), layout)
+        texts = _system_texts(
+            encode_layout_breaks(staged.encoded, layout), layout
+        )
     except _SAMPLE_ERRORS:
         return _result(
             engine,
@@ -2278,3 +2351,30 @@ def render_verovio(  # noqa: PLR0913
         pages=pages,
         texts=texts,
     )
+
+
+def render_verovio(  # noqa: PLR0913
+    x_inj: str,
+    style: LayoutStyle,
+    downloads_dir: Path,
+    scratch_root: Path,
+    ledger: RenderGateLedger,
+    *,
+    max_pages: int = 5_000,
+    count_rasters: Callable[[int], None] | None = None,
+    max_scratch_bytes: int | None = None,
+) -> RenderResult:
+    """Render and admit a sample only with exact SVG and symbolic gates."""
+    staged = stage_verovio_subprocess(
+        x_inj,
+        style,
+        downloads_dir,
+        scratch_root,
+        ledger,
+        max_pages=max_pages,
+        count_rasters=count_rasters,
+        max_scratch_bytes=max_scratch_bytes,
+    )
+    if isinstance(staged, RenderResult):
+        return staged
+    return verify_verovio_outputs(staged, ledger)

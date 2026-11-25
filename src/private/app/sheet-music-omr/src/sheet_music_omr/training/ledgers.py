@@ -13,7 +13,7 @@ import sys
 import urllib.parse
 import urllib.request
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, Self
@@ -834,13 +834,72 @@ def check_w6_disk_cap(
         return _check_w6_disk_cap(runs, additional_bytes=additional_bytes)
 
 
+W6_SCRATCH_RESERVATION_FILE = ".w6-scratch-reservation.json"
+
+
+def w6_scratch_dir_bytes(directory: Path) -> int:
+    """Return ``max(reserved_bytes, actual_bytes)`` in a single walk."""
+    if not directory.exists():
+        return 0
+    meta = directory / W6_SCRATCH_RESERVATION_FILE
+    if meta.is_symlink():
+        _stop("invalid Slice A scratch reservation symlink")
+    reserved = 0
+    if meta.is_file():
+        try:
+            payload = json.loads(meta.read_text(encoding="utf-8"))
+            reserved = _integer(payload.get("reserved_bytes"), minimum=1)
+        except OSError, ValueError, AttributeError:
+            _stop("malformed Slice A scratch reservation metadata")
+    actual = 0
+    for dirpath, _, filenames in os.walk(directory, followlinks=False):
+        dp = Path(dirpath)
+        for fn in filenames:
+            fp = dp / fn
+            if fp == meta or fp.is_symlink():
+                continue
+            with suppress(FileNotFoundError):
+                if fp.is_file():
+                    actual += fp.stat().st_size
+    return max(reserved, actual)
+
+
+def _w6_tmp_bytes(tmp: Path) -> int:
+    if tmp.is_symlink() or not tmp.is_dir():
+        _stop("invalid Slice A scratch directory")
+    total = 0
+    for child in tmp.iterdir():
+        if child.is_symlink():
+            _stop("invalid Slice A scratch job directory")
+        total += (
+            w6_scratch_dir_bytes(child)
+            if child.is_dir()
+            else child.stat().st_size
+        )
+    return total
+
+
+def _w6_run_bytes(directory: Path) -> int:
+    total = 0
+    for entry in directory.iterdir():
+        if entry.name == "tmp":
+            total += _w6_tmp_bytes(entry)
+        elif not entry.is_symlink():
+            total += (
+                directory_bytes(entry)
+                if entry.is_dir()
+                else entry.stat().st_size
+            )
+    return total
+
+
 def _check_w6_disk_cap(runs: Path, *, additional_bytes: int = 0) -> int:
     """Measure disk use while the campaign disk lock is held."""
     total = 0
     for directory in runs.glob("w6-slice-a-*"):
         if directory.is_symlink() or not directory.is_dir():
             _stop("invalid Slice A run directory")
-        total += directory_bytes(directory)
+        total += _w6_run_bytes(directory)
     if total + _integer(additional_bytes) > W6_DISK_CAP_BYTES:
         _stop("Slice A 100 GB generated disk cap would be exceeded")
     return total

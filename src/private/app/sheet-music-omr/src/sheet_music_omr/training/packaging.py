@@ -2,21 +2,33 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import io
 import json
 import math
+import multiprocessing
 import os
 import re
 import shutil
+import signal
 import subprocess
+import sys
 import threading
+import time
 import uuid
 from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import (
+    BrokenExecutor,
+    ProcessPoolExecutor,
+    ThreadPoolExecutor,
+)
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field, replace
+from itertools import batched, islice
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
+from weakref import WeakSet
 
 import numpy as np
 from PIL import Image
@@ -45,7 +57,6 @@ from sheet_music_omr.synthetic.ledgers import (
     VEROVIO_VERSION,
     VEROVIO_WHEEL_SHA256,
     WORKER_SCRATCH_HEADROOM_BYTES,
-    directory_bytes,
     verify_w4_w5_live_assets,
 )
 from sheet_music_omr.timeline import build_timeline
@@ -60,11 +71,20 @@ from sheet_music_omr.training.ledgers import (
     settle_w6_run,
     verify_w6_training_assets,
     w6_disk_lock,
+    w6_scratch_dir_bytes,
 )
 from sheet_music_omr.writer import _state_lines, write_carry_state
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+    from collections.abc import (
+        Callable,
+        Generator,
+        Iterable,
+        Iterator,
+        Mapping,
+        Sequence,
+    )
+    from concurrent.futures import Future
 
     from sheet_music_omr.harness.musescore import MuseScore
 
@@ -86,6 +106,109 @@ _VEROVIO_MAX_DROP_RATE = 0.05
 _PLATE = re.compile(r"G[1-7]")
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 type Row = dict[str, object]
+type _VariantRows = tuple[list[Row], list[Row], dict[Path, bytes]]
+type _ProfileResult = tuple[str | None, intake.ProfiledSource | str]
+_ORIG_RENDER_VEROVIO = renderers.render_verovio
+_ORIG_NORMALIZE_CANDIDATE = intake.normalize_and_profile_candidate
+_TERMINATED_POOLS: WeakSet[ProcessPoolExecutor] = WeakSet()
+
+
+@dataclass(frozen=True, slots=True)
+class _WorkerError:
+    kind: str
+    message: str
+
+
+def _worker_error(exc: BaseException) -> _WorkerError:
+    if isinstance(exc, KeyboardInterrupt | SystemExit):
+        raise exc
+    try:
+        detail = str(exc)
+    except Exception:  # noqa: BLE001
+        detail = ""
+    kind = "value_error" if isinstance(exc, ValueError) else "stop"
+    return _WorkerError(kind, detail or type(exc).__name__)
+
+
+def _to_exception(err: _WorkerError) -> Exception:
+    if err.kind == "value_error":
+        return ValueError(err.message)
+    return StopConditionError(err.message)
+
+
+def _terminate_pool(
+    pool: ProcessPoolExecutor,
+    *,
+    processes: Sequence[object] | None = None,
+) -> bool:
+    _TERMINATED_POOLS.add(pool)
+    procs = (
+        list(processes)
+        if processes is not None
+        else list((getattr(pool, "_processes", None) or {}).values())
+    )
+    pool.shutdown(wait=False, cancel_futures=True)
+    for proc in procs:
+        pid = getattr(proc, "pid", None)
+        is_alive = getattr(proc, "is_alive", lambda: False)
+        if pid is not None and is_alive():
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(pid, signal.SIGKILL)
+    deadline = time.monotonic() + 5.0
+    all_reaped = True
+    for proc in procs:
+        join = getattr(proc, "join", None)
+        if callable(join):
+            join(timeout=max(0.0, deadline - time.monotonic()))
+        if getattr(proc, "is_alive", lambda: False)():
+            all_reaped = False
+    return all_reaped
+
+
+def _shutdown_pool(
+    pool: ProcessPoolExecutor, *, clean_idle: bool = False
+) -> None:
+    if pool in _TERMINATED_POOLS:
+        return
+    processes = list((getattr(pool, "_processes", None) or {}).values())
+    if not clean_idle or sys.exc_info()[0] is not None:
+        reaped = _terminate_pool(pool, processes=processes)
+        if not reaped and sys.exc_info()[0] is None:
+            msg = "W6 worker pool could not be reaped"
+            raise StopConditionError(msg)
+        return
+    pool.shutdown(wait=False, cancel_futures=True)
+    deadline = time.monotonic() + 5.0
+    for proc in processes:
+        proc.join(timeout=max(0.0, deadline - time.monotonic()))
+    if any(proc.is_alive() for proc in processes) and not _terminate_pool(
+        pool, processes=processes
+    ):
+        msg = "W6 worker pool could not be reaped"
+        raise StopConditionError(msg)
+
+
+def _await_futures[T](
+    pool: ProcessPoolExecutor,
+    futures: Sequence[Future[T]],
+    *,
+    timeout: float = W6_WORKER_TIMEOUT_SECONDS,
+    started_at: float | None = None,
+) -> list[T]:
+    deadline = (
+        started_at if started_at is not None else time.monotonic()
+    ) + timeout
+    results: list[T] = []
+    try:
+        for future in futures:
+            remaining = max(0.0, deadline - time.monotonic())
+            results.append(future.result(timeout=remaining))
+    except (FuturesTimeoutError, BrokenExecutor) as exc:
+        reaped = _terminate_pool(pool)
+        suffix = "" if reaped else "; worker could not be reaped"
+        msg = f"W6 worker pool exceeded {timeout:g}s deadline or failed{suffix}"
+        raise StopConditionError(msg) from exc
+    return results
 
 
 def _sha(data: bytes) -> str:
@@ -293,6 +416,9 @@ def choose_engine_for_score(
     return preferred_engine
 
 
+_ORIG_CHOOSE_ENGINE = choose_engine_for_score
+
+
 def category_supervision_mask(engine: str) -> dict[str, bool]:
     """Return all 27 W1 category gates for one rendering engine."""
     if engine not in {"verovio", "musescore"}:
@@ -375,6 +501,17 @@ class RenderedVariant:
     seed: int
     plate_group: str
     render: renderers.RenderResult
+    prepackaged: _VariantRows | None = None
+    _packaging_error: _WorkerError | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _DegradedPage:
+    page_png: bytes
+    page_width: int
+    page_height: int
+    boxes: list[Row]
+    crops: tuple[tuple[bytes, int, int], ...]
 
 
 _INVENTORY_FIELDS = {
@@ -485,9 +622,53 @@ def _decode_page(page: renderers.RenderedPage) -> Image.Image:
         return raw.convert("RGB")
 
 
+def _degrade_page(
+    page: renderers.RenderedPage,
+    mirror_png: bytes | None,
+    seed: int,
+    pidx: int,
+) -> _DegradedPage:
+    geometry = page.geometry
+    mirror: Image.Image | None = None
+    if mirror_png is not None:
+        with Image.open(io.BytesIO(mirror_png)) as raw:
+            mirror = raw.convert("RGB")
+    tier = degrade.apply_tier_r_degradation(
+        _decode_page(page),
+        [s.box for s in geometry.systems],
+        [m.box for m in geometry.measures],
+        mirror_im=mirror,
+        seed=_seed(f"{seed}:{pidx}"),
+    )
+    return _DegradedPage(
+        page_png=_png(tier.image),
+        page_width=tier.image.width,
+        page_height=tier.image.height,
+        boxes=_boxes(tier),
+        crops=tuple(
+            (_png(crop), crop.width, crop.height)
+            for crop in degrade.crop_tier_r_systems(tier)
+        ),
+    )
+
+
+def _degrade_page_worker(
+    page: renderers.RenderedPage,
+    mirror_png: bytes | None,
+    seed: int,
+    pidx: int,
+) -> _DegradedPage | _WorkerError:
+    try:
+        return _degrade_page(page, mirror_png, seed, pidx)
+    except BaseException as exc:  # noqa: BLE001
+        return _worker_error(exc)
+
+
 def _variant_rows(
     variant: RenderedVariant,
-) -> tuple[list[Row], list[Row], dict[Path, bytes]]:
+    *,
+    degraded_pages: Sequence[_DegradedPage] | None = None,
+) -> _VariantRows:
     render = variant.render
     if (
         render.gate.status != "passed"
@@ -524,37 +705,33 @@ def _variant_rows(
     next_ordinal = 1
     for pidx, page in enumerate(render.pages, 1):
         geometry = page.geometry
-        mirror = (
-            _decode_page(render.pages[pidx])
-            if pidx < len(render.pages)
-            else None
-        )
-        tier = degrade.apply_tier_r_degradation(
-            _decode_page(page),
-            [s.box for s in geometry.systems],
-            [m.box for m in geometry.measures],
-            mirror_im=mirror,
-            seed=_seed(f"{variant.seed}:{pidx}"),
+        degraded = (
+            degraded_pages[pidx - 1]
+            if degraded_pages is not None
+            else _degrade_page(
+                page,
+                render.pages[pidx].png if pidx < len(render.pages) else None,
+                variant.seed,
+                pidx,
+            )
         )
         page_id = f"{variant.variant_id}-p{pidx:04d}"
         page_path = Path("assets/pages") / f"{page_id}.png"
-        files[page_path] = _png(tier.image)
+        files[page_path] = degraded.page_png
         pages.append(
             common
             | {
                 "schema": "omr-w6-page-boxes-v1",
                 "page_id": page_id,
                 "page_relpath": page_path.as_posix(),
-                "page_width_px": tier.image.width,
-                "page_height_px": tier.image.height,
+                "page_width_px": degraded.page_width,
+                "page_height_px": degraded.page_height,
                 "sha256": _sha(files[page_path]),
-                "boxes": _boxes(tier),
+                "boxes": degraded.boxes,
             }
         )
-        for sidx, (system, crop) in enumerate(
-            zip(
-                geometry.systems, degrade.crop_tier_r_systems(tier), strict=True
-            ),
+        for sidx, (system, (crop_png, crop_w, crop_h)) in enumerate(
+            zip(geometry.systems, degraded.crops, strict=True),
             1,
         ):
             target = render.system_texts[len(crops)]
@@ -586,7 +763,7 @@ def _variant_rows(
                 )
             sample_id = f"{page_id}-s{sidx:03d}"
             crop_path = Path("assets/crops") / f"{sample_id}.png"
-            files[crop_path] = _png(crop)
+            files[crop_path] = crop_png
             crops.append(
                 common
                 | {
@@ -598,8 +775,8 @@ def _variant_rows(
                     "page_id": page_id,
                     "staff_space_px": 14.0,
                     "crop_relpath": crop_path.as_posix(),
-                    "crop_width": crop.width,
-                    "crop_height": crop.height,
+                    "crop_width": crop_w,
+                    "crop_height": crop_h,
                     "carry_in_text": write_carry_state(doc.carry_in),
                     "incoming_header_state_text": header,
                     "page_system_tuple": (pidx, sidx),
@@ -827,6 +1004,9 @@ class _DatasetSink:
         charge = sum(map(len, files.values()))
         self.check_headroom(charge)
         for rel, data in files.items():
+            if rel.is_absolute() or ".." in rel.parts:
+                msg = "W6 dataset path escapes its staging root"
+                raise StopConditionError(msg)
             path = self.root / rel
             check_no_symlink_under(path, self.root.parent)
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -938,7 +1118,13 @@ def _package(  # noqa: C901, PLR0913
         if counts[split] >= targets[split]:
             continue
         try:
-            crops, pages, files = _variant_rows(variant)
+            if variant._packaging_error is not None:  # noqa: SLF001
+                raise _to_exception(variant._packaging_error)  # noqa: SLF001
+            crops, pages, files = (
+                variant.prepackaged
+                if variant.prepackaged is not None
+                else _variant_rows(variant)
+            )
         except ValueError:
             # Tier R can reject a rendering; do not emit any partial variant.
             continue
@@ -1045,12 +1231,133 @@ def _source_score(
     return score
 
 
-def _expanded_intake(
+_ORIG_SOURCE_SCORE = _source_score
+
+
+def _offline_worker() -> None:
+    os.environ.update(W6_OFFLINE_ENV)
+
+
+def _process_pool(workers: int) -> ProcessPoolExecutor:
+    return ProcessPoolExecutor(
+        max_workers=workers,
+        mp_context=multiprocessing.get_context("forkserver"),
+        initializer=_offline_worker,
+    )
+
+
+def _profile_pdmx_worker(
+    candidate: intake.SourceCandidate,
+    checked: tuple[bytes, dict[str, str], str, str],
+) -> _ProfileResult | _WorkerError:
+    try:
+        return intake._profile_candidate(candidate, checked)  # noqa: SLF001
+    except BaseException as exc:  # noqa: BLE001
+        return _worker_error(exc)
+
+
+def _parallel_pdmx_profiles(  # noqa: C901, PLR0912
+    downloads: Path,
+    gate: MetadataOnlyTestExclusion,
+    seen: set[str],
+    counts: Counter[str],
+    workers: int,
+) -> Generator[intake.ProfiledSource | None]:
+    candidates = intake.iter_pdmx_candidates(downloads)
+    pool = _process_pool(workers)
+    in_flight = False
+    try:
+        while True:
+            staged: list[
+                str
+                | tuple[
+                    intake.SourceCandidate,
+                    tuple[bytes, dict[str, str], str, str],
+                ]
+            ] = []
+            failure: Exception | None = None
+            try:
+                for candidate in islice(candidates, workers * 4):
+                    try:
+                        # Check both digests, rights and aliases before handing
+                        # the score to a worker, without sending TEST state.
+                        checked = intake._preflight_candidate(  # noqa: SLF001
+                            candidate, gate
+                        )
+                    except intake._CandidateExcludedError as exc:  # noqa: SLF001
+                        staged.append(str(exc))
+                        continue
+                    staged.append(
+                        (replace(candidate, raw=b"", decode=None), checked)
+                    )
+            except Exception as exc:  # noqa: BLE001 - defer speculative archive errors
+                failure = exc
+            pending = [
+                (idx, item)
+                for idx, item in enumerate(staged)
+                if not isinstance(item, str)
+            ]
+            resolved: dict[int, _ProfileResult | _WorkerError] = {}
+            for wave in batched(pending, workers, strict=False):
+                started_at = time.monotonic()
+                in_flight = True
+                futures = [
+                    pool.submit(_profile_pdmx_worker, cand, checked)
+                    for _, (cand, checked) in wave
+                ]
+                wave_out = _await_futures(pool, futures, started_at=started_at)
+                in_flight = False
+                for (idx, _), out in zip(wave, wave_out, strict=True):
+                    resolved[idx] = out
+            for idx, item in enumerate(staged):
+                counts["eligible_pdmx_candidates_seen"] += 1
+                if isinstance(item, str):
+                    digest, result = None, item
+                else:
+                    out = resolved[idx]
+                    if isinstance(out, _WorkerError):
+                        raise _to_exception(out)
+                    digest, result = out
+                if digest is not None and digest in seen:
+                    counts["duplicate_canonical"] += 1
+                elif isinstance(result, str):
+                    counts[result] += 1
+                else:
+                    gate.audit_admitted_manifest((result.manifest_row,))
+                    seen.add(_field(result.manifest_row, "canonical_v2_sha256"))
+                    counts["admitted"] += 1
+                    yield result
+                    continue
+                yield None
+            if failure is not None:
+                raise failure
+            if len(staged) < workers * 4:
+                return
+    finally:
+        _shutdown_pool(pool, clean_idle=not in_flight)
+
+
+def _serial_pdmx_profiles(
+    downloads: Path,
+    gate: MetadataOnlyTestExclusion,
+    seen: set[str],
+    counts: Counter[str],
+) -> Generator[intake.ProfiledSource | None]:
+    for candidate in intake.iter_pdmx_candidates(downloads):
+        counts["eligible_pdmx_candidates_seen"] += 1
+        yield intake.normalize_and_profile_candidate(
+            candidate, gate=gate, seen_canonical=seen, counts=counts
+        )
+
+
+def _expanded_intake(  # noqa: PLR0913
     run: Path,
     downloads: Path,
     lieder_manifest: Path,
     gate: MetadataOnlyTestExclusion,
     max_pdmx: int,
+    *,
+    workers: int = 1,
 ) -> tuple[list[Row], Row]:
     all_rows = _read_sources(lieder_manifest)
     if any(
@@ -1078,12 +1385,16 @@ def _expanded_intake(
         row["canonical_root"] = str(lieder_manifest.parent)
     if max_pdmx:
         disk_used = _check_w6_disk_cap(run.parent)
-        for candidate in intake.iter_pdmx_candidates(downloads):
-            counts["eligible_pdmx_candidates_seen"] += 1
-            profile = intake.normalize_and_profile_candidate(
-                candidate, gate=gate, seen_canonical=seen, counts=counts
-            )
-            if profile is not None:
+        normalize = intake.normalize_and_profile_candidate
+        profiles = (
+            _parallel_pdmx_profiles(downloads, gate, seen, counts, workers)
+            if workers > 1 and normalize is _ORIG_NORMALIZE_CANDIDATE
+            else _serial_pdmx_profiles(downloads, gate, seen, counts)
+        )
+        try:
+            for profile in profiles:
+                if profile is None:
+                    continue
                 disk_used += len(profile.canonical_v2.encode()) + len(
                     profile.musicxml
                 )
@@ -1094,6 +1405,8 @@ def _expanded_intake(
                 rows.append(row | {"canonical_root": str(corpus)})
                 if counts["admitted"] >= max_pdmx:
                     break
+        finally:
+            profiles.close()
     gate.audit_admitted_manifest(rows)
     return rows, {
         "reused_lieder": _LIEDER_COUNT,
@@ -1193,20 +1506,24 @@ class _PageMeter:
 
 
 @dataclass(frozen=True, slots=True)
-class _PreparedVariant:
+class _VariantPlan:
     row: Row
     seed_text: str
     seed: int
     style: renderers.LayoutStyle
+    measures: int
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedVariant(_VariantPlan):
     engine: str
     xml: str
-    measures: int
 
 
 @dataclass(slots=True)
 class _RenderOutcome:
-    prepared: _PreparedVariant
-    result: renderers.RenderResult | Exception
+    plan: _VariantPlan
+    result: renderers.RenderResult | _WorkerError | Exception | None
     pages: int
     scratch_bytes: int
 
@@ -1215,15 +1532,84 @@ class _VerovioCohortError(StopConditionError):
     """An unmasked category exceeded the inherited Verovio drop gate."""
 
 
+def _variant_plan(row: Row, round_index: int) -> _VariantPlan:
+    measures = _int(row.get("measure_count"), 1)
+    digest = _field(row, "canonical_v2_sha256")
+    seed_text = f"omr-w6-variant-v1:{round_index}:{digest}"
+    seed = _seed(seed_text)
+    return _VariantPlan(
+        row,
+        seed_text,
+        seed,
+        renderers.sample_layout_and_style(seed, measures),
+        measures,
+    )
+
+
+def _prepare_variant(plan: _VariantPlan, preferred: str) -> _PreparedVariant:
+    score = _source_score(plan.row, Path(_field(plan.row, "canonical_root")))
+    categories = (
+        set(injector._CATEGORIES) - {"N2", "P3"}  # noqa: SLF001
+        if preferred == "verovio"
+        else None
+    )
+    injected = injector.inject_annotations(
+        score, seed=plan.seed_text, enabled_categories=categories
+    )
+    engine = choose_engine_for_score(
+        injected.score, injected.musicxml, preferred_engine=preferred
+    )
+    return _PreparedVariant(
+        plan.row,
+        plan.seed_text,
+        plan.seed,
+        plan.style,
+        plan.measures,
+        engine,
+        injected.musicxml.decode(),
+    )
+
+
+def _prepare_variant_worker(
+    plan: _VariantPlan, preferred: str
+) -> _PreparedVariant | _WorkerError:
+    try:
+        return _prepare_variant(plan, preferred)
+    except BaseException as exc:  # noqa: BLE001 - raise in submission order
+        return _worker_error(exc)
+
+
+def _rendered_variant(
+    plan: _VariantPlan, result: renderers.RenderResult
+) -> RenderedVariant:
+    return RenderedVariant(
+        _sha(plan.seed_text.encode()),
+        plan.row,
+        plan.seed,
+        plan.style.plate_group,
+        result,
+    )
+
+
+def _retained_scratch_bytes(scratch: Path, peak_bytes: int) -> int:
+    if not scratch.exists():
+        return peak_bytes
+    if not any(scratch.iterdir()):
+        shutil.rmtree(scratch)
+        return peak_bytes
+    return max(peak_bytes, w6_scratch_dir_bytes(scratch))
+
+
 def _execute_prepared_variant(  # noqa: PLR0913
     prepared: _PreparedVariant,
     *,
     run: Path,
     downloads: Path,
-    musescore: MuseScore,
+    musescore: MuseScore | None,
     calibrated_identity: tuple[str, str] | None,
     musescore_lock: threading.Lock,
     max_pages: int,
+    max_scratch_bytes: int | None = None,
 ) -> _RenderOutcome:
     local_pages = 0
     peak_scratch_bytes = 0
@@ -1234,7 +1620,7 @@ def _execute_prepared_variant(  # noqa: PLR0913
         local_pages += count
         if scratch.exists():
             peak_scratch_bytes = max(
-                peak_scratch_bytes, directory_bytes(scratch)
+                peak_scratch_bytes, w6_scratch_dir_bytes(scratch)
             )
 
     ledger = renderers.RenderGateLedger(
@@ -1254,7 +1640,7 @@ def _execute_prepared_variant(  # noqa: PLR0913
                 result = renderers.render_musescore(
                     prepared.xml,
                     prepared.style,
-                    musescore,
+                    cast("MuseScore", musescore),
                     scratch,
                     ledger,
                     rights_variant="permissive",
@@ -1271,10 +1657,11 @@ def _execute_prepared_variant(  # noqa: PLR0913
                 ledger,
                 max_pages=max_pages,
                 count_rasters=add_pages,
+                max_scratch_bytes=max_scratch_bytes,
             )
         scratch_bytes = max(
             peak_scratch_bytes,
-            directory_bytes(scratch) if scratch.exists() else 0,
+            w6_scratch_dir_bytes(scratch) if scratch.exists() else 0,
         )
         if scratch.exists():
             shutil.rmtree(scratch)
@@ -1283,12 +1670,136 @@ def _execute_prepared_variant(  # noqa: PLR0913
             prepared,
             exc,
             max(local_pages, prepared.measures),
-            max(
-                peak_scratch_bytes,
-                directory_bytes(scratch) if scratch.exists() else 0,
-            ),
+            _retained_scratch_bytes(scratch, peak_scratch_bytes),
         )
     return _RenderOutcome(prepared, result, local_pages, scratch_bytes)
+
+
+def _stage_verovio_parent_job(
+    prepared: _PreparedVariant,
+    *,
+    run: Path,
+    downloads: Path,
+    max_pages: int,
+    max_scratch_bytes: int,
+) -> tuple[
+    _VariantPlan,
+    renderers.RenderResult | renderers.StagedVerovio | Exception,
+    int,
+    int,
+]:
+    local_pages = 0
+    peak_scratch_bytes = 0
+    scratch = run / "tmp" / uuid.uuid4().hex
+
+    def add_pages(count: int) -> None:
+        nonlocal local_pages, peak_scratch_bytes
+        local_pages += count
+        if scratch.exists():
+            peak_scratch_bytes = max(
+                peak_scratch_bytes, w6_scratch_dir_bytes(scratch)
+            )
+
+    ledger = renderers.RenderGateLedger(
+        "verovio",
+        min_cohort_before_disable=10**9,
+        disabled_categories=set(VEROVIO_DISABLED_CATEGORIES),
+    )
+    stripped = replace(prepared, xml="")
+    try:
+        staged = renderers.stage_verovio_subprocess(
+            prepared.xml,
+            prepared.style,
+            downloads,
+            scratch,
+            ledger,
+            max_pages=max_pages,
+            count_rasters=add_pages,
+            max_scratch_bytes=max_scratch_bytes,
+        )
+        scratch_bytes = max(
+            peak_scratch_bytes,
+            w6_scratch_dir_bytes(scratch) if scratch.exists() else 0,
+        )
+        if scratch.exists():
+            shutil.rmtree(scratch)
+    except Exception as exc:  # noqa: BLE001 - re-raised after all threads reap
+        return (
+            stripped,
+            exc,
+            max(local_pages, prepared.measures),
+            _retained_scratch_bytes(scratch, peak_scratch_bytes),
+        )
+    return stripped, staged, local_pages, scratch_bytes
+
+
+def _verify_verovio_worker(
+    staged: renderers.StagedVerovio,
+) -> renderers.RenderResult | _WorkerError:
+    ledger = renderers.RenderGateLedger(
+        "verovio",
+        min_cohort_before_disable=10**9,
+        disabled_categories=set(VEROVIO_DISABLED_CATEGORIES),
+    )
+    try:
+        return renderers.verify_verovio_outputs(staged, ledger)
+    except BaseException as exc:  # noqa: BLE001
+        return _worker_error(exc)
+
+
+def _prepackage_variants_parallel(
+    pool: ProcessPoolExecutor,
+    workers: int,
+    variants: Sequence[RenderedVariant],
+) -> list[RenderedVariant]:
+    page_tasks: list[
+        tuple[int, int, renderers.RenderedPage, bytes | None, int]
+    ] = []
+    for v_idx, variant in enumerate(variants):
+        pages = variant.render.pages
+        for pidx, page in enumerate(pages, 1):
+            mirror_png = pages[pidx].png if pidx < len(pages) else None
+            page_tasks.append((v_idx, pidx, page, mirror_png, variant.seed))
+    degraded_by_variant: dict[int, list[_DegradedPage]] = defaultdict(list)
+    errors_by_variant: dict[int, _WorkerError] = {}
+    for wave in batched(page_tasks, workers, strict=False):
+        started_at = time.monotonic()
+        futures = [
+            pool.submit(_degrade_page_worker, page, mirror_png, seed, pidx)
+            for _, pidx, page, mirror_png, seed in wave
+        ]
+        for (v_idx, *_), res in zip(
+            wave,
+            _await_futures(pool, futures, started_at=started_at),
+            strict=True,
+        ):
+            if isinstance(res, _WorkerError):
+                errors_by_variant.setdefault(v_idx, res)
+            else:
+                degraded_by_variant[v_idx].append(res)
+    packaged: list[RenderedVariant] = []
+    for v_idx, variant in enumerate(variants):
+        metadata = replace(variant.render, pages=(), system_texts=())
+        if err := errors_by_variant.get(v_idx):
+            packaged.append(
+                replace(variant, render=metadata, _packaging_error=err)
+            )
+            continue
+        try:
+            rows = _variant_rows(
+                variant, degraded_pages=degraded_by_variant[v_idx]
+            )
+        except BaseException as exc:  # noqa: BLE001 - defer in variant order
+            packaged.append(
+                replace(
+                    variant,
+                    render=metadata,
+                    _packaging_error=_worker_error(exc),
+                )
+            )
+        else:
+            packaged.append(replace(variant, render=metadata, prepackaged=rows))
+    return packaged
 
 
 _MAX_MUSESCORE_REPEATS = 10
@@ -1344,6 +1855,25 @@ def _musescore_worst_case_bytes(measures: int, xml: str) -> int:
     return png_ceiling + sidecar_ceiling + xml_ceiling
 
 
+def _verovio_worst_case_bytes(plan: _PreparedVariant) -> int:
+    """Return hard-enforced scratch ceiling for one Verovio subprocess job."""
+    est_pages = max(
+        1,
+        math.ceil(len(plan.style.layout.starts) / plan.style.systems_per_page),
+    )
+    return (
+        WORKER_SCRATCH_HEADROOM_BYTES * est_pages
+        + 16 * len(plan.xml.encode("utf-8"))
+        + 16 * 1024 * 1024
+    )
+
+
+def _item_worst_case_bytes(item: _PreparedVariant) -> int:
+    if item.engine == "musescore":
+        return _musescore_worst_case_bytes(item.measures, item.xml)
+    return _verovio_worst_case_bytes(item)
+
+
 def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
     rows: Sequence[Row],
     *,
@@ -1363,31 +1893,231 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
     musescore_lock = threading.Lock()
     batch: list[_PreparedVariant] = []
     reserved_measures = 0
-    reserved_est_pages = 0
+    reserved_scratch_bytes = 0
     pending_ms_measures = 0
+    attempted = False
+    process_pool = (
+        _process_pool(workers)
+        if workers > 1
+        and renderers.render_verovio is _ORIG_RENDER_VEROVIO
+        and choose_engine_for_score is _ORIG_CHOOSE_ENGINE
+        and _source_score is _ORIG_SOURCE_SCORE
+        else None
+    )
+    thread_pool = (
+        ThreadPoolExecutor(max_workers=workers) if workers > 1 else None
+    )
+    preparations: dict[
+        int,
+        tuple[
+            str,
+            float,
+            Future[_PreparedVariant | _WorkerError]
+            | _PreparedVariant
+            | _WorkerError,
+        ],
+    ] = {}
+    discarded: list[tuple[float, Future[_PreparedVariant | _WorkerError]]] = []
 
-    def flush_batch(
-        pool: ThreadPoolExecutor | None,
-    ) -> list[RenderedVariant]:
-        nonlocal musescore_pages, reserved_measures, reserved_est_pages
-        nonlocal pending_ms_measures
+    def preferred_engine(plan: _VariantPlan) -> str:
+        return (
+            "musescore"
+            if plan.seed % 2 == 0 and permits_musescore(plan.measures)
+            else "verovio"
+        )
+
+    def permits_musescore(measures: int) -> bool:
+        return musescore_page_cap is None or (
+            musescore_pages + pending_ms_measures + measures
+            <= musescore_page_cap
+        )
+
+    def discard_preparation(index: int) -> None:
+        popped = preparations.pop(index, None)
+        if popped is None:
+            return
+        _, started_at, slot = popped
+        if not isinstance(slot, _PreparedVariant | _WorkerError):
+            slot.cancel()
+            if not slot.done():
+                discarded.append((started_at, slot))
+
+    def drain_preparations() -> None:
+        if process_pool is None:
+            return
+        for index, (eng, started_at, entry) in list(preparations.items()):
+            if not isinstance(entry, _PreparedVariant | _WorkerError):
+                (resolved,) = _await_futures(
+                    process_pool, (entry,), started_at=started_at
+                )
+                preparations[index] = (eng, started_at, resolved)
+        for started_at, fut in list(discarded):
+            if not fut.done():
+                _await_futures(process_pool, (fut,), started_at=started_at)
+        discarded.clear()
+
+    def prepare(
+        plan: _VariantPlan, idx: int, round_index: int
+    ) -> _PreparedVariant:
+        preferred = preferred_engine(plan)
+        if process_pool is None:
+            return _prepare_variant(plan, preferred)
+        cached = preparations.get(idx)
+        if cached is None or cached[0] != preferred:
+            # Keep at most `workers` active lookahead jobs so each starts
+            # immediately without queue delay.
+            for index in range(idx, min(idx + workers, len(rows))):
+                row = rows[index]
+                try:
+                    split = _field(row, "split")
+                    if meter.crop_counts[split] >= targets[split]:
+                        continue
+                    upcoming = (
+                        plan
+                        if index == idx
+                        else _variant_plan(row, round_index)
+                    )
+                except KeyError, StopConditionError:
+                    if index == idx:
+                        raise
+                    # Check invalid rows only if the schedule reaches them.
+                    break
+                engine = preferred_engine(upcoming)
+                entry = preparations.get(index)
+                if entry is None or entry[0] != engine:
+                    preparations[index] = (
+                        engine,
+                        time.monotonic(),
+                        process_pool.submit(
+                            _prepare_variant_worker, upcoming, engine
+                        ),
+                    )
+        eng, started_at, slot = preparations[idx]
+        if not isinstance(slot, _PreparedVariant | _WorkerError):
+            (slot,) = _await_futures(
+                process_pool, (slot,), started_at=started_at
+            )
+            preparations[idx] = (eng, started_at, slot)
+        if isinstance(slot, _WorkerError):
+            raise _to_exception(slot)
+        return slot
+
+    def dispatch(
+        items: Sequence[_PreparedVariant],
+        max_pages: int,
+        *,
+        is_musescore: bool,
+    ) -> list[_RenderOutcome]:
+        if process_pool is not None and not is_musescore:
+            # Run unshare Verovio subprocesses on parent threads under the disk
+            # lock owner so every renderer is reaped before lock release, then
+            # run pure-Python SVG/MEI verification in forkserver workers.
+            def stage_one(
+                item: _PreparedVariant,
+            ) -> tuple[
+                _VariantPlan,
+                renderers.RenderResult | renderers.StagedVerovio | Exception,
+                int,
+                int,
+            ]:
+                return _stage_verovio_parent_job(
+                    item,
+                    run=run,
+                    downloads=downloads,
+                    max_pages=min(item.measures, max_pages),
+                    max_scratch_bytes=_verovio_worst_case_bytes(item),
+                )
+
+            staged_rows = (
+                [
+                    job.result()
+                    for job in [
+                        thread_pool.submit(stage_one, it) for it in items
+                    ]
+                ]
+                if thread_pool is not None and len(items) > 1
+                else [stage_one(it) for it in items]
+            )
+            meter.add(sum(pages for _, _, pages, _ in staged_rows))
+            meter.uncounted_worker = False
+            verify_indices = [
+                i
+                for i, (_, st, _, _) in enumerate(staged_rows)
+                if isinstance(st, renderers.StagedVerovio)
+            ]
+            verified: dict[int, renderers.RenderResult | _WorkerError] = {}
+            if verify_indices:
+                started_at = time.monotonic()
+                verify_jobs = [
+                    process_pool.submit(
+                        _verify_verovio_worker,
+                        cast("renderers.StagedVerovio", staged_rows[i][1]),
+                    )
+                    for i in verify_indices
+                ]
+                for i, res in zip(
+                    verify_indices,
+                    _await_futures(
+                        process_pool, verify_jobs, started_at=started_at
+                    ),
+                    strict=True,
+                ):
+                    verified[i] = res
+            return [
+                _RenderOutcome(
+                    plan,
+                    verified[i]
+                    if i in verified
+                    else cast(
+                        "renderers.RenderResult | Exception", staged_or_res
+                    ),
+                    pages,
+                    scratch_bytes,
+                )
+                for i, (plan, staged_or_res, pages, scratch_bytes) in enumerate(
+                    staged_rows
+                )
+            ]
+
+        def execute(item: _PreparedVariant) -> _RenderOutcome:
+            return _execute_prepared_variant(
+                item,
+                run=run,
+                downloads=downloads,
+                musescore=musescore,
+                calibrated_identity=calibrated_identity,
+                musescore_lock=musescore_lock,
+                max_pages=min(item.measures, max_pages),
+                max_scratch_bytes=(
+                    None
+                    if item.engine == "musescore"
+                    else _verovio_worst_case_bytes(item)
+                ),
+            )
+
+        if thread_pool is not None and len(items) > 1:
+            jobs = [thread_pool.submit(execute, item) for item in items]
+            outcomes = [job.result() for job in jobs]
+        else:
+            outcomes = [execute(item) for item in items]
+        meter.add(sum(outcome.pages for outcome in outcomes))
+        meter.uncounted_worker = False
+        return outcomes
+
+    def flush_batch() -> list[RenderedVariant]:  # noqa: C901
+        nonlocal musescore_pages, reserved_measures, reserved_scratch_bytes
+        nonlocal pending_ms_measures, attempted
         if not batch:
             return []
+        drain_preparations()
         items = list(batch)
         batch.clear()
         reserved_measures = 0
-        required_scratch = sum(
-            _musescore_worst_case_bytes(item.measures, item.xml)
-            if item.engine == "musescore"
-            else WORKER_SCRATCH_HEADROOM_BYTES * max(1, reserved_est_pages)
-            for item in items
-        )
-        if not any(item.engine == "musescore" for item in items):
-            required_scratch = WORKER_SCRATCH_HEADROOM_BYTES * max(
-                reserved_est_pages, len(items)
-            )
+        first = items[0]
+        is_musescore = first.engine == "musescore"
+        required_scratch = sum(_item_worst_case_bytes(it) for it in items)
         scratch_disk = meter.check_scratch(required_scratch)
-        reserved_est_pages = 0
+        reserved_scratch_bytes = 0
         pending_ms_measures = 0
         remaining = W6_DISK_CAP_BYTES - scratch_disk.usage
         max_pages = max(
@@ -1395,51 +2125,32 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
         )
         # If dispatch or collection fails, settlement charges the reservation.
         meter.uncounted_worker = True
-        if pool is None or len(items) == 1:
-            outcomes = [
-                _execute_prepared_variant(
-                    item,
-                    run=run,
-                    downloads=downloads,
-                    musescore=musescore,
-                    calibrated_identity=calibrated_identity,
-                    musescore_lock=musescore_lock,
-                    max_pages=min(item.measures, max_pages),
-                )
-                for item in items
-            ]
-        else:
-            futures = [
-                pool.submit(
-                    _execute_prepared_variant,
-                    item,
-                    run=run,
-                    downloads=downloads,
-                    musescore=musescore,
-                    calibrated_identity=calibrated_identity,
-                    musescore_lock=musescore_lock,
-                    max_pages=min(item.measures, max_pages),
-                )
-                for item in items
-            ]
-            outcomes = [future.result() for future in futures]
-        meter.add(sum(outcome.pages for outcome in outcomes))
-        meter.uncounted_worker = False
+        outcomes = dispatch(items, max_pages, is_musescore=is_musescore)
         scratch_disk.check_headroom(
             sum(outcome.scratch_bytes for outcome in outcomes)
         )
         scratch_disk.usage += sum(
             outcome.scratch_bytes
             for outcome in outcomes
-            if isinstance(outcome.result, Exception)
+            if isinstance(outcome.result, _WorkerError | Exception)
         )
         rendered: list[RenderedVariant] = []
         failure: Exception | None = None
         for outcome in outcomes:
+            if outcome.result is None:
+                continue
+            attempted = True
+            if isinstance(outcome.result, _WorkerError):
+                failure = failure or _to_exception(outcome.result)
+                continue
             if isinstance(outcome.result, Exception):
                 failure = failure or outcome.result
                 continue
-            engine = outcome.prepared.engine
+            engine = (
+                outcome.plan.engine
+                if isinstance(outcome.plan, _PreparedVariant)
+                else "verovio"
+            )
             gate = outcome.result.gate
             ledger = meter.gates[engine]
             ledger.record(gate, set(outcome.result.categories))
@@ -1448,15 +2159,7 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
             else:
                 ledger.disabled_categories.update(VEROVIO_DISABLED_CATEGORIES)
             if gate.status == "passed":
-                rendered.append(
-                    RenderedVariant(
-                        _sha(outcome.prepared.seed_text.encode()),
-                        outcome.prepared.row,
-                        outcome.prepared.seed,
-                        outcome.prepared.style.plate_group,
-                        outcome.result,
-                    )
-                )
+                rendered.append(_rendered_variant(outcome.plan, outcome.result))
         if failure is not None:
             raise failure
         if (
@@ -1464,11 +2167,16 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
             - VEROVIO_DISABLED_CATEGORIES
         ):
             meter.validate_verovio_cohort(formal=False)
+        if process_pool is not None and not is_musescore and rendered:
+            return _prepackage_variants_parallel(
+                process_pool, workers, rendered
+            )
         return rendered
 
-    pool = ThreadPoolExecutor(max_workers=workers) if workers > 1 else None
     try:
         for round_index in range(_MAX_VARIANT_ROUNDS):
+            drain_preparations()
+            preparations.clear()
             attempted = False
             idx = 0
             while idx < len(rows):
@@ -1479,98 +2187,62 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 row = rows[idx]
                 split = _field(row, "split")
                 if meter.crop_counts[split] >= targets[split]:
+                    discard_preparation(idx)
                     idx += 1
                     continue
                 measures = _int(row.get("measure_count"), 1)
                 if measures + reserved_measures > meter.planned - meter.actual:
                     if batch:
-                        for variant in flush_batch(pool):
-                            yield variant
+                        yield from flush_batch()
                         continue
+                    discard_preparation(idx)
                     idx += 1
                     continue
-                digest = _field(row, "canonical_v2_sha256")
-                seed_text = f"omr-w6-variant-v1:{round_index}:{digest}"
-                seed = _seed(seed_text)
-                style = renderers.sample_layout_and_style(seed, measures)
-                page_count = math.ceil(
-                    len(style.layout.starts) / style.systems_per_page
-                )
-                allow_musescore = musescore_page_cap is None or (
-                    musescore_pages + pending_ms_measures + measures
-                    <= musescore_page_cap
-                )
-                preferred = (
-                    "musescore"
-                    if allow_musescore and seed % 2 == 0
-                    else "verovio"
-                )
-                score = _source_score(row, Path(_field(row, "canonical_root")))
-                categories = (
-                    set(injector._CATEGORIES) - {"N2", "P3"}  # noqa: SLF001
-                    if preferred == "verovio"
-                    else None
-                )
-                injected = injector.inject_annotations(
-                    score, seed=seed_text, enabled_categories=categories
-                )
-                engine = choose_engine_for_score(
-                    injected.score,
-                    injected.musicxml,
-                    preferred_engine=preferred,
-                )
-                if engine == "musescore" and not allow_musescore:
+                plan = _variant_plan(row, round_index)
+                allow_musescore = permits_musescore(measures)
+                item = prepare(plan, idx, round_index)
+                is_musescore = item.engine == "musescore"
+                if is_musescore and not allow_musescore:
                     if pending_ms_measures > 0 and batch:
-                        for variant in flush_batch(pool):
-                            yield variant
+                        yield from flush_batch()
                         continue
+                    discard_preparation(idx)
                     idx += 1
                     continue
-                if engine == "musescore" and batch:
-                    for variant in flush_batch(pool):
-                        yield variant
+                if is_musescore and batch:
+                    yield from flush_batch()
                     continue
-                xml_text = injected.musicxml.decode()
+                discard_preparation(idx)
                 if (
-                    engine == "musescore"
-                    and xml_text.count("<repeat") > _MAX_MUSESCORE_REPEATS
+                    is_musescore
+                    and item.xml.count("<repeat") > _MAX_MUSESCORE_REPEATS
                 ):
                     idx += 1
                     continue
-                meter.check_scratch(
-                    _musescore_worst_case_bytes(measures, xml_text)
-                    if engine == "musescore"
-                    else WORKER_SCRATCH_HEADROOM_BYTES
-                    * (reserved_est_pages + page_count)
-                )
-                attempted = True
-                batch.append(
-                    _PreparedVariant(
-                        row=row,
-                        seed_text=seed_text,
-                        seed=seed,
-                        style=style,
-                        engine=engine,
-                        xml=xml_text,
-                        measures=measures,
-                    )
-                )
+                item_scratch = _item_worst_case_bytes(item)
+                meter.check_scratch(reserved_scratch_bytes + item_scratch)
+                batch.append(item)
                 reserved_measures += measures
-                reserved_est_pages += page_count
-                if engine == "musescore":
+                reserved_scratch_bytes += item_scratch
+                if is_musescore:
                     pending_ms_measures += measures
                 idx += 1
-                if engine == "musescore" or len(batch) >= workers:
-                    for variant in flush_batch(pool):
-                        yield variant
+                if is_musescore or len(batch) >= workers:
+                    yield from flush_batch()
             if batch:
-                for variant in flush_batch(pool):
-                    yield variant
+                yield from flush_batch()
             if not attempted:
                 return
     finally:
-        if pool is not None:
-            pool.shutdown(wait=True)
+        if process_pool is not None:
+            has_pending = any(
+                not isinstance(slot, _PreparedVariant | _WorkerError)
+                and not slot.done()
+                for _, _, slot in preparations.values()
+            ) or any(not fut.done() for _, fut in discarded)
+            _shutdown_pool(process_pool, clean_idle=not has_pending)
+        if thread_pool is not None:
+            thread_pool.shutdown(wait=True)
 
 
 def _offline_musescore(
@@ -1695,7 +2367,12 @@ def run_expanded_w4a_and_package(  # noqa: PLR0913, PLR0915
             atomic_write_text(env_path, environment_text)
             gate = MetadataOnlyTestExclusion(test_exclusion, test_status)
             rows, funnel = _expanded_intake(
-                run, downloads, lieder_manifest, gate, _int(max_pdmx)
+                run,
+                downloads,
+                lieder_manifest,
+                gate,
+                _int(max_pdmx),
+                workers=_int(verovio_workers, 1),
             )
             _record_intake(run, runs, rows, funnel, formal=formal)
         train, val, split = split_admitted_sources_by_composer(
