@@ -113,6 +113,18 @@ public sealed class LanguageServicesTests
     }
 
     [TestMethod]
+    public void PruneDescriptor_RetainsTerminalsReferencedThroughMixedMetavariableSuffixes()
+    {
+        LanguageDescriptor language = new(
+            "L", "Expr", [new("variable", ["x"]), new("unused", ["u"])],
+            [NonTerminal("Expr", "e", "(use x*1)")]);
+
+        LanguageDescriptor pruned = LanguageServices.PruneDescriptor(language);
+
+        Assert.AreEqual(new Symbol("variable"), Assert.ContainsSingle(pruned.Terminals).Name);
+    }
+
+    [TestMethod]
     public void Prune_MissingEntry_RejectsInvalidDescriptor()
     {
         LanguageDescriptor invalid = new("L", "Missing", [], [NonTerminal("Found", "f", "(atom)")]);

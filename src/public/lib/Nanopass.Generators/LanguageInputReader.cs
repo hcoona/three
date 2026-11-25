@@ -348,7 +348,9 @@ internal static class LanguageInputReader
         }
 
         var declaration = type.DeclaringSyntaxReferences.Select(r => r.GetSyntax(cancellationToken))
-            .OfType<RecordDeclarationSyntax>().FirstOrDefault();
+            .OfType<RecordDeclarationSyntax>()
+            .OrderByDescending(static record => record.ParameterList is not null)
+            .FirstOrDefault();
         if (declaration is null)
         {
             return null;

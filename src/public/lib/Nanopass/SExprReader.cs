@@ -18,7 +18,6 @@
 
 using System;
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -26,61 +25,35 @@ namespace Hcoona.Nanopass;
 
 internal sealed class SExprReader(string text)
 {
-    private const NumberStyles FloatStyle = NumberStyles.AllowLeadingSign
-        | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent;
-
     private int position;
 
     private bool AtEnd => this.position == text.Length;
 
-    internal static bool IsDelimiter(char ch) =>
-        char.IsWhiteSpace(ch) || ch is '(' or ')' or '[' or ']' or '{' or '}'
-            or '"' or '\'' or '`' or ',' or ';';
-
     internal static SExpr? ClassifyAtom(ReadOnlySpan<char> token)
     {
-        if (token is "#t" or "#true")
+        if (SExprLiteral.ReadBoolean(token) is bool boolean)
         {
-            return new SExpr.Bool(true);
+            return new SExpr.Bool(boolean);
         }
 
-        if (token is "#f" or "#false")
+        if (SExprLiteral.ReadSpecialFloat(token) is double special)
         {
-            return new SExpr.Bool(false);
+            return new SExpr.Float(special);
         }
 
-        if (token is "+inf.0" or "-inf.0")
-        {
-            return new SExpr.Float(
-                token[0] == '+' ? double.PositiveInfinity : double.NegativeInfinity);
-        }
-
-        if (token is "+nan.0" or "-nan.0")
-        {
-            return new SExpr.Float(double.NaN);
-        }
-
-        if (!StartsLikeNumber(token))
+        if (!SExprLiteral.StartsLikeNumber(token))
         {
             return new SExpr.Sym(token.ToString());
         }
 
-        // The numeric parsers accept trailing NULs, but they are not part of a number token.
-        if (token[^1] == '\0')
+        if (SExprLiteral.IsFloat(token))
         {
-            return null;
+            return SExprLiteral.TryReadFloat(token, out var floating)
+                ? new SExpr.Float(floating)
+                : null;
         }
 
-        if (token.IndexOfAny('.', 'e', 'E') >= 0)
-        {
-            bool parsedFloat = double.TryParse(
-                token, FloatStyle, CultureInfo.InvariantCulture, out double floating);
-            return parsedFloat ? new SExpr.Float(floating) : null;
-        }
-
-        bool parsed = long.TryParse(
-            token, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long integer);
-        return parsed ? new SExpr.Int(integer) : null;
+        return SExprLiteral.TryReadInteger(token, out var integer) ? new SExpr.Int(integer) : null;
     }
 
     internal SExpr Parse()
@@ -108,21 +81,8 @@ internal sealed class SExprReader(string text)
         return new(items.DrainToImmutable());
     }
 
-    private static bool TryReadHex(ReadOnlySpan<char> token, out ushort code) =>
-        ushort.TryParse(
-            token, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out code);
-
-    private static bool StartsLikeNumber(ReadOnlySpan<char> token)
-    {
-        if (token is ['+' or '-', ..])
-        {
-            token = token[1..];
-        }
-
-        return !token.IsEmpty
-            && (char.IsAsciiDigit(token[0])
-                || (token[0] == '.' && token.Length > 1 && char.IsAsciiDigit(token[1])));
-    }
+    private static NanopassParseException LiteralError(string message, int offset) =>
+        new(message, offset);
 
     private SExpr ReadDatum()
     {
@@ -167,7 +127,8 @@ internal sealed class SExprReader(string text)
                     ? this.ReadAbbreviation("unquote-splicing")
                     : this.ReadAbbreviation("unquote");
             case '"':
-                return new SExpr.Str(this.ReadString());
+                return new SExpr.Str(
+                    SExprLiteral.ReadString(text, ref this.position, LiteralError));
             case '#':
                 return this.ReadHashDatum();
             default:
@@ -227,7 +188,8 @@ internal sealed class SExprReader(string text)
 
         if (this.Take("#\\"))
         {
-            return this.ReadCharacter();
+            return new SExpr.Char(
+                SExprLiteral.ReadCharacter(text, ref this.position, LiteralError));
         }
 
         if (this.Take("#&"))
@@ -244,88 +206,6 @@ internal sealed class SExprReader(string text)
         }
 
         return atom;
-    }
-
-    private SExpr.Char ReadCharacter()
-    {
-        if (this.AtEnd)
-        {
-            throw this.Error("Expected a character");
-        }
-
-        int start = this.position++;
-        if (IsDelimiter(text[start]))
-        {
-            return new(text[start]);
-        }
-
-        while (!this.AtTokenEnd(this.position))
-        {
-            this.position++;
-        }
-
-        ReadOnlySpan<char> token = text.AsSpan(start, this.position - start);
-        char ch = token switch
-        {
-            "space" => ' ',
-            "newline" => '\n',
-            "tab" => '\t',
-            "return" => '\r',
-            [_] => token[0],
-            ['u', _, _, _, _] when TryReadHex(token[1..], out ushort code) =>
-                (char)code,
-            _ => throw new NanopassParseException("Unknown character literal", start),
-        };
-        return new(ch);
-    }
-
-    private string ReadString()
-    {
-        this.position++;
-        StringBuilder value = new();
-        while (!this.AtEnd)
-        {
-            char ch = text[this.position++];
-            if (ch == '"')
-            {
-                return value.ToString();
-            }
-
-            if (ch == '\\')
-            {
-                if (this.AtEnd)
-                {
-                    break;
-                }
-
-                ch = text[this.position++] switch
-                {
-                    '"' => '"',
-                    '\\' => '\\',
-                    'n' => '\n',
-                    'r' => '\r',
-                    't' => '\t',
-                    'u' => this.ReadHexEscape(),
-                    _ => throw this.Error("Unknown escape sequence"),
-                };
-            }
-
-            value.Append(ch);
-        }
-
-        throw this.Error("Unterminated string");
-    }
-
-    private char ReadHexEscape()
-    {
-        if (text.Length - this.position < 4
-            || !TryReadHex(text.AsSpan(this.position, 4), out ushort code))
-        {
-            throw this.Error("Expected four hexadecimal digits");
-        }
-
-        this.position += 4;
-        return (char)code;
     }
 
     private SExpr ReadAtom()
@@ -435,7 +315,7 @@ internal sealed class SExprReader(string text)
     }
 
     private bool AtTokenEnd(int index) =>
-        index == text.Length || IsDelimiter(text[index]);
+        index == text.Length || SExprLiteral.IsDelimiter(text[index]);
 
     private bool Take(char ch)
     {

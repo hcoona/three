@@ -339,12 +339,7 @@ public static class LanguageServices
     {
         string name = value.ToString();
         int length = name.Length;
-        while (length > 0 && name[length - 1] is '*' or '^' or '?')
-        {
-            length--;
-        }
-
-        while (length > 0 && char.IsDigit(name[length - 1]))
+        while (length > 0 && name[length - 1] is (>= '0' and <= '9') or '*' or '?' or '^')
         {
             length--;
         }

@@ -27,6 +27,12 @@ namespace Hcoona.Nanopass.Generators;
 
 internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
 {
+    private static readonly string[] RecordMemberNames =
+    [
+        "EqualityContract", "PrintMembers", "ToString", "GetHashCode", "Equals",
+        "ReferenceEquals", "GetType", "MemberwiseClone", "Deconstruct", "Clone",
+    ];
+
     private static readonly string[] UnionMemberNames =
     [
         "Value", "RawValue", "HasValue", "TryGetValue", "IUnionMembers", "Equals",
@@ -615,7 +621,12 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
                     path = UniqueNodePath(path);
                 }
 
-                nonTerminal.Productions[i] = rule with { RecordPath = path };
+                var nameAfterRename = path.Substring(path.LastIndexOf('.') + 1);
+                nonTerminal.Productions[i] = rule with
+                {
+                    RecordPath = path,
+                    Fields = DisambiguateRecordFields(rule.Fields, nameAfterRename),
+                };
             }
         }
 
@@ -630,6 +641,37 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
 
             return name;
         }
+    }
+
+    private static EquatableArray<LanguageModel.Field> DisambiguateRecordFields(
+        EquatableArray<LanguageModel.Field> fields, string recordName)
+    {
+        var reserved = new HashSet<string>(RecordMemberNames, StringComparer.Ordinal)
+        {
+            recordName,
+        };
+        if (!fields.Any(field => reserved.Contains(field.Property)))
+        {
+            return fields;
+        }
+
+        var occupied = new HashSet<string>(reserved, StringComparer.Ordinal);
+        occupied.UnionWith(fields.Select(static field => field.Property));
+        return new(fields.Select(field =>
+        {
+            if (!reserved.Contains(field.Property))
+            {
+                return field;
+            }
+
+            var property = field.Property;
+            for (int suffix = 2; !occupied.Add(property); suffix++)
+            {
+                property = field.Property + suffix.ToString(CultureInfo.InvariantCulture);
+            }
+
+            return field with { Property = property };
+        }));
     }
 
     private static LanguageModel Prune(LanguageModel source)

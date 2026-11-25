@@ -66,26 +66,14 @@ internal sealed record PatternDatum(
         return (syntax, pretty);
     }
 
-    private static bool IsDelimiter(char token) =>
-        char.IsWhiteSpace(token) || token is '(' or ')' or '[' or ']' or '{' or '}'
-            or '"' or '\'' or '`' or ',' or ';';
+    private static bool IsBareSymbol(string value) =>
+        value.Length > 0 && value[0] != '#' && value != "."
+        && SExprLiteral.ReadSpecialFloat(value.AsSpan()) is null
+        && !SExprLiteral.StartsLikeNumber(value.AsSpan())
+        && !value.Any(static token => token is '\\' or '|' || SExprLiteral.IsDelimiter(token));
 
-    private static bool IsBareSymbol(string value)
-    {
-        if (value.Length == 0 || value[0] == '#'
-            || value is "." or "+inf.0" or "-inf.0" or "+nan.0" or "-nan.0")
-        {
-            return false;
-        }
-
-        int start = value[0] is '+' or '-' ? 1 : 0;
-        bool numeric = start < value.Length
-            && (IsDigit(value[start])
-                || (value[start] == '.' && start + 1 < value.Length && IsDigit(value[start + 1])));
-        return !numeric && !value.Any(static token => token is '\\' or '|' || IsDelimiter(token));
-    }
-
-    private static bool IsDigit(char token) => token is >= '0' and <= '9';
+    private static FormatException LiteralError(string reason, int offset) =>
+        new($"{reason} (offset {offset}).");
 
     private static string FormatSymbol(string value)
     {
@@ -102,7 +90,8 @@ internal sealed record PatternDatum(
         var result = new StringBuilder();
         foreach (char token in value)
         {
-            if (IsDelimiter(token) || token is '\\' or '|' || (result.Length == 0 && token == '#'))
+            if (SExprLiteral.IsDelimiter(token) || token is '\\' or '|'
+                || (result.Length == 0 && token == '#'))
             {
                 result.Append('\\');
             }
@@ -151,7 +140,11 @@ internal sealed record PatternDatum(
                 case '}':
                     throw new FormatException("Unexpected closing delimiter.");
                 case '"':
-                    return new(this.ReadQuoted(start, token), default, null);
+                    this.index = start;
+                    _ = SExprLiteral.ReadString(text, ref this.index, LiteralError);
+                    return new(text.Substring(start, this.index - start), default, null);
+                case '#':
+                    return this.ReadHash(start);
                 case '\'':
                     return this.ReadAbbreviation("quote");
                 case '`':
@@ -173,11 +166,34 @@ internal sealed record PatternDatum(
         private PatternDatum ReadAbbreviation(string name) =>
             new(null, new([new(name, default, null), this.Read()]), null);
 
+        private PatternDatum ReadHash(int start)
+        {
+            if (this.index < text.Length && text[this.index] == '\\')
+            {
+                this.index++;
+                _ = SExprLiteral.ReadCharacter(text, ref this.index, LiteralError);
+            }
+            else
+            {
+                while (this.index < text.Length && !SExprLiteral.IsDelimiter(text[this.index]))
+                {
+                    this.index++;
+                }
+
+                if (SExprLiteral.ReadBoolean(text.AsSpan(start, this.index - start)) is null)
+                {
+                    throw new FormatException("Unsupported # literal in grammar pattern.");
+                }
+            }
+
+            return new(text.Substring(start, this.index - start), default, null);
+        }
+
         private PatternDatum ReadAtom()
         {
             int start = this.index;
             StringBuilder? name = null;
-            while (this.index < text.Length && !IsDelimiter(text[this.index]))
+            while (this.index < text.Length && !SExprLiteral.IsDelimiter(text[this.index]))
             {
                 char token = text[this.index++];
                 if (token is not ('\\' or '|'))
@@ -209,9 +225,25 @@ internal sealed record PatternDatum(
                 }
             }
 
-            return name is null
-                ? new(text.Substring(start, this.index - start), default, null)
-                : new(name.ToString(), default, null, IsEscapedSymbol: true);
+            if (name is not null)
+            {
+                return new(name.ToString(), default, null, IsEscapedSymbol: true);
+            }
+
+            var atom = text.AsSpan(start, this.index - start);
+            if (SExprLiteral.StartsLikeNumber(atom))
+            {
+                bool parsed = SExprLiteral.IsFloat(atom)
+                    ? SExprLiteral.TryReadFloat(atom, out _)
+                    : SExprLiteral.TryReadInteger(atom, out _);
+                if (!parsed)
+                {
+                    throw new FormatException(
+                        "Unsupported or out-of-range number in grammar pattern.");
+                }
+            }
+
+            return new(atom.ToString(), default, null);
         }
 
         private PatternDatum ReadList(char end)
@@ -253,25 +285,6 @@ internal sealed record PatternDatum(
 
             this.index++;
             return new(null, new(items), null);
-        }
-
-        private string ReadQuoted(int start, char delimiter)
-        {
-            while (this.index < text.Length)
-            {
-                char next = text[this.index++];
-                if (next == delimiter)
-                {
-                    return text.Substring(start, this.index - start);
-                }
-
-                if (next == '\\' && this.index < text.Length)
-                {
-                    this.index++;
-                }
-            }
-
-            throw new FormatException("Unterminated quoted token in grammar pattern.");
         }
 
         private void SkipWhitespace()

@@ -201,7 +201,7 @@ internal static class SExprFormatter
     }
 
     private static bool NeedsSymbolEscape(char ch) =>
-        ch is '|' or '\\' || SExprReader.IsDelimiter(ch) || char.IsControl(ch);
+        ch is '|' or '\\' || SExprLiteral.IsDelimiter(ch) || char.IsControl(ch);
 
     private static void AppendString(StringBuilder output, string text)
     {

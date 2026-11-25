@@ -10,23 +10,15 @@
     <PackageDescription>Strongly typed Nanopass intermediate-representation grammar framework for C# 15 and .NET 11 with incremental language definitions, C# 15 union code generation, and S-expression tooling.</PackageDescription>
     <PackageTags>compiler nanopass ir ast csharp15 union source-generator roslyn</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/ReleaseNotes.md'))</PackageReleaseNotes>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackNanopassGenerator</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
-
-  <Target Name="SetPackageReleaseNotes" BeforeTargets="GenerateNuspec">
-    <ReadLinesFromFile File="$(MSBuildProjectDirectory)/ReleaseNotes.md">
-      <Output TaskParameter="Lines" ItemName="ReleaseNotesLines" />
-    </ReadLinesFromFile>
-    <PropertyGroup>
-      <PackageReleaseNotes>@(ReleaseNotesLines, '%0A')</PackageReleaseNotes>
-    </PropertyGroup>
-  </Target>
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
     <None Include="THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="\" />
     <None Include="ReleaseNotes.md" />
+    <None Include="$(MSBuildProjectDirectory)/../Nanopass.Generators/bin/$(Configuration)/netstandard2.0/Hcoona.Nanopass.Generators.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -35,13 +27,5 @@
                       ReferenceOutputAssembly="false"
                       PrivateAssets="all" />
   </ItemGroup>
-
-  <Target Name="PackNanopassGenerator" DependsOnTargets="ResolveProjectReferences">
-    <ItemGroup>
-      <_NanopassGenerator Include="@(Analyzer->WithMetadataValue('Filename', 'Hcoona.Nanopass.Generators'))" />
-      <TfmSpecificPackageFile Include="@(_NanopassGenerator)" PackagePath="analyzers/dotnet/cs" />
-    </ItemGroup>
-    <Error Condition="'@(_NanopassGenerator)' == ''" Text="The Nanopass generator was not resolved for packaging." />
-  </Target>
 
 </Project>

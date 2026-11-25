@@ -21,6 +21,29 @@ public sealed class PrettyLanguageTests
     }
 
     [TestMethod]
+    public void PrettyTemplates_PreserveCharacterLiteralDatums()
+    {
+        Assert.AreEqual(
+            new SExpr.Char('a'),
+            CharacterPrettyLanguage.Unparse(CharacterPrettyLanguage.Parse("(letter)")));
+        Assert.AreEqual(
+            SExpr.List(
+                new SExpr.Char('('), new SExpr.Char(')'), new SExpr.Char(' '),
+                new SExpr.Char('\\'), new SExpr.Char('\n')),
+            CharacterPrettyLanguage.Unparse(CharacterPrettyLanguage.Parse("(delimiters)")));
+    }
+
+    [TestMethod]
+    public void PrettyTemplates_RecognizeValidLiteralsAndExplicitlyEscapedSymbols()
+    {
+        Assert.AreEqual(
+            SExpr.List(
+                new SExpr.Bool(true), new SExpr.Int(long.MaxValue), new SExpr.Float(-0.5),
+                new SExpr.Str("line\n"), new SExpr.Sym("1/2"), new SExpr.Sym("#unknown")),
+            CharacterPrettyLanguage.Unparse(CharacterPrettyLanguage.Parse("(constants)")));
+    }
+
+    [TestMethod]
     public void PrettyTemplates_RecursivelyZipFactorialBindingsWithoutLosingOpaqueTerminals()
     {
         SExpr raw = BoxVariables(SExpr.Parse("""
@@ -81,3 +104,12 @@ public sealed class PrettyLanguageTests
         _ => datum,
     };
 }
+
+[Language]
+[NonTerminalDef(
+    "Expr",
+    ["e"],
+    @"(letter) => #\a",
+    @"(delimiters) => (#\( #\) #\  #\\ #\newline)",
+    """(constants) => (#true 9223372036854775807 -.5 "line\n" |1/2| |#unknown|)""")]
+internal static partial class CharacterPrettyLanguage;

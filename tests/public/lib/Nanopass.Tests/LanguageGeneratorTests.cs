@@ -146,6 +146,28 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
         [Language, NonTerminalDef("Expr", ["e"], "(bob 2)")] public static partial class Broken;
         """)]
     [DataRow("NP0105", """
+        [Language, NonTerminalDef("Expr", ["e"], "(unit) => #unknown")]
+        public static partial class Broken;
+        """)]
+    [DataRow("NP0105", """
+        [Language, NonTerminalDef("Expr", ["e"], "(unit) => (display 1/2)")]
+        public static partial class Broken;
+        """)]
+    [DataRow("NP0105", """
+        [Language, NonTerminalDef("Expr", ["e"], @"(unit) => #\unknown")]
+        public static partial class Broken;
+        """)]
+    [DataRow("NP0105", """
+        [Language]
+        public static partial class Broken
+        {
+            public partial union Expr(Unit);
+
+            [Pretty("\"invalid\\q\"")]
+            public sealed record Unit;
+        }
+        """)]
+    [DataRow("NP0105", """
         [Language, NonTerminalDef("Expr", ["e"], "(bob unknown)")]
         public static partial class Broken;
         """)]
@@ -445,6 +467,31 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
     }
 
     [TestMethod]
+    public void ProductionFields_ReserveFinalRecordNameAndSynthesizedMemberNames()
+    {
+        const string input = """
+            [Language, Terminal(typeof(Symbol), "x", "reserved-node", "equality-contract",
+                "print-members", "to-string", "get-hash-code", "equals", "reference-equals",
+                "get-type", "memberwise-clone", "deconstruct", "clone")]
+            [NonTerminalDef("Expr", ["e"], "(x-list x ...)", "(reserved reserved-node)",
+                "(members equality-contract print-members to-string get-hash-code equals equals2 "
+                + "reference-equals get-type memberwise-clone deconstruct clone)")]
+            public static partial class ReservedFields
+            {
+                public static void Reserved() { }
+                public static Seq<Symbol> Items(XList item) => item.XList2;
+                public static Symbol Renamed(ReservedNode item) => item.ReservedNode2;
+                public static Symbol[] Values(Members item) =>
+                    [item.EqualityContract2, item.PrintMembers2, item.ToString2, item.GetHashCode2,
+                     item.Equals3, item.Equals2, item.ReferenceEquals2, item.GetType2,
+                     item.MemberwiseClone2, item.Deconstruct2, item.Clone2];
+            }
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("ReservedFieldNames", input)));
+    }
+
+    [TestMethod]
     public void DeclaredMetaVariables_ResolveUnescapedReferencesInAllDeclarationStyles()
     {
         const string input = """"
@@ -646,6 +693,26 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
             """;
 
         _ = this.Emit(this.Generate(this.Compile("ExplicitNativeEntry", input)));
+    }
+
+    [TestMethod]
+    public void NativeRecords_ReadPositionalFieldsFromThePartialDeclarationWithParameters()
+    {
+        const string input = """
+            [Language]
+            public static partial class PartialRecordLanguage
+            {
+                public partial union Expr(Unit, Box);
+                public sealed record Unit;
+
+                [Syntax("(box e)")]
+                public sealed partial record Box;
+
+                public sealed partial record Box(Expr Child);
+            }
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("PartialRecordFields", input)));
     }
 
     [TestMethod]
