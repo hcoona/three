@@ -1,0 +1,11 @@
+<Project>
+  <!-- C# indexing needs neither native manifest merging nor XAML code generation.
+       The full Microsoft.WindowsAppSDK package supplies the runtime reference
+       required when WindowsAppSDKSelfContained is false. -->
+  <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
+    <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+  </PropertyGroup>
+</Project>
