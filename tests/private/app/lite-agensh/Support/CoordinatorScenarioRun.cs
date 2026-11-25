@@ -14,6 +14,9 @@ namespace LiteAgensh.Tests.Support;
 // separate collaborators; this class does not implement product control logic.
 internal sealed class CoordinatorScenarioRun
 {
+    private readonly GitScenarioState? git;
+    private readonly ScratchDirectory? scratch;
+    private readonly IGitWorkspace workspace;
     private readonly CancellationTokenSource owner;
     private Task<JsonObject>? active;
     private IDisposable? clockObservation;
@@ -24,7 +27,8 @@ internal sealed class CoordinatorScenarioRun
     private int ownerPollWorkers;
 
     private CoordinatorScenarioRun(
-        GitScenarioState git,
+        GitScenarioState? git,
+        ScratchDirectory? scratch,
         RunDatabase database,
         FixtureDiagnosticSink evidence,
         string? hostRole,
@@ -35,7 +39,8 @@ internal sealed class CoordinatorScenarioRun
         ConfiguredCheckInvocation? configuredCheck = null
     )
     {
-        Git = git;
+        this.git = git;
+        this.scratch = scratch;
         Evidence = evidence;
         Clock = clock;
         Database = database;
@@ -44,20 +49,29 @@ internal sealed class CoordinatorScenarioRun
             Database.Configuration.CampaignAiCreditAllowance
         );
         Collaboration = new(Database);
-        Operations = new(Database, Collaboration, configuredCheck);
+        workspace = git is not null
+            ? new GitOperations(Database, Collaboration, configuredCheck)
+            : new LightweightGitWorkspace(Database, Collaboration);
         Sessions = new(Database, hostRole, journal, ownedHosts, evidence);
         // No partially constructed fixture can strand this registration.
         owner = CancellationTokenSource.CreateLinkedTokenSource(token);
     }
 
-    internal GitScenarioState Git { get; }
+    internal GitScenarioState Git =>
+        git ?? throw new InvalidOperationException("Real Git was not enabled for this scenario.");
     internal FixtureDiagnosticSink Evidence { get; }
     internal ObservedManualClock Clock { get; }
     internal Func<Task>? BeforeGitCleanup { get; private set; }
     internal RunDatabase Database { get; }
     internal CreditLedger Ledger { get; }
     internal CollaborationOperations Collaboration { get; }
-    internal GitOperations Operations { get; }
+    internal GitOperations Operations =>
+        workspace as GitOperations
+        ?? throw new InvalidOperationException(
+            "Real GitOperations was not enabled for this scenario."
+        );
+    internal string PathFor(params string[] parts) =>
+        git is not null ? git.PathFor(parts) : scratch!.PathFor(parts);
     internal ControlledSessionPool Sessions { get; }
     internal TimeProvider? SettlementTimeProvider { get; set; }
     internal ExhaustionSessionHost? Exhaustion { get; set; }
@@ -80,25 +94,49 @@ internal sealed class CoordinatorScenarioRun
         string? hostRole = OwnedChildControl.ControlledNativeHostRole,
         decimal allowance = 207.25m,
         bool ownedHosts = true,
-        ConfiguredCheckInvocation? configuredCheck = null
+        ConfiguredCheckInvocation? configuredCheck = null,
+        bool realGit = false
     )
     {
         FixtureDiagnosticSink evidence = CreateEvidence(context, Guid.NewGuid().ToString("N"));
         using Activity observation = evidence.BeginScope();
         GitScenarioState? git = null;
+        ScratchDirectory? scratch = null;
         CoordinatorScenarioRun? state = null;
         string phase = "git-setup";
         try
         {
             evidence.Phase(phase, "started");
-            git = await GitScenarioState.CreateAsync(token).ConfigureAwait(false);
+            GitScenarioState.AssertEnvironmentUnchanged();
+            if (realGit)
+            {
+                git = await GitScenarioState.CreateAsync(token).ConfigureAwait(false);
+            }
+            else
+            {
+                scratch = new();
+            }
+
             evidence.Phase(phase, "completed");
             phase = "fixture-state";
             evidence.Phase(phase, "started");
-            RunConfiguration configuration = git.Database.Configuration with
+            Func<string, string> pathFor = name =>
+                git is not null ? git.PathFor(name) : scratch!.PathFor(name);
+            RunConfiguration baseConfig = git?.Database.Configuration ?? new()
             {
-                StatePath = git.PathFor("scenario-run"),
-                CampaignLedgerPath = git.PathFor("scenario-campaign.sqlite"),
+                RepositoryPath = scratch!.PathFor("checkout"),
+                StatePath = scratch.PathFor("scenario-run"),
+                CampaignLedgerPath = scratch.PathFor("scenario-campaign.sqlite"),
+                Goal = "Integrate two independent changes without touching the initial checkout.",
+                NativeExecutable = scratch.PathFor("unavailable-native", "copilot"),
+                CandidateChecks = [GitScenarioState.ExitCheck(0)],
+                IntegrationChecks = [],
+                FinalChecks = [GitScenarioState.ExitCheck(0)],
+            };
+            RunConfiguration configuration = baseConfig with
+            {
+                StatePath = pathFor("scenario-run"),
+                CampaignLedgerPath = pathFor("scenario-campaign.sqlite"),
                 NativeModel = "controlled-model",
                 WorkerCount = workers,
                 WorkerStartIntervalSeconds = interval,
@@ -111,14 +149,8 @@ internal sealed class CoordinatorScenarioRun
             ObservedManualClock clock = new();
             RunDatabase initialized = new(configuration.StatePath, configuration, clock);
             state = new(
-                git, initialized, evidence, hostRole, clock, null, token,
+                git, scratch, initialized, evidence, hostRole, clock, null, token,
                 ownedHosts, configuredCheck
-            );
-            evidence.Phase(phase, "completed", clock.GetUtcNow());
-            phase = "initialize";
-            evidence.Phase(phase, "started", clock.GetUtcNow());
-            GitScenarioState.Data(
-                await state.Coordinator("initialize").InitializeAsync(token).ConfigureAwait(false)
             );
             evidence.Phase(phase, "completed", clock.GetUtcNow());
             evidence.BindRun(state.Database.RunId, clock.GetUtcNow());
@@ -155,6 +187,8 @@ internal sealed class CoordinatorScenarioRun
                 }
                 else
                 {
+                    git?.Dispose();
+                    scratch?.Dispose();
                     GitScenarioState.AssertEnvironmentUnchanged();
                 }
             }
@@ -225,6 +259,7 @@ internal sealed class CoordinatorScenarioRun
             evidence.Phase("reopen-original", "completed", restoredClock.GetUtcNow());
             return new(
                 creator.Git,
+                null,
                 reopened,
                 evidence,
                 OwnedChildControl.ControlledNativeHostRole,
@@ -246,7 +281,7 @@ internal sealed class CoordinatorScenarioRun
 
     internal Coordinator Coordinator(string operation = "run") =>
         new(
-            Database, Collaboration, Operations, (_, _, _) => new Factory(this, operation),
+            Database, Collaboration, workspace, (_, _, _) => new Factory(this, operation),
             loops =>
             {
                 if (loops.Count == ownerPollWorkers)
@@ -552,7 +587,7 @@ internal sealed class CoordinatorScenarioRun
         CancellationToken token
     ) =>
         GitScenarioState.Data(
-            await Operations.InvokeAsync(actor, operation, arguments, token).ConfigureAwait(false)
+            await workspace.InvokeAsync(actor, operation, arguments, token).ConfigureAwait(false)
         );
 
     internal object? Value(string statement, params (string Name, object? Value)[] parameters)
@@ -738,7 +773,9 @@ internal sealed class CoordinatorScenarioRun
         {
             if (primary is null && secondary.Count == 0)
             {
-                Git.Dispose();
+                git?.Dispose();
+                scratch?.Dispose();
+                GitScenarioState.AssertEnvironmentUnchanged();
             }
             else
             {

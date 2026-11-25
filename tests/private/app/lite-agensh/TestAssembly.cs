@@ -82,6 +82,7 @@ public sealed class TestAssembly
     internal static string GlobalConfig => Owned.PathFor("global.gitconfig");
     internal static string SystemConfig => Owned.PathFor("system.gitconfig");
     internal static string PolicyFile => Owned.PathFor("home", ".copilot", "config.json");
+    internal static string OwnedPathFor(params string[] parts) => Owned.PathFor(parts);
     private static ScratchDirectory Owned =>
         isolation ?? throw new InvalidOperationException("Assembly Git isolation is unavailable.");
 

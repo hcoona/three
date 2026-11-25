@@ -685,7 +685,7 @@ public sealed class DeadlineRampSpecs(TestContext testContext)
                 // Use unused backing from the same campaign, not the held worker's reservation.
                 accounting = state.Ledger.Reserve(
                     "drain-accounting-fixture", "fixture-peer", 30m, 30m,
-                    state.Git.PathFor("drain-accounting.usage")
+                    state.PathFor("drain-accounting.usage")
                 );
                 state.Ledger.MarkStarted(accounting.Id);
                 state.Ledger.AttachSession(accounting.Id, accounting.SessionId!);

@@ -18,7 +18,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         CoordinatorScenarioRun state = await CoordinatorScenarioRun
-            .CreateAsync(testContext, token, ownedHosts: false)
+            .CreateAsync(testContext, token, ownedHosts: false, realGit: true)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -296,7 +296,8 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                             false
                         )
                     )
-                    : null
+                    : null,
+                realGit: candidate != PlannerCandidate.None
             )
             .ConfigureAwait(false);
         await state
@@ -913,7 +914,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         CoordinatorScenarioRun state = await CoordinatorScenarioRun
-            .CreateAsync(testContext, token, workers: 1, ownedHosts: false)
+            .CreateAsync(testContext, token, workers: 1, ownedHosts: false, realGit: true)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -1424,7 +1425,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     {
         CancellationToken token = testContext.CancellationToken;
         CoordinatorScenarioRun state = await CoordinatorScenarioRun
-            .CreateAsync(testContext, token, workers: 1, ownedHosts: false)
+            .CreateAsync(testContext, token, workers: 1, ownedHosts: false, realGit: true)
             .ConfigureAwait(false);
         await state
             .RunBodyAsync(async () =>
@@ -1586,27 +1587,21 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
             .Single(item => item["id"]!.GetValue<string>() == worker);
 
     private static JsonArray AllChanges(CoordinatorScenarioRun state, CancellationToken token) =>
-        GitScenarioState.Data(
-            state.Operations.InvokeAsync("owner", "change_list", new(), token)
-                .GetAwaiter()
-                .GetResult()
-        )["items"]!.AsArray();
+        state
+            .GitToolAsync("owner", "change_list", new(), token)
+            .GetAwaiter()
+            .GetResult()["items"]!
+            .AsArray();
 
     private static JsonArray IntegratedChanges(
         CoordinatorScenarioRun state,
         CancellationToken token
     ) =>
-        GitScenarioState.Data(
-            state
-                .Operations.InvokeAsync(
-                    "owner",
-                    "change_list",
-                    new() { ["state"] = "integrated" },
-                    token
-                )
-                .GetAwaiter()
-                .GetResult()
-        )["items"]!.AsArray();
+        state
+            .GitToolAsync("owner", "change_list", new() { ["state"] = "integrated" }, token)
+            .GetAwaiter()
+            .GetResult()["items"]!
+            .AsArray();
 
     private static JsonObject[] PromptEvents(string prompt)
     {
