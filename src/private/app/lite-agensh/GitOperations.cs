@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
+using static LiteAgensh.ToolArguments;
 
 namespace LiteAgensh;
 
@@ -17,6 +18,19 @@ internal delegate Task<ProcessResult> ConfiguredCheckInvocation(
 
 public sealed class GitOperations : IGitWorkspace
 {
+    private sealed record ChangeRecord(
+        long Id,
+        string Author,
+        string Branch,
+        string Head,
+        string Title,
+        string Body,
+        long[] TaskIds,
+        string State,
+        string CreatedAt,
+        string UpdatedAt
+    );
+
     private readonly RunDatabase database;
     private readonly CollaborationOperations collaboration;
     private readonly ProcessRunner processes;
@@ -141,7 +155,7 @@ public sealed class GitOperations : IGitWorkspace
             }
 
             repositoryRoot = paths[0].Trim();
-            if (SamePath(repositoryRoot, Repository))
+            if (Paths.AreSame(repositoryRoot, Repository))
             {
                 repositoryCommon = paths[1].Trim();
             }
@@ -164,7 +178,7 @@ public sealed class GitOperations : IGitWorkspace
             await GitAsync(Repository, ["init", "--quiet"], cancellationToken)
                 .ConfigureAwait(false);
         }
-        else if (!SamePath(repositoryRoot, Repository))
+        else if (!Paths.AreSame(repositoryRoot, Repository))
         {
             if (
                 !configuration.CreateRepository
@@ -303,7 +317,7 @@ public sealed class GitOperations : IGitWorkspace
                 )
                 .ConfigureAwait(false)
         ).Trim();
-        if (!SamePath(repositoryCommon, currentCommon))
+        if (!Paths.AreSame(repositoryCommon, currentCommon))
         {
             throw new OperationException(
                 "conflict",
@@ -674,10 +688,10 @@ public sealed class GitOperations : IGitWorkspace
         {
             case "submit":
                 {
-                    Fields(arguments, ["action", "title", "body", "taskIds"]);
+                    Fields(arguments, "action", "title", "body", "taskIds");
                     string title = Text(arguments, "title");
                     string body = Text(arguments, "body");
-                    JsonArray tasks = TaskIds(arguments);
+                    long[] tasks = PositiveIntegers(arguments, "taskIds");
                     string branch = WorkerBranch(actor);
                     string head = await ResolveAsync(branch, token).ConfigureAwait(false);
                     using SqliteConnection connection = database.Open();
@@ -697,7 +711,7 @@ public sealed class GitOperations : IGitWorkspace
                         ("$head", head),
                         ("$title", title),
                         ("$body", body),
-                        ("$tasks", tasks.ToJsonString()),
+                        ("$tasks", JsonSerializer.Serialize(tasks, Json.Options)),
                         ("$time", Stamp)
                     );
                     long id = LastId(connection, transaction);
@@ -712,8 +726,8 @@ public sealed class GitOperations : IGitWorkspace
                 }
             case "update":
                 {
-                    Fields(arguments, ["action", "id", "title", "body", "taskIds", "head"]);
-                    long id = Id(arguments, "id");
+                    Fields(arguments, "action", "id", "title", "body", "taskIds", "head");
+                    long id = Integer(arguments, "id");
                     if (
                         !arguments.Any(pair => pair.Key is "title" or "body" or "taskIds" or "head")
                     )
@@ -724,7 +738,9 @@ public sealed class GitOperations : IGitWorkspace
                     string? title = OptionalText(arguments, "title");
                     string? body = OptionalText(arguments, "body");
                     string? head = OptionalText(arguments, "head");
-                    JsonArray? tasks = arguments.ContainsKey("taskIds") ? TaskIds(arguments) : null;
+                    long[]? tasks = arguments.ContainsKey("taskIds")
+                        ? PositiveIntegers(arguments, "taskIds")
+                        : null;
                     if (
                         head is not null
                         && head != await ResolveAsync(WorkerBranch(actor), token)
@@ -740,7 +756,7 @@ public sealed class GitOperations : IGitWorkspace
                     using SqliteConnection connection = database.Open();
                     using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
                     RequireWritable(connection, transaction);
-                    JsonObject change = Change(connection, transaction, id);
+                    ChangeRecord change = ReadChangeRecord(connection, transaction, id);
                     RequireAuthor(change, actor);
                     RequireOpen(change);
                     RequireNotRunning(connection, transaction, id);
@@ -749,7 +765,7 @@ public sealed class GitOperations : IGitWorkspace
                         ValidateTasks(connection, transaction, tasks);
                     }
 
-                    if (head is not null && head != change["head"]!.GetValue<string>())
+                    if (head is not null && head != change.Head)
                     {
                         Sql.Execute(
                             connection,
@@ -766,10 +782,10 @@ public sealed class GitOperations : IGitWorkspace
                         updated_at=$time WHERE id=$id;
                     """,
                         transaction,
-                        ("$title", title ?? change["title"]!.GetValue<string>()),
-                        ("$body", body ?? change["body"]!.GetValue<string>()),
-                        ("$tasks", (tasks ?? change["taskIds"]!.AsArray()).ToJsonString()),
-                        ("$head", head ?? change["head"]!.GetValue<string>()),
+                        ("$title", title ?? change.Title),
+                        ("$body", body ?? change.Body),
+                        ("$tasks", JsonSerializer.Serialize(tasks ?? change.TaskIds, Json.Options)),
+                        ("$head", head ?? change.Head),
                         ("$time", Stamp),
                         ("$id", id)
                     );
@@ -784,13 +800,13 @@ public sealed class GitOperations : IGitWorkspace
                 }
             case "comment":
                 {
-                    Fields(arguments, ["action", "id", "body"]);
-                    long id = Id(arguments, "id");
+                    Fields(arguments, "action", "id", "body");
+                    long id = Integer(arguments, "id");
                     string body = Text(arguments, "body");
                     using SqliteConnection connection = database.Open();
                     using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
                     RequireWritable(connection, transaction);
-                    _ = Change(connection, transaction, id);
+                    _ = ReadChangeRecord(connection, transaction, id);
                     Sql.Execute(
                         connection,
                         """
@@ -814,15 +830,15 @@ public sealed class GitOperations : IGitWorkspace
                 }
             case "integrate":
                 {
-                    Fields(arguments, ["action", "id", "head"]);
-                    long id = Id(arguments, "id");
+                    Fields(arguments, "action", "id", "head");
+                    long id = Integer(arguments, "id");
                     string head = Text(arguments, "head");
                     using SqliteConnection connection = database.Open();
                     using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
                     RequireWritable(connection, transaction);
-                    JsonObject change = Change(connection, transaction, id);
+                    ChangeRecord change = ReadChangeRecord(connection, transaction, id);
                     RequireOpen(change);
-                    if (head != change["head"]!.GetValue<string>())
+                    if (head != change.Head)
                     {
                         throw new OperationException(
                             "stale_candidate",
@@ -892,8 +908,8 @@ public sealed class GitOperations : IGitWorkspace
 
     private async Task<JsonObject> ReadChangeAsync(JsonObject arguments, CancellationToken token)
     {
-        Fields(arguments, ["id"]);
-        long id = Id(arguments, "id");
+        Fields(arguments, "id");
+        long id = Integer(arguments, "id");
         JsonObject change = Change(id);
         string head = change["head"]!.GetValue<string>();
         change["diff"] = await GitAsync(
@@ -916,14 +932,14 @@ public sealed class GitOperations : IGitWorkspace
 
     private JsonObject ListChanges(JsonObject arguments)
     {
-        Fields(arguments, ["state", "cursor", "limit"]);
+        Fields(arguments, "state", "cursor", "limit");
         string? state = OptionalText(arguments, "state");
         if (state is not null and not ("open" or "integrated"))
         {
             throw Invalid("Unknown change state.");
         }
 
-        (long cursor, int limit) = Page(arguments);
+        (long cursor, int limit) = Pagination(arguments);
         List<long> ids = [];
         using (SqliteConnection connection = database.Open())
         using (
@@ -960,8 +976,8 @@ public sealed class GitOperations : IGitWorkspace
     private JsonObject Review(string actor, JsonObject arguments)
     {
         RequireInitialized();
-        Fields(arguments, ["id", "head", "decision", "body"]);
-        long changeId = Id(arguments, "id");
+        Fields(arguments, "id", "head", "decision", "body");
+        long changeId = Integer(arguments, "id");
         string head = Text(arguments, "head");
         string decision = Text(arguments, "decision");
         string body = Text(arguments, "body");
@@ -973,9 +989,9 @@ public sealed class GitOperations : IGitWorkspace
         using SqliteConnection connection = database.Open();
         using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         RequireWritable(connection, transaction);
-        JsonObject change = Change(connection, transaction, changeId);
+        ChangeRecord change = ReadChangeRecord(connection, transaction, changeId);
         RequireOpen(change);
-        if (change["head"]!.GetValue<string>() != head)
+        if (change.Head != head)
         {
             throw new OperationException(
                 "stale_candidate",
@@ -988,6 +1004,7 @@ public sealed class GitOperations : IGitWorkspace
             RequireNotRunning(connection, transaction, changeId);
         }
 
+        string createdAt = Stamp;
         Sql.Execute(
             connection,
             """
@@ -1000,10 +1017,9 @@ public sealed class GitOperations : IGitWorkspace
             ("$head", head),
             ("$decision", decision),
             ("$body", body),
-            ("$time", Stamp)
+            ("$time", createdAt)
         );
         long id = LastId(connection, transaction);
-        string createdAt = Stamp;
         Event(
             connection,
             transaction,
@@ -1027,17 +1043,17 @@ public sealed class GitOperations : IGitWorkspace
 
     private JsonObject ReadChecks(JsonObject arguments)
     {
-        Fields(arguments, ["id", "changeId"]);
+        Fields(arguments, "id", "changeId");
         if (arguments.ContainsKey("id") == arguments.ContainsKey("changeId"))
         {
             throw Invalid("Exactly one of id or changeId is required.");
         }
 
-        long id = Id(arguments, arguments.ContainsKey("id") ? "id" : "changeId");
+        long id = Integer(arguments, arguments.ContainsKey("id") ? "id" : "changeId");
         using SqliteConnection connection = database.Open();
         if (arguments.ContainsKey("changeId"))
         {
-            _ = Change(connection, null, id);
+            _ = ReadChangeRecord(connection, null, id);
         }
 
         JsonArray items = CheckRows(
@@ -1097,7 +1113,7 @@ public sealed class GitOperations : IGitWorkspace
             transaction.Commit();
         }
 
-        JsonObject change = Change(changeId);
+        ChangeRecord change = ReadChangeRecord(changeId);
         RequireOpen(change);
         await RequireSubmittedHeadAsync(change, submitted, token).ConfigureAwait(false);
         EnforceHealth(change);
@@ -1143,6 +1159,8 @@ public sealed class GitOperations : IGitWorkspace
             );
         }
 
+        await RequireReviewsAsync(change, parent, token, candidate).ConfigureAwait(false);
+
         using (SqliteConnection connection = database.Open())
         {
             Sql.Execute(
@@ -1175,9 +1193,10 @@ public sealed class GitOperations : IGitWorkspace
         }
 
         await RequireExactTreeAsync(path, candidate, token).ConfigureAwait(false);
-        await RequireSubmittedHeadAsync(Change(changeId), submitted, token).ConfigureAwait(false);
-        await RequireReviewsAsync(Change(changeId), parent, token).ConfigureAwait(false);
-        EnforceHealth(Change(changeId));
+        ChangeRecord current = ReadChangeRecord(changeId);
+        await RequireSubmittedHeadAsync(current, submitted, token).ConfigureAwait(false);
+        await RequireReviewsAsync(current, parent, token, candidate).ConfigureAwait(false);
+        EnforceHealth(current);
         if (
             await ResolveAsync(IntegrationBranch, token).ConfigureAwait(false) != parent
             || await ResolveAsync(candidateBranch, token).ConfigureAwait(false) != candidate
@@ -1190,14 +1209,6 @@ public sealed class GitOperations : IGitWorkspace
         }
 
         await RequireExactTreeAsync(IntegrationPath, parent, token).ConfigureAwait(false);
-        await RequireSubmittedHeadAsync(Change(changeId), submitted, token).ConfigureAwait(false);
-        if (await ResolveAsync(candidateBranch, token).ConfigureAwait(false) != candidate)
-        {
-            throw new OperationException(
-                "stale_candidate",
-                "Candidate ref changed before integration advance."
-            );
-        }
 
         using (SqliteConnection connection = database.Open())
         {
@@ -1211,12 +1222,49 @@ public sealed class GitOperations : IGitWorkspace
         }
 
         token.ThrowIfCancellationRequested();
-        await GitAsync(
+        ProcessResult updateRef = await GitResultAsync(
                 Repository,
-                ["update-ref", IntegrationBranch, candidate, parent],
-                CancellationToken.None
+                ["update-ref", "--stdin"],
+                CancellationToken.None,
+                standardInput: $"verify {current.Branch} {submitted}\n"
+                    + $"verify {candidateBranch} {candidate}\n"
+                    + $"update {IntegrationBranch} {candidate} {parent}\n"
             )
             .ConfigureAwait(false);
+        if (updateRef.ExitCode != 0 || updateRef.TimedOut)
+        {
+            await WriteDiagnosticAsync(
+                    "update-ref-" + requestId.ToString(CultureInfo.InvariantCulture),
+                    updateRef,
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
+            if (
+                !updateRef.TimedOut
+                && (
+                    await ResolveAsync(current.Branch, CancellationToken.None)
+                        .ConfigureAwait(false) != submitted
+                    || await ResolveAsync(candidateBranch, CancellationToken.None)
+                        .ConfigureAwait(false) != candidate
+                    || await ResolveAsync(IntegrationBranch, CancellationToken.None)
+                        .ConfigureAwait(false) != parent
+                )
+            )
+            {
+                throw new OperationException(
+                    "stale_candidate",
+                    "Integration, candidate or submitted worker head moved before integration "
+                        + "advance."
+                );
+            }
+
+            throw new OperationException(
+                "unavailable",
+                $"Git update-ref failed (exit: {updateRef.ExitCode}; "
+                    + $"timeout: {updateRef.TimedOut}): {updateRef.StandardError.Trim()}"
+            );
+        }
+
         await GitAsync(IntegrationPath, ["reset", "--hard", candidate], CancellationToken.None)
             .ConfigureAwait(false);
         FinishRequest(
@@ -1585,14 +1633,12 @@ public sealed class GitOperations : IGitWorkspace
             };
     }
 
-    private void EnforceHealth(JsonObject change)
+    private void EnforceHealth(ChangeRecord change)
     {
         JsonObject? health = ReadHealth();
         if (
             health?["fixMainOnly"]?.GetValue<bool>() == true
-            && !change["taskIds"]!
-                .AsArray()
-                .Any(node => node!.GetValue<long>() == EnsureHealthTask())
+            && (change.TaskIds.Length == 0 || !change.TaskIds.Contains(EnsureHealthTask()))
         )
         {
             throw new OperationException(
@@ -1826,52 +1872,34 @@ public sealed class GitOperations : IGitWorkspace
     }
 
     private async Task RequireReviewsAsync(
-        JsonObject change,
+        ChangeRecord change,
         string parent,
-        CancellationToken token
+        CancellationToken token,
+        string? mergedCandidate = null
     )
     {
-        string head = change["head"]!.GetValue<string>();
-        string author = change["author"]!.GetValue<string>();
+        string head = change.Head;
         Dictionary<string, string> latest = new(StringComparer.Ordinal);
-        JsonArray activeReviews = [];
         using (SqliteConnection connection = database.Open())
         using (
             SqliteCommand command = Sql.Command(
                 connection,
-                "SELECT actor,head,decision FROM reviews WHERE change_id=$id AND stale=0 "
-                    + "ORDER BY id;",
+                """
+                SELECT actor,decision FROM reviews
+                WHERE change_id=$id AND head=$head AND stale=0
+                    AND actor<>$author AND decision<>'comment' ORDER BY id;
+                """,
                 null,
-                ("$id", change["id"]!.GetValue<long>())
+                ("$id", change.Id),
+                ("$head", head),
+                ("$author", change.Author)
             )
         )
         using (ObservedSqliteReader reader = Sql.Reader(command))
         {
             while (reader.Read())
             {
-                activeReviews.Add(
-                    new JsonObject
-                    {
-                        ["actor"] = reader.GetString(0),
-                        ["head"] = reader.GetString(1),
-                        ["decision"] = reader.GetString(2),
-                    }
-                );
-            }
-        }
-
-        foreach (JsonNode? item in activeReviews)
-        {
-            JsonObject review = item!.AsObject();
-            string actor = review["actor"]!.GetValue<string>();
-            string decision = review["decision"]!.GetValue<string>();
-            if (
-                review["head"]!.GetValue<string>() == head
-                && actor != author
-                && decision != "comment"
-            )
-            {
-                latest[actor] = decision;
+                latest[reader.GetString(0)] = reader.GetString(1);
             }
         }
 
@@ -1886,17 +1914,20 @@ public sealed class GitOperations : IGitWorkspace
             );
         }
 
-        string files = await GitAsync(
-                Repository,
-                ["diff", "--no-renames", "--name-only", "-z", parent + "..." + head, "--"],
-                token
-            )
-            .ConfigureAwait(false);
-        bool protectedChange = files
-            .Split('\0', StringSplitOptions.RemoveEmptyEntries)
-            .Any(file =>
-                database.Configuration.ProtectedPaths.Any(pattern => MatchesPath(file, pattern))
-            );
+        bool protectedChange = false;
+        if (database.Configuration.ProtectedPaths.Length != 0)
+        {
+            string[] diffArguments = mergedCandidate is null
+                ? ["diff", "--no-renames", "--name-only", "-z", parent + "..." + head, "--"]
+                : ["diff", "--no-renames", "--name-only", "-z", parent, mergedCandidate, "--"];
+            string files = await GitAsync(Repository, diffArguments, token).ConfigureAwait(false);
+            protectedChange = files
+                .Split('\0', StringSplitOptions.RemoveEmptyEntries)
+                .Any(file =>
+                    database.Configuration.ProtectedPaths.Any(pattern => MatchesPath(file, pattern))
+                );
+        }
+
         if (
             protectedChange
             && (
@@ -1913,15 +1944,14 @@ public sealed class GitOperations : IGitWorkspace
     }
 
     private async Task RequireSubmittedHeadAsync(
-        JsonObject change,
+        ChangeRecord change,
         string head,
         CancellationToken token
     )
     {
         if (
-            change["head"]!.GetValue<string>() != head
-            || await ResolveAsync(change["branch"]!.GetValue<string>(), token).ConfigureAwait(false)
-                != head
+            change.Head != head
+            || await ResolveAsync(change.Branch, token).ConfigureAwait(false) != head
         )
         {
             throw new OperationException(
@@ -2071,6 +2101,7 @@ public sealed class GitOperations : IGitWorkspace
         CancellationToken token
     )
     {
+        string worktrees = Path.Combine(database.StatePath, "worktrees");
         using (SqliteConnection connection = database.Open())
         {
             string? saved =
@@ -2081,14 +2112,10 @@ public sealed class GitOperations : IGitWorkspace
                     ("$ref", reference)
                 ) as string;
             if (
-                saved is null
-                || !SamePath(path, saved)
-                || !Path.GetFullPath(path)
-                    .StartsWith(
-                        Path.Combine(database.StatePath, "worktrees") + Path.DirectorySeparatorChar,
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                || SamePath(path, Repository)
+                !Paths.AreSame(path, saved)
+                || !Paths.IsSameOrUnder(path, worktrees)
+                || Paths.AreSame(path, worktrees)
+                || Paths.AreSame(path, Repository)
             )
             {
                 throw new OperationException(
@@ -2138,7 +2165,11 @@ public sealed class GitOperations : IGitWorkspace
                 )
                 .ConfigureAwait(false)
         ).Trim();
-        if (!SamePath(root, path) || branch != reference || !SamePath(common, repositoryCommon))
+        if (
+            !Paths.AreSame(root, path)
+            || branch != reference
+            || !Paths.AreSame(common, repositoryCommon)
+        )
         {
             throw new OperationException(
                 "conflict",
@@ -2436,32 +2467,13 @@ public sealed class GitOperations : IGitWorkspace
             cursor = nextCursor;
         }
 
-        using SqliteCommand checksCommand = Sql.Command(
-            connection,
-            "SELECT id FROM checks ORDER BY id;"
-        );
-        List<long> checkIds = [];
-        using (ObservedSqliteReader reader = Sql.Reader(checksCommand))
-        {
-            while (reader.Read())
-            {
-                checkIds.Add(reader.GetInt64(0));
-            }
-        }
-
-        JsonArray checks = [];
-        foreach (long id in checkIds)
-        {
-            checks.Add(CheckRows(connection, null, "id=$id", id)[0]!.DeepClone());
-        }
-
         return new JsonObject
         {
             ["baseCommit"] = database.Configuration.BaseRevision,
             ["finalCommit"] = head,
             ["deliveryRef"] = DeliveryBranch,
             ["accepted"] = passed,
-            ["checks"] = checks,
+            ["checks"] = CheckRows(connection, null),
             ["finalCheckBatch"] = batch,
             ["integrationHealth"] = ReadHealth(),
             ["unresolvedTasks"] = tasks,
@@ -2471,51 +2483,64 @@ public sealed class GitOperations : IGitWorkspace
         };
     }
 
-    private JsonObject Change(long id)
+    private ChangeRecord ReadChangeRecord(long id)
     {
         using SqliteConnection connection = database.Open();
-        return Change(connection, null, id);
+        return ReadChangeRecord(connection, null, id);
     }
 
-    private static JsonObject Change(
+    private static ChangeRecord ReadChangeRecord(
         SqliteConnection connection,
         SqliteTransaction? transaction,
         long id
     )
     {
-        JsonObject change;
-        using (
-            SqliteCommand command = Sql.Command(
-                connection,
-                """
-                SELECT id,author,branch,head,title,body,task_ids,state,created_at,updated_at
-                FROM changes WHERE id=$id;
-                """,
-                transaction,
-                ("$id", id)
-            )
-        )
-        using (ObservedSqliteReader reader = Sql.Reader(command))
+        using SqliteCommand command = Sql.Command(
+            connection,
+            """
+            SELECT id,author,branch,head,title,body,task_ids,state,created_at,updated_at
+            FROM changes WHERE id=$id;
+            """,
+            transaction,
+            ("$id", id)
+        );
+        using ObservedSqliteReader reader = Sql.Reader(command);
+        if (!reader.Read())
         {
-            if (!reader.Read())
-            {
-                throw new OperationException("not_found", "Change does not exist.");
-            }
-
-            change = new JsonObject
-            {
-                ["id"] = reader.GetInt64(0),
-                ["author"] = reader.GetString(1),
-                ["branch"] = reader.GetString(2),
-                ["head"] = reader.GetString(3),
-                ["title"] = reader.GetString(4),
-                ["body"] = reader.GetString(5),
-                ["taskIds"] = JsonNode.Parse(reader.GetString(6)),
-                ["state"] = reader.GetString(7),
-                ["createdAt"] = reader.GetString(8),
-                ["updatedAt"] = reader.GetString(9),
-            };
+            throw new OperationException("not_found", "Change does not exist.");
         }
+
+        return new ChangeRecord(
+            reader.GetInt64(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.GetString(3),
+            reader.GetString(4),
+            reader.GetString(5),
+            JsonSerializer.Deserialize<long[]>(reader.GetString(6), Json.Options)!,
+            reader.GetString(7),
+            reader.GetString(8),
+            reader.GetString(9)
+        );
+    }
+
+    private JsonObject Change(long id)
+    {
+        using SqliteConnection connection = database.Open();
+        ChangeRecord record = ReadChangeRecord(connection, null, id);
+        JsonObject change = new()
+        {
+            ["id"] = record.Id,
+            ["author"] = record.Author,
+            ["branch"] = record.Branch,
+            ["head"] = record.Head,
+            ["title"] = record.Title,
+            ["body"] = record.Body,
+            ["taskIds"] = new JsonArray(record.TaskIds.Select(task => (JsonNode)task).ToArray()),
+            ["state"] = record.State,
+            ["createdAt"] = record.CreatedAt,
+            ["updatedAt"] = record.UpdatedAt,
+        };
 
         JsonArray comments = [];
         using (
@@ -2523,7 +2548,7 @@ public sealed class GitOperations : IGitWorkspace
                 connection,
                 "SELECT id,actor,body,created_at FROM change_comments WHERE "
                     + "change_id=$id ORDER BY id;",
-                transaction,
+                null,
                 ("$id", id)
             )
         )
@@ -2549,7 +2574,7 @@ public sealed class GitOperations : IGitWorkspace
                 connection,
                 "SELECT id,actor,head,decision,body,created_at FROM reviews WHERE "
                     + "change_id=$id ORDER BY id;",
-                transaction,
+                null,
                 ("$id", id)
             )
         )
@@ -2574,27 +2599,28 @@ public sealed class GitOperations : IGitWorkspace
 
         change["comments"] = comments;
         change["reviews"] = reviews;
-        change["checks"] = CheckRows(connection, transaction, "change_id=$id", id);
+        change["checks"] = CheckRows(connection, null, "change_id=$id", id);
         return change;
     }
 
     private static JsonArray CheckRows(
         SqliteConnection connection,
         SqliteTransaction? transaction,
-        string predicate,
-        long id
+        string? predicate = null,
+        long id = 0
     )
     {
         JsonArray items = [];
+        string where = predicate is null ? "" : $" WHERE {predicate}";
         using SqliteCommand command = Sql.Command(
             connection,
             $"""
             SELECT id,change_id,kind,commit_hash,tree,command_json,status,exit_code,log_path,
                 created_at
-            FROM checks WHERE {predicate} ORDER BY id;
+            FROM checks{where} ORDER BY id;
             """,
             transaction,
-            ("$id", id)
+            predicate is null ? [] : [("$id", id)]
         );
         using ObservedSqliteReader reader = Sql.Reader(command);
         while (reader.Read())
@@ -2682,11 +2708,17 @@ public sealed class GitOperations : IGitWorkspace
 
     private void RequireInitialized()
     {
-        if (
-            database.ReadMetadata("git:initialized") != "true"
-            || database.ReadMetadata("git:cleaned") == "true"
-            || database.ReadMetadata("git:cleaning") == "true"
-        )
+        using SqliteConnection connection = database.Open();
+        object? initialized = Sql.Scalar(
+            connection,
+            """
+            SELECT EXISTS(SELECT 1 FROM meta WHERE key='git:initialized' AND value='true')
+                AND NOT EXISTS(
+                    SELECT 1 FROM meta WHERE key IN ('git:cleaned','git:cleaning') AND value='true'
+                );
+            """
+        );
+        if (initialized is not 1L)
         {
             throw new OperationException(
                 "unavailable",
@@ -2779,7 +2811,8 @@ public sealed class GitOperations : IGitWorkspace
     private async Task<ProcessResult> GitResultAsync(
         string path,
         IReadOnlyList<string> arguments,
-        CancellationToken token
+        CancellationToken token,
+        string? standardInput = null
     )
     {
         string hooks = Path.Combine(database.StatePath, "git-hooks");
@@ -2800,13 +2833,20 @@ public sealed class GitOperations : IGitWorkspace
             "core.quotePath=false",
         ];
         return await processes
-            .RunAsync("git", [.. options, .. arguments], path, TimeSpan.FromSeconds(60), token)
+            .RunAsync(
+                "git",
+                [.. options, .. arguments],
+                path,
+                TimeSpan.FromSeconds(60),
+                standardInput,
+                token
+            )
             .ConfigureAwait(false);
     }
 
     private async Task<string> GitAsync(
         string path,
-        IReadOnlyList<string> arguments,
+        string[] arguments,
         CancellationToken token
     )
     {
@@ -2888,17 +2928,17 @@ public sealed class GitOperations : IGitWorkspace
             CultureInfo.InvariantCulture
         );
 
-    private static void RequireAuthor(JsonObject change, string actor)
+    private static void RequireAuthor(ChangeRecord change, string actor)
     {
-        if (change["author"]!.GetValue<string>() != actor)
+        if (change.Author != actor)
         {
             throw new OperationException("not_visible", "Only the change author may update it.");
         }
     }
 
-    private static void RequireOpen(JsonObject change)
+    private static void RequireOpen(ChangeRecord change)
     {
-        if (change["state"]!.GetValue<string>() != "open")
+        if (change.State != "open")
         {
             throw new OperationException("conflict", "Change has already been integrated.");
         }
@@ -2930,17 +2970,17 @@ public sealed class GitOperations : IGitWorkspace
     private static void ValidateTasks(
         SqliteConnection connection,
         SqliteTransaction transaction,
-        JsonArray tasks
+        long[] tasks
     )
     {
-        foreach (JsonNode? task in tasks)
+        foreach (long task in tasks)
         {
             if (
                 Sql.Scalar(
                     connection,
                     "SELECT id FROM tasks WHERE id=$id;",
                     transaction,
-                    ("$id", task!.GetValue<long>())
+                    ("$id", task)
                 )
                 is null
             )
@@ -2950,121 +2990,48 @@ public sealed class GitOperations : IGitWorkspace
         }
     }
 
-    private static JsonArray TaskIds(JsonObject arguments)
+    internal static bool MatchesPath(string path, string pattern)
     {
-        if (!arguments.TryGetPropertyValue("taskIds", out JsonNode? value))
+        if (string.IsNullOrWhiteSpace(pattern))
         {
-            return [];
+            return false;
         }
 
-        if (value is not JsonArray array)
+        string normalizedPath = path.TrimStart('/');
+        string normalizedPattern = pattern.Replace('\\', '/').TrimStart('/');
+        if (normalizedPattern == "**")
         {
-            throw Invalid("taskIds must be an array of positive integer IDs.");
+            return true;
         }
 
-        JsonArray normalized = [];
-        foreach (JsonNode? item in array)
-        {
-            if (!TryInteger(item, out long id) || id <= 0)
-            {
-                throw Invalid("taskIds must be an array of positive integer IDs.");
-            }
-
-            normalized.Add(id);
-        }
-
-        return normalized;
-    }
-
-    private static void Fields(JsonObject arguments, string[] allowed)
-    {
-        if (arguments.Any(pair => !allowed.Contains(pair.Key, StringComparer.Ordinal)))
-        {
-            throw Invalid("Unknown request field.");
-        }
-    }
-
-    private static string Text(JsonObject arguments, string key)
-    {
-        if (
-            arguments[key] is not JsonValue value
-            || !value.TryGetValue<string>(out string? text)
-            || string.IsNullOrWhiteSpace(text)
-        )
-        {
-            throw Invalid(key + " must be a nonempty string.");
-        }
-
-        return text;
-    }
-
-    private static string? OptionalText(JsonObject arguments, string key) =>
-        arguments.ContainsKey(key) ? Text(arguments, key) : null;
-
-    private static long Id(JsonObject arguments, string key)
-    {
-        if (!TryInteger(arguments[key], out long id) || id <= 0)
-        {
-            throw Invalid(key + " must be a positive JSON integer.");
-        }
-
-        return id;
-    }
-
-    private static (long Cursor, int Limit) Page(JsonObject arguments)
-    {
-        long cursor = 0;
-        if (
-            arguments.ContainsKey("cursor")
-            && (!TryInteger(arguments["cursor"], out cursor) || cursor < 0)
-        )
-        {
-            throw Invalid("cursor must be a nonnegative JSON integer.");
-        }
-
-        long limit = arguments.ContainsKey("limit") ? Id(arguments, "limit") : 50;
-        if (limit > 200)
-        {
-            throw Invalid("limit must be between 1 and 200.");
-        }
-
-        return (cursor, (int)limit);
-    }
-
-    private static bool TryInteger(JsonNode? value, out long number)
-    {
-        number = 0;
-        return value is JsonValue json
-            && json.GetValueKind() == JsonValueKind.Number
-            && JsonSerializer.SerializeToElement(json, Json.Options).TryGetInt64(out number);
-    }
-
-    private static bool SamePath(string first, string second) =>
-        Path.GetFullPath(first)
-            .TrimEnd(Path.DirectorySeparatorChar)
-            .Equals(
-                Path.GetFullPath(second).TrimEnd(Path.DirectorySeparatorChar),
-                StringComparison.OrdinalIgnoreCase
-            );
-
-    private static bool MatchesPath(string path, string pattern)
-    {
         StringBuilder expression = new("^");
-        for (int i = 0; i < pattern.Length; i++)
+        for (int i = 0; i < normalizedPattern.Length; i++)
         {
-            if (pattern[i] == '*' && i + 1 < pattern.Length && pattern[i + 1] == '*')
+            if (
+                normalizedPattern[i] == '*'
+                && i + 1 < normalizedPattern.Length
+                && normalizedPattern[i + 1] == '*'
+            )
             {
-                expression.Append(".*");
-                i++;
+                if (i + 2 < normalizedPattern.Length && normalizedPattern[i + 2] == '/')
+                {
+                    expression.Append("(?:.*/)?");
+                    i += 2;
+                }
+                else
+                {
+                    expression.Append(".*");
+                    i++;
+                }
             }
             else
             {
                 expression.Append(
-                    pattern[i] switch
+                    normalizedPattern[i] switch
                     {
                         '*' => "[^/]*",
                         '?' => "[^/]",
-                        _ => Regex.Escape(pattern[i].ToString()),
+                        _ => Regex.Escape(normalizedPattern[i].ToString()),
                     }
                 );
             }
@@ -3072,12 +3039,10 @@ public sealed class GitOperations : IGitWorkspace
 
         expression.Append('$');
         return Regex.IsMatch(
-            path,
+            normalizedPath,
             expression.ToString(),
             RegexOptions.CultureInvariant,
             TimeSpan.FromSeconds(1)
         );
     }
-
-    private static OperationException Invalid(string message) => new("invalid_arguments", message);
 }

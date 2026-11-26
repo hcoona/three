@@ -376,6 +376,109 @@ public sealed class GitCandidateSpecs(TestContext testContext)
     }
 
     [TestMethod]
+    [DataRow("ROOT_POLICY.md", "**/ROOT_POLICY.md", true)]
+    [DataRow("nested/dir/ROOT_POLICY.md", "**/ROOT_POLICY.md", true)]
+    [DataRow("OTHER_ROOT_POLICY.md", "**/ROOT_POLICY.md", false)]
+    [DataRow("docs/overview.md", "docs/**/*.md", true)]
+    [DataRow("docs/a/b/overview.md", "docs/**/*.md", true)]
+    [DataRow("config/sub/app.json", @"config\sub\*.json", true)]
+    [DataRow("routes/[id]/handler.cs", "routes/[id]/*.cs", true)]
+    [DataRow("routes/i/handler.cs", "routes/[id]/*.cs", false)]
+    [DataRow("exact-dir-name", "exact-dir-name", true)]
+    [DataRow("exact-dir-name/unprotected.txt", "exact-dir-name", false)]
+    [DataRow(@"notes\policy.md", "*.md", true)]
+    [DataRow("any.txt", "", false)]
+    [DataRow("any.txt", "   ", false)]
+    public void ProtectedPathMatcherCoversGlobAndLiteralBoundaries(
+        string path,
+        string pattern,
+        bool expected
+    ) => Assert.AreEqual(expected, GitOperations.MatchesPath(path, pattern));
+
+    [TestMethod]
+    [TestCategory("SerialExactCandidateIntegration")]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task ProtectedPathApprovalEvaluatesMergedCandidateAfterIntegrationRename()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenarioState state = await GitScenarioState.CreateAsync(
+            token,
+            protectedPaths: ["protected/**"],
+            configuredCheck: PassConfiguredCheckAsync
+        ).ConfigureAwait(false);
+        await state.Operations.InitializeAsync(token).ConfigureAwait(false);
+
+        // Worker2 edits the original unprotected filename before any rename is integrated.
+        string worker2Path = state.Operations.GetWorkerPath("worker2");
+        string originalShared = await File.ReadAllTextAsync(
+            Path.Combine(worker2Path, "shared.txt"), token
+        ).ConfigureAwait(false);
+        string worker2Head = await state.CommitAsync(
+            worker2Path, "shared.txt", originalShared + "worker2 pre-rename edit\n", token
+        ).ConfigureAwait(false);
+
+        // Worker1 renames shared.txt into protected/** and integrates with owner approval.
+        string worker1Path = state.Operations.GetWorkerPath("worker1");
+        Directory.CreateDirectory(Path.Combine(worker1Path, "protected"));
+        File.Move(
+            Path.Combine(worker1Path, "shared.txt"),
+            Path.Combine(worker1Path, "protected", "shared.txt")
+        );
+        await state.GitAsync(worker1Path, token, "add", "-A").ConfigureAwait(false);
+        await state.GitAsync(worker1Path, token, "commit", "-m", "Rename shared into protected")
+            .ConfigureAwait(false);
+        JsonObject renameChange = await state.SubmitAsync("worker1", "Move into protected", token)
+            .ConfigureAwait(false);
+        await state.ReviewAsync("worker2", renameChange, token).ConfigureAwait(false);
+        await state.ReviewAsync("owner", renameChange, token).ConfigureAwait(false);
+        await state.QueueAsync(renameChange, token).ConfigureAwait(false);
+        await state.Operations.ProcessPendingAsync(token).ConfigureAwait(false);
+        Assert.AreEqual(
+            "integrated",
+            (await state.ReadAsync(renameChange, token).ConfigureAwait(false))["state"]!
+                .GetValue<string>()
+        );
+
+        // Worker2's submitted diff touches only shared.txt, but merging onto integration
+        // modifies protected/shared.txt and must require owner approval before checks run.
+        JsonObject editChange = await state.SubmitAsync("worker2", "Edit pre-rename file", token)
+            .ConfigureAwait(false);
+        Assert.AreEqual(worker2Head, editChange["head"]!.GetValue<string>());
+        await state.ReviewAsync("worker1", editChange, token).ConfigureAwait(false);
+        JsonObject refusedQueue = await state.QueueAsync(editChange, token).ConfigureAwait(false);
+        string before = await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false);
+        await state.Operations.ProcessPendingAsync(token).ConfigureAwait(false);
+
+        JsonObject refused = await state.ReadAsync(editChange, token).ConfigureAwait(false);
+        JsonObject rejected = Assert.ContainsSingle(
+            refused["integrationRequests"]!.AsArray().OfType<JsonObject>()
+        );
+        Assert.AreEqual(
+            refusedQueue["requestId"]!.GetValue<long>(), rejected["requestId"]!.GetValue<long>()
+        );
+        Assert.AreEqual("review_required", rejected["resultCode"]!.GetValue<string>());
+        Assert.Contains(
+            "Protected paths require owner approval", rejected["message"]!.GetValue<string>()
+        );
+        Assert.IsEmpty(refused["checks"]!.AsArray());
+        Assert.AreEqual(
+            before, await state.ResolveAsync(state.IntegrationRef, token).ConfigureAwait(false)
+        );
+
+        await state.ReviewAsync("owner", editChange, token).ConfigureAwait(false);
+        await state.QueueAsync(editChange, token).ConfigureAwait(false);
+        await state.Operations.ProcessPendingAsync(token).ConfigureAwait(false);
+        JsonObject integrated = await state.ReadAsync(editChange, token).ConfigureAwait(false);
+        Assert.AreEqual("integrated", integrated["state"]!.GetValue<string>());
+        StringAssert.Contains(
+            await state.GitAsync(
+                state.Repository, token, "show", state.IntegrationRef + ":protected/shared.txt"
+            ).ConfigureAwait(false),
+            "worker2 pre-rename edit"
+        );
+    }
+
+    [TestMethod]
     [TestCategory("SerialExactCandidateIntegration")]
     [DataRow("worker2", "Protected paths require owner approval of this exact head.")]
     [DataRow("owner", "A different worker must approve the exact submitted head.")]
