@@ -66,17 +66,17 @@
     "hexo-util": "^4.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.8",
-    "@types/node": "^26.0.0",
-    "@typescript/native-preview": "^7.0.0-dev.20260523.1",
+    "@biomejs/biome": "catalog:",
+    "@types/node": "catalog:",
+    "@typescript/native-preview": "catalog:",
     "@vitest/coverage-v8": "^5.0.0",
     "hexo": "8.1.2",
-    "markdownlint-cli2": "0.24.2",
-    "nerdbank-gitversioning": "^3.7.91",
-    "prettier": "3.10.1",
+    "markdownlint-cli2": "catalog:",
+    "nerdbank-gitversioning": "catalog:",
+    "prettier": "catalog:",
     "tsdown": "^0.23.0",
     "unrun": "0.3.1",
-    "typescript": "^7.0.0",
+    "typescript": "catalog:",
     "vitest": "^5.0.0"
   },
   "exports": {

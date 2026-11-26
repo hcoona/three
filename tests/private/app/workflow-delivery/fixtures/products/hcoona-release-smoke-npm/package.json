@@ -32,6 +32,6 @@
     "node": ">=24.0.0"
   },
   "devDependencies": {
-    "nerdbank-gitversioning": "^3.7.91"
+    "nerdbank-gitversioning": "catalog:"
   }
 }

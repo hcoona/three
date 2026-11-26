@@ -137,7 +137,13 @@
     },
     {
       "description": "Repository-level tooling may update lower bounds normally.",
-      "matchFileNames": ["package.json", "pyproject.toml", "global.json", ".config/dotnet-tools.json"],
+      "matchFileNames": [
+        "package.json",
+        "pnpm-workspace.yaml",
+        "pyproject.toml",
+        "global.json",
+        ".config/dotnet-tools.json"
+      ],
       "rangeStrategy": "replace"
     },
     {
@@ -153,7 +159,7 @@
     {
       "description": "JavaScript development dependencies may update lower bounds normally.",
       "matchManagers": ["npm"],
-      "matchDepTypes": ["devDependencies"],
+      "matchDepTypes": ["devDependencies", "pnpm.catalog.default"],
       "rangeStrategy": "replace",
       "automerge": true
     },
@@ -252,10 +258,18 @@
     {
       "description": "Group root repository JS tooling.",
       "matchManagers": ["npm"],
-      "matchFileNames": ["package.json"],
-      "matchDepTypes": ["devDependencies"],
+      "matchFileNames": ["package.json", "pnpm-workspace.yaml"],
+      "matchDepTypes": ["devDependencies", "pnpm.catalog.default"],
       "groupName": "Repo JS Tooling",
       "postUpdateOptions": ["pnpmDedupe"]
+    },
+    {
+      "description": "Keep @opentelemetry/api override within 1.9.x while @upstash/context7-mcp uses OpenTelemetry 2.x (<1.10.0 peer ceiling).",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["pnpm-workspace.yaml"],
+      "matchDepTypes": ["pnpm-workspace.overrides"],
+      "matchPackageNames": ["@opentelemetry/api"],
+      "allowedVersions": "<1.10.0"
     },
     {
       "description": "Group Biome updates across JavaScript workspaces.",
