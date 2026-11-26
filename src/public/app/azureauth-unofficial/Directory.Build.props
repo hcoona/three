@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TargetLatestRuntimePatch>true</TargetLatestRuntimePatch>
+    <RollForward>Disable</RollForward>
+    <!-- Expose the computed SemVer 2.0 package version to ProductVersion. -->
+    <NBGV_ThisAssemblyIncludesPackageVersion>true</NBGV_ThisAssemblyIncludesPackageVersion>
+  </PropertyGroup>
+</Project>

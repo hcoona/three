@@ -66,19 +66,13 @@
           "const": "wam"
         },
         "interaction": {
-          "enum": [
-            "silent",
-            "interactive"
-          ]
+          "enum": ["silent", "interactive"]
         },
         "warnings": {
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "enum": [
-              "persistence_unconfirmed",
-              "persistence_failed"
-            ]
+            "enum": ["persistence_unconfirmed", "persistence_failed"]
           }
         },
         "correlationId": {
@@ -90,11 +84,7 @@
     {
       "type": "object",
       "additionalProperties": true,
-      "required": [
-        "protocol",
-        "outcome",
-        "reason"
-      ],
+      "required": ["protocol", "outcome", "reason"],
       "properties": {
         "protocol": {
           "const": 1
@@ -121,79 +111,49 @@
       "not": {
         "anyOf": [
           {
-            "required": [
-              "accessToken"
-            ]
+            "required": ["accessToken"]
           },
           {
-            "required": [
-              "tokenType"
-            ]
+            "required": ["tokenType"]
           },
           {
-            "required": [
-              "expiresOn"
-            ]
+            "required": ["expiresOn"]
           },
           {
-            "required": [
-              "accountEmail"
-            ]
+            "required": ["accountEmail"]
           },
           {
-            "required": [
-              "tenantId"
-            ]
+            "required": ["tenantId"]
           },
           {
-            "required": [
-              "authority"
-            ]
+            "required": ["authority"]
           },
           {
-            "required": [
-              "scopes"
-            ]
+            "required": ["scopes"]
           },
           {
-            "required": [
-              "mechanism"
-            ]
+            "required": ["mechanism"]
           },
           {
-            "required": [
-              "interaction"
-            ]
+            "required": ["interaction"]
           },
           {
-            "required": [
-              "warnings"
-            ]
+            "required": ["warnings"]
           },
           {
-            "required": [
-              "correlationId"
-            ]
+            "required": ["correlationId"]
           },
           {
-            "required": [
-              "refreshToken"
-            ]
+            "required": ["refreshToken"]
           },
           {
-            "required": [
-              "idToken"
-            ]
+            "required": ["idToken"]
           },
           {
-            "required": [
-              "authorizationCode"
-            ]
+            "required": ["authorizationCode"]
           },
           {
-            "required": [
-              "claims"
-            ]
+            "required": ["claims"]
           }
         ]
       }
@@ -209,14 +169,10 @@
       "accountEmail": "personal@example.test",
       "tenantId": "11111111-2222-3333-4444-555555555555",
       "authority": "https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555",
-      "scopes": [
-        "499b84ac-1321-427f-aa17-267ca6975798/user_impersonation"
-      ],
+      "scopes": ["499b84ac-1321-427f-aa17-267ca6975798/user_impersonation"],
       "mechanism": "wam",
       "interaction": "silent",
-      "warnings": [
-        "persistence_unconfirmed"
-      ],
+      "warnings": ["persistence_unconfirmed"],
       "correlationId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     },
     {

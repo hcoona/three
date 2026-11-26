@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.Build.Traversal">
   <ItemGroup>
-    <WindowsOnlyProjectReference Include="src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj">
-      <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    </WindowsOnlyProjectReference>
+    <WindowsOnlyProjectReference Include="src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj" />
+    <WindowsOnlyProjectReference Include="src/public/app/azureauth-unofficial/Authentication.Windows/Authentication.Windows.csproj" />
+    <WindowsOnlyProjectReference Include="src/public/app/azureauth-unofficial/Authentication.Cli/Authentication.Cli.csproj" />
+    <WindowsOnlyProjectReference Include="tests/public/app/azureauth-unofficial/Authentication.Windows.Scenarios/Authentication.Windows.Scenarios.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
@@ -12,14 +13,14 @@
 
   <ItemGroup Condition="'$(OS)' != 'Windows_NT'">
     <ProjectReference Include="src\**\*.*proj" Exclude="@(WindowsOnlyProjectReference)" />
-    <ProjectReference Include="tests\**\*.*proj" />
+    <ProjectReference Include="tests\**\*.*proj" Exclude="@(WindowsOnlyProjectReference)" />
   </ItemGroup>
 
   <Target Name="RestoreWindowsOnlyProjectsOnNonWindows" BeforeTargets="Restore" Condition="'$(OS)' != 'Windows_NT'">
     <MSBuild
       Projects="@(WindowsOnlyProjectReference)"
       Targets="Restore"
-      Properties="EnableWindowsTargeting=true;RuntimeIdentifier=%(WindowsOnlyProjectReference.RuntimeIdentifier);RestoreForceEvaluate=$(RestoreForceEvaluate);RestoreLockedMode=$(RestoreLockedMode)"
-      BuildInParallel="true" />
+      Properties="EnableWindowsTargeting=true;RestoreForceEvaluate=$(RestoreForceEvaluate);RestoreLockedMode=$(RestoreLockedMode)"
+      BuildInParallel="false" />
   </Target>
 </Project>

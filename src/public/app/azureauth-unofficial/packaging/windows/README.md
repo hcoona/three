@@ -1,11 +1,12 @@
 # azureauth-unofficial
 
 **azureauth-unofficial** is the Windows x64 command of **AzureAuth Unofficial V2**, an
-independent, unofficial, pre-release fork of
+independent, unofficial, pre-release authentication engine originally started as a clean-room
+`main-v2` line in a fork of
 [Microsoft Authentication CLI](https://github.com/AzureAD/microsoft-authentication-cli).
 It is not a Microsoft product, is not supported by Microsoft, and makes no support,
 production-readiness, or compatibility commitment. Source and license:
-<https://github.com/hcoona/microsoft-authentication-cli> (branch `main-v2`).
+<https://github.com/hcoona/three/tree/main/src/public/app/azureauth-unofficial>.
 
 This package is an alpha prerelease. It requires Windows 11 x64 in an interactive user
 session with Web Account Manager (WAM) available.
@@ -17,7 +18,7 @@ session with Web Account Manager (WAM) available.
 | `azureauth-unofficial.exe` | The command, a self-contained Native AOT executable. |
 | `msalruntime.dll` | The Microsoft authentication broker runtime. Keep it next to the executable. |
 | `profiles/visual-studio-legacy-wam.json` | An optional Client Profile; see below. |
-| `LICENSE.txt` | The license of this project. |
+| `COPYING`, `COPYING.LESSER`, `LGPL-3.0-linking-exception.txt` | License texts (`LGPL-3.0-or-later WITH LGPL-3.0-linking-exception`). |
 | `THIRD-PARTY-NOTICES.txt` | Notices for the bundled .NET runtime and Microsoft libraries. |
 | `README.md` | This file. |
 

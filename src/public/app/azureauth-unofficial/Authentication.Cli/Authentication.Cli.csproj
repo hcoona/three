@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(CurrentWpfTargetFramework)</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>azureauth-unofficial</AssemblyName>
+    <Product>azureauth-unofficial</Product>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishAot>true</PublishAot>
+    <DisableTransitiveFrameworkReferenceDownloads>true</DisableTransitiveFrameworkReferenceDownloads>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Authentication.Windows/Authentication.Windows.csproj" />
+  </ItemGroup>
+</Project>

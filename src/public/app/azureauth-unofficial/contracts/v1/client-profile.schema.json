@@ -3,15 +3,7 @@
   "$id": "https://github.com/hcoona/microsoft-authentication-cli/contracts/v1/client-profile.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "name",
-    "clientId",
-    "cloud",
-    "tenantPolicy",
-    "integration",
-    "registration"
-  ],
+  "required": ["schemaVersion", "name", "clientId", "cloud", "tenantPolicy", "integration", "registration"],
   "properties": {
     "schemaVersion": {
       "const": 1
@@ -35,9 +27,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "kind"
-          ],
+          "required": ["kind"],
           "properties": {
             "kind": {
               "const": "multitenant"
@@ -47,10 +37,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "kind",
-            "tenantId"
-          ],
+          "required": ["kind", "tenantId"],
           "properties": {
             "kind": {
               "const": "single-tenant"
@@ -64,19 +51,12 @@
       ]
     },
     "integration": {
-      "enum": [
-        "windows-wam",
-        "visual-studio-legacy-wam"
-      ]
+      "enum": ["windows-wam", "visual-studio-legacy-wam"]
     },
     "registration": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "owner",
-        "externalDependency",
-        "supportNotice"
-      ],
+      "required": ["owner", "externalDependency", "supportNotice"],
       "properties": {
         "owner": {
           "type": "string",
@@ -107,9 +87,7 @@
             "const": "visual-studio-legacy-wam"
           }
         },
-        "required": [
-          "integration"
-        ]
+        "required": ["integration"]
       },
       "then": {
         "properties": {

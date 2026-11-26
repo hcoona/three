@@ -1,0 +1,20 @@
+<Project Sdk="MSTest.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(CurrentWpfTargetFramework)</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <GenerateTestingPlatformEntryPoint>false</GenerateTestingPlatformEntryPoint>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(ContinuousIntegrationBuild)' == 'true' or '$(TF_BUILD)' == 'true'">
+    <TestingPlatformCommandLineArguments>$(TestingPlatformCommandLineArguments) --filter "TestCategory!=WindowsHostTiming"</TestingPlatformCommandLineArguments>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../../../src/public/app/azureauth-unofficial/Authentication.Windows/Authentication.Windows.csproj" />
+    <ProjectReference
+      Include="../../../../../src/public/app/azureauth-unofficial/Authentication.Cli/Authentication.Cli.csproj"
+      ReferenceOutputAssembly="false"
+    />
+  </ItemGroup>
+</Project>

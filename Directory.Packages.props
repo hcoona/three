@@ -28,6 +28,9 @@
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" Condition="'$(MSBuildProjectName)' == 'LiteAgensh.Tests' or '$(MSBuildProjectName)' == 'LiteAgensh.OfflineOwner' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
+    <PackageVersion Include="Microsoft.Identity.Client" Version="4.83.1" Condition="'$(MSBuildProjectName)' == 'Authentication.Windows' or '$(MSBuildProjectName)' == 'Authentication.Cli' or '$(MSBuildProjectName)' == 'Authentication.Windows.Scenarios'" />
+    <PackageVersion Include="Microsoft.Identity.Client.Broker" Version="4.83.1" Condition="'$(MSBuildProjectName)' == 'Authentication.Windows' or '$(MSBuildProjectName)' == 'Authentication.Cli' or '$(MSBuildProjectName)' == 'Authentication.Windows.Scenarios'" />
+    <PackageVersion Include="Microsoft.Identity.Client.NativeInterop" Version="0.20.3" Condition="'$(MSBuildProjectName)' == 'Authentication.Windows' or '$(MSBuildProjectName)' == 'Authentication.Cli' or '$(MSBuildProjectName)' == 'Authentication.Windows.Scenarios'" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.65.1" />
     <!-- MSTest.Sdk owns these versions for SDK-style MSTest projects. -->

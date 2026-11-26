@@ -1,8 +1,10 @@
 azureauth-unofficial third-party notices
 ========================================
 
-azureauth-unofficial (AzureAuth Unofficial V2) is licensed under the MIT License in
-LICENSE.txt. The package also contains the following third-party components.
+azureauth-unofficial (AzureAuth Unofficial V2) is licensed under
+LGPL-3.0-or-later WITH LGPL-3.0-linking-exception (see COPYING, COPYING.LESSER,
+and LGPL-3.0-linking-exception.txt). The package also contains the following
+third-party components.
 
 Microsoft Authentication Library for .NET (Microsoft.Identity.Client 4.83.1,
 Microsoft.Identity.Client.Broker 4.83.1)
@@ -33,12 +35,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-.NET Runtime 10.0.14 (compiled into azureauth-unofficial.exe by Native AOT)
+.NET Runtime 10.0.15 (compiled into azureauth-unofficial.exe by Native AOT)
 -------------------------------------------------------------------------------
 
 Copyright (c) .NET Foundation and Contributors. All rights reserved.
 
 The .NET Runtime is distributed under the MIT License, whose text is above. Its own
 third-party notices follow, as published in the
-runtime.win-x64.Microsoft.DotNet.ILCompiler 10.0.14 package.
+runtime.win-x64.Microsoft.DotNet.ILCompiler 10.0.15 package.
 

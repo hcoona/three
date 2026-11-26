@@ -38,6 +38,10 @@ tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/p
 /src/private/app/Directory.Build.props text eol=lf
 /src/private/app/azureauth-credprovider/Directory.Build.props text eol=lf
 /src/public/Directory.Build.props text eol=lf
+/src/public/app/azureauth-unofficial/Directory.Build.props text eol=lf
+/src/public/app/azureauth-unofficial/docs/security/*.tm7 text eol=lf
+/src/public/app/azureauth-unofficial/packaging/windows/** text eol=lf
+/src/public/app/azureauth-unofficial/version.json text eol=lf
 /src/public/lib/Directory.Build.props text eol=lf
 /src/public/lib/Directory.Packages.props text eol=lf
 /tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/README.md text eol=lf
@@ -50,4 +54,5 @@ tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/p
 /stylecop.json text eol=lf
 /tests/Directory.Build.props text eol=lf
 /tests/public/Directory.Build.props text eol=lf
+/tests/public/app/azureauth-unofficial/Directory.Build.props text eol=lf
 /version.json text eol=lf

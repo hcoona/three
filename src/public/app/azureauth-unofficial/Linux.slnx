@@ -1,4 +1,0 @@
-<Solution>
-  <Project Path="src/Authentication.Core/Authentication.Core.csproj" />
-  <Project Path="tests/Authentication.Scenarios/Authentication.Scenarios.csproj" />
-</Solution>

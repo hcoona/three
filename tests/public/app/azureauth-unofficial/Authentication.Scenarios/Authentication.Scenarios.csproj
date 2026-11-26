@@ -1,0 +1,19 @@
+<Project Sdk="MSTest.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../ResultValidation/*.cs" Link="ResultValidation/%(Filename)%(Extension)" />
+    <None
+      Include="../../../../../src/public/app/azureauth-unofficial/packaging/windows/profiles/visual-studio-legacy-wam.json"
+      Link="BundledProfile/visual-studio-legacy-wam.json"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <None
+      Include="../../../../../src/public/app/azureauth-unofficial/contracts/v1/client-profile.schema.json"
+      Link="BundledProfile/client-profile.schema.json"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <ProjectReference Include="../../../../../src/public/app/azureauth-unofficial/Authentication.Core/Authentication.Core.csproj" />
+  </ItemGroup>
+</Project>

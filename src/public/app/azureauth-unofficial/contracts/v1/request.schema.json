@@ -3,13 +3,7 @@
   "$id": "https://github.com/hcoona/microsoft-authentication-cli/contracts/v1/request.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "protocol",
-    "profile",
-    "accountEmail",
-    "scopes",
-    "interaction"
-  ],
+  "required": ["protocol", "profile", "accountEmail", "scopes", "interaction"],
   "properties": {
     "protocol": {
       "const": 1
@@ -42,11 +36,7 @@
       "description": "Qualified permissions on one resource; resource equality and /.default isolation require semantic validation."
     },
     "interaction": {
-      "enum": [
-        "non-interactive-only",
-        "interactive-if-needed",
-        "force-interactive"
-      ],
+      "enum": ["non-interactive-only", "interactive-if-needed", "force-interactive"],
       "description": "Prohibit interaction, permit it after a silent miss, or explicitly request the interactive provider path and account selection without engine silent token acquisition. The provider may reuse its session; this does not guarantee visible UI, renewed credentials, cache refresh or clearing."
     },
     "tenant": {
@@ -72,10 +62,7 @@
       "default": false
     },
     "telemetry": {
-      "enum": [
-        "off",
-        "stderr"
-      ],
+      "enum": ["off", "stderr"],
       "default": "off"
     }
   },
@@ -86,9 +73,7 @@
       "protocol": 1,
       "profile": "C:\\AuthProfiles\\visual-studio-legacy.json",
       "accountEmail": "personal@example.test",
-      "scopes": [
-        "499b84ac-1321-427f-aa17-267ca6975798/.default"
-      ],
+      "scopes": ["499b84ac-1321-427f-aa17-267ca6975798/.default"],
       "interaction": "interactive-if-needed",
       "cancelOnStdinClose": true
     },
@@ -96,9 +81,7 @@
       "protocol": 1,
       "profile": "C:\\AuthProfiles\\visual-studio-legacy.json",
       "accountEmail": "work@example.test",
-      "scopes": [
-        "499b84ac-1321-427f-aa17-267ca6975798/.default"
-      ],
+      "scopes": ["499b84ac-1321-427f-aa17-267ca6975798/.default"],
       "interaction": "non-interactive-only",
       "tenant": "11111111-2222-3333-4444-555555555555",
       "timeoutSeconds": 30
@@ -107,9 +90,7 @@
       "protocol": 1,
       "profile": "C:\\AuthProfiles\\visual-studio-legacy.json",
       "accountEmail": "personal@example.test",
-      "scopes": [
-        "499b84ac-1321-427f-aa17-267ca6975798/.default"
-      ],
+      "scopes": ["499b84ac-1321-427f-aa17-267ca6975798/.default"],
       "interaction": "force-interactive",
       "cancelOnStdinClose": true
     }

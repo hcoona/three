@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup>
+    <GitVersionBaseDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)../../../../src/public/app/azureauth-unofficial'))</GitVersionBaseDirectory>
+  </PropertyGroup>
+
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TargetLatestRuntimePatch>true</TargetLatestRuntimePatch>
+    <RollForward>Disable</RollForward>
+    <NBGV_ThisAssemblyIncludesPackageVersion>true</NBGV_ThisAssemblyIncludesPackageVersion>
+    <MSTestAnalysisMode>Default</MSTestAnalysisMode>
+    <NoWarn>$(NoWarn);CA1861</NoWarn>
+  </PropertyGroup>
+</Project>
