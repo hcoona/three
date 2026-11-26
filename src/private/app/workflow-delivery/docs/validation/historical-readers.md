@@ -59,27 +59,15 @@ entry point. The [first reader row](#producer-qualified-readers) routes the actu
 producer's code, catalog, request and setup source separately from the later
 interpretation protocol and last-source navigation. Historical `replay`,
 `archive` and `digest` contracts, including the static catalog, are recoverable
-at their exact source revisions with the original evidence. Use the map's
-producer-qualified closure when interpreting historical archives; the current
-application supplies no replay or compatibility service. Historical replay
-validates supplied bytes and lineage; it cannot recreate missing captures, prove
-provenance by itself or upgrade the failed verdict. Existing replay may run local
-clean consumers with locked public build prerequisites, so it is not a
-zero-effect operation; use it only within separately applicable work
-authorization. Do not re-upload or re-observe the registry to complete historical
-evidence, and do not recreate or populate slots, prepare another native
-generation, dispatch, retry, refill or clean up from this record.
+at their exact source revisions with the original evidence. Use the map's producer-qualified closure when interpreting historical archives;
+the current application supplies no replay or compatibility service, and
+historical replay cannot recreate missing captures or upgrade a failed verdict.
 
 The [historical v2 migration](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-python-lld.md#python-governance-v2-migration)
-explains the former admission change without fabricating suite or generation
-fields. Its former readers and bootstrap helpers remain recoverable in pinned
-Git source, not as current runtime or resource-establishment callers. The
-configured native publisher remains an external resource until a separately
-authorized configuration change removes it; producer retirement and protocol
-retirement neither claim nor imply its deletion or other service configuration
-change. The former separate records are pinned as the
-[retired tooling boundary](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/validation/python-native-readiness.md) and
-[retired acceptance protocol](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/validation/python-native-acceptance.md).
+explains the former admission change; former readers and bootstrap helpers
+remain recoverable at pinned Git revisions ([retired tooling boundary](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/validation/python-native-readiness.md)
+and [retired acceptance protocol](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/validation/python-native-acceptance.md)),
+and producer retirement implies no external publisher-configuration deletion.
 
 ## Interpretation and outcomes
 
@@ -123,15 +111,11 @@ integration and recheck boundaries remain in the native publisher records.
 
 ## Retired Local Qualification Records
 
-These completed local records retain their original protocols, exact subjects,
-source and environment identities, original-byte hashes, audit/classification
-carriers, failures, cleanup and spent ceilings at snapshot
-`e90543cf4b9c5b069053221f7b9d38ee6035ea11`. That snapshot preserves text, not a
-replacement actual producer or new evidence admission. Follow each record's
-original source/protocol/output bindings; unavailable local originals remain an
-evidence limitation. No retired allowance, reserve or cleanup may be reused.
-Current native findings and pin guards remain in the planning/packaging records,
-and the HLD owns the Windows assumption.
+Completed local qualification records retain their original protocols, subjects,
+environment identities, byte digests, and failed/expired lifetimes at snapshot
+`e90543cf4b9c5b069053221f7b9d38ee6035ea11` (text preservation only, not a
+replacement producer). Current native findings remain in the planning/packaging
+records, and the HLD owns the Windows assumption.
 
 | Historical record                                                                                                                                                                                   | Original role and evidence limit                                                                                                                   |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -143,10 +127,8 @@ and the HLD owns the Windows assumption.
 
 ## Retired records
 
-These Workflow Delivery records were deleted from the current tree. Their
-commit-pinned text remains available to the evidence records that cite them.
-Their former admission, approval-proof, witness and campaign machinery does not
-prescribe the current application, and none is an executable next step.
+Commit-pinned text of deleted Workflow Delivery records remains available for
+evidence audit only and does not prescribe the current application:
 
 | Retired record                                                                                                                                                                                 | Retained historical role                                                                              |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
