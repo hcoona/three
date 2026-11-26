@@ -16,7 +16,9 @@
 // You should have received a copy of the GNU General Public License along with
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
-// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015 Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell). See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
+// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015
+// Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell).
+// See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
 
 using System.Globalization;
 

@@ -16,19 +16,23 @@
 // You should have received a copy of the GNU General Public License along with
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
-// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015 Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell). See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
+// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015
+// Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell).
+// See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
 
 namespace Hcoona.Nanopass.Tests.Compilers.Scheme;
 
 [Language]
 [Entry("Expr")]
 [Terminal(typeof(Symbol), "x", Name = "Variable", Predicate = nameof(IsVariable))]
+[Terminal(typeof(SExpr), "c", Name = "Constant", Predicate = nameof(IsConstant))]
 [Terminal(typeof(SExpr), "d", Name = "Datum", Predicate = nameof(IsDatum))]
 [Terminal(typeof(Symbol), "pr", Name = "UserPrimitive", Predicate = nameof(IsUserPrimitive))]
 [NonTerminalDef("Expr", ["e", "body"],
-    "d",
+    "c",
     "x",
     "pr",
+    "(quote d)",
     "(set! x e)",
     "(if e1 e2)",
     "(if e1 e2 e3)",
@@ -41,6 +45,8 @@ internal static partial class LP
 {
     private static bool IsVariable(Symbol value) => SchemeHelpers.IsVariable(value);
 
+    private static bool IsConstant(SExpr value) => SchemeHelpers.IsConstant(value);
+
     private static bool IsDatum(SExpr value) => SchemeHelpers.IsDatum(value);
 
     private static bool IsUserPrimitive(Symbol value) => SchemeHelpers.IsUserPrimitive(value);
@@ -48,15 +54,19 @@ internal static partial class LP
 
 [Language]
 [Extends(typeof(LP))]
+[RemoveTerminal("Constant")]
 [ExtendNonTerminal("Expr", MetaVars = ["e", "body"],
-    Remove = ["d", "x", "pr", "(e0 e1 ...)"],
+    Remove = ["c", "x", "pr", "(quote d)", "(e0 e1 ...)"],
     Add = ["(datum d)", "(var x)", "(primapp pr e ...)", "(app e0 e1 ...)"])]
 internal static partial class L0;
 
 [Language]
 [Extends(typeof(L0))]
 [ExtendNonTerminal("Expr", MetaVars = ["e", "body"],
-    Remove = ["(lambda (x ...) body1 ... body2)", "(let ((x e) ...) body1 ... body2)", "(letrec ((x e) ...) body1 ... body2)"],
+    Remove = [
+        "(lambda (x ...) body1 ... body2)",
+        "(let ((x e) ...) body1 ... body2)",
+        "(letrec ((x e) ...) body1 ... body2)"],
     Add = ["(lambda (x ...) body)", "(let ((x e) ...) body)", "(letrec ((x e) ...) body)"])]
 internal static partial class L1;
 
@@ -188,7 +198,8 @@ internal static partial class L11
 [Terminal(typeof(Symbol), "x", Name = "Variable", Predicate = nameof(IsVariable))]
 [Terminal(typeof(SExpr), "d", Name = "Datum", Predicate = nameof(IsDatum))]
 [Terminal(typeof(Symbol), "vp", Name = "ValuePrimitive", Predicate = nameof(IsValuePrimitive))]
-[Terminal(typeof(Symbol), "pp", Name = "PredicatePrimitive", Predicate = nameof(IsPredicatePrimitive))]
+[Terminal(
+    typeof(Symbol), "pp", Name = "PredicatePrimitive", Predicate = nameof(IsPredicatePrimitive))]
 [Terminal(typeof(Symbol), "ep", Name = "EffectPrimitive", Predicate = nameof(IsEffectPrimitive))]
 [Terminal(typeof(Symbol), "spr", Name = "SystemPrimitive", Predicate = nameof(IsSystemPrimitive))]
 [NonTerminalDef("LetrecExpr", ["lrexpr"],
@@ -232,7 +243,8 @@ internal static partial class L12
 
     private static bool IsValuePrimitive(Symbol value) => SchemeHelpers.IsValuePrimitive(value);
 
-    private static bool IsPredicatePrimitive(Symbol value) => SchemeHelpers.IsPredicatePrimitive(value);
+    private static bool IsPredicatePrimitive(Symbol value) =>
+        SchemeHelpers.IsPredicatePrimitive(value);
 
     private static bool IsEffectPrimitive(Symbol value) => SchemeHelpers.IsEffectPrimitive(value);
 
@@ -244,7 +256,8 @@ internal static partial class L12
 [Terminal(typeof(Symbol), "x", Name = "Variable", Predicate = nameof(IsVariable))]
 [Terminal(typeof(SExpr), "d", Name = "Datum", Predicate = nameof(IsDatum))]
 [Terminal(typeof(Symbol), "vp", Name = "ValuePrimitive", Predicate = nameof(IsValuePrimitive))]
-[Terminal(typeof(Symbol), "pp", Name = "PredicatePrimitive", Predicate = nameof(IsPredicatePrimitive))]
+[Terminal(
+    typeof(Symbol), "pp", Name = "PredicatePrimitive", Predicate = nameof(IsPredicatePrimitive))]
 [Terminal(typeof(Symbol), "ep", Name = "EffectPrimitive", Predicate = nameof(IsEffectPrimitive))]
 [Terminal(typeof(Symbol), "spr", Name = "SystemPrimitive", Predicate = nameof(IsSystemPrimitive))]
 [NonTerminalDef("LetrecExpr", ["lrexpr"],
@@ -290,7 +303,8 @@ internal static partial class L13
 
     private static bool IsValuePrimitive(Symbol value) => SchemeHelpers.IsValuePrimitive(value);
 
-    private static bool IsPredicatePrimitive(Symbol value) => SchemeHelpers.IsPredicatePrimitive(value);
+    private static bool IsPredicatePrimitive(Symbol value) =>
+        SchemeHelpers.IsPredicatePrimitive(value);
 
     private static bool IsEffectPrimitive(Symbol value) => SchemeHelpers.IsEffectPrimitive(value);
 
@@ -313,7 +327,8 @@ internal static partial class L14;
 [Terminal(typeof(Symbol), "x", Name = "Variable", Predicate = nameof(IsVariable))]
 [Terminal(typeof(SExpr), "d", Name = "Datum", Predicate = nameof(IsDatum))]
 [Terminal(typeof(Symbol), "vp", Name = "ValuePrimitive", Predicate = nameof(IsValuePrimitive))]
-[Terminal(typeof(Symbol), "pp", Name = "PredicatePrimitive", Predicate = nameof(IsPredicatePrimitive))]
+[Terminal(
+    typeof(Symbol), "pp", Name = "PredicatePrimitive", Predicate = nameof(IsPredicatePrimitive))]
 [Terminal(typeof(Symbol), "ep", Name = "EffectPrimitive", Predicate = nameof(IsEffectPrimitive))]
 [Terminal(typeof(Symbol), "spr", Name = "SystemPrimitive", Predicate = nameof(IsSystemPrimitive))]
 [NonTerminalDef("LetrecExpr", ["lrexpr"],
@@ -365,7 +380,8 @@ internal static partial class L15
 
     private static bool IsValuePrimitive(Symbol value) => SchemeHelpers.IsValuePrimitive(value);
 
-    private static bool IsPredicatePrimitive(Symbol value) => SchemeHelpers.IsPredicatePrimitive(value);
+    private static bool IsPredicatePrimitive(Symbol value) =>
+        SchemeHelpers.IsPredicatePrimitive(value);
 
     private static bool IsEffectPrimitive(Symbol value) => SchemeHelpers.IsEffectPrimitive(value);
 
@@ -403,9 +419,13 @@ internal static partial class L16;
 [ExtendNonTerminal("Tail", MetaVars = ["tl"],
     Remove = ["(let ((x ntl1)) tl2)"])]
 [ExtendNonTerminal("Nontail", MetaVars = ["ntl"],
-    Remove = ["t", "(if p1 ntl2 ntl3)", "(begin f0 ... ntl1)", "(let ((x ntl1)) ntl2)", "(primapp vp t ...)", "(sys-primapp spr t ...)", "(return-point x a)"])]
+    Remove = [
+        "t", "(if p1 ntl2 ntl3)", "(begin f0 ... ntl1)", "(let ((x ntl1)) ntl2)",
+        "(primapp vp t ...)", "(sys-primapp spr t ...)", "(return-point x a)"])]
 [ExtendNonTerminal("RhsExpr", MetaVars = ["rhs"],
-    Add = ["t", "(if p1 rhs2 rhs3)", "(begin f0 ... rhs1)", "(primapp vp t ...)", "(sys-primapp spr t ...)", "(return-point x a)"])]
+    Add = [
+        "t", "(if p1 rhs2 rhs3)", "(begin f0 ... rhs1)",
+        "(primapp vp t ...)", "(sys-primapp spr t ...)", "(return-point x a)"])]
 [ExtendNonTerminal("Predicate", MetaVars = ["p"],
     Remove = ["(let ((x ntl)) p)"])]
 [ExtendNonTerminal("Effect", MetaVars = ["f"],

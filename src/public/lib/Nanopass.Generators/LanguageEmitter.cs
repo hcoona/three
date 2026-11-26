@@ -154,7 +154,10 @@ internal sealed class LanguageEmitter(LanguageModel model)
         + "]";
 
     private static string PrettyBinding(LanguageModel.Handler handler) =>
-        "__NanopassPretty_" + BindingKey(handler.Name);
+        PrettyBinding(handler.Binding ?? handler.Owner + "." + handler.Name);
+
+    private static string PrettyBinding(string key) =>
+        "__NanopassPretty_" + BindingKey(key);
 
     private static string BindingKey(string name) =>
         Convert.ToBase64String(Encoding.UTF8.GetBytes(name))
@@ -267,14 +270,16 @@ internal sealed class LanguageEmitter(LanguageModel model)
             this.Line($"public static {Runtime}LanguageRuntime.Terminal "
                 + $"{TerminalBinding(terminal)}() => new(");
             this.indentation++;
-            var predicate = terminal.Predicate is null ? string.Empty : ", " + terminal.Predicate;
+            var predicate = terminal.Predicate is null
+                ? string.Empty
+                : ", " + Id(terminal.Predicate);
             var acceptance = terminal.Predicate is null ? "_" : "value";
             var condition = terminal.Predicate is null
                 ? string.Empty
-                : $" && {terminal.Predicate}(value)";
+                : $" && {Id(terminal.Predicate)}(value)";
             var print = terminal.Prettifier is null
                 ? "ir"
-                : $"{terminal.Prettifier}(({terminal.Type})ir)";
+                : $"{Id(terminal.Prettifier)}(({terminal.Type})ir)";
             this.Line($"static datum => "
                 + $"{Runtime}LanguageRuntime.ReadTerminal<{terminal.Type}>(datum{predicate}),");
             this.Line($"static ir => ir is {terminal.Type} {acceptance}{condition},");
@@ -284,15 +289,19 @@ internal sealed class LanguageEmitter(LanguageModel model)
 
         var handlers = model.NonTerminals.SelectMany(static nonTerminal => nonTerminal.Productions)
             .Select(static rule => rule.PrettyHandler).OfType<LanguageModel.Handler>()
-            .Where(handler =>
-                string.Equals(handler.Owner, model.QualifiedName, StringComparison.Ordinal))
             .Distinct();
         foreach (var handler in handlers)
         {
             this.Line($"[{SystemNamespace}ComponentModel.EditorBrowsable("
                 + $"{SystemNamespace}ComponentModel.EditorBrowsableState.Never)]");
-            this.Line($"public static {Runtime}SExpr {PrettyBinding(handler)}"
-                + $"({Runtime}SExpr datum) => {handler.Name}(datum);");
+            string binding = PrettyBinding(handler);
+            string target = handler.Owner == model.QualifiedName
+                ? Id(handler.Name)
+                : handler.Owner + "." + (handler.Binding is null
+                    ? PrettyBinding(handler.Name) // Legacy binaries exposed unqualified keys.
+                    : binding);
+            this.Line($"public static {Runtime}SExpr {binding}"
+                + $"({Runtime}SExpr datum) => {target}(datum);");
         }
     }
 
@@ -319,7 +328,7 @@ internal sealed class LanguageEmitter(LanguageModel model)
             field => $"(({type})ir).{Id(field.Property)}"));
         var fields = string.Join(", ", rule.Fields.Select(this.Field));
         var handler = rule.PrettyHandler is { } custom
-            ? $", {custom.Owner}.{PrettyBinding(custom)}"
+            ? $", {PrettyBinding(custom)}"
             : string.Empty;
         this.Line($"new({syntax}, {pretty}, null, [{fields}], typeof({type}),");
         this.indentation++;

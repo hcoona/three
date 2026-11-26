@@ -20,7 +20,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
 
 namespace Hcoona.Nanopass.Generators;
 
@@ -39,7 +38,26 @@ internal readonly struct EquatableArray<T> : IReadOnlyList<T>, IEquatable<Equata
 
     public T this[int index] => this.Items[index];
 
-    public bool Equals(EquatableArray<T> other) => this.Items.SequenceEqual(other.Items);
+    public bool Equals(EquatableArray<T> other)
+    {
+        var left = this.Items;
+        var right = other.Items;
+        if (left.Length != right.Length)
+        {
+            return false;
+        }
+
+        var comparer = EqualityComparer<T>.Default;
+        for (int i = 0; i < left.Length; i++)
+        {
+            if (!comparer.Equals(left[i], right[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     public override bool Equals(object? obj) =>
         obj is EquatableArray<T> other && this.Equals(other);

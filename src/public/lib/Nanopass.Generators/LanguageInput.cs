@@ -25,7 +25,6 @@ internal sealed record LanguageInput(
     string Accessibility,
     EquatableArray<string> Containers,
     bool IsValidDeclaration,
-    LocationInfo Location,
     EquatableArray<LanguageInput.Inheritance> Bases,
     EquatableArray<string> Entries,
     EquatableArray<LanguageModel.Terminal> Terminals,

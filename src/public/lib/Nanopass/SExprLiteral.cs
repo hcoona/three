@@ -17,6 +17,9 @@
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
 using System;
+#if !NETSTANDARD2_0
+using System.Buffers;
+#endif
 using System.Globalization;
 using System.Text;
 
@@ -27,9 +30,37 @@ internal static class SExprLiteral
     private const NumberStyles FloatStyle = NumberStyles.AllowLeadingSign
         | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent;
 
+#if !NETSTANDARD2_0
+    // Include all characters accepted by char.IsWhiteSpace.
+    private const string Delimiters =
+        " \t\n\v\f\r\u0085\u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006"
+        + "\u2007\u2008\u2009\u200A\u2028\u2029\u202F\u205F\u3000()[]{}\"'`,;";
+
+    private static readonly SearchValues<char> DelimiterValues = SearchValues.Create(Delimiters);
+    private static readonly SearchValues<char> AtomBoundaries =
+        SearchValues.Create(Delimiters + "\\|");
+#endif
+
     internal static bool IsDelimiter(char ch) =>
         char.IsWhiteSpace(ch) || ch is '(' or ')' or '[' or ']' or '{' or '}'
             or '"' or '\'' or '`' or ',' or ';';
+
+    internal static int TokenLength(ReadOnlySpan<char> text, bool stopAtEscape = false)
+    {
+#if NETSTANDARD2_0
+        int i = 0;
+        while (i < text.Length && !IsDelimiter(text[i])
+            && !(stopAtEscape && text[i] is '\\' or '|'))
+        {
+            i++;
+        }
+
+        return i;
+#else
+        int end = text.IndexOfAny(stopAtEscape ? AtomBoundaries : DelimiterValues);
+        return end < 0 ? text.Length : end;
+#endif
+    }
 
     internal static bool? ReadBoolean(ReadOnlySpan<char> token) => token switch
     {
@@ -65,7 +96,8 @@ internal static class SExprLiteral
         value = default;
         return !HasTrailingNull(token)
             && double.TryParse(
-                ParseInput(token), FloatStyle, CultureInfo.InvariantCulture, out value);
+                ParseInput(token), FloatStyle, CultureInfo.InvariantCulture, out value)
+            && !double.IsInfinity(value);
     }
 
     internal static bool TryReadInteger(ReadOnlySpan<char> token, out long value)
@@ -92,10 +124,7 @@ internal static class SExprLiteral
             return text[start];
         }
 
-        while (position < text.Length && !IsDelimiter(text[position]))
-        {
-            position++;
-        }
+        position += TokenLength(text.AsSpan(position));
 
         ReadOnlySpan<char> token = text.AsSpan(start, position - start);
         return token switch
@@ -114,8 +143,23 @@ internal static class SExprLiteral
     internal static string ReadString(
         string text, ref int position, Func<string, int, Exception> error)
     {
-        position++;
-        StringBuilder value = new();
+        int start = ++position;
+        var remainder = text.AsSpan(start);
+        int boundary = remainder.IndexOfAny('"', '\\');
+        if (boundary < 0)
+        {
+            position = text.Length;
+            throw error("Unterminated string", position);
+        }
+
+        position += boundary;
+        if (text[position] == '"')
+        {
+            position++;
+            return text.Substring(start, boundary);
+        }
+
+        var value = new StringBuilder().Append(text, start, boundary);
         while (position < text.Length)
         {
             char ch = text[position++];

@@ -214,11 +214,11 @@ public sealed class ClauseLanguageTests
     }
 
     [TestMethod]
-    public void EmptyLists_CanBeConstructedButOnlyPairDataTryPairProductions()
+    public void EmptyLists_RoundTripWithoutTreatingAtomsAsPairProductions()
     {
-        var empty = new EmptyListLanguage.Implicit([]);
+        EmptyListLanguage.Expr empty = new EmptyListLanguage.Implicit([]);
         Assert.AreEqual("()", EmptyListLanguage.UnparseToString(empty));
-        Assert.ThrowsExactly<NanopassParseException>(() => EmptyListLanguage.Parse("()"));
+        Assert.AreEqual(empty, EmptyListLanguage.Parse("()"));
         var atom = EmptyDottedListLanguage.Parse("c");
         Assert.AreEqual("c", EmptyDottedListLanguage.UnparseToString(atom));
         Assert.ThrowsExactly<NanopassParseException>(() => EmptyDottedListLanguage.Parse("#f"));

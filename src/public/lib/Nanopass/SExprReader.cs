@@ -29,11 +29,16 @@ internal sealed class SExprReader(string text)
 
     private bool AtEnd => this.position == text.Length;
 
+    internal static bool IsSymbolicAtom(ReadOnlySpan<char> token) =>
+        SExprLiteral.ReadBoolean(token) is null
+        && SExprLiteral.ReadSpecialFloat(token) is null
+        && !SExprLiteral.StartsLikeNumber(token);
+
     internal static SExpr? ClassifyAtom(ReadOnlySpan<char> token)
     {
         if (SExprLiteral.ReadBoolean(token) is bool boolean)
         {
-            return new SExpr.Bool(boolean);
+            return boolean ? SExpr.Bool.True : SExpr.Bool.False;
         }
 
         if (SExprLiteral.ReadSpecialFloat(token) is double special)
@@ -212,26 +217,28 @@ internal sealed class SExprReader(string text)
     {
         int start = this.position;
         StringBuilder? name = null;
-        while (!this.AtTokenEnd(this.position))
+        while (!this.AtEnd)
         {
-            char ch = text[this.position++];
-            if (ch is not ('\\' or '|'))
+            int length = SExprLiteral.TokenLength(text.AsSpan(this.position), stopAtEscape: true);
+            name?.Append(text.AsSpan(this.position, length));
+            this.position += length;
+            if (this.AtTokenEnd(this.position))
             {
-                name?.Append(ch);
-                continue;
+                break;
             }
 
-            name ??= new StringBuilder().Append(text.AsSpan(start, this.position - start - 1));
+            name ??= new StringBuilder().Append(text.AsSpan(start, this.position - start));
+            char ch = text[this.position++];
             if (ch == '|')
             {
-                int length = text.AsSpan(this.position).IndexOf('|');
-                if (length < 0)
+                int quotedLength = text.AsSpan(this.position).IndexOf('|');
+                if (quotedLength < 0)
                 {
                     throw new NanopassParseException("Unterminated quoted symbol", text.Length);
                 }
 
-                name.Append(text.AsSpan(this.position, length));
-                this.position += length + 1;
+                name.Append(text.AsSpan(this.position, quotedLength));
+                this.position += quotedLength + 1;
             }
             else
             {

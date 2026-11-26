@@ -18,6 +18,8 @@
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
+using static Hcoona.Nanopass.Tests.ConversionInput;
+
 namespace Hcoona.Nanopass.Tests;
 
 /// <summary>
@@ -69,6 +71,67 @@ public sealed class PassSynthesisTests
         Assert.AreEqual(input, passEvents[0].Value);
         Assert.AreEqual(expected, passEvents[1].Value);
         Assert.AreEqual("(sub (lit 0) (lit 5))", passEvents[1].TryUnparse()?.Format());
+    }
+
+    /// <summary>
+    /// Reports one stage pair without removing the trace of individual processors.
+    /// </summary>
+    [TestMethod]
+    public void Pipeline_TracedPassDoesNotDuplicateStageEvents()
+    {
+        var pipeline = Pipeline.Start<LoweringInput.Expr>().Then(new LowerNegationRecur());
+        var input = LoweringInput.Parse("(neg (lit 5))");
+        var events = new List<PassTraceEvent>();
+
+        Assert.AreEqual("(sub (lit 0) (lit 5))",
+            LoweringOutput.UnparseToString(pipeline.Run(input, events.Add)));
+        Assert.AreSequenceEqual<PassTracePhase>(
+            [PassTracePhase.Enter, PassTracePhase.Exit],
+            events.Where(static item => item.ProcessorName is null)
+                .Select(static item => item.Phase));
+        var processorPhases = events.Where(static item => item.ProcessorName is not null)
+            .Select(static item => item.Phase).ToArray();
+        Assert.Contains(PassTracePhase.Enter, processorPhases);
+        Assert.Contains(PassTracePhase.Exit, processorPhases);
+    }
+
+    /// <summary>Preserves nested and recursive stage events after a caught failure.</summary>
+    [TestMethod]
+    public void Pipeline_NestedTraceRecoversAfterFailedStage()
+    {
+        var pass = new TraceRecovery();
+        var pipeline = Pipeline.Start<LoweringInput.Expr>().Then(pass);
+        var events = new List<PassTraceEvent>();
+
+        var result = pipeline.Run(new LoweringInput.Lit(2), events.Add);
+
+        Assert.AreEqual(new LoweringInput.Lit(1), result.Value);
+        var stageEvents = events.Where(static item => item.ProcessorName is null).ToArray();
+        Assert.IsTrue(stageEvents.All(static item =>
+            ReferenceEquals(item.Descriptor, TraceRecovery.PassDescriptor)));
+        Assert.AreSequenceEqual<(PassTracePhase, long)>(
+            [(PassTracePhase.Enter, 2), (PassTracePhase.Enter, 0), (PassTracePhase.Enter, 1),
+                (PassTracePhase.Exit, 1), (PassTracePhase.Enter, 1), (PassTracePhase.Exit, 1),
+                (PassTracePhase.Exit, 1)],
+            stageEvents.Select(static item =>
+                (item.Phase, Assert.IsInstanceOfType<LoweringInput.Lit>(
+                    Assert.IsInstanceOfType<LoweringInput.Expr>(item.Value).Value).N)));
+    }
+
+    /// <summary>
+    /// Reconstructs native records in their constructor order, not grammar order.
+    /// </summary>
+    [TestMethod]
+    public void Synthesis_BindsReorderedNativeFieldsByName()
+    {
+        var input = ReorderedLanguage.Parse("(sub (lit 17) (lit 5))");
+        var pass = new ReorderedIdentity();
+
+        var result = pass.Run(input);
+        Assert.AreEqual(input, result);
+        var node = Assert.IsInstanceOfType<ReorderedLanguage.Sub>(result.Value);
+        Assert.AreEqual(new ReorderedLanguage.Lit(5), node.Left.Value);
+        Assert.AreEqual(new ReorderedLanguage.Lit(17), node.Right.Value);
     }
 
     /// <summary>
@@ -241,14 +304,112 @@ public sealed class PassSynthesisTests
     {
         var pass = new ForwardSubtypeTuple();
         var term = IncludedInput.Parse("(var a)");
-        var (expression, count, label) = useDefaults
+        var (expression, count, label, offset) = useDefaults
             ? pass.TransformWithDefaults(term, "forwarded")
             : pass.Transform(term);
 
         Assert.AreEqual("(var tuple)", IncludedOutput.UnparseToString(expression));
-        Assert.AreEqual(1L, count);
+        Assert.AreEqual<long?>(1L, count);
         Assert.AreEqual("forwarded", label);
+        Assert.AreEqual<long?>(7L, offset);
         Assert.AreEqual(1, pass.Calls);
+    }
+
+    /// <summary>Verifies conversions involving generated grammar types.</summary>
+    [TestMethod]
+    public void Synthesis_ConvertsGeneratedTupleExtras()
+    {
+        var pass = new ConvertTupleExtras();
+        var literal = new ConversionInput.Lit(7);
+        ConversionInput.Expr input = literal;
+        ConversionOutput.Expr expected = new ConversionOutput.Lit(7);
+
+        Assert.AreEqual((expected, literal), pass.NullableRecord(input));
+        Assert.AreEqual((expected, (ConversionInput.Expr?)input), pass.NullableUnion(input));
+        Assert.AreEqual((expected, input), pass.SourceUnion(input));
+        var (expression, boxed) = pass.ObjectExtra(input);
+        Assert.AreEqual(expected, expression);
+        Assert.AreSame(literal, boxed);
+
+        var (structural, number) = pass.WidenedDefault(input);
+        Assert.AreEqual(expected, structural);
+        Assert.AreEqual(0L, number.Value);
+
+        var (rewritten, payload, array) = pass.GenericExtra(input);
+        Assert.AreEqual(expected, rewritten);
+        Assert.AreSame(literal, payload.Value);
+        Assert.AreSame(literal, Assert.ContainsSingle(array).Value.Value);
+    }
+
+    /// <summary>
+    /// Passes collection and nullable tuple extras through the generated processor.
+    /// </summary>
+    [TestMethod]
+    public void Synthesis_ConvertsCollectionsAndNullableTupleExtra()
+    {
+        var literal = new ConversionInput.Lit(7);
+        var (expression, array, sequence, tuple) =
+            new ConvertTupleExtras().CollectionExtras(literal);
+
+        Assert.AreEqual<ConversionOutput.Expr>(new ConversionOutput.Lit(7), expression);
+        Assert.AreSame(literal, Assert.ContainsSingle(array));
+        Assert.AreSame(literal, Assert.ContainsSingle(sequence));
+        Assert.AreEqual<(int, int)?>((1, 2), tuple);
+    }
+
+    /// <summary>
+    /// Synthesizes a terminal widening without a rewrite supplying the conversion.
+    /// </summary>
+    [TestMethod]
+    public void Synthesis_WidensStandaloneTerminalProcessor()
+    {
+        Assert.AreEqual(42L, new WidenTerminal().Run(42));
+    }
+
+    /// <summary>
+    /// Preserves the processor signature and delegates ordinary extra-slot conversions to C#.
+    /// </summary>
+    [TestMethod]
+    public void Synthesis_PreservesJaggedArraysGenericOwnersAndNarrowDefaults()
+    {
+        var pass = new ConvertSignatureExtras();
+        var literal = new ConversionInput.Lit(7);
+        int[][,] grid = [new int[2, 3]];
+        var box = new ConvertSignatureExtras.Box<(ConversionInput.Lit, int)>.Inner((literal, 5));
+
+        Assert.AreEqual<ConversionOutput.Expr>(
+            new ConversionOutput.Lit(12), pass.Run(literal, grid, box));
+        var (result, extraGrid, extraPass) = pass.Lower(literal, grid, box);
+        Assert.AreEqual<ConversionOutput.Expr>(new ConversionOutput.Lit(12), result);
+        Assert.AreSame(grid, extraGrid);
+        Assert.AreSame(pass, extraPass);
+        Assert.AreEqual<byte>(1, Assert.IsInstanceOfType<byte>(pass.WithByte(literal).Item2));
+    }
+
+    /// <summary>Converts defaults and custom Run results into declared unions.</summary>
+    [TestMethod]
+    public void Synthesis_ConvertsDeclaredUnionDefaultsAndRunResult()
+    {
+        var pass = new ConvertDeclaredDefaults();
+        ConversionInput.Expr input = new ConversionInput.Lit(7);
+
+        var (term, custom, native) = pass.Lower(input);
+        Assert.AreEqual<DeclaredConversionOutput.Expr>(new DeclaredConversionOutput.Lit(7), term);
+        Assert.IsTrue(custom.TryGetValue(out long number));
+        Assert.AreEqual(1L, number);
+        Assert.AreEqual(0L, native.Value);
+        Assert.AreEqual((term, native), pass.LowerNative(input));
+        Assert.AreEqual(term, Pipeline.Start<ConversionInput.Expr>().Then(pass).Run(input));
+    }
+
+    /// <summary>Converts a rewrite extra into an independent language's union.</summary>
+    [TestMethod]
+    public void Synthesis_ConvertsThirdLanguageUnionExtra()
+    {
+        var (term, extra) = new ConvertDeclaredDefaults().LowerAux(new ConversionInput.Lit(7));
+
+        Assert.AreEqual<DeclaredConversionOutput.Expr>(new DeclaredConversionOutput.Lit(7), term);
+        Assert.AreEqual<Aux.Expr>(new Aux.Lit(7), extra);
     }
 
     /// <summary>
@@ -314,6 +475,9 @@ public sealed class PassSynthesisTests
 
         Assert.AreEqual(fallback, pass.Run(zero, fallback));
         Assert.AreEqual(one, pass.Run(one, fallback));
+        Assert.AreSame(GuardedElsePass.PassDescriptor, ((INanopassPass)pass).Descriptor);
+        Assert.IsFalse(typeof(IPass<LoweringOutput.Expr, LoweringOutput.Expr>)
+            .IsAssignableFrom(typeof(GuardedElsePass)));
     }
 
     private static SExpr Generate(Random random, int depth)
@@ -380,6 +544,52 @@ internal sealed partial class ParamsEntryProcessorPass
     private static LoweringOutput.Expr Map(LoweringOutput.Expr ir, params int[] context) =>
         context.Length == 0 ? new LoweringOutput.Lit(0) : ir;
 }
+
+[Pass(typeof(LoweringInput), typeof(LoweringInput), Trace = true)]
+internal sealed partial class TraceRecovery
+{
+    [Rewrite]
+    private LoweringInput.Expr RewriteLit(LoweringInput.Lit node)
+    {
+        if (node.N == 0)
+        {
+            throw new InvalidOperationException("Failed stage");
+        }
+
+        if (node.N == 1)
+        {
+            return node;
+        }
+
+        var nested = Pipeline.Start<LoweringInput.Expr>().Then(this);
+        try
+        {
+            _ = nested.Run(new LoweringInput.Lit(0));
+        }
+        catch (InvalidOperationException exception) when (exception.Message == "Failed stage")
+        {
+            return nested.Run(this.Run(new LoweringInput.Lit(1)));
+        }
+
+        throw new InvalidOperationException("The failing stage unexpectedly succeeded.");
+    }
+}
+
+[Language, Terminal(typeof(long), "n")]
+internal static partial class ReorderedLanguage
+{
+    [NonTerminal("e")]
+    public partial union Expr(Sub, Lit);
+
+    [Syntax("(sub right left)")]
+    public sealed record Sub(Expr Left, Expr Right);
+
+    [Syntax("(lit n)")]
+    public sealed record Lit(long N);
+}
+
+[Pass(typeof(ReorderedLanguage), typeof(ReorderedLanguage))]
+internal sealed partial class ReorderedIdentity;
 
 [Language, Terminal(typeof(Symbol), "x")]
 [NonTerminalDef("Expr", ["e"], "a")]
@@ -504,20 +714,16 @@ internal sealed partial class ForwardSubtypeTuple
     internal int Calls { get; private set; }
 
     [Processor]
-    internal partial (IncludedOutput.Value, long, string) Transform(IncludedInput.Expr ir);
+    internal partial (IncludedOutput.Value, long?, string?, long?) Transform(IncludedInput.Expr ir);
 
-    [Processor(DefaultExtraReturns = new object[] { 0L, "default" })]
-    internal partial (IncludedOutput.Value, long, string) TransformWithDefaults(
+    [Processor(DefaultExtraReturns = new object[] { 0L, "default", 0L })]
+    internal partial (IncludedOutput.Value, long?, string?, long?) TransformWithDefaults(
         IncludedInput.Expr ir, string label);
 
     [Processor]
-    private (IncludedOutput.Leaf, int, string) Forward(
+    private (IncludedOutput.Leaf, int, string, int) Forward(
         IncludedInput.Atom ir, string label = "forwarded") =>
-        (new IncludedOutput.Var(new Symbol("tuple")), ++this.Calls, label);
-
-    [Processor]
-    private static (IncludedOutput.Leaf, string, string) Incompatible(IncludedInput.Atom ir) =>
-        throw new NotSupportedException();
+        (new IncludedOutput.Var(new Symbol("tuple")), ++this.Calls, label, 7);
 
     [Processor]
     private static (IncludedOutput.Leaf, int) WrongArity(IncludedInput.Atom ir) =>
@@ -526,6 +732,176 @@ internal sealed partial class ForwardSubtypeTuple
     [Processor]
     private static IncludedOutput.Leaf NoExtras(IncludedInput.Atom ir) =>
         throw new NotSupportedException();
+}
+
+[Language, Terminal(typeof(long), "n")]
+[NonTerminalDef("Expr", ["e"], "(lit n)")]
+internal static partial class ConversionInput;
+
+[Language, Extends(typeof(ConversionInput))]
+[NonTerminalDef("Number", ["num"], "n")]
+internal static partial class ConversionOutput;
+
+[Pass(typeof(ConversionInput), typeof(ConversionOutput))]
+internal sealed partial class ConvertSignatureExtras
+{
+    internal partial ConversionOutput.Expr Run(
+        ConversionInput.Expr ir, int[][,] grid, Box<(Lit A, int B)>.Inner box);
+
+    [Processor]
+    internal partial (ConversionOutput.Expr, int[][,], INanopassPass) Lower(
+        ConversionInput.Expr ir, int[][,] grid, Box<(Lit, int)>.Inner box);
+
+    [Processor(DefaultExtraReturns = [(byte)1])]
+    internal partial (ConversionOutput.Expr, object) WithByte(ConversionInput.Expr ir);
+
+    [Rewrite(Processor = nameof(Lower))]
+    private (ConversionOutput.Lit, int[][,], ConvertSignatureExtras) RewriteLiteral(
+        Lit lit, int[][,] grid, Box<(Lit Value, int Offset)>.Inner box) =>
+        (new(lit.N + box.Value.Offset), grid, this);
+
+    internal static class Box<T>
+    {
+        internal sealed record Inner(T Value);
+    }
+}
+
+[Pass(typeof(ConversionInput), typeof(ConversionOutput))]
+internal sealed partial class ConvertTupleExtras
+{
+    internal ConversionOutput.Expr Run(ConversionInput.Expr ir) => this.NullableRecord(ir).Item1;
+
+    [Processor]
+    internal partial (ConversionOutput.Expr, ConversionInput.Lit?) NullableRecord(
+        ConversionInput.Expr ir);
+
+    [Processor]
+    internal partial (ConversionOutput.Expr, ConversionInput.Expr?) NullableUnion(
+        ConversionInput.Expr ir);
+
+    [Processor]
+    internal partial (ConversionOutput.Expr, ConversionInput.Expr) SourceUnion(
+        ConversionInput.Expr ir);
+
+    [Processor]
+    internal partial (ConversionOutput.Expr, object) ObjectExtra(ConversionInput.Expr ir);
+
+    [Processor(DefaultExtraReturns = [0])]
+    internal partial (ConversionOutput.Expr, ConversionOutput.Number) WidenedDefault(
+        ConversionInput.Expr ir);
+
+    [Processor]
+    internal partial (
+        ConversionOutput.Expr,
+        Payload<ConversionInput.Lit>,
+        IProducer<Payload<ConversionInput.Lit>>[])
+        GenericExtra(ConversionInput.Expr ir);
+
+    [Processor]
+    internal partial (
+        ConversionOutput.Expr,
+        IReadOnlyList<ConversionInput.Lit?>,
+        IEnumerable<ConversionInput.Lit?>,
+        (int, int)?) CollectionExtras(ConversionInput.Expr ir);
+
+    [Rewrite(Processor = nameof(NullableRecord))]
+    private static (ConversionOutput.Expr, ConversionInput.Lit) RewriteNullableRecord(
+        ConversionInput.Lit lit) =>
+        (new ConversionOutput.Lit(lit.N), lit);
+
+    [Rewrite(Processor = nameof(NullableUnion))]
+    private static (ConversionOutput.Expr, ConversionInput.Expr) RewriteNullableUnion(
+        ConversionInput.Lit lit) =>
+        (new ConversionOutput.Lit(lit.N), lit);
+
+    [Rewrite(Processor = nameof(SourceUnion))]
+    private static (ConversionOutput.Expr, ConversionInput.Lit) RewriteSourceUnion(
+        ConversionInput.Lit lit) =>
+        (new ConversionOutput.Lit(lit.N), lit);
+
+    [Rewrite(Processor = nameof(ObjectExtra))]
+    private static (ConversionOutput.Expr, ConversionInput.Lit) RewriteObjectExtra(
+        ConversionInput.Lit lit) =>
+        (new ConversionOutput.Lit(lit.N), lit);
+
+    [Rewrite(Processor = nameof(GenericExtra))]
+    private static (ConversionOutput.Expr, RewritePayload<Lit>, Producer<RewritePayload<Lit>>[])
+        RewriteGenericExtra(ConversionInput.Lit lit) =>
+        (new ConversionOutput.Lit(lit.N), new(lit), [new(new(lit))]);
+
+    [Rewrite(Processor = nameof(CollectionExtras))]
+    private static (ConversionOutput.Expr, Lit[], List<Lit>, (int, int))
+        RewriteCollectionExtras(ConversionInput.Lit lit) =>
+        (new ConversionOutput.Lit(lit.N), [lit], [lit], (1, 2));
+
+    internal interface IProducer<out T>
+    {
+        T Value { get; }
+    }
+
+    internal record Payload<T>(T Value);
+
+    private sealed record Producer<T>(T Value) : IProducer<T>;
+
+    private sealed record RewritePayload<T>(T Value) : Payload<T>(Value);
+}
+
+[Language, Extends(typeof(ConversionInput)), Remove(typeof(ConversionInput.Lit))]
+internal static partial class DeclaredConversionOutput
+{
+    public partial union Expr(long, Lit);
+
+    [Syntax("(lit n)")]
+    public sealed record Lit(long N);
+
+    [NonTerminal("v"), Cases(typeof(long))]
+    public readonly partial struct Value;
+}
+
+[Language, Terminal(typeof(long), "n")]
+[NonTerminalDef("Expr", ["e"], "(lit n)")]
+internal static partial class Aux;
+
+[Language, Terminal(typeof(int), "n", Name = "num")]
+[NonTerminalDef("Expr", ["e"], "n")]
+internal static partial class NarrowNumberLanguage;
+
+[Language, Terminal(typeof(long), "n", Name = "num")]
+[NonTerminalDef("Expr", ["e"], "n")]
+internal static partial class WideNumberLanguage;
+
+[Pass(typeof(NarrowNumberLanguage), typeof(WideNumberLanguage))]
+internal sealed partial class WidenTerminal
+{
+    internal long Run(int n) => this.Widen(n);
+
+    [Processor("num", "num")]
+    private partial long Widen(int n);
+}
+
+[Pass(typeof(ConversionInput), typeof(DeclaredConversionOutput))]
+internal sealed partial class ConvertDeclaredDefaults
+{
+    internal static DeclaredConversionOutput.Lit Run(ConversionInput.Expr ir) =>
+        new(((Lit)ir.Value).N);
+
+    [Processor(DefaultExtraReturns = [1L, 0])]
+    internal partial (
+        DeclaredConversionOutput.Expr,
+        DeclaredConversionOutput.Value,
+        DeclaredConversionOutput.Expr)
+        Lower(ConversionInput.Expr ir);
+
+    [Processor(DefaultExtraReturns = [0])]
+    internal partial (DeclaredConversionOutput.Expr, DeclaredConversionOutput.Expr)
+        LowerNative(ConversionInput.Expr ir);
+
+    [Processor]
+    internal partial (DeclaredConversionOutput.Expr, Aux.Expr) LowerAux(ConversionInput.Expr ir);
+
+    [Rewrite(Processor = nameof(LowerAux))]
+    private static (DeclaredConversionOutput.Expr, Aux.Lit) RewriteAux(ConversionInput.Lit lit) =>
+        (new DeclaredConversionOutput.Lit(lit.N), new Aux.Lit(lit.N));
 }
 
 [Language, Terminal(typeof(Symbol), "x", Name = "Symbol")]

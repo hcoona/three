@@ -16,7 +16,9 @@
 // You should have received a copy of the GNU General Public License along with
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
-// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015 Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell). See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
+// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015
+// Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell).
+// See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
 
 using RenameEnvironment = System.Collections.Immutable.ImmutableDictionary<
     Hcoona.Nanopass.Symbol, Hcoona.Nanopass.Symbol>;
@@ -65,16 +67,20 @@ internal sealed partial class RenameVarsVerifyLegal
                 case "begin" when form.Count >= 2:
                     return new L0.Begin(form[1..^1].Select(Lower), Lower(form[^1]));
                 case "lambda" when form.Count >= 3:
-                    var parameters = SchemeHelpers.RequireList(form[1]).Select(SchemeHelpers.RequireSymbol);
+                    var parameters = SchemeHelpers.RequireList(form[1])
+                        .Select(SchemeHelpers.RequireSymbol);
                     var (renamed, bodyEnvironment) = Extend(parameters, env, symbols, head);
                     return new L0.Lambda(
-                        renamed, form[2..^1].Select(item => this.Read(item, bodyEnvironment, symbols)),
+                        renamed,
+                        form[2..^1].Select(item => this.Read(item, bodyEnvironment, symbols)),
                         this.Read(form[^1], bodyEnvironment, symbols));
                 case "let" or "letrec" when form.Count >= 3:
                     var binding = SchemeHelpers.RequireList(form[1]).Select(ReadBinding);
-                    var (names, bodyEnv) = Extend(binding.Select(pair => pair.Name), env, symbols, head);
+                    var (names, bodyEnv) = Extend(
+                        binding.Select(pair => pair.Name), env, symbols, head);
                     bool recursive = head.Name == "letrec";
-                    var values = binding.Select(pair => this.Read(pair.Value, recursive ? bodyEnv : env, symbols));
+                    var values = binding.Select(pair =>
+                        this.Read(pair.Value, recursive ? bodyEnv : env, symbols));
                     var prefix = form[2..^1].Select(item => this.Read(item, bodyEnv, symbols));
                     var final = this.Read(form[^1], bodyEnv, symbols);
                     return recursive ? new L0.Letrec(names, values, prefix, final)
@@ -84,7 +90,8 @@ internal sealed partial class RenameVarsVerifyLegal
                     {
                         if (!SchemeHelpers.AcceptsUserArity(head, form.Count - 1))
                         {
-                            throw new NanopassException($"Wrong arity for Scheme primitive {head}: {ir}.");
+                            throw new NanopassException(
+                                $"Wrong arity for Scheme primitive {head}: {ir}.");
                         }
 
                         return new L0.Primapp(head, form[1..].Select(Lower));
@@ -116,7 +123,8 @@ internal sealed partial class RenameVarsVerifyLegal
 
     private static Symbol Lookup(Symbol name, RenameEnvironment env, string operation) =>
         env.TryGetValue(name, out var value) ? value :
-            throw new NanopassException($"Invalid {operation} to {VerifyScheme.VariableKind(name)} {name}.");
+            throw new NanopassException(
+                $"Invalid {operation} to {VerifyScheme.VariableKind(name)} {name}.");
 }
 
 [Pass(typeof(LP), typeof(L0))]
@@ -124,7 +132,8 @@ internal sealed partial class VerifyScheme
 {
     public L0.Expr Run(LP.Expr input) => this.Verify(input, RenameEnvironment.Empty, null);
 
-    internal L0.Expr Run(LP.Expr input, SchemeSymbols symbols) => this.Verify(input, RenameEnvironment.Empty, symbols);
+    internal L0.Expr Run(LP.Expr input, SchemeSymbols symbols) =>
+        this.Verify(input, RenameEnvironment.Empty, symbols);
 
     [Processor("Expr", "Expr")]
     private partial L0.Expr Verify(LP.Expr ir, RenameEnvironment env, SchemeSymbols? symbols);
@@ -134,7 +143,10 @@ internal sealed partial class VerifyScheme
         SchemeHelpers.IsUserPrimitive(name) ? "user-primitive" : "unbound variable";
 
     [Rewrite(typeof(SExpr), Processor = nameof(Verify))]
-    private static L0.Expr Datum(SExpr d) => new L0.Datum(d);
+    private static L0.Expr Constant(SExpr c) => new L0.Datum(c);
+
+    [Rewrite(Processor = nameof(Verify))]
+    private static L0.Expr Quote(LP.Quote node) => new L0.Datum(node.D);
 
     [Rewrite(typeof(Symbol), Processor = nameof(Verify))]
     private static L0.Expr Variable(Symbol x, RenameEnvironment env) =>
@@ -153,7 +165,9 @@ internal sealed partial class VerifyScheme
         var (names, prefix, last) = node;
         var (bound, bodyEnv) = Bind(names, env, "lambda", symbols);
         return new L0.Lambda(
-            bound, prefix.Select(item => this.Verify(item, bodyEnv, symbols)), this.Verify(last, bodyEnv, symbols));
+            bound,
+            prefix.Select(item => this.Verify(item, bodyEnv, symbols)),
+            this.Verify(last, bodyEnv, symbols));
     }
 
     [Rewrite(Processor = nameof(Verify))]
@@ -162,7 +176,8 @@ internal sealed partial class VerifyScheme
         var (names, values, prefix, last) = node;
         var (bound, bodyEnv) = Bind(names, env, "let", symbols);
         return new L0.Let(bound, values.Select(value => this.Verify(value, env, symbols)),
-            prefix.Select(item => this.Verify(item, bodyEnv, symbols)), this.Verify(last, bodyEnv, symbols));
+            prefix.Select(item => this.Verify(item, bodyEnv, symbols)),
+            this.Verify(last, bodyEnv, symbols));
     }
 
     [Rewrite(Processor = nameof(Verify))]
@@ -171,7 +186,8 @@ internal sealed partial class VerifyScheme
         var (names, values, prefix, last) = node;
         var (bound, bodyEnv) = Bind(names, env, "letrec", symbols);
         return new L0.Letrec(bound, values.Select(value => this.Verify(value, bodyEnv, symbols)),
-            prefix.Select(item => this.Verify(item, bodyEnv, symbols)), this.Verify(last, bodyEnv, symbols));
+            prefix.Select(item => this.Verify(item, bodyEnv, symbols)),
+            this.Verify(last, bodyEnv, symbols));
     }
 
     [Rewrite(Processor = nameof(Verify))]
@@ -179,7 +195,9 @@ internal sealed partial class VerifyScheme
     {
         var (procedure, operands) = node;
         var arguments = operands.Select(item => this.Verify(item, env, symbols));
-        if (procedure.Value is Symbol primitive && !env.ContainsKey(primitive) && SchemeHelpers.IsUserPrimitive(primitive))
+        if (procedure.Value is Symbol primitive
+            && !env.ContainsKey(primitive)
+            && SchemeHelpers.IsUserPrimitive(primitive))
         {
             if (!SchemeHelpers.AcceptsUserArity(primitive, operands.Count))
             {
@@ -201,12 +219,16 @@ internal sealed partial class VerifyScheme
     {
         if (!SchemeHelpers.IsSet(names))
         {
-            var duplicates = names.GroupBy(name => name).Where(group => group.Count() > 1).Select(group => group.Key);
-            throw new NanopassException($"Duplicate bindings {string.Join(", ", duplicates)} in {form} form.");
+            var duplicates = names.GroupBy(name => name)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key);
+            throw new NanopassException(
+                $"Duplicate bindings {string.Join(", ", duplicates)} in {form} form.");
         }
 
         var bound = symbols is null ? names : names.Select(symbols.GenSymbol);
-        return (bound, env.SetItems(names.Zip(bound, static (name, value) => KeyValuePair.Create(name, value))));
+        return (bound, env.SetItems(
+            names.Zip(bound, static (name, value) => KeyValuePair.Create(name, value))));
     }
 }
 
@@ -215,7 +237,9 @@ internal sealed partial class RemoveImplicitBegin
 {
     [Rewrite]
     private static L1.Expr Lambda(
-        L0.Lambda node, [Recur(Field = "Body1List")] Seq<L1.Expr> prefix, [Recur(Field = "Body2")] L1.Expr last) =>
+        L0.Lambda node,
+        [Recur(Field = "Body1List")] Seq<L1.Expr> prefix,
+        [Recur(Field = "Body2")] L1.Expr last) =>
         new L1.Lambda(node.XList, new L1.Begin(prefix, last));
 
     [Rewrite]
@@ -243,7 +267,9 @@ internal sealed partial class RemoveOneArmedIf
 {
     [Rewrite]
     private static L3.Expr If(
-        L2.If2 node, [Recur(Field = "E1")] L3.Expr test, [Recur(Field = "E2")] L3.Expr consequent) =>
+        L2.If2 node,
+        [Recur(Field = "E1")] L3.Expr test,
+        [Recur(Field = "E2")] L3.Expr consequent) =>
         new L3.If3(test, consequent, new L3.Primapp("void", []));
 }
 
@@ -274,7 +300,8 @@ internal sealed partial class UncoverSettable
         L3.Let node, [Recur(Field = "Body")] (L4.Expr Term, Seq<Symbol> Assigned) body)
     {
         var local = SchemeHelpers.Intersection(body.Assigned, node.XList);
-        var (values, assigned) = this.LowerAll(node.EList, SchemeHelpers.Difference(body.Assigned, local));
+        var (values, assigned) = this.LowerAll(
+            node.EList, SchemeHelpers.Difference(body.Assigned, local));
         return (new L4.Let(node.XList, values, new L4.Settable(local, body.Term)), assigned);
     }
 

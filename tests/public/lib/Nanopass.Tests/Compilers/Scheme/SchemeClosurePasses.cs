@@ -16,7 +16,9 @@
 // You should have received a copy of the GNU General Public License along with
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
-// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015 Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell). See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
+// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015
+// Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell).
+// See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
 
 using DirectCalls = System.Collections.Immutable.ImmutableDictionary<
     Hcoona.Nanopass.Symbol, Hcoona.Nanopass.Symbol>;
@@ -47,7 +49,8 @@ internal sealed partial class RemoveImpureLetrec
         var lambdas = node.EList.Select(item =>
         {
             var lambda = (L4.Lambda)item.Value!;
-            return (L5.LambdaExpr)new L5.Lambda(lambda.XList, this.LowerSetBody(lambda.Sbody, symbols));
+            return (L5.LambdaExpr)new L5.Lambda(
+                lambda.XList, this.LowerSetBody(lambda.Sbody, symbols));
         });
         return new L5.Letrec(node.XList, lambdas, this.Lower(body.Body, symbols));
     }
@@ -85,7 +88,8 @@ internal sealed partial class RemoveSetBang
     private partial L6.Expr Lower(L5.Expr ir, Seq<Symbol> boxed, SchemeSymbols symbols);
 
     [Processor("LambdaExpr", "LambdaExpr")]
-    private partial L6.LambdaExpr LowerLambda(L5.LambdaExpr ir, Seq<Symbol> boxed, SchemeSymbols symbols);
+    private partial L6.LambdaExpr LowerLambda(
+        L5.LambdaExpr ir, Seq<Symbol> boxed, SchemeSymbols symbols);
 
     [Rewrite(Processor = nameof(Lower))]
     private static L6.Expr Var(L5.Var node, Seq<Symbol> boxed) =>
@@ -99,7 +103,10 @@ internal sealed partial class RemoveSetBang
 
     [Rewrite(Processor = nameof(Lower))]
     private L6.Expr Let(
-        L5.Let node, [Recur(Field = "EList")] Seq<L6.Expr> values, Seq<Symbol> boxed, SchemeSymbols symbols)
+        L5.Let node,
+        [Recur(Field = "EList")] Seq<L6.Expr> values,
+        Seq<Symbol> boxed,
+        SchemeSymbols symbols)
     {
         var (formals, body) = this.SetBody(node.Sbody, node.XList, boxed, symbols);
         return new L6.Let(formals, values, body);
@@ -131,13 +138,16 @@ internal sealed partial class RemoveSetBang
             {
                 Symbol temp = symbols.GenSymbol(name);
                 parameters[i] = temp;
-                bindings.Add((name, new L6.Primapp("cons", [new L6.Var(temp), new L6.Primapp("void", [])])));
+                bindings.Add((name, new L6.Primapp(
+                    "cons", [new L6.Var(temp), new L6.Primapp("void", [])])));
             }
         }
 
         bindings.Reverse();
         return ([.. parameters], new L6.Let(
-            [.. bindings.Select(binding => binding.Name)], [.. bindings.Select(binding => binding.Value)], result));
+            [.. bindings.Select(binding => binding.Name)],
+            [.. bindings.Select(binding => binding.Value)],
+            result));
     }
 }
 
@@ -146,7 +156,9 @@ internal sealed partial class SanitizeBinding
 {
     [Rewrite]
     private static L6.Expr Let(
-        L6.Let node, [Recur(Field = "EList")] Seq<L6.Expr> values, [Recur(Field = "Body")] L6.Expr body)
+        L6.Let node,
+        [Recur(Field = "EList")] Seq<L6.Expr> values,
+        [Recur(Field = "Body")] L6.Expr body)
     {
         List<Symbol> localNames = [];
         List<L6.Expr> locals = [];
@@ -168,7 +180,8 @@ internal sealed partial class SanitizeBinding
 
         var local = new L6.Let([.. localNames], [.. locals], body);
         return lambdas.Count == 0 ? local :
-            (L6.Expr)new L6.Letrec([.. recursiveNames], [.. lambdas], locals.Count == 0 ? body : local);
+            (L6.Expr)new L6.Letrec(
+                [.. recursiveNames], [.. lambdas], locals.Count == 0 ? body : local);
     }
 }
 
@@ -198,28 +211,29 @@ internal sealed partial class RemoveAnonymousLambda
 [Pass(typeof(L7), typeof(L8))]
 internal sealed partial class UncoverFree
 {
-    public L8.Expr Run(L7.Expr input) => this.Lower(input, []).Term;
+    public L8.Expr Run(L7.Expr input) => this.Lower(input).Term;
 
     [Processor("Expr", "Expr")]
-    private partial (L8.Expr Term, Seq<Symbol> Free) Lower(L7.Expr ir, Seq<Symbol> free);
+    private partial (L8.Expr Term, Seq<Symbol> Free) Lower(L7.Expr ir);
 
     [Processor("LambdaExpr", "LambdaExpr")]
-    private partial (L8.LambdaExpr Term, Seq<Symbol> Free) LowerLambda(L7.LambdaExpr ir, Seq<Symbol> free);
+    private partial (L8.LambdaExpr Term, Seq<Symbol> Free) LowerLambda(L7.LambdaExpr ir);
 
     [Rewrite(Processor = nameof(Lower))]
-    private static (L8.Expr, Seq<Symbol>) Var(L7.Var node, Seq<Symbol> free) =>
-        (new L8.Var(node.X), [node.X, .. free]);
+    private static (L8.Expr, Seq<Symbol>) Var(L7.Var node) =>
+        (new L8.Var(node.X), [node.X]);
 
     [Rewrite(Processor = nameof(Lower))]
-    private static (L8.Expr, Seq<Symbol>) QuotedConst(L7.QuotedConst node, Seq<Symbol> free) =>
-        (new L8.QuotedConst(node.D), free);
+    private static (L8.Expr, Seq<Symbol>) QuotedConst(L7.QuotedConst node) =>
+        (new L8.QuotedConst(node.D), []);
 
     [Rewrite(Processor = nameof(Lower))]
     private (L8.Expr, Seq<Symbol>) Let(
         L7.Let node, [Recur(Field = "Body")] (L8.Expr Term, Seq<Symbol> Free) body)
     {
-        var (values, free) = this.LowerAll(node.EList, SchemeHelpers.Difference(body.Free, node.XList));
-        return (new L8.Let(node.XList, values, body.Term), free);
+        var (values, free) = this.LowerAll(node.EList);
+        return (new L8.Let(node.XList, values, body.Term),
+            SchemeHelpers.Union(free, SchemeHelpers.Difference(body.Free, node.XList)));
     }
 
     [Rewrite(Processor = nameof(Lower))]
@@ -229,59 +243,63 @@ internal sealed partial class UncoverFree
         var free = body.Free;
         var lambdas = node.LexprList.Select(item =>
         {
-            var (lambda, updated) = this.LowerLambda(item, free);
-            free = updated;
+            var (lambda, captured) = this.LowerLambda(item);
+            free = SchemeHelpers.Union(free, captured);
             return lambda;
         });
-        return (new L8.Letrec(node.XList, lambdas, body.Term), SchemeHelpers.Difference(free, node.XList));
+        return (
+            new L8.Letrec(node.XList, lambdas, body.Term),
+            SchemeHelpers.Difference(free, node.XList));
     }
 
     [Rewrite(Processor = nameof(Lower))]
-    private (L8.Expr, Seq<Symbol>) If(
-        L7.If3 node, [Recur(Field = "E1")] (L8.Expr Term, Seq<Symbol> Free) test)
-    {
-        var (yes, next) = this.Lower(node.E2, test.Free);
-        var (no, free) = this.Lower(node.E3, next);
-        return (new L8.If3(test.Term, yes, no), free);
-    }
+    private static (L8.Expr, Seq<Symbol>) If(
+        L7.If3 node,
+        [Recur(Field = "E1")] (L8.Expr Term, Seq<Symbol> Free) test,
+        [Recur(Field = "E2")] (L8.Expr Term, Seq<Symbol> Free) yes,
+        [Recur(Field = "E3")] (L8.Expr Term, Seq<Symbol> Free) no) =>
+        (new L8.If3(test.Term, yes.Term, no.Term),
+            SchemeHelpers.Union(test.Free, yes.Free, no.Free));
 
     [Rewrite(Processor = nameof(Lower))]
     private (L8.Expr, Seq<Symbol>) Begin(
         L7.Begin node, [Recur(Field = "E2")] (L8.Expr Term, Seq<Symbol> Free) last)
     {
-        var (effects, free) = this.LowerAll(node.E1List, last.Free);
-        return (new L8.Begin(effects, last.Term), free);
+        var (effects, free) = this.LowerAll(node.E1List);
+        return (new L8.Begin(effects, last.Term), SchemeHelpers.Union(free, last.Free));
     }
 
     [Rewrite(Processor = nameof(Lower))]
-    private (L8.Expr, Seq<Symbol>) Primapp(L7.Primapp node, Seq<Symbol> free)
+    private (L8.Expr, Seq<Symbol>) Primapp(L7.Primapp node)
     {
-        var (arguments, updated) = this.LowerAll(node.EList, free);
-        return (new L8.Primapp(node.Pr, arguments), updated);
+        var (arguments, free) = this.LowerAll(node.EList);
+        return (new L8.Primapp(node.Pr, arguments), free);
     }
 
     [Rewrite(Processor = nameof(Lower))]
     private (L8.Expr, Seq<Symbol>) App(
         L7.App node, [Recur(Field = "E0")] (L8.Expr Term, Seq<Symbol> Free) procedure)
     {
-        var (arguments, free) = this.LowerAll(node.E1List, procedure.Free);
-        return (new L8.App(procedure.Term, arguments), free);
+        var (arguments, free) = this.LowerAll(node.E1List);
+        return (new L8.App(procedure.Term, arguments), SchemeHelpers.Union(procedure.Free, free));
     }
 
     [Rewrite(Processor = nameof(LowerLambda))]
     private static (L8.LambdaExpr, Seq<Symbol>) Lambda(
-        L7.Lambda node, [Recur(Field = "Body", Processor = nameof(Lower))] (L8.Expr Term, Seq<Symbol> Free) body)
+        L7.Lambda node,
+        [Recur(Field = "Body", Processor = nameof(Lower))] (L8.Expr Term, Seq<Symbol> Free) body)
     {
         var free = SchemeHelpers.Difference(body.Free, node.XList);
         return (new L8.Lambda(node.XList, new L8.Free(free, body.Term)), free);
     }
 
-    private (Seq<L8.Expr>, Seq<Symbol>) LowerAll(Seq<L7.Expr> terms, Seq<Symbol> free)
+    private (Seq<L8.Expr>, Seq<Symbol>) LowerAll(Seq<L7.Expr> terms)
     {
+        Seq<Symbol> free = [];
         var result = terms.Select(item =>
         {
-            var (term, updated) = this.Lower(item, free);
-            free = updated;
+            var (term, captured) = this.Lower(item);
+            free = SchemeHelpers.Union(free, captured);
             return term;
         });
         return (result, free);
@@ -293,7 +311,8 @@ internal sealed partial class ConvertClosure
 {
     public L9.Expr Run(L8.Expr input) => this.Run(input, new());
 
-    internal L9.Expr Run(L8.Expr input, SchemeSymbols symbols) => this.Lower(input, DirectCalls.Empty, symbols);
+    internal L9.Expr Run(L8.Expr input, SchemeSymbols symbols) =>
+        this.Lower(input, DirectCalls.Empty, symbols);
 
     [Processor("Expr", "Expr")]
     private partial L9.Expr Lower(L8.Expr ir, DirectCalls direct, SchemeSymbols symbols);
@@ -317,7 +336,8 @@ internal sealed partial class ConvertClosure
     {
         var labels = node.XList.Select(SchemeSymbols.GenLabel);
         var pointers = node.XList.Select(_ => symbols.GenSymbol("cp"));
-        var locals = direct.SetItems(node.XList.Zip(labels, static (name, label) => KeyValuePair.Create(name, label)));
+        var locals = direct.SetItems(
+            node.XList.Zip(labels, static (name, label) => KeyValuePair.Create(name, label)));
         var lambdas = new L9.LambdaExpr[labels.Count];
         var closures = new L9.Closure[labels.Count];
         for (int i = 0; i < labels.Count; i++)
@@ -331,7 +351,8 @@ internal sealed partial class ConvertClosure
         }
 
         return new L9.Letrec(labels, [.. lambdas],
-            new L9.ClosureLetrec.ClosureLetrecNode(node.XList, [.. closures], this.Lower(node.Body, locals, symbols)));
+            new L9.ClosureLetrec.ClosureLetrecNode(
+                node.XList, [.. closures], this.Lower(node.Body, locals, symbols)));
     }
 
     private static bool IsDirect(L8.App node, DirectCalls direct) =>
@@ -347,7 +368,9 @@ internal sealed partial class LiftLetrec
         var body = this.Lower(input, bindings);
         bindings.Items.Reverse();
         return new L10.Letrec(
-            [.. bindings.Items.Select(item => item.Label)], [.. bindings.Items.Select(item => item.Code)], body);
+            [.. bindings.Items.Select(item => item.Label)],
+            [.. bindings.Items.Select(item => item.Code)],
+            body);
     }
 
     [Processor("Expr", "Expr")]
@@ -420,7 +443,8 @@ internal sealed partial class ExplicitClosure
     [Rewrite]
     private L11.LetrecExpr Letrec(
         L10.Letrec node,
-        [Recur(Field = "LexprList", Processor = nameof(LowerLambda))] Seq<L11.LambdaExpr> lambdas) =>
+        [Recur(Field = "LexprList", Processor = nameof(LowerLambda))]
+        Seq<L11.LambdaExpr> lambdas) =>
         new L11.Letrec(node.XList, lambdas, this.Lower(node.E, default, []));
 
     [Rewrite(Processor = nameof(LowerLambda))]
@@ -449,22 +473,27 @@ internal sealed partial class ExplicitClosure
             for (int slot = 0; slot < captured.Count; slot++)
             {
                 setup.Add(new L11.SysPrimapp("closure-set!",
-                    [name, new L11.QuotedConst(new SExpr.Int(slot)), Reference(captured[slot], cp, free)]));
+                    [name,
+                        new L11.QuotedConst(new SExpr.Int(slot)),
+                        Reference(captured[slot], cp, free)]));
             }
         }
 
-        return new L11.Let(node.XList, closures.Select(item => item.Term), new L11.Begin([.. setup], body));
+        return new L11.Let(
+            node.XList, closures.Select(item => item.Term), new L11.Begin([.. setup], body));
     }
 
     [Rewrite(Processor = nameof(LowerClosure))]
     private static (L11.Expr, Seq<Symbol>) Closure(L10.Closure.ClosureNode node) =>
         (new L11.SysPrimapp("make-closure",
-            [new L11.Var(node.X1), new L11.QuotedConst(new SExpr.Int(node.X2List.Count))]), node.X2List);
+            [new L11.Var(node.X1), new L11.QuotedConst(new SExpr.Int(node.X2List.Count))]),
+            node.X2List);
 
     private static L11.Expr Reference(Symbol name, Symbol cp, Seq<Symbol> free)
     {
         int index = SchemeHelpers.ListIndex(name, free);
         return index < 0 ? new L11.Var(name)
-            : (L11.Expr)new L11.SysPrimapp("closure-ref", [new L11.Var(cp), new L11.QuotedConst(new SExpr.Int(index))]);
+            : (L11.Expr)new L11.SysPrimapp(
+                "closure-ref", [new L11.Var(cp), new L11.QuotedConst(new SExpr.Int(index))]);
     }
 }

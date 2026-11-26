@@ -197,7 +197,7 @@ internal static class SExprFormatter
             }
         }
 
-        return SExprReader.ClassifyAtom(name) is SExpr.Sym;
+        return SExprReader.IsSymbolicAtom(name);
     }
 
     private static bool NeedsSymbolEscape(char ch) =>

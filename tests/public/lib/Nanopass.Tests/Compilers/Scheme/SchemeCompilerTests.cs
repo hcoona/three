@@ -16,14 +16,18 @@
 // You should have received a copy of the GNU General Public License along with
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
-// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015 Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell). See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
+// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015
+// Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell).
+// See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
 
 using System.Globalization;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Hcoona.Nanopass.Tests.Compilers.Scheme;
 
-/// <summary>Compares independent source and target execution across the canonical Scheme corpus.</summary>
+/// <summary>
+/// Compares independent source and target execution across the canonical Scheme corpus.
+/// </summary>
 [TestClass]
 public sealed class SchemeCompilerTests
 {
@@ -33,7 +37,9 @@ public sealed class SchemeCompilerTests
     /// <summary>Gets the independently numbered upstream final test programs.</summary>
     public static IEnumerable<object[]> FinalPrograms => Programs(SchemeAllTestsData.Final);
 
-    /// <summary>Checks that neither upstream test list was truncated during transcription.</summary>
+    /// <summary>
+    /// Checks that neither upstream test list was truncated during transcription.
+    /// </summary>
     [TestMethod]
     public void Corpus_ContainsEveryUpstreamProgram()
     {
@@ -44,14 +50,18 @@ public sealed class SchemeCompilerTests
     /// <summary>Runs each main test through the source and compiled evaluators.</summary>
     [TestMethod]
     [DynamicData(nameof(MainPrograms))]
-    public void MainProgram_MatchesSourceEvaluation(int index, string source) => Compare(index, source);
+    public void MainProgram_MatchesSourceEvaluation(int index, string source) =>
+        Compare(index, source);
 
     /// <summary>Runs each final test through the source and compiled evaluators.</summary>
     [TestMethod]
     [DynamicData(nameof(FinalPrograms))]
-    public void FinalProgram_MatchesSourceEvaluation(int index, string source) => Compare(index, source);
+    public void FinalProgram_MatchesSourceEvaluation(int index, string source) =>
+        Compare(index, source);
 
-    /// <summary>Checks structural round-trips and membership across the entire language series.</summary>
+    /// <summary>
+    /// Checks structural round-trips and membership across the entire language series.
+    /// </summary>
     [TestMethod]
     [DataRow("""
         (let ((cell (cons 0 1)) (v (vector #f #\a "text")))
@@ -84,24 +94,66 @@ public sealed class SchemeCompilerTests
             stages.Add(language);
         });
         Assert.AreSequenceEqual(
-            Enumerable.Range(0, 19).SelectMany(stage => stage == 6 ? new[] { stage, stage } : [stage])
-                .Select(stage => "L" + stage.ToString(CultureInfo.InvariantCulture)).ToArray(), stages);
-        Assert.IsTrue(SchemeValues.Equal(SchemeSourceEvaluator.EvalSource(input), SchemeL18Evaluator.EvalL18(compiled)));
+            Enumerable.Range(0, 19)
+                .SelectMany(stage => stage == 6 ? new[] { stage, stage } : [stage])
+                .Select(stage => "L" + stage.ToString(CultureInfo.InvariantCulture))
+                .ToArray(),
+            stages);
+        Assert.IsTrue(SchemeValues.Equal(
+            SchemeSourceEvaluator.EvalSource(input), SchemeL18Evaluator.EvalL18(compiled)));
     }
 
-    /// <summary>Checks both lexical scope in the checked LP entry point and the resulting program.</summary>
+    /// <summary>
+    /// Checks both lexical scope in the checked LP entry point and the resulting program.
+    /// </summary>
     [TestMethod]
     public void VerifyScheme_CompilesParsedProgram()
     {
         const string source = "(let ((x 20)) (letrec ((f (lambda (y) (+ x y)))) (f 22)))";
         var input = LP.Parse(source);
         var verified = new VerifyScheme().Run(input);
-        Assert.AreEqual("(let ((x (datum 20))) (letrec ((f (lambda (y) (primapp + (var x) (var y))))) (app (var f) (datum 22))))",
+        Assert.AreEqual(
+            "(let ((x (datum 20))) (letrec ((f (lambda (y) (primapp + (var x) (var y))))) "
+                + "(app (var f) (datum 22))))",
             L0.UnparseToString(verified));
         Assert.AreEqual(42L, SchemeL18Evaluator.EvalL18(SchemeCompiler.CompileVerified(input)));
     }
 
-    /// <summary>Keeps distinct LP lexical bindings distinct after lowering to frame slots.</summary>
+    /// <summary>Compiles compound quotation through the typed LP entry point.</summary>
+    [TestMethod]
+    [DataRow("'()", "()")]
+    [DataRow("'(1 . 2)", "(1 . 2)")]
+    [DataRow("'#(1 (2 3))", "#(1 (2 3))")]
+    public void VerifyScheme_CompilesQuotedDatums(string source, string datum)
+    {
+        var parsed = LP.Parse(source);
+        Assert.IsInstanceOfType<LP.Quote>(parsed.Value);
+        Assert.AreEqual($"(datum {datum})", L0.UnparseToString(new VerifyScheme().Run(parsed)));
+        Assert.IsTrue(SchemeValues.Equal(
+            SchemeSourceEvaluator.EvalSource(SExpr.Parse(source)),
+            SchemeL18Evaluator.EvalL18(SchemeCompiler.CompileVerified(parsed))));
+    }
+
+    /// <summary>
+    /// Keeps sibling references out of a closure and captures repeated uses only once.
+    /// </summary>
+    [TestMethod]
+    [DataRow("""
+        (let ((x (quoted-const 1)))
+          (if (var x) (var x) (letrec ((f (lambda (y) (var y)))) (var f))))
+        """, "(free () (var y))")]
+    [DataRow("""
+        (letrec ((f (lambda (y) (primapp + (var x) (var x))))) (var f))
+        """, "(free (x) (primapp + (var x) (var x)))")]
+    public void UncoverFree_CapturesOnlyDistinctVariablesUsedByTheLambda(string source, string free)
+    {
+        var term = new UncoverFree().Run(L7.Parse(source));
+        Assert.Contains(free, L8.UnparseToString(term), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Keeps distinct LP lexical bindings distinct after lowering to frame slots.
+    /// </summary>
     [TestMethod]
     public void VerifyScheme_CompilesShadowedLocalWithCapture()
     {
@@ -131,7 +183,9 @@ public sealed class SchemeCompilerTests
         Assert.Contains(message, error.Message);
     }
 
-    /// <summary>Exercises shadowed syntax, zero and variadic vector arities, and deterministic fresh names.</summary>
+    /// <summary>
+    /// Exercises shadowed syntax, zero and variadic vector arities, and deterministic fresh names.
+    /// </summary>
     [TestMethod]
     public void Compile_ShadowsKeywordsAndPrimitivesDeterministically()
     {
@@ -157,7 +211,8 @@ public sealed class SchemeCompilerTests
     [DataRow("(void 1)", "void")]
     public void RenameVarsVerifyLegal_RejectsWrongPrimitiveArity(string source, string primitive)
     {
-        var error = Assert.ThrowsExactly<NanopassException>(() => SchemeCompiler.Compile(SExpr.Parse(source)));
+        var error = Assert.ThrowsExactly<NanopassException>(
+            () => SchemeCompiler.Compile(SExpr.Parse(source)));
         Assert.Contains($"Wrong arity for Scheme primitive {primitive}", error.Message);
     }
 
@@ -168,10 +223,13 @@ public sealed class SchemeCompilerTests
         var input = SExpr.Parse("""'#((1 . 2) #\z "text" 9223372036854775807)""");
         var expected = new SchemeVector([new SchemePair(1L, 2L), 'z', "text", long.MaxValue]);
         Assert.IsTrue(SchemeValues.Equal(expected, SchemeSourceEvaluator.EvalSource(input)));
-        Assert.IsTrue(SchemeValues.Equal(expected, SchemeL18Evaluator.EvalL18(SchemeCompiler.Compile(input))));
+        Assert.IsTrue(SchemeValues.Equal(
+            expected, SchemeL18Evaluator.EvalL18(SchemeCompiler.Compile(input))));
     }
 
-    /// <summary>Checks stable evaluation of cyclic values without recursive structural comparison.</summary>
+    /// <summary>
+    /// Checks stable evaluation of cyclic values without recursive structural comparison.
+    /// </summary>
     [TestMethod]
     public void Compile_ProducesEquivalentCyclicPairAndVector()
     {
@@ -188,7 +246,9 @@ public sealed class SchemeCompilerTests
         Assert.AreSame(cycle, ((SchemeVector)actual.Cdr!).Items[0]);
     }
 
-    /// <summary>Checks that deep tail calls do not grow the managed stack in either evaluator.</summary>
+    /// <summary>
+    /// Checks that deep tail calls do not grow the managed stack in either evaluator.
+    /// </summary>
     [TestMethod]
     public void Compile_TrampolinesDeepTailRecursion()
     {
@@ -210,6 +270,7 @@ public sealed class SchemeCompilerTests
         object? expected = SchemeSourceEvaluator.EvalSource(input);
         object? actual = SchemeL18Evaluator.EvalL18(SchemeCompiler.Compile(input));
         Assert.IsTrue(SchemeValues.Equal(expected, actual),
-            $"Program {index} disagreed with source evaluation. Expected {expected}, got {actual}: {source}");
+            $"Program {index} disagreed with source evaluation. "
+                + $"Expected {expected}, got {actual}: {source}");
     }
 }

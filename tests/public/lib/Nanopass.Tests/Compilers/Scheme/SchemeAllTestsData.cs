@@ -16,7 +16,9 @@
 // You should have received a copy of the GNU General Public License along with
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
-// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015 Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell). See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
+// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015
+// Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell).
+// See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
 
 namespace Hcoona.Nanopass.Tests.Compilers.Scheme;
 
@@ -800,17 +802,17 @@ internal static class SchemeAllTestsData
                                        (if (eq? x (void))
                                            (cons #\# (cons #\< (cons #\v
                                                                  (cons #\o (cons #\i (cons #\d
-                                                                                       (cons #\> p)))))))
+                                                                   (cons #\> p)))))))
                                            (if (char? x)
                                                (cons #\# (cons #\\
                                                            (if (eq? x #\newline)
                                                                (cons #\n (cons #\e (cons #\w
-                                                                                     (cons #\l (cons #\i (cons #\n
-                                                                                                           (cons #\e p)))))))
+                                                               (cons #\l (cons #\i (cons #\n
+                                                                 (cons #\e p)))))))
                                                                (if (eq? x #\space)
                                                                    (cons #\s (cons #\p
                                                                                (cons #\a (cons #\c
-                                                                                           (cons #\e p)))))
+                                                                               (cons #\e p)))))
                                                                    (if (eq? x #\tab)
                                                                        (cons #\t (cons #\a
                                                                                    (cons #\b p)))
@@ -884,32 +886,15 @@ internal static class SchemeAllTestsData
                                                                                (loop 0))))))
                                                            (if (procedure? x)
                                                                (cons #\# (cons #\<
-                                                                           (cons #\p (cons #\r
-                                                                                       (cons #\o
-                                                                                         (cons #\c
-                                                                                           (cons #\e
-                                                                                             (cons #\d
-                                                                                               (cons #\u
-                                                                                                 (cons
-                                                                                                   #\r
-                                                                                                   (cons
-                                                                                                     #\e
-                                                                                                     (cons
-                                                                                                       #\>
-                                                                                                       p)
-                                                                                                     )))
-                                                                                               ))))))))
+                                                                 (cons #\p (cons #\r (cons #\o
+                                                                   (cons #\c (cons #\e (cons #\d
+                                                                     (cons #\u (cons #\r (cons #\e
+                                                                       (cons #\> p))))))))))))
                                                                (cons #\# (cons #\<
-                                                                           (cons #\g (cons #\a
-                                                                                       (cons #\r
-                                                                                         (cons #\b
-                                                                                           (cons #\a
-                                                                                             (cons #\g
-                                                                                               (cons #\e
-                                                                                                 (cons
-                                                                                                   #\>
-                                                                                                   p))))
-                                                                                           )))))))))
+                                                                 (cons #\g (cons #\a (cons #\r
+                                                                   (cons #\b (cons #\a (cons #\g
+                                                                     (cons #\e
+                                                                       (cons #\> p)))))))))))))
                                                    )))))))]
                      [wrint (lambda (n p)
                               (if (< n 10)

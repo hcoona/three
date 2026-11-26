@@ -16,7 +16,9 @@
 // You should have received a copy of the GNU General Public License along with
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
-// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015 Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell). See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
+// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015
+// Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell).
+// See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
 
 namespace Hcoona.Nanopass.Tests.Compilers.Scheme;
 
@@ -80,7 +82,9 @@ internal static class SchemeSourceEvaluator
                         if (SchemeHelpers.AcceptsUserArity(head, form.Count - 1))
                         {
                             return SchemeValues.ApplyPrimitive(
-                                head, form.Skip(1).Select(value => Evaluate(value, environment)).ToArray());
+                                head,
+                                form.Skip(1)
+                                    .Select(value => Evaluate(value, environment)).ToArray());
                         }
 
                         break;
@@ -239,7 +243,8 @@ internal static class SchemeL18Evaluator
             };
 
         private static object? Primitive(Symbol name, Seq<L18.Triv> operands, Frame frame) =>
-            SchemeValues.ApplyPrimitive(name, operands.Select(operand => Triv(operand, frame)).ToArray());
+            SchemeValues.ApplyPrimitive(
+                name, operands.Select(operand => Triv(operand, frame)).ToArray());
 
         private static NanopassException Invalid(object? expression) =>
             new($"Invalid L18 machine term or return address: {expression}.");
@@ -296,13 +301,15 @@ internal static class SchemeL18Evaluator
             var callee = new Frame(declaration.XList);
             for (int i = 0; i < operands.Count; i++)
             {
-                callee.Define(lambda.XList[i], Triv(operands[i], caller, returnLabel, returnAddress));
+                callee.Define(
+                    lambda.XList[i], Triv(operands[i], caller, returnLabel, returnAddress));
             }
 
             this.next = () => this.Tail(declaration.Tl, callee);
         }
 
-        private void ReturnPoint(Symbol label, L18.Application application, Frame frame, Action<object?> resume)
+        private void ReturnPoint(
+            Symbol label, L18.Application application, Frame frame, Action<object?> resume)
         {
             var address = new ReturnAddress();
             this.continuations.Push(new(address, resume));
@@ -548,7 +555,8 @@ internal static class SchemeValues
                 Vector(0).Items[Index(1)] = arguments[2];
                 return SchemeVoid.Instance;
             case "closure-ref": return Closure(0).FreeSlots[Index(1)];
-            case "make-closure": return new SchemeClosure((Symbol)arguments[0]!, new object?[Index(1)]);
+            case "make-closure":
+                return new SchemeClosure((Symbol)arguments[0]!, new object?[Index(1)]);
             case "procedure-code": return Closure(0).CodeLabel;
             case "closure-set!":
                 Closure(0).FreeSlots[Index(1)] = arguments[2];
@@ -609,12 +617,13 @@ internal static class SchemeValues
         return true;
     }
 
-    private static bool Eq(object? left, object? right) => ReferenceEquals(left, right) || left switch
-    {
-        long number => right is long other && number == other,
-        bool boolean => right is bool other && boolean == other,
-        char character => right is char other && character == other,
-        Symbol symbol => right is Symbol other && symbol == other,
-        _ => false,
-    };
+    private static bool Eq(object? left, object? right) =>
+        ReferenceEquals(left, right) || left switch
+        {
+            long number => right is long other && number == other,
+            bool boolean => right is bool other && boolean == other,
+            char character => right is char other && character == other,
+            Symbol symbol => right is Symbol other && symbol == other,
+            _ => false,
+        };
 }

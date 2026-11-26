@@ -151,7 +151,7 @@ public closed record SExpr
     private static SExpr? AsDatum(object value) => value switch
     {
         SExpr datum => datum,
-        bool boolean => new Bool(boolean),
+        bool boolean => boolean ? Bool.True : Bool.False,
         int integer => new Int(integer),
         long integer => new Int(integer),
         short integer => new Int(integer),
@@ -183,7 +183,14 @@ public closed record SExpr
     /// Represents a boolean S-expression datum (<c>#t</c> or <c>#f</c>).
     /// </summary>
     /// <param name="Value">The boolean value.</param>
-    public sealed record Bool(bool Value) : SExpr;
+    public sealed record Bool(bool Value) : SExpr
+    {
+        /// <summary>Gets the shared true datum.</summary>
+        public static Bool True { get; } = new(true);
+
+        /// <summary>Gets the shared false datum.</summary>
+        public static Bool False { get; } = new(false);
+    }
 
     /// <summary>
     /// Represents an exact 64-bit signed integer S-expression datum.

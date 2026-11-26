@@ -21,6 +21,8 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
+
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
 using static Hcoona.Nanopass.Generators.PassInputReader;
@@ -29,22 +31,26 @@ namespace Hcoona.Nanopass.Generators;
 
 internal sealed partial class PassResolver
 {
+    private static string Node(PassModel.Processor processor) =>
+        Local(processor.Method?.Parameters ?? processor.Parameters, "__np_node");
+
     private static string FieldExpression(
-        LanguageModel.Production rule, LanguageModel.Field field) =>
-        rule.Alternative is not null ? NodeVariable : $"{NodeVariable}.{Id(field.Property)}";
+        PassModel.Processor processor, LanguageModel.Production rule, LanguageModel.Field field) =>
+        rule.Alternative is not null ? Node(processor) : $"{Node(processor)}.{Id(field.Property)}";
 
     private static EquatableArray<LanguageModel.Field> Fields(LanguageModel.Production? rule) =>
         rule?.Alternative is { } alternative ? new([alternative]) : rule?.Fields ?? default;
 
-    private static string WithDefaults(PassModel.Processor processor, string expression)
+    private static PassModel.SynthesizedReturn WithDefaults(
+        PassModel.Processor processor, string expression)
     {
         if (processor.Defaults.Count == 0)
         {
-            return expression;
+            return new(expression);
         }
 
         var defaults = string.Join(", ", processor.Defaults);
-        return $"({expression}, {defaults})";
+        return new($"({expression}, {defaults})", UsesDefaults: true);
     }
 
     private static PassType? ElementType(PassType type, int depth, bool maybe)
@@ -68,25 +74,41 @@ internal sealed partial class PassResolver
     }
 
     private static string Map(
+        PassModel.Processor caller,
+        PassModel.Processor callee,
         LanguageModel.Field field,
         string inputExpression,
         string returnType,
-        Func<string, string> transform)
+        ImmutableArray<string> arguments,
+        Func<string, string, string> transform)
     {
-        return MapLevel(field.SequenceDepth, inputExpression);
+        bool isStatic = arguments.IsEmpty;
+        bool useState = isStatic && callee.Method?.IsStatic != true;
+        var parameters = caller.Method?.Parameters ?? caller.Parameters;
+        return MapLevel(field.SequenceDepth, inputExpression, "this");
 
-        string MapLevel(int depth, string expression)
+        string MapLevel(int depth, string expression, string receiver)
         {
-            string item = "__np_item" + depth.ToString(CultureInfo.InvariantCulture);
+            string suffix = depth.ToString(CultureInfo.InvariantCulture);
+            string item = Local(parameters, "__np_item" + suffix);
             if (depth > 0)
             {
-                return $"{expression}.Select({item} => {MapLevel(depth - 1, item)})";
+                if (useState)
+                {
+                    string state = Local(parameters, "__np_state" + suffix);
+                    return $"{expression}.Select({receiver}, static ({item}, {state}) => "
+                        + $"{MapLevel(depth - 1, item, state)})";
+                }
+
+                string modifier = isStatic ? "static " : string.Empty;
+                return $"{expression}.Select({modifier}{item} => "
+                    + $"{MapLevel(depth - 1, item, receiver)})";
             }
 
             return field.IsMaybe
-                ? $"({expression}) switch {{ {{ }} {item} => {transform(item)}, "
-                    + $"null => ({returnType}?)null }}"
-                : transform(expression);
+                ? $"({expression}) switch {{ {{ }} {item} => {transform(item, receiver)}, "
+                    + $"_ => default({returnType}?) }}"
+                : transform(expression, receiver);
         }
     }
 
@@ -109,11 +131,11 @@ internal sealed partial class PassResolver
         return matches.Length == 1 ? matches[0] : null;
     }
 
-    private void Build(PassModel.Processor processor)
+    private EquatableArray<PassModel.Alternative> Build(PassModel.Processor processor)
     {
         if (!processor.IsSynthesized)
         {
-            return;
+            return default;
         }
 
         var fallback = this.BuildClauses(processor, null);
@@ -121,6 +143,9 @@ internal sealed partial class PassResolver
         var rules = PassGrammar.Rules(processor.From).OrderByDescending(rule =>
             rule.Alternative is { IsNonTerminal: false } terminal
             && this.source.Terminal(terminal.Target)?.Predicate is not null).ToArray();
+        var alternatives = new List<PassModel.Alternative>();
+        string node = Node(processor);
+        string value = Local(processor.Method?.Parameters ?? processor.Parameters, "__np_val");
         foreach (var rule in rules)
         {
             var clauses = this.BuildClauses(processor, rule);
@@ -129,7 +154,7 @@ internal sealed partial class PassResolver
                 : null;
             var ruleType = this.source.RuleType(rule);
             bool overlaps = totalFallback && terminal?.Predicate is not null
-                && processor.Clauses.Any(clause => clause.Rule is { } other && other != rule
+                && this.Clauses(processor).Any(clause => clause.Rule is { } other && other != rule
                     && Same(ruleType, this.source.RuleType(other)));
             if (clauses.IsEmpty && totalFallback && !overlaps)
             {
@@ -153,27 +178,28 @@ internal sealed partial class PassResolver
                 }
             }
 
-            string value = LanguageEmitter.UnionValue(
-                processor.From.NonTerminal!, Type(processor.From.Type), InputName(processor));
-            string condition = $"{value} is {Type(ruleType)} {NodeVariable}";
+            string condition = $"{value} is {Type(ruleType)} {node}";
             if (terminal is { Predicate: not null })
             {
                 string binding = LanguageEmitter.TerminalBinding(terminal);
                 condition += $" && {this.source.Language!.QualifiedName}.{binding}()"
-                    + $".Accept({NodeVariable})";
+                    + $".Accept({node})";
             }
 
             var rewrites = !totalClause && (!totalFallback || overlaps)
                 ? clauses.AddRange(fallback)
                 : clauses;
-            processor.Alternatives.Add(new(condition, rewrites, last));
+            alternatives.Add(new(condition, new(rewrites), last));
         }
 
-        string? identity = null;
+        PassModel.SynthesizedReturn? identity = null;
         if (rules.Length == 0 && !totalFallback)
         {
             if (processor.From.Name == processor.To.Name
-                && this.Converts(processor.From.Type, processor.To.Type)
+                && this.ConvertsPrimary(
+                    processor.Method?.Parameters[0].Type ?? processor.From.Type,
+                    processor.To,
+                    processor.Result.Primary)
                 && (!processor.Result.IsTuple || processor.Defaults.Count > 0))
             {
                 identity = WithDefaults(processor, InputName(processor));
@@ -188,15 +214,16 @@ internal sealed partial class PassResolver
 
         if (!fallback.IsEmpty || identity is not null)
         {
-            processor.Alternatives.Add(new(
-                null, fallback, identity is null ? null : new(identity)));
+            alternatives.Add(new(null, new(fallback), identity));
         }
+
+        return new(alternatives);
     }
 
     private ImmutableArray<(string? Guard, string Call)> BuildClauses(
         PassModel.Processor processor, LanguageModel.Production? rule)
     {
-        var clauses = processor.Clauses.Where(clause => clause.Rule == rule)
+        var clauses = this.Clauses(processor).Where(clause => clause.Rule == rule)
             .OrderBy(static clause => clause.Rewrite.Order);
         var result = ImmutableArray.CreateBuilder<(string? Guard, string Call)>();
         bool unguarded = false;
@@ -280,15 +307,15 @@ internal sealed partial class PassResolver
                     && Same(item.Type, parameter.Type));
                 expression = context is not null
                     ? Id(context.Name)
-                    : this.BindField(rule, parameter.Name, parameter.Type);
+                    : this.BindField(processor, rule, parameter.Name, parameter.Type);
                 bool inputMatches = Same(processor.From.Type, parameter.Type)
                     && (rule is null || parameter.Name == "ir");
                 expression ??= inputMatches
                     ? InputName(processor)
                     : nodeType is not null && Same(nodeType, parameter.Type)
-                        ? NodeVariable
+                        ? Node(processor)
                         : this.BindField(
-                            rule, parameter.Name, parameter.Type, allowCamelCase: true);
+                            processor, rule, parameter.Name, parameter.Type, allowCamelCase: true);
             }
 
             if (expression is null)
@@ -315,14 +342,18 @@ internal sealed partial class PassResolver
     }
 
     private string? BindField(
-        LanguageModel.Production? rule, string name, PassType type, bool allowCamelCase = false)
+        PassModel.Processor processor,
+        LanguageModel.Production? rule,
+        string name,
+        PassType type,
+        bool allowCamelCase = false)
     {
         if (rule is not null && FindField(rule, name, allowCamelCase) is { } field
             && Same(
                 this.source.Find(field)?.Type,
                 ElementType(type, field.SequenceDepth, field.IsMaybe)))
         {
-            return FieldExpression(rule, field);
+            return FieldExpression(processor, rule, field);
         }
 
         return null;
@@ -352,15 +383,18 @@ internal sealed partial class PassResolver
         var candidates = this.processors.Where(candidate => candidate.Method is not null
             && (requested is null
                 || string.Equals(candidate.Name, requested, StringComparison.Ordinal))
-            && candidate.From == from && Same(candidate.Result, result))
+            && candidate.From == from && Same(candidate.Result.Primary, result.Primary))
             .Select(candidate => (Processor: candidate, Binding: BindArguments(candidate),
-                Named: this.target.MatchesTerminal(candidate.To.Name, parameter.Name)))
-            .Where(static candidate => candidate.Binding is not null)
-            .OrderByDescending(static candidate => candidate.Binding!.Value.Matched)
+                Named: this.target.MatchesTerminal(candidate.To.Name, parameter.Name),
+                Cost: this.ExtraReturnCost(candidate.Result, result)))
+            .Where(static candidate => candidate.Binding is not null && candidate.Cost >= 0)
+            .OrderBy(static candidate => candidate.Cost)
+            .ThenByDescending(static candidate => candidate.Binding!.Value.Matched)
             .ThenByDescending(static candidate => candidate.Named)
             .Take(2).ToArray();
         PassModel.Processor? chosen = candidates.FirstOrDefault().Processor;
         if (candidates.Length == 2
+            && candidates[0].Cost == candidates[1].Cost
             && candidates[0].Binding!.Value.Matched == candidates[1].Binding!.Value.Matched
             && candidates[0].Named == candidates[1].Named)
         {
@@ -394,11 +428,19 @@ internal sealed partial class PassResolver
         }
 
         var bound = BindArguments(chosen)!.Value.Arguments;
+        string returnType = Type(result);
         return Map(
+            processor,
+            chosen,
             field,
-            FieldExpression(rule, field),
-            Type(result),
-            value => this.InvokeFrom(processor, chosen, value, bound));
+            FieldExpression(processor, rule, field),
+            returnType,
+            bound,
+            (value, receiver) =>
+            {
+                string call = this.InvokeFrom(processor, chosen, value, bound, receiver);
+                return Same(chosen.Result, result) ? call : $"({returnType})({call})";
+            });
 
         (ImmutableArray<string> Arguments, int Matched)? BindArguments(
             PassModel.Processor candidate) =>
@@ -406,7 +448,7 @@ internal sealed partial class PassResolver
                 candidate,
                 processor.Parameters,
                 recur.Arguments,
-                (name, type) => this.BindField(rule, name, type));
+                (name, type) => this.BindField(processor, rule, name, type));
     }
 
     private PassModel.SynthesizedReturn? Synthesize(
@@ -437,7 +479,7 @@ internal sealed partial class PassResolver
             return null;
         }
 
-        string? shape = rule.Alternative is null ? PassGrammar.Shape(rule) : null;
+        string? shape = this.source.Shape(rule);
         var matches = Candidates(processor.To, [], new(StringComparer.Ordinal))
             .Where(static candidate => candidate.Cost >= 0)
             .OrderBy(static candidate => candidate.Path.Length)
@@ -472,9 +514,10 @@ internal sealed partial class PassResolver
         }
 
         string expression = match.Alternative is null
-            ? $"new {Type(targetType)}({string.Join(", ", mapped)})"
+            ? $"new {Type(targetType)}({string.Join(", ", match.Fields.Zip(
+                mapped, static (to, field) => $"{Id(to.Property)}: {field}"))})"
             : mapped[0]!;
-        return new(WithDefaults(processor, Wrap(expression, matches[0].Path)));
+        return WithDefaults(processor, Wrap(expression, matches[0].Path));
 
         static string Wrap(string expression, ImmutableArray<PassModel.Kind> path)
         {
@@ -490,16 +533,11 @@ internal sealed partial class PassResolver
             PassModel.Processor selected, ImmutableArray<PassModel.Kind> path)
         {
             var args = Bind(selected, processor.Parameters)!.Value.Arguments;
-            string call = this.InvokeFrom(processor, selected, NodeVariable, args);
+            string call = this.InvokeFrom(processor, selected, Node(processor), args);
             if (selected.Result.IsTuple)
             {
-                string local = "__np_sub";
-                while (processor.Method?.Parameters.Any(
-                    parameter => string.Equals(parameter.Name, local, StringComparison.Ordinal))
-                    == true)
-                {
-                    local += "_";
-                }
+                string local = Local(
+                    processor.Method?.Parameters ?? processor.Parameters, "__np_sub");
 
                 var primary = Wrap(local + ".Item1", path);
                 var extras = Enumerable.Range(2, selected.Result.Arguments.Count - 1)
@@ -508,7 +546,7 @@ internal sealed partial class PassResolver
                 return new($"({primary}, {string.Join(", ", extras)})", (local, call));
             }
 
-            return new(WithDefaults(processor, Wrap(call, path)));
+            return WithDefaults(processor, Wrap(call, path));
         }
 
         IEnumerable<(LanguageModel.Production Rule, ImmutableArray<PassModel.Kind> Path, int Cost)>
@@ -521,17 +559,14 @@ internal sealed partial class PassResolver
             }
 
             path = path.Add(kind);
-            foreach (var candidate in PassGrammar.Rules(kind))
+            foreach (var candidate in this.target.MatchingShape(kind, shape))
             {
-                bool matchesShape = shape is null
-                    ? candidate.Alternative is { IsNonTerminal: false }
-                    : candidate.Alternative is null && shape == PassGrammar.Shape(candidate);
-                if (matchesShape)
-                {
-                    int cost = this.MatchFields(Fields(rule), Fields(candidate), processor);
-                    yield return (candidate, path, cost);
-                }
+                int cost = this.MatchFields(Fields(rule), Fields(candidate), processor);
+                yield return (candidate, path, cost);
+            }
 
+            foreach (var candidate in this.target.Inclusions(kind))
+            {
                 if (candidate.Alternative is { IsNonTerminal: true } inclusion
                     && this.target.Find(inclusion) is { } nested)
                 {
@@ -609,16 +644,217 @@ internal sealed partial class PassResolver
                 processor.Parameters,
                 processor.Method,
                 synthesize,
-                compatible: candidate => this.CompatibleExtraReturns(processor, candidate));
+                compatibilityCost: candidate =>
+                    !candidate.Result.IsTuple && processor.Defaults.Count > 0
+                        ? int.MaxValue
+                        : this.ExtraReturnCost(candidate.Result, processor.Result));
 
-    private bool CompatibleExtraReturns(
-        PassModel.Processor processor, PassModel.Processor candidate) =>
-        candidate.Result.IsTuple
-            ? processor.Result.IsTuple
-                && candidate.Result.Arguments.Count == processor.Result.Arguments.Count
-                && candidate.Result.Arguments.Skip(1).Zip(
-                    processor.Result.Arguments.Skip(1), this.Converts).All(static match => match)
-            : !processor.Result.IsTuple || processor.Defaults.Count > 0;
+    private int ExtraReturnCost(
+        PassType actual,
+        PassType expected,
+        int firstSlot = 1,
+        SlotSearch? search = null,
+        int varianceDepth = 0)
+    {
+        if (actual.IsTuple != expected.IsTuple)
+        {
+            return -1;
+        }
+
+        if (!actual.IsTuple)
+        {
+            return 0;
+        }
+
+        if (actual.Arguments.Count != expected.Arguments.Count)
+        {
+            return -1;
+        }
+
+        int cost = 0;
+        for (int i = firstSlot; i < actual.Arguments.Count; i++)
+        {
+            int slotCost = this.SlotCost(
+                actual.Arguments[i],
+                expected.Arguments[i],
+                search: search,
+                varianceDepth: varianceDepth);
+            if (slotCost < 0)
+            {
+                return -1;
+            }
+
+            cost += slotCost;
+        }
+
+        return cost;
+    }
+
+    private int SlotCost(
+        PassType fromType,
+        PassType to,
+        bool referenceOnly = false,
+        SlotSearch? search = null,
+        int varianceDepth = 0)
+    {
+        search ??= new(
+            Math.Max(1024, Math.Max(fromType.NodeCount, to.NodeCount)),
+            Math.Max(4096, (fromType.NodeCount + to.NodeCount) * 4));
+        if (fromType.NodeCount > search.MaxNodes || to.NodeCount > search.MaxNodes)
+        {
+            return -1;
+        }
+
+        var pair = (fromType.Key, to.Key, referenceOnly, varianceDepth);
+        if (search.Memo.TryGetValue(pair, out int cached))
+        {
+            return cached;
+        }
+
+        if (search.Budget <= 0)
+        {
+            return -1;
+        }
+
+        search.Budget--;
+        search.Memo[pair] = -1;
+        int result = MatchSlot();
+        search.Memo[pair] = result;
+        return result;
+
+        int MatchSlot()
+        {
+            if (referenceOnly && !IsReferenceType(fromType))
+            {
+                return -1;
+            }
+
+            if (Same(fromType, to))
+            {
+                return 0;
+            }
+
+            if (!fromType.Nullable && to.Nullable
+                && this.SlotCost(
+                    fromType, to with { Nullable = false }, referenceOnly, search, varianceDepth)
+                    is >= 0 and var lifted)
+            {
+                return lifted + 1;
+            }
+
+            if (fromType.HasTupleElements && to.HasTupleElements)
+            {
+                if (fromType.Nullable != to.Nullable
+                    || fromType.Arguments.Count != to.Arguments.Count)
+                {
+                    return -1;
+                }
+
+                int nestedCost = this.ExtraReturnCost(
+                    fromType with { Nullable = false },
+                    to with { Nullable = false },
+                    firstSlot: 0,
+                    search: search,
+                    varianceDepth: varianceDepth);
+                return nestedCost < 0 ? -1 : Math.Max(1, nestedCost);
+            }
+
+            if (fromType.Nullable && !to.Nullable)
+            {
+                return -1;
+            }
+
+            var fromShape = fromType with { Nullable = false };
+            var toShape = to with { Nullable = false };
+            bool sameArrayRank = fromShape.ArrayRank > 0
+                && fromShape.ArrayRank == toShape.ArrayRank;
+            bool szArrayInterface = varianceDepth < 50
+                && fromShape.ArrayRank == 1 && IsSzArrayInterface(toShape);
+            if (sameArrayRank || szArrayInterface)
+            {
+                var element = fromType.Arguments[0];
+                var target = to.Arguments[0];
+                int nextDepth = szArrayInterface ? varianceDepth + 1 : varianceDepth;
+                bool compatible = Same(element, target)
+                    || this.SlotCost(
+                        element,
+                        target,
+                        referenceOnly: true,
+                        search: search,
+                        varianceDepth: nextDepth) >= 0;
+                return compatible ? 1 : -1;
+            }
+
+            if ((!referenceOnly && !fromType.Nullable
+                    && (this.source.CanConvert(fromType, to)
+                        || this.target.CanConvert(fromType, to)))
+                || to.Name is "object" or "global::System.Object")
+            {
+                return 1;
+            }
+
+            foreach (var projection in input.Projections)
+            {
+                var projected = projection.AsTarget;
+                if (!Same(fromShape, projection.From)
+                    || projected.Name != toShape.Name
+                    || !Same(projected.ContainingType, toShape.ContainingType)
+                    || projection.Variances.Count != toShape.Arguments.Count)
+                {
+                    continue;
+                }
+
+                bool compatible = true;
+                for (int i = 0; i < projection.Variances.Count; i++)
+                {
+                    var actual = projected.Arguments[i];
+                    var expected = toShape.Arguments[i];
+                    if (!Same(actual, expected)
+                        && (varianceDepth >= 50 || projection.Variances[i] switch
+                        {
+                            VarianceKind.Out => this.SlotCost(
+                                actual,
+                                expected,
+                                referenceOnly: true,
+                                search: search,
+                                varianceDepth: varianceDepth + 1) < 0,
+                            VarianceKind.In => this.SlotCost(
+                                expected,
+                                actual,
+                                referenceOnly: true,
+                                search: search,
+                                varianceDepth: varianceDepth + 1) < 0,
+                            _ => true,
+                        }))
+                    {
+                        compatible = false;
+                        break;
+                    }
+                }
+
+                if (compatible)
+                {
+                    return 1;
+                }
+            }
+
+            return !this.IsGrammarUnion(to)
+                && this.HasImplicitConversion(fromType, to, referenceOnly)
+                    ? 1
+                    : -1;
+        }
+
+        bool IsReferenceType(PassType type)
+        {
+            var unannotated = type with { Nullable = false };
+            return input.ReferenceTypes.Any(known => Same(known, unannotated))
+                || ContainsRecord(this.source) || ContainsRecord(this.target);
+
+            bool ContainsRecord(PassGrammar grammar) => grammar.Kinds.Any(kind =>
+                PassGrammar.Rules(kind).Any(rule => rule.Alternative is null
+                    && Same(unannotated, grammar.RuleType(rule))));
+        }
+    }
 
     private int MatchFields(
         IEnumerable<LanguageModel.Field> sourceFields,
@@ -682,7 +918,7 @@ internal sealed partial class PassResolver
             processor.Parameters,
             processor.Method,
             synthesize: sourceField.IsNonTerminal);
-        string expression = FieldExpression(rule, sourceField);
+        string expression = FieldExpression(processor, rule, sourceField);
         if (chosen is null)
         {
             bool canCopy = this.problems.Count == errors
@@ -692,10 +928,14 @@ internal sealed partial class PassResolver
 
         var bound = Bind(chosen, processor.Parameters)!.Value.Arguments;
         return Map(
+            processor,
+            chosen,
             sourceField,
             expression,
             Type(to.Type),
-            value => Result(chosen, this.InvokeFrom(processor, chosen, value, bound)));
+            bound,
+            (value, receiver) =>
+                Result(chosen, this.InvokeFrom(processor, chosen, value, bound, receiver)));
     }
 
     private void Missing(
@@ -717,14 +957,26 @@ internal sealed partial class PassResolver
             && this.source.Terminal(terminalField.Target) is { } terminal)
         {
             parameter = terminal.MetaVars.Append(terminal.Name)
-                .FirstOrDefault(name => SyntaxFacts.IsValidIdentifier(Id(name))) ?? parameter;
+                .FirstOrDefault(name => SyntaxFacts.IsValidIdentifier(Id(name))
+                    && !processor.Parameters.Any(ambient => ambient.Name == name)) ?? parameter;
         }
 
+        parameter = Local(processor.Parameters, parameter);
         var stub = $"[{Runtime}Rewrite(typeof({Type(node)}){owner})]\n"
             + $"private {Type(processor.Result)} {name}({Type(node)} {Id(parameter)}) => "
             + "throw new global::System.NotImplementedException();";
         string message = $"Pass '{input.Name}' needs a rewrite for '{rule.Syntax}' in language "
             + $"'{this.target.Language?.Name ?? "*"}', nonterminal '{processor.To.Name}'.";
         this.problems.Add(new(1, input.Location, message, stub));
+    }
+
+    private sealed class SlotSearch(int maxNodes, int budget)
+    {
+        internal int MaxNodes { get; } = maxNodes;
+
+        internal int Budget { get; set; } = budget;
+
+        internal Dictionary<(string From, string To, bool ReferenceOnly, int Depth), int> Memo
+        { get; } = [];
     }
 }

@@ -16,9 +16,6 @@
 // You should have received a copy of the GNU General Public License along with
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
-using System.Collections.Generic;
-using System.Collections.Immutable;
-
 namespace Hcoona.Nanopass.Generators;
 
 internal sealed record PassModel(
@@ -30,39 +27,22 @@ internal sealed record PassModel(
     PassInput.Method? Run,
     string? EntryCall,
     string? InterfaceCall,
-    ImmutableArray<PassModel.Processor> Processors,
-    ImmutableArray<PassModel.Problem> Problems)
+    EquatableArray<PassModel.Processor> Processors,
+    EquatableArray<PassModel.Problem> Problems)
 {
     internal sealed record Kind(
         string Name, PassType Type, LanguageModel.NonTerminal? NonTerminal);
 
-    internal sealed class Processor(
-        string name,
-        Kind from,
-        Kind to,
-        PassType result,
-        ImmutableArray<PassInput.Parameter> parameters,
-        PassInput.Method? method,
-        EquatableArray<string> defaults)
+    internal sealed record Processor(
+        string Name,
+        Kind From,
+        Kind To,
+        PassType Result,
+        EquatableArray<PassInput.Parameter> Parameters,
+        PassInput.Method? Method,
+        EquatableArray<string> Defaults,
+        EquatableArray<Alternative> Alternatives = default)
     {
-        internal string Name { get; } = name;
-
-        internal Kind From { get; } = from;
-
-        internal Kind To { get; } = to;
-
-        internal PassType Result { get; } = result;
-
-        internal ImmutableArray<PassInput.Parameter> Parameters { get; } = parameters;
-
-        internal PassInput.Method? Method { get; } = method;
-
-        internal EquatableArray<string> Defaults { get; } = defaults;
-
-        internal List<Clause> Clauses { get; } = [];
-
-        internal List<Alternative> Alternatives { get; } = [];
-
         internal bool IsSynthesized => this.Method is null || this.Method.IsPartialDeclaration;
     }
 
@@ -71,11 +51,13 @@ internal sealed record PassModel(
 
     internal sealed record Alternative(
         string? Condition,
-        ImmutableArray<(string? Guard, string Call)> Rewrites,
+        EquatableArray<(string? Guard, string Call)> Rewrites,
         SynthesizedReturn? Fallback);
 
     internal sealed record SynthesizedReturn(
-        string Expression, (string Variable, string Call)? Subprocessor = null);
+        string Expression,
+        (string Variable, string Call)? Subprocessor = null,
+        bool UsesDefaults = false);
 
     internal sealed record Problem(
         int Number, LocationInfo Location, string Message, string? Stub = null);

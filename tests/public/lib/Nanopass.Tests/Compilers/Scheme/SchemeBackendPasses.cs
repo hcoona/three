@@ -16,7 +16,9 @@
 // You should have received a copy of the GNU General Public License along with
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
-// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015 Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell). See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
+// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015
+// Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell).
+// See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
 
 namespace Hcoona.Nanopass.Tests.Compilers.Scheme;
 
@@ -25,7 +27,8 @@ internal sealed partial class IntroduceDummyRp
 {
     public L15.LetrecExpr Run(L14.LetrecExpr input) => this.Run(input, new());
 
-    internal L15.LetrecExpr Run(L14.LetrecExpr input, SchemeSymbols symbols) => this.Program(input, symbols);
+    internal L15.LetrecExpr Run(L14.LetrecExpr input, SchemeSymbols symbols) =>
+        this.Program(input, symbols);
 
     [Processor("LetrecExpr", "LetrecExpr")]
     private partial L15.LetrecExpr Program(L14.LetrecExpr ir, SchemeSymbols symbols);
@@ -47,7 +50,9 @@ internal sealed partial class IntroduceDummyRp
 
     [Rewrite(Processor = nameof(Program))]
     private L15.LetrecExpr Letrec(
-        L14.Letrec node, [Recur(Field = "LexprList")] Seq<L15.LambdaExpr> lambdas, SchemeSymbols symbols)
+        L14.Letrec node,
+        [Recur(Field = "LexprList")] Seq<L15.LambdaExpr> lambdas,
+        SchemeSymbols symbols)
     {
         Symbol rp = symbols.GenSymbol("rp");
         return new L15.Letrec(node.XList, lambdas, new L15.Run(rp, this.Tail(node.V, rp, symbols)));
@@ -77,7 +82,8 @@ internal sealed partial class IntroduceDummyRp
 
     [Rewrite(Processor = nameof(Tail))]
     private static L15.Tail TailLet(
-        L14.Value.Let node, [Recur(Field = "V1List", Processor = nameof(Nontail))] Seq<L15.Nontail> values,
+        L14.Value.Let node,
+        [Recur(Field = "V1List", Processor = nameof(Nontail))] Seq<L15.Nontail> values,
         [Recur(Field = "V2")] L15.Tail body) => new L15.Tail.Let(node.XList, values, body);
 
     [Rewrite(Processor = nameof(Tail))]
@@ -125,7 +131,8 @@ internal sealed partial class IntroduceDummyRp
 
     [Rewrite(Processor = nameof(Predicate))]
     private static L15.Predicate PredicateLet(
-        L14.Predicate.Let node, [Recur(Field = "VList", Processor = nameof(Nontail))] Seq<L15.Nontail> values,
+        L14.Predicate.Let node,
+        [Recur(Field = "VList", Processor = nameof(Nontail))] Seq<L15.Nontail> values,
         [Recur(Field = "P")] L15.Predicate body) => new L15.Predicate.Let(node.XList, values, body);
 
     [Rewrite(Processor = nameof(Predicate))]
@@ -135,14 +142,16 @@ internal sealed partial class IntroduceDummyRp
     {
         var (label, app) = ReturnPoint(target, arguments, symbols);
         Symbol result = symbols.GenSymbol("tmp");
-        var isFalse = new L15.Predicate.Primapp("eq?", [new L15.Var(result), new L15.QuotedConst(new SExpr.Bool(false))]);
+        var isFalse = new L15.Predicate.Primapp(
+            "eq?", [new L15.Var(result), new L15.QuotedConst(new SExpr.Bool(false))]);
         return new L15.Predicate.Let([result], [new L15.Nontail.ReturnPoint(label, app)],
             new L15.Predicate.If(isFalse, new L15.False(), new L15.True()));
     }
 
     [Rewrite(Processor = nameof(Effect))]
     private static L15.Effect EffectLet(
-        L14.Effect.Let node, [Recur(Field = "VList", Processor = nameof(Nontail))] Seq<L15.Nontail> values,
+        L14.Effect.Let node,
+        [Recur(Field = "VList", Processor = nameof(Nontail))] Seq<L15.Nontail> values,
         [Recur(Field = "F")] L15.Effect body) => new L15.Effect.Let(node.XList, values, body);
 
     [Rewrite(Processor = nameof(Effect))]
@@ -157,7 +166,8 @@ internal sealed partial class IntroduceDummyRp
     private static L15.Tail ReturnPrimitive(L15.Nontail operation, Symbol rp, SchemeSymbols symbols)
     {
         Symbol result = symbols.GenSymbol("tmp");
-        return new L15.Tail.Let([result], [operation], new L15.Return(new L15.Var(rp), new L15.Var(result)));
+        return new L15.Tail.Let(
+            [result], [operation], new L15.Return(new L15.Var(rp), new L15.Var(result)));
     }
 
     private static (Symbol, L15.Application) ReturnPoint(
@@ -187,27 +197,36 @@ internal sealed partial class RemoveNonunaryLet
     private static L16.Tail TailLet(
         L15.Tail.Let node, [Recur(Field = "Ntl1List")] Seq<L16.Nontail> values,
         [Recur(Field = "Tl2")] L16.Tail body) =>
-        Unnest(node.XList, values, body, static (name, value, rest) => new L16.Tail.Let(name, value, rest));
+        Unnest(
+            node.XList, values, body,
+            static (name, value, rest) => new L16.Tail.Let(name, value, rest));
 
     [Rewrite(Processor = nameof(Nontail))]
     private static L16.Nontail NontailLet(
         L15.Nontail.Let node, [Recur(Field = "Ntl1List")] Seq<L16.Nontail> values,
         [Recur(Field = "Ntl2")] L16.Nontail body) =>
-        Unnest(node.XList, values, body, static (name, value, rest) => new L16.Nontail.Let(name, value, rest));
+        Unnest(
+            node.XList, values, body,
+            static (name, value, rest) => new L16.Nontail.Let(name, value, rest));
 
     [Rewrite(Processor = nameof(Predicate))]
     private static L16.Predicate PredicateLet(
         L15.Predicate.Let node, [Recur(Field = "NtlList")] Seq<L16.Nontail> values,
         [Recur(Field = "P")] L16.Predicate body) =>
-        Unnest(node.XList, values, body, static (name, value, rest) => new L16.Predicate.Let(name, value, rest));
+        Unnest(
+            node.XList, values, body,
+            static (name, value, rest) => new L16.Predicate.Let(name, value, rest));
 
     [Rewrite(Processor = nameof(Effect))]
     private static L16.Effect EffectLet(
         L15.Effect.Let node, [Recur(Field = "NtlList")] Seq<L16.Nontail> values,
         [Recur(Field = "F")] L16.Effect body) =>
-        Unnest(node.XList, values, body, static (name, value, rest) => new L16.Effect.Let(name, value, rest));
+        Unnest(
+            node.XList, values, body,
+            static (name, value, rest) => new L16.Effect.Let(name, value, rest));
 
-    private static T Unnest<T>(Seq<Symbol> names, Seq<L16.Nontail> values, T body, Func<Symbol, L16.Nontail, T, T> let)
+    private static T Unnest<T>(
+        Seq<Symbol> names, Seq<L16.Nontail> values, T body, Func<Symbol, L16.Nontail, T, T> let)
     {
         for (int i = names.Count - 1; i >= 0; i--)
         {
@@ -243,7 +262,8 @@ internal sealed partial class ReturnOfSetBang
     private L17.RunExpr RunBody(L16.Run node) => new L17.Run(node.X, this.Declare(node.Tl));
 
     [Rewrite(Processor = nameof(LambdaExpr))]
-    private L17.LambdaExpr LambdaBody(L16.Lambda node) => new L17.Lambda(node.XList, this.Declare(node.Tl));
+    private L17.LambdaExpr LambdaBody(L16.Lambda node) =>
+        new L17.Lambda(node.XList, this.Declare(node.Tl));
 
     [Rewrite(Processor = nameof(Tail))]
     private L17.Tail TailLet(

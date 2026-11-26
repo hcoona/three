@@ -18,9 +18,12 @@
 
 using System;
 using System.Collections;
+using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.ComponentModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
 
 namespace Hcoona.Nanopass;
 
@@ -39,14 +42,14 @@ public sealed class LanguageRuntime(
     LanguageRuntime.Terminal[] terminals,
     LanguageRuntime.NonTerminal[] nonTerminals)
 {
-    private readonly Dictionary<Type, NonTerminal> unions =
-        nonTerminals.ToDictionary(static nonTerminal => nonTerminal.Type);
+    private readonly FrozenDictionary<Type, NonTerminal> unions =
+        nonTerminals.ToFrozenDictionary(static nonTerminal => nonTerminal.Type);
 
-    private readonly Dictionary<Type, Rule> records = nonTerminals
+    private readonly FrozenDictionary<Type, Rule> records = nonTerminals
         .SelectMany(static nonTerminal => nonTerminal.Rules)
         .Where(static rule => rule.RecordType is not null)
         .GroupBy(static rule => rule.RecordType!)
-        .ToDictionary(static group => group.Key, static group => group.First());
+        .ToFrozenDictionary(static group => group.Key, static group => group.First());
 
     /// <summary>
     /// Reads and validates a terminal value from an <see cref="SExpr"/> datum for generated
@@ -72,8 +75,23 @@ public sealed class LanguageRuntime(
     /// <param name="value">The captured <see cref="object"/> array.</param>
     /// <param name="convert">The element conversion function.</param>
     /// <returns>A <see cref="Seq{T}"/> of converted elements.</returns>
-    public static Seq<T> Sequence<T>(object? value, Func<object?, T> convert) =>
-        [.. ((object?[])value!).Select(convert)];
+    public static Seq<T> Sequence<T>(object? value, Func<object?, T> convert)
+    {
+        var items = (object?[])value!;
+        ArgumentNullException.ThrowIfNull(convert);
+        if (items.Length == 0)
+        {
+            return [];
+        }
+
+        var result = ImmutableArray.CreateBuilder<T>(items.Length);
+        foreach (object? item in items)
+        {
+            result.Add(convert(item));
+        }
+
+        return new(result.MoveToImmutable());
+    }
 
     /// <summary>
     /// Parses an <see cref="SExpr"/> datum as the specified nonterminal for generated Nanopass
@@ -85,7 +103,7 @@ public sealed class LanguageRuntime(
     public object Parse(int nonTerminal, SExpr datum)
     {
         ArgumentNullException.ThrowIfNull(datum);
-        return this.TryParse(nonTerminal, datum, new(ReferenceEqualityComparer.Instance))
+        return this.TryParse(nonTerminal, datum, new())
             ?? throw new NanopassParseException(
                 $"Invalid {name} syntax for {nonTerminals[nonTerminal].Name}: {datum}.");
     }
@@ -144,8 +162,21 @@ public sealed class LanguageRuntime(
     public bool IsTerm(object? value)
     {
         value = this.Unwrap(value);
-        return value is not null
-            && nonTerminals.Any(nonTerminal => this.IsTerm(nonTerminal, value, []));
+        if (value is null)
+        {
+            return false;
+        }
+
+        var memo = new TraversalMemo<bool>();
+        for (int i = 0; i < nonTerminals.Length; i++)
+        {
+            if (this.IsTerm(i, value, memo))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -161,7 +192,7 @@ public sealed class LanguageRuntime(
     public bool IsTerm(int nonTerminal, object? value)
     {
         value = this.Unwrap(value);
-        return value is not null && this.IsTerm(nonTerminals[nonTerminal], value, []);
+        return value is not null && this.IsTerm(nonTerminal, value, new());
     }
 
     private static object? RawTerminal<T>(SExpr datum) =>
@@ -178,7 +209,10 @@ public sealed class LanguageRuntime(
                 && integer.Value is >= byte.MinValue and <= byte.MaxValue =>
                 (byte)integer.Value,
             SExpr.Int integer => integer.Value,
-            SExpr.Float floating when typeof(T) == typeof(float) => (float)floating.Value,
+            SExpr.Float floating when typeof(T) == typeof(float) =>
+                double.IsFinite(floating.Value) && float.IsInfinity((float)floating.Value)
+                    ? null
+                    : (object)(float)floating.Value,
             SExpr.Float floating => floating.Value,
             SExpr.Str text => text.Value,
             SExpr.Sym symbol => symbol.Value,
@@ -187,63 +221,132 @@ public sealed class LanguageRuntime(
             _ => datum,
         };
 
-    private bool IsTerm(NonTerminal nonTerminal, object value, HashSet<NonTerminal> active)
+    private bool IsTerm(int index, object value, TraversalMemo<bool> memo)
     {
-        if (!active.Add(nonTerminal))
+        var state = memo.For(value);
+        if (state.TryGet(index, out bool cached))
+        {
+            return cached;
+        }
+
+        if (!RuntimeHelpers.TryEnsureSufficientExecutionStack() || !state.Enter(index))
         {
             return false;
         }
 
         try
         {
-            return nonTerminal.Rules.Any(rule => rule.Alternative switch
+            int cycles = state.Cycles;
+            bool result = nonTerminals[index].Rules.Any(rule => rule.Alternative switch
             {
                 { IsNonTerminal: true } field =>
-                    this.IsTerm(nonTerminals[field.Target], value, active),
+                    this.IsTerm(field.Target, value, memo),
                 { } field => terminals[field.Target].Accept(value),
-                _ => rule.RecordType == value.GetType(),
+                _ => rule.RecordType == value.GetType() && this.IsRecord(rule, value, memo),
             });
+            state.Store(index, result, cycles);
+            return result;
         }
         finally
         {
-            active.Remove(nonTerminal);
+            state.Exit(index);
         }
     }
 
-    private object? TryParse(int index, SExpr datum, Dictionary<SExpr, HashSet<int>> active)
+    private bool IsRecord(Rule rule, object value, TraversalMemo<bool> memo)
     {
-        if (!active.TryGetValue(datum, out HashSet<int>? indices))
+        object?[] fields = rule.Read!(value);
+        for (int i = 0; i < fields.Length; i++)
         {
-            indices = [];
-            active.Add(datum, indices);
+            Field field = rule.Fields[i];
+            if (!this.IsField(field, fields[i], field.SequenceDepth, memo))
+            {
+                return false;
+            }
         }
 
-        if (!indices.Add(index))
+        return true;
+    }
+
+    private bool IsField(Field field, object? value, int depth, TraversalMemo<bool> memo)
+    {
+        if (!RuntimeHelpers.TryEnsureSufficientExecutionStack())
+        {
+            return false;
+        }
+
+        if (depth == 0)
+        {
+            if (value is null)
+            {
+                return field.IsMaybe;
+            }
+
+            return field.IsNonTerminal
+                ? this.Unwrap(value) is { } term && this.IsTerm(field.Target, term, memo)
+                : terminals[field.Target].Accept(value);
+        }
+
+        if (value is not IEnumerable items)
+        {
+            return false;
+        }
+
+        foreach (object? item in items)
+        {
+            if (!this.IsField(field, item, depth - 1, memo))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private object? TryParse(int index, SExpr datum, TraversalMemo<object?> memo)
+    {
+        var state = memo.For(datum);
+        if (state.TryGet(index, out object? cached))
+        {
+            return cached;
+        }
+
+        if (!RuntimeHelpers.TryEnsureSufficientExecutionStack())
+        {
+            throw new NanopassParseException($"The {name} term is nested too deeply.");
+        }
+
+        if (!state.Enter(index))
         {
             return null;
         }
 
         try
         {
-            bool isPair = datum is SExpr.Pair;
+            int cycles = state.Cycles;
+            object? result = ParseRules();
+            state.Store(index, result, cycles);
+            return result;
+        }
+        finally
+        {
+            state.Exit(index);
+        }
+
+        object? ParseRules()
+        {
             foreach (Rule rule in nonTerminals[index].Rules)
             {
                 if (rule.Alternative is Field field)
                 {
-                    if (isPair && !field.IsNonTerminal)
-                    {
-                        continue;
-                    }
-
-                    object? value = field.IsNonTerminal
-                        ? this.TryParse(field.Target, datum, active)
-                        : terminals[field.Target].Parse(datum);
-                    if (value is not null)
+                    if ((field.IsNonTerminal || datum is not SExpr.Pair)
+                        && ReadField(field, datum) is { } value)
                     {
                         return rule.Create([value]);
                     }
                 }
-                else if (isPair && rule.Pattern.TryMatch(datum, ReadField, out object?[] values))
+                else if (datum is SExpr.Pair or SExpr.Nil
+                    && rule.Pattern.TryMatch(datum, ReadField, out object?[] values))
                 {
                     return rule.Create(values);
                 }
@@ -251,17 +354,9 @@ public sealed class LanguageRuntime(
 
             return null;
         }
-        finally
-        {
-            indices.Remove(index);
-            if (indices.Count == 0)
-            {
-                active.Remove(datum);
-            }
-        }
 
         object? ReadField(Field field, SExpr fieldDatum) => field.IsNonTerminal
-            ? this.TryParse(field.Target, fieldDatum, active)
+            ? this.TryParse(field.Target, fieldDatum, memo)
             : terminals[field.Target].Parse(fieldDatum);
     }
 
@@ -337,8 +432,7 @@ public sealed class LanguageRuntime(
             }
 
             var target = nonTerminals[field.Target];
-            if (target.Type == type && this.Unwrap(value) is { } form
-                && this.IsTerm(target, form, []))
+            if (target.Type == type && this.IsTerm(field.Target, value))
             {
                 var inner = this.Unparse(target, value, raw);
                 return rule.Pattern.Render([value], raw, (_, _) => inner);
@@ -467,5 +561,66 @@ public sealed class LanguageRuntime(
         internal Func<object, object?[]>? Read { get; } = read;
 
         internal Func<SExpr, SExpr>? PrettyHandler { get; } = prettyHandler;
+    }
+
+    private sealed class TraversalMemo<T>
+    {
+        private readonly Dictionary<object, State> values = new(ReferenceEqualityComparer.Instance);
+
+        internal State For(object value)
+        {
+            if (!this.values.TryGetValue(value, out var state))
+            {
+                state = new();
+                this.values.Add(value, state);
+            }
+
+            return state;
+        }
+
+        internal sealed class State
+        {
+            private readonly HashSet<int> active = [];
+            private readonly Dictionary<int, (T Value, bool CycleFree)> results = [];
+
+            internal int Cycles { get; private set; }
+
+            internal bool TryGet(int index, out T value)
+            {
+                if (this.results.TryGetValue(index, out var result)
+                    && (this.active.Count == 0 || result.CycleFree))
+                {
+                    value = result.Value;
+                    return true;
+                }
+
+                value = default!;
+                return false;
+            }
+
+            internal bool Enter(int index)
+            {
+                if (this.active.Add(index))
+                {
+                    return true;
+                }
+
+                this.Cycles++;
+                return false;
+            }
+
+            internal void Exit(int index) => this.active.Remove(index);
+
+            internal void Store(int index, T value, int cycles)
+            {
+                bool cycleFree = this.Cycles == cycles;
+
+                // A cycle-dependent result is reusable only without an outer rule on this value.
+                if (this.active.Count == 1 || cycleFree)
+                {
+                    this.results[index] = (value, cycleFree);
+                }
+            }
+        }
     }
 }

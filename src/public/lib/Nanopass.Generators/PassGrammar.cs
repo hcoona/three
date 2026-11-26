@@ -27,6 +27,9 @@ internal sealed class PassGrammar
 {
     private readonly Dictionary<string, PassModel.Kind> kinds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PassModel.Kind> terminalKinds = new(StringComparer.Ordinal);
+    private readonly Dictionary<LanguageModel.Production, string> shapes = [];
+    private readonly Dictionary<string, ILookup<string?, LanguageModel.Production>> rulesByShape =
+        new(StringComparer.Ordinal);
 
     internal PassGrammar(PassInput.Endpoint endpoint, LanguageModel? language)
     {
@@ -45,13 +48,28 @@ internal sealed class PassGrammar
 
         foreach (var nonTerminal in grammar.NonTerminals)
         {
-            this.kinds.Add(nonTerminal.Name, new(
-                nonTerminal.Name, this.NestedType(nonTerminal.Name), nonTerminal));
+            var type = this.NestedType(nonTerminal.Name);
+            this.kinds.Add(nonTerminal.Name, new(nonTerminal.Name, type, nonTerminal));
+            this.rulesByShape.Add(
+                nonTerminal.Name,
+                nonTerminal.Productions.ToLookup(IndexShape, StringComparer.Ordinal));
         }
 
         foreach (var terminal in grammar.Terminals)
         {
             this.terminalKinds.Add(terminal.Name, new(terminal.Name, new(terminal.Type), null));
+        }
+
+        string? IndexShape(LanguageModel.Production rule)
+        {
+            if (rule.Alternative is { } alternative)
+            {
+                return alternative.IsNonTerminal ? string.Empty : null;
+            }
+
+            string shape = ReadShape(rule);
+            this.shapes[rule] = shape;
+            return shape;
         }
     }
 
@@ -68,26 +86,15 @@ internal sealed class PassGrammar
     internal static ImmutableArray<LanguageModel.Production> Rules(PassModel.Kind kind) =>
         kind.NonTerminal is { } nonTerminal ? [.. nonTerminal.Productions] : [];
 
-    internal static string Shape(LanguageModel.Production rule)
-    {
-        var fields = rule.Fields.Select(static field => field.MetaVar)
-            .ToImmutableHashSet(StringComparer.Ordinal);
-        return Render(PatternDatum.Parse(rule.Syntax).Syntax, !rule.IsImplicit);
+    internal string? Shape(LanguageModel.Production rule) =>
+        this.shapes.TryGetValue(rule, out string? shape) ? shape : null;
 
-        string Render(PatternDatum pattern, bool keepTag)
-        {
-            if (pattern.Atom is { } atom)
-            {
-                return !keepTag && fields.Contains(atom) ? "$" : pattern.ToString();
-            }
+    internal IEnumerable<LanguageModel.Production> MatchingShape(
+        PassModel.Kind kind, string? shape) =>
+        this.rulesByShape.TryGetValue(kind.Name, out var rules) ? rules[shape] : [];
 
-            var parts = string.Join(" ", pattern.Items.Select(
-                (item, index) => Render(item, keepTag && index == 0)));
-            return pattern.Tail is null
-                ? $"({parts})"
-                : $"({parts} . {Render(pattern.Tail, false)})";
-        }
-    }
+    internal IEnumerable<LanguageModel.Production> Inclusions(PassModel.Kind kind) =>
+        this.MatchingShape(kind, string.Empty);
 
     internal PassModel.Kind? Find(string? name) =>
         name is null ? null : this.FindNonTerminal(name) ?? this.FindTerminal(name);
@@ -128,9 +135,11 @@ internal sealed class PassGrammar
     internal LanguageModel.Terminal? Terminal(string name) =>
         this.Language?.Terminals.FirstOrDefault(terminal => terminal.Name == name);
 
+    internal bool IsEndpointUnion(PassType type) => this.FindUnion(type) is not null;
+
     internal bool CanConvert(PassType from, PassType to) =>
-        this.Infer(to) is { NonTerminal: not null } kind
-        && Rules(kind).Any(rule => PassInputReader.Same(this.RuleType(rule), from));
+        this.FindUnion(to) is { } kind
+        && Rules(kind).Any(rule => PassInputReader.Same(from, this.RuleType(rule)));
 
     internal PassType? RuleType(LanguageModel.Production rule)
     {
@@ -142,11 +151,36 @@ internal sealed class PassGrammar
         return this.NestedType(rule.RecordPath);
     }
 
+    private static string ReadShape(LanguageModel.Production rule)
+    {
+        var fields = rule.Fields.Select(static field => field.MetaVar)
+            .ToImmutableHashSet(StringComparer.Ordinal);
+        return Render(PatternDatum.Parse(rule.Syntax).Syntax, !rule.IsImplicit);
+
+        string Render(PatternDatum pattern, bool keepTag)
+        {
+            if (pattern.Atom is { } atom)
+            {
+                return !keepTag && fields.Contains(atom) ? "$" : pattern.ToString();
+            }
+
+            var parts = string.Join(" ", pattern.Items.Select(
+                (item, index) => Render(item, keepTag && index == 0)));
+            return pattern.Tail is null
+                ? $"({parts})"
+                : $"({parts} . {Render(pattern.Tail, false)})";
+        }
+    }
+
     private PassType NestedType(string path) => new(this.Language!.QualifiedName
         + "." + string.Join(".", path.Split('.').Select(PassInputReader.Id)));
 
     private PassModel.Kind? FindNonTerminal(string name) =>
         this.kinds.TryGetValue(name, out var kind) ? kind : null;
+
+    private PassModel.Kind? FindUnion(PassType type) =>
+        this.kinds.Values.FirstOrDefault(kind =>
+            kind.NonTerminal is not null && PassInputReader.Same(kind.Type, type));
 
     private PassModel.Kind? FindTerminal(string name) =>
         this.terminalKinds.TryGetValue(name, out var terminal) ? terminal : null;

@@ -34,6 +34,8 @@ namespace Hcoona.Nanopass.Generators;
     Justification = "Only the code fix loads workspace services.")]
 public sealed class NanopassGenerator : IIncrementalGenerator
 {
+    internal const string LanguageGeneratedSuffix = ".Nanopass.g.cs";
+
     private static readonly ImmutableArray<DiagnosticDescriptor> Diagnostics =
     [
         CreateDiagnostic("NP0101", "Unrecognized language"),
@@ -46,17 +48,24 @@ public sealed class NanopassGenerator : IIncrementalGenerator
     /// <inheritdoc/>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var results = LanguagePipeline.Discover(context);
+        var inputs = LanguagePipeline.Discover(context);
+        var results = LanguagePipeline.Resolve(inputs);
         var models = LanguagePipeline.Models(results);
         var languages = models.Select(static (model, _) =>
-            (Hint: model.QualifiedName.Substring("global::".Length) + ".Nanopass.g.cs",
+            (Hint: model.QualifiedName.Substring("global::".Length) + LanguageGeneratedSuffix,
                 Source: new LanguageEmitter(model).Emit()));
         context.RegisterSourceOutput(languages, static (output, language) =>
             output.AddSource(language.Hint, language.Source));
         context.RegisterSourceOutput(
-            results.Where(static result => result.Diagnostic != 0),
-            static (output, result) => output.ReportDiagnostic(Diagnostic.Create(
-                Diagnostics[result.Diagnostic - 1], result.Location.ToLocation(), result.Message)));
+            results.Where(static result => result.Diagnostic != 0).Combine(inputs.Collect()),
+            static (output, value) =>
+            {
+                var (result, locations) = value;
+                var location = locations.First(item =>
+                    item.Input.QualifiedName == result.QualifiedName).Location;
+                output.ReportDiagnostic(Diagnostic.Create(
+                    Diagnostics[result.Diagnostic - 1], location.ToLocation(), result.Message));
+            });
 
         var passInputs = context.SyntaxProvider.ForAttributeWithMetadataName(
                 PassInputReader.PassAttribute,
@@ -67,16 +76,15 @@ public sealed class NanopassGenerator : IIncrementalGenerator
                     attributeContext.Attributes[0],
                     includeLocations: false,
                     token).Read())
+            .Where(static input => input is { CanEmit: true })
             .WithTrackingName("PassInputs");
-        var passes = passInputs.Collect().Combine(models.Collect())
-            .SelectMany(static (value, _) => value.Left
-                .Where(static input => input is { CanEmit: true })
-                .Select(input => (
-                    Input: input!,
-                    From: value.Right.FirstOrDefault(model =>
-                        model.QualifiedName == input!.From.Name),
-                    To: value.Right.FirstOrDefault(model =>
-                        model.QualifiedName == input!.To.Name))))
+        var languageMap = models.Collect().Select(static (items, _) =>
+            new LanguagePipeline.ModelMap(items));
+        var passes = passInputs.Combine(languageMap)
+            .Select(static (value, _) => (
+                Input: value.Left!,
+                From: value.Right.Find(value.Left!.From.Name),
+                To: value.Right.Find(value.Left.To.Name)))
             .Select(static (item, _) => new PassResolver(item.Input, item.From, item.To).Resolve())
             .WithTrackingName("PassResolution")
             .Select(static (model, _) =>

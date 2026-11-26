@@ -41,8 +41,11 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
 
     private readonly Dictionary<string, Result> resolved = new(StringComparer.Ordinal);
     private readonly HashSet<string> active = new(StringComparer.Ordinal);
+    private readonly ILookup<string, LanguageInput> byName =
+        inputs.ToLookup(static input => input.QualifiedName, StringComparer.Ordinal);
 
-    internal ImmutableArray<Result> ResolveAll() => [.. inputs.Select(this.Resolve)];
+    internal ImmutableArray<Result> ResolveAll() =>
+        [.. this.byName.Select(group => this.Resolve(group.First()))];
 
     private static void ApplyRemovals(
         LanguageInput input,
@@ -524,7 +527,10 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
                 Pretty = pretty,
                 PrettyHandler = record.PrettyHandler is null
                     ? null
-                    : new(record.PrettyHandler, input.QualifiedName),
+                    : new(
+                        record.PrettyHandler,
+                        input.QualifiedName,
+                        input.QualifiedName + "." + record.PrettyHandler),
             };
         }
     }
@@ -763,6 +769,14 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
             return existing;
         }
 
+        if (this.byName[input.QualifiedName].Skip(1).Any())
+        {
+            string message = $"Duplicate language declaration for '{input.QualifiedName}'.";
+            var duplicate = new Result(null, input.QualifiedName, 4, message, false);
+            this.resolved.Add(input.QualifiedName, duplicate);
+            return duplicate;
+        }
+
         if (!this.active.Add(input.QualifiedName))
         {
             throw new Failure(
@@ -772,15 +786,15 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
         Result result;
         try
         {
-            result = new(this.ResolveModel(input), input.Location, 0, null, false);
+            result = new(this.ResolveModel(input), input.QualifiedName, 0, null, false);
         }
         catch (Failure error)
         {
-            result = new(null, input.Location, error.Number, error.Message, error.IsCycle);
+            result = new(null, input.QualifiedName, error.Number, error.Message, error.IsCycle);
         }
         catch (FormatException error)
         {
-            result = new(null, input.Location, 5, error.Message, false);
+            result = new(null, input.QualifiedName, 5, error.Message, false);
         }
         finally
         {
@@ -808,8 +822,7 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
         if (input.Bases.Count == 1)
         {
             var source = input.Bases[0];
-            var local = inputs.FirstOrDefault(candidate =>
-                Equal(candidate.QualifiedName, source.Type));
+            var local = this.byName[source.Type].FirstOrDefault();
             var localSource = local is null ? null : this.Resolve(local);
             if (localSource is { IsCycle: true })
             {
@@ -843,7 +856,13 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
                 {
                     Productions =
                     [
-                        .. item.Productions.Select(static rule => rule with { IsDeclared = false }),
+                        .. item.Productions.Select(rule => rule with
+                        {
+                            IsDeclared = false,
+                            PrettyHandler = rule.PrettyHandler is { Binding: not null } handler
+                                ? handler with { Owner = inherited.QualifiedName }
+                                : rule.PrettyHandler,
+                        }),
                     ],
                 };
                 nonTerminals.Add(previous);
@@ -1015,7 +1034,7 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
     }
 
     internal sealed record Result(
-        LanguageModel? Model, LocationInfo Location, int Diagnostic, string? Message, bool IsCycle);
+        LanguageModel? Model, string QualifiedName, int Diagnostic, string? Message, bool IsCycle);
 
     private sealed class NonTerminalBuilder(
         string name,

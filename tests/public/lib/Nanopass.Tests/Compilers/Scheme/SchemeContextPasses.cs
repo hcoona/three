@@ -16,7 +16,9 @@
 // You should have received a copy of the GNU General Public License along with
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
-// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015 Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell). See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
+// Adapted from the MIT-licensed Nanopass Compiler Framework (Copyright (c) 2000-2015
+// Dipanwita Sarkar, Andrew W. Keep, R. Kent Dybvig, Oscar Waddell).
+// See src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt.
 
 namespace Hcoona.Nanopass.Tests.Compilers.Scheme;
 
@@ -54,7 +56,8 @@ internal sealed partial class NormalizeContext
 
     [Rewrite(Processor = nameof(Value))]
     private static L12.Value ValueBegin(
-        L11.Begin node, [Recur(Field = "E1List", Processor = nameof(Effect))] Seq<L12.Effect> effects,
+        L11.Begin node,
+        [Recur(Field = "E1List", Processor = nameof(Effect))] Seq<L12.Effect> effects,
         [Recur(Field = "E2")] L12.Value end) => new L12.Value.Begin(effects, end);
 
     [Rewrite(Processor = nameof(Value))]
@@ -80,13 +83,15 @@ internal sealed partial class NormalizeContext
 
     [Rewrite(Processor = nameof(Predicate))]
     private static L12.Predicate PredicateBegin(
-        L11.Begin node, [Recur(Field = "E1List", Processor = nameof(Effect))] Seq<L12.Effect> effects,
+        L11.Begin node,
+        [Recur(Field = "E1List", Processor = nameof(Effect))] Seq<L12.Effect> effects,
         [Recur(Field = "E2")] L12.Predicate end) => new L12.Predicate.Begin(effects, end);
 
     [Rewrite(Processor = nameof(Predicate))]
     private static L12.Predicate PredicateLet(
         L11.Let node, [Recur(Field = "EList", Processor = nameof(Value))] Seq<L12.Value> values,
-        [Recur(Field = "Body")] L12.Predicate body) => new L12.Predicate.Let(node.XList, values, body);
+        [Recur(Field = "Body")] L12.Predicate body) =>
+        new L12.Predicate.Let(node.XList, values, body);
 
     [Rewrite(Processor = nameof(Predicate))]
     private L12.Predicate PredicatePrimapp(L11.Primapp node) =>
@@ -157,13 +162,20 @@ internal sealed partial class NormalizeContext
     private static L12.Value Boolean(bool value) => new L12.QuotedConst(new SExpr.Bool(value));
 
     private static L12.Value PrimitiveValue(Symbol name, Seq<L12.Value> values, bool system) =>
-        system ? new L12.Value.SysPrimapp(name, values) : (L12.Value)new L12.Value.Primapp(name, values);
+        system
+            ? new L12.Value.SysPrimapp(name, values)
+            : (L12.Value)new L12.Value.Primapp(name, values);
 
-    private static L12.Predicate PrimitivePredicate(Symbol name, Seq<L12.Value> values, bool system) =>
-        system ? new L12.Predicate.SysPrimapp(name, values) : (L12.Predicate)new L12.Predicate.Primapp(name, values);
+    private static L12.Predicate PrimitivePredicate(
+        Symbol name, Seq<L12.Value> values, bool system) =>
+        system
+            ? new L12.Predicate.SysPrimapp(name, values)
+            : (L12.Predicate)new L12.Predicate.Primapp(name, values);
 
     private static L12.Effect PrimitiveEffect(Symbol name, Seq<L12.Value> values, bool system) =>
-        system ? new L12.Effect.SysPrimapp(name, values) : (L12.Effect)new L12.Effect.Primapp(name, values);
+        system
+            ? new L12.Effect.SysPrimapp(name, values)
+            : (L12.Effect)new L12.Effect.Primapp(name, values);
 
     private L12.Value PrimitiveInValue(Symbol name, Seq<L11.Expr> operands, bool system)
     {
@@ -175,11 +187,13 @@ internal sealed partial class NormalizeContext
         var values = operands.Select(this.Value);
         if (SchemeHelpers.IsPredicatePrimitive(name))
         {
-            return new L12.Value.If(PrimitivePredicate(name, values, system), Boolean(true), Boolean(false));
+            return new L12.Value.If(
+                PrimitivePredicate(name, values, system), Boolean(true), Boolean(false));
         }
 
         return SchemeHelpers.IsEffectPrimitive(name)
-            ? new L12.Value.Begin([PrimitiveEffect(name, values, system)], new L12.Value.Primapp("void", []))
+            ? new L12.Value.Begin(
+                [PrimitiveEffect(name, values, system)], new L12.Value.Primapp("void", []))
             : PrimitiveValue(name, values, system);
     }
 
@@ -187,7 +201,8 @@ internal sealed partial class NormalizeContext
     {
         if (name.Name == "not")
         {
-            return new L12.Predicate.If(this.Predicate(operands[0]), new L12.False(), new L12.True());
+            return new L12.Predicate.If(
+                this.Predicate(operands[0]), new L12.False(), new L12.True());
         }
 
         var values = operands.Select(this.Value);
@@ -223,7 +238,8 @@ internal sealed partial class RemoveComplexOpera
 {
     public L13.LetrecExpr Run(L12.LetrecExpr input) => this.Run(input, new());
 
-    internal L13.LetrecExpr Run(L12.LetrecExpr input, SchemeSymbols symbols) => this.Lower(input, symbols);
+    internal L13.LetrecExpr Run(L12.LetrecExpr input, SchemeSymbols symbols) =>
+        this.Lower(input, symbols);
 
     [Processor("LetrecExpr", "LetrecExpr")]
     private partial L13.LetrecExpr Lower(L12.LetrecExpr ir, SchemeSymbols symbols);
@@ -247,7 +263,8 @@ internal sealed partial class RemoveComplexOpera
     private static (L13.Triv, Binding?) OperandVar(L12.Var node) => (new L13.Var(node.X), null);
 
     [Rewrite(Processor = nameof(Operand))]
-    private static (L13.Triv, Binding?) OperandQuote(L12.QuotedConst node) => (new L13.QuotedConst(node.D), null);
+    private static (L13.Triv, Binding?) OperandQuote(L12.QuotedConst node) =>
+        (new L13.QuotedConst(node.D), null);
 
     [Rewrite(Processor = nameof(Operand), IsElse = true)]
     private (L13.Triv, Binding?) ComplexOperand(L12.Value ir, SchemeSymbols symbols)
@@ -261,87 +278,106 @@ internal sealed partial class RemoveComplexOpera
     private static L13.Value ValueVar(L12.Var node) => (L13.Triv)new L13.Var(node.X);
 
     [Rewrite(Processor = nameof(Value))]
-    private static L13.Value ValueQuote(L12.QuotedConst node) => (L13.Triv)new L13.QuotedConst(node.D);
+    private static L13.Value ValueQuote(L12.QuotedConst node) =>
+        (L13.Triv)new L13.QuotedConst(node.D);
 
     [Rewrite(Processor = nameof(Value))]
     private static L13.Value ValuePrim(
         L12.Value.Primapp node,
-        [Recur(Field = "VList", Processor = nameof(Operand))] Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
-        Bind(operands, new L13.Value.Primapp(node.Vp, Trivials(operands)));
+        [Recur(Field = "VList", Processor = nameof(Operand))]
+        Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
+        Bind(operands, new L13.Value.Primapp(node.Vp, TrivialOperands(operands)));
 
     [Rewrite(Processor = nameof(Value))]
     private static L13.Value ValueSysPrim(
         L12.Value.SysPrimapp node,
-        [Recur(Field = "VList", Processor = nameof(Operand))] Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
-        Bind(operands, new L13.Value.SysPrimapp(node.Spr, Trivials(operands)));
+        [Recur(Field = "VList", Processor = nameof(Operand))]
+        Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
+        Bind(operands, new L13.Value.SysPrimapp(node.Spr, TrivialOperands(operands)));
 
     [Rewrite(Processor = nameof(Value))]
     private static L13.Value ValueAnonymousCall(
         L12.Value.AnonymousCall node,
         [Recur(Field = "V0", Processor = nameof(Operand))] (L13.Triv Triv, Binding? Binding) target,
-        [Recur(Field = "V1List", Processor = nameof(Operand))] Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
-        Bind([target, .. operands], new L13.Value.AnonymousCall(target.Triv, Trivials(operands)));
+        [Recur(Field = "V1List", Processor = nameof(Operand))]
+        Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
+        Bind(
+            [target, .. operands],
+            new L13.Value.AnonymousCall(target.Triv, TrivialOperands(operands)));
 
     [Rewrite(Processor = nameof(Value))]
     private static L13.Value ValueCall(
         L12.Value.App node,
         [Recur(Field = "V0", Processor = nameof(Operand))] (L13.Triv Triv, Binding? Binding) target,
-        [Recur(Field = "V1List", Processor = nameof(Operand))] Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
-        Bind([target, .. operands], new L13.Value.App(target.Triv, Trivials(operands)));
+        [Recur(Field = "V1List", Processor = nameof(Operand))]
+        Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
+        Bind([target, .. operands], new L13.Value.App(target.Triv, TrivialOperands(operands)));
 
     [Rewrite(Processor = nameof(Predicate))]
     private static L13.Predicate PredicatePrim(
         L12.Predicate.Primapp node,
-        [Recur(Field = "VList", Processor = nameof(Operand))] Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
-        Bind(operands, new L13.Predicate.Primapp(node.Pp, Trivials(operands)));
+        [Recur(Field = "VList", Processor = nameof(Operand))]
+        Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
+        Bind(operands, new L13.Predicate.Primapp(node.Pp, TrivialOperands(operands)));
 
     [Rewrite(Processor = nameof(Predicate))]
     private static L13.Predicate PredicateSysPrim(
         L12.Predicate.SysPrimapp node,
-        [Recur(Field = "VList", Processor = nameof(Operand))] Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
-        Bind(operands, new L13.Predicate.SysPrimapp(node.Spr, Trivials(operands)));
+        [Recur(Field = "VList", Processor = nameof(Operand))]
+        Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
+        Bind(operands, new L13.Predicate.SysPrimapp(node.Spr, TrivialOperands(operands)));
 
     [Rewrite(Processor = nameof(Predicate))]
     private static L13.Predicate PredicateAnonymousCall(
         L12.Predicate.AnonymousCall node,
         [Recur(Field = "V0", Processor = nameof(Operand))] (L13.Triv Triv, Binding? Binding) target,
-        [Recur(Field = "V1List", Processor = nameof(Operand))] Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
-        Bind([target, .. operands], new L13.Predicate.AnonymousCall(target.Triv, Trivials(operands)));
+        [Recur(Field = "V1List", Processor = nameof(Operand))]
+        Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
+        Bind(
+            [target, .. operands],
+            new L13.Predicate.AnonymousCall(target.Triv, TrivialOperands(operands)));
 
     [Rewrite(Processor = nameof(Predicate))]
     private static L13.Predicate PredicateCall(
         L12.Predicate.App node,
         [Recur(Field = "V0", Processor = nameof(Operand))] (L13.Triv Triv, Binding? Binding) target,
-        [Recur(Field = "V1List", Processor = nameof(Operand))] Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
-        Bind([target, .. operands], new L13.Predicate.App(target.Triv, Trivials(operands)));
+        [Recur(Field = "V1List", Processor = nameof(Operand))]
+        Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
+        Bind([target, .. operands], new L13.Predicate.App(target.Triv, TrivialOperands(operands)));
 
     [Rewrite(Processor = nameof(Effect))]
     private static L13.Effect EffectPrim(
         L12.Effect.Primapp node,
-        [Recur(Field = "VList", Processor = nameof(Operand))] Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
-        Bind(operands, new L13.Effect.Primapp(node.Ep, Trivials(operands)));
+        [Recur(Field = "VList", Processor = nameof(Operand))]
+        Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
+        Bind(operands, new L13.Effect.Primapp(node.Ep, TrivialOperands(operands)));
 
     [Rewrite(Processor = nameof(Effect))]
     private static L13.Effect EffectSysPrim(
         L12.Effect.SysPrimapp node,
-        [Recur(Field = "VList", Processor = nameof(Operand))] Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
-        Bind(operands, new L13.Effect.SysPrimapp(node.Spr, Trivials(operands)));
+        [Recur(Field = "VList", Processor = nameof(Operand))]
+        Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
+        Bind(operands, new L13.Effect.SysPrimapp(node.Spr, TrivialOperands(operands)));
 
     [Rewrite(Processor = nameof(Effect))]
     private static L13.Effect EffectAnonymousCall(
         L12.Effect.AnonymousCall node,
         [Recur(Field = "V0", Processor = nameof(Operand))] (L13.Triv Triv, Binding? Binding) target,
-        [Recur(Field = "V1List", Processor = nameof(Operand))] Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
-        Bind([target, .. operands], new L13.Effect.AnonymousCall(target.Triv, Trivials(operands)));
+        [Recur(Field = "V1List", Processor = nameof(Operand))]
+        Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
+        Bind(
+            [target, .. operands],
+            new L13.Effect.AnonymousCall(target.Triv, TrivialOperands(operands)));
 
     [Rewrite(Processor = nameof(Effect))]
     private static L13.Effect EffectCall(
         L12.Effect.App node,
         [Recur(Field = "V0", Processor = nameof(Operand))] (L13.Triv Triv, Binding? Binding) target,
-        [Recur(Field = "V1List", Processor = nameof(Operand))] Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
-        Bind([target, .. operands], new L13.Effect.App(target.Triv, Trivials(operands)));
+        [Recur(Field = "V1List", Processor = nameof(Operand))]
+        Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
+        Bind([target, .. operands], new L13.Effect.App(target.Triv, TrivialOperands(operands)));
 
-    private static Seq<L13.Triv> Trivials(Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
+    private static Seq<L13.Triv> TrivialOperands(Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
         operands.Select(item => item.Triv);
 
     private static Seq<Binding> Bindings(Seq<(L13.Triv Triv, Binding? Binding)> operands) =>
@@ -351,21 +387,25 @@ internal sealed partial class RemoveComplexOpera
     {
         var bindings = Bindings(operands);
         return bindings.IsEmpty ? body :
-            new L13.Value.Let(bindings.Select(item => item.Name), bindings.Select(item => item.Value), body);
+            new L13.Value.Let(
+                bindings.Select(item => item.Name), bindings.Select(item => item.Value), body);
     }
 
-    private static L13.Predicate Bind(Seq<(L13.Triv Triv, Binding? Binding)> operands, L13.Predicate body)
+    private static L13.Predicate Bind(
+        Seq<(L13.Triv Triv, Binding? Binding)> operands, L13.Predicate body)
     {
         var bindings = Bindings(operands);
         return bindings.IsEmpty ? body :
-            new L13.Predicate.Let(bindings.Select(item => item.Name), bindings.Select(item => item.Value), body);
+            new L13.Predicate.Let(
+                bindings.Select(item => item.Name), bindings.Select(item => item.Value), body);
     }
 
     private static L13.Effect Bind(Seq<(L13.Triv Triv, Binding? Binding)> operands, L13.Effect body)
     {
         var bindings = Bindings(operands);
         return bindings.IsEmpty ? body :
-            new L13.Effect.Let(bindings.Select(item => item.Name), bindings.Select(item => item.Value), body);
+            new L13.Effect.Let(
+                bindings.Select(item => item.Name), bindings.Select(item => item.Value), body);
     }
 
     private sealed record Binding(Symbol Name, L13.Value Value);
@@ -376,7 +416,8 @@ internal sealed partial class RemoveAnonymousCall
 {
     public L14.LetrecExpr Run(L13.LetrecExpr input) => this.Run(input, new());
 
-    internal L14.LetrecExpr Run(L13.LetrecExpr input, SchemeSymbols symbols) => this.Lower(input, symbols);
+    internal L14.LetrecExpr Run(L13.LetrecExpr input, SchemeSymbols symbols) =>
+        this.Lower(input, symbols);
 
     [Processor("LetrecExpr", "LetrecExpr")]
     private partial L14.LetrecExpr Lower(L13.LetrecExpr ir, SchemeSymbols symbols);
@@ -399,7 +440,8 @@ internal sealed partial class RemoveAnonymousCall
         [Recur(Field = "T1List")] Seq<L14.Triv> args, SchemeSymbols symbols)
     {
         Symbol label = symbols.GenSymbol("tmp");
-        return new L14.Value.Let([label], [Code(target)], new L14.Value.App(new L14.Var(label), [target, .. args]));
+        return new L14.Value.Let(
+            [label], [Code(target)], new L14.Value.App(new L14.Var(label), [target, .. args]));
     }
 
     [Rewrite(Processor = nameof(Predicate))]
@@ -418,8 +460,10 @@ internal sealed partial class RemoveAnonymousCall
         [Recur(Field = "T1List")] Seq<L14.Triv> args, SchemeSymbols symbols)
     {
         Symbol label = symbols.GenSymbol("tmp");
-        return new L14.Effect.Let([label], [Code(target)], new L14.Effect.App(new L14.Var(label), [target, .. args]));
+        return new L14.Effect.Let(
+            [label], [Code(target)], new L14.Effect.App(new L14.Var(label), [target, .. args]));
     }
 
-    private static L14.Value Code(L14.Triv target) => new L14.Value.SysPrimapp("procedure-code", [target]);
+    private static L14.Value Code(L14.Triv target) =>
+        new L14.Value.SysPrimapp("procedure-code", [target]);
 }

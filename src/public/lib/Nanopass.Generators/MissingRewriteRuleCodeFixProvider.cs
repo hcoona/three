@@ -63,34 +63,38 @@ public sealed class MissingRewriteRuleCodeFixProvider : CodeFixProvider
                 continue;
             }
 
-            var additions = stubs.Split(NanopassPassAnalyzer.StubSeparator)
-                .Select(static stub => SyntaxFactory.ParseMemberDeclaration(stub))
-                .OfType<MethodDeclarationSyntax>()
-                .Select(static method => method.WithAdditionalAnnotations(Formatter.Annotation))
-                .ToArray();
-            if (additions.Length == 0)
-            {
-                continue;
-            }
-
-            var replacement = declaration.AddMembers(additions);
-            if (!declaration.SemicolonToken.IsKind(SyntaxKind.None))
-            {
-                replacement = replacement.WithSemicolonToken(default)
-                    .WithOpenBraceToken(SyntaxFactory.Token(SyntaxKind.OpenBraceToken))
-                    .WithCloseBraceToken(SyntaxFactory.Token(SyntaxKind.CloseBraceToken)
-                        .WithTrailingTrivia(declaration.SemicolonToken.TrailingTrivia))
-                    .WithAdditionalAnnotations(Formatter.Annotation);
-            }
-
-            string title = additions.Length == 1
+            string title = stubs.IndexOf(NanopassPassAnalyzer.StubSeparator) < 0
                 ? "Add missing rewrite rule"
                 : "Add missing rewrite rules";
             context.RegisterCodeFix(
                 CodeAction.Create(
                     title,
-                    _ => Task.FromResult(context.Document.WithSyntaxRoot(
-                        root.ReplaceNode(declaration, replacement))),
+                    _ =>
+                    {
+                        var additions = stubs.Split(NanopassPassAnalyzer.StubSeparator)
+                            .Select(static stub => SyntaxFactory.ParseMemberDeclaration(stub))
+                            .OfType<MethodDeclarationSyntax>()
+                            .Select(static method =>
+                                method.WithAdditionalAnnotations(Formatter.Annotation))
+                            .ToArray();
+                        if (additions.Length == 0)
+                        {
+                            return Task.FromResult(context.Document);
+                        }
+
+                        var replacement = declaration.AddMembers(additions);
+                        if (!declaration.SemicolonToken.IsKind(SyntaxKind.None))
+                        {
+                            replacement = replacement.WithSemicolonToken(default)
+                                .WithOpenBraceToken(SyntaxFactory.Token(SyntaxKind.OpenBraceToken))
+                                .WithCloseBraceToken(SyntaxFactory.Token(SyntaxKind.CloseBraceToken)
+                                    .WithTrailingTrivia(declaration.SemicolonToken.TrailingTrivia))
+                                .WithAdditionalAnnotations(Formatter.Annotation);
+                        }
+
+                        return Task.FromResult(context.Document.WithSyntaxRoot(
+                            root.ReplaceNode(declaration, replacement)));
+                    },
                     nameof(MissingRewriteRuleCodeFixProvider)),
                 diagnostic);
         }
