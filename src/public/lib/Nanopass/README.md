@@ -107,6 +107,6 @@ isolated consumer project before any publication.
 ## Project Records
 
 - [Architecture and Design Invariants](https://github.com/hcoona/three/blob/main/src/public/lib/Nanopass/docs/architecture.md)
-- [Validation and Testing Strategy](https://github.com/hcoona/three/blob/main/src/public/lib/Nanopass/docs/validation.md)
+- [Validation and Testing Strategy](https://github.com/hcoona/three/blob/main/src/public/lib/Nanopass/docs/validation.md) (includes the [Upstream Differential Verification](https://github.com/hcoona/three/blob/main/src/public/lib/Nanopass/docs/validation.md#upstream-differential-verification) runbook and summary)
 - [Release Notes](https://github.com/hcoona/three/blob/main/src/public/lib/Nanopass/ReleaseNotes.md)
 - [Third-Party Notices (MIT Attribution)](https://github.com/hcoona/three/blob/main/src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt)
