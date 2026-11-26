@@ -1125,10 +1125,20 @@ def _batch_path(path: Path, binary: Path) -> str:
 
 
 def _musescore_job(
-    ms: MuseScore, directory: Path, xml: str, style: LayoutStyle
+    ms: MuseScore,
+    directory: Path,
+    xml: str,
+    style: LayoutStyle,
+    *,
+    max_scratch_bytes: int | None = None,
 ) -> None:
     owned = ms.confinement.check(directory)
     owned.mkdir(parents=True, exist_ok=False)
+    reservation_file: Path | None = None
+    if max_scratch_bytes is not None:
+        reservation_file = owned / SCRATCH_RESERVATION_FILE
+        with reservation_file.open("x", encoding="utf-8") as handle:
+            handle.write(f'{{"reserved_bytes":{max_scratch_bytes}}}\n')
     source = ms.confinement.write_text(owned / "input.musicxml", xml)
     mss = ms.confinement.write_text(owned / "style.mss", style.musescore_style)
     exe = ms.executable
@@ -1153,10 +1163,18 @@ def _musescore_job(
     ]
     with ms.confinement.lock(ms.confinement.downloads / LOCK_NAME):
         ms.check_settings()
+        launched_ok = False
         try:
             code, _ = ms.launcher(cmd, STEP_SECONDS)
+            launched_ok = True
         finally:
-            ms.check_settings()
+            if launched_ok:
+                ms.check_settings()
+            else:
+                with contextlib.suppress(OSError, StopConditionError):
+                    ms.check_settings()
+    if reservation_file is not None:
+        reservation_file.unlink(missing_ok=True)
     if code != 0:
         msg = f"MuseScore W4 job did not complete successfully ({code})"
         raise RenderRejected(msg)
@@ -1272,6 +1290,25 @@ def calibrate_musescore_pixel_scale(
     return (musescore.version, musescore.executable_sha256)
 
 
+def _safe_count_rasters(
+    output_dir: Path,
+    count_rasters: Callable[[int], None] | None,
+    *,
+    suppress_errors: bool,
+) -> int:
+    if not suppress_errors:
+        observed = _rendered_raster_count(output_dir)
+        if count_rasters is not None:
+            count_rasters(observed)
+        return observed
+    observed = 0
+    with contextlib.suppress(OSError, StopConditionError):
+        observed = _rendered_raster_count(output_dir)
+        if count_rasters is not None:
+            count_rasters(observed)
+    return observed
+
+
 def render_musescore(  # noqa: PLR0913
     x_inj: str,
     style: LayoutStyle,
@@ -1283,6 +1320,7 @@ def render_musescore(  # noqa: PLR0913
     calibrated_identity: tuple[str, str] | None = None,
     max_pages: int = 5_000,
     count_rasters: Callable[[int], None] | None = None,
+    max_scratch_bytes: int | None = None,
 ) -> RenderResult:
     """Render a public sample through the settings-guarded host job driver."""
     engine = "musescore"
@@ -1307,12 +1345,23 @@ def render_musescore(  # noqa: PLR0913
         encoded = encode_layout_breaks(x_inj, style.layout)
         categories = _categories(_parse_xml(encoded), encoded)
         annotate(encoded)
+        stopped = False
+        observed = 0
         try:
-            _musescore_job(musescore, output_dir, encoded, style)
+            _musescore_job(
+                musescore,
+                output_dir,
+                encoded,
+                style,
+                max_scratch_bytes=max_scratch_bytes,
+            )
+        except StopConditionError:
+            stopped = True
+            raise
         finally:
-            observed = _rendered_raster_count(output_dir)
-            if count_rasters is not None:
-                count_rasters(observed)
+            observed = _safe_count_rasters(
+                output_dir, count_rasters, suppress_errors=stopped
+            )
         if observed > max_pages:
             msg = "MuseScore exceeded its per-job page ceiling"
             raise StopConditionError(msg)

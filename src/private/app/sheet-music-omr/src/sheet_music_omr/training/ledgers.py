@@ -723,6 +723,7 @@ def _bind_campaign_roots(
 ) -> tuple[dict[str, Any], bytes, bytes]:
     """Validate the pinned roots and ledger bytes under the campaign lock."""
     anchor = _read_campaign_anchor()
+    _check_no_unreaped_worker()
     _check_bound_roots(downloads, anchor)
     verify_prior_campaign_ledgers(downloads)
     download_raw, run_raw = _campaign_ledger_bytes(downloads, anchor)
@@ -777,6 +778,7 @@ def migrate_w6_campaign_roots(
     )
     with _disk_lock(), _campaign_lock():
         anchor = _read_campaign_anchor()
+        _check_no_unreaped_worker()
         old_runs = _check_bound_roots(old_downloads, anchor)
         new_runs = check_w6_runs_root(new_downloads)
         verify_prior_campaign_ledgers(new_downloads)
@@ -835,9 +837,106 @@ def check_w6_disk_cap(
 
 
 W6_SCRATCH_RESERVATION_FILE = ".w6-scratch-reservation.json"
+W6_UNREAPED_WORKER_NAME = ".w6-unreaped-worker.json"
 
 
-def w6_scratch_dir_bytes(directory: Path) -> int:
+def _pending_native_worker_path() -> Path:
+    path = _campaign_anchor_path().with_name(W6_UNREAPED_WORKER_NAME)
+    check_no_symlink_under(path, Path(path.anchor))
+    return path
+
+
+def has_pending_w6_native_worker(reservation_id: str | None = None) -> bool:
+    """Return whether an unconfirmed native-worker fence is present."""
+    marker = _pending_native_worker_path()
+    if reservation_id is None:
+        return marker.exists()
+    try:
+        raw = marker.read_bytes()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    try:
+        data = _object(json.loads(raw))
+    except StopConditionError, ValueError:
+        return True
+    return data.get("reservation_id") == reservation_id
+
+
+def _check_no_unreaped_worker() -> None:
+    if has_pending_w6_native_worker():
+        _stop(
+            "unconfirmed W6 native worker exit blocks further campaign launches"
+        )
+
+
+def begin_w6_native_worker(detail: str, *, reservation_id: str = "") -> str:
+    """Publish a populated exclusive token-bound fence atomically pre-launch."""
+    marker = _pending_native_worker_path()
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    token = uuid.uuid4().hex
+    payload = (
+        _json_bytes(
+            {
+                "token": token,
+                "reservation_id": reservation_id,
+                "detail": detail,
+                "utc": _utc_now(),
+            }
+        )
+        + b"\n"
+    )
+    tmp = marker.with_name(f"{marker.name}.{token}.part")
+    check_no_symlink_under(tmp, marker.parent)
+    try:
+        with tmp.open("xb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(tmp, marker, follow_symlinks=False)
+    except FileExistsError:
+        _stop(
+            "unconfirmed W6 native worker exit blocks further campaign launches"
+        )
+    finally:
+        tmp.unlink(missing_ok=True)
+    _sync_parent(marker)
+    return token
+
+
+def clear_w6_native_worker(token: str) -> None:
+    """Clear the pending fence only for the exact launch token that set it."""
+    marker = _pending_native_worker_path()
+    if not marker.is_file():
+        _stop("missing W6 native worker fence on exit clearance")
+    data = _read_json(marker)
+    if data.get("token") != token:
+        _stop("W6 native worker fence token mismatch on exit clearance")
+    marker.unlink()
+    _sync_parent(marker)
+
+
+def _unique_file_bytes(
+    fp: Path, seen_inodes: set[tuple[int, int]] | None
+) -> tuple[int, int]:
+    with suppress(FileNotFoundError):
+        info = fp.stat(follow_symlinks=False)
+        if stat.S_ISREG(info.st_mode):
+            ident = _identity(info)
+            if seen_inodes is None:
+                return info.st_size, info.st_size
+            is_new = ident not in seen_inodes
+            seen_inodes.add(ident)
+            return info.st_size, (info.st_size if is_new else 0)
+    return 0, 0
+
+
+def w6_scratch_dir_bytes(
+    directory: Path,
+    *,
+    seen_inodes: set[tuple[int, int]] | None = None,
+) -> int:
     """Return ``max(reserved_bytes, actual_bytes)`` in a single walk."""
     if not directory.exists():
         return 0
@@ -852,54 +951,82 @@ def w6_scratch_dir_bytes(directory: Path) -> int:
         except OSError, ValueError, AttributeError:
             _stop("malformed Slice A scratch reservation metadata")
     actual = 0
+    unique = 0
     for dirpath, _, filenames in os.walk(directory, followlinks=False):
         dp = Path(dirpath)
         for fn in filenames:
             fp = dp / fn
             if fp == meta or fp.is_symlink():
                 continue
-            with suppress(FileNotFoundError):
-                if fp.is_file():
-                    actual += fp.stat().st_size
-    return max(reserved, actual)
+            raw_sz, uniq_sz = _unique_file_bytes(fp, seen_inodes)
+            actual += raw_sz
+            unique += uniq_sz
+    if seen_inodes is None:
+        return max(reserved, actual)
+    return unique + max(0, reserved - actual)
 
 
-def _w6_tmp_bytes(tmp: Path) -> int:
+def _directory_unique_bytes(
+    root: Path, seen_inodes: set[tuple[int, int]]
+) -> int:
+    if not root.exists():
+        return 0
+    total = 0
+    for dirpath, _, filenames in os.walk(root, followlinks=False):
+        dp = Path(dirpath)
+        for fn in filenames:
+            fp = dp / fn
+            if not fp.is_symlink():
+                _, uniq_sz = _unique_file_bytes(fp, seen_inodes)
+                total += uniq_sz
+    return total
+
+
+def _w6_tmp_bytes(
+    tmp: Path, seen_inodes: set[tuple[int, int]] | None = None
+) -> int:
     if tmp.is_symlink() or not tmp.is_dir():
         _stop("invalid Slice A scratch directory")
     total = 0
     for child in tmp.iterdir():
         if child.is_symlink():
             _stop("invalid Slice A scratch job directory")
-        total += (
-            w6_scratch_dir_bytes(child)
-            if child.is_dir()
-            else child.stat().st_size
-        )
+        if child.is_dir():
+            total += w6_scratch_dir_bytes(child, seen_inodes=seen_inodes)
+        else:
+            _, uniq_sz = _unique_file_bytes(child, seen_inodes)
+            total += uniq_sz
     return total
 
 
-def _w6_run_bytes(directory: Path) -> int:
+def _w6_run_bytes(
+    directory: Path, seen_inodes: set[tuple[int, int]] | None = None
+) -> int:
     total = 0
     for entry in directory.iterdir():
         if entry.name == "tmp":
-            total += _w6_tmp_bytes(entry)
+            total += _w6_tmp_bytes(entry, seen_inodes)
         elif not entry.is_symlink():
-            total += (
-                directory_bytes(entry)
-                if entry.is_dir()
-                else entry.stat().st_size
-            )
+            if entry.is_dir():
+                total += (
+                    directory_bytes(entry)
+                    if seen_inodes is None
+                    else _directory_unique_bytes(entry, seen_inodes)
+                )
+            else:
+                _, uniq_sz = _unique_file_bytes(entry, seen_inodes)
+                total += uniq_sz
     return total
 
 
 def _check_w6_disk_cap(runs: Path, *, additional_bytes: int = 0) -> int:
-    """Measure disk use while the campaign disk lock is held."""
+    """Measure physical disk use across all Slice A runs under the disk lock."""
     total = 0
-    for directory in runs.glob("w6-slice-a-*"):
+    seen_inodes: set[tuple[int, int]] = set()
+    for directory in sorted(runs.glob("w6-slice-a-*")):
         if directory.is_symlink() or not directory.is_dir():
             _stop("invalid Slice A run directory")
-        total += _w6_run_bytes(directory)
+        total += _w6_run_bytes(directory, seen_inodes)
     if total + _integer(additional_bytes) > W6_DISK_CAP_BYTES:
         _stop("Slice A 100 GB generated disk cap would be exceeded")
     return total
@@ -1021,6 +1148,7 @@ def reserve_w6_render_run(  # noqa: PLR0913
         w6_disk_lock(downloads, runs_parent) as runs,
         _locked_run_ledger(downloads) as (anchor, raw),
     ):
+        _check_no_unreaped_worker()
         _check_w6_disk_cap(runs)
         starts, settlements, _ = _run_state(raw)
         charged = sum(
@@ -1066,6 +1194,7 @@ def reserve_w6_copista_invocation_and_read_anchor(
     """Atomically pin an external anchor and charge one private invocation."""
     downloads = downloads_dir.absolute()
     with _locked_run_ledger(downloads) as (campaign, raw):
+        _check_no_unreaped_worker()
         starts, _, anchor = _run_state(raw)
         _validate_anchor(anchor)
         if sum(row["kind"] == "copista" for row in starts.values()) >= (
@@ -1083,6 +1212,20 @@ def reserve_w6_copista_invocation_and_read_anchor(
             kind="copista",
         )
     return token, anchor
+
+
+def verify_completed_w6_render_run(downloads_dir: Path, run_id: str) -> None:
+    """Require a settled completed render entry in the Slice A run ledger."""
+    downloads = downloads_dir.absolute()
+    with _locked_run_ledger(downloads) as (_, raw):
+        starts, settlements, _ = _run_state(raw)
+        if not any(
+            row.get("kind") == "render"
+            and row.get("run_id") == run_id
+            and settlements.get(res_id, {}).get("status") == "completed"
+            for res_id, row in starts.items()
+        ):
+            _stop(f"base W6 run {run_id} has no completed Slice A ledger entry")
 
 
 def settle_w6_run(

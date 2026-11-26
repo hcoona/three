@@ -1901,7 +1901,7 @@ def test_renderer_exception_retains_scratch_and_charges_entire_batch(
     (retained,) = (tmp_path / "tmp").glob("*/active")
     assert retained.read_bytes() == marker
     assert meter.disk.usage == len(marker)
-    assert meter.actual == (9 if engine == "verovio" else 8)
+    assert meter.actual == 9  # noqa: PLR2004
     assert not meter.uncounted_worker
 
 
@@ -1957,7 +1957,8 @@ def test_renderer_checks_successful_scratch_before_removal(
     meter.disk.usage = 0
     with pytest.raises(StopConditionError, match="generated disk cap"):
         attempt()
-    assert calls == [min(8, cap // headroom)]
+    expected_pages = 9 if engine == "musescore" else 8
+    assert calls == [min(expected_pages, cap // headroom)]
     assert not list((tmp_path / "tmp").iterdir())
 
 
@@ -2813,3 +2814,523 @@ def test_idle_pool_fallback_and_post_stage_verifier_meter(
         )
     assert meter.actual == 1
     assert meter.uncounted_worker is False
+
+
+def _write_supplement_fixture_base_run(
+    base_run: Path, downloads: Path
+) -> tuple[Path, list[dict[str, object]]]:
+    perm_dir = base_run / "synthetic" / "permissive"
+    src_dir = perm_dir / "sources"
+    src_dir.mkdir(parents=True)
+    bucket_keys = ("tremolos", "cross_staff", "ornaments", "hairpins")
+    surnames = (
+        "Albeniz",
+        "Brahms",
+        "Couperin",
+        "Debussy",
+        "Elgar",
+        "Faure",
+        "Grieg",
+        "Handle",
+        "Ibert",
+        "Janacek",
+        "Kodaly",
+        "Liszt",
+    )
+    manifest_rows: list[dict[str, object]] = []
+    for i, comp in enumerate(surnames):
+        fname = f"s{i:02d}.v2"
+        pitch = f"{'CDEFGAB'[i % 7]}{4 + (i // 7)}"
+        unique_score = parse_document(
+            _HEADER
+            + "".join(
+                f"m {m}\n1.1: {pitch}/1\n2.1: C3/1\n" for m in range(1, 4)
+            )
+        )
+        assert isinstance(unique_score, AssembledScore)
+        raw_i = write_document(unique_score).encode()
+        (src_dir / fname).write_bytes(raw_i)
+        manifest_rows.append(
+            {
+                "source_id": f"pdmx-{i:02d}",
+                "corpus": "PDMX",
+                "rights_variant": "permissive",
+                "license_url": "CC0-1.0",
+                "composer": comp,
+                "title": f"Sonata No. {i + 1}",
+                "canonical_root": str(perm_dir),
+                "canonical_v2_path": f"sources/{fname}",
+                "canonical_v2_sha256": _sha(raw_i),
+                "raw_sha256": _sha(raw_i),
+                "measure_count": 3,
+                "category_densities": {bucket_keys[i % 4]: 0.5},
+            }
+        )
+    manifest_path = perm_dir / "sources-manifest.jsonl"
+    manifest_path.write_text(
+        packaging._jsonl(manifest_rows),  # noqa: SLF001
+        encoding="utf-8",
+    )
+    train, val, split = packaging.split_admitted_sources_by_composer(
+        manifest_rows, min_val_works=10
+    )
+    tr_var = replace(
+        _rendered_fixture("tr-base", "synth_train"), source=train[0]
+    )
+    va_var = replace(_rendered_fixture("va-base", "synth_val"), source=val[0])
+    tr_var2 = replace(
+        _rendered_fixture("tr-base-2", "synth_train"), source=train[1]
+    )
+    va_var2 = replace(
+        _rendered_fixture("va-base-2", "synth_val"), source=val[1]
+    )
+    pkg_report = packaging.package_rendered_variants_to_datasets(
+        [tr_var, va_var, tr_var2, va_var2],
+        base_run,
+        downloads_dir=downloads,
+        target_train_crops=4,
+        target_val_crops=4,
+        prefix_train_crops=2,
+        prefix_val_crops=2,
+    )
+    report_path = base_run / "report" / "w6-packaging.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(pkg_report | {"split": split}) + "\n",
+        encoding="utf-8",
+    )
+    return manifest_path, manifest_rows
+
+
+def test_musescore_supplement_audits_test_and_minima_before_read(
+    tmp_path, monkeypatch
+):
+    """Supplement checks minima/digests and audits TEST before reads."""
+    with pytest.raises(StopConditionError, match="requires >=2,700/300"):
+        packaging.validate_w6_supplement_minima(
+            formal=True,
+            supplement_train_crops=2699,
+            supplement_val_crops=300,
+        )
+    with pytest.raises(StopConditionError, match="exact 18,000/2,000"):
+        packaging.validate_w6_supplement_minima(
+            formal=True,
+            supplement_train_crops=2700,
+            supplement_val_crops=300,
+            crop_targets=(18_000, 2_000, 45_001, 5_000),
+        )
+    with pytest.raises(StopConditionError, match="lacks positive coverage"):
+        packaging._verify_supplement_category_positives(  # noqa: SLF001
+            [
+                {"split": "synth_train", "present_categories": ["tremolo"]},
+                {"split": "synth_val", "present_categories": ["tremolo"]},
+            ]
+        )
+    runs_root = tmp_path / "runs"
+    base_dir = runs_root / "w6-slice-a-package-formal-4"
+    perm_dir = base_dir / "synthetic" / "permissive"
+    perm_dir.mkdir(parents=True)
+    for rel in (
+        "report/w6-packaging.json",
+        "synthetic/permissive/sources-manifest.jsonl",
+        "datasets/w6-crops-50k/summary.json",
+        "datasets/w6-crops-50k/synth_train/crops.jsonl",
+        "datasets/w6-crops-50k/synth_val/crops.jsonl",
+        "datasets/w6-crops-50k/synth_train/page-boxes.jsonl",
+        "datasets/w6-crops-50k/synth_val/page-boxes.jsonl",
+    ):
+        f = base_dir / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("tampered\n", encoding="utf-8")
+    gate, _ = _metadata_gate(tmp_path, monkeypatch)
+    test_gid = sorted(intake.TEST_GOLD_IDS)[0]
+    poisoned = tmp_path / "poisoned.jsonl"
+    poisoned.write_text(
+        packaging._jsonl(  # noqa: SLF001
+            [
+                {
+                    "source_id": "pdmx-00",
+                    "corpus": "PDMX",
+                    "rights_variant": "permissive",
+                    "license_url": "CC0-1.0",
+                    "composer": "Brahms",
+                    "title": "Sonata No. 1",
+                    "canonical_root": str(perm_dir),
+                    "canonical_v2_path": "sources/s00.v2",
+                    "canonical_v2_sha256": "a" * 64,
+                    "raw_sha256": _sha(f"xml-{test_gid}".encode()),
+                    "measure_count": 3,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    score_reads = 0
+
+    def forbid_score(*_a, **_kw):
+        nonlocal score_reads
+        score_reads += 1
+        msg = "score must not be opened before verification"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(packaging, "_source_score", forbid_score)
+    with pytest.raises(StopConditionError, match="digest provenance"):
+        packaging._read_verified_base_blobs(  # noqa: SLF001
+            base_dir, "w6-crops-50k", formal=True
+        )
+    with pytest.raises(StopConditionError, match="TEST"):
+        packaging._verify_reused_manifest(  # noqa: SLF001
+            poisoned, runs_root, gate, formal=False
+        )
+    assert score_reads == 0
+
+
+def test_musescore_supplement_augments_milestones_cleanly(
+    tmp_path, monkeypatch
+):
+    """Supplement augments 20k/50k milestones cleanly on identical splits."""
+    from sheet_music_omr.training import models as w6_models  # noqa: PLC0415
+
+    downloads = tmp_path / "downloads"
+    _seed_prior_ledgers(downloads, monkeypatch)
+    runs_root = tmp_path / "runs"
+    base_run = runs_root / "w6-slice-a-base"
+    supp_run = runs_root / "w6-slice-a-supp"
+    monkeypatch.setattr(packaging, "_pinned_lengths", lambda *_: ({}, {}))
+    manifest_path, _ = _write_supplement_fixture_base_run(base_run, downloads)
+    _metadata_gate(tmp_path, monkeypatch)
+    excl_file = tmp_path / "test-exclusion.json"
+    status_file = tmp_path / "batch-status.json"
+    assert manifest_path.is_file()
+
+    exe = tmp_path / "fake-ms"
+    exe.write_bytes(b"ms")
+    ms = MuseScore(
+        exe,
+        "4.7.7",
+        _sha(b"ms"),
+        tmp_path / "active-ms.ini",
+        Confinement(supp_run, downloads),
+        None,
+        {"import/musicXml/importInferTextType": {"value": "false"}},
+    )
+    monkeypatch.setattr(packaging, "repository_root", lambda: tmp_path / "repo")
+    monkeypatch.setattr(
+        packaging, "source_state", lambda: {"commit": "c" * 40, "dirty": False}
+    )
+    monkeypatch.setattr(
+        packaging,
+        "ACCEPTED_MUSESCORE_IDENTITIES",
+        {(ms.version, ms.executable_sha256)},
+    )
+    monkeypatch.setattr(packaging, "verify_w6_training_assets", lambda _: {})
+    seen_enabled: list[set[str] | None] = []
+    orig_inject = packaging.injector.inject_annotations
+
+    def spy_inject(sc, *, seed, enabled_categories=None):
+        seen_enabled.append(
+            None if enabled_categories is None else set(enabled_categories)
+        )
+        return orig_inject(sc, seed=seed, enabled_categories=enabled_categories)
+
+    monkeypatch.setattr(packaging.injector, "inject_annotations", spy_inject)
+
+    def fake_render_ms(*_a, count_rasters, **_kw):
+        count_rasters(1)
+        return _rendered_fixture("ms-supp", "synth_train").render
+
+    monkeypatch.setattr(renderers, "render_musescore", fake_render_ms)
+    bytes_before = ledgers._check_w6_disk_cap(runs_root)  # noqa: SLF001
+    out = packaging.run_musescore_supplement_and_package(
+        downloads,
+        supp_run,
+        base_run_dir=base_run,
+        test_exclusion=excl_file,
+        test_status=status_file,
+        musescore=ms,
+        planned_pages=30,
+        formal=False,
+        supplement_train_crops=2,
+        supplement_val_crops=2,
+        target_train_crops=4,
+        target_val_crops=4,
+        prefix_train_crops=3,
+        prefix_val_crops=3,
+    )
+    assert seen_enabled
+    assert all("N5" not in s for s in seen_enabled if s)
+    assert all({"N2", "P3"} <= s for s in seen_enabled if s)
+    full_out = cast("dict[str, dict[str, object]]", out["fixture-crops-full"])
+    pref_out = cast("dict[str, dict[str, object]]", out["fixture-crops-prefix"])
+    assert full_out["synth_train"]["crops"] == 4  # noqa: PLR2004
+    assert full_out["synth_val"]["crops"] == 4  # noqa: PLR2004
+    assert cast("int", pref_out["synth_train"]["crops"]) >= 3  # noqa: PLR2004
+    tr_full = w6_models.load_packaged_crop_manifest(
+        supp_run / "datasets" / "fixture-crops-full" / "synth_train"
+    )
+    va_full = w6_models.load_packaged_crop_manifest(
+        supp_run / "datasets" / "fixture-crops-full" / "synth_val"
+    )
+    assert not (
+        {r["canonical_composer"] for r in tr_full}
+        & {r["canonical_composer"] for r in va_full}
+    )
+    raw_sum = sum(
+        ledgers._w6_run_bytes(d)  # noqa: SLF001
+        for d in runs_root.glob("w6-slice-a-*")
+    )
+    assert bytes_before < ledgers._check_w6_disk_cap(runs_root) < raw_sum  # noqa: SLF001
+
+    # Corrupting a base page PNG is rejected before linking.
+    page_png = next((base_run / "datasets" / "assets" / "pages").glob("*.png"))
+    page_png.write_bytes(b"corrupt")
+    with pytest.raises(StopConditionError, match="corrupted base W6 page"):
+        packaging._load_verified_base_run(  # noqa: SLF001
+            base_run,
+            run=runs_root / "w6-slice-a-supp2",
+            downloads=downloads,
+            runs_root=runs_root,
+            gate=packaging.MetadataOnlyTestExclusion(excl_file, status_file),
+            formal=False,
+        )
+
+
+def test_musescore_timeout_reservation_and_cli_settings_guard(
+    tmp_path, monkeypatch, capsys
+):
+    """Real _musescore_job writes reservation once and CLI guards settings."""
+    from sheet_music_omr.training import cli as w6_cli  # noqa: PLC0415
+
+    downloads = tmp_path / "downloads"
+    _seed_prior_ledgers(downloads, monkeypatch)
+    runs_root = tmp_path / "runs"
+    timeout_run = Confinement.create(
+        runs_root / "w6-slice-a-ms-timeout", downloads
+    ).run
+    exe = tmp_path / "fake-ms"
+    exe.write_bytes(b"ms")
+    active_ini = tmp_path / "active-ms.ini"
+    active_ini.write_text(
+        "[General]\nimport\\musicXml\\importInferTextType=false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        packaging,
+        "ACCEPTED_MUSESCORE_IDENTITIES",
+        {("4.7.7", _sha(b"ms"))},
+    )
+    ms = MuseScore.open(
+        Confinement(timeout_run, downloads),
+        executable=exe,
+        settings=active_ini,
+        version_lookup=lambda: "4.7.7",
+    )
+    ms_xml = to_musicxml_text(_score(3))
+    ms_prep = packaging._PreparedVariant(  # noqa: SLF001
+        {"source_id": "s1"},
+        "seed",
+        1,
+        renderers.sample_layout_and_style(1, 3),
+        3,
+        "musescore",
+        ms_xml,
+    )
+    assert packaging._item_max_pages(ms_prep) == 4  # noqa: SLF001, PLR2004
+    ms_bound = packaging._musescore_worst_case_bytes(3, ms_xml)  # noqa: SLF001
+
+    # Normal RenderRejected through real render_musescore -> _musescore_job
+    # creates scratch once, unlinks reservation, and cleans scratch.
+    clean_outcome = packaging._execute_prepared_variant(  # noqa: SLF001
+        ms_prep,
+        run=timeout_run,
+        downloads=downloads,
+        musescore=replace(ms, launcher=lambda _c, _t: (1, "failed")),
+        calibrated_identity=None,
+        musescore_lock=packaging.threading.Lock(),
+        max_pages=4,
+        max_scratch_bytes=ms_bound,
+    )
+    assert isinstance(clean_outcome.result, renderers.RenderResult)
+    assert clean_outcome.result.gate.status == "dropped"
+    assert not list((timeout_run / "tmp").iterdir())
+
+    seen_reservations: list[Path] = []
+
+    def stall_launcher(_cmd, _timeout):
+        seen_reservations.extend(
+            (timeout_run / "tmp").glob(
+                f"*/{renderers.SCRATCH_RESERVATION_FILE}"
+            )
+        )
+        msg = "MuseScore batch worker timed out"
+        raise StopConditionError(msg)
+
+    outcome = packaging._execute_prepared_variant(  # noqa: SLF001
+        ms_prep,
+        run=timeout_run,
+        downloads=downloads,
+        musescore=replace(ms, launcher=stall_launcher),
+        calibrated_identity=None,
+        musescore_lock=packaging.threading.Lock(),
+        max_pages=4,
+        max_scratch_bytes=ms_bound,
+    )
+    assert len(seen_reservations) == 1
+    assert isinstance(outcome.result, StopConditionError)
+    assert outcome.pages == 4  # noqa: PLR2004
+    assert outcome.scratch_bytes == ms_bound
+
+    monkeypatch.setattr(w6_cli, "check_outside_repository", lambda *_: None)
+    monkeypatch.setattr(w6_cli, "settings_path", lambda: active_ini)
+    monkeypatch.setattr(
+        w6_cli, "ACCEPTED_MUSESCORE_IDENTITIES", {("4.7.7", _sha(b"accepted"))}
+    )
+    cli_base = [
+        "package-w6-musescore-supplement",
+        "--run-dir",
+        str(runs_root / "w6-slice-a-cli"),
+        "--downloads",
+        str(downloads),
+        "--base-run-dir",
+        str(runs_root / "w6-slice-a-base"),
+        "--test-exclusion",
+        str(tmp_path / "excl.json"),
+        "--test-status",
+        str(tmp_path / "status.json"),
+        "--musescore",
+        str(exe),
+        "--no-formal",
+    ]
+    assert (
+        w6_cli.main([*cli_base, "--settings", str(tmp_path / "other.ini")]) == 2  # noqa: PLR2004
+    )
+    assert "active host MuseScore settings" in capsys.readouterr().err
+    assert w6_cli.main(cli_base) == 2  # noqa: PLR2004
+    assert "mutable-source recheck" in capsys.readouterr().err
+    assert not (runs_root / "w6-slice-a-cli").exists()
+
+
+def test_wsl_supervisor_unconfirmed_exit_fences_campaign_and_migration(
+    tmp_path, monkeypatch
+):
+    """Generic WSL supervisor failure keeps pre-launch fence and blocks runs."""
+    downloads = tmp_path / "downloads"
+    _seed_prior_ledgers(downloads, monkeypatch)
+    runs_root = tmp_path / "runs"
+    fake_ps = tmp_path / "fail-ps"
+    fake_ps.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    fake_ps.chmod(0o755)
+    monkeypatch.setattr(packaging, "_WSL_POWERSHELL", fake_ps)
+    monkeypatch.setattr(packaging, "_windows_path_for_wsl", str)
+    with pytest.raises(packaging._UnconfirmedWorkerExitError):  # noqa: SLF001
+        packaging._run_wsl_native_musescore(  # noqa: SLF001
+            ["MuseScore4.exe", "-j", "job.json"],
+            1.0,
+            track_campaign_fence=True,
+        )
+    new_dl = tmp_path / "migrated" / "downloads"
+    _seed_prior_ledgers(new_dl, monkeypatch, init_campaign=False)
+    with pytest.raises(StopConditionError, match="unconfirmed W6 native"):
+        ledgers.begin_w6_native_worker("second-launch")
+    with pytest.raises(StopConditionError, match="token mismatch"):
+        ledgers.clear_w6_native_worker("wrong-token")
+    with pytest.raises(StopConditionError, match="unconfirmed W6 native"):
+        ledgers.migrate_w6_campaign_roots(downloads, new_dl)
+    with pytest.raises(StopConditionError, match="unconfirmed W6 native"):
+        ledgers.reserve_w6_render_run(
+            downloads,
+            run_id="w6-slice-a-blocked",
+            git_commit="a" * 40,
+            clean_tree=True,
+            command="package-w6-musescore-supplement",
+            planned_pages=10,
+            runs_parent=runs_root,
+        )
+    token = str(
+        json.loads(ledgers._pending_native_worker_path().read_bytes())["token"]  # noqa: SLF001
+    )
+    assert ledgers.has_pending_w6_native_worker()
+    assert not ledgers.has_pending_w6_native_worker("other-reservation")
+    ledgers.clear_w6_native_worker(token)
+    assert not ledgers.has_pending_w6_native_worker()
+
+
+def test_unconfirmed_exit_with_settings_oserror_retains_scratch(
+    tmp_path, monkeypatch
+):
+    """Post-launch settings OSError cannot mask unconfirmed exit or scratch."""
+    downloads = tmp_path / "downloads"
+    _seed_prior_ledgers(downloads, monkeypatch)
+    runs_root = tmp_path / "runs"
+    fake_ps = tmp_path / "fail-ps"
+    fake_ps.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    fake_ps.chmod(0o755)
+    monkeypatch.setattr(packaging, "_WSL_POWERSHELL", fake_ps)
+    monkeypatch.setattr(packaging, "_windows_path_for_wsl", str)
+    err_run = Confinement.create(
+        runs_root / "w6-slice-a-settings-oserr", downloads
+    ).run
+    exe = tmp_path / "fake-ms.exe"
+    exe.write_bytes(b"ms")
+    ini = tmp_path / "ms-oserr.ini"
+    ini.write_text(
+        "[General]\nimport\\musicXml\\importInferTextType=false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        packaging, "ACCEPTED_MUSESCORE_IDENTITIES", {("4.7.7", _sha(b"ms"))}
+    )
+    ms = MuseScore.open(
+        Confinement(err_run, downloads),
+        executable=exe,
+        settings=ini,
+        version_lookup=lambda: "4.7.7",
+    )
+    orig_check = MuseScore.check_settings
+    calls = 0
+
+    def fail_second_check(self):
+        nonlocal calls
+        calls += 1
+        if calls >= 2:  # noqa: PLR2004
+            msg = "settings locked on Windows"
+            raise PermissionError(msg)
+        return orig_check(self)
+
+    monkeypatch.setattr(MuseScore, "check_settings", fail_second_check)
+    ms_xml = to_musicxml_text(_score(2))
+    ms_prep = packaging._PreparedVariant(  # noqa: SLF001
+        {"source_id": "s1"},
+        "seed",
+        1,
+        renderers.sample_layout_and_style(1, 2),
+        2,
+        "musescore",
+        ms_xml,
+    )
+    ms_bound = packaging._musescore_worst_case_bytes(2, ms_xml)  # noqa: SLF001
+    res_outcome = packaging._execute_prepared_variant(  # noqa: SLF001
+        ms_prep,
+        run=err_run,
+        downloads=downloads,
+        musescore=replace(
+            ms,
+            launcher=packaging._make_offline_musescore(  # noqa: SLF001
+                downloads, reservation_id="res-own"
+            ),
+        ),
+        calibrated_identity=None,
+        musescore_lock=packaging.threading.Lock(),
+        max_pages=3,
+        max_scratch_bytes=ms_bound,
+        reservation_id="res-own",
+    )
+    assert isinstance(res_outcome.result, packaging._UnconfirmedWorkerExitError)  # noqa: SLF001
+    assert res_outcome.scratch_bytes == ms_bound
+    assert list((err_run / "tmp").iterdir())
+    assert ledgers.has_pending_w6_native_worker("res-own")
+    assert not ledgers.has_pending_w6_native_worker("res-other")
+    tok2 = str(
+        json.loads(ledgers._pending_native_worker_path().read_bytes())["token"]  # noqa: SLF001
+    )
+    ledgers.clear_w6_native_worker(tok2)

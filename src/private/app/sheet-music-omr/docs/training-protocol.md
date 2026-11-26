@@ -342,6 +342,59 @@ False`, the token vocabulary IDs exclusively encoding `cat` (`8va`/`8vb`/
       work/score/measure split counts, repetition quantiles (`p50`, `p90`,
       `p99`, `max`), per-category positive counts, and exact visual-grid +
       target-token length quantiles under each pinned tokenizer/processor.
+    - **Targeted `MuseScore 4.x` full-category milestone augmentation (`package-w6-musescore-supplement --base-run-dir`):**
+      when a configured `--musescore-page-cap` bounds host `MuseScore` volume in
+      an initial `package-w6-crops` run (runtime observation in
+      [`w6-slice-a-package-formal-4`](https://github.com/hcoona/three/issues/1498#issuecomment-7173082854),
+      `w6-packaging.json` `SHA-256`
+      `260b461d20c7647415d60f9fb3f025fc33b290cf7a92ef7c4d7db85bcc9f22c3`,
+      where `--musescore-page-cap 50` left the `6` `Verovio`-disabled/unchecked
+      categories near zero in `synth_train`),
+      `package-w6-musescore-supplement` takes an attested completed sibling
+      `w6-slice-a-*` `--base-run-dir` (`0` new Phase-1 downloads, reading raw
+      bytes and verifying all `7` pinned base manifest `SHA-256` digests before
+      parsing any metadata or opening any score/PNG file, and verifying every
+      reused crop PNG and page PNG before linking), checks `canonical_root`
+      confinement under the canonical synthetic `runs` root, re-audits `0`
+      `TEST` overlap against `test-exclusion.json` and `test-status` **before**
+      opening any score notation, and reproduces and verifies the base run's
+      exact `split_admitted_sources_by_composer` partition against both
+      `w6-packaging.json` and the base `w6-crops-50k` manifests so `synth_train`
+      and `synth_val` composer/work/score assignments remain identical with zero
+      cross-split leakage. Within each split, scores carrying native
+      `Verovio`-disabled/unchecked or low-support notation are partitioned into
+      `7` disjoint rarity buckets (`0: tremolo`, `1: cross_staff`, `2:
+ornament`, `3: grace`, `4: ottava`, `5: hairpin`, `6: mid-score clef change`,
+      sorted deterministically by `source_id` within each bucket) and
+      interleaved `1:1:1:1:1:1:1` across buckets and rounds under seed domain
+      `"omr-w6-ms-supplement-v1:{round_index}:{canonical_v2_sha256}"` (disjoint
+      from `"omr-w6-variant-v1:"` so `variant_id`s never collide with the base
+      run). Supplement variants disable synthetic `N5` pedal injection while
+      preserving native `pedal` (**inference**: avoids avoidable `MuseScore`
+      round-trip rejections given the runtime observation in
+      [`w6-slice-a-package-formal-4`](https://github.com/hcoona/three/issues/1498#issuecomment-7173082854)
+      of a `47.62%` `MuseScore` `pedal` round-trip drop rate versus a `0.00%`
+      `Verovio` `pedal` round-trip drop rate and `35,401` `synth_train` +
+      `3,593` `synth_val` `pedal`-positive crops already present in
+      `w6-crops-50k`), and execute on public `permissive` synthetic scores
+      through the `SHA-256`-verified host `MuseScore 4.x` CLI under its local
+      batch lock per [synthetic-protocol.md](synthetic-protocol.md) lines
+      `125`–`129` (retaining `.w6-scratch-reservation.json` and aborting
+      fail-closed via `StopConditionError` on batch worker timeout). After
+      rendering `>= 2,700` `synth_train` and `>= 300` `synth_val` complete
+      `MuseScore` crops on `--formal` and verifying realized positive coverage
+      across all `7` rarity-bucket categories in the supplement, the packager
+      prepends those complete `MuseScore` variants before the verified base
+      `w6-crops-50k` variants, slices complete-variant prefixes at the exact
+      authorized `w6-crops-50k` (`45,000` `synth_train` / `5,000` `synth_val`)
+      and `w6-crops-20k` (`18,000` `synth_train` / `2,000` `synth_val`) targets
+      (allowing overshoot only to finish the last complete variant, and
+      hardlinking selected base PNG assets on the canonical `runs` filesystem
+      with unique-inode physical disk accounting under the `100 GB` cap),
+      verifies realized positive coverage (`>= 1` crop in both splits) across
+      all `27` `CONTENT_CATEGORIES` in both published milestones on `--formal`,
+      and writes refreshed `w6-crops-20k` and `w6-crops-50k` manifests and
+      `summary.json` files.
 
 ## Training, detector and constrained-decoding contracts
 
