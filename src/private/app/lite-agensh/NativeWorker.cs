@@ -139,15 +139,15 @@ internal sealed class NativeWorker : INativeWorker
         }
         else
         {
-            database.WriteMetadata(
-                $"native:preflight:{id}",
+            database.Meta.WriteJson(
+                RunMetadata.PreflightDiagnosticKey(id),
                 new JsonObject
                 {
                     ["sessionId"] = id,
                     ["evidencePrefix"] = evidencePath,
                     ["state"] = "opening",
                     ["paidReservation"] = false,
-                }.ToJsonString()
+                }
             );
         }
 
@@ -230,7 +230,7 @@ internal sealed class NativeWorker : INativeWorker
                     );
                 }
                 windowBaseline = exactSession is null ? 0 : usage.RequireComplete();
-                database.WriteMetadata($"worker:{worker}:lifecycle", "ready");
+                database.Meta.SetWorkerLifecycle(worker, "ready");
             }
 
             verified = true;
@@ -347,7 +347,7 @@ internal sealed class NativeWorker : INativeWorker
             session.MarkDispatchPending();
             admission?.ThrowIfClosed();
             nativeIdle = false;
-            database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "prompting");
+            database.Meta.SetWorkerLifecycle(reservation.Worker, "prompting");
             JsonObject result = await session
                 .SendAsync(
                     text,
@@ -360,7 +360,7 @@ internal sealed class NativeWorker : INativeWorker
                 )
                 .ConfigureAwait(false);
             nativeIdle = true;
-            database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "ready");
+            database.Meta.SetWorkerLifecycle(reservation.Worker, "ready");
             return result;
         }
         catch (OperationCanceledException exception) when (
@@ -709,7 +709,7 @@ internal sealed class NativeWorker : INativeWorker
 
             if (reservation is not null)
             {
-                database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "stopped");
+                database.Meta.SetWorkerLifecycle(reservation.Worker, "stopped");
             }
         }
         finally
@@ -759,7 +759,7 @@ internal sealed class NativeWorker : INativeWorker
                 }
             });
             usageFinalized = true;
-            database.WriteMetadata($"worker:{reservation.Worker}:lifecycle", "stopped");
+            database.Meta.SetWorkerLifecycle(reservation.Worker, "stopped");
         }
         catch
         {
@@ -788,11 +788,11 @@ internal sealed class NativeWorker : INativeWorker
         Diagnostic["aiCreditsStatus"] = usage.Status;
         Diagnostic["totalUserRequests"] = usage.TotalUserRequests;
         Diagnostic["paidReservation"] = reservation is not null;
-        database.WriteMetadata(
+        database.Meta.WriteJson(
             reservation is null
-                ? $"native:preflight:{usage.SessionId}"
-                : $"native:session:{usage.SessionId}",
-            Diagnostic.ToJsonString()
+                ? RunMetadata.PreflightDiagnosticKey(usage.SessionId)
+                : RunMetadata.SessionDiagnosticKey(usage.SessionId),
+            Diagnostic
         );
     }
 
@@ -825,20 +825,13 @@ internal sealed class NativeWorker : INativeWorker
         );
         if (!calibration)
         {
-            Sql.Execute(
+            RunMetadata.WriteWorkerAssociation(
                 connection,
-                """
-                INSERT INTO meta(key,value)
-                VALUES($sessionKey,$session),($reservationKey,$reservation),($recoveryKey,$recovery)
-                ON CONFLICT(key) DO UPDATE SET value=excluded.value;
-                """,
                 transaction,
-                ("$sessionKey", $"worker:{worker}:session"),
-                ("$session", id),
-                ("$reservationKey", $"worker:{worker}:reservation"),
-                ("$reservation", allocation.Id),
-                ("$recoveryKey", $"worker:{worker}:recovery"),
-                ("$recovery", recovery)
+                worker,
+                id,
+                allocation.Id,
+                recovery
             );
         }
 

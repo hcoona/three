@@ -92,7 +92,7 @@ public static class Program
                 RunDatabase database = new(options["--state"]);
                 if (
                     args[0] is "reconcile" or "reconnect"
-                    && (database.ReadMetadata("native:ledger_binding") is null
+                    && (database.Meta.LedgerBinding is null
                         || !File.Exists(database.Configuration.CampaignLedgerPath))
                 )
                 {

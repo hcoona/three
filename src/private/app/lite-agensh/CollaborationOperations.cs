@@ -122,6 +122,18 @@ public sealed partial class CollaborationOperations
         }
     }
 
+    internal long? FindOwnerTaskByTitle(string title)
+    {
+        using SqliteConnection connection = database.Open();
+        object? id = Sql.Scalar(
+            connection,
+            "SELECT id FROM tasks WHERE title=$title AND author='owner' ORDER BY id LIMIT 1;",
+            null,
+            ("$title", title)
+        );
+        return id is null ? null : Convert.ToInt64(id, CultureInfo.InvariantCulture);
+    }
+
     public void EnqueueEvent(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -277,9 +289,11 @@ public sealed partial class CollaborationOperations
         {
             ["goal"] = database.Configuration.Goal,
             ["baseCommit"] =
-                Metadata(connection, transaction, "git:base_commit")
+                Sql.GetMetadata(connection, transaction, RunMetadata.GitBaseCommitKey)
                 ?? database.Configuration.BaseRevision,
-            ["lifecycle"] = Metadata(connection, transaction, "lifecycle") ?? "initialized",
+            ["lifecycle"] =
+                Sql.GetMetadata(connection, transaction, RunMetadata.LifecycleKey)
+                ?? "initialized",
             ["members"] = Array(database.Members),
             ["repositoryPath"] = database.Configuration.RepositoryPath,
             ["statePath"] = database.StatePath,
@@ -331,12 +345,18 @@ public sealed partial class CollaborationOperations
         new()
         {
             ["id"] = id,
-            ["worktreePath"] = Metadata(connection, transaction, $"worktree:{id}"),
+            ["worktreePath"] = Sql.GetMetadata(
+                connection,
+                transaction,
+                RunMetadata.WorktreeKey(id)
+            ),
             ["lifecycle"] =
-                Metadata(
+                Sql.GetMetadata(
                     connection,
                     transaction,
-                    id == "owner" ? "lifecycle" : $"worker:{id}:lifecycle"
+                    id == "owner"
+                        ? RunMetadata.LifecycleKey
+                        : RunMetadata.WorkerLifecycleKey(id)
                 ) ?? "initialized",
         };
 
@@ -435,14 +455,11 @@ public sealed partial class CollaborationOperations
                 );
                 if (id == 1)
                 {
-                    Sql.Execute(
+                    Sql.SetMetadata(
                         connection,
-                        """
-                        INSERT INTO meta(key,value) VALUES('lifecycle:root_closed_by',$actor)
-                        ON CONFLICT(key) DO UPDATE SET value=excluded.value;
-                        """,
                         transaction,
-                        ("$actor", actor)
+                        RunMetadata.RootClosedByKey,
+                        actor
                     );
                 }
 
@@ -683,14 +700,6 @@ public sealed partial class CollaborationOperations
             throw new OperationException("not_found", $"Unknown member '{id}'.");
         }
     }
-
-    private static string? Metadata(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        string key
-    ) =>
-        Sql.Scalar(connection, "SELECT value FROM meta WHERE key=$key;", transaction, ("$key", key))
-        as string;
 
     private static long Insert(
         SqliteConnection connection,

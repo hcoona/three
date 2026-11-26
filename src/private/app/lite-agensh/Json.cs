@@ -106,6 +106,12 @@ public static class Operation
             ["message"] = message,
             ["data"] = null,
         };
+
+    internal static JsonObject ExpectedFailure(Exception exception) =>
+        Failure(
+            exception is OperationException operation ? operation.Code : "unavailable",
+            exception.Message
+        );
 }
 
 public sealed class OperationException(

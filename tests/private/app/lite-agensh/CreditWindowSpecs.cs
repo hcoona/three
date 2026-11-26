@@ -22,11 +22,14 @@ public sealed class CreditWindowSpecs
     public void MissingBoundCampaignLedgerFailsCoordinatorOpenWithoutCreatingReplacementFile()
     {
         using ScratchDirectory scratch = new();
+        string nestedDirectory = scratch.PathFor("nested");
+        Directory.CreateDirectory(nestedDirectory);
+        string aliasedLedgerPath = Path.Combine(nestedDirectory, "..", "campaign.sqlite");
         RunConfiguration configuration = new()
         {
             RepositoryPath = scratch.PathFor("checkout"),
             StatePath = scratch.PathFor("run"),
-            CampaignLedgerPath = scratch.PathFor("campaign.sqlite"),
+            CampaignLedgerPath = aliasedLedgerPath,
             Goal = "Do not replace a missing campaign ledger for a bound run.",
         };
         RunDatabase database = new(configuration.StatePath, configuration);
@@ -36,22 +39,164 @@ public sealed class CreditWindowSpecs
         string? binding = database.ReadMetadata("native:ledger_binding");
         Assert.IsNotNull(binding);
 
-        string path = configuration.CampaignLedgerPath;
-        Assert.IsTrue(File.Exists(path));
-        using (SqliteConnection connection = new(Sql.ConnectionStringFor(path)))
+        string canonicalPath = scratch.PathFor("campaign.sqlite");
+        Assert.AreEqual(aliasedLedgerPath, database.Configuration.CampaignLedgerPath);
+        Assert.AreEqual(
+            Sql.ConnectionStringFor(canonicalPath),
+            Sql.ConnectionStringFor(aliasedLedgerPath)
+        );
+        Assert.IsTrue(File.Exists(canonicalPath));
+        using (SqliteConnection damaged = Sql.OpenExisting(canonicalPath, "campaign"))
+        {
+            Sql.Execute(damaged, "PRAGMA foreign_keys=OFF; DROP TABLE credit_reservations;");
+        }
+        OperationException missingTableRefusal = Assert.ThrowsExactly<OperationException>(() =>
+            new Coordinator(database, collaboration, workspace, nativeWorkerFactory: null)
+        );
+        Assert.AreEqual("credit_unknown", missingTableRefusal.Code);
+
+        // An unbound second run joining the same shared campaign also refuses the damaged schema
+        // without recreating the missing accounting table.
+        RunConfiguration unboundConfiguration = configuration with
+        {
+            StatePath = scratch.PathFor("unbound-run"),
+        };
+        RunDatabase unboundDatabase = new(unboundConfiguration.StatePath, unboundConfiguration);
+        CollaborationOperations unboundCollaboration = new(unboundDatabase);
+        LightweightGitWorkspace unboundWorkspace = new(unboundDatabase, unboundCollaboration);
+        OperationException unboundRefusal = Assert.ThrowsExactly<OperationException>(() =>
+            new Coordinator(
+                unboundDatabase,
+                unboundCollaboration,
+                unboundWorkspace,
+                nativeWorkerFactory: null
+            )
+        );
+        Assert.AreEqual("credit_unknown", unboundRefusal.Code);
+        using (SqliteConnection verifyNoRecreate = Sql.OpenExisting(canonicalPath, "campaign"))
+        {
+            Assert.IsNull(
+                Sql.Scalar(
+                    verifyNoRecreate,
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='credit_reservations';"
+                )
+            );
+        }
+
+        string liveLedgerPath = scratch.PathFor("live-campaign.sqlite");
+        CreditLedger liveLedger = new(liveLedgerPath, 100);
+        File.Delete(liveLedgerPath);
+        File.Delete(liveLedgerPath + "-wal");
+        File.Delete(liveLedgerPath + "-shm");
+        OperationException postOpenMissing = Assert.ThrowsExactly<OperationException>(() =>
+            _ = liveLedger.Reservations("run-after-delete")
+        );
+        Assert.AreEqual("credit_unknown", postOpenMissing.Code);
+        Assert.IsFalse(File.Exists(liveLedgerPath));
+
+        // A healthy 5-table merge-base ledger (before lazy cancellation tables existed) upgrades
+        // cleanly on bound reopen while preserving campaign identity and prior spend.
+        string fiveTablePath = scratch.PathFor("five-table-campaign.sqlite");
+        using (
+            SqliteConnection legacy = new(Sql.NonPooledCreateConnectionStringFor(fiveTablePath))
+        )
+        {
+            legacy.Open();
+            Sql.Execute(
+                legacy,
+                """
+                CREATE TABLE credit_campaign(
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                    schema_version INTEGER NOT NULL,
+                    allowance TEXT NOT NULL, identity TEXT NOT NULL);
+                CREATE TABLE credit_reservations(
+                    id TEXT PRIMARY KEY, run_id TEXT NOT NULL, worker TEXT NOT NULL,
+                    allowance TEXT NOT NULL, run_allowance TEXT NOT NULL,
+                    state TEXT NOT NULL, usage_path TEXT NOT NULL, session_id TEXT,
+                    actual TEXT, report_identity TEXT, updated_at TEXT NOT NULL,
+                    shared INTEGER NOT NULL DEFAULT 0, grant_open INTEGER NOT NULL DEFAULT 0,
+                    overshoot TEXT NOT NULL DEFAULT '0');
+                CREATE TABLE credit_reports(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, reservation_id TEXT NOT NULL,
+                    actual TEXT NOT NULL, usage_path TEXT NOT NULL, report_identity TEXT NOT NULL,
+                    scope TEXT NOT NULL, created_at TEXT NOT NULL,
+                    FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id),
+                    UNIQUE(reservation_id,report_identity));
+                CREATE TABLE credit_sdk_usage(
+                    reservation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                    reported_nano_aiu TEXT, status TEXT, dispatch_count INTEGER NOT NULL DEFAULT 0,
+                    reported_requests INTEGER,
+                    FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
+                CREATE TABLE credit_sdk_owners(
+                    reservation_id TEXT PRIMARY KEY, pid INTEGER NOT NULL,
+                    start_ticks INTEGER NOT NULL,
+                    FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
+                INSERT INTO credit_campaign VALUES(1,2,'200','legacy-campaign-id');
+                INSERT INTO credit_reservations VALUES(
+                    'res-1','prior-run','worker1','30','100','reconciled','usage.jsonl','sess-1',
+                    '12.5','rep-1','2026-04-01T00:00:00.0000000Z',0,0,'0');
+                """
+            );
+        }
+        CreditLedger upgraded = new(fiveTablePath, 200, requireExisting: true);
+        Assert.AreEqual("legacy-campaign-id", upgraded.Identity);
+        Assert.AreEqual(
+            12.5m,
+            upgraded.Status("prior-run", 100)["campaignCommitted"]!.GetValue<decimal>()
+        );
+
+        // An interrupted zero-page file (created before the schema transaction committed)
+        // initializes cleanly on an unbound retry, whereas a non-empty file left with only
+        // sqlite_sequence fails closed without resetting campaign identity.
+        string zeroPagePath = scratch.PathFor("interrupted-zero-page.sqlite");
+        using (
+            SqliteConnection interrupted = new(Sql.NonPooledCreateConnectionStringFor(zeroPagePath))
+        )
+        {
+            interrupted.Open();
+            using SqliteTransaction rolledBack = interrupted.BeginTransaction();
+            Sql.Execute(interrupted, "CREATE TABLE transient(id INTEGER);", rolledBack);
+            rolledBack.Rollback();
+        }
+        CreditLedger retriedZeroPage = new(zeroPagePath, 100);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(retriedZeroPage.Identity));
+
+        string sequenceOnlyPath = scratch.PathFor("sequence-only.sqlite");
+        using (
+            SqliteConnection sequenceOnly = new(
+                Sql.NonPooledCreateConnectionStringFor(sequenceOnlyPath)
+            )
+        )
+        {
+            sequenceOnly.Open();
+            Sql.Execute(
+                sequenceOnly,
+                """
+                CREATE TABLE transient_seq(id INTEGER PRIMARY KEY AUTOINCREMENT);
+                INSERT INTO transient_seq DEFAULT VALUES;
+                DROP TABLE transient_seq;
+                """
+            );
+        }
+        OperationException sequenceRefusal = Assert.ThrowsExactly<OperationException>(() =>
+            new CreditLedger(sequenceOnlyPath, 100)
+        );
+        Assert.AreEqual("credit_unknown", sequenceRefusal.Code);
+
+        using (SqliteConnection connection = new(Sql.ConnectionStringFor(canonicalPath)))
         {
             SqliteConnection.ClearPool(connection);
         }
-        File.Delete(path);
-        File.Delete(path + "-wal");
-        File.Delete(path + "-shm");
-        Assert.IsFalse(File.Exists(path));
+        File.Delete(canonicalPath);
+        File.Delete(canonicalPath + "-wal");
+        File.Delete(canonicalPath + "-shm");
+        Assert.IsFalse(File.Exists(canonicalPath));
 
         OperationException refused = Assert.ThrowsExactly<OperationException>(() =>
             new Coordinator(database, collaboration, workspace, nativeWorkerFactory: null)
         );
         Assert.AreEqual("credit_unknown", refused.Code);
-        Assert.IsFalse(File.Exists(path));
+        Assert.IsFalse(File.Exists(canonicalPath));
         Assert.AreEqual(binding, database.ReadMetadata("native:ledger_binding"));
     }
 
