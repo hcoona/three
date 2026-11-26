@@ -36,7 +36,8 @@ public sealed class NuGetLibraryPreparationNativeTests(TestContext context)
             string revision = (await RunAsync(new("git", source, ["rev-parse", "HEAD"], 30)))
                 .Stdout.Trim();
             await RunAsync(new("git", source,
-                ["clone", "--shared", "--no-checkout", "--", source, checkout], 120));
+                ["clone", "-c", "core.longpaths=true", "--shared", "--no-checkout", "--",
+                    source, checkout], 120));
             await RunAsync(new("git", checkout, ["checkout", "--detach", revision], 120,
                 new Dictionary<string, string?> { ["GIT_LFS_SKIP_SMUDGE"] = "1" }));
             var subject = new ReleaseSubject(revision, "refs/heads/main", id, unit.Declaration,
