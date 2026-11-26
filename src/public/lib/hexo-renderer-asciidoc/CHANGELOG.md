@@ -16,17 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 > [!WARNING]
-> The current `4.0.0-beta` line is a major change from 3.x. Programmatic users
-> must update to the new async contract before adopting it.
-
-### Added
+> The current `4.0.0` major line is a breaking change from 3.x. Programmatic
+> users must update to the new async contract before adopting it.
 
 ### Changed
 
 - Migrate the project repository to the `hcoona/three` monorepo and update
   documentation links accordingly.
-- Begin the `4.0.0-beta` major line by moving the runtime dependency from
-  `asciidoctor` 3.0.4 to exact `@asciidoctor/core` 4.0.5 / Asciidoctor.js 4.0.5.
+- Begin the `4.0.0` major line by moving the runtime dependency from
+  `asciidoctor` 3.0.4 to exact `@asciidoctor/core` 4.3.0 / Asciidoctor.js 4.x.
 - Derive extension logger types from the official `Reader.getLogger()` contract.
 - Change the public renderer contract from `string` to `Promise<string>`.
   Programmatic consumers must `await renderer(...)`.
@@ -71,12 +69,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Hexo site root acted as `base_dir`; relative includes continue to follow the
   conversion-time current working directory instead. That directory is not a
   jail, and an HTML sanitizer cannot prevent file-content disclosure.
-
-### Deprecated
-
-### Removed
-
-### Fixed
 
 ### Security
 

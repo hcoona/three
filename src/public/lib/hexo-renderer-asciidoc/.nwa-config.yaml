@@ -14,6 +14,7 @@ nwa:
     - 'coverage/**'
     - 'dist/**'
     - 'examples/hexo-site/public/**'
+    - 'examples/hexo-site/source/**'
     - 'LICENSES/**'
     - '**/node_modules/**'
     - 'mise.lock'
@@ -22,12 +23,12 @@ nwa:
     - 'LICENSE'
     - '**/pnpm-lock.yaml'
     - '**/pnpm-workspace.yaml'
+    - 'workflow-delivery.*.yml'
+    - '**/*.md'
     - '**/*.snap'
     # Unsupported file types
     - '**/*.json'
     - '**/.editorconfig'
     - '**/.gitignore'
-    - '.npmignore'
-    - '.prettierignore'
   path:
     - '**'
