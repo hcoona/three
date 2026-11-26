@@ -1,0 +1,30 @@
+name: azureauth-unofficial-development
+version: 0.0.0
+description: Repository development skills and Microsoft Learn tooling
+license: MIT
+targets:
+  - copilot
+  - codex
+includes: []
+dependencies:
+  apm:
+    - git: https://github.com/dotnet/skills.git
+      path: plugins/dotnet-msbuild/skills/directory-build-organization
+      ref: 8a5a42d3e392b402768fc29416831643b79e402b
+    - git: https://github.com/dotnet/skills.git
+      path: plugins/dotnet-msbuild/skills/property-patterns
+      ref: 8a5a42d3e392b402768fc29416831643b79e402b
+    - git: https://github.com/dotnet/skills.git
+      path: plugins/dotnet-msbuild/skills/msbuild-antipatterns
+      ref: 8a5a42d3e392b402768fc29416831643b79e402b
+    - git: https://github.com/microsoftdocs/mcp.git
+      path: skills/microsoft-docs
+      ref: f8ffde185dfd232dbf5d187c22ce299eadc3d583
+    - git: https://github.com/microsoftdocs/mcp.git
+      path: skills/microsoft-code-reference
+      ref: f8ffde185dfd232dbf5d187c22ce299eadc3d583
+  mcp:
+    - name: microsoft-learn
+      registry: false
+      transport: http
+      url: https://learn.microsoft.com/api/mcp

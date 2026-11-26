@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hcoona/microsoft-authentication-cli/contracts/v1/result.schema.json",
+  "title": "Protocol 1 Terminal Authentication Result",
+  "description": "Serialized shape of the protocol 1 terminal result for an authenticate invocation: one JSON object, either a success or a typed failure. A failure object carries no authentication material or account metadata. docs/designs/windows-ado-authentication.md owns the process and read semantics, including output framing, exit status, transport failure and unknown-field handling.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "protocol",
+        "outcome",
+        "accessToken",
+        "tokenType",
+        "expiresOn",
+        "accountEmail",
+        "tenantId",
+        "authority",
+        "scopes",
+        "mechanism",
+        "interaction",
+        "warnings"
+      ],
+      "properties": {
+        "protocol": {
+          "const": 1
+        },
+        "outcome": {
+          "const": "success"
+        },
+        "accessToken": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tokenType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expiresOn": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "accountEmail": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 320,
+          "pattern": "^[^\\s@]+@[^\\s@]+$"
+        },
+        "tenantId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "authority": {
+          "type": "string",
+          "pattern": "^https://login\\.microsoftonline\\.com/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+          "description": "Canonical Public Cloud URI using the validated actual token tenant, not a literal request endpoint or routing alias."
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "mechanism": {
+          "const": "wam"
+        },
+        "interaction": {
+          "enum": [
+            "silent",
+            "interactive"
+          ]
+        },
+        "warnings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "persistence_unconfirmed",
+              "persistence_failed"
+            ]
+          }
+        },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "protocol",
+        "outcome",
+        "reason"
+      ],
+      "properties": {
+        "protocol": {
+          "const": 1
+        },
+        "outcome": {
+          "enum": [
+            "invalid_request",
+            "interaction_required",
+            "account_ambiguous",
+            "identity_validation_failed",
+            "cancelled",
+            "denied",
+            "mechanism_unavailable",
+            "temporarily_unavailable",
+            "timeout",
+            "internal_failure"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        }
+      },
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "accessToken"
+            ]
+          },
+          {
+            "required": [
+              "tokenType"
+            ]
+          },
+          {
+            "required": [
+              "expiresOn"
+            ]
+          },
+          {
+            "required": [
+              "accountEmail"
+            ]
+          },
+          {
+            "required": [
+              "tenantId"
+            ]
+          },
+          {
+            "required": [
+              "authority"
+            ]
+          },
+          {
+            "required": [
+              "scopes"
+            ]
+          },
+          {
+            "required": [
+              "mechanism"
+            ]
+          },
+          {
+            "required": [
+              "interaction"
+            ]
+          },
+          {
+            "required": [
+              "warnings"
+            ]
+          },
+          {
+            "required": [
+              "correlationId"
+            ]
+          },
+          {
+            "required": [
+              "refreshToken"
+            ]
+          },
+          {
+            "required": [
+              "idToken"
+            ]
+          },
+          {
+            "required": [
+              "authorizationCode"
+            ]
+          },
+          {
+            "required": [
+              "claims"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "examples": [
+    {
+      "protocol": 1,
+      "outcome": "success",
+      "accessToken": "synthetic-access-token-not-valid",
+      "tokenType": "Bearer",
+      "expiresOn": "2030-01-01T00:00:00Z",
+      "accountEmail": "personal@example.test",
+      "tenantId": "11111111-2222-3333-4444-555555555555",
+      "authority": "https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555",
+      "scopes": [
+        "499b84ac-1321-427f-aa17-267ca6975798/user_impersonation"
+      ],
+      "mechanism": "wam",
+      "interaction": "silent",
+      "warnings": [
+        "persistence_unconfirmed"
+      ],
+      "correlationId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    },
+    {
+      "protocol": 1,
+      "outcome": "invalid_request",
+      "reason": "synthetic_example"
+    },
+    {
+      "protocol": 1,
+      "outcome": "interaction_required",
+      "reason": "synthetic_example"
+    },
+    {
+      "protocol": 1,
+      "outcome": "account_ambiguous",
+      "reason": "synthetic_example"
+    },
+    {
+      "protocol": 1,
+      "outcome": "identity_validation_failed",
+      "reason": "synthetic_example"
+    },
+    {
+      "protocol": 1,
+      "outcome": "cancelled",
+      "reason": "synthetic_example"
+    },
+    {
+      "protocol": 1,
+      "outcome": "denied",
+      "reason": "synthetic_example"
+    },
+    {
+      "protocol": 1,
+      "outcome": "mechanism_unavailable",
+      "reason": "synthetic_example"
+    },
+    {
+      "protocol": 1,
+      "outcome": "temporarily_unavailable",
+      "reason": "synthetic_example"
+    },
+    {
+      "protocol": 1,
+      "outcome": "timeout",
+      "reason": "synthetic_example"
+    },
+    {
+      "protocol": 1,
+      "outcome": "internal_failure",
+      "reason": "synthetic_example"
+    }
+  ]
+}

@@ -1,0 +1,267 @@
+lockfile_version: '1'
+generated_at: '2026-09-12T01:01:29.362806+00:00'
+apm_version: 0.29.0
+dependencies:
+- repo_url: dotnet/skills
+  name: directory-build-organization
+  host: github.com
+  resolved_commit: 8a5a42d3e392b402768fc29416831643b79e402b
+  resolved_ref: 8a5a42d3e392b402768fc29416831643b79e402b
+  version: unknown
+  virtual_path: plugins/dotnet-msbuild/skills/directory-build-organization
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/directory-build-organization
+  - .agents/skills/directory-build-organization/SKILL.md
+  - .agents/skills/directory-build-organization/references/common-patterns.md
+  - .agents/skills/directory-build-organization/references/multi-level-examples.md
+  - .agents/skills/directory-build-organization/references/targetframework-props-pitfall.md
+  deployed_file_hashes:
+    .agents/skills/directory-build-organization/SKILL.md: sha256:19236a9a5ccac500f1d2bc4023bbe5c427e4ec598220af7366257de686835ff8
+    .agents/skills/directory-build-organization/references/common-patterns.md: sha256:6e651cb87034e162e8a966228cbf837612e434c564fd7f9928d38ef44a12e7f3
+    .agents/skills/directory-build-organization/references/multi-level-examples.md: sha256:6120bf2b385eb2cf348c66173bb27ade493d570db8c497881cc8319f448c820a
+    .agents/skills/directory-build-organization/references/targetframework-props-pitfall.md: sha256:a5f0b84a3138e5fdf1fdf103268493006756a1c86312952926f3a10c3e5dd738
+  content_hash: sha256:17038c0bddae1ca88e9cae92f1a3a134a3bec0d0e02d3b59aa2e17134dfb28b9
+- repo_url: dotnet/skills
+  name: msbuild-antipatterns
+  host: github.com
+  resolved_commit: 8a5a42d3e392b402768fc29416831643b79e402b
+  resolved_ref: 8a5a42d3e392b402768fc29416831643b79e402b
+  version: unknown
+  virtual_path: plugins/dotnet-msbuild/skills/msbuild-antipatterns
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/msbuild-antipatterns
+  - .agents/skills/msbuild-antipatterns/SKILL.md
+  - .agents/skills/msbuild-antipatterns/references/additional-antipatterns.md
+  - .agents/skills/msbuild-antipatterns/references/incremental-build-inputs-outputs.md
+  - .agents/skills/msbuild-antipatterns/references/private-assets.md
+  deployed_file_hashes:
+    .agents/skills/msbuild-antipatterns/SKILL.md: sha256:08b36b41196b1282fc96bee299cbabf10e876969be0d9abb5b40ae4f15665ae4
+    .agents/skills/msbuild-antipatterns/references/additional-antipatterns.md: sha256:4a62a12ba5173eb5c3d8b66e2ec4a9f0248e815aacd065664175b6db72adb6d9
+    .agents/skills/msbuild-antipatterns/references/incremental-build-inputs-outputs.md: sha256:006a123ea16f95aeb216ae9e2a59be48fc82f15e66ecccdbb92fdcf03b05fdc4
+    .agents/skills/msbuild-antipatterns/references/private-assets.md: sha256:1e678c0ef9667d9df92ff71ca12737ac3a4ed26050d73e5197a2478356e0b4f5
+  content_hash: sha256:cc7e67de44be8215310d15d51f7183953aa621c3c14fe9b6d4c91de8448979ad
+- repo_url: dotnet/skills
+  name: property-patterns
+  host: github.com
+  resolved_commit: 8a5a42d3e392b402768fc29416831643b79e402b
+  resolved_ref: 8a5a42d3e392b402768fc29416831643b79e402b
+  version: unknown
+  virtual_path: plugins/dotnet-msbuild/skills/property-patterns
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/property-patterns
+  - .agents/skills/property-patterns/SKILL.md
+  deployed_file_hashes:
+    .agents/skills/property-patterns/SKILL.md: sha256:d20ac0adca21952f0dba7501595b2bb7c9ae5cff1b236e5ef912fbd3a32da838
+  content_hash: sha256:2a14484c9fee40c1a77b53d7a5b3c98f3d5733874be31946b0d598d9c47ba1e2
+- repo_url: microsoftdocs/mcp
+  name: microsoft-code-reference
+  host: github.com
+  resolved_commit: f8ffde185dfd232dbf5d187c22ce299eadc3d583
+  resolved_ref: f8ffde185dfd232dbf5d187c22ce299eadc3d583
+  version: unknown
+  virtual_path: skills/microsoft-code-reference
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/microsoft-code-reference
+  - .agents/skills/microsoft-code-reference/SKILL.md
+  deployed_file_hashes:
+    .agents/skills/microsoft-code-reference/SKILL.md: sha256:36354e87d7095fbba0b7138c251ee6fd30f85a89d35a0909e4a6aafdf74280fe
+  content_hash: sha256:b8f19fa71bfbb9b6c6e586c9135fbc4baa4df4aa3e2da2398d7db4add6fde1c3
+- repo_url: microsoftdocs/mcp
+  name: microsoft-docs
+  host: github.com
+  resolved_commit: f8ffde185dfd232dbf5d187c22ce299eadc3d583
+  resolved_ref: f8ffde185dfd232dbf5d187c22ce299eadc3d583
+  version: unknown
+  virtual_path: skills/microsoft-docs
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/microsoft-docs
+  - .agents/skills/microsoft-docs/SKILL.md
+  deployed_file_hashes:
+    .agents/skills/microsoft-docs/SKILL.md: sha256:23d6c309124c4dd7f96ef7166a1998814b4eaeca7e3d654bdac2feacde7e16d1
+  content_hash: sha256:0acd8d2629937e021d605fd1426e641295909e13bab47cad1153793f5564e85e
+deployments:
+- kind: project-relative
+  target: codex
+  value: .agents/skills/directory-build-organization
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild/skills/directory-build-organization
+  active_owner: dotnet/skills/plugins/dotnet-msbuild/skills/directory-build-organization
+  content_hash: null
+- kind: project-relative
+  target: codex
+  value: .agents/skills/directory-build-organization/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild/skills/directory-build-organization
+  active_owner: dotnet/skills/plugins/dotnet-msbuild/skills/directory-build-organization
+  content_hash: sha256:19236a9a5ccac500f1d2bc4023bbe5c427e4ec598220af7366257de686835ff8
+- kind: project-relative
+  target: codex
+  value: .agents/skills/directory-build-organization/references/common-patterns.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild/skills/directory-build-organization
+  active_owner: dotnet/skills/plugins/dotnet-msbuild/skills/directory-build-organization
+  content_hash: sha256:6e651cb87034e162e8a966228cbf837612e434c564fd7f9928d38ef44a12e7f3
+- kind: project-relative
+  target: codex
+  value: .agents/skills/directory-build-organization/references/multi-level-examples.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild/skills/directory-build-organization
+  active_owner: dotnet/skills/plugins/dotnet-msbuild/skills/directory-build-organization
+  content_hash: sha256:6120bf2b385eb2cf348c66173bb27ade493d570db8c497881cc8319f448c820a
+- kind: project-relative
+  target: codex
+  value: .agents/skills/directory-build-organization/references/targetframework-props-pitfall.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild/skills/directory-build-organization
+  active_owner: dotnet/skills/plugins/dotnet-msbuild/skills/directory-build-organization
+  content_hash: sha256:a5f0b84a3138e5fdf1fdf103268493006756a1c86312952926f3a10c3e5dd738
+- kind: project-relative
+  target: codex
+  value: .agents/skills/microsoft-code-reference
+  runtime: null
+  scope: project
+  owners:
+  - microsoftdocs/mcp/skills/microsoft-code-reference
+  active_owner: microsoftdocs/mcp/skills/microsoft-code-reference
+  content_hash: null
+- kind: project-relative
+  target: codex
+  value: .agents/skills/microsoft-code-reference/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - microsoftdocs/mcp/skills/microsoft-code-reference
+  active_owner: microsoftdocs/mcp/skills/microsoft-code-reference
+  content_hash: sha256:36354e87d7095fbba0b7138c251ee6fd30f85a89d35a0909e4a6aafdf74280fe
+- kind: project-relative
+  target: codex
+  value: .agents/skills/microsoft-docs
+  runtime: null
+  scope: project
+  owners:
+  - microsoftdocs/mcp/skills/microsoft-docs
+  active_owner: microsoftdocs/mcp/skills/microsoft-docs
+  content_hash: null
+- kind: project-relative
+  target: codex
+  value: .agents/skills/microsoft-docs/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - microsoftdocs/mcp/skills/microsoft-docs
+  active_owner: microsoftdocs/mcp/skills/microsoft-docs
+  content_hash: sha256:23d6c309124c4dd7f96ef7166a1998814b4eaeca7e3d654bdac2feacde7e16d1
+- kind: project-relative
+  target: codex
+  value: .agents/skills/msbuild-antipatterns
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild/skills/msbuild-antipatterns
+  active_owner: dotnet/skills/plugins/dotnet-msbuild/skills/msbuild-antipatterns
+  content_hash: null
+- kind: project-relative
+  target: codex
+  value: .agents/skills/msbuild-antipatterns/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild/skills/msbuild-antipatterns
+  active_owner: dotnet/skills/plugins/dotnet-msbuild/skills/msbuild-antipatterns
+  content_hash: sha256:08b36b41196b1282fc96bee299cbabf10e876969be0d9abb5b40ae4f15665ae4
+- kind: project-relative
+  target: codex
+  value: .agents/skills/msbuild-antipatterns/references/additional-antipatterns.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild/skills/msbuild-antipatterns
+  active_owner: dotnet/skills/plugins/dotnet-msbuild/skills/msbuild-antipatterns
+  content_hash: sha256:4a62a12ba5173eb5c3d8b66e2ec4a9f0248e815aacd065664175b6db72adb6d9
+- kind: project-relative
+  target: codex
+  value: .agents/skills/msbuild-antipatterns/references/incremental-build-inputs-outputs.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild/skills/msbuild-antipatterns
+  active_owner: dotnet/skills/plugins/dotnet-msbuild/skills/msbuild-antipatterns
+  content_hash: sha256:006a123ea16f95aeb216ae9e2a59be48fc82f15e66ecccdbb92fdcf03b05fdc4
+- kind: project-relative
+  target: codex
+  value: .agents/skills/msbuild-antipatterns/references/private-assets.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild/skills/msbuild-antipatterns
+  active_owner: dotnet/skills/plugins/dotnet-msbuild/skills/msbuild-antipatterns
+  content_hash: sha256:1e678c0ef9667d9df92ff71ca12737ac3a4ed26050d73e5197a2478356e0b4f5
+- kind: project-relative
+  target: codex
+  value: .agents/skills/property-patterns
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild/skills/property-patterns
+  active_owner: dotnet/skills/plugins/dotnet-msbuild/skills/property-patterns
+  content_hash: null
+- kind: project-relative
+  target: codex
+  value: .agents/skills/property-patterns/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild/skills/property-patterns
+  active_owner: dotnet/skills/plugins/dotnet-msbuild/skills/property-patterns
+  content_hash: sha256:d20ac0adca21952f0dba7501595b2bb7c9ae5cff1b236e5ef912fbd3a32da838
+- kind: uri
+  target: mcp
+  value: microsoft-learn
+  runtime: codex
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: uri
+  target: mcp
+  value: microsoft-learn
+  runtime: copilot
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+mcp_servers:
+- microsoft-learn
+mcp_configs:
+  microsoft-learn:
+    name: microsoft-learn
+    transport: http
+    registry: false
+    url: https://learn.microsoft.com/api/mcp
+mcp_target_servers:
+  codex:
+  - microsoft-learn
+  copilot:
+  - microsoft-learn

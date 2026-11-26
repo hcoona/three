@@ -1,0 +1,7 @@
+{
+  "mstest": {
+    "execution": {
+      "mapInconclusiveToFailed": true
+    }
+  }
+}

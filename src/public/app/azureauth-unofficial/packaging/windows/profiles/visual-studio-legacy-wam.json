@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "name": "visual-studio-legacy-compatibility-candidate",
+  "clientId": "872cd9fa-d31f-45e0-9eab-6e460a02d1f1",
+  "cloud": "public",
+  "tenantPolicy": {
+    "kind": "multitenant"
+  },
+  "integration": "visual-studio-legacy-wam",
+  "registration": {
+    "owner": "Microsoft",
+    "externalDependency": true,
+    "supportNotice": "Microsoft owns this Visual Studio registration. This unofficial fork has no upstream endorsement, support commitment, or control over its availability. Sign-in, consent, and audit may identify Visual Studio."
+  }
+}

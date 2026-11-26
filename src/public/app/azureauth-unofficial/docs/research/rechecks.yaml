@@ -1,0 +1,191 @@
+schema_version: 1
+
+governance:
+  evaluator: Research maintainer
+  trigger_action: >-
+    Complete the entry's required outcome and update or explicitly disposition every
+    current record whose conclusion is materially affected.
+  fallback_review: Evaluate every entry when a merged change modifies docs/delivery-wave.md.
+  # The observable event for each trigger kind and value used below.
+  trigger_events:
+    decision:
+      interaction-policy: >-
+        A pull request proposes to accept or change a requirement, architecture, design,
+        or decision record that defines when V2 may, must, or must not show interaction,
+        including explicitly forced interaction.
+      account-contract: >-
+        A pull request proposes to accept or change a requirement, architecture, design,
+        or decision record that defines account selection or result identity validation.
+      cache-design: >-
+        A pull request proposes to accept or change a requirement, architecture, design,
+        or decision record that selects or changes reusable authentication-state storage
+        or its fallback.
+      client-profile: >-
+        A pull request proposes to select, enable, distribute, or change a Client Profile
+        or the externally owned Client Profile gate.
+      native-aot-publishing: >-
+        A pull request proposes to select or change a publishing mode or to accept or
+        renew a Native AOT exception.
+      provider-failure-mapping: >-
+        A pull request proposes to accept or change a design's mapping from provider
+        failures to V2 results.
+    workstream:
+      wsl: >-
+        A pull request or Delivery Wave change proposes to select, design, implement,
+        experiment with, or claim support for a WSL caller or WSL-hosted acquisition.
+      system-browser: >-
+        A pull request or Delivery Wave change proposes to select, design, implement,
+        experiment with, or claim support for a system-browser or redirect-callback
+        mechanism.
+      linux-broker: >-
+        A pull request or Delivery Wave change proposes to select, design, implement,
+        experiment with, or claim support for a Linux broker integration.
+    release:
+      any: Release review for any release.
+
+rechecks:
+  - id: RECHECK-001
+    subject: AzureAuth silent-only acquisition
+    sources:
+      - https://github.com/AzureAD/microsoft-authentication-cli/issues/464
+    triggers:
+      - kind: decision
+        value: interaction-policy
+      - kind: release
+        value: any
+    required_outcome: >-
+      Record whether upstream now exposes a documented no-interaction acquisition
+      contract and whether that changes the v2 interaction-policy requirements.
+
+  - id: RECHECK-002
+    subject: AzureAuth strict account selection
+    sources:
+      - https://github.com/AzureAD/microsoft-authentication-cli/issues/465
+    triggers:
+      - kind: decision
+        value: account-contract
+      - kind: release
+        value: any
+    required_outcome: >-
+      Record whether upstream now provides strict account selection and result identity
+      validation that would change the v2 account contract or reuse decision.
+
+  - id: RECHECK-003
+    subject: WSL broker-backed acquisition
+    sources:
+      - https://github.com/AzureAD/microsoft-authentication-cli/issues/460
+      - https://learn.microsoft.com/en-us/entra/msal/dotnet/acquiring-tokens/desktop-mobile/linux-dotnet-sdk-wsl
+    triggers:
+      - kind: workstream
+        value: wsl
+      - kind: release
+        value: any
+    required_outcome: >-
+      Record the current upstream WSL model, prerequisites, host ownership, and supported
+      failure behavior before selecting a v2 WSL design.
+
+  - id: RECHECK-004
+    subject: Remote browser and callback behavior
+    sources:
+      - https://github.com/AzureAD/microsoft-authentication-cli/issues/459
+      - https://github.com/AzureAD/microsoft-authentication-cli/issues/461
+    triggers:
+      - kind: workstream
+        value: system-browser
+      - kind: release
+        value: any
+    required_outcome: >-
+      Record current upstream browser-launch, callback, cancellation, and remote-host
+      behavior before claiming support for a browser mechanism.
+
+  - id: RECHECK-005
+    subject: Linux broker implementation
+    sources:
+      - https://github.com/AzureAD/microsoft-authentication-cli/pull/462
+      - https://learn.microsoft.com/en-us/entra/msal/dotnet/acquiring-tokens/desktop-mobile/linux-dotnet-sdk-wsl
+    triggers:
+      - kind: workstream
+        value: linux-broker
+      - kind: workstream
+        value: wsl
+    required_outcome: >-
+      Record the merged or unmerged state, current implementation shape, prerequisites,
+      and public support statement before selecting a Linux broker path.
+
+  - id: RECHECK-006
+    subject: Secure-store availability
+    sources:
+      - https://github.com/AzureAD/microsoft-authentication-cli/issues/398
+    triggers:
+      - kind: decision
+        value: cache-design
+      - kind: release
+        value: any
+    required_outcome: >-
+      Record current secure-store behavior and unresolved platform limitations before
+      accepting cache fallback or declaring a platform supported.
+
+  - id: RECHECK-007
+    subject: Azure DevOps Microsoft-account application support
+    sources:
+      - https://learn.microsoft.com/en-us/azure/devops/integrate/get-started/authentication/entra-oauth
+    triggers:
+      - kind: decision
+        value: client-profile
+      - kind: release
+        value: any
+    required_outcome: >-
+      Record current public guidance and reproducible account-type behavior before
+      selecting or enabling an Azure DevOps compatibility client profile.
+
+  - id: RECHECK-008
+    subject: Windows Native AOT UI and broker compatibility
+    sources:
+      - https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/
+      - https://learn.microsoft.com/en-us/dotnet/core/deploying/trimming/incompatibilities
+      - https://github.com/AzureAD/microsoft-authentication-library-for-dotnet/issues/5226
+      - https://github.com/AzureAD/microsoft-authentication-library-for-dotnet/issues/5248
+    triggers:
+      - kind: decision
+        value: native-aot-publishing
+      - kind: release
+        value: any
+    required_outcome: >-
+      Assess current public UI, AOT/trimming, and broker/native-loading contracts against
+      the exact Windows target and dependency pins before selecting a publishing mode
+      or accepting or renewing an exception. Distinguish reports, annotations, and
+      package metadata from observed publish and platform compatibility; disposition
+      the Windows design and its validation obligations when the premise changes.
+
+  - id: RECHECK-009
+    subject: Entra numeric denial recognition
+    sources:
+      - https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+    triggers:
+      - kind: decision
+        value: provider-failure-mapping
+      - kind: release
+        value: any
+    required_outcome: >-
+      Reassess the currently documented meaning and stability limits of numeric
+      65004 denial recognition before accepting or revising the Windows adapter
+      failure mapping and at release review. Preserve the distinction between
+      diagnostic error_codes and the application error contract; update or
+      explicitly disposition affected Windows design and validation conclusions
+      without treating this review as a service-stability guarantee.
+
+  - id: RECHECK-010
+    subject: WAM interactive account-selection prompt
+    sources:
+      - https://learn.microsoft.com/en-us/entra/identity-platform/reference-entra-id-wam-api
+    triggers:
+      - kind: decision
+        value: interaction-policy
+      - kind: release
+        value: any
+    required_outcome: >-
+      Reassess documented WAM prompt values and the exact pinned MSAL/Broker/native
+      transport before accepting or changing explicitly interactive account-selection
+      intent. Preserve the distinction between a documented request, inspected parameter
+      transport and actual UI behavior; do not infer renewed credentials from an
+      interactive API result or replace missing runtime evidence with prompt metadata.

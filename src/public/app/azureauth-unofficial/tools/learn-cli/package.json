@@ -1,0 +1,13 @@
+{
+  "name": "azureauth-unofficial-learn-tooling",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Locked Microsoft Learn CLI for repository development",
+  "license": "MIT",
+  "engines": {
+    "node": "22.22.2"
+  },
+  "dependencies": {
+    "@microsoft/learn-cli": "1.0.0"
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hcoona/microsoft-authentication-cli/contracts/v1/request.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol",
+    "profile",
+    "accountEmail",
+    "scopes",
+    "interaction"
+  ],
+  "properties": {
+    "protocol": {
+      "const": 1
+    },
+    "profile": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32767,
+      "pattern": "^[A-Za-z]:[\\\\/]",
+      "description": "Explicit absolute local Windows Profile path. Filesystem eligibility is checked by the Windows reader."
+    },
+    "accountEmail": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 320,
+      "pattern": "^[^\\s@]+@[^\\s@]+$",
+      "description": "ECMAScript \\s includes U+FEFF, so it is rejected; the reader also rejects control characters."
+    },
+    "scopes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048,
+        "pattern": "^\\S+/[^\\s/]+$"
+      },
+      "description": "Qualified permissions on one resource; resource equality and /.default isolation require semantic validation."
+    },
+    "interaction": {
+      "enum": [
+        "non-interactive-only",
+        "interactive-if-needed",
+        "force-interactive"
+      ],
+      "description": "Prohibit interaction, permit it after a silent miss, or explicitly request the interactive provider path and account selection without engine silent token acquisition. The provider may reuse its session; this does not guarantee visible UI, renewed credentials, cache refresh or clearing."
+    },
+    "tenant": {
+      "oneOf": [
+        {
+          "const": "common"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        }
+      ]
+    },
+    "timeoutSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 600,
+      "default": 120,
+      "description": "The argument is unsigned ASCII decimal without leading zeros (^[1-9][0-9]{0,2}$) before this range check."
+    },
+    "cancelOnStdinClose": {
+      "type": "boolean",
+      "default": false
+    },
+    "telemetry": {
+      "enum": [
+        "off",
+        "stderr"
+      ],
+      "default": "off"
+    }
+  },
+  "title": "Protocol 1 Parsed Command-Line Request",
+  "description": "Projection of authenticate arguments, not an accepted JSON input. docs/designs/windows-ado-authentication.md owns command-line and process semantics. Optional defaults are reader behavior; JSON Schema does not apply them.",
+  "examples": [
+    {
+      "protocol": 1,
+      "profile": "C:\\AuthProfiles\\visual-studio-legacy.json",
+      "accountEmail": "personal@example.test",
+      "scopes": [
+        "499b84ac-1321-427f-aa17-267ca6975798/.default"
+      ],
+      "interaction": "interactive-if-needed",
+      "cancelOnStdinClose": true
+    },
+    {
+      "protocol": 1,
+      "profile": "C:\\AuthProfiles\\visual-studio-legacy.json",
+      "accountEmail": "work@example.test",
+      "scopes": [
+        "499b84ac-1321-427f-aa17-267ca6975798/.default"
+      ],
+      "interaction": "non-interactive-only",
+      "tenant": "11111111-2222-3333-4444-555555555555",
+      "timeoutSeconds": 30
+    },
+    {
+      "protocol": 1,
+      "profile": "C:\\AuthProfiles\\visual-studio-legacy.json",
+      "accountEmail": "personal@example.test",
+      "scopes": [
+        "499b84ac-1321-427f-aa17-267ca6975798/.default"
+      ],
+      "interaction": "force-interactive",
+      "cancelOnStdinClose": true
+    }
+  ]
+}
