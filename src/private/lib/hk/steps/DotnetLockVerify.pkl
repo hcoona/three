@@ -16,6 +16,10 @@ dotnet_lock_verify = new Config.Step {
   batch = false
   glob = GlobList
   stage = GlobList
-  check = "dotnet restore --locked-mode"
-  fix = "dotnet restore --force-evaluate"
+  check = new Config.Command {
+    argv = List("dotnet", "restore", "--locked-mode")
+  }
+  fix = new Config.Command {
+    argv = List("dotnet", "restore", "--force-evaluate")
+  }
 }

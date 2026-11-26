@@ -1,9 +1,13 @@
 import "../Config.pkl"
 
 uv_lock = new Config.Step {
-  batch = true
+  batch = false
   glob = List("**/pyproject.toml", "uv.lock")
   stage = List("**/pyproject.toml", "uv.lock")
-  check = "uv lock --check"
-  fix = "uv lock"
+  check = new Config.Command {
+    argv = List("uv", "lock", "--check")
+  }
+  fix = new Config.Command {
+    argv = List("uv", "lock")
+  }
 }

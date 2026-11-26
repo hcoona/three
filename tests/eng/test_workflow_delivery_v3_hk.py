@@ -109,9 +109,14 @@ ran = {}
 for name, step in steps.items():
     if (selected and name not in selected) or name in skipped:
         continue
+    globs = step.get("glob")
+    if not globs:
+        ran[name] = [item for item in files if Path(item).is_file()]
+        continue
     matched = sorted(
         item for item in files
-        if any(PurePosixPath(item).match(glob) for glob in step["glob"])
+        if any(PurePosixPath(item).match(glob) for glob in globs)
+        and Path(item).is_file()
     )
     if matched:
         ran[name] = matched
@@ -120,7 +125,8 @@ with Path(os.environ["COMMAND_LOG"]).open("a", encoding="utf-8") as stream:
     stream.write(json.dumps({"arguments": command, "ran": ran}) + "\n")
 sys.exit(int(any(
     "SEEDED_FINDING" in Path(item).read_text(encoding="utf-8")
-    for matched in ran.values()
+    for name, matched in ran.items()
+    if "{{files}}" in json.dumps(steps[name])
     for item in matched
     if Path(item).exists()
 )))
@@ -613,3 +619,180 @@ def test_hk_actionlint_batches_multiple_workflows_and_enforces_timeout(
     )
     assert hung.returncode == 1
     assert "timed out after 1s" in hung.stderr
+
+
+# Structured Config.Command linter resolution and deleted-path partitioning
+
+
+def test_structured_command_steps_resolve_locks_and_widen_when_changed(
+    fixture: dict[str, Any],
+) -> None:
+    """Structured Config.Command argv entries map to uv, pnpm and mise locks."""
+    structured = {
+        "ruff": {
+            "glob": ["*.py"],
+            "check": {
+                "argv": ["uv", "run", "ruff", "check", "--", "{{files}}"]
+            },
+        },
+        "markdown-prettier": {
+            "glob": ["*.md"],
+            "check": {
+                "command": {
+                    "argv": [
+                        "pnpm",
+                        "exec",
+                        "--",
+                        "prettier",
+                        "--check",
+                        "{{files}}",
+                    ]
+                },
+                "effect": "read",
+            },
+        },
+        "shellcheck": {
+            "glob": ["*.sh"],
+            "check": {"argv": ["shellcheck", "{{files}}"]},
+        },
+        "uv-lock": {"glob": ["uv.lock"], "check": {"argv": ["uv", "lock"]}},
+    }
+    fixture["env"]["FIXTURE_STEPS"] = json.dumps(structured)
+    endpoints = _commit_candidate(
+        fixture["repository"], _bumped("uv.lock", "ruff", "0.17.1")
+    )
+    result, runs = _run(fixture, endpoints)
+    assert result.returncode == 1
+    changed, complete = runs
+    assert changed["ran"] == {"uv-lock": ["uv.lock"]}
+    assert complete["ran"] == {"ruff": ["changed.py", "unchanged.py"]}
+
+
+def test_command_linter_rejects_runtimes_and_mismatched_prefixes() -> None:
+    """Launcher/runtime binaries and incompatible prefixes resolve to None."""
+    helper = load_script(HELPER)
+    assert (
+        helper.command_linter({"argv": ["node", "lint.mjs", "{{files}}"]})
+        is None
+    )
+    assert (
+        helper.command_linter({"argv": ["npx", "prettier", "{{files}}"]})
+        is None
+    )
+    assert (
+        helper.command_linter(
+            {"argv": ["taplo", "check", "{{files}}"]}, prefix="pnpm exec --"
+        )
+        is None
+    )
+    assert (
+        helper.command_linter(
+            "python eng/scripts/hk_exec.py taplo check --hk-files {{files}}",
+            prefix=["mise", "exec"],
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("files0", [True, False])
+def test_deleted_and_directory_replaced_operands_keep_unconditional_checks(
+    fixture: dict[str, Any], files0: bool
+) -> None:
+    """Deleted and directory-replaced paths skip linters; unconditional runs."""
+    steps = {
+        **STEPS,
+        "inventory": {"check": {"argv": ["uv", "run", "python", "check.py"]}},
+    }
+    fixture["env"]["FIXTURE_STEPS"] = json.dumps(steps)
+    repository: Path = fixture["repository"]
+    base = _git(repository, "rev-parse", "HEAD")
+    _git(repository, "rm", "--quiet", "changed.py", "README.md")
+    _git(repository, "commit", "--quiet", "--message", "Delete files")
+    candidate = _git(repository, "rev-parse", "HEAD")
+    (repository / "README.md").mkdir()
+    (repository / "README.md/nested.md").write_text("# Nested\n")
+
+    args = [
+        sys.executable,
+        str(HELPER),
+        "--repository",
+        str(repository),
+        "--from-ref",
+        base,
+        "--to-ref",
+        candidate,
+        *(["--files0"] if files0 else []),
+        "--",
+        *HK_COMMAND,
+    ]
+    result = subprocess.run(  # noqa: S603
+        args,
+        env=fixture["env"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    (run,) = [
+        json.loads(line) for line in fixture["log"].read_text().splitlines()
+    ]
+    assert run["ran"] == {"inventory": []}
+
+    fixture["log"].unlink()
+    _git(repository, "rm", "--quiet", "build.sh")
+    _git(repository, "commit", "--quiet", "--message", "Replace with dir")
+    dir_only = _git(repository, "rev-parse", "HEAD")
+    (repository / "build.sh").mkdir()
+    result2 = subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            str(HELPER),
+            "--repository",
+            str(repository),
+            "--from-ref",
+            candidate,
+            "--to-ref",
+            dir_only,
+            *(["--files0"] if files0 else []),
+            "--",
+            *HK_COMMAND,
+        ],
+        env=fixture["env"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result2.returncode == 0, result2.stderr
+    (run2,) = [
+        json.loads(line) for line in fixture["log"].read_text().splitlines()
+    ]
+    assert "--files0-from" in run2["arguments"]
+    assert run2["ran"] == {"inventory": []}
+
+    target_dir = repository / "real-dir"
+    target_dir.mkdir()
+    (repository / "dir-link").symlink_to(target_dir)
+    _git(repository, "add", "dir-link")
+    _git(repository, "commit", "--quiet", "--message", "Add dir symlink")
+    symlink_head = _git(repository, "rev-parse", "HEAD")
+    bad = subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            str(HELPER),
+            "--repository",
+            str(repository),
+            "--from-ref",
+            dir_only,
+            "--to-ref",
+            symlink_head,
+            "--files0",
+            "--",
+            *HK_COMMAND,
+        ],
+        env=fixture["env"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert bad.returncode != 0
+    assert "symlink to a directory" in bad.stderr

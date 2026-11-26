@@ -2,7 +2,7 @@ amends "src/private/lib/hk/Config.pkl"
 
 import "src/private/lib/hk/Steps.pkl"
 
-min_hk_version = "2.2.0"
+min_hk_version = "2.13.0"
 display_skip_reasons =
   List(
     "profile-not-enabled",
@@ -218,8 +218,12 @@ local dotnet_linters = new Mapping<String, Step> {
   ["dotnet-lock-verify"] = (Steps.dotnet_lock_verify) {
     profiles = List("medium")
     // Name the traversal project; `mise run slngen` adds main.sln to the repository root.
-    check = "dotnet restore dirs.proj --locked-mode"
-    fix = "dotnet restore dirs.proj --force-evaluate"
+    check = new Command {
+      argv = List("dotnet", "restore", "dirs.proj", "--locked-mode")
+    }
+    fix = new Command {
+      argv = List("dotnet", "restore", "dirs.proj", "--force-evaluate")
+    }
   }
 }
 
@@ -282,7 +286,9 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
         ".config/uv/uv.toml",
         "eng/scripts/sync_python_version.py",
       )
-    check = "python eng/scripts/hk_exec.py python eng/scripts/sync_python_version.py"
+    check = new Command {
+      argv = List("python", "eng/scripts/sync_python_version.py")
+    }
   }
   // CiScope's fixed copies of HK step globs and exclusions stay aligned with this file.
   ["hk-scope-drift"] {
@@ -295,12 +301,15 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
         ".github/workflows/ci.yml",
         "eng/scripts/hk_scope_drift.py",
       )
-    check = "python eng/scripts/hk_exec.py python eng/scripts/hk_scope_drift.py"
+    check = new Command {
+      argv = List("python", "eng/scripts/hk_scope_drift.py")
+    }
   }
   ["public-release-inventory"] {
     profiles = List("small")
-    check =
-      "python eng/scripts/hk_exec.py uv run python eng/scripts/release_triage.py --check-inventory"
+    check = new Command {
+      argv = List("uv", "run", "python", "eng/scripts/release_triage.py", "--check-inventory")
+    }
   }
 }
 
@@ -323,8 +332,9 @@ local scholarly_publication_validation = new Mapping<String, Step> {
   ["scholarly-publication-plugin-check"] {
     glob = scholarly_publication_files
     allow_symlinks = true
-    check =
-      "python eng/scripts/hk_exec.py --timeout-seconds 720 mise run scholarly-publication-plugin-check"
+    check = new Command {
+      argv = List("mise", "run", "scholarly-publication-plugin-check")
+    }
   }
 }
 
@@ -384,6 +394,7 @@ hooks = new {
   ["pre-commit"] {
     fix = false
     stash = "git"
+    timeout = "12m"
     steps = all_steps
   }
 
@@ -393,11 +404,13 @@ hooks = new {
 
   ["check"] {
     fix = false
+    timeout = "12m"
     steps = all_steps
   }
 
   ["fix"] {
     fix = true
+    timeout = "12m"
     steps = all_steps
   }
 }

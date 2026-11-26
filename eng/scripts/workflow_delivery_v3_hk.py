@@ -11,6 +11,7 @@ import argparse
 import json
 import re
 import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -30,9 +31,12 @@ PROVIDER_LOCKS = {
     "uv": "uv.lock",
     "pnpm": "pnpm-lock.yaml",
 }
+NON_LINTER_EXECUTABLES = frozenset(
+    {"python", "python3", "node", "npx", "uv", "uvx", "pnpm", "pnpx"}
+)
 PKL = ("mise", "exec", "--locked", "pkl", "--", "pkl", "eval", "-f", "json")
 STEP_COMMANDS = ("check", "check_diff", "fix")
-FILES_PLACEHOLDER = re.compile(r"\{\{\s*files\s*\}\}")
+FILES_PLACEHOLDER = re.compile(r"\{\{\s*(?:workspace_)?files\s*\}\}")
 
 
 class ChangedPathError(ValueError):
@@ -151,21 +155,85 @@ def staged_paths(repository: Path) -> tuple[str, ...]:
     return parse_name_status(result.stdout)
 
 
-def command_linter(command: str) -> tuple[str, str] | None:
-    """Return the provider and linter an `hk_exec.py` command runs."""
-    words = shlex.split(command)
-    if len(words) < 3 or words[1] != "eng/scripts/hk_exec.py":  # noqa: PLR2004
-        return None
-    rest = words[2:]
+def _unwrap_command_spec(spec: object) -> object:
+    if isinstance(spec, dict) and "command" in spec:
+        return spec["command"]
+    return spec
+
+
+def _spec_uses_files(spec: object) -> bool:
+    unwrapped = _unwrap_command_spec(spec)
+    if isinstance(unwrapped, str):
+        return bool(FILES_PLACEHOLDER.search(unwrapped))
+    if isinstance(unwrapped, dict):
+        argv = unwrapped.get("argv")
+        if isinstance(argv, list):
+            return any(
+                isinstance(item, str) and bool(FILES_PLACEHOLDER.search(item))
+                for item in argv
+            )
+        return any(
+            isinstance(value, str) and bool(FILES_PLACEHOLDER.search(value))
+            for value in unwrapped.values()
+        )
+    return False
+
+
+def _step_uses_files(step: dict[str, object]) -> bool:
+    return any(
+        _spec_uses_files(step[key])
+        for key in STEP_COMMANDS
+        if step.get(key) is not None
+    )
+
+
+def _linter_from_tokens(rest: list[str]) -> tuple[str, str] | None:
     if rest[:2] == ["uv", "run"]:
         provider, rest = "uv", rest[2:]
     elif rest[:3] == ["pnpm", "exec", "--"]:
         provider, rest = "pnpm", rest[3:]
+    elif rest[:2] == ["pnpm", "exec"]:
+        provider, rest = "pnpm", rest[2:]
     else:
         provider = "mise"
-    if not rest or rest[0].startswith("-"):
+    if not rest or rest[0].startswith("-") or rest[0] in NON_LINTER_EXECUTABLES:
         return None
     return provider, rest[0]
+
+
+def _structured_linter(
+    unwrapped: dict[str, object], prefix: object
+) -> tuple[str, str] | None:
+    argv = unwrapped.get("argv")
+    if not isinstance(argv, list) or not all(
+        isinstance(item, str) for item in argv
+    ):
+        return None
+    if prefix is not None and not (
+        isinstance(prefix, list)
+        and all(isinstance(item, str) for item in prefix)
+    ):
+        return None
+    head = list(prefix) if isinstance(prefix, list) else []
+    return _linter_from_tokens([*head, *argv])
+
+
+def command_linter(
+    spec: object, prefix: object = None
+) -> tuple[str, str] | None:
+    """Return the provider and linter a structured or wrapped step runs."""
+    unwrapped = _unwrap_command_spec(spec)
+    if isinstance(unwrapped, dict):
+        return _structured_linter(unwrapped, prefix)
+    if not isinstance(unwrapped, str) or (
+        prefix is not None and not isinstance(prefix, str)
+    ):
+        return None
+    text = f"{prefix} {unwrapped}" if prefix else unwrapped
+    words = shlex.split(text)
+    if len(words) < 3 or words[1] != "eng/scripts/hk_exec.py":  # noqa: PLR2004
+        return None
+    return _linter_from_tokens(words[2:])
 
 
 def file_step_linters(
@@ -174,14 +242,15 @@ def file_step_linters(
     """Map each HK file step to its linters; `None` marks an unresolved one."""
     mapping = {}
     for name, step in steps.items():
+        if not _step_uses_files(step):
+            continue
         prefix = step.get("prefix")
-        commands = [
-            f"{prefix} {step[key]}" if prefix else step[key]
-            for key in STEP_COMMANDS
-            if step.get(key)
+        specs = [
+            step[key] for key in STEP_COMMANDS if step.get(key) is not None
         ]
-        if any(FILES_PLACEHOLDER.search(command) for command in commands):
-            mapping[name] = frozenset(map(command_linter, commands))
+        mapping[name] = frozenset(
+            command_linter(spec, prefix) for spec in specs
+        )
     return mapping
 
 
@@ -347,6 +416,18 @@ def widened_steps(
     return widened
 
 
+def _is_directory_operand(repository: Path, relative_path: str) -> bool:
+    candidate = repository / relative_path
+    try:
+        metadata = candidate.lstat()
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    if stat.S_ISLNK(metadata.st_mode) and candidate.is_dir():
+        message = f"changed path is a symlink to a directory: {relative_path!r}"
+        raise ChangedPathError(message)
+    return stat.S_ISDIR(metadata.st_mode)
+
+
 def _write_files(directory: Path, paths: tuple[str, ...]) -> Path:
     path = directory / "files.nul"
     path.write_bytes(b"".join(item.encode("utf-8") + b"\0" for item in paths))
@@ -397,7 +478,10 @@ def main(arguments: Sequence[str] | None = None) -> int:
     for step, reason in widened.items():
         print(f"HK runs {step} on all its files: {reason}", file=sys.stderr)
     skipped = [f"--skip-step={step}" for step in widened]
-    changed = _run_changed(repository, [*command, *skipped], paths, options)
+    operands = tuple(
+        path for path in paths if not _is_directory_operand(repository, path)
+    )
+    changed = _run_changed(repository, [*command, *skipped], operands, options)
     if not widened:
         return changed
     selected = [f"--step={step}" for step in widened]
@@ -415,7 +499,7 @@ def _run_changed(
     paths: tuple[str, ...],
     options: argparse.Namespace,
 ) -> int:
-    if options.files0:
+    if options.files0 or not paths:
         with tempfile.TemporaryDirectory(prefix="hk-changes-") as temporary:
             files = _write_files(Path(temporary), paths)
             return subprocess.run(
