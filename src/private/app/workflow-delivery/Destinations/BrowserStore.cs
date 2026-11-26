@@ -30,7 +30,8 @@ internal sealed record StoreResponse(int Status, byte[] Body, string? Location);
 // Bounded store HTTP. Credentials stay in request headers; reads record only stage, URL
 // and status. Store responses are small JSON documents.
 internal sealed class StoreHttp(HttpClient client, List<StoreRead> reads,
-    Func<TimeSpan, CancellationToken, Task>? delay = null, TimeProvider? time = null)
+    Func<TimeSpan, CancellationToken, Task>? delay = null, TimeProvider? time = null,
+    HttpClient? writeClient = null)
 {
     private const int BodyLimit = 4 * 1024 * 1024;
 
@@ -47,9 +48,10 @@ internal sealed class StoreHttp(HttpClient client, List<StoreRead> reads,
         using var timer = new CancellationTokenSource(TimeSpan.FromSeconds(120),
             time ?? TimeProvider.System);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token, timer.Token);
-        string url = request.RequestUri!.GetLeftPart(UriPartial.Path);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        using HttpResponseMessage response = await client.SendAsync(request,
+        string url = owned.RequestUri!.GetLeftPart(UriPartial.Path);
+        owned.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        HttpClient transport = owned.Method == HttpMethod.Get ? client : writeClient ?? client;
+        using HttpResponseMessage response = await transport.SendAsync(owned,
             HttpCompletionOption.ResponseHeadersRead, deadline.Token);
         int status = (int)response.StatusCode;
         using Stream stream = await response.Content.ReadAsStreamAsync(deadline.Token);

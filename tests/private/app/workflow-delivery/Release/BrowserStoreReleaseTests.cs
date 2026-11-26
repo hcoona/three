@@ -71,6 +71,38 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow("submitted", "true")]
+    [DataRow("published", """{"state":"PUBLISHED"}""")]
+    [DataRow("published", """{"state":"PUBLISHED","distributionChannels":{}}""")]
+    [DataRow("published", """{"state":"PUBLISHED","distributionChannels":[]}""")]
+    [DataRow("published", """{"state":"PUBLISHED","distributionChannels":[false]}""")]
+    [DataRow("published", """{"state":"PUBLISHED","distributionChannels":[{}]}""")]
+    [DataRow("published", """{"distributionChannels":[{"crxVersion":7}]}""")]
+    [DataRow("published", """{"distributionChannels":[{"crxVersion":"invalid"}]}""")]
+    [DataRow("published", """{"distributionChannels":[{"crxVersion":"1.0.0.0.0"}]}""")]
+    public async Task UnreadableChromeRevisionBlocksPublication(string field, string revision)
+    {
+        string body = $$"""{"{{field}}ItemRevisionStatus":{{revision}}}""";
+        using var handler = new ScriptedHttpHandler((_, _) => Response(200, body));
+        using var client = new HttpClient(handler);
+        using var files = new Originals(["chrome-zip"]);
+        BrowserStorePreparationResult preparation = files.Preparation("chrome-web-store",
+            live: true);
+        var store = new ChromeWebStore(client, preparation.Prepared.Subject, preparation.Target,
+            Version, "token");
+
+        BrowserStorePublicationResult result = await BrowserStoreRelease.PublishAsync(
+            preparation, files.Files, Observation(preparation, StoreState.Absent), store,
+            context.CancellationToken);
+
+        Assert.AreEqual(StoreState.Unknown, result.Before.State);
+        Assert.AreEqual("Chrome Web Store revision lacks readable distribution channels.",
+            Assert.ContainsSingle(result.Before.Reasons));
+        Assert.IsEmpty(result.Operations);
+        Assert.AreEqual(HttpMethod.Get, Assert.ContainsSingle(handler.Requests).Method);
+    }
+
+    [TestMethod]
     public async Task ChromeUploadPollsAsyncStateThenPublishesTheItem()
     {
         using var handler = new ScriptedHttpHandler((_, number) => number switch
@@ -185,6 +217,50 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         // Every request carries a fresh token.
         Assert.AreEqual(handler.Requests.Count, handler.Requests.Select(request =>
             request.Headers.Authorization?.Parameter).Distinct().Count());
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task AmoReadsBackAfterAmbiguousCreateWithoutResubmitting(bool timeout)
+    {
+        using var handler = new ScriptedHttpHandler((_, number) => number switch
+        {
+            0 => Response(404, "{}"),
+            1 => Response(200, "{}"),
+            2 => Response(201, """{"uuid":"abc"}"""),
+            3 => Response(200, """{"processed":true,"valid":true,"version":"1.2.0.7"}"""),
+            4 => throw (timeout ? new TaskCanceledException("Request timed out.")
+                : new HttpRequestException("Connection lost after create.")),
+            _ => Response(200, AmoListed + "\"unreviewed\"}}"),
+        });
+        using var client = new HttpClient(handler);
+        using var files = new Originals(["firefox-zip", "firefox-sources"]);
+        BrowserStorePreparationResult preparation = files.Preparation("firefox-amo", live: true);
+        StoreObservation initial = BrowserStoreRelease.Unobserved(preparation);
+        var store = new FirefoxAmo(client, preparation.Prepared.Subject, preparation.Target,
+            Version, "issuer", "secret");
+
+        BrowserStorePublicationResult publication = await BrowserStoreRelease.PublishAsync(
+            preparation, files.Files, initial, store, context.CancellationToken);
+        BrowserStoreCompletionResult completion = BrowserStoreRelease.Complete(preparation,
+            initial, null, publication);
+
+        var create = Assert.ContainsSingle(handler.Requests.Where(request =>
+            request.Method == HttpMethod.Post && request.Uri.AbsolutePath ==
+            "/api/v5/addons/addon/item/versions/"));
+        Assert.AreEqual(create, handler.Requests[4]);
+        Assert.HasCount(6, handler.Requests);
+        Assert.AreEqual(HttpMethod.Get, handler.Requests[^1].Method);
+        Assert.AreEqual("/api/v5/addons/addon/item/versions/v" + Version + "/",
+            handler.Requests[^1].Uri.AbsolutePath);
+        Assert.IsFalse(Assert.ContainsSingle(publication.Operations.Where(operation =>
+            operation.Operation == "create-version")).Succeeded);
+        Assert.StartsWith("create-version:", Assert.ContainsSingle(publication.Errors));
+        Assert.AreEqual(StoreState.InReview, publication.Final!.State);
+        Assert.AreEqual(StoreState.InReview, completion.State);
+        Assert.AreEqual(ReleaseBusinessState.Satisfied, completion.Outcome.State);
+        Assert.IsTrue(completion.MutationAttempted);
     }
 
     [TestMethod]
@@ -487,12 +563,52 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     private static string Pad(string value) => value + new string('=', (4 - value.Length % 4)
         % 4);
 
+    [TestMethod]
+    public void DefaultPublisherRoutesReadsAndWritesToSeparateTransports()
+    {
+        using var originals = new Originals(["chrome-zip"]);
+        BrowserStorePreparationResult preparation = originals.Preparation(
+            BrowserStorePreparation.ChromeWebStore, live: true);
+        string dir = Directory.CreateTempSubdirectory("browser-store-cli-").FullName;
+        try
+        {
+            string prepPath = Path.Combine(dir, "preparation.json");
+            string initPath = Path.Combine(dir, "initial.json");
+            File.WriteAllText(prepPath, JsonSerializer.Serialize(preparation,
+                TransferJson.Default.BrowserStorePreparationResult));
+            File.WriteAllText(initPath, JsonSerializer.Serialize(
+                Observation(preparation, StoreState.Absent),
+                TransferJson.Default.StoreObservation));
+            using var readHandler = new ScriptedHttpHandler((_, _) => Response(200, "{}"));
+            using var writeHandler = new ScriptedHttpHandler((_, _) => Response(307, "{}",
+                "https://chromewebstore.googleapis.com/redirect"));
+            using var output = new StringWriter();
+
+            int? exit = BrowserStoreReleaseCli.Run(
+                ["release", "publish-browser-store", prepPath,
+                    Path.GetDirectoryName(Path.GetDirectoryName(originals.Files[0].Path)!)!,
+                    initPath],
+                output, environment: name => name == "CWS_ACCESS_TOKEN" ? "token" : null,
+                readHttp: () => new HttpClient(readHandler, disposeHandler: false),
+                writeHttp: () => new HttpClient(writeHandler, disposeHandler: false));
+
+            Assert.AreEqual(1, exit);
+            Assert.AreEqual(HttpMethod.Get, Assert.ContainsSingle(readHandler.Requests).Method);
+            Assert.AreEqual(HttpMethod.Post, Assert.ContainsSingle(writeHandler.Requests).Method);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     private static HttpResponseMessage Response(int status, string body,
         string? location = null)
     {
         var response = new HttpResponseMessage((HttpStatusCode)status)
         { Content = new StringContent(body, Encoding.UTF8, "application/json") };
-        if (location is not null) response.Headers.Location = new(location, UriKind.Relative);
+        if (location is not null)
+            response.Headers.Location = new(location, UriKind.RelativeOrAbsolute);
         return response;
     }
 

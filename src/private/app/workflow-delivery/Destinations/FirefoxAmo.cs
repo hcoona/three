@@ -12,10 +12,10 @@ namespace WorkflowDelivery.Destinations;
 internal sealed class FirefoxAmo(HttpClient client, ReleaseSubject subject,
     BrowserStoreTarget target, string version, string issuer, string secret,
     Func<TimeSpan, CancellationToken, Task>? delay = null, TimeProvider? time = null,
-    int attempts = 60) : IBrowserStore
+    int attempts = 60, HttpClient? writeClient = null) : IBrowserStore
 {
     internal static readonly Uri Origin = new("https://addons.mozilla.org/api/v5/");
-    private readonly StoreHttp http = new(client, [], delay, time);
+    private readonly StoreHttp http = new(client, [], delay, time, writeClient);
     private readonly TimeProvider clock = time ?? TimeProvider.System;
 
     private string Addon => $"addons/addon/{Uri.EscapeDataString(target.Item)}/";
@@ -87,7 +87,14 @@ internal sealed class FirefoxAmo(HttpClient client, ReleaseSubject subject,
             { new StringContent(uuid), "upload" },
             { File(source), "source", Path.GetFileName(source) },
         };
-        StoreResponse created = await http.SendAsync("create-version", create, cancel);
+        StoreResponse created;
+        try { created = await http.SendAsync("create-version", create, cancel); }
+        catch (Exception failure) when (failure is HttpRequestException or IOException ||
+            failure is OperationCanceledException && !cancel.IsCancellationRequested)
+        {
+            // Read back with a fresh request deadline; the version may already exist.
+            return await Final("create-version", false, "Version create response was unavailable.");
+        }
         return await Final("create-version", created.Status == 201,
             $"Version create status {created.Status}.");
 

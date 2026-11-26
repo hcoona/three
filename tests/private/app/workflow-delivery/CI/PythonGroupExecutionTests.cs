@@ -99,6 +99,20 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task PytestSyncAndRunDoNotInheritTheRunnerEnvironment()
+    {
+        using var fixture = new Fixture();
+
+        PythonGroupRunResult result = await fixture.RunAsync(fixture.PytestPlan,
+            context.CancellationToken);
+
+        Assert.IsTrue(result.Outcome.Satisfied);
+        Assert.HasCount(Targets.Length + 1, result.Pytest.Commands);
+        foreach (PythonPytestCommand command in result.Pytest.Commands)
+            Assert.IsFalse(command.Command.InheritEnvironment);
+    }
+
+    [TestMethod]
     [DataRow(nameof(NativeTermination.Exited), nameof(CheckStatus.Failed))]
     [DataRow(nameof(NativeTermination.TimedOut), nameof(CheckStatus.TimedOut))]
     [DataRow(nameof(NativeTermination.Cancelled), nameof(CheckStatus.Cancelled))]

@@ -50,7 +50,7 @@ internal static class GithubReleaseCli
             GithubReleasePublicationResult result = Destination(destination =>
                 GithubRelease.PublishAsync(preparation, publishOriginals, initial,
                     destination.ObserveAsync, destination.CreateAsync, destination.UploadAsync,
-                    CancellationToken.None));
+                    CancellationToken.None), write: true);
             ReleaseCli.Write(output, result, TransferJson.Default.GithubReleasePublicationResult);
             // The required separate verification retains actual abnormal invocations.
             return result.Errors.Length == 0 ? 0 : 1;
@@ -67,12 +67,15 @@ internal static class GithubReleaseCli
         }
         return null;
 
-        T Destination<T>(Func<GithubReleaseDestination, Task<T>> action)
+        T Destination<T>(Func<GithubReleaseDestination, Task<T>> action, bool write = false)
         {
             using HttpClient http = client?.Invoke() ?? RegistryHttpClient.Create();
+            using HttpClient? writeHttp = write && client is null
+                ? RegistryHttpClient.CreateNoRedirect() : null;
             // The job's GITHUB_TOKEN has contents:read to observe, contents:write to publish.
             return action(new(http, ReleaseCli.RequiredEnv("GITHUB_TOKEN",
-                "GitHub Release requires GITHUB_TOKEN."))).GetAwaiter().GetResult();
+                "GitHub Release requires GITHUB_TOKEN."),
+                writeClient: writeHttp)).GetAwaiter().GetResult();
         }
     }
 

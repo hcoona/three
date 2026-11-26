@@ -53,6 +53,23 @@ public sealed class RegistryHttpClientTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task WriteClientReturnsTemporaryRedirectWithoutResendingPost()
+    {
+        await using var server = new LoopbackServer(tls: null, request =>
+            request.Path == "/upload" ? Redirect("/other", "307 Temporary Redirect") : Ok(""));
+        using HttpClient client = RegistryHttpClient.CreateNoRedirect();
+        using var payload = new StringContent("original");
+
+        using HttpResponseMessage response = await client.PostAsync(
+            $"http://127.0.0.1:{server.Port}/upload", payload, context.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.TemporaryRedirect, response.StatusCode);
+        Request request = Assert.ContainsSingle(server.Requests);
+        Assert.AreEqual("POST", request.Method);
+        Assert.AreEqual("/upload", request.Path);
+    }
+
+    [TestMethod]
     public async Task HttpsToHttpRedirectIsNotFollowed()
     {
         using X509Certificate2 certificate = Certificate();
@@ -75,8 +92,8 @@ public sealed class RegistryHttpClientTests(TestContext context)
         Assert.IsEmpty(plain.Requests);
     }
 
-    private static string Redirect(string location) =>
-        "HTTP/1.1 302 Found\r\nLocation: " + location + "\r\nContent-Length: 0\r\n" +
+    private static string Redirect(string location, string status = "302 Found") =>
+        $"HTTP/1.1 {status}\r\nLocation: " + location + "\r\nContent-Length: 0\r\n" +
         "Connection: close\r\n\r\n";
 
     private static string Ok(string body) => "HTTP/1.1 200 OK\r\nContent-Length: " +
@@ -96,7 +113,8 @@ public sealed class RegistryHttpClientTests(TestContext context)
         return X509CertificateLoader.LoadPkcs12(created.Export(X509ContentType.Pkcs12), null);
     }
 
-    internal sealed record Request(string Path, string Host, string? Authorization, int Port);
+    internal sealed record Request(string Method, string Path, string Host, string? Authorization,
+        int Port);
 
     private sealed class LoopbackServer : IAsyncDisposable
     {
@@ -150,8 +168,10 @@ public sealed class RegistryHttpClientTests(TestContext context)
             string? Field(string name) => lines.Skip(1).Where(line => line.StartsWith(
                     name + ":", StringComparison.OrdinalIgnoreCase))
                 .Select(line => line[(name.Length + 1)..].Trim()).SingleOrDefault();
-            return new(lines[0].Split(' ')[1], Field("Host") ?? "", Field("Authorization"),
-                Port);
+            if (int.TryParse(Field("Content-Length"), out int length) && length > 0)
+                await stream.ReadExactlyAsync(new byte[length], stop.Token);
+            string[] request = lines[0].Split(' ');
+            return new(request[0], request[1], Field("Host") ?? "", Field("Authorization"), Port);
         }
 
         public async ValueTask DisposeAsync()

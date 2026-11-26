@@ -439,7 +439,14 @@ public sealed class CiCallerTests(TestContext context)
             new() { ["testPath"] = target });
         PlannedCheck own = Target("tests/private/app/workflow-delivery/Native/Python");
         PlannedCheck azure = Target("src/private/app/azureauth-credprovider/python/tests");
+        PlannedCheck svgedit = Target("tests/eng/test_svgedit_renovate.py");
         Assert.IsTrue(PythonCiCaller.AzureBundle(Plan(PythonCiCaller.Scope, own, azure)));
+        Assert.IsFalse(PythonCiCaller.AzureBundle(Plan(PythonCiCaller.Scope, svgedit)));
+        Assert.IsTrue(PythonCiCaller.RequiresPowerShell(Plan(PythonCiCaller.Scope, svgedit)));
+        Assert.IsTrue(PythonCiCaller.RequiresPowerShell(Plan(PythonCiCaller.Scope,
+            Target("tests/eng"))));
+        Assert.IsFalse(PythonCiCaller.RequiresPowerShell(Plan(PythonCiCaller.Scope,
+            Target("tests/eng/test_general_ci_workflow.py"))));
         Assert.IsFalse(PythonCiCaller.AzureBundle(Plan(PythonCiCaller.Scope,
             Target("tests/private/app/workflow-delivery/Native/Ruby"),
             Target("tests/eng/test_general_ci_workflow.py"))));

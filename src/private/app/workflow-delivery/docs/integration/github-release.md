@@ -112,7 +112,8 @@ required check `release-identity`.
   state, with the prepared size. Another name is a conflict; another state is
   unknown.
 - Each listed asset is downloaded and compared byte for byte with its original
-  (WD-REL-009). Equal bytes are exact; other bytes are a conflict.
+  (WD-REL-009). Read-only downloads can follow storage redirects. Equal bytes
+  are exact; other bytes are a conflict.
 
 Unavailable or contradictory facts are unknown and permit no mutation.
 
@@ -123,8 +124,8 @@ writes. When the release is absent, it creates it once at the selected
 revision, which also creates the tag. Then it uploads each missing asset,
 installer first. A failed or ambiguous create or upload stops all further
 writes. Existing exact assets are retained, and different assets are never
-replaced or deleted. There is no automatic resend, rerun recovery or
-compensation.
+replaced or deleted. Create and upload requests do not follow redirects.
+There is no automatic resend, rerun recovery or compensation.
 
 The separate no-write `verify-result` job observes again and downloads every
 asset. An identical existing release is satisfied without writes. A conflict

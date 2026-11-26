@@ -13,10 +13,10 @@ namespace WorkflowDelivery.Destinations;
 internal sealed class EdgeAddons(HttpClient client, ReleaseSubject subject,
     BrowserStoreTarget target, string version, string apiKey, string clientId,
     Func<TimeSpan, CancellationToken, Task>? delay = null, TimeProvider? time = null,
-    int attempts = 60) : IBrowserStore
+    int attempts = 60, HttpClient? writeClient = null) : IBrowserStore
 {
     internal static readonly Uri Origin = new("https://api.addons.microsoftedge.microsoft.com/");
-    private readonly StoreHttp http = new(client, [], delay, time);
+    private readonly StoreHttp http = new(client, [], delay, time, writeClient);
 
     private string Product => "v1/products/" + Uri.EscapeDataString(target.Item);
 

@@ -46,8 +46,7 @@ internal sealed class GitMaterialization
                 Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)),
                 OwnedPath.Comparison))
             throw new InvalidDataException("A reused binding names a different checkout.");
-        // Earlier native work in this invocation may have changed tracked files.
-        await RequireCleanAsync(bound.Root, token);
+        await BindCheckoutAsync(bound.Root, commit, token);
         return bound;
     }
 
