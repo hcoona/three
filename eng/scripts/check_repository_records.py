@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.13"
 # dependencies = [
-#   "PyYAML==6.0.4", "jsonschema==4.25.1", "markdown-it-py==4.0.0",
+#   "PyYAML==6.0.4", "jsonschema==4.26.0", "markdown-it-py==4.0.0",
 # ]
 # ///
 """Validate repository records prospectively within an explicit scope."""
