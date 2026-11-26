@@ -14,6 +14,10 @@ dotenv_linter = new Config.Step {
   batch = true
   glob = GlobList
   stage = GlobList
-  check = "dotenv-linter check {{files}}"
-  fix = "dotenv-linter fix --no-backup {{files}}"
+  check = new Config.Command {
+    argv = List("dotenv-linter", "check", "--", "{{files}}")
+  }
+  fix = new Config.Command {
+    argv = List("dotenv-linter", "fix", "--no-backup", "--", "{{files}}")
+  }
 }

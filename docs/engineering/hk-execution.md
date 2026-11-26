@@ -147,17 +147,9 @@ does not walk replacement directories, and fails closed on symlinks to
 directories. HK `2.13.0+` omits
 deleted and directory-to-file absent paths before expanding `{{files}}` and
 skips filtered steps when no existing operands remain, while still running
-unconditional checks. Steps configured with `HK_SKIP_MISSING_FILES=1` in
-`hk.pkl` (or direct wrapper callers setting `HK_SKIP_MISSING_FILES=1`) also
-omit absent operands in the wrapper; permission errors and other filesystem
-failures remain errors. HK still owns source conformance; product tests remain
-in their explicit local commands and selected CI jobs.
-
-File-reading `hk_exec.py` commands use `--hk-files` to mark the start of file
-operands. The first such marker is the boundary, so wrapped commands may retain
-their own `--` arguments and a file named `--` stays a file. Existing leading-dash
-operands are prefixed with `./` before reaching the tool. The legacy last-`--`
-form remains available for callers without ambiguous filenames.
+unconditional checks; permission errors and other filesystem failures remain
+errors. HK still owns source conformance; product tests remain in their
+explicit local commands and selected CI jobs.
 
 The explicit staged helper does not stash unstaged changes. Normal pre-commit
 retains HK's native selection and configured stashing; it does not call this
@@ -185,9 +177,8 @@ A step whose linter version differs runs on all its covered files. The helper
 skips it in the changed-path HK run, runs it in a second
 `<command> --all --step=<step>` run, reports each widened step and reason on
 stderr, and fails when either run fails. When a tool lock changes, a step whose
-command has another form (for example the actionlint and Pkl evaluation
-wrappers or a script invoked via a runtime binary) or whose linter has no entry
-in its provider lock at either endpoint
+command has another form (for example a script invoked via a runtime binary) or
+whose linter has no entry in its provider lock at either endpoint
 (for example `taplo`, which `pnpm exec` finds on the mise `PATH`) also runs on
 all its files. Resolution never narrows a run, and a failed Pkl evaluation
 fails the helper. Other steps, including lock and configuration checks, keep
@@ -196,34 +187,22 @@ the changed-path input. The SDK's `dotnet format` resolves to the mise
 a local .NET tool.
 With `--staged`, the endpoints are `HEAD` and the index.
 
-## Hook Timeout, Quoted Paths, and Watchdogs
+## Direct Command Execution and Retained Wrapper Scripts
 
-[hk.pkl](../../hk.pkl) requires HK `2.13.0+`, configures a hook-level
-`timeout = "12m"` across `pre-commit`, `check`, and `fix`, and runs operand-free
-guard and lock-verification steps directly through shell-free `Config.Command`
-definitions.
-
-For steps still wrapped in [hk_exec.py](../../eng/scripts/hk_exec.py), the
-wrapper normalizes quoted file arguments
-and splits the command from the file list at the first `--hk-files` marker,
-falling back to the **last** `--` for the legacy form, as described above.
-By default it passes the surviving file batch to one command invocation under
-blocking `process.wait` supervision with heartbeats, timeout handling, and
-process-tree termination, retaining opt-in per-file diagnostic execution via
-`HK_EXEC_PER_FILE`. Its controls are `HK_EXEC_TIMEOUT_SECONDS` (or
-`--timeout-seconds`), `HK_EXEC_HEARTBEAT_SECONDS`, and `HK_EXEC_PER_FILE`;
-the implementation owns their defaults and command-line overrides.
-
-[hk_pkl_eval.py](../../eng/scripts/hk_pkl_eval.py) evaluates Pkl files
-individually, preserving failure output and normalizing quoted paths.
-[hk_actionlint.py](../../eng/scripts/hk_actionlint.py) runs a batched
-`actionlint` invocation under the same watchdog with
-`HK_ACTIONLINT_TIMEOUT_SECONDS` and `HK_ACTIONLINT_HEARTBEAT_SECONDS`, plus
-optional `HK_ACTIONLINT_SHELLCHECK` and `HK_ACTIONLINT_PYFLAKES` executable
-overrides. In the inspected accepted source, unset integration overrides add
-no `-shellcheck` or `-pyflakes` option; actionlint chooses its normal behavior.
-This source observation does not prove that either executable is installed
+[hk.pkl](../../hk.pkl) and [the shared HK steps](../../src/private/lib/hk/)
+require HK `2.13.0+`, configure a hook-level `timeout = "12m"` across
+`pre-commit`, `check`, and `fix`, and execute both guard steps and file-reading
+linters directly through shell-free `Config.Command` definitions (passing `--`
+before `{{files}}` on tools that accept end-of-options markers). Direct
+`actionlint` execution uses actionlint's default shellcheck/pyflakes behavior;
+this configuration does not prove that either optional executable is installed
 or that a complete Windows workflow check passes.
+
+Legacy wrapper scripts ([hk_exec.py](../../eng/scripts/hk_exec.py),
+[hk_actionlint.py](../../eng/scripts/hk_actionlint.py),
+[hk_pkl_eval.py](../../eng/scripts/hk_pkl_eval.py), and
+[hk_file_operands.py](../../eng/scripts/hk_file_operands.py)) are no longer
+wired into `hk.pkl` and remain only pending final script retirement.
 
 The shared [Typos step](../../src/private/lib/hk/steps/Typos.pkl) uses
 `--force-exclude` so explicit HK file lists respect [.typos.toml](../../.typos.toml).
