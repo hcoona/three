@@ -871,7 +871,7 @@ public sealed class CiScopeTests
     [TestMethod]
     public void ScriptsWithoutInlineMetadataKeepPythonResponsibility()
     {
-        const string path = "eng/scripts/hk_exec.py";
+        const string path = "eng/scripts/workflow_delivery_v3_hk.py";
         ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
             [], Tasks, Hk));
         Assert.AreEqual("python", Assert.ContainsSingle(row.Reasons).Owner);
