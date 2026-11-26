@@ -649,10 +649,10 @@ null`: `null` on `synth_val` or unaligned prediction measures where no
       starting-state directory** supplied by the repository owner / local
       operator (failing closed immediately if either `--traindev-root` or its
       external ledger anchor is absent; any new preparation of private
-      `TRAIN_DEV` artifacts executes strictly under accepted W6 Slice A
-      [Delivery Wave](../../../../../docs/delivery-wave.md) authorization after
-      this protocol is merged on `main`, and no Slice A runner command scans or
-      copies from mixed `23`-piece directories). `--traindev-root` holds
+      `TRAIN_DEV` artifacts requires an accepted
+      [Delivery Wave](../../../../../docs/delivery-wave.md) entry now that the
+      `#1766`/`#1769` W6 Slice A grant is retired, and no Slice A runner command
+      scans or copies from mixed `23`-piece directories). `--traindev-root` holds
       strictly the `102` `TRAIN_DEV` leaves across `gold-07`–`gold-17` and
       `gold-19`–`gold-23` (`pages/gold-{07..17,19..23}-p<NN>.png`,
       `gold/gold-{07..17,19..23}/accepted.musicxml`, normalized Stage S0 initial
