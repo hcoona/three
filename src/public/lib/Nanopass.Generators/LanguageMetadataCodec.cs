@@ -25,11 +25,14 @@ namespace Hcoona.Nanopass.Generators;
 
 internal static class LanguageMetadataCodec
 {
-    private const string Prefix = "(nanopass-v1 ";
+    private const string Prefix = "(nanopass-v2 ";
+    private const string LegacyPrefix = "(nanopass-v1 ";
 
     internal static string Encode(LanguageModel model)
     {
-        var buffer = new StringBuilder(Prefix);
+        bool hasHandlerBindings = model.NonTerminals.Any(static nonTerminal =>
+            nonTerminal.Productions.Any(static rule => rule.PrettyHandler?.Binding is not null));
+        var buffer = new StringBuilder(hasHandlerBindings ? Prefix : LegacyPrefix);
         Text(model.Name);
         Text(model.QualifiedName);
         Text(model.Namespace);
@@ -63,6 +66,10 @@ internal static class LanguageMetadataCodec
                 if (rule.PrettyHandler is not null)
                 {
                     Text(rule.PrettyHandler.Owner);
+                    if (hasHandlerBindings)
+                    {
+                        Text(rule.PrettyHandler.Binding);
+                    }
                 }
 
                 Integer(rule.Fields.Count);
@@ -126,7 +133,8 @@ internal static class LanguageMetadataCodec
 
     internal static LanguageModel? Decode(string payload)
     {
-        if (!payload.StartsWith(Prefix, StringComparison.Ordinal)
+        bool legacy = payload.StartsWith(LegacyPrefix, StringComparison.Ordinal);
+        if ((!legacy && !payload.StartsWith(Prefix, StringComparison.Ordinal))
             || !payload.EndsWith(")", StringComparison.Ordinal))
         {
             return null;
@@ -134,8 +142,8 @@ internal static class LanguageMetadataCodec
 
         try
         {
-            int length = payload.Length - Prefix.Length - 1;
-            var reader = new Reader(payload.Substring(Prefix.Length, length));
+            int start = (legacy ? LegacyPrefix : Prefix).Length;
+            var reader = new Reader(payload.Substring(start, payload.Length - start - 1), legacy);
             var model = new LanguageModel(
                 reader.Text(),
                 reader.Text(),
@@ -153,7 +161,7 @@ internal static class LanguageMetadataCodec
         }
     }
 
-    private sealed class Reader(string payload)
+    private sealed class Reader(string payload, bool legacy)
     {
         private readonly string[] tokens = payload.Split(' ');
         private int index;
@@ -240,6 +248,8 @@ internal static class LanguageMetadataCodec
             this.Bool());
 
         private LanguageModel.Handler? Handler() =>
-            this.NullableText() is { } name ? new(name, this.Text()) : null;
+            this.NullableText() is { } name
+                ? new(name, this.Text(), legacy ? null : this.NullableText())
+                : null;
     }
 }

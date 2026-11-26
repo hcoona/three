@@ -53,14 +53,17 @@ internal sealed class PassEmitter(PassModel model)
 
         var input = model.InputKind is null ? null : Type(model.InputKind.Type);
         var output = model.OutputKind is null ? null : Type(model.OutputKind.Type);
-        string? passInterface = input is null || output is null
-            ? null
-            : $"{Runtime}IPass<{input}, {output}>";
-        string interfaces = passInterface is null
+        bool hasEndpoints = input is not null && output is not null;
+        bool hasAdapter = model.Problems.Count > 0 || model.InterfaceCall is not null;
+        string? passInterface = hasEndpoints && hasAdapter
+            ? $"{Runtime}IPass<{input}, {output}>"
+            : null;
+        string interfaces = !hasEndpoints
             ? string.Empty
-            : $" : {passInterface}, {Runtime}INanopassPass, {Runtime}INanopassPassMetadata";
+            : $" : {Runtime}INanopassPass, {Runtime}INanopassPassMetadata"
+                + (passInterface is null ? string.Empty : $", {passInterface}");
         this.Open($"{declaration.Accessibility} partial class {Id(declaration.Name)}{interfaces}");
-        if (input is not null && output is not null && passInterface is not null)
+        if (input is not null && output is not null)
         {
             this.EmitDescriptor();
             this.EmitRun(input, output, passInterface);
@@ -70,7 +73,7 @@ internal sealed class PassEmitter(PassModel model)
             this.EmitStub(run);
         }
 
-        if (model.Problems.Length > 0)
+        if (model.Problems.Count > 0)
         {
             foreach (var method in model.Declaration.Methods.Where(method =>
                 method.IsPartialDeclaration && method != model.Run
@@ -145,7 +148,7 @@ internal sealed class PassEmitter(PassModel model)
             int extras = processor.Result.IsTuple ? processor.Result.Arguments.Count - 1 : 0;
             this.Line($"new(new {Runtime}Symbol({Literal(processor.Name)}), "
                 + $"{SymbolLiteral(processor.From.Name)}, {SymbolLiteral(processor.To.Name)}, "
-                + $"{Number(processor.Parameters.Length)}, {Number(extras)}),");
+                + $"{Number(processor.Parameters.Count)}, {Number(extras)}),");
         }
 
         this.Close("],");
@@ -157,10 +160,10 @@ internal sealed class PassEmitter(PassModel model)
         this.Line($"{descriptor} {Runtime}INanopassPass.Descriptor => PassDescriptor;");
     }
 
-    private void EmitRun(string input, string output, string passInterface)
+    private void EmitRun(string input, string output, string? passInterface)
     {
         var run = model.Run;
-        bool valid = model.Problems.Length == 0;
+        bool valid = model.Problems.Count == 0;
         string inputName = run?.Parameters.Count > 0
             ? Id(run.Parameters[0].Name)
             : InputVariable;
@@ -197,7 +200,7 @@ internal sealed class PassEmitter(PassModel model)
             this.Close();
         }
 
-        if (run is not null)
+        if (run is not null && passInterface is not null)
         {
             var interfaceCall = valid ? model.InterfaceCall : null;
             this.Line($"{output} {passInterface}.Run({input} {InputVariable}) => "
@@ -225,8 +228,25 @@ internal sealed class PassEmitter(PassModel model)
             : $"private {resultType} {Id(processor.Name)}"
                 + $"({Type(processor.From.Type)} {ir}{parameters})";
         this.Open(signature);
+        var allParameters = method?.Parameters ?? processor.Parameters;
+        if (processor.Defaults.Count > 0 && !processor.Alternatives.Any(
+            static alternative => alternative.Fallback is { UsesDefaults: true }))
+        {
+            // Bind the defaults without evaluating their conversions at runtime.
+            string check = Local(allParameters, "__np_checkDefaults");
+            this.Line($"static {resultType} {check}() => "
+                + $"(default!, {string.Join(", ", processor.Defaults)});");
+            this.Line($"_ = nameof({check});");
+        }
+
         this.Trace(processor.Name, "Enter", ir);
-        var allParameters = method?.Parameters ?? new(processor.Parameters);
+        if (processor.Alternatives.Any(static alternative => alternative.Condition is not null))
+        {
+            string value = LanguageEmitter.UnionValue(
+                processor.From.NonTerminal!, Type(processor.From.Type), ir);
+            this.Line($"var {Local(allParameters, "__np_val")} = {value};");
+        }
+
         string result = Local(allParameters, "__np_result");
         bool returned = false;
         foreach (var alternative in processor.Alternatives)

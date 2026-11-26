@@ -73,6 +73,13 @@ internal sealed class PassInputReader(
     internal static bool Same(PassType? left, PassType? right) =>
         string.Equals(left?.Key, right?.Key, StringComparison.Ordinal);
 
+    internal static bool IsSzArrayInterface(PassType type) => type.Name is
+        "global::System.Collections.Generic.IList"
+        or "global::System.Collections.Generic.ICollection"
+        or "global::System.Collections.Generic.IReadOnlyList"
+        or "global::System.Collections.Generic.IReadOnlyCollection"
+        or "global::System.Collections.Generic.IEnumerable";
+
     internal static bool IsGenerated(SyntaxTree? tree) =>
         tree?.FilePath.EndsWith(GeneratedSuffix, StringComparison.Ordinal) == true;
 
@@ -85,6 +92,9 @@ internal sealed class PassInputReader(
         Accessibility.ProtectedOrInternal => "protected internal",
         _ => "internal",
     };
+
+    internal INamedTypeSymbol? EndpointSymbol(int index) =>
+        At(pass, index).Value as INamedTypeSymbol;
 
     internal PassInput? Read()
     {
@@ -123,42 +133,68 @@ internal sealed class PassInputReader(
                 .FirstOrDefault(static syntax => !IsGenerated(syntax.SyntaxTree))))
             .Where(static item => item.Syntax is not null)
             .ToArray();
-        var signatures = methods.Select(item => this.ReadMethod(item.Method, item.Syntax!))
-            .ToArray();
         var fromEndpoint = this.ReadEndpoint(0, "InputEntry");
         var toEndpoint = this.ReadEndpoint(1, "OutputEntry");
-        var conversions = new HashSet<PassInput.Conversion>();
+        var conversions = new HashSet<PassInput.TypeConversion>();
+        var projections = new HashSet<PassInput.TypeProjection>();
+        var referenceTypes = new HashSet<PassType>();
+        var signatures = methods.Select(item => this.ReadMethod(item.Method, item.Syntax!))
+            .ToArray();
+        var compiler = (CSharpCompilation)compilation;
+        var processorExtras = new List<(ITypeSymbol Symbol, PassType Type)>();
+        var recurExtras = new List<(ITypeSymbol Symbol, PassType Type)>();
         for (int i = 0; i < methods.Length; i++)
         {
-            if (signatures[i].Name == "Run" && toEndpoint.IsRaw
-                && compilation.GetTypeByMetadataName("Hcoona.Nanopass.SExpr") is { } rawType)
+            var signature = signatures[i];
+            var method = methods[i].Method;
+            var from = method.ReturnType;
+            if (signature.Processor is not null && method.Parameters.Length > 0)
             {
-                ReadConversions(
-                    methods[i].Method.ReturnType,
-                    signatures[i].ReturnType,
-                    rawType,
-                    ReadType(rawType));
+                ReadConversion(
+                    method.Parameters[0].Type,
+                    Primary(from),
+                    signature.Parameters[0].Type,
+                    signature.ReturnType.Primary);
             }
 
-            bool rewrite = signatures[i].Rewrites.Count > 0;
-            bool tupleProcessor = signatures[i].Processor is not null
-                && signatures[i].ReturnType.IsTuple;
-            if (!rewrite && !tupleProcessor)
+            if (signature.Processor is not null && signature.ReturnType.IsTuple)
+            {
+                processorExtras.AddRange(ExtraSlots(from, signature.ReturnType));
+            }
+
+            if (signature.Rewrites.Count == 0 || (signature.ReturnType.Nullable
+                && signature.ReturnType.HasTupleElements))
             {
                 continue;
             }
 
+            for (int j = 0; j < signature.Parameters.Count; j++)
+            {
+                if (signature.Parameters[j].Recursion is not null)
+                {
+                    recurExtras.AddRange(ExtraSlots(
+                        methods[i].Method.Parameters[j].Type, signature.Parameters[j].Type));
+                }
+            }
+
+            from = Primary(from);
             for (int j = 0; j < methods.Length; j++)
             {
-                if (signatures[j].Processor is not null
-                    && (rewrite || signatures[j].ReturnType.IsTuple))
+                if (signatures[j].Processor is not null)
                 {
-                    ReadConversions(
-                        methods[i].Method.ReturnType,
-                        signatures[i].ReturnType,
-                        methods[j].Method.ReturnType,
-                        signatures[j].ReturnType);
+                    var to = Primary(methods[j].Method.ReturnType);
+                    ReadConversion(
+                        from, to, signature.ReturnType.Primary, signatures[j].ReturnType.Primary);
                 }
+            }
+        }
+
+        var extraSources = processorExtras.Distinct().ToArray();
+        foreach (var to in extraSources.Concat(recurExtras).Distinct())
+        {
+            foreach (var from in extraSources)
+            {
+                ReadConversion(from.Symbol, to.Symbol, from.Type, to.Type);
             }
         }
 
@@ -180,151 +216,233 @@ internal sealed class PassInputReader(
             new(members.Select(static member => member.Name).Distinct(StringComparer.Ordinal)
                 .OrderBy(static name => name, StringComparer.Ordinal)),
             new(conversions.OrderBy(static conversion => conversion.From, StringComparer.Ordinal)
-                .ThenBy(static conversion => conversion.To, StringComparer.Ordinal)));
+                .ThenBy(static conversion => conversion.To, StringComparer.Ordinal)
+                .ThenBy(static conversion => conversion.IsReference)),
+            new(projections
+                .OrderBy(static projection => projection.From.Key, StringComparer.Ordinal)
+                .ThenBy(static projection => projection.AsTarget.Key, StringComparer.Ordinal)),
+            new(referenceTypes.OrderBy(static type => type.Key, StringComparer.Ordinal)));
 
-        void ReadConversions(ITypeSymbol from, PassType fromRef, ITypeSymbol to, PassType toRef)
+        void ReadConversion(
+            ITypeSymbol from,
+            ITypeSymbol to,
+            PassType fromType,
+            PassType toType)
         {
-            if (fromRef.IsTuple && toRef.IsTuple
-                && fromRef.Arguments.Count == toRef.Arguments.Count
-                && from is INamedTypeSymbol fromTuple && to is INamedTypeSymbol toTuple)
+            var visited = new HashSet<(
+                (ITypeSymbol Symbol, PassType Type) From,
+                (ITypeSymbol Symbol, PassType Type, int Depth) To)>();
+            int maxNodes = Math.Max(1024, Math.Max(fromType.NodeCount, toType.NodeCount));
+            int budget = Math.Max(4096, (fromType.NodeCount + toType.NodeCount) * 4);
+            WalkConversion(
+                from, to, fromType, toType, visited, maxNodes, varianceDepth: 0, ref budget);
+        }
+
+        void WalkConversion(
+            ITypeSymbol from,
+            ITypeSymbol to,
+            PassType fromType,
+            PassType toType,
+            HashSet<(
+                (ITypeSymbol Symbol, PassType Type) From,
+                (ITypeSymbol Symbol, PassType Type, int Depth) To)> visited,
+            int maxNodes,
+            int varianceDepth,
+            ref int budget)
+        {
+            if (budget <= 0
+                || fromType.NodeCount > maxNodes
+                || toType.NodeCount > maxNodes
+                || !visited.Add(((from, fromType), (to, toType, varianceDepth))))
             {
-                for (int i = 0; i < fromRef.Arguments.Count; i++)
+                return;
+            }
+
+            budget--;
+            if (from is not IErrorTypeSymbol && from.IsReferenceType)
+            {
+                referenceTypes.Add(fromType with { Nullable = false });
+            }
+
+            if (Same(fromType, toType) || (fromType.Nullable && !toType.Nullable))
+            {
+                return;
+            }
+
+            if (!fromType.Nullable && toType.Nullable)
+            {
+                WalkConversion(
+                    from,
+                    UnwrapNullableValue(to),
+                    fromType,
+                    toType with { Nullable = false },
+                    visited,
+                    maxNodes,
+                    varianceDepth,
+                    ref budget);
+            }
+            else if (fromType.HasTupleElements && toType.HasTupleElements
+                && fromType.Arguments.Count == toType.Arguments.Count
+                && UnwrapNullableValue(from) is INamedTypeSymbol { IsTupleType: true } fromTuple
+                && UnwrapNullableValue(to) is INamedTypeSymbol { IsTupleType: true } toTuple)
+            {
+                for (int i = 0; i < fromType.Arguments.Count; i++)
                 {
-                    ReadConversions(
+                    WalkConversion(
                         fromTuple.TupleElements[i].Type,
-                        fromRef.Arguments[i],
                         toTuple.TupleElements[i].Type,
-                        toRef.Arguments[i]);
+                        fromType.Arguments[i],
+                        toType.Arguments[i],
+                        visited,
+                        maxNodes,
+                        varianceDepth,
+                        ref budget);
                 }
             }
-            else if (!Same(fromRef, toRef) && from.TypeKind != TypeKind.Error
-                && to.TypeKind != TypeKind.Error && this.Converts(from, to))
+
+            if (from is IArrayTypeSymbol array)
             {
-                conversions.Add(new(fromRef.Key, toRef.Key));
+                bool toInterface = to is INamedTypeSymbol
+                    && array.IsSZArray && IsSzArrayInterface(toType);
+                var element = to switch
+                {
+                    IArrayTypeSymbol targetArray when array.Rank == targetArray.Rank =>
+                        targetArray.ElementType,
+                    INamedTypeSymbol targetInterface when toInterface && varianceDepth < 50 =>
+                        targetInterface.TypeArguments[0],
+                    _ => null,
+                };
+                if (element is not null)
+                {
+                    WalkConversion(
+                        array.ElementType,
+                        element,
+                        fromType.Arguments[0],
+                        toType.Arguments[0],
+                        visited,
+                        maxNodes,
+                        toInterface ? varianceDepth + 1 : varianceDepth,
+                        ref budget);
+                }
+            }
+
+            if (to is INamedTypeSymbol { Arity: > 0 } target && target is not IErrorTypeSymbol
+                && !IsNullableValue(target) && target.Arity == toType.Arguments.Count
+                && !toType.HasTupleElements && fromType.Nullable == toType.Nullable)
+            {
+                var variances = new EquatableArray<VarianceKind>(
+                    target.TypeParameters.Select(static parameter => parameter.Variance));
+                foreach (var (projected, asTarget) in this.ReadProjections(from, fromType, target))
+                {
+                    if (asTarget.NodeCount > 1024)
+                    {
+                        continue;
+                    }
+
+                    projections.Add(new(
+                        fromType with { Nullable = false },
+                        asTarget with { Nullable = false },
+                        variances));
+                    if (varianceDepth >= 50)
+                    {
+                        continue;
+                    }
+
+                    for (int i = 0; i < variances.Count; i++)
+                    {
+                        if (variances[i] is VarianceKind.In or VarianceKind.Out)
+                        {
+                            bool reverse = variances[i] == VarianceKind.In;
+                            WalkConversion(
+                                reverse ? target.TypeArguments[i] : projected.TypeArguments[i],
+                                reverse ? projected.TypeArguments[i] : target.TypeArguments[i],
+                                reverse ? toType.Arguments[i] : asTarget.Arguments[i],
+                                reverse ? asTarget.Arguments[i] : toType.Arguments[i],
+                                visited,
+                                maxNodes,
+                                varianceDepth + 1,
+                                ref budget);
+                        }
+                    }
+                }
+            }
+
+            if (HasErrorType(from) || HasErrorType(to))
+            {
+                return;
+            }
+
+            var conversion = compiler.ClassifyConversion(from, to);
+            if (conversion.IsImplicit && !conversion.IsIdentity
+                && (conversion.IsUserDefined
+                    ? conversion.MethodSymbol is { Name: "op_Implicit" } op
+                        && CompatibleOperatorLeg(from, op.Parameters[0].Type)
+                        && CompatibleOperatorLeg(op.ReturnType, to)
+                    : !(conversion.IsReference || conversion.IsBoxing)
+                        || (!HasTypeArguments(from) && !HasTypeArguments(to))))
+            {
+                conversions.Add(new(fromType.Key, toType.Key, conversion.IsReference));
             }
         }
     }
 
-    private static PassType ReadType(
-        ITypeSymbol? type, TypeSyntax? syntax = null, SemanticModel? semantic = null)
+    private static bool HasTypeArguments(ITypeSymbol type) =>
+        UnwrapNullableValue(type) is IArrayTypeSymbol or INamedTypeSymbol { IsGenericType: true };
+
+    private static bool CompatibleOperatorLeg(ITypeSymbol from, ITypeSymbol to) =>
+        (!HasTypeArguments(from) && !HasTypeArguments(to))
+        || SymbolEqualityComparer.IncludeNullability.Equals(
+            UnwrapNullableValue(from).WithNullableAnnotation(NullableAnnotation.None),
+            UnwrapNullableValue(to).WithNullableAnnotation(NullableAnnotation.None));
+
+    private static bool IsNullableValue(ITypeSymbol type) =>
+        type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T;
+
+    private static ITypeSymbol UnwrapNullableValue(ITypeSymbol type) =>
+        type is INamedTypeSymbol nullable && IsNullableValue(nullable)
+            ? nullable.TypeArguments[0]
+            : type;
+
+    private static ITypeSymbol Primary(ITypeSymbol type) =>
+        type is INamedTypeSymbol { IsTupleType: true, TupleElements.Length: >= 2 } tuple
+            ? tuple.TupleElements[0].Type
+            : type;
+
+    private static IEnumerable<(ITypeSymbol Symbol, PassType Type)> ExtraSlots(
+        ITypeSymbol symbol, PassType type)
     {
-        if (syntax is NullableTypeSyntax nullableSyntax)
+        while (symbol is INamedTypeSymbol sequence && type.Name == Runtime + "Seq"
+            && type.Arguments.Count == 1 && sequence.TypeArguments.Length == 1)
         {
-            var value = type is INamedTypeSymbol
-            { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullableValue
-                ? nullableValue.TypeArguments[0]
-                : type;
-            return ReadType(value, nullableSyntax.ElementType, semantic) with { Nullable = true };
+            symbol = sequence.TypeArguments[0];
+            type = type.Arguments[0];
         }
 
-        if (type is IArrayTypeSymbol array)
+        if (symbol is INamedTypeSymbol nullable && IsNullableValue(nullable))
         {
-            return new(
-                string.Empty,
-                new([
-                    ReadType(
-                    array.ElementType, (syntax as ArrayTypeSyntax)?.ElementType, semantic),
-                ]),
-                Nullable: array.NullableAnnotation == NullableAnnotation.Annotated,
-                ArrayRank: array.Rank);
+            symbol = nullable.TypeArguments[0];
         }
 
-        if (type is INamedTypeSymbol { IsTupleType: true } tuple)
+        if (symbol is INamedTypeSymbol { IsTupleType: true } tuple && type.HasTupleElements)
         {
-            var elements = (syntax as TupleTypeSyntax)?.Elements;
-            return new(
-                string.Empty,
-                new(tuple.TupleElements.Select((field, index) =>
-                    ReadType(field.Type, elements?[index].Type, semantic))),
-                new(tuple.TupleElements.Select(static field =>
-                    field.IsExplicitlyNamedTupleElement ? field.Name : string.Empty)));
+            for (int i = 1; i < tuple.TupleElements.Length; i++)
+            {
+                yield return (tuple.TupleElements[i].Type, type.Arguments[i]);
+            }
         }
-
-        if (type is INamedTypeSymbol
-            { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullable)
-        {
-            return ReadType(nullable.TypeArguments[0]) with { Nullable = true };
-        }
-
-        if (type is INamedTypeSymbol { TypeKind: not TypeKind.Error, Arity: > 0 } named)
-        {
-            var generic = (syntax is QualifiedNameSyntax qualified ? qualified.Right : syntax)
-                as GenericNameSyntax;
-            string name = named.ConstructedFrom.ToDisplayString(TypeFormat);
-            return new(
-                name.Substring(0, name.LastIndexOf('<')),
-                new(named.TypeArguments.Select((arg, index) =>
-                    ReadType(arg, generic?.TypeArgumentList.Arguments[index], semantic))),
-                Nullable: named.NullableAnnotation == NullableAnnotation.Annotated);
-        }
-
-        if (type is not null && type.TypeKind != TypeKind.Error)
-        {
-            string text = type.ToDisplayString(TypeFormat);
-            return text.EndsWith("?", StringComparison.Ordinal)
-                ? new(text.Substring(0, text.Length - 1), Nullable: true)
-                : new(text);
-        }
-
-        if (syntax is QualifiedNameSyntax nameSyntax && semantic is not null)
-        {
-            var owner = semantic.GetSymbolInfo(nameSyntax.Left).Symbol;
-            string prefix = owner is not null and not IErrorTypeSymbol
-                ? owner.ToDisplayString(TypeFormat)
-                : ReadType(owner as ITypeSymbol, nameSyntax.Left, semantic).Code;
-            return new(prefix + "." + nameSyntax.Right.WithoutTrivia());
-        }
-
-        if (type?.ContainingType is { TypeKind: not TypeKind.Error } containing)
-        {
-            return new(containing.ToDisplayString(TypeFormat) + "." + Id(type.Name));
-        }
-
-        return new(syntax?.WithoutTrivia().ToString()
-            ?? type?.ToDisplayString(TypeFormat) ?? string.Empty);
     }
 
-    private static string Constant(TypedConstant value)
+    private static bool HasErrorType(ITypeSymbol type) => type switch
     {
-        if (value.IsNull)
-        {
-            return "null";
-        }
+        IErrorTypeSymbol => true,
+        IArrayTypeSymbol array => HasErrorType(array.ElementType),
+        INamedTypeSymbol named => named.TypeArguments.Any(HasErrorType)
+            || (named.ContainingType is { } owner && HasErrorType(owner)),
+        _ => false,
+    };
 
-        if (value.Kind == TypedConstantKind.Array)
-        {
-            string values = string.Join(", ", value.Values.Select(Constant));
-            return $"new {ReadType(value.Type).Code} {{ {values} }}";
-        }
-
-        if (value.Kind == TypedConstantKind.Enum)
-        {
-            return $"({ReadType(value.Type).Code}){SymbolDisplay.FormatPrimitive(
-                value.Value!, quoteStrings: true, useHexadecimalNumbers: false)}";
-        }
-
-        if (value.Kind == TypedConstantKind.Type && value.Value is ITypeSymbol type)
-        {
-            return $"typeof({ReadType(type).Code})";
-        }
-
-        return value.Value switch
-        {
-            float number when !float.IsNaN(number) && !float.IsInfinity(number) =>
-                number.ToString("R", CultureInfo.InvariantCulture) + "f",
-            float number => "float." + NonFinite(number),
-            double number when double.IsNaN(number) || double.IsInfinity(number) =>
-                "double." + NonFinite(number),
-            double number => number.ToString("R", CultureInfo.InvariantCulture) + "d",
-            long number => number.ToString(CultureInfo.InvariantCulture) + "L",
-            ulong number => number.ToString(CultureInfo.InvariantCulture) + "UL",
-            uint number => number.ToString(CultureInfo.InvariantCulture) + "U",
-            _ => value.ToCSharpString(),
-        };
-
-        static string NonFinite(double number) =>
-            double.IsNaN(number) ? "NaN" : number > 0 ? "PositiveInfinity" : "NegativeInfinity";
-    }
+    private static string DisplayName(ITypeSymbol? type) =>
+        (type?.ToDisplayString(TypeFormat) ?? string.Empty).TrimEnd('?');
 
     private static string? DefaultExpression(IParameterSymbol parameter)
     {
@@ -396,6 +514,15 @@ internal sealed class PassInputReader(
     private static string? Text(AttributeData attribute, string name) =>
         Named(attribute, name).Value as string;
 
+    private static bool HasGenericName(NameSyntax syntax) => syntax switch
+    {
+        GenericNameSyntax => true,
+        QualifiedNameSyntax qualified => qualified.Right is GenericNameSyntax
+            || HasGenericName(qualified.Left),
+        AliasQualifiedNameSyntax alias => alias.Name is GenericNameSyntax,
+        _ => false,
+    };
+
     private static PassInput.Recur? ReadRecur(IParameterSymbol parameter)
     {
         if (Attribute(parameter, "RecurAttribute") is not { } attribute)
@@ -411,8 +538,448 @@ internal sealed class PassInputReader(
         return new(Text(attribute, "Field"), Text(attribute, "Processor"), names);
     }
 
-    private bool Converts(ITypeSymbol from, ITypeSymbol to) =>
-        ((CSharpCompilation)compilation).ClassifyConversion(from, to).IsImplicit;
+    private IEnumerable<(INamedTypeSymbol Symbol, PassType Type)> ReadProjections(
+        ITypeSymbol from, PassType fromType, INamedTypeSymbol target)
+    {
+        if (from is IArrayTypeSymbol { IsSZArray: true } array)
+        {
+            var substitutions = new Dictionary<ITypeSymbol, PassType>(
+                SymbolEqualityComparer.Default)
+            {
+                [array.ElementType] = fromType.Arguments[0],
+            };
+            foreach (var candidate in array.AllInterfaces.Where(MatchesDefinition))
+            {
+                yield return (candidate, ReadProjection(candidate, substitutions));
+            }
+        }
+        else if (from is INamedTypeSymbol { IsTupleType: false } named
+            && named is not IErrorTypeSymbol && !IsNullableValue(named))
+        {
+            var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.IncludeNullability);
+            foreach (var candidate in Project(named, named.OriginalDefinition, fromType))
+            {
+                yield return candidate;
+            }
+
+            IEnumerable<(INamedTypeSymbol, PassType)> Project(
+                INamedTypeSymbol actual,
+                INamedTypeSymbol open,
+                PassType type)
+            {
+                if (!seen.Add(open))
+                {
+                    yield break;
+                }
+
+                if (MatchesDefinition(open))
+                {
+                    yield return (actual, type);
+                }
+
+                // Project each declaration with its owner's arguments, including unresolved
+                // syntax candidates.
+                var owner = open.OriginalDefinition;
+                var substitutions = new Dictionary<ITypeSymbol, PassType>(
+                    SymbolEqualityComparer.Default);
+                AddTypeParameters(owner, type, substitutions);
+                if (open.BaseType is { } openBase && actual.BaseType is { } actualBase)
+                {
+                    foreach (var candidate in Project(
+                        actualBase,
+                        openBase,
+                        ReadProjection(owner.BaseType!, substitutions, owner)))
+                    {
+                        yield return candidate;
+                    }
+                }
+
+                for (int i = 0; i < open.Interfaces.Length; i++)
+                {
+                    foreach (var candidate in Project(
+                        actual.Interfaces[i],
+                        open.Interfaces[i],
+                        ReadProjection(owner.Interfaces[i], substitutions, owner)))
+                    {
+                        yield return candidate;
+                    }
+                }
+            }
+        }
+
+        static void AddTypeParameters(
+            INamedTypeSymbol definition,
+            PassType type,
+            Dictionary<ITypeSymbol, PassType> substitutions)
+        {
+            for (int i = 0; i < definition.TypeParameters.Length; i++)
+            {
+                substitutions.Add(definition.TypeParameters[i], type.Arguments[i]);
+            }
+
+            if (definition.ContainingType is { } owner && type.ContainingType is { } ownerType)
+            {
+                AddTypeParameters(owner, ownerType, substitutions);
+            }
+        }
+
+        bool MatchesDefinition(INamedTypeSymbol candidate) =>
+            SymbolEqualityComparer.Default.Equals(
+                candidate.OriginalDefinition, target.OriginalDefinition);
+
+        PassType ReadProjection(
+            INamedTypeSymbol candidate,
+            Dictionary<ITypeSymbol, PassType> substitutions,
+            INamedTypeSymbol? owner = null)
+        {
+            if (owner is not null && HasErrorType(candidate))
+            {
+                foreach (var reference in owner.DeclaringSyntaxReferences)
+                {
+                    if (reference.GetSyntax(token) is TypeDeclarationSyntax { BaseList: { } bases })
+                    {
+                        var semantic = compilation.GetSemanticModel(reference.SyntaxTree);
+                        var matching = bases.Types.FirstOrDefault(item =>
+                            SymbolEqualityComparer.Default.Equals(
+                                semantic.GetTypeInfo(item.Type, token).Type, candidate));
+                        if (matching is not null)
+                        {
+                            return this.ReadType(
+                                candidate, matching.Type, semantic, substitutions: substitutions);
+                        }
+                    }
+                }
+            }
+
+            return this.ReadType(candidate, substitutions: substitutions);
+        }
+    }
+
+    private PassType ReadType(
+        ITypeSymbol? type,
+        TypeSyntax? syntax = null,
+        SemanticModel? semantic = null,
+        int rank = 0,
+        IReadOnlyDictionary<ITypeSymbol, PassType>? substitutions = null)
+    {
+        bool annotated = type?.NullableAnnotation == NullableAnnotation.Annotated
+            || syntax is NullableTypeSyntax;
+        if (type is not null && substitutions?.TryGetValue(type, out var replacement) == true)
+        {
+            return annotated ? replacement with { Nullable = true } : replacement;
+        }
+
+        var bareSyntax = syntax is NullableTypeSyntax annotation ? annotation.ElementType : syntax;
+        if (bareSyntax is IdentifierNameSyntax identifier && semantic is not null
+            && semantic.GetAliasInfo(identifier, token)
+                is { Target: ITypeSymbol aliasType } aliasSymbol
+            && aliasSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax(token)
+                is UsingDirectiveSyntax { NamespaceOrType: TypeSyntax targetSyntax })
+        {
+            var aliasModel = targetSyntax.SyntaxTree == semantic.SyntaxTree
+                ? semantic
+                : compilation.GetSemanticModel(targetSyntax.SyntaxTree);
+            var target = this.ReadType(aliasType, targetSyntax, aliasModel);
+            return annotated ? target with { Nullable = true } : target;
+        }
+
+        if (type is INamedTypeSymbol nullable && IsNullableValue(nullable))
+        {
+            return this.ReadType(
+                nullable.TypeArguments[0],
+                (syntax as NullableTypeSyntax)?.ElementType,
+                semantic,
+                substitutions: substitutions)
+                with
+            { Nullable = true };
+        }
+
+        syntax = bareSyntax;
+        if (type is IArrayTypeSymbol array)
+        {
+            var arraySyntax = syntax as ArrayTypeSyntax;
+            bool moreRanks = arraySyntax is not null && rank + 1 < arraySyntax.RankSpecifiers.Count;
+            var element = this.ReadType(
+                array.ElementType,
+                moreRanks ? arraySyntax : arraySyntax?.ElementType,
+                semantic,
+                moreRanks ? rank + 1 : 0,
+                substitutions);
+            return new(
+                string.Empty,
+                new([element]),
+                Nullable: annotated,
+                ArrayRank: array.Rank);
+        }
+
+        if (type is INamedTypeSymbol { IsTupleType: true, TupleElements.Length: >= 2 } tuple)
+        {
+            return new(
+                string.Empty,
+                new(tuple.TupleElements.Select((field, index) => this.ReadType(
+                    field.Type,
+                    (syntax as TupleTypeSyntax)?.Elements[index].Type,
+                    semantic,
+                    substitutions: substitutions))),
+                new(tuple.TupleElements.Select(static field =>
+                    field.IsExplicitlyNamedTupleElement ? field.Name : string.Empty)),
+                Nullable: annotated);
+        }
+
+        if (type is IErrorTypeSymbol && syntax is NameSyntax nameSyntax && semantic is not null)
+        {
+            if (HasGenericName(nameSyntax))
+            {
+                return this.ReadUnboundName(nameSyntax, semantic) with { Nullable = annotated };
+            }
+
+            var candidates = this.TypeCandidates(nameSyntax, semantic)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            return new(
+                candidates.Length == 1 ? candidates[0] : DisplayName(type),
+                Nullable: annotated,
+                Candidates: new(candidates));
+        }
+
+        if (type is INamedTypeSymbol named
+            && (named.Arity > 0 || named.ContainingType?.IsGenericType == true))
+        {
+            var simpleSyntax = syntax switch
+            {
+                QualifiedNameSyntax qualified => qualified.Right,
+                AliasQualifiedNameSyntax alias => alias.Name,
+                _ => syntax as SimpleNameSyntax,
+            };
+            var arguments = (simpleSyntax as GenericNameSyntax)?.TypeArgumentList.Arguments;
+            var owner = named.ContainingType is { } containing
+                ? this.ReadType(
+                    containing,
+                    (syntax as QualifiedNameSyntax)?.Left,
+                    semantic,
+                    substitutions: substitutions)
+                : null;
+            string name = owner is not null ? Id(named.Name) : DisplayName(named.ConstructedFrom);
+            return new(
+                owner is null ? name.Substring(0, name.LastIndexOf('<')) : name,
+                new(named.TypeArguments.Select((argument, index) =>
+                    this.ReadType(
+                        argument, arguments?[index], semantic, substitutions: substitutions))),
+                Nullable: annotated,
+                ContainingType: owner);
+        }
+
+        return new(DisplayName(type), Nullable: annotated);
+    }
+
+    private PassType ReadUnboundName(NameSyntax syntax, SemanticModel semantic)
+    {
+        if (semantic.GetSymbolInfo(syntax, token).Symbol is INamespaceOrTypeSymbol bound
+            && bound is not IErrorTypeSymbol)
+        {
+            return bound is ITypeSymbol type
+                ? this.ReadType(type, syntax, semantic)
+                : new(bound.ToDisplayString(TypeFormat));
+        }
+
+        return syntax switch
+        {
+            QualifiedNameSyntax qualified => ReadSimple(qualified.Right) with
+            {
+                ContainingType = this.ReadUnboundName(qualified.Left, semantic),
+            },
+            AliasQualifiedNameSyntax alias => ReadSimple(alias.Name) with
+            {
+                Name = AliasPrefix(alias.Alias) + Id(alias.Name.Identifier.ValueText),
+            },
+            SimpleNameSyntax simple => ReadSimple(simple),
+            _ => new(syntax.ToString()),
+        };
+
+        string AliasPrefix(IdentifierNameSyntax alias) => alias.Identifier.Text != "global"
+            && semantic.GetAliasInfo(alias, token)?.Target is { } target
+                ? target.ToDisplayString(TypeFormat) + "."
+                : alias.Identifier.Text + "::";
+
+        PassType ReadSimple(SimpleNameSyntax name)
+        {
+            EquatableArray<PassType> arguments = name is GenericNameSyntax generic
+                ? new(generic.TypeArgumentList.Arguments.Select(argument =>
+                    this.ReadType(semantic.GetTypeInfo(argument, token).Type, argument, semantic)))
+                : default;
+            return new(Id(name.Identifier.ValueText), arguments);
+        }
+    }
+
+    private IEnumerable<string> TypeCandidates(
+        NameSyntax syntax, SemanticModel semantic, bool expandAlias = true)
+    {
+        if (HasGenericName(syntax))
+        {
+            yield break;
+        }
+
+        if (semantic.GetSymbolInfo(syntax, token).Symbol is INamespaceOrTypeSymbol bound
+            && bound is not IErrorTypeSymbol)
+        {
+            yield return bound.ToDisplayString(TypeFormat);
+            yield break;
+        }
+
+        switch (syntax)
+        {
+            case QualifiedNameSyntax qualified:
+                foreach (string prefix in this.TypeCandidates(
+                    qualified.Left, semantic, expandAlias))
+                {
+                    yield return prefix + "." + Id(qualified.Right.Identifier.ValueText);
+                }
+
+                break;
+            case AliasQualifiedNameSyntax alias:
+                if (alias.Alias.Identifier.Text == "global")
+                {
+                    yield return "global::" + Id(alias.Name.Identifier.ValueText);
+                }
+                else if (semantic.GetAliasInfo(alias.Alias, token)?.Target is { } target)
+                {
+                    yield return target.ToDisplayString(TypeFormat)
+                        + "." + Id(alias.Name.Identifier.ValueText);
+                }
+
+                break;
+            case IdentifierNameSyntax identifier:
+                string name = Id(identifier.Identifier.ValueText);
+                var scopes = semantic.GetImportScopes(syntax.SpanStart, token);
+                var usingAlias = scopes.SelectMany(static scope => scope.Aliases)
+                    .FirstOrDefault(candidate => candidate.Name == identifier.Identifier.ValueText);
+                if (usingAlias is not null)
+                {
+                    if (usingAlias.Target is not IErrorTypeSymbol)
+                    {
+                        yield return usingAlias.Target.ToDisplayString(TypeFormat);
+                    }
+                    else if (expandAlias
+                        && usingAlias.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax(token)
+                            is UsingDirectiveSyntax { Name: NameSyntax targetName })
+                    {
+                        var aliasModel = targetName.SyntaxTree == semantic.SyntaxTree
+                            ? semantic
+                            : compilation.GetSemanticModel(targetName.SyntaxTree);
+                        foreach (string candidate in this.TypeCandidates(
+                            targetName, aliasModel, expandAlias: false))
+                        {
+                            yield return candidate;
+                        }
+                    }
+
+                    yield break;
+                }
+
+                var enclosing = semantic.GetEnclosingSymbol(syntax.SpanStart, token);
+                for (var owner = enclosing as INamedTypeSymbol ?? enclosing?.ContainingType;
+                    owner is not null; owner = owner.ContainingType)
+                {
+                    yield return owner.ToDisplayString(TypeFormat) + "." + name;
+                }
+
+                for (var ns = enclosing?.ContainingNamespace; ns is { IsGlobalNamespace: false };
+                    ns = ns.ContainingNamespace)
+                {
+                    yield return ns.ToDisplayString(TypeFormat) + "." + name;
+                }
+
+                foreach (var import in scopes.SelectMany(static scope => scope.Imports))
+                {
+                    yield return import.NamespaceOrType.ToDisplayString(TypeFormat) + "." + name;
+                }
+
+                yield return "global::" + name;
+                break;
+        }
+    }
+
+    private string Constant(TypedConstant value)
+    {
+        if (value.IsNull)
+        {
+            return "null";
+        }
+
+        if (value.Kind == TypedConstantKind.Array)
+        {
+            string values = string.Join(", ", value.Values.Select(this.Constant));
+            return $"new {this.ReadType(value.Type).Code} {{ {values} }}";
+        }
+
+        if (value.Kind == TypedConstantKind.Enum)
+        {
+            return $"({this.ReadType(value.Type).Code}){SymbolDisplay.FormatPrimitive(
+                value.Value!, quoteStrings: true, useHexadecimalNumbers: false)}";
+        }
+
+        if (value.Kind == TypedConstantKind.Type && value.Value is ITypeSymbol type)
+        {
+            return $"typeof({this.ReadType(type).Code})";
+        }
+
+        return value.Value switch
+        {
+            float number when !float.IsNaN(number) && !float.IsInfinity(number) =>
+                number.ToString("R", CultureInfo.InvariantCulture) + "f",
+            float number => "float." + NonFinite(number),
+            double number when double.IsNaN(number) || double.IsInfinity(number) =>
+                "double." + NonFinite(number),
+            double number => number.ToString("R", CultureInfo.InvariantCulture) + "d",
+            long number => number.ToString(CultureInfo.InvariantCulture) + "L",
+            ulong number => number.ToString(CultureInfo.InvariantCulture) + "UL",
+            uint number => number.ToString(CultureInfo.InvariantCulture) + "U",
+            byte or sbyte or short or ushort =>
+                $"(({this.ReadType(value.Type).Code}){value.ToCSharpString()})",
+            _ => value.ToCSharpString(),
+        };
+
+        static string NonFinite(double number) =>
+            double.IsNaN(number) ? "NaN" : number > 0 ? "PositiveInfinity" : "NegativeInfinity";
+    }
+
+    private PassInput.Processor? ReadProcessor(IMethodSymbol method)
+    {
+        if (Attribute(method, "ProcessorAttribute") is not { } attribute)
+        {
+            return null;
+        }
+
+        var constants = Named(attribute, "DefaultExtraReturns");
+        bool hasDefaults = constants.Kind == TypedConstantKind.Array;
+        EquatableArray<string>? defaults = hasDefaults && !constants.IsNull
+            ? new(constants.Values.Select(this.Constant))
+            : null;
+        return new(
+            At(attribute, 0).Value as string,
+            At(attribute, 1).Value as string,
+            defaults,
+            hasDefaults);
+    }
+
+    private PassInput.Rewrite ReadRewrite(AttributeData attribute)
+    {
+        var type = At(attribute, 0).Value as ITypeSymbol;
+        var syntax = (attribute.ApplicationSyntaxReference?.GetSyntax(token) as AttributeSyntax)
+            ?.ArgumentList?.Arguments.FirstOrDefault(static argument => argument.NameEquals is null)
+            ?.Expression as TypeOfExpressionSyntax;
+        var semantic = syntax is not null ? compilation.GetSemanticModel(syntax.SyntaxTree) : null;
+        var production = type is not null || syntax is not null
+            ? this.ReadType(
+                type ?? semantic!.GetTypeInfo(syntax!.Type, token).Type, syntax?.Type, semantic)
+            : null;
+        return new(
+            production,
+            Text(attribute, "Processor"),
+            Text(attribute, "Guard"),
+            Named(attribute, "IsElse").Value is true,
+            Named(attribute, "Order").Value as int? ?? 0);
+    }
 
     private bool CanExtend(INamedTypeSymbol type) =>
         type.Arity == 0 && type.DeclaringSyntaxReferences.Any(reference =>
@@ -436,11 +1003,12 @@ internal sealed class PassInputReader(
             method.IsStatic,
             isPartialDeclaration,
             returnModifier,
-            ReadType(method.ReturnType, syntax.ReturnType, semantic),
+            this.ReadType(method.ReturnType, syntax.ReturnType, semantic),
             new(method.TypeParameters.Select(static parameter => parameter.Name)),
             new(method.Parameters.Select((parameter, index) => new PassInput.Parameter(
                 parameter.Name,
-                ReadType(parameter.Type, syntax.ParameterList.Parameters[index].Type, semantic),
+                this.ReadType(
+                    parameter.Type, syntax.ParameterList.Parameters[index].Type, semantic),
                 parameter.IsOptional,
                 ParameterModifier(parameter),
                 ReadRecur(parameter),
@@ -451,55 +1019,12 @@ internal sealed class PassInputReader(
             new(Attributes(method, "RewriteAttribute").Select(this.ReadRewrite)));
     }
 
-    private PassInput.Processor? ReadProcessor(IMethodSymbol method)
-    {
-        if (Attribute(method, "ProcessorAttribute") is not { } attribute)
-        {
-            return null;
-        }
-
-        var constants = Named(attribute, "DefaultExtraReturns");
-        var defaults = constants.Kind == TypedConstantKind.Array && !constants.IsNull
-            ? constants.Values
-            : [];
-        bool valid = defaults.IsEmpty
-            || (method.ReturnType is INamedTypeSymbol { IsTupleType: true } tuple
-                && defaults.Length == tuple.TupleElements.Length - 1
-                && defaults.Select((value, i) =>
-                        (Value: value, Expected: tuple.TupleElements[i + 1].Type))
-                    .All(pair => pair.Value.IsNull
-                        ? pair.Expected.IsReferenceType || pair.Expected is INamedTypeSymbol
-                        { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T }
-                        : pair.Value.Type is { } type && this.Converts(type, pair.Expected)));
-        return new(
-            At(attribute, 0).Value as string,
-            At(attribute, 1).Value as string,
-            valid ? new(defaults.Select(Constant)) : default,
-            valid);
-    }
-
-    private PassInput.Rewrite ReadRewrite(AttributeData attribute)
-    {
-        var symbol = At(attribute, 0).Value as ITypeSymbol;
-        var type = (attribute.ApplicationSyntaxReference?.GetSyntax(token) as AttributeSyntax)
-            ?.ArgumentList?.Arguments.Select(static argument => argument.Expression)
-            .OfType<TypeOfExpressionSyntax>().FirstOrDefault()?.Type;
-        var semantic = type is null ? null : compilation.GetSemanticModel(type.SyntaxTree);
-        return new(
-            symbol is null && type is null ? null : ReadType(symbol, type, semantic),
-            Text(attribute, "Processor"),
-            Text(attribute, "Guard"),
-            Named(attribute, "IsElse").Value is true,
-            Named(attribute, "Order").Value as int? ?? 0);
-    }
-
     private PassInput.Endpoint ReadEndpoint(int index, string entryProperty)
     {
-        var type = At(pass, index).Value as INamedTypeSymbol;
+        var type = this.EndpointSymbol(index);
         var meta = Attribute(type, "LanguageMetadataAttribute");
         string? name = type?.ToDisplayString(TypeFormat);
-        bool readMetadata = includeLocations || type?.DeclaringSyntaxReferences.Length == 0;
-        var metadata = readMetadata && meta is not null ? At(meta, 0).Value as string : null;
+        var metadata = meta is null ? null : At(meta, 0).Value as string;
         return new(name, metadata, name == Runtime + "RawTerm", Text(pass, entryProperty));
     }
 }

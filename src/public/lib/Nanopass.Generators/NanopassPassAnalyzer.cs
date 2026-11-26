@@ -16,10 +16,16 @@
 // You should have received a copy of the GNU General Public License along with
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Threading;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace Hcoona.Nanopass.Generators;
@@ -73,23 +79,75 @@ public sealed class NanopassPassAnalyzer : DiagnosticAnalyzer
     {
         context.EnableConcurrentExecution();
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
-        context.RegisterSymbolAction(AnalyzePass, SymbolKind.NamedType);
+        context.RegisterCompilationStartAction(static start =>
+        {
+            if (start.Compilation.GetTypeByMetadataName(PassInputReader.PassAttribute)
+                is not { } passAttribute)
+            {
+                return;
+            }
+
+            var generatedTrees = start.Compilation.SyntaxTrees.Where(static tree =>
+                tree.FilePath.EndsWith(
+                    NanopassGenerator.LanguageGeneratedSuffix,
+                    StringComparison.Ordinal)
+                || PassInputReader.IsGenerated(tree)).ToArray();
+            var preGenCompilation = generatedTrees.Length == 0
+                ? start.Compilation
+                : start.Compilation.RemoveSyntaxTrees(generatedTrees);
+            var languages = new ConcurrentDictionary<INamedTypeSymbol, LanguageModel?>(
+                SymbolEqualityComparer.Default);
+            var trees = start.Compilation.SyntaxTrees.ToLookup(
+                static tree => tree.FilePath, StringComparer.Ordinal);
+            start.RegisterSymbolAction(
+                symbol => AnalyzePass(symbol, passAttribute, preGenCompilation, languages, trees),
+                SymbolKind.NamedType);
+        });
     }
 
-    private static void AnalyzePass(SymbolAnalysisContext context)
+    [SuppressMessage(
+        "MicrosoftCodeAnalysisPerformance",
+        "RS1030",
+        Justification = """
+            The analyzer must bind pass declarations without Nanopass-generated syntax trees.
+            """)]
+    private static void AnalyzePass(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol passAttribute,
+        Compilation preGenCompilation,
+        ConcurrentDictionary<INamedTypeSymbol, LanguageModel?> languages,
+        ILookup<string, SyntaxTree> trees)
     {
         if (context.Symbol is not INamedTypeSymbol type
-            || PassInputReader.Attribute(type, "PassAttribute") is not { } attribute)
+            || type.GetAttributes().FirstOrDefault(candidate =>
+                SymbolEqualityComparer.Default.Equals(candidate.AttributeClass, passAttribute))
+            is not { } attribute)
         {
             return;
         }
 
-        var input = new PassInputReader(
-            context.Compilation,
-            type,
-            attribute,
-            includeLocations: true,
-            context.CancellationToken).Read();
+        var token = context.CancellationToken;
+        var attributeSyntax = attribute.ApplicationSyntaxReference;
+        if (attributeSyntax is not null
+            && !preGenCompilation.ContainsSyntaxTree(attributeSyntax.SyntaxTree))
+        {
+            return;
+        }
+
+        var declaration = attributeSyntax?.GetSyntax(token)
+            .FirstAncestorOrSelf<ClassDeclarationSyntax>();
+        var sourceType = declaration is null
+            ? null
+            : preGenCompilation.GetSemanticModel(declaration.SyntaxTree)
+                .GetDeclaredSymbol(declaration, token);
+        var sourceAttribute = sourceType?.GetAttributes().FirstOrDefault(candidate =>
+            candidate.ApplicationSyntaxReference?.SyntaxTree == attributeSyntax!.SyntaxTree
+            && candidate.ApplicationSyntaxReference?.Span == attributeSyntax.Span);
+        var reader = sourceType is null || sourceAttribute is null
+            ? null
+            : new PassInputReader(
+                preGenCompilation, sourceType, sourceAttribute, includeLocations: true, token);
+        var input = reader?.Read();
         if (input is not { CanEmit: true })
         {
             var location = type.Locations.FirstOrDefault(static location => location.IsInSource);
@@ -98,7 +156,8 @@ public sealed class NanopassPassAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var model = new PassResolver(input, null, null).Resolve();
+        var model = new PassResolver(input, Language(0, input.From), Language(1, input.To))
+            .Resolve();
         var properties = ImmutableDictionary<string, string?>.Empty;
         var stubs = model.Problems.Select(static problem => problem.Stub)
             .OfType<string>().ToArray();
@@ -120,13 +179,54 @@ public sealed class NanopassPassAnalyzer : DiagnosticAnalyzer
             };
             var fix = problem.Number == 1 && !offeredGroupFix ? properties : null;
             offeredGroupFix |= fix is not null;
-            var tree = context.Compilation.SyntaxTrees.FirstOrDefault(tree =>
-                tree.FilePath == problem.Location.Path
-                && problem.Location.Span.End <= tree.Length);
+            var tree = trees[problem.Location.Path ?? string.Empty].FirstOrDefault(tree =>
+                problem.Location.Span.End <= tree.Length);
             var location = tree is null
                 ? type.Locations.FirstOrDefault(static candidate => candidate.IsInSource)
                 : Location.Create(tree, problem.Location.Span);
             context.ReportDiagnostic(Diagnostic.Create(descriptor, location, fix, problem.Message));
+        }
+
+        LanguageModel? Language(int index, PassInput.Endpoint endpoint) =>
+            !endpoint.IsRaw && reader!.EndpointSymbol(index) is { } language
+                ? languages.GetOrAdd(language, source => endpoint.Metadata is { } metadata
+                    ? LanguageMetadataCodec.Decode(metadata)
+                    : ResolveSource(source, preGenCompilation, token))
+                : null;
+    }
+
+    private static LanguageModel? ResolveSource(
+        INamedTypeSymbol root, Compilation compilation, CancellationToken token)
+    {
+        var inputs = ImmutableArray.CreateBuilder<LanguageInput>();
+        var visited = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        Visit(root);
+        return new LanguageResolver(inputs.ToImmutable()).ResolveAll().FirstOrDefault()?.Model;
+
+        void Visit(INamedTypeSymbol symbol)
+        {
+            token.ThrowIfCancellationRequested();
+            if (!visited.Add(symbol)
+                || !SymbolEqualityComparer.Default.Equals(
+                    symbol.ContainingAssembly,
+                    compilation.Assembly)
+                || symbol.DeclaringSyntaxReferences.Length == 0
+                || PassInputReader.Attribute(symbol, "LanguageMetadataAttribute") is not null
+                || PassInputReader.Attribute(symbol, "LanguageAttribute") is null)
+            {
+                return;
+            }
+
+            inputs.Add(LanguageInputReader.Read(symbol, compilation, token));
+            foreach (var attribute in symbol.GetAttributes())
+            {
+                if (attribute.AttributeClass?.ToDisplayString() is
+                    "Hcoona.Nanopass.ExtendsAttribute" or "Hcoona.Nanopass.PrunedLanguageAttribute"
+                    && PassInputReader.At(attribute, 0).Value is INamedTypeSymbol parent)
+                {
+                    Visit(parent);
+                }
+            }
         }
     }
 }

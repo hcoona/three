@@ -21,6 +21,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.CompilerServices;
 
 using static Hcoona.Nanopass.Generators.PassInputReader;
 
@@ -30,12 +31,17 @@ internal sealed partial class PassResolver(
     PassInput input, LanguageModel? sourceLanguage, LanguageModel? targetLanguage)
 {
     internal const string InputVariable = "__np_input";
-    internal const string NodeVariable = "__np_node";
-
+    private static readonly ProcessorIdentity Identity = new();
+    private static readonly List<PassModel.Clause> EmptyClauses = [];
     private readonly PassGrammar source = new(input.From, sourceLanguage);
     private readonly PassGrammar target = new(input.To, targetLanguage);
     private readonly List<PassModel.Processor> processors = [];
-    private readonly Dictionary<PassModel.Processor, HashSet<PassModel.Processor>> calls = [];
+    private readonly Dictionary<PassModel.Processor, List<PassModel.Clause>> clauses =
+        new(Identity);
+
+    private readonly Dictionary<PassModel.Processor, HashSet<PassModel.Processor>> calls =
+        new(Identity);
+
     private readonly List<PassModel.Problem> problems = [];
     private readonly HashSet<string> names = new(
         input.MemberNames, StringComparer.Ordinal);
@@ -52,21 +58,32 @@ internal sealed partial class PassResolver(
 
     internal PassModel Resolve()
     {
+        input = input with
+        {
+            Methods = new(input.Methods.Select(this.NormalizeMethod)),
+            Projections = new(input.Projections.Select(projection => projection with
+            {
+                From = this.NormalizeType(projection.From),
+                AsTarget = this.NormalizeType(projection.AsTarget),
+            })),
+            ReferenceTypes = new(input.ReferenceTypes.Select(this.NormalizeType)),
+        };
         var sourceEntry = this.Entry(this.source);
         var targetEntry = this.Entry(this.target);
         var partialRuns = input.Methods.Where(static method =>
             method.Name == "Run" && method.IsPartialDeclaration).ToArray();
         var customRuns = input.Methods.Where(method =>
             method.Name == "Run" && !method.IsPartialDeclaration
-            && method.Parameters.Count > 0 && Same(method.Parameters[0].Type, sourceEntry?.Type))
+            && method.Parameters.Count > 0 && Same(method.Parameters[0].Type, sourceEntry?.Type)
+            && IsValueParameter(method.Parameters[0]))
             .OrderBy(static method => method.Parameters.Count).ToArray();
         var run = partialRuns.FirstOrDefault() ?? customRuns.FirstOrDefault();
         bool customRun = run is { IsPartialDeclaration: false };
-        var parameters = run is null ? [] : Parameters(run.Parameters.Skip(1));
-        if (partialRuns.Length > 1 || (run is not null && sourceEntry is not null
-            && targetEntry is not null && (!ValidMethod(run)
+        var parameters = run is null ? default : Parameters(run.Parameters.Skip(1));
+        if (partialRuns.Length > 1 || (run is { IsPartialDeclaration: true }
+            && sourceEntry is not null && targetEntry is not null && (!ValidMethod(run)
                 || !Same(run.Parameters[0].Type, sourceEntry.Type)
-                || !this.ValidRunResult(run, targetEntry.Type))))
+                || run.IsStatic || !Same(run.ReturnType, targetEntry.Type))))
         {
             this.Invalid(run, "has an invalid or ambiguous Run declaration.");
         }
@@ -81,6 +98,8 @@ internal sealed partial class PassResolver(
 
         string? entryCall = null;
         string? interfaceCall = null;
+        var alternatives =
+            new Dictionary<PassModel.Processor, EquatableArray<PassModel.Alternative>>(Identity);
         if (sourceEntry is not null && targetEntry is not null && this.problems.Count == 0)
         {
             bool needsEntry = !customRun || input.Methods.Any(static method =>
@@ -107,12 +126,16 @@ internal sealed partial class PassResolver(
                 interfaceCall = run is null ? entryCall : null;
             }
 
-            if (run is not null && parameters.All(static parameter => parameter.CanOmit))
+            var callable = partialRuns.Concat(customRuns).Where(static method =>
+                method.TypeParameters.Count == 0
+                && method.Parameters.Skip(1).All(static parameter => parameter.CanOmit)).ToArray();
+            var adapter = callable.FirstOrDefault(static method => method.Parameters.Count == 1)
+                ?? (callable.Length == 1 ? callable[0] : null);
+            if (adapter is not null && ValidMethod(adapter) && !adapter.ReturnType.HasTupleElements
+                && this.ConvertsGrammarPrimary(adapter.ReturnType, targetEntry))
             {
-                var omitted = parameters
-                    .Select(static parameter => OmittedArgument(parameter))
-                    .OfType<string>();
-                interfaceCall = Call(run, [InputVariable, .. omitted]);
+                var omitted = adapter.Parameters.Skip(1).Select(OmittedArgument).OfType<string>();
+                interfaceCall = Call(adapter, [InputVariable, .. omitted]);
             }
 
             foreach (var method in input.Methods)
@@ -127,7 +150,8 @@ internal sealed partial class PassResolver(
             {
                 for (int i = 0; i < this.processors.Count; i++)
                 {
-                    this.Build(this.processors[i]);
+                    var processor = this.processors[i];
+                    alternatives.Add(processor, this.Build(processor));
                 }
 
                 this.CheckReachability(customRun ? null : entry);
@@ -146,8 +170,11 @@ internal sealed partial class PassResolver(
             run,
             entryCall,
             interfaceCall,
-            [.. this.processors],
-            [.. diagnostics]);
+            new(this.processors.Select(
+                processor => alternatives.TryGetValue(processor, out var rules)
+                    ? processor with { Alternatives = rules }
+                    : processor)),
+            new(diagnostics));
     }
 
     private static bool ValidMethod(PassInput.Method method) =>
@@ -161,36 +188,41 @@ internal sealed partial class PassResolver(
     private static bool IsValueParameter(PassInput.Parameter parameter) =>
         parameter.Modifier is "" or "params ";
 
-    private static ImmutableArray<PassInput.Parameter> Parameters(
-        IEnumerable<PassInput.Parameter> parameters) => [.. parameters];
+    private static EquatableArray<PassInput.Parameter> Parameters(
+        IEnumerable<PassInput.Parameter> parameters) => new(parameters);
 
     private static string InputName(PassModel.Processor processor) =>
         processor.Method is { } method ? Id(method.Parameters[0].Name) : InputVariable;
 
-    private static string Call(PassInput.Method method, IEnumerable<string> arguments) =>
-        (method.IsStatic ? string.Empty : "this.") + Id(method.Name)
+    private static string Call(
+        PassInput.Method method, IEnumerable<string> arguments, string receiver = "this") =>
+        (method.IsStatic ? string.Empty : receiver + ".") + Id(method.Name)
         + "(" + string.Join(", ", arguments) + ")";
 
     private static string Invoke(
-        PassModel.Processor processor, string ir, ImmutableArray<string> arguments) =>
+        PassModel.Processor processor,
+        string ir,
+        ImmutableArray<string> arguments,
+        string receiver = "this") =>
         processor.Method is { } method
-            ? Call(method, [ir, .. arguments])
-            : $"this.{Id(processor.Name)}({string.Join(", ", new[] { ir }.Concat(arguments))})";
+            ? Call(method, [ir, .. arguments], receiver)
+            : $"{receiver}.{Id(processor.Name)}("
+                + $"{string.Join(", ", new[] { ir }.Concat(arguments))})";
 
     private static (ImmutableArray<string> Arguments, int Matched)? Bind(
         PassModel.Processor processor,
-        ImmutableArray<PassInput.Parameter> ambient,
+        EquatableArray<PassInput.Parameter> ambient,
         EquatableArray<string> explicitArguments = default,
         Func<string, PassType, string?>? field = null)
     {
-        if (explicitArguments.Count > processor.Parameters.Length)
+        if (explicitArguments.Count > processor.Parameters.Count)
         {
             return null;
         }
 
         var result = ImmutableArray.CreateBuilder<string>();
         int matched = 0;
-        for (int i = 0; i < processor.Parameters.Length; i++)
+        for (int i = 0; i < processor.Parameters.Count; i++)
         {
             var parameter = processor.Parameters[i];
             bool explicitName = i < explicitArguments.Count;
@@ -235,21 +267,57 @@ internal sealed partial class PassResolver(
         };
     }
 
+    private PassInput.Method NormalizeMethod(PassInput.Method method) => method with
+    {
+        ReturnType = this.NormalizeType(method.ReturnType),
+        Parameters = new(method.Parameters.Select(parameter =>
+            parameter with { Type = this.NormalizeType(parameter.Type) })),
+        Rewrites = new(method.Rewrites.Select(rewrite => rewrite.Production is { } production
+            ? rewrite with { Production = this.NormalizeType(production) }
+            : rewrite)),
+    };
+
+    private PassType NormalizeType(PassType type)
+    {
+        if (type.Candidates.Count == 0 && type.Arguments.Count == 0 && type.ContainingType is null)
+        {
+            return type;
+        }
+
+        string? name = type.Candidates.FirstOrDefault(candidate =>
+            HasType(this.source, candidate) || HasType(this.target, candidate));
+        return type with
+        {
+            Name = name ?? type.Name,
+            Candidates = default,
+            ContainingType = type.ContainingType is { } owner ? this.NormalizeType(owner) : null,
+            Arguments = new(type.Arguments.Select(this.NormalizeType)),
+        };
+
+        static bool HasType(PassGrammar grammar, string name) =>
+            grammar.Kinds.Any(kind => kind.Type.Name == name || PassGrammar.Rules(kind)
+                .Any(rule => grammar.RuleType(rule)?.Name == name));
+    }
+
     private string InvokeFrom(
         PassModel.Processor caller,
         PassModel.Processor callee,
         string ir,
-        ImmutableArray<string> arguments)
+        ImmutableArray<string> arguments,
+        string receiver = "this")
     {
         if (!this.calls.TryGetValue(caller, out var callees))
         {
-            callees = [];
+            callees = new(Identity);
             this.calls.Add(caller, callees);
         }
 
         callees.Add(callee);
-        return Invoke(callee, ir, arguments);
+        return Invoke(callee, ir, arguments, receiver);
     }
+
+    private List<PassModel.Clause> Clauses(PassModel.Processor processor) =>
+        this.clauses.TryGetValue(processor, out var rules) ? rules : EmptyClauses;
 
     private void CheckReachability(PassModel.Processor? entry)
     {
@@ -260,7 +328,7 @@ internal sealed partial class PassResolver(
             pending.Push(entry);
         }
 
-        var reachable = new HashSet<PassModel.Processor>();
+        var reachable = new HashSet<PassModel.Processor>(Identity);
         while (pending.Count > 0)
         {
             var processor = pending.Pop();
@@ -277,7 +345,7 @@ internal sealed partial class PassResolver(
         {
             if (processor.Method is null && !reachable.Contains(processor))
             {
-                foreach (var clause in processor.Clauses)
+                foreach (var clause in this.Clauses(processor))
                 {
                     this.Invalid(clause.Method, $"has unreachable rewrite '{clause.Method.Name}'.");
                 }
@@ -306,7 +374,8 @@ internal sealed partial class PassResolver(
 
     private void ReadProcessor(PassInput.Method method, PassInput.Processor processor)
     {
-        if (!ValidMethod(method) || (method.IsStatic && method.IsPartialDeclaration))
+        if (!ValidMethod(method) || (method.IsStatic && method.IsPartialDeclaration)
+            || (method.ReturnType.Nullable && method.ReturnType.HasTupleElements))
         {
             this.Invalid(method, $"has invalid processor '{method.Name}'.");
             return;
@@ -329,7 +398,16 @@ internal sealed partial class PassResolver(
             return;
         }
 
-        if (!processor.ValidDefaults)
+        if (!method.IsPartialDeclaration && processor.HasDefaults)
+        {
+            string message = $"uses DefaultExtraReturns on '{method.Name}', "
+                + "which is not a synthesized partial processor.";
+            this.Invalid(method, message);
+            return;
+        }
+
+        if (processor.Defaults is { } defaults && (!method.ReturnType.IsTuple
+            || defaults.Count != method.ReturnType.Arguments.Count - 1))
         {
             this.Invalid(method, $"has invalid default extra returns on '{method.Name}'.");
             return;
@@ -342,41 +420,57 @@ internal sealed partial class PassResolver(
             method.ReturnType,
             Parameters(method.Parameters.Skip(1)),
             method,
-            processor.Defaults));
+            processor.Defaults ?? default));
     }
 
-    private bool Converts(PassType from, PassType to) =>
-        Same(from, to)
-        || this.target.CanConvert(from, to)
-        || (from.IsTuple && to.IsTuple && from.Arguments.Count == to.Arguments.Count
-            && from.Arguments.Zip(to.Arguments, this.Converts).All(static match => match))
-        || input.Conversions.Contains(new(from.Key, to.Key));
+    private bool IsGrammarUnion(PassType type) =>
+        this.source.IsEndpointUnion(type with { Nullable = false })
+        || this.target.IsEndpointUnion(type with { Nullable = false });
 
-    private bool ValidRunResult(PassInput.Method run, PassType targetType) =>
-        run.IsPartialDeclaration
-            ? !run.IsStatic && Same(run.ReturnType, targetType)
-            : this.Converts(run.ReturnType, targetType);
+    private bool ConvertsGrammarPrimary(PassType primary, PassModel.Kind to) =>
+        Same(primary, to.Type) || this.target.CanConvert(primary, to.Type)
+        || (to.Name == "*" && !primary.Nullable
+            && primary.Name.StartsWith(Runtime + "SExpr.", StringComparison.Ordinal))
+        || (to.NonTerminal is null && to.Type.Name is "object" or "global::System.Object"
+            && (!primary.Nullable || to.Type.Nullable));
+
+    private bool ConvertsPrimary(PassType primary, PassModel.Kind to, PassType result) =>
+        this.ConvertsGrammarPrimary(primary, to)
+        || (to.NonTerminal is null && this.SlotCost(primary, result) >= 0);
+
+    private bool HasImplicitConversion(PassType from, PassType to, bool referenceOnly = false) =>
+        input.Conversions.Contains(new(from.Key, to.Key, IsReference: true))
+        || (!referenceOnly
+            && input.Conversions.Contains(new(from.Key, to.Key, IsReference: false)));
+
+    private bool MatchesRewriteResult(PassType result, PassModel.Processor processor) =>
+        !(result.Nullable && result.HasTupleElements)
+        && result.IsTuple == processor.Result.IsTuple
+        && (!result.IsTuple || result.Arguments.Count == processor.Result.Arguments.Count)
+        && this.ConvertsPrimary(result.Primary, processor.To, processor.Result.Primary);
 
     private PassModel.Processor? Select(
         PassModel.Kind from,
         PassModel.Kind to,
-        ImmutableArray<PassInput.Parameter> ambient,
+        EquatableArray<PassInput.Parameter> ambient,
         PassInput.Method? where,
         bool synthesize,
         bool report = true,
-        Func<PassModel.Processor, bool>? compatible = null)
+        Func<PassModel.Processor, int>? compatibilityCost = null)
     {
         var candidates = this.processors.Where(processor =>
-            (processor.Method is not null || (!synthesize && processor.Clauses.Count > 0))
-            && processor.From == from && processor.To == to
-            && (compatible is null || compatible(processor)))
-            .Select(processor => (Processor: processor, Binding: Bind(processor, ambient)))
-            .Where(static item => item.Binding is not null)
-            .OrderByDescending(static item => item.Binding!.Value.Matched)
+            (processor.Method is not null || (!synthesize && this.Clauses(processor).Count > 0))
+            && processor.From == from && processor.To == to)
+            .Select(processor => (Processor: processor, Binding: Bind(processor, ambient),
+                Cost: compatibilityCost?.Invoke(processor) ?? 0))
+            .Where(static item => item.Binding is not null && item.Cost >= 0)
+            .OrderBy(static item => item.Cost)
+            .ThenByDescending(static item => item.Binding!.Value.Matched)
             .Take(2).ToArray();
         if (candidates.Length > 0)
         {
             if (candidates.Length == 2
+                && candidates[0].Cost == candidates[1].Cost
                 && candidates[0].Binding!.Value.Matched == candidates[1].Binding!.Value.Matched)
             {
                 if (report)
@@ -418,9 +512,9 @@ internal sealed partial class PassResolver(
             from,
             to,
             to.Type,
-            [],
+            default,
             null,
-            []);
+            default);
         this.processors.Add(inferred);
         return inferred;
     }
@@ -439,7 +533,7 @@ internal sealed partial class PassResolver(
         }
         else if (rewrite.Processor is null)
         {
-            var ambient = entry?.Parameters ?? [];
+            var ambient = entry?.Parameters ?? default;
             var owners = this.source.Kinds
                 .Select(kind => (Kind: kind, Rules: MatchingRules(kind, ambient)))
                 .Where(static item => item.Rules.Length > 0)
@@ -454,7 +548,7 @@ internal sealed partial class PassResolver(
             var outputKind = this.target.Infer(method.ReturnType.Primary);
             bool convertsToEntry = entry is not null
                 && owners.Any(item => item.Kind == entry.From)
-                && this.Converts(method.ReturnType, entry.Result);
+                && this.MatchesRewriteResult(method.ReturnType, entry);
             if (rewrite.IsElse || (convertsToEntry && entry!.To == outputKind))
             {
                 processor = entry;
@@ -481,16 +575,22 @@ internal sealed partial class PassResolver(
             || method.IsPartialDeclaration || method.TypeParameters.Count != 0
             || method.ReturnModifier.Length != 0 || method.ReturnType.Name == "void"
             || !method.Parameters.All(static parameter => IsValueParameter(parameter))
-            || !this.Converts(method.ReturnType, processor.Result))
+            || !this.MatchesRewriteResult(method.ReturnType, processor))
         {
             this.Invalid(method, $"has invalid rewrite '{method.Name}'.");
             return;
         }
 
-        processor.Clauses.Add(new(method, rewrite, rule));
+        if (!this.clauses.TryGetValue(processor, out var rules))
+        {
+            rules = [];
+            this.clauses.Add(processor, rules);
+        }
+
+        rules.Add(new(method, rewrite, rule));
 
         LanguageModel.Production[] MatchingRules(
-            PassModel.Kind kind, ImmutableArray<PassInput.Parameter> ambient)
+            PassModel.Kind kind, EquatableArray<PassInput.Parameter> ambient)
         {
             var parameters = method.Parameters.Where(parameter => parameter.Recursion is null
                 && !ambient.Any(value =>
@@ -532,4 +632,11 @@ internal sealed partial class PassResolver(
             3,
             method?.Location ?? input.Location,
             $"Pass '{input.Name}' {message}"));
+
+    private sealed class ProcessorIdentity : IEqualityComparer<PassModel.Processor>
+    {
+        public bool Equals(PassModel.Processor? x, PassModel.Processor? y) => ReferenceEquals(x, y);
+
+        public int GetHashCode(PassModel.Processor obj) => RuntimeHelpers.GetHashCode(obj);
+    }
 }

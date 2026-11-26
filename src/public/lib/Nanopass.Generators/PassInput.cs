@@ -16,6 +16,8 @@
 // You should have received a copy of the GNU General Public License along with
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
+using Microsoft.CodeAnalysis;
+
 namespace Hcoona.Nanopass.Generators;
 
 internal sealed record PassInput(
@@ -31,7 +33,9 @@ internal sealed record PassInput(
     bool Trace,
     EquatableArray<PassInput.Method> Methods,
     EquatableArray<string> MemberNames,
-    EquatableArray<PassInput.Conversion> Conversions)
+    EquatableArray<PassInput.TypeConversion> Conversions,
+    EquatableArray<PassInput.TypeProjection> Projections,
+    EquatableArray<PassType> ReferenceTypes)
 {
     internal sealed record Endpoint(string? Name, string? Metadata, bool IsRaw, string? Entry);
 
@@ -61,7 +65,7 @@ internal sealed record PassInput(
     }
 
     internal sealed record Processor(
-        string? From, string? To, EquatableArray<string> Defaults, bool ValidDefaults);
+        string? From, string? To, EquatableArray<string>? Defaults, bool HasDefaults);
 
     internal sealed record Rewrite(
         PassType? Production, string? Processor, string? Guard, bool IsElse, int Order);
@@ -69,5 +73,8 @@ internal sealed record PassInput(
     internal sealed record Recur(
         string? Field, string? Processor, EquatableArray<string> Arguments);
 
-    internal sealed record Conversion(string From, string To);
+    internal sealed record TypeConversion(string From, string To, bool IsReference);
+
+    internal sealed record TypeProjection(
+        PassType From, PassType AsTarget, EquatableArray<VarianceKind> Variances);
 }

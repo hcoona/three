@@ -60,7 +60,7 @@ internal sealed record LanguageModel(
         bool IsDeclared,
         bool IsImplicit);
 
-    internal sealed record Handler(string Name, string Owner);
+    internal sealed record Handler(string Name, string Owner, string? Binding = null);
 
     internal sealed record Field(
         string MetaVar,

@@ -299,6 +299,103 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
     }
 
     [TestMethod]
+    public void Diagnostics_RejectDuplicateLanguageDeclarationsWithoutStoppingGeneration()
+    {
+        const string input = """
+            [Language, NonTerminalDef("Expr", ["e"], "(unit)")]
+            public static partial class Duplicate;
+            [Language]
+            public static partial class Duplicate;
+
+            [Language, NonTerminalDef("Expr", ["e"], "(valid)")]
+            public static partial class Valid;
+            [Pass(typeof(Valid), typeof(Valid))]
+            public partial class ValidPass;
+            """;
+
+        var result = Driver().RunGenerators(this.Compile("DuplicateLanguages", input),
+            testContext.CancellationToken).GetRunResult();
+
+        Assert.AreEqual("NP0104", Assert.ContainsSingle(result.Diagnostics).Id);
+        Assert.AreSequenceEqual(
+            ["Valid.Nanopass.g.cs", "ValidPass.NanopassPass.g.cs"],
+            Assert.ContainsSingle(result.Results).GeneratedSources
+                .Select(static source => source.HintName).Order(StringComparer.Ordinal));
+    }
+
+    [TestMethod]
+    public void Diagnostics_ReportExcessivePatternDepth()
+    {
+        string pattern = "(deep " + new string('(', 513) + "e" + new string(')', 513) + ")";
+        this.Diagnostics_ReportGrammarErrorsAtSource("NP0105", $$"""
+            [Language, NonTerminalDef("Expr", ["e"], "{{pattern}}")]
+            public static partial class TooDeep;
+            """);
+    }
+
+    [TestMethod]
+    public void BinaryPrettyHandlers_ForwardThroughAccessibleOwnersAndEscapeHooks()
+    {
+        const string librarySource = """
+            namespace Cross;
+
+            [Language, Terminal(
+                typeof(long), "n", Predicate = nameof(@class), Prettifier = nameof(@return))]
+            internal static partial class Hidden
+            {
+                [NonTerminal("e")]
+                public partial union Expr(One);
+
+                [Syntax("(one n)"), Pretty(PrettyHandler = nameof(@switch))]
+                public sealed record One(long N);
+
+                private static bool @class(long n) => n > 0;
+                private static long @return(long n) => n + 1;
+                private static SExpr @switch(SExpr datum) =>
+                    SExpr.List(new SExpr.Sym("hidden"), datum);
+            }
+
+            [Language, Extends(typeof(Hidden))]
+            public static partial class Facade
+            {
+                [Syntax("(two n)"), Pretty(PrettyHandler = nameof(@switch))]
+                public sealed record Two(long N);
+
+                private static SExpr @switch(SExpr datum) =>
+                    SExpr.List(new SExpr.Sym("facade"), datum);
+            }
+            """;
+        const string consumerSource = """
+            namespace Cross;
+
+            [Language, Extends(typeof(Facade))]
+            public static partial class Consumer
+            {
+                public static string Check(string text) => UnparseToString(Parse(text));
+            }
+            """;
+        byte[] image = this.Emit(this.Generate(this.Compile("HiddenHandlers", librarySource)));
+        byte[] consumer = this.Emit(this.Generate(this.Compile(
+            "HandlerConsumer", consumerSource, MetadataReference.CreateFromImage(image))));
+        var context = new AssemblyLoadContext("PrettyHandlerForwarding", isCollectible: true);
+        try
+        {
+            using var libraryStream = new MemoryStream(image);
+            using var consumerStream = new MemoryStream(consumer);
+            _ = context.LoadFromStream(libraryStream);
+            var type = context.LoadFromStream(consumerStream)
+                .GetType("Cross.Consumer", throwOnError: true)!;
+            var check = type.GetMethod("Check")!;
+            Assert.AreEqual("(hidden (one 8))", check.Invoke(null, ["(one 7)"]));
+            Assert.AreEqual("(facade (two 4))", check.Invoke(null, ["(two 3)"]));
+        }
+        finally
+        {
+            context.Unload();
+        }
+    }
+
+    [TestMethod]
     public void BinaryMetadata_PreservesExternalExtensionPruningAndHandlers()
     {
         const string baseSource = """
@@ -491,6 +588,15 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
         Assert.AreEqual(expected, parsed);
         Assert.AreEqual(expected.GetHashCode(), parsed.GetHashCode());
         Assert.AreEqual("#f", CustomUnionNamesLanguage.UnparseToString(parsed));
+    }
+
+    [TestMethod]
+    public void CustomUnion_SynthesizedPassDispatchesThroughExplicitUnionMembers()
+    {
+        var input = CustomUnionNamesLanguage.Parse("#f");
+        var result = new NegateCustomUnion().Run(input);
+
+        Assert.AreEqual("#t", CustomUnionNamesLanguage.UnparseToString(result));
     }
 
     [TestMethod]
@@ -903,6 +1009,13 @@ internal static partial class CustomUnionNamesLanguage
 {
     [NonTerminal("v"), Cases(typeof(bool))]
     public readonly partial struct RawValue;
+}
+
+[Pass(typeof(CustomUnionNamesLanguage), typeof(CustomUnionNamesLanguage))]
+internal sealed partial class NegateCustomUnion
+{
+    [Rewrite]
+    private static CustomUnionNamesLanguage.RawValue Negate(bool value) => !value;
 }
 
 [Language, Entry("EntryPoint"), NonTerminalDef("EntryPoint", ["p"], "(unit)")]

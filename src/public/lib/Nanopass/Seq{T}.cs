@@ -22,6 +22,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Hcoona.Nanopass;
 
@@ -119,6 +120,37 @@ public readonly struct Seq<T> : IReadOnlyList<T>, IEquatable<Seq<T>>
     {
         ArgumentNullException.ThrowIfNull(selector);
         return new(ImmutableArray.CreateRange(this.Items, selector));
+    }
+
+    /// <summary>
+    /// Projects each element of the sequence into a new form using an explicit state argument to
+    /// avoid closure allocations.
+    /// </summary>
+    /// <typeparam name="TState">The type of the caller-supplied state value.</typeparam>
+    /// <typeparam name="TResult">The element type of the resulting sequence.</typeparam>
+    /// <param name="state">
+    /// The state value forwarded to each invocation of <paramref name="selector"/>.
+    /// </param>
+    /// <param name="selector">
+    /// A transform function applied to each element and <paramref name="state"/>.
+    /// </param>
+    /// <returns>A <see cref="Seq{T}"/> containing the projected elements in order.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="selector"/> is null.</exception>
+    public Seq<TResult> Select<TState, TResult>(TState state, Func<T, TState, TResult> selector)
+    {
+        ArgumentNullException.ThrowIfNull(selector);
+        if (this.IsEmpty)
+        {
+            return Seq<TResult>.Empty;
+        }
+
+        var result = new TResult[this.items.Length];
+        for (int i = 0; i < result.Length; i++)
+        {
+            result[i] = selector(this.items[i], state);
+        }
+
+        return new(ImmutableCollectionsMarshal.AsImmutableArray(result));
     }
 
     /// <summary>

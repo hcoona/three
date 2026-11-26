@@ -18,6 +18,7 @@
 
 using System;
 using System.Collections;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -31,26 +32,46 @@ namespace Hcoona.Nanopass;
 [EditorBrowsable(EditorBrowsableState.Never)]
 internal sealed class GrammarPattern
 {
-    private readonly Dictionary<Symbol, int> indices;
+    private readonly FrozenDictionary<Symbol, int> indices;
     private readonly LanguageRuntime.Field[] fields;
     private readonly SExpr syntax;
     private readonly SExpr? pretty;
+    private readonly SExpr.Sym? head;
+    private readonly int minimumLength;
+    private readonly bool hasFixedLength;
 
     internal GrammarPattern(string syntax, string? pretty, LanguageRuntime.Field[] fields)
     {
         this.fields = fields;
         this.syntax = SExpr.Parse(syntax);
         this.pretty = pretty is null ? null : SExpr.Parse(pretty);
-        this.indices = new(fields.Length);
+        var index = new Dictionary<Symbol, int>(fields.Length);
         for (int i = 0; i < fields.Length; i++)
         {
-            this.indices.Add(fields[i].Name, i);
+            index.Add(fields[i].Name, i);
+        }
+
+        this.indices = index.ToFrozenDictionary();
+        SExpr pattern = this.StripMaybe(this.syntax);
+        (this.minimumLength, this.hasFixedLength) = this.Measure(pattern);
+        if (pattern is SExpr.Pair { Car: SExpr.Sym symbol } pair
+            && !this.indices.ContainsKey(symbol.Value) && Repetition(pair) is null)
+        {
+            this.head = symbol;
         }
     }
 
     internal bool TryMatch(
         SExpr input, Func<LanguageRuntime.Field, SExpr, object?> read, out object?[] captures)
     {
+        if ((this.head is not null && (input is not SExpr.Pair pair
+                || !this.head.Equals(pair.Car)))
+            || !HasLength(input, this.minimumLength, this.hasFixedLength))
+        {
+            captures = [];
+            return false;
+        }
+
         captures = new object?[this.fields.Length];
         return this.Match(this.syntax, input, captures, read);
     }
@@ -71,10 +92,49 @@ internal sealed class GrammarPattern
         datum is SExpr.Sym symbol
         && string.Equals(symbol.Value.Name, text, StringComparison.Ordinal);
 
+    private static SExpr.Pair? Repetition(SExpr.Pair pair) =>
+        pair.Cdr is SExpr.Pair next && IsSymbol(next.Car, "...") ? next : null;
+
+    private static bool HasLength(SExpr input, int minimum, bool exact)
+    {
+        for (int i = 0; i < minimum; i++)
+        {
+            if (input is not SExpr.Pair pair)
+            {
+                return false;
+            }
+
+            input = pair.Cdr;
+        }
+
+        return !exact || input is SExpr.Nil;
+    }
+
     private static object? Normalize(object? value, int depth) => depth == 0
         ? value
         : new SequenceColumn(((IEnumerable)value!).Cast<object?>()
             .Select(item => Normalize(item, depth - 1)).ToArray());
+
+    private (int Minimum, bool Fixed) Measure(SExpr pattern)
+    {
+        int minimum = 0;
+        bool repeats = false;
+        while ((pattern = this.StripMaybe(pattern)) is SExpr.Pair pair)
+        {
+            if (Repetition(pair) is { } repetition)
+            {
+                repeats = true;
+                pattern = repetition.Cdr;
+            }
+            else
+            {
+                minimum++;
+                pattern = pair.Cdr;
+            }
+        }
+
+        return (minimum, pattern is SExpr.Nil && !repeats);
+    }
 
     private SExpr StripMaybe(SExpr pattern) =>
         pattern is SExpr.Pair { Cdr: SExpr.Pair { Car: SExpr.Sym leaf, Cdr: SExpr.Nil } } pair
@@ -90,7 +150,23 @@ internal sealed class GrammarPattern
         object?[] captures,
         Func<LanguageRuntime.Field, SExpr, object?> read)
     {
-        pattern = this.StripMaybe(pattern);
+        while ((pattern = this.StripMaybe(pattern)) is SExpr.Pair pair)
+        {
+            if (Repetition(pair) is { } repetition)
+            {
+                return this.MatchRepetition(pair.Car, repetition.Cdr, input, captures, read);
+            }
+
+            if (input is not SExpr.Pair inputPair
+                || !this.Match(pair.Car, inputPair.Car, captures, read))
+            {
+                return false;
+            }
+
+            pattern = pair.Cdr;
+            input = inputPair.Cdr;
+        }
+
         if (pattern is SExpr.Sym symbol && this.indices.TryGetValue(symbol.Value, out int index))
         {
             LanguageRuntime.Field field = this.fields[index];
@@ -104,19 +180,7 @@ internal sealed class GrammarPattern
             return captures[index] is not null;
         }
 
-        if (pattern is not SExpr.Pair pair)
-        {
-            return pattern.Equals(input);
-        }
-
-        if (pair.Cdr is SExpr.Pair repetition && IsSymbol(repetition.Car, "..."))
-        {
-            return this.MatchRepetition(pair.Car, repetition.Cdr, input, captures, read);
-        }
-
-        return input is SExpr.Pair inputPair
-            && this.Match(pair.Car, inputPair.Car, captures, read)
-            && this.Match(pair.Cdr, inputPair.Cdr, captures, read);
+        return pattern.Equals(input);
     }
 
     private bool MatchRepetition(
@@ -126,38 +190,82 @@ internal sealed class GrammarPattern
         object?[] captures,
         Func<LanguageRuntime.Field, SExpr, object?> read)
     {
-        int[] columns = [.. this.CaptureIndices(item).Distinct()];
-        input.SplitList(out Seq<SExpr> items, out _);
-        suffix.SplitList(out Seq<SExpr> required, out _);
-        int count = items.Length - required.Length;
-        if (count < 0)
+        var (minimum, fixedLength) = this.Measure(suffix);
+        int count = 0;
+        SExpr tail = input;
+        while (tail is SExpr.Pair pair)
+        {
+            count++;
+            tail = pair.Cdr;
+        }
+
+        int limit = count - minimum;
+        if (limit < 0 || (fixedLength && tail is not SExpr.Nil))
         {
             return false;
         }
 
+        int[] columns = [.. this.CaptureIndices(item).Distinct()];
         foreach (int column in columns)
         {
-            captures[column] = new object?[count];
+            captures[column] = limit == 0 ? Array.Empty<object?>() : new object?[limit];
         }
 
-        for (int i = 0; i < count; i++)
+        var splits = fixedLength ? null : new SExpr[limit + 1];
+        var row = limit == 0 ? [] : new object?[this.fields.Length];
+        int matched = 0;
+        while (matched < limit)
         {
+            if (splits is not null)
+            {
+                splits[matched] = input;
+            }
+
             var pair = (SExpr.Pair)input;
-            object?[] row = new object?[this.fields.Length];
             if (!this.Match(item, pair.Car, row, read))
             {
-                return false;
+                break;
             }
 
             foreach (int column in columns)
             {
-                ((object?[])captures[column]!)[i] = row[column];
+                ((object?[])captures[column]!)[matched] = row[column];
             }
 
+            matched++;
             input = pair.Cdr;
         }
 
-        return this.Match(suffix, input, captures, read);
+        if (splits is null)
+        {
+            if (matched != limit || !this.Match(suffix, input, captures, read))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            splits[matched] = input;
+            while (matched >= 0 && !this.Match(suffix, splits[matched], captures, read))
+            {
+                matched--;
+            }
+
+            if (matched < 0)
+            {
+                return false;
+            }
+        }
+
+        if (matched < limit)
+        {
+            foreach (int column in columns)
+            {
+                captures[column] = ((object?[])captures[column]!)[..matched];
+            }
+        }
+
+        return true;
     }
 
     private SExpr Render(
@@ -168,7 +276,7 @@ internal sealed class GrammarPattern
         {
             return captures[index] is { } value
                 ? print(this.fields[index], value)
-                : new SExpr.Bool(false);
+                : SExpr.Bool.False;
         }
 
         if (pattern is not SExpr.Pair pair)
@@ -176,7 +284,7 @@ internal sealed class GrammarPattern
             return pattern;
         }
 
-        if (pair.Cdr is not SExpr.Pair repetition || !IsSymbol(repetition.Car, "..."))
+        if (Repetition(pair) is not { } repetition)
         {
             return new SExpr.Pair(
                 this.Render(pair.Car, captures, print), this.Render(pair.Cdr, captures, print));

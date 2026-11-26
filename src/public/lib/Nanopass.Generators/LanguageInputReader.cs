@@ -32,10 +32,8 @@ internal static class LanguageInputReader
     private const string RuntimeNamespace = "Hcoona.Nanopass";
 
     internal static LanguageInput Read(
-        GeneratorAttributeSyntaxContext context, CancellationToken cancellationToken)
+        INamedTypeSymbol type, Compilation compilation, CancellationToken cancellationToken)
     {
-        var type = (INamedTypeSymbol)context.TargetSymbol;
-        var compilation = context.SemanticModel.Compilation;
         var qualifiedName = TypeName(type);
         List<LanguageInput.Inheritance> bases = [];
         List<string> entries = [];
@@ -200,7 +198,6 @@ internal static class LanguageInputReader
             Access(type.DeclaredAccessibility),
             new(containers),
             isValidDeclaration,
-            LocationInfo.From(context.TargetNode.GetLocation()),
             new(bases),
             new(entries),
             new(terminals),

@@ -10,14 +10,11 @@ Rather than embedding a Lisp macro sub-language inside strings or runtime expres
 
 - **Native C# 15 Type-First & Clause-Based IR Definitions**: Define base languages either directly with C# 15 `partial union` and `sealed record` declarations or with concise Nanopass S-expression production attributes (`[Terminal]`, `[NonTerminalDef]`).
 - **Incremental Grammar Algebra**: Derive new IR stages via `[Extends(typeof(LBase))]`, `[Remove(...)]`, `[RemoveTerminal(...)]`, `[ExtendNonTerminal(...)]`, and `[PrunedLanguage(typeof(LSource))]` across arbitrarily deep inheritance chains within one compilation or across assemblies.
-- **Value-Equatable AST Containers**: `Seq<T>` provides deep structural equality, hash codes, C# collection-expression construction (`[a, b, .. rest]`), and C# list-pattern slicing (`[var head, .. var tail]`).
-- **S-Expression Tooling**: Generated `Parse`, `Unparse` (raw and `=>` pretty modes), `ToSExpression`, `DiffTo`, `Prune`, `CountNodes`, and language/nonterminal predicates (`IsLanguageTerm`, `Is<NonTerminal>`).
+- **Value-Equatable AST Containers**: `Seq<T>` provides deep structural equality, hash codes, zero-closure `Select<TState, TResult>` projection, C# collection-expression construction (`[a, b, .. rest]`), and C# list-pattern slicing (`[var head, .. var tail]`).
+- **S-Expression Tooling**: Generated memoized `Parse`, `Unparse` (raw and `=>` pretty modes), `ToSExpression`, `DiffTo`, `Prune`, `CountNodes`, and recursive language/nonterminal predicates (`IsLanguageTerm`, `Is<NonTerminal>`).
 - **Automatic Pass Synthesis & Catamorphisms**: Declare transformations via `[Pass(typeof(LIn), typeof(LOut))]`, `[Processor]`, `[Rewrite]`, and `[Recur]` catamorphisms over scalars, `Maybe` (`?`), nested `Seq<T>`, and extra-return tuples, with parameter-name context forwarding, guarded clauses, `IsElse` fallbacks, `RawTerm` (`*`) endpoints, `PassDescriptor` introspection, `PassTrace`, and strongly typed `Pipeline` composition.
 - **Compile-Time Diagnostics & IDE Code Fixes**: Static grammar validation (`NP0101`–`NP0105`), pass completeness/signature analysis (`NP1001`–`NP1003`), and `MissingRewriteRuleCodeFixProvider` (single-rule and BatchFixer `[Rewrite]` stub generation).
-
-### Planned Stacked Advancements ([#1779](https://github.com/hcoona/three/issues/1779))
-
-- **Reference Multi-Pass Compilers**: Full C# 15 ports of the upstream CoreScheme-to-JavaScript compiler and 20-pass Scheme compiler test suites.
+- **Reference Multi-Pass Compiler Verification**: Verified end to end in-process against full C# 15 ports of the upstream 4-pass CoreScheme-to-JavaScript compiler and the canonical 20-language (`LP` and `L0`–`L18`) Scheme compiler (`RenameVarsVerifyLegal` plus 19 lowering passes across all 194 upstream `alltests.rkt` programs, alongside dedicated `LP` + `VerifyScheme` tests).
 
 ### Explicit Non-Goals
 

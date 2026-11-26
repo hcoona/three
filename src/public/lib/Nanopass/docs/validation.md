@@ -16,22 +16,25 @@ Following the repository's [shared engineering principles](../../../../../docs/e
 3. **End-to-End Language and Pass Scenario Suites**:
     - `NativeLanguageTests.cs`, `ClauseLanguageTests.cs`, & `PrettyLanguageTests.cs`: C# 15 type-first and clause-based `[Language]` declarations, `[Extends]` + `[Remove]` type safety, S-expression parsing, raw and pretty unparsing, node counting, and `Parse(Unparse(ir))` round-trip invariants.
     - `PassRuntimeTests.cs`, `PassSynthesisTests.cs`, `CatamorphismTests.cs`, `StructuralPassTests.cs`, `ProcessorArgumentTests.cs`, & `PassParserUnparserTests.cs`: End-to-end `define-pass` synthesis, `[Recur]` catamorphisms, guarded/else rewrites, subtype inclusion flattening/splitting/wrapping, `P1`–`P12` parameter-name forwarding and terminal processors, `PassDescriptor` introspection (`ski->lc`), `PassTrace`, and `Pipeline` composition.
+4. **Reference Multi-Pass Compiler Suites (`Compilers/`)**:
+    - `Compilers/CoreScheme/`: Full 4-pass CoreScheme-to-JavaScript compiler (`LCS`, `LACS`, `ParseCoreScheme`, `AlphaRenameCoreScheme`, `ANormalizeCoreScheme`, `GenerateJavaScript`) verified via independent in-process `LCS` and `LACS` evaluators (including Y-combinator `(Fact 5) == 120`) and emitted JavaScript invariants.
+    - `Compilers/Scheme/`: Full 20-language (`LP` and `L0`–`L18`) canonical Nanopass Scheme compiler (`RenameVarsVerifyLegal` and the 19 lowering passes `RemoveImplicitBegin` through `ExplicitLabels` verified across all 194 upstream `alltests.rkt` programs—`164` `main-tests` and `30` `final-tests`—matching upstream `compiler-test.rkt`, plus dedicated compilation and diagnostic tests for `LP.Parse` + `VerifyScheme`, `L0`–`L18` `Parse(Unparse(ir))` round-trip checks, cyclic pair/vector equivalence, and trampolined tail recursion using independent in-process source and `L18` target-machine evaluators).
 
 ## Upstream Test Matrix and Scope Boundary
 
-| Upstream Suite (`nanopass-framework-racket` / `nanopass-framework-scheme`)     | Status in `Hcoona.Nanopass.Tests`                                                                           |
-| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `unit-tests` (`LUNPARSE` raw & pretty, `LBool`, `LBoolLambda`)                 | Covered in `PrettyLanguageTests.cs` and `ClauseLanguageTests.cs`                                            |
-| `maybe-tests`, `maybe-dots-tests`, `maybe-unparse-tests`                       | Covered in `ClauseLanguageTests.cs` and `StructuralPassTests.cs`                                            |
-| `language-dot-support` (`LPairs`, `LList`, `Lx` Issue #7)                      | Covered in `ClauseLanguageTests.cs` and `StructuralPassTests.cs`                                            |
-| `empty-lists`, `LMULTI`, `L-list-tagged`, `Leach-any` (`bb47b56`)              | Covered in `ClauseLanguageTests.cs` and `StructuralPassTests.cs`                                            |
-| `language-node-counter` (`Lnodecount` Issue #42)                               | Covered in `ClauseLanguageTests.cs`                                                                         |
-| `ensure-correct-identifiers` (`LVAR` `break-variable`)                         | Covered in `StructuralPassTests.cs`                                                                         |
-| `argument-name-matching` (`P1`–`P12` parameter matching & terminal processors) | Covered in `ProcessorArgumentTests.cs`                                                                      |
-| `pass-parser-unparser` (`Lski`, `Llc`, `ski->lc`, `ski-in`, `lc-out`)          | Covered in `PassParserUnparserTests.cs`                                                                     |
-| `error-messages` (`define-language` & `define-pass` + `ea23996`, #12/#27/#40)  | Covered in `LanguageGeneratorTests.cs` and `PassAnalyzerTests.cs`                                           |
-| `coresheme-to-javascript-compiler.rkt` & 20-pass `compiler.rkt`/`alltests.rkt` | Scheduled for Stacked Package 3 (in-process semantic equivalence verification without external child tools) |
-| `with-output-language-tests.rkt` (hygienic macro `quasiquote` capture)         | Excluded by project scope ([#1779](https://github.com/hcoona/three/issues/1779))                            |
+| Upstream Suite (`nanopass-framework-racket` / `nanopass-framework-scheme`)     | Status in `Hcoona.Nanopass.Tests`                                                                     |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `unit-tests` (`LUNPARSE` raw & pretty, `LBool`, `LBoolLambda`)                 | Covered in `PrettyLanguageTests.cs` and `ClauseLanguageTests.cs`                                      |
+| `maybe-tests`, `maybe-dots-tests`, `maybe-unparse-tests`                       | Covered in `ClauseLanguageTests.cs` and `StructuralPassTests.cs`                                      |
+| `language-dot-support` (`LPairs`, `LList`, `Lx` Issue #7)                      | Covered in `ClauseLanguageTests.cs` and `StructuralPassTests.cs`                                      |
+| `empty-lists`, `LMULTI`, `L-list-tagged`, `Leach-any` (`bb47b56`)              | Covered in `ClauseLanguageTests.cs` and `StructuralPassTests.cs`                                      |
+| `language-node-counter` (`Lnodecount` Issue #42)                               | Covered in `ClauseLanguageTests.cs`                                                                   |
+| `ensure-correct-identifiers` (`LVAR` `break-variable`)                         | Covered in `StructuralPassTests.cs`                                                                   |
+| `argument-name-matching` (`P1`–`P12` parameter matching & terminal processors) | Covered in `ProcessorArgumentTests.cs`                                                                |
+| `pass-parser-unparser` (`Lski`, `Llc`, `ski->lc`, `ski-in`, `lc-out`)          | Covered in `PassParserUnparserTests.cs`                                                               |
+| `error-messages` (`define-language` & `define-pass` + `ea23996`, #12/#27/#40)  | Covered in `LanguageGeneratorTests.cs` and `PassAnalyzerTests.cs`                                     |
+| `coresheme-to-javascript-compiler.rkt` & 20-pass `compiler.rkt`/`alltests.rkt` | Covered in `Compilers/CoreScheme/` and `Compilers/Scheme/` (all 194 `alltests.rkt` programs verified) |
+| `with-output-language-tests.rkt` (hygienic macro `quasiquote` capture)         | Excluded by project scope ([#1779](https://github.com/hcoona/three/issues/1779))                      |
 
 ## Execution Commands
 

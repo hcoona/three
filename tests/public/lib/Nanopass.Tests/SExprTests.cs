@@ -19,6 +19,7 @@ public sealed class SExprTests
     [DataRow(",@x", "(unquote-splicing x)")]
     [DataRow("#(1 [x . y] #true {z})", "#(1 (x . y) #t (z))")]
     [DataRow("\"a\\\"b\\\\c\\n\\r\\t\"", "\"a\\\"b\\\\c\\n\\r\\t\"")]
+    [DataRow("(plain\u2003\"unescaped\")", "(plain \"unescaped\")")]
     [DataRow(
         "(#true #false -5 +6 3.0 -0.0 .5 1e2 -2.5E-1 +inf.0 +nan.0)",
         "(#t #f -5 6 3.0 -0.0 0.5 100.0 -0.25 +inf.0 +nan.0)")]
@@ -279,6 +280,8 @@ public sealed class SExprTests
     [DataRow("-.2wat", 0)]
     [DataRow("1\0", 0)]
     [DataRow("1.0\0", 0)]
+    [DataRow("1e999", 0)]
+    [DataRow("-1e999", 0)]
     [DataRow("1+2i", 0)]
     [DataRow("1e-2-2/3i", 0)]
     [DataRow("1@2.5", 0)]

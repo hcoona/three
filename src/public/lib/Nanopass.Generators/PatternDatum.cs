@@ -104,6 +104,8 @@ internal sealed record PatternDatum(
 
     private sealed class Reader(string text)
     {
+        private const int MaximumDepth = 512;
+
         private int index;
 
         internal bool End
@@ -115,8 +117,13 @@ internal sealed record PatternDatum(
             }
         }
 
-        internal PatternDatum Read()
+        internal PatternDatum Read(int depth = 0)
         {
+            if (depth > MaximumDepth)
+            {
+                throw new FormatException("The grammar pattern is nested too deeply.");
+            }
+
             if (this.End)
             {
                 throw new FormatException("Expected a grammar pattern.");
@@ -129,12 +136,13 @@ internal sealed record PatternDatum(
                 case '(':
                 case '[':
                 case '{':
-                    return this.ReadList(token switch
+                    char close = token switch
                     {
                         '(' => ')',
                         '[' => ']',
                         _ => '}',
-                    });
+                    };
+                    return this.ReadList(close, depth + 1);
                 case ')':
                 case ']':
                 case '}':
@@ -146,25 +154,25 @@ internal sealed record PatternDatum(
                 case '#':
                     return this.ReadHash(start);
                 case '\'':
-                    return this.ReadAbbreviation("quote");
+                    return this.ReadAbbreviation("quote", depth + 1);
                 case '`':
-                    return this.ReadAbbreviation("quasiquote");
+                    return this.ReadAbbreviation("quasiquote", depth + 1);
                 case ',':
                     if (this.index < text.Length && text[this.index] == '@')
                     {
                         this.index++;
-                        return this.ReadAbbreviation("unquote-splicing");
+                        return this.ReadAbbreviation("unquote-splicing", depth + 1);
                     }
 
-                    return this.ReadAbbreviation("unquote");
+                    return this.ReadAbbreviation("unquote", depth + 1);
                 default:
                     this.index = start;
                     return this.ReadAtom();
             }
         }
 
-        private PatternDatum ReadAbbreviation(string name) =>
-            new(null, new([new(name, default, null), this.Read()]), null);
+        private PatternDatum ReadAbbreviation(string name, int depth) =>
+            new(null, new([new(name, default, null), this.Read(depth)]), null);
 
         private PatternDatum ReadHash(int start)
         {
@@ -246,12 +254,12 @@ internal sealed record PatternDatum(
             return new(atom.ToString(), default, null);
         }
 
-        private PatternDatum ReadList(char end)
+        private PatternDatum ReadList(char end, int depth)
         {
             var items = new List<PatternDatum>();
             while (!this.End && text[this.index] != end)
             {
-                PatternDatum item = this.Read();
+                PatternDatum item = this.Read(depth);
                 if (item.Atom == "." && !item.IsEscapedSymbol)
                 {
                     if (items.Count == 0)
@@ -259,14 +267,16 @@ internal sealed record PatternDatum(
                         throw new FormatException("A dotted tail must follow an item or ellipsis.");
                     }
 
-                    PatternDatum tail = this.Read();
+                    PatternDatum tail = this.Read(depth);
                     if ((tail.Atom == "." && !tail.IsEscapedSymbol)
                         || this.End || text[this.index++] != end)
                     {
                         throw new FormatException("Expected a single dotted tail.");
                     }
 
-                    if (tail.Atom is null)
+                    // A dotted maybe is one field, not two additional list items.
+                    if (tail.Atom is null
+                        && (tail.Items.Count == 0 || tail.Items[0].Atom != "maybe"))
                     {
                         items.AddRange(tail.Items);
                         return new(null, new(items), tail.Tail);
