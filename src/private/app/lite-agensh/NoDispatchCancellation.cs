@@ -432,7 +432,7 @@ internal static class NoDispatchCancellation
         value[key]?.GetValue<string>()
             ?? throw Unknown($"Required evidence field {key} is missing.");
 
-    internal static string Marker(string id) => $"native:dispatch_contract:{id}";
+    internal static string Marker(string id) => RunMetadata.DispatchContractKey(id);
 
     private static void Require(bool condition, string message)
     {

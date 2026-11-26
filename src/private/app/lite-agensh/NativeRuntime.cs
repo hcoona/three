@@ -125,7 +125,7 @@ internal sealed partial class NativeRuntime : IAsyncDisposable
                 }
                 catch (Exception exception)
                 {
-                    database.WriteMetadata("lifecycle:ownership_ambiguity", exception.Message);
+                    database.Meta.RecordOwnershipAmbiguity(exception.Message);
                     throw new OperationException(
                         "ownership_unresolved",
                         "The owned native runtime or inherited pipes did not settle."

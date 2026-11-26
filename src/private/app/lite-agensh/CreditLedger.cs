@@ -36,106 +36,133 @@ public sealed class CreditLedger
             throw new ArgumentException("The campaign ledger path must be absolute.", nameof(path));
         }
 
-        if (!requireExisting)
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        }
-
-        connectionString = Sql.ConnectionStringFor(path, create: !requireExisting);
+        connectionString = Sql.ExistingConnectionStringFor(path);
         campaignAllowance = allowance;
-        using SqliteConnection connection = Open(requireExisting);
-        Sql.Execute(connection, "PRAGMA journal_mode=WAL;");
-        using SqliteTransactionScope transaction =
-            Sql.BeginTransaction(connection, deferred: false);
-        Sql.Execute(
-            connection,
-            """
-            CREATE TABLE IF NOT EXISTS credit_campaign(
-                singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL,
-                allowance TEXT NOT NULL, identity TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS credit_reservations(
-                id TEXT PRIMARY KEY, run_id TEXT NOT NULL, worker TEXT NOT NULL,
-                allowance TEXT NOT NULL, run_allowance TEXT NOT NULL,
-                state TEXT NOT NULL, usage_path TEXT NOT NULL, session_id TEXT,
-                actual TEXT, report_identity TEXT, updated_at TEXT NOT NULL,
-                shared INTEGER NOT NULL DEFAULT 0, grant_open INTEGER NOT NULL DEFAULT 0,
-                overshoot TEXT NOT NULL DEFAULT '0');
-            CREATE TABLE IF NOT EXISTS credit_reports(
-                id INTEGER PRIMARY KEY AUTOINCREMENT, reservation_id TEXT NOT NULL,
-                actual TEXT NOT NULL, usage_path TEXT NOT NULL, report_identity TEXT NOT NULL,
-                scope TEXT NOT NULL, created_at TEXT NOT NULL,
-                FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id),
-                UNIQUE(reservation_id,report_identity));
-            CREATE TABLE IF NOT EXISTS credit_sdk_usage(
-                reservation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
-                reported_nano_aiu TEXT, status TEXT, dispatch_count INTEGER NOT NULL DEFAULT 0,
-                reported_requests INTEGER,
-                FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
-            CREATE TABLE IF NOT EXISTS credit_sdk_owners(
-                reservation_id TEXT PRIMARY KEY, pid INTEGER NOT NULL, start_ticks INTEGER NOT NULL,
-                FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
-            CREATE TABLE IF NOT EXISTS credit_cancellation_disqualifiers(
-                reservation_id TEXT PRIMARY KEY, reported_nano_aiu TEXT,
-                status TEXT, reported_requests INTEGER, created_at TEXT NOT NULL,
-                FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
-            CREATE TABLE IF NOT EXISTS credit_cancellations(
-                reservation_id TEXT PRIMARY KEY, reason TEXT NOT NULL, proof TEXT NOT NULL,
-                inspection TEXT NOT NULL, application_build TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
-            """,
-            transaction
-        );
-        Sql.Execute(
-            connection,
-            """
-            INSERT OR IGNORE INTO credit_campaign(singleton,schema_version,allowance,identity)
-            VALUES(1,2,$allowance,$identity);
-            """,
-            transaction,
-            ("$allowance", Format(allowance)),
-            ("$identity", Guid.NewGuid().ToString("N"))
-        );
+        using SqliteConnection connection = OpenForInitialization(path, requireExisting);
         using (
-            SqliteCommand command = Sql.Command(
-                connection,
-                "SELECT schema_version,allowance FROM credit_campaign WHERE singleton=1;",
-                transaction
-            )
+            SqliteTransactionScope transaction = Sql.BeginTransaction(connection, deferred: false)
         )
-        using (ObservedSqliteReader reader = Sql.Reader(command))
         {
-            if (
-                !reader.Read()
-                || reader.GetInt32(0) is not (1 or 2)
-                || Parse(reader.GetString(1)) != allowance
-            )
+            long masterEntries = Convert.ToInt64(
+                Sql.Scalar(connection, "SELECT COUNT(*) FROM sqlite_master;", transaction),
+                CultureInfo.InvariantCulture
+            );
+            if (!requireExisting && masterEntries == 0)
             {
-                throw new InvalidOperationException(
-                    "Campaign schema or allowance differs; the durable budget cannot be reset."
+                Sql.Execute(
+                    connection,
+                    """
+                    CREATE TABLE credit_campaign(
+                        singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                        schema_version INTEGER NOT NULL,
+                        allowance TEXT NOT NULL, identity TEXT NOT NULL);
+                    CREATE TABLE credit_reservations(
+                        id TEXT PRIMARY KEY, run_id TEXT NOT NULL, worker TEXT NOT NULL,
+                        allowance TEXT NOT NULL, run_allowance TEXT NOT NULL,
+                        state TEXT NOT NULL, usage_path TEXT NOT NULL, session_id TEXT,
+                        actual TEXT, report_identity TEXT, updated_at TEXT NOT NULL,
+                        shared INTEGER NOT NULL DEFAULT 0, grant_open INTEGER NOT NULL DEFAULT 0,
+                        overshoot TEXT NOT NULL DEFAULT '0');
+                    CREATE TABLE credit_reports(
+                        id INTEGER PRIMARY KEY AUTOINCREMENT, reservation_id TEXT NOT NULL,
+                        actual TEXT NOT NULL, usage_path TEXT NOT NULL,
+                        report_identity TEXT NOT NULL,
+                        scope TEXT NOT NULL, created_at TEXT NOT NULL,
+                        FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id),
+                        UNIQUE(reservation_id,report_identity));
+                    CREATE TABLE credit_sdk_usage(
+                        reservation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                        reported_nano_aiu TEXT, status TEXT,
+                        dispatch_count INTEGER NOT NULL DEFAULT 0,
+                        reported_requests INTEGER,
+                        FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
+                    CREATE TABLE credit_sdk_owners(
+                        reservation_id TEXT PRIMARY KEY, pid INTEGER NOT NULL,
+                        start_ticks INTEGER NOT NULL,
+                        FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
+                    CREATE TABLE credit_cancellation_disqualifiers(
+                        reservation_id TEXT PRIMARY KEY, reported_nano_aiu TEXT,
+                        status TEXT, reported_requests INTEGER, created_at TEXT NOT NULL,
+                        FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
+                    CREATE TABLE credit_cancellations(
+                        reservation_id TEXT PRIMARY KEY, reason TEXT NOT NULL, proof TEXT NOT NULL,
+                        inspection TEXT NOT NULL, application_build TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
+                    INSERT INTO credit_campaign(singleton,schema_version,allowance,identity)
+                    VALUES(1,2,$allowance,$identity);
+                    """,
+                    transaction,
+                    ("$allowance", Format(allowance)),
+                    ("$identity", Guid.NewGuid().ToString("N"))
                 );
             }
+            else
+            {
+                RequireIntactSchema(connection, transaction);
+                Sql.Execute(
+                    connection,
+                    """
+                    CREATE TABLE IF NOT EXISTS credit_cancellation_disqualifiers(
+                        reservation_id TEXT PRIMARY KEY, reported_nano_aiu TEXT,
+                        status TEXT, reported_requests INTEGER, created_at TEXT NOT NULL,
+                        FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
+                    CREATE TABLE IF NOT EXISTS credit_cancellations(
+                        reservation_id TEXT PRIMARY KEY, reason TEXT NOT NULL, proof TEXT NOT NULL,
+                        inspection TEXT NOT NULL, application_build TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
+                    """,
+                    transaction
+                );
+            }
+
+            using (
+                SqliteCommand command = Sql.Command(
+                    connection,
+                    "SELECT schema_version,allowance FROM credit_campaign WHERE singleton=1;",
+                    transaction
+                )
+            )
+            using (ObservedSqliteReader reader = Sql.Reader(command))
+            {
+                if (
+                    !reader.Read()
+                    || reader.GetInt32(0) is not (1 or 2)
+                    || Parse(reader.GetString(1)) != allowance
+                )
+                {
+                    throw new InvalidOperationException(
+                        "Campaign schema or allowance differs; the durable budget cannot be reset."
+                    );
+                }
+            }
+
+            if ((long)Sql.Scalar(
+                    connection,
+                    "SELECT schema_version FROM credit_campaign WHERE singleton=1;",
+                    transaction
+                )! == 1)
+            {
+                Sql.Execute(
+                    connection,
+                    """
+                    ALTER TABLE credit_reservations
+                        ADD COLUMN shared INTEGER NOT NULL DEFAULT 0;
+                    ALTER TABLE credit_reservations
+                        ADD COLUMN grant_open INTEGER NOT NULL DEFAULT 0;
+                    ALTER TABLE credit_reservations
+                        ADD COLUMN overshoot TEXT NOT NULL DEFAULT '0';
+                    UPDATE credit_campaign SET schema_version=2 WHERE singleton=1;
+                    """,
+                    transaction
+                );
+            }
+
+            transaction.Commit();
         }
 
-        if ((long)Sql.Scalar(
-                connection,
-                "SELECT schema_version FROM credit_campaign WHERE singleton=1;",
-                transaction
-            )! == 1)
-        {
-            Sql.Execute(
-                connection,
-                """
-                ALTER TABLE credit_reservations ADD COLUMN shared INTEGER NOT NULL DEFAULT 0;
-                ALTER TABLE credit_reservations ADD COLUMN grant_open INTEGER NOT NULL DEFAULT 0;
-                ALTER TABLE credit_reservations ADD COLUMN overshoot TEXT NOT NULL DEFAULT '0';
-                UPDATE credit_campaign SET schema_version=2 WHERE singleton=1;
-                """,
-                transaction
-            );
-        }
-
-        transaction.Commit();
+        Sql.Execute(connection, "PRAGMA journal_mode=WAL;");
         Identity = (string)(
             Sql.Scalar(connection, "SELECT identity FROM credit_campaign WHERE singleton=1;")
             ?? throw new InvalidOperationException("The durable campaign identity is missing.")
@@ -143,6 +170,67 @@ public sealed class CreditLedger
     }
 
     public string Identity { get; }
+
+    private SqliteConnection OpenForInitialization(string path, bool requireExisting)
+    {
+        try
+        {
+            return Open();
+        }
+        catch (OperationException) when (!requireExisting)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            SqliteConnection created = new(Sql.NonPooledCreateConnectionStringFor(path));
+            try
+            {
+                return Sql.Open(created, "campaign");
+            }
+            catch
+            {
+                created.Dispose();
+                throw;
+            }
+        }
+    }
+
+    private static void RequireIntactSchema(
+        SqliteConnection connection,
+        SqliteTransaction transaction
+    )
+    {
+        long tables = Convert.ToInt64(
+            Sql.Scalar(
+                connection,
+                """
+                SELECT COUNT(*) FROM sqlite_master
+                WHERE type='table' AND name IN (
+                    'credit_campaign',
+                    'credit_reservations',
+                    'credit_reports',
+                    'credit_sdk_usage',
+                    'credit_sdk_owners'
+                );
+                """,
+                transaction
+            ),
+            CultureInfo.InvariantCulture
+        );
+        bool hasCampaignRow =
+            tables == 5
+            && Sql.Scalar(
+                connection,
+                "SELECT 1 FROM credit_campaign WHERE singleton=1;",
+                transaction
+            )
+                is not null;
+        if (!hasCampaignRow)
+        {
+            throw new OperationException(
+                "credit_unknown",
+                "The campaign ledger schema is incomplete; durable accounting cannot be reset."
+            );
+        }
+    }
 
     public void RequirePaidAdmission()
     {
@@ -1333,21 +1421,26 @@ public sealed class CreditLedger
         }
     }
 
-    private SqliteConnection Open(bool requireExisting = false)
+    private SqliteConnection Open()
     {
         SqliteConnection connection = new(connectionString);
         try
         {
             return Sql.Open(connection, "campaign");
         }
-        catch (SqliteException exception)
-            when (requireExisting && exception.SqliteErrorCode == 14)
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 14)
         {
+            connection.Dispose();
             throw new OperationException(
                 "credit_unknown",
                 "Retained recovery requires its original campaign ledger.",
                 exception
             );
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
         }
     }
 }

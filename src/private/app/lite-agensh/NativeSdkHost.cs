@@ -59,18 +59,18 @@ internal sealed class NativeSdkHost(
 
             try
             {
-                database.WriteMetadata(
-                    $"native:runtime:{Id}",
+                database.Meta.WriteJson(
+                    RunMetadata.RuntimeKey(Id),
                     new JsonObject
                     {
                         ["runtimeId"] = Id,
                         ["state"] = "opening",
                         ["evidencePrefix"] = evidencePath,
-                    }.ToJsonString()
+                    }
                 );
                 runtime = new(database, processes, cwd);
                 string endpoint = await runtime
-                    .StartAsync($"native:runtime:{Id}", evidencePath, cancellationToken)
+                    .StartAsync(RunMetadata.RuntimeKey(Id), evidencePath, cancellationToken)
                     .ConfigureAwait(false);
                 client = new(
                     new CopilotClientOptions
@@ -111,8 +111,8 @@ internal sealed class NativeSdkHost(
     }
 
     public void Associate(string worker, string sessionId, string cwd) =>
-        database.WriteMetadata(
-            $"native:runtime:{Id}:session:{sessionId}",
+        database.Meta.WriteJson(
+            RunMetadata.RuntimeSessionKey(Id, sessionId),
             new JsonObject
             {
                 ["runtimeId"] = Id,
@@ -120,7 +120,7 @@ internal sealed class NativeSdkHost(
                 ["sessionId"] = sessionId,
                 ["worker"] = worker,
                 ["workingDirectory"] = cwd,
-            }.ToJsonString()
+            }
         );
 
     public async ValueTask DisposeAsync()
@@ -181,14 +181,14 @@ internal sealed class NativeSdkHost(
     }
 
     private void RecordState(string state) =>
-        database.WriteMetadata(
-            $"native:runtime:{Id}",
+        database.Meta.WriteJson(
+            RunMetadata.RuntimeKey(Id),
             new JsonObject
             {
                 ["runtimeId"] = Id,
                 ["runtimeLeaseId"] = runtime?.LeaseId,
                 ["runtimeVersion"] = ActualRuntimeVersion,
                 ["state"] = state,
-            }.ToJsonString()
+            }
         );
 }

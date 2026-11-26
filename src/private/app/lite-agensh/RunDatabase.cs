@@ -102,6 +102,7 @@ public sealed class RunDatabase
 
         transaction.Commit();
         cachedMembers = Array.AsReadOnly(["owner", .. Configuration.WorkerIds]);
+        Meta = new(this);
     }
 
     public string StatePath { get; }
@@ -117,6 +118,11 @@ public sealed class RunDatabase
 
     public IReadOnlyList<string> Members => cachedMembers;
 
+    internal RunMetadata Meta { get; }
+
+    internal string CreateSdkEvidencePath(string worker) =>
+        Path.Combine(StatePath, "native", $"{worker}-{Guid.NewGuid():N}.sdk-evidence");
+
     public SqliteConnection Open()
     {
         SqliteConnection connection = new(connectionString);
@@ -126,21 +132,13 @@ public sealed class RunDatabase
     public string? ReadMetadata(string key)
     {
         using SqliteConnection connection = Open();
-        return Sql.Scalar(connection, "SELECT value FROM meta WHERE key=$key;", null, ("$key", key))
-            as string;
+        return Sql.GetMetadata(connection, null, key);
     }
 
     public void WriteMetadata(string key, string value)
     {
         using SqliteConnection connection = Open();
-        Sql.Execute(
-            connection,
-            "INSERT INTO meta(key,value) VALUES($key,$value) ON CONFLICT(key) DO UPDATE "
-                + "SET value=excluded.value;",
-            null,
-            ("$key", key),
-            ("$value", value)
-        );
+        Sql.SetMetadata(connection, null, key, value);
     }
 
     public void SaveConfiguration(RunConfiguration configuration)
@@ -154,15 +152,72 @@ public sealed class RunDatabase
 
 public static class Sql
 {
-    internal static string ConnectionStringFor(string path, bool create = true) =>
+    internal static string ConnectionStringFor(string path) =>
         new SqliteConnectionStringBuilder
         {
-            DataSource = path,
-            Mode = create ? SqliteOpenMode.ReadWriteCreate : SqliteOpenMode.ReadWrite,
+            DataSource = Path.GetFullPath(path),
+            Mode = SqliteOpenMode.ReadWriteCreate,
             ForeignKeys = true,
             DefaultTimeout = 5,
             Pooling = true,
         }.ToString();
+
+    internal static string ExistingConnectionStringFor(string path) =>
+        new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.GetFullPath(path),
+            Mode = SqliteOpenMode.ReadWrite,
+            ForeignKeys = true,
+            DefaultTimeout = 5,
+            Pooling = false,
+        }.ToString();
+
+    internal static string NonPooledCreateConnectionStringFor(string path) =>
+        new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.GetFullPath(path),
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            ForeignKeys = true,
+            DefaultTimeout = 5,
+            Pooling = false,
+        }.ToString();
+
+    internal static SqliteConnection OpenExisting(string path, string kind)
+    {
+        SqliteConnection probe = new(ExistingConnectionStringFor(path));
+        try
+        {
+            return Open(probe, kind);
+        }
+        catch
+        {
+            probe.Dispose();
+            throw;
+        }
+    }
+
+    internal static string? GetMetadata(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string key
+    ) =>
+        Scalar(connection, "SELECT value FROM meta WHERE key=$key;", transaction, ("$key", key))
+        as string;
+
+    internal static void SetMetadata(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string key,
+        string value
+    ) =>
+        Execute(
+            connection,
+            "INSERT INTO meta(key,value) VALUES($key,$value) ON CONFLICT(key) DO UPDATE "
+                + "SET value=excluded.value;",
+            transaction,
+            ("$key", key),
+            ("$value", value)
+        );
 
     internal static SqliteConnection Open(SqliteConnection connection, string kind)
     {
