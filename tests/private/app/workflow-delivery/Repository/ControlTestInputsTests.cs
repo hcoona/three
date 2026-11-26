@@ -163,12 +163,6 @@ public sealed class ControlTestInputsTests(TestContext context)
             Assert.AreEqual(new("Debug", "net10.0"), result.Candidate.Dimension);
             Assert.AreEqual(Resource, Assert.ContainsSingle(result.Basis.Inputs));
             Assert.AreEqual("inputs/moved.json", Assert.ContainsSingle(result.Candidate.Inputs));
-            using JsonDocument transfer = JsonDocument.Parse(JsonSerializer.Serialize(result,
-                TransferJson.Default.ControlTestInputResponse));
-            Assert.AreEqual("Debug", transfer.RootElement.GetProperty("basis")
-                .GetProperty("dimension").GetProperty("configuration").GetString());
-            Assert.AreEqual(Resource, transfer.RootElement.GetProperty("basis")
-                .GetProperty("inputs")[0].GetString());
         }, repo.Dispose);
     }
 
@@ -195,7 +189,7 @@ public sealed class ControlTestInputsTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task NativeReceiptRetainsCoherentExplicitFullAndCliTransfer()
+    public async Task NativeReceiptRetainsCoherentExplicitFullAndCallerPreparation()
     {
         var repo = await GitFixture.CreateAsync(context.CancellationToken);
         await FixtureCleanup.RunAsync(async () =>
@@ -203,23 +197,28 @@ public sealed class ControlTestInputsTests(TestContext context)
             await repo.SetAsync(ControlTestInputs.Project, Project(Resource));
             await repo.SetAsync(Resource);
             string candidate = await repo.CommitAsync();
-            string endpoint = await MaterializeAsync(repo, "candidate", candidate);
-            var request = new ControlTestInputRequest(new(candidate, candidate, true),
-                repo.Directory, endpoint, endpoint);
-            string path = Path.Combine(Path.GetDirectoryName(repo.Directory)!, "request.json");
-            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(request,
-                TransferJson.Default.ControlTestInputRequest), context.CancellationToken);
+            string parent = Path.GetDirectoryName(repo.Directory)!;
+            string stateDir = Path.Combine(parent, "control-state");
+            string eventPath = Path.Combine(parent, "event.json");
+            File.WriteAllText(Path.Combine(parent, "global.json"),
+                RepositoryToolSelection.GlobalJson());
+            File.WriteAllText(eventPath, "{}");
             using var output = new StringWriter();
             using var error = new StringWriter();
 
-            int code = Program.Run(["ci", "control-inputs", path], output, error);
+            int code = Program.Run(
+                ["ci", "caller-control", "prepare", repo.Directory, stateDir, "workflow_dispatch",
+                    eventPath, candidate], output, error);
 
             Assert.AreEqual(0, code, error.ToString());
-            Assert.AreEqual("", error.ToString());
-            ControlTestInputResponse result = JsonSerializer.Deserialize(output.ToString(),
-                TransferJson.Default.ControlTestInputResponse)!;
+            Assert.IsEmpty(error.ToString());
+            var prepared = JsonSerializer.Deserialize(output.ToString(),
+                TransferJson.Default.ControlTestInputRequest);
+            Assert.IsNotNull(prepared);
+            ControlTestInputResponse result = await ControlTestInputs.ReadAsync(prepared,
+                context.CancellationToken);
             Assert.AreEqual(new(candidate, candidate, true), result.Comparison);
-            Assert.AreEqual(Resource, Assert.ContainsSingle(result.Basis.Inputs));
+            Assert.Contains(Resource, result.Basis.Inputs);
             CollectionAssert.AreEqual(result.Basis.Inputs, result.Candidate.Inputs);
             Assert.IsTrue(result.Basis.Present);
         }, repo.Dispose);
@@ -228,12 +227,8 @@ public sealed class ControlTestInputsTests(TestContext context)
     [TestMethod]
     public async Task SharedComparisonQualifiesNativeReceipt()
     {
-        // Defect-free control: the shared comparison itself produces successful JSON.
-        (int code, string output, string error) = await RunAsync(sharedRequest!,
+        ControlTestInputResponse result = await ControlTestInputs.ReadAsync(sharedRequest!,
             context.CancellationToken);
-        Assert.AreEqual(0, code, error);
-        ControlTestInputResponse result = JsonSerializer.Deserialize(output,
-            TransferJson.Default.ControlTestInputResponse)!;
         Assert.AreEqual(sharedRequest!.Comparison, result.Comparison);
         Assert.AreEqual(Resource, Assert.ContainsSingle(result.Candidate.Inputs));
     }
@@ -250,21 +245,26 @@ public sealed class ControlTestInputsTests(TestContext context)
             await MaterializeAsync(repo, "basis", basis), candidateMode == "120000"
                 ? repo.Directory : await MaterializeAsync(repo, "candidate", candidate));
 
-        string error = await AssertNoReceiptAsync(request);
+        var exception = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            ControlTestInputs.ReadAsync(request, context.CancellationToken));
 
-        Assert.Contains("The control test owner must be a committed regular project.", error);
+        Assert.Contains("The control test owner must be a committed regular project.",
+            exception.Message);
     }
 
     [TestMethod]
     public async Task ConfirmedBasisPresenceRequiresItsOwnMaterialization() =>
-        await AssertNoReceiptAsync(sharedRequest! with { BasisDirectory = null });
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => ControlTestInputs.ReadAsync(
+            sharedRequest! with { BasisDirectory = null }, context.CancellationToken));
 
     [TestMethod]
     public async Task BasisCheckoutCannotSatisfyTheCandidateReceipt()
     {
         ControlTestInputRequest request = sharedRequest!;
 
-        await AssertNoReceiptAsync(request with { CandidateDirectory = request.BasisDirectory! });
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => ControlTestInputs.ReadAsync(
+            request with { CandidateDirectory = request.BasisDirectory! },
+            context.CancellationToken));
     }
 
     [TestMethod]
@@ -272,8 +272,9 @@ public sealed class ControlTestInputsTests(TestContext context)
     {
         ControlTestInputRequest request = sharedRequest!;
 
-        await AssertNoReceiptAsync(request with
-        { Comparison = request.Comparison with { Candidate = "HEAD" } });
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => ControlTestInputs.ReadAsync(
+            request with { Comparison = request.Comparison with { Candidate = "HEAD" } },
+            context.CancellationToken));
     }
 
     [TestMethod]
@@ -286,21 +287,11 @@ public sealed class ControlTestInputsTests(TestContext context)
             await MaterializeAsync(repo, "basis", basis),
             await MaterializeAsync(repo, "candidate", candidate));
 
-        string error = await AssertNoReceiptAsync(request);
+        var exception = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            ControlTestInputs.ReadAsync(request, context.CancellationToken));
 
-        Assert.Contains("Native query (dotnet msbuild) failed: Exited, exit 1.", error);
-        Assert.Contains("unavailable.props", error);
-    }
-
-    private async Task<string> AssertNoReceiptAsync(ControlTestInputRequest request)
-    {
-        (int code, string output, string error) = await RunAsync(request,
-            context.CancellationToken);
-
-        Assert.AreEqual(2, code);
-        Assert.AreEqual("", output);
-        Assert.IsNotEmpty(error);
-        return error;
+        Assert.Contains("Native query (dotnet msbuild) failed: Exited, exit 1.", exception.Message);
+        Assert.Contains("unavailable.props", exception.Message);
     }
 
     private static async Task<(string Basis, string Candidate)> CommitPairAsync(GitFixture repo,
@@ -314,24 +305,6 @@ public sealed class ControlTestInputsTests(TestContext context)
         else await repo.SetAsync(ControlTestInputs.Project,
             candidateMode == "120000" ? "other.txt" : Project(Resource), candidateMode);
         return (basis, await repo.CommitAsync(basis));
-    }
-
-    // The request transfer file is row-owned scratch outside any checkout.
-    private static async Task<(int Code, string Output, string Error)> RunAsync(
-        ControlTestInputRequest request, CancellationToken token)
-    {
-        string state = Directory.CreateTempSubdirectory("workflow-control-inputs-").FullName;
-        try
-        {
-            string path = Path.Combine(state, "request.json");
-            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(request,
-                TransferJson.Default.ControlTestInputRequest), token);
-            using var output = new StringWriter();
-            using var error = new StringWriter();
-            int code = Program.Run(["ci", "control-inputs", path], output, error);
-            return (code, output.ToString(), error.ToString());
-        }
-        finally { Directory.Delete(state, recursive: true); }
     }
 
     private static string Project(string input) => $$"""

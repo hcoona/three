@@ -535,11 +535,12 @@ runtime configuration together, without publishing or packaging it. The scope
 job additionally uploads that build output, together with a Git archive of the
 candidate Native/Python helper sources (`python-control.zip`), the Ruby facts
 helper and the original .NET plan, as the `ci-dotnet-plan` transfer that the
-later CI jobs consume. Resolve the native event comparison once with `ci
-comparison`, then resolve its actual Git objects.
+later CI jobs consume. Resolve the native event comparison once, resolve its
+actual Git objects, confirm the named test project's committed entry and
+materialize exact endpoints outside the candidate source root with `ci
+caller-control prepare`.
 
-Confirm the named test project's committed entry, materialize exact endpoints
-outside the candidate source root and install each endpoint's selected
+Install each endpoint's selected
 `global.json` SDK. Reuse that endpoint's already-required locked `dirs.proj`
 preparation; do not restore the test project again. Run the single resource
 query in its default Debug context, distinct from the full root graph's

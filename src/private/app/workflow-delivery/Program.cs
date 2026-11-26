@@ -6,7 +6,6 @@ using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 using WorkflowDelivery.Release;
 using WorkflowDelivery.Destinations;
-using WorkflowDelivery.Ecosystems;
 
 namespace WorkflowDelivery;
 
@@ -18,8 +17,7 @@ internal static class Program
         return Run(args, Console.Out, Console.Error);
     }
 
-    internal static int Run(string[] args, TextWriter output, TextWriter error,
-        CiCliOverrides? overrides = null)
+    internal static int Run(string[] args, TextWriter output, TextWriter error)
     {
         try
         {
@@ -29,17 +27,13 @@ internal static class Program
                 return 0;
             }
             if (ReleaseCli.Run(args, output) is { } releaseStatus) return releaseStatus;
-            if (CiCli.Run(args, output, error, overrides) is { } ciStatus) return ciStatus;
+            if (CiCli.Run(args, output, error) is { } ciStatus) return ciStatus;
             error.WriteLine(
-                "Usage: WorkflowDelivery ci plan <request.json>"
-                    + " | ci caller-<control|dotnet|node|python|ruby|local-python> ..."
-                    + " | ci native-preparation-plan <root> <scope.json>"
-                    + " | ci comparison <event-name> <native-event.json> <tested-candidate>"
-                    + " | ci control-inputs <request.json>"
-                    + " | ci <prepare|plan|run>-<node|python|ruby>-group ..."
-                    + " | ci run-<dotnet|node|python-package> <plan.json> <request.json>"
-                    + " | ci result <plan.json> <results.json>"
+                "Usage: WorkflowDelivery ci "
+                    + "caller-<control|dotnet|node|python|ruby|local-python> ..."
+                    + " | ci native-preparation-plan <root> <scope.json> <directory>"
                     + " | release job-inputs <ecosystem> <operation>"
+                    + " | release prepare-python-index-tools <request.json>"
                     + " | release <prepare|observe|describe|publish|complete>-<target> ..."
                     + " | native-message-schemas <directory>"
             );
@@ -84,7 +78,6 @@ internal static class Program
 [JsonSerializable(typeof(PythonCiCallerReadback))]
 [JsonSerializable(typeof(RubyCiCallerReadback))]
 [JsonSerializable(typeof(GithubNpmToolSelection))]
-[JsonSerializable(typeof(PlanRequest))]
 [JsonSerializable(typeof(NpmPreparationRequest))]
 [JsonSerializable(typeof(NpmPreparationResult))]
 [JsonSerializable(typeof(NuGetPreparationRequest))]
@@ -95,7 +88,6 @@ internal static class Program
 [JsonSerializable(typeof(PythonIndexToolRequest))]
 [JsonSerializable(typeof(PythonIndexToolResult))]
 [JsonSerializable(typeof(PythonPublisherTools))]
-[JsonSerializable(typeof(PythonPackageTools))]
 [JsonSerializable(typeof(PythonIndexObservationResult))]
 [JsonSerializable(typeof(PythonPublicationResult))]
 [JsonSerializable(typeof(PythonCompletionResult))]
@@ -125,9 +117,7 @@ internal static class Program
 [JsonSerializable(typeof(GithubNpmObservationResult))]
 [JsonSerializable(typeof(GithubNpmPublicationResult))]
 [JsonSerializable(typeof(NpmjsPublicationResult))]
-[JsonSerializable(typeof(CiComparison))]
 [JsonSerializable(typeof(ControlTestInputRequest))]
-[JsonSerializable(typeof(ControlTestInputResponse))]
 [JsonSerializable(typeof(DotNetGraphRequest))]
 [JsonSerializable(typeof(DotNetGraphResponse))]
 [JsonSerializable(typeof(KeyValuePair<string, string>[]))]
@@ -137,12 +127,9 @@ internal static class Program
 [JsonSerializable(typeof(DotNetTestRequest))]
 [JsonSerializable(typeof(DotNetTestEntryResult))]
 [JsonSerializable(typeof(DotNetRunResult))]
-[JsonSerializable(typeof(DotNetPackageRunResult))]
 [JsonSerializable(typeof(DotNetGroupRequest))]
 [JsonSerializable(typeof(DotNetGroupReadback))]
 [JsonSerializable(typeof(DotNetGroupRunResult))]
-[JsonSerializable(typeof(PythonPackageRunRequest))]
-[JsonSerializable(typeof(PythonPackageRunResult))]
 [JsonSerializable(typeof(PythonGroupRunRequest))]
 [JsonSerializable(typeof(PythonGroupRunResult))]
 [JsonSerializable(typeof(PythonGroupRequest))]
@@ -157,7 +144,6 @@ internal static class Program
 [JsonSerializable(typeof(RubyGroupReadback))]
 [JsonSerializable(typeof(RubyGroupRunRequest))]
 [JsonSerializable(typeof(RubyGroupRun))]
-[JsonSerializable(typeof(NodePlanRequest))]
 [JsonSerializable(typeof(NodeGroupRequest))]
 [JsonSerializable(typeof(NodeGroupReadback))]
 [JsonSerializable(typeof(Dictionary<string, string[]>),

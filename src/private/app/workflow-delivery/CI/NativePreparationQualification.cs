@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using WorkflowDelivery.CI.Callers;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 using WorkflowDelivery.Repository;
@@ -43,11 +44,9 @@ internal static class NativePreparationQualification
         {
             string json = File.ReadAllText(scopePath);
             using JsonDocument document = JsonDocument.Parse(json);
-            string basis = document.RootElement.GetProperty("base").GetString()
-                ?? throw new InvalidDataException("Missing native comparison basis.");
-            string candidate = document.RootElement.GetProperty("candidate").GetString()
-                ?? throw new InvalidDataException("Missing native comparison candidate.");
-            bool full = document.RootElement.GetProperty("full").GetBoolean();
+            string basis = CiCallerTransfer.ScopeCommit(document.RootElement, "base");
+            string candidate = CiCallerTransfer.ScopeCommit(document.RootElement, "candidate");
+            bool full = CiCallerTransfer.Full(document.RootElement);
             GitComparison comparison = new GitReader(checkout).CompareAsync(basis, candidate,
                 CancellationToken.None).GetAwaiter().GetResult();
             GitMaterialization.BindAsync(checkout, comparison.Candidate, CancellationToken.None)
