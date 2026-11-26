@@ -162,24 +162,47 @@ defined validation point.
 ## Work Authorization and Concurrency
 
 Contract-preserving, non-feature defect and test fixes, CI
-troubleshooting/diagnostics, lint/formatting, doc-drift repairs, and routine
-Renovate or dependency compatibility adjustments without new external, paid,
-credentialed, or privacy effects execute directly through ordinary pull requests
-without a Delivery Wave entry.
+troubleshooting/diagnostics, lint/formatting, doc-drift repairs, routine
+Renovate or dependency compatibility adjustments, and committed release or
+prerelease version and changelog/release-note transitions (`version.json`,
+static `pyproject.toml`, `version.rb`) for already-admitted release units
+([Official channel scope](../../src/private/app/workflow-delivery/docs/integration/common.md#official-channel-scope))
+that do not change public APIs, target frameworks, or Workflow Delivery
+contracts—all without new external, paid, credentialed, or privacy
+effects—execute directly through ordinary pull requests without a Delivery Wave
+entry.
+
+Routine controlled release operations for already-admitted release units also
+require no Delivery Wave entry: credential-free `dry-run` dispatches and live
+Buddy or Official dispatches (gated by the destination's GitHub Environment
+approval) of checked-in `.github/workflows/workflow-delivery-v3-*-release.yml`
+callers initiated by the repository owner—or executed by an agent only upon an
+explicit operational instruction from the repository owner for that specific
+dispatch—and repository-owner maintenance of existing external publisher or
+storefront registrations (such as renewing an expired OIDC trusted publisher).
+Agents must never autonomously dispatch release workflows, approve Environments,
+or run package or release publication commands during ordinary development,
+maintenance, testing, or review without an explicit operational instruction from
+the repository owner for that specific operation.
 
 The target branch's accepted `docs/delivery-wave.md` is the sole positive
 work-authorization authority for feature or capability advancements,
-architectural or public-contract changes, and external or risk-bearing
-operations. Each entry identifies accepted inputs, one bounded advancement and
-outcome, material exclusions, and any explicitly permitted external or
-risk-bearing effects.
+architectural or public-contract changes, and non-routine external or
+risk-bearing operations—including admitting a new release unit or Official
+channel/destination scope, changing Workflow Delivery release or qualification
+contracts, out-of-band or manual package or release publication bypassing the
+governed release workflows and GitHub Environments, reopening closed proving
+campaigns, and running new external or paid empirical campaigns. Each entry
+identifies accepted inputs, one bounded advancement and outcome, material
+exclusions, and any explicitly permitted external or risk-bearing effects.
 
 Within authorized work, routine local editing, restore/build/lint/test/pilot
 debugging, out-of-repository scratch harnesses, read-only
 repository/GitHub/public-source inspection, independent delegated review, and
 ordinary Issue/PR/CI validation (including failed-job reruns) are permitted by
-default with no attempt quota and need not be repeated in each entry. External
-or irreversible side effects—package or release publication, ruleset or
+default with no attempt quota and need not be repeated in each entry. Outside
+the owner-governed release operations above, external or irreversible side
+effects—unapproved or out-of-band package or release publication, ruleset or
 permission changes, non-public or credential-bearing dependency sources or
 external services, ambient or external account/secret access or mutation,
 persistent host mutations outside repository/toolchain/build/cache/temp state,
@@ -190,13 +213,14 @@ paid), even inside a test command or CI workflow step.
 
 A work item is executable when:
 
-- either it qualifies as contract-preserving routine maintenance above without
-  new external, paid, credentialed, or privacy effects, or an accepted Delivery
-  Wave entry grants that work and remains present;
+- either it qualifies as contract-preserving routine maintenance or an
+  owner-governed release operation above, or an accepted Delivery Wave entry
+  grants that work and remains present;
 - the work stays inside the applicable scope, exclusions, and permitted external
   effects; and
-- any required repository-owner risk disposition and external/paid protocol are
-  already accepted before executing external or paid effects.
+- any required repository-owner operational instruction, Environment approval,
+  risk disposition, and external/paid protocol are already in place before
+  executing external or paid effects.
 
 Relied-on shared canonical authorities must remain current through acceptance.
 If the target branch supersedes or materially changes one, dependent work must

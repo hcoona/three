@@ -67,7 +67,9 @@ to replace the applicable accepted instructions or enlarge work authorization.
    human inputs, fixtures, domain contracts, and unprepared ownership. A partial catalog
    cannot establish complete repository coverage.
 2. Confirm either that the change qualifies as contract-preserving routine maintenance
-   without new external, paid, credentialed, or privacy effects
+   (including committed version or changelog/release-note transitions for already-admitted
+   release units without public API, target-framework, or Workflow Delivery contract
+   changes) without new external, paid, credentialed, or privacy effects
    ([work authorization](../../../docs/governance/record-system.md#work-authorization-and-concurrency)),
    or that the target branch's accepted Delivery Wave contains an entry authorizing the
    change and the work remains inside that entry's scope, exclusions, and permitted
@@ -109,12 +111,17 @@ to replace the applicable accepted instructions or enlarge work authorization.
    controls, and current records change atomically when required.
 10. When work-authorization semantics change, verify that the Delivery Wave remains the
     sole positive authority for feature/capability advancements, architectural or
-    public-contract changes, and external/risk-bearing operations (exempting
-    contract-preserving routine maintenance without new external/paid/credentialed/privacy
-    effects), contains no progress or historical-status ledger, focuses on bounded
-    scope/outcome, exclusions, and explicit external/risk effects, closes grants
-    atomically by merged deletion, preserves consistency at each merge into `main`, and
-    keeps explicit risk decisions for high-effect work.
+    public-contract changes, and non-routine external/risk-bearing operations—including
+    admitting new release units or Official scope, changing release/qualification
+    contracts, out-of-band publication, reopening closed proving campaigns, and
+    external/paid empirical campaigns—(exempting contract-preserving routine maintenance
+    and owner-governed release operations gated by explicit repository-owner disposition
+    and destination GitHub Environments under
+    [work authorization](../../../docs/governance/record-system.md#work-authorization-and-concurrency)),
+    contains no progress or historical-status ledger, focuses on bounded scope/outcome,
+    exclusions, and explicit external/risk effects, closes grants atomically by merged
+    deletion, preserves consistency at each merge into `main`, and keeps explicit risk
+    decisions for high-effect work.
 11. Use hk results as evidence for deterministic invariants, not as evidence that
     contextual governance is correct. Check actual profile/path reachability and the
     reviewed snapshot; do not import the source's staged-index assumptions or claim

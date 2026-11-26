@@ -11,7 +11,10 @@ A pull request:
   credential-free test runs on unmerged feature branches or capping local debugging at
   three runs before opening a pull request;
 - binds a fixture README in `docs/governance/record-families.yaml` to `namespace: tests`
-  instead of its owning project directory.
+  instead of its owning project directory;
+- admits a new Official release unit in `src/private/app/workflow-delivery/docs/integration/common.md`
+  and adds agent instructions permitting autonomous release-workflow dispatches without an
+  accepted `docs/delivery-wave.md` entry or explicit repository-owner operational instruction.
 
 ## Expected Findings
 
@@ -26,3 +29,7 @@ A pull request:
 4. A blocking `record-system.md#project-namespaces` finding: `tests` is a test container
    root rather than an owning project, engineering tool, or standalone skill namespace;
    bind the fixture record to its owning project namespace.
+5. A blocking `record-system.md#work-authorization-and-concurrency` finding: admitting a
+   new release unit or Official scope requires an accepted `docs/delivery-wave.md` entry,
+   and agents must never autonomously dispatch release workflows without an explicit
+   operational instruction from the repository owner for that specific operation.
