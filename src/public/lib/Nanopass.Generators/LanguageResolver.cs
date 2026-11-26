@@ -957,13 +957,32 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
         var metas = IndexMetaVars(terminals, nonTerminals);
         foreach (var nonTerminal in nonTerminals)
         {
+            var seenInclusions = new HashSet<string>(StringComparer.Ordinal);
             for (int i = 0; i < nonTerminal.Productions.Count; i++)
             {
                 var rule = nonTerminal.Productions[i];
+                var alternative = rule.Alternative is null ? null : Rebind(rule.Alternative);
+                if (alternative is { IsNonTerminal: true })
+                {
+                    if (Equal(alternative.Target, nonTerminal.Name))
+                    {
+                        throw new Failure(
+                            5, $"Nonterminal '{nonTerminal.Name}' cannot directly include itself.");
+                    }
+
+                    if (!seenInclusions.Add(alternative.Target))
+                    {
+                        string message =
+                            $"Duplicate nonterminal inclusion in add: '{alternative.Target}' "
+                            + $"in '{nonTerminal.Name}'.";
+                        throw new Failure(4, message);
+                    }
+                }
+
                 nonTerminal.Productions[i] = rule with
                 {
                     Fields = new(rule.Fields.Select(Rebind)),
-                    Alternative = rule.Alternative is null ? null : Rebind(rule.Alternative),
+                    Alternative = alternative,
                 };
             }
         }
