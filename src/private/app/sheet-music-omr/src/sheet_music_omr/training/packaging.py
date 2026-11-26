@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import contextlib
+import errno
 import hashlib
 import io
 import json
@@ -12,6 +14,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -25,9 +28,9 @@ from concurrent.futures import (
 )
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field, replace
-from itertools import batched, islice
+from itertools import batched, islice, zip_longest
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Never, cast
 from weakref import WeakSet
 
 import numpy as np
@@ -43,6 +46,7 @@ from sheet_music_omr.evaluation.alignment import (
 )
 from sheet_music_omr.harness.downloads import sha256_file
 from sheet_music_omr.harness.musescore import (
+    _windows_path_for_wsl,
     preference_values,
     wsl_translate_command,
 )
@@ -66,9 +70,13 @@ from sheet_music_omr.training.ledgers import (
     W6_OFFLINE_ENV,
     W6_WORKER_TIMEOUT_SECONDS,
     _check_w6_disk_cap,
+    begin_w6_native_worker,
     check_w6_runs_root,
+    clear_w6_native_worker,
+    has_pending_w6_native_worker,
     reserve_w6_render_run,
     settle_w6_run,
+    verify_completed_w6_render_run,
     verify_w6_training_assets,
     w6_disk_lock,
     w6_scratch_dir_bytes,
@@ -99,6 +107,7 @@ _MIN_FORMAL_WORKS = 1500
 _FORMAL_VAL_FLOOR = 150
 _FIXTURE_VAL_FLOOR = 10
 _MILESTONE_MINIMA = (18_000, 2_000, 45_000, 5_000)
+_SUPPLEMENT_MINIMA = (2_700, 300)
 _MAX_VARIANT_ROUNDS = 21
 _MIN_FORMAL_SOURCES = 2500
 _MAX_TOTAL_SOURCES = 5000
@@ -254,6 +263,30 @@ def validate_w6_packaging_minima(
             "formal Slice A milestone minima are 18,000/2,000 prefix crops, "
             "45,000/5,000 full crops, 150 validation works and an intake "
             "limit of at least 2,500 scores"
+        )
+        raise StopConditionError(msg)
+
+
+def validate_w6_supplement_minima(
+    *,
+    formal: bool,
+    supplement_train_crops: int,
+    supplement_val_crops: int,
+    crop_targets: tuple[int, int, int, int] = _MILESTONE_MINIMA,
+) -> None:
+    """Reject lowered or enlarged targets before a formal MuseScore run."""
+    _int(supplement_train_crops, 1)
+    _int(supplement_val_crops, 1)
+    for target in crop_targets:
+        _int(target, 1)
+    if formal and (
+        crop_targets != _MILESTONE_MINIMA
+        or supplement_train_crops < _SUPPLEMENT_MINIMA[0]
+        or supplement_val_crops < _SUPPLEMENT_MINIMA[1]
+    ):
+        msg = (
+            "formal Slice A MuseScore supplement requires >=2,700/300 "
+            "MuseScore crops and exact 18,000/2,000 and 45,000/5,000 targets"
         )
         raise StopConditionError(msg)
 
@@ -1014,6 +1047,25 @@ class _DatasetSink:
                 stream.write(data)
         self.usage += charge
 
+    def link(self, links: Mapping[Path, Path]) -> None:
+        fallback: dict[Path, bytes] = {}
+        for rel, src in links.items():
+            if rel.is_absolute() or ".." in rel.parts:
+                msg = "W6 dataset path escapes its staging root"
+                raise StopConditionError(msg)
+            dst = self.root / rel
+            check_no_symlink_under(dst, self.root.parent)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                os.link(src, dst, follow_symlinks=False)
+            except OSError as exc:
+                if exc.errno != errno.EXDEV:
+                    msg = f"cannot hardlink verified W6 base asset {rel}"
+                    raise StopConditionError(msg) from exc
+                fallback[rel] = src.read_bytes()
+        if fallback:
+            self.write(fallback)
+
 
 def package_rendered_variants_to_datasets(  # noqa: PLR0913
     variants: Iterable[RenderedVariant],
@@ -1039,6 +1091,11 @@ def package_rendered_variants_to_datasets(  # noqa: PLR0913
     )
 
 
+type _BaseTail = tuple[
+    Sequence[Row], Sequence[Row], Mapping[Path, Path], Mapping[str, int]
+]
+
+
 def _package_rendered_variants(  # noqa: PLR0913
     variants: Iterable[RenderedVariant],
     run_dir: Path,
@@ -1049,6 +1106,7 @@ def _package_rendered_variants(  # noqa: PLR0913
     prefix_train_crops: int = 18_000,
     prefix_val_crops: int = 2_000,
     _formal_milestones: bool = False,
+    _base_tail: _BaseTail | None = None,
     validate_before_publish: Callable[[], None] | None = None,
     _meter: _PageMeter | None = None,
 ) -> Row:
@@ -1083,13 +1141,77 @@ def _package_rendered_variants(  # noqa: PLR0913
             prefix_targets=prefix_targets,
             downloads_dir=downloads_dir,
             formal_milestones=_formal_milestones,
+            base_tail=_base_tail,
             validate_before_publish=validate_before_publish,
         )
         sink.root.rename(root)
         return result
 
 
-def _package(  # noqa: C901, PLR0913
+def _verify_supplement_category_positives(
+    rows: Sequence[Row],
+    categories: Sequence[str] | None = None,
+) -> None:
+    required = _SUPPLEMENT_BUCKET_NAMES if categories is None else categories
+    for split in _SPLITS:
+        present = {
+            cat
+            for row in rows
+            if row.get("split") == split
+            for cat in cast("Sequence[str]", row.get("present_categories", ()))
+        }
+        missing = [cat for cat in required if cat not in present]
+        if missing:
+            msg = (
+                f"formal MuseScore supplement lacks positive coverage in "
+                f"{split} for: {', '.join(missing)}"
+            )
+            raise StopConditionError(msg)
+
+
+def _merge_base_tail(  # noqa: PLR0913
+    rows: list[Row],
+    page_rows: list[Row],
+    seen: set[str],
+    partitions: dict[tuple[str, str], str],
+    *,
+    sink: _DatasetSink,
+    base_tail: _BaseTail,
+    formal_milestones: bool,
+) -> tuple[list[Row], list[Row]]:
+    if formal_milestones:
+        _verify_supplement_category_positives(rows)
+    base_crops, base_pages, base_links, full_targets = base_tail
+    if seen & {_field(r, "variant_id") for r in base_crops}:
+        msg = "supplement variant_id collides with base W6 dataset"
+        raise StopConditionError(msg)
+    for r in (*base_crops, *base_pages):
+        split = _field(r, "split")
+        for key in ("canonical_composer", "work_group_id", "source_id"):
+            partition = (key, _field(r, key))
+            if partitions.setdefault(partition, split) != split:
+                msg = "supplement split diverges from base W6 dataset"
+                raise StopConditionError(msg)
+    merged_crops = slice_prefix_milestone(
+        [*rows, *base_crops], full_targets[_TRAIN], full_targets[_VAL]
+    )
+    verify_complete_variant_sequences(merged_crops)
+    selected_pages = {_field(r, "page_id") for r in merged_crops}
+    kept_base_pages = [
+        p for p in base_pages if _field(p, "page_id") in selected_pages
+    ]
+    kept_base_crops = [
+        c for c in merged_crops if _field(c, "variant_id") not in seen
+    ]
+    needed_rels = {
+        *(Path(_field(c, "crop_relpath")) for c in kept_base_crops),
+        *(Path(_field(p, "page_relpath")) for p in kept_base_pages),
+    }
+    sink.link({rel: base_links[rel] for rel in sorted(needed_rels)})
+    return merged_crops, [*page_rows, *kept_base_pages]
+
+
+def _package(  # noqa: C901, PLR0912, PLR0913, PLR0915
     variants: Iterable[RenderedVariant],
     sink: _DatasetSink,
     counts: Counter[str],
@@ -1098,6 +1220,7 @@ def _package(  # noqa: C901, PLR0913
     prefix_targets: Mapping[str, int],
     downloads_dir: Path | None,
     formal_milestones: bool,
+    base_tail: _BaseTail | None = None,
     validate_before_publish: Callable[[], None] | None,
 ) -> Row:
     rows: list[Row] = []
@@ -1141,9 +1264,22 @@ def _package(  # noqa: C901, PLR0913
     if any(counts[s] < targets[s] for s in _SPLITS):
         msg = "W6 render budget did not reach both full crop targets"
         raise StopConditionError(msg)
+    if base_tail is not None:
+        rows, page_rows = _merge_base_tail(
+            rows,
+            page_rows,
+            seen,
+            partitions,
+            sink=sink,
+            base_tail=base_tail,
+            formal_milestones=formal_milestones,
+        )
     prefix = slice_prefix_milestone(
         rows, prefix_targets[_TRAIN], prefix_targets[_VAL]
     )
+    if base_tail is not None and formal_milestones:
+        _verify_supplement_category_positives(prefix, CONTENT_CATEGORIES)
+        _verify_supplement_category_positives(rows, CONTENT_CATEGORIES)
     token_lengths, visual_lengths = _pinned_lengths(rows, downloads_dir)
     result: Row = {}
     names = (
@@ -1151,7 +1287,8 @@ def _package(  # noqa: C901, PLR0913
         if formal_milestones
         else ("fixture-crops-prefix", "fixture-crops-full")
     )
-    for milestone, subset in zip(names, (prefix, rows), strict=True):
+    subsets = zip(names, (prefix, rows), strict=True)
+    for milestone, subset in subsets:
         page_ids = {row["page_id"] for row in subset}
         manifests = {}
         for split in _SPLITS:
@@ -1532,10 +1669,15 @@ class _VerovioCohortError(StopConditionError):
     """An unmasked category exceeded the inherited Verovio drop gate."""
 
 
-def _variant_plan(row: Row, round_index: int) -> _VariantPlan:
+def _variant_plan(
+    row: Row,
+    round_index: int,
+    *,
+    seed_prefix: str = "omr-w6-variant-v1",
+) -> _VariantPlan:
     measures = _int(row.get("measure_count"), 1)
     digest = _field(row, "canonical_v2_sha256")
-    seed_text = f"omr-w6-variant-v1:{round_index}:{digest}"
+    seed_text = f"{seed_prefix}:{round_index}:{digest}"
     seed = _seed(seed_text)
     return _VariantPlan(
         row,
@@ -1548,16 +1690,20 @@ def _variant_plan(row: Row, round_index: int) -> _VariantPlan:
 
 def _prepare_variant(plan: _VariantPlan, preferred: str) -> _PreparedVariant:
     score = _source_score(plan.row, Path(_field(plan.row, "canonical_root")))
-    categories = (
-        set(injector._CATEGORIES) - {"N2", "P3"}  # noqa: SLF001
-        if preferred == "verovio"
-        else None
-    )
+    if preferred == "musescore_supplement":
+        categories: set[str] | None = set(injector._CATEGORIES) - {"N5"}  # noqa: SLF001
+        target_preferred = "musescore"
+    elif preferred == "verovio":
+        categories = set(injector._CATEGORIES) - {"N2", "P3"}  # noqa: SLF001
+        target_preferred = "verovio"
+    else:
+        categories = None
+        target_preferred = preferred
     injected = injector.inject_annotations(
         score, seed=plan.seed_text, enabled_categories=categories
     )
     engine = choose_engine_for_score(
-        injected.score, injected.musicxml, preferred_engine=preferred
+        injected.score, injected.musicxml, preferred_engine=target_preferred
     )
     return _PreparedVariant(
         plan.row,
@@ -1610,6 +1756,7 @@ def _execute_prepared_variant(  # noqa: PLR0913
     musescore_lock: threading.Lock,
     max_pages: int,
     max_scratch_bytes: int | None = None,
+    reservation_id: str | None = None,
 ) -> _RenderOutcome:
     local_pages = 0
     peak_scratch_bytes = 0
@@ -1632,6 +1779,7 @@ def _execute_prepared_variant(  # noqa: PLR0913
             else set()
         ),
     )
+    job_max_pages = _item_max_pages(prepared)
     try:
         if prepared.engine == "musescore":
             if musescore is not None:
@@ -1647,6 +1795,7 @@ def _execute_prepared_variant(  # noqa: PLR0913
                     max_pages=max_pages,
                     count_rasters=add_pages,
                     calibrated_identity=calibrated_identity,
+                    max_scratch_bytes=max_scratch_bytes,
                 )
         else:
             result = renderers.render_verovio(
@@ -1659,6 +1808,12 @@ def _execute_prepared_variant(  # noqa: PLR0913
                 count_rasters=add_pages,
                 max_scratch_bytes=max_scratch_bytes,
             )
+        if prepared.engine == "musescore" and has_pending_w6_native_worker(
+            reservation_id
+        ):
+            _fail_unconfirmed_musescore(
+                "pending W6 native-worker fence prevents scratch cleanup"
+            )
         scratch_bytes = max(
             peak_scratch_bytes,
             w6_scratch_dir_bytes(scratch) if scratch.exists() else 0,
@@ -1669,7 +1824,7 @@ def _execute_prepared_variant(  # noqa: PLR0913
         return _RenderOutcome(
             prepared,
             exc,
-            max(local_pages, prepared.measures),
+            max(local_pages, job_max_pages),
             _retained_scratch_bytes(scratch, peak_scratch_bytes),
         )
     return _RenderOutcome(prepared, result, local_pages, scratch_bytes)
@@ -1868,6 +2023,12 @@ def _verovio_worst_case_bytes(plan: _PreparedVariant) -> int:
     )
 
 
+def _item_max_pages(item: _PreparedVariant) -> int:
+    if item.engine == "musescore":
+        return max(item.measures, item.xml.count("<measure")) + 1
+    return item.measures
+
+
 def _item_worst_case_bytes(item: _PreparedVariant) -> int:
     if item.engine == "musescore":
         return _musescore_worst_case_bytes(item.measures, item.xml)
@@ -1885,6 +2046,9 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
     targets: Mapping[str, int],
     verovio_workers: int = 1,
     musescore_page_cap: int | None = None,
+    musescore_supplement: bool = False,
+    precomputed_plans: Sequence[_VariantPlan] | None = None,
+    reservation_id: str = "",
 ) -> Iterator[RenderedVariant]:
     workers = _int(verovio_workers, 1)
     if musescore_page_cap is not None:
@@ -1918,8 +2082,13 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
         ],
     ] = {}
     discarded: list[tuple[float, Future[_PreparedVariant | _WorkerError]]] = []
+    total_items = (
+        len(precomputed_plans) if precomputed_plans is not None else len(rows)
+    )
 
     def preferred_engine(plan: _VariantPlan) -> str:
+        if musescore_supplement:
+            return "musescore_supplement"
         return (
             "musescore"
             if plan.seed % 2 == 0 and permits_musescore(plan.measures)
@@ -1956,7 +2125,7 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 _await_futures(process_pool, (fut,), started_at=started_at)
         discarded.clear()
 
-    def prepare(
+    def prepare(  # noqa: C901
         plan: _VariantPlan, idx: int, round_index: int
     ) -> _PreparedVariant:
         preferred = preferred_engine(plan)
@@ -1966,17 +2135,23 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
         if cached is None or cached[0] != preferred:
             # Keep at most `workers` active lookahead jobs so each starts
             # immediately without queue delay.
-            for index in range(idx, min(idx + workers, len(rows))):
-                row = rows[index]
+            for index in range(idx, min(idx + workers, total_items)):
                 try:
-                    split = _field(row, "split")
-                    if meter.crop_counts[split] >= targets[split]:
-                        continue
-                    upcoming = (
-                        plan
-                        if index == idx
-                        else _variant_plan(row, round_index)
-                    )
+                    if precomputed_plans is not None:
+                        upcoming = precomputed_plans[index]
+                        split = _field(upcoming.row, "split")
+                        if meter.crop_counts[split] >= targets[split]:
+                            continue
+                    else:
+                        row = rows[index]
+                        split = _field(row, "split")
+                        if meter.crop_counts[split] >= targets[split]:
+                            continue
+                        upcoming = (
+                            plan
+                            if index == idx
+                            else _variant_plan(row, round_index)
+                        )
                 except KeyError, StopConditionError:
                     if index == idx:
                         raise
@@ -2087,12 +2262,9 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 musescore=musescore,
                 calibrated_identity=calibrated_identity,
                 musescore_lock=musescore_lock,
-                max_pages=min(item.measures, max_pages),
-                max_scratch_bytes=(
-                    None
-                    if item.engine == "musescore"
-                    else _verovio_worst_case_bytes(item)
-                ),
+                max_pages=min(_item_max_pages(item), max_pages),
+                max_scratch_bytes=_item_worst_case_bytes(item),
+                reservation_id=reservation_id or None,
             )
 
         if thread_pool is not None and len(items) > 1:
@@ -2101,7 +2273,18 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
         else:
             outcomes = [execute(item) for item in items]
         meter.add(sum(outcome.pages for outcome in outcomes))
-        meter.uncounted_worker = False
+        fence_owned = has_pending_w6_native_worker(reservation_id or None)
+        meter.uncounted_worker = fence_owned or any(
+            isinstance(outcome.result, _UnconfirmedWorkerExitError)
+            for outcome in outcomes
+        )
+        if fence_owned and not any(
+            isinstance(outcome.result, _WorkerError | Exception)
+            for outcome in outcomes
+        ):
+            _fail_unconfirmed_musescore(
+                "W6 native-worker fence remained set after dispatch"
+            )
         return outcomes
 
     def flush_batch() -> list[RenderedVariant]:  # noqa: C901
@@ -2167,24 +2350,33 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
             - VEROVIO_DISABLED_CATEGORIES
         ):
             meter.validate_verovio_cohort(formal=False)
-        if process_pool is not None and not is_musescore and rendered:
+        if (
+            process_pool is not None
+            and (not is_musescore or musescore_supplement)
+            and rendered
+        ):
             return _prepackage_variants_parallel(
                 process_pool, workers, rendered
             )
         return rendered
 
+    outer_rounds = 1 if precomputed_plans is not None else _MAX_VARIANT_ROUNDS
     try:
-        for round_index in range(_MAX_VARIANT_ROUNDS):
+        for round_index in range(outer_rounds):
             drain_preparations()
             preparations.clear()
             attempted = False
             idx = 0
-            while idx < len(rows):
+            while idx < total_items:
                 if all(
                     meter.crop_counts[s] >= need for s, need in targets.items()
                 ):
                     return
-                row = rows[idx]
+                row = (
+                    precomputed_plans[idx].row
+                    if precomputed_plans is not None
+                    else rows[idx]
+                )
                 split = _field(row, "split")
                 if meter.crop_counts[split] >= targets[split]:
                     discard_preparation(idx)
@@ -2198,12 +2390,33 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     discard_preparation(idx)
                     idx += 1
                     continue
-                plan = _variant_plan(row, round_index)
-                allow_musescore = permits_musescore(measures)
+                plan = (
+                    precomputed_plans[idx]
+                    if precomputed_plans is not None
+                    else _variant_plan(row, round_index)
+                )
                 item = prepare(plan, idx, round_index)
                 is_musescore = item.engine == "musescore"
-                if is_musescore and not allow_musescore:
+                if (
+                    is_musescore
+                    and item.xml.count("<repeat") > _MAX_MUSESCORE_REPEATS
+                ):
+                    discard_preparation(idx)
+                    idx += 1
+                    continue
+                item_pages = _item_max_pages(item)
+                if is_musescore and not permits_musescore(item_pages):
                     if pending_ms_measures > 0 and batch:
+                        yield from flush_batch()
+                        continue
+                    discard_preparation(idx)
+                    idx += 1
+                    continue
+                if (
+                    item_pages + reserved_measures
+                    > meter.planned - meter.actual
+                ):
+                    if batch:
                         yield from flush_batch()
                         continue
                     discard_preparation(idx)
@@ -2213,19 +2426,13 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     yield from flush_batch()
                     continue
                 discard_preparation(idx)
-                if (
-                    is_musescore
-                    and item.xml.count("<repeat") > _MAX_MUSESCORE_REPEATS
-                ):
-                    idx += 1
-                    continue
                 item_scratch = _item_worst_case_bytes(item)
                 meter.check_scratch(reserved_scratch_bytes + item_scratch)
                 batch.append(item)
-                reserved_measures += measures
+                reserved_measures += item_pages
                 reserved_scratch_bytes += item_scratch
                 if is_musescore:
-                    pending_ms_measures += measures
+                    pending_ms_measures += item_pages
                 idx += 1
                 if is_musescore or len(batch) >= workers:
                     yield from flush_batch()
@@ -2245,24 +2452,431 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
             thread_pool.shutdown(wait=True)
 
 
+class _UnconfirmedWorkerExitError(StopConditionError):
+    """Raised when a timed-out native worker's exit could not be confirmed."""
+
+
+_WSL_POWERSHELL = Path(
+    "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+)
+_WSL_NATIVE_LAUNCH_SCRIPT = r"""
+$ErrorActionPreference = "Stop"
+Add-Type -TypeDefinition @"
+using System;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+public static class W6JobRunner {
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct STARTUPINFO {
+        public int cb;
+        public string lpReserved, lpDesktop, lpTitle;
+        public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars;
+        public int dwFillAttribute, dwFlags;
+        public short wShowWindow, cbReserved2;
+        public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+    }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct STARTUPINFOEX {
+        public STARTUPINFO StartupInfo;
+        public IntPtr lpAttributeList;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct PROCESS_INFORMATION {
+        public IntPtr hProcess, hThread;
+        public int dwProcessId, dwThreadId;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct SECURITY_ATTRIBUTES {
+        public int nLength;
+        public IntPtr lpSecurityDescriptor;
+        public bool bInheritHandle;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct JOBOBJECT_BASIC_LIMIT_INFORMATION {
+        public long PerProcessUserTimeLimit, PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize, MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass, SchedulingClass;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct IO_COUNTERS {
+        public ulong ROp, WOp, OOp, RBytes, WBytes, OBytes;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+        public IO_COUNTERS IoInfo;
+        public UIntPtr ProcMem, JobMem, PeakProcMem, PeakJobMem;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct JOBOBJECT_BASIC_ACCOUNTING_INFORMATION {
+        public long TotalUser, TotalKernel, PeriodUser, PeriodKernel;
+        public uint PageFaults, TotalProcesses, ActiveProcesses, Terminated;
+    }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern IntPtr CreateJobObjectW(IntPtr a, string n);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool SetInformationJobObject(
+        IntPtr h, int t, ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION i, int cb);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool QueryInformationJobObject(
+        IntPtr h, int t, out JOBOBJECT_BASIC_ACCOUNTING_INFORMATION i,
+        int cb, IntPtr r);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool TerminateJobObject(IntPtr hJob, uint code);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool InitializeProcThreadAttributeList(
+        IntPtr list, int count, int flags, ref IntPtr size);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool UpdateProcThreadAttribute(
+        IntPtr list, uint flags, IntPtr attr, ref IntPtr val, IntPtr cb,
+        IntPtr prev, IntPtr retSz);
+    [DllImport("kernel32.dll")]
+    static extern void DeleteProcThreadAttributeList(IntPtr list);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool CreatePipe(
+        out SafeFileHandle r, out SafeFileHandle w,
+        ref SECURITY_ATTRIBUTES sa, int sz);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool SetHandleInformation(SafeFileHandle h, int m, int f);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern SafeFileHandle CreateFileW(
+        string fn, uint acc, uint share, ref SECURITY_ATTRIBUTES sa,
+        uint disp, uint flg, IntPtr tpl);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern bool CreateProcessW(
+        string app, StringBuilder cmd, IntPtr pa, IntPtr ta,
+        bool inheritHandles, uint flg, IntPtr env, string cwd,
+        ref STARTUPINFOEX si, out PROCESS_INFORMATION pi);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern uint WaitForSingleObject(IntPtr h, uint ms);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool GetExitCodeProcess(IntPtr h, out uint code);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool CloseHandle(IntPtr h);
+
+    static void Check(bool ok) {
+        if (!ok) throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
+
+    static uint ActiveCount(IntPtr hJob) {
+        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION a;
+        int sz = Marshal.SizeOf(typeof(JOBOBJECT_BASIC_ACCOUNTING_INFORMATION));
+        Check(QueryInformationJobObject(hJob, 1, out a, sz, IntPtr.Zero));
+        return a.ActiveProcesses;
+    }
+
+    public static object[] Run(string exe, string cmdLine, uint timeoutMs) {
+        IntPtr hJob = CreateJobObjectW(IntPtr.Zero, null);
+        Check(hJob != IntPtr.Zero);
+        try {
+            var ext = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+            ext.BasicLimitInformation.LimitFlags = 0x00002000;
+            int extSz = Marshal.SizeOf(
+                typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
+            Check(SetInformationJobObject(hJob, 9, ref ext, extSz));
+            IntPtr attrSz = IntPtr.Zero;
+            InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref attrSz);
+            IntPtr attrBuf = Marshal.AllocHGlobal(attrSz);
+            try {
+                Check(InitializeProcThreadAttributeList(
+                    attrBuf, 1, 0, ref attrSz));
+                try {
+                    Check(UpdateProcThreadAttribute(
+                        attrBuf, 0, (IntPtr)0x0002000D, ref hJob,
+                        (IntPtr)IntPtr.Size, IntPtr.Zero, IntPtr.Zero));
+                    var sa = new SECURITY_ATTRIBUTES {
+                        nLength = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES)),
+                        bInheritHandle = true
+                    };
+                    SafeFileHandle hRead, hWrite;
+                    Check(CreatePipe(out hRead, out hWrite, ref sa, 0));
+                    SetHandleInformation(hRead, 1, 0);
+                    using (var nul = CreateFileW(
+                        "NUL", 0x80000000u, 3u, ref sa, 3u, 0u, IntPtr.Zero)) {
+                        if (nul.IsInvalid) {
+                            hWrite.Dispose();
+                            hRead.Dispose();
+                            Check(false);
+                        }
+                        var si = new STARTUPINFOEX();
+                        si.StartupInfo.cb = Marshal.SizeOf(
+                            typeof(STARTUPINFOEX));
+                        si.StartupInfo.dwFlags = 0x00000100;
+                        si.StartupInfo.hStdInput = nul.DangerousGetHandle();
+                        si.StartupInfo.hStdOutput = hWrite.DangerousGetHandle();
+                        si.StartupInfo.hStdError = hWrite.DangerousGetHandle();
+                        si.lpAttributeList = attrBuf;
+                        PROCESS_INFORMATION pi;
+                        var sb = new StringBuilder(cmdLine);
+                        if (!CreateProcessW(
+                            exe, sb, IntPtr.Zero, IntPtr.Zero, true,
+                            0x08080000u, IntPtr.Zero, null, ref si, out pi)) {
+                            hWrite.Dispose();
+                            hRead.Dispose();
+                            Check(false);
+                        }
+                        hWrite.Dispose();
+                        try {
+                            var ms = new MemoryStream();
+                            var reader = System.Threading.Tasks.Task.Run(() => {
+                                using (var fs = new FileStream(
+                                    hRead, FileAccess.Read)) {
+                                    fs.CopyTo(ms);
+                                }
+                            });
+                            uint wait = WaitForSingleObject(
+                                pi.hProcess, timeoutMs);
+                            bool timedOut = (wait != 0);
+                            Check(TerminateJobObject(hJob, 1));
+                            var sw = System.Diagnostics.Stopwatch.StartNew();
+                            while (ActiveCount(hJob) > 0) {
+                                if (sw.ElapsedMilliseconds > 5000)
+                                    throw new TimeoutException("Active > 0");
+                                System.Threading.Thread.Sleep(25);
+                            }
+                            reader.Wait(2000);
+                            uint code = 1;
+                            if (!timedOut)
+                                Check(GetExitCodeProcess(
+                                    pi.hProcess, out code));
+                            return new object[] {
+                                timedOut ? "timed_out_reaped" : "exited",
+                                (int)code,
+                                Convert.ToBase64String(ms.ToArray())
+                            };
+                        } finally {
+                            CloseHandle(pi.hThread);
+                            CloseHandle(pi.hProcess);
+                        }
+                    }
+                } finally {
+                    DeleteProcThreadAttributeList(attrBuf);
+                }
+            } finally {
+                Marshal.FreeHGlobal(attrBuf);
+            }
+        } finally {
+            CloseHandle(hJob);
+        }
+    }
+}
+"@
+$cfg = [Console]::In.ReadToEnd() | ConvertFrom-Json
+$res = [W6JobRunner]::Run(
+    [string]$cfg.exe, [string]$cfg.cmdline, [uint32]$cfg.timeout_ms)
+$envObj = @{ state = $res[0]; exit_code = $res[1]; output_b64 = $res[2] }
+$envObj | ConvertTo-Json -Compress
+"""
+
+
+def _fail_unconfirmed_musescore(
+    detail: str, cause: Exception | None = None
+) -> Never:
+    if cause is not None:
+        raise _UnconfirmedWorkerExitError(detail) from cause
+    raise _UnconfirmedWorkerExitError(detail)
+
+
+def _parse_wsl_job_envelope(raw: bytes) -> tuple[str, int, str]:
+    lines = [
+        ln
+        for ln in raw.decode("utf-8", errors="strict").splitlines()
+        if ln.strip()
+    ]
+    if not lines:
+        msg = "empty WSL JobObject supervisor response"
+        raise ValueError(msg)
+    obj = json.loads(lines[-1])
+    if not isinstance(obj, dict):
+        msg = "non-object WSL JobObject supervisor response"
+        raise TypeError(msg)
+    state = obj.get("state")
+    code = obj.get("exit_code")
+    out_b64 = obj.get("output_b64")
+    if (
+        state not in {"exited", "timed_out_reaped"}
+        or type(code) is not int
+        or not isinstance(out_b64, str)
+    ):
+        msg = "malformed WSL JobObject supervisor envelope"
+        raise ValueError(msg)
+    output = base64.b64decode(out_b64.encode("ascii"), validate=True).decode(
+        "utf-8", errors="replace"
+    )
+    return state, code, output
+
+
+def _run_wsl_native_musescore(
+    command: Sequence[str],
+    limit_sec: float,
+    *,
+    track_campaign_fence: bool,
+    reservation_id: str = "",
+) -> tuple[int | None, str]:
+    if not _WSL_POWERSHELL.is_file():
+        msg = (
+            "WSL MuseScore execution requires host powershell.exe JobObject "
+            "guard"
+        )
+        raise StopConditionError(msg)
+    win_exe = _windows_path_for_wsl(Path(command[0]))
+    win_cmd = [win_exe, *command[1:]]
+    encoded = base64.b64encode(
+        _WSL_NATIVE_LAUNCH_SCRIPT.encode("utf-16-le")
+    ).decode("ascii")
+    payload = json.dumps(
+        {
+            "exe": win_exe,
+            "cmdline": subprocess.list2cmdline(win_cmd),
+            "timeout_ms": max(1, round(limit_sec * 1000)),
+        }
+    ).encode("utf-8")
+    token = (
+        begin_w6_native_worker(
+            "wsl-musescore-job", reservation_id=reservation_id
+        )
+        if track_campaign_fence
+        else None
+    )
+    try:
+        proc = subprocess.Popen(  # noqa: S603
+            [
+                str(_WSL_POWERSHELL),
+                "-NoProfile",
+                "-NonInteractive",
+                "-EncodedCommand",
+                encoded,
+            ],
+            cwd="/mnt/c" if Path("/mnt/c").is_dir() else None,
+            env=os.environ | W6_OFFLINE_ENV,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+    except OSError as exc:
+        if token is not None:
+            clear_w6_native_worker(token)
+        msg = "failed to start WSL JobObject supervisor"
+        raise StopConditionError(msg) from exc
+    try:
+        out, _ = proc.communicate(input=payload, timeout=limit_sec + 15.0)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        with contextlib.suppress(OSError):
+            proc.kill()
+        with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+            proc.communicate(timeout=2.0)
+        if proc.stdout is not None:
+            with contextlib.suppress(OSError):
+                proc.stdout.close()
+        _fail_unconfirmed_musescore(
+            "MuseScore batch worker failed without confirmed native exit",
+            exc,
+        )
+    if proc.returncode != 0:
+        _fail_unconfirmed_musescore(
+            "WSL JobObject supervisor failed without exit confirmation "
+            f"({proc.returncode})"
+        )
+    try:
+        state, code, decoded = _parse_wsl_job_envelope(out)
+    except (UnicodeDecodeError, TypeError, ValueError) as exc:
+        _fail_unconfirmed_musescore(
+            "WSL JobObject supervisor returned invalid exit confirmation",
+            exc,
+        )
+    if token is not None:
+        clear_w6_native_worker(token)
+    if state == "timed_out_reaped":
+        msg = "MuseScore batch worker timed out"
+        raise StopConditionError(msg)
+    return code, decoded
+
+
 def _offline_musescore(
     command: Sequence[str],
     timeout: float,
+    *,
+    downloads: Path | None = None,
+    reservation_id: str = "",
 ) -> tuple[int | None, str]:
+    limit_sec = min(timeout, W6_WORKER_TIMEOUT_SECONDS)
+    track = downloads is not None
+    if sys.platform != "win32" and command[0].lower().endswith(".exe"):
+        return _run_wsl_native_musescore(
+            command,
+            limit_sec,
+            track_campaign_fence=track,
+            reservation_id=reservation_id,
+        )
+    token = (
+        begin_w6_native_worker(
+            "posix-musescore-job", reservation_id=reservation_id
+        )
+        if track
+        else None
+    )
     try:
-        process = subprocess.run(  # noqa: S603
+        process = subprocess.Popen(  # noqa: S603
             wsl_translate_command(command),
             env=os.environ | W6_OFFLINE_ENV,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
             close_fds=True,
-            timeout=min(timeout, W6_WORKER_TIMEOUT_SECONDS),
-            check=False,
         )
-    except subprocess.TimeoutExpired as exc:
-        return None, (exc.output or b"").decode("utf-8", errors="replace")
-    return process.returncode, process.stdout.decode("utf-8", errors="replace")
+    except OSError as exc:
+        if token is not None:
+            clear_w6_native_worker(token)
+        msg = "failed to launch MuseScore worker"
+        raise StopConditionError(msg) from exc
+    try:
+        out, _ = process.communicate(timeout=limit_sec)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        with contextlib.suppress(OSError):
+            process.kill()
+        try:
+            process.communicate(timeout=5.0)
+        except (OSError, subprocess.TimeoutExpired) as reap_exc:
+            if process.stdout is not None:
+                with contextlib.suppress(OSError):
+                    process.stdout.close()
+            _fail_unconfirmed_musescore(
+                "MuseScore batch worker failed without confirmed exit",
+                reap_exc,
+            )
+        if token is not None:
+            clear_w6_native_worker(token)
+        msg = "MuseScore batch worker timed out"
+        raise StopConditionError(msg) from exc
+    if token is not None:
+        clear_w6_native_worker(token)
+    return process.returncode, out.decode("utf-8", errors="replace")
+
+
+def _make_offline_musescore(
+    downloads: Path,
+    *,
+    reservation_id: str = "",
+) -> Callable[[Sequence[str], float], tuple[int | None, str]]:
+    def launch(
+        command: Sequence[str], timeout: float
+    ) -> tuple[int | None, str]:
+        return _offline_musescore(
+            command,
+            timeout,
+            downloads=downloads,
+            reservation_id=reservation_id,
+        )
+
+    return launch
 
 
 def _write_packaging_report(run: Path, downloads: Path, result: Row) -> None:
@@ -2395,12 +3009,18 @@ def run_expanded_w4a_and_package(  # noqa: PLR0913, PLR0915
                 ordered,
                 run=run,
                 downloads=downloads,
-                musescore=replace(musescore, launcher=_offline_musescore),
+                musescore=replace(
+                    musescore,
+                    launcher=_make_offline_musescore(
+                        downloads, reservation_id=reserve
+                    ),
+                ),
                 meter=meter,
                 calibrated_identity=calibrated_identity,
                 targets={_TRAIN: target_train_crops, _VAL: target_val_crops},
                 verovio_workers=verovio_workers,
                 musescore_page_cap=musescore_page_cap,
+                reservation_id=reserve,
             ),
             run,
             downloads_dir=downloads,
@@ -2439,6 +3059,613 @@ def run_expanded_w4a_and_package(  # noqa: PLR0913, PLR0915
             reserve,
             status=status,
             actual_pages=max(planned_pages, meter.actual)
-            if meter.uncounted_worker
+            if (meter.uncounted_worker or has_pending_w6_native_worker(reserve))
+            else meter.actual,
+        )
+
+
+_SUPPLEMENT_BUCKET_NAMES = (
+    "tremolo",
+    "cross_staff",
+    "ornament",
+    "grace",
+    "ottava",
+    "hairpin",
+    "clef",
+)
+
+
+def _has_native_grace(score: model.AssembledScore) -> bool:
+    for placed in build_timeline(score).events():
+        if isinstance(placed.event, model.Note | model.Rest) and any(
+            isinstance(flag, model.Grace) for flag in placed.event.flags
+        ):
+            return True
+    return False
+
+
+def _supplement_rarity_bucket(row: Mapping[str, object]) -> int | None:
+    raw_densities = row.get("category_densities")
+    densities = raw_densities if isinstance(raw_densities, dict) else {}
+    score = _source_score(row, Path(_field(row, "canonical_root")))
+    for idx, key in enumerate(("tremolos", "cross_staff", "ornaments")):
+        val = densities.get(key, 0)
+        if isinstance(val, int | float) and val > 0:
+            return idx
+    if _has_native_grace(score):
+        return 3
+    for idx, key in ((4, "ottavas"), (5, "hairpins"), (6, "clef_changes")):
+        val = densities.get(key, 0)
+        if isinstance(val, int | float) and val > 0:
+            return idx
+    if any(
+        isinstance(placed.event, model.ClefChange)
+        for placed in build_timeline(score).events()
+    ):
+        return 6
+    return None
+
+
+def _interleave_supplement_plans(
+    split_rows: Sequence[Row],
+) -> tuple[list[_VariantPlan], dict[str, int]]:
+    buckets: dict[int, list[Row]] = {
+        i: [] for i in range(len(_SUPPLEMENT_BUCKET_NAMES))
+    }
+    for row in split_rows:
+        bucket = _supplement_rarity_bucket(row)
+        if bucket is not None:
+            buckets[bucket].append(row)
+    for group in buckets.values():
+        group.sort(key=lambda r: _field(r, "source_id"))
+    counts = {
+        name: len(buckets[idx])
+        for idx, name in enumerate(_SUPPLEMENT_BUCKET_NAMES)
+    }
+    if not any(counts.values()):
+        msg = "admitted split has no scores eligible for MuseScore supplement"
+        raise StopConditionError(msg)
+    streams = [
+        [
+            _variant_plan(
+                row, round_index, seed_prefix="omr-w6-ms-supplement-v1"
+            )
+            for round_index in range(_MAX_VARIANT_ROUNDS)
+            for row in buckets[idx]
+        ]
+        for idx in range(len(_SUPPLEMENT_BUCKET_NAMES))
+        if buckets[idx]
+    ]
+    interleaved = [
+        plan
+        for step in zip_longest(*streams, fillvalue=None)
+        for plan in step
+        if plan is not None
+    ]
+    return interleaved, counts
+
+
+_PERMISSIVE_REUSE_LICENSES = intake.PDMX_LICENSES | {"CC0-1.0"}
+
+
+def _jsonl_bytes_rows(raw: bytes) -> list[Row]:
+    try:
+        return [
+            json.loads(line)
+            for line in raw.decode("utf-8").splitlines()
+            if line.strip()
+        ]
+    except (UnicodeDecodeError, ValueError) as exc:
+        msg = "malformed W6 JSONL manifest bytes"
+        raise StopConditionError(msg) from exc
+
+
+def _verify_reused_manifest(
+    manifest_source: Path | bytes,
+    runs_root: Path,
+    gate: MetadataOnlyTestExclusion,
+    *,
+    formal: bool,
+    default_root: Path | None = None,
+) -> list[Row]:
+    rows = (
+        _jsonl_bytes_rows(manifest_source)
+        if isinstance(manifest_source, bytes)
+        else _read_sources(manifest_source)
+    )
+    fallback_root = (
+        default_root
+        if default_root is not None
+        else (
+            manifest_source.parent
+            if isinstance(manifest_source, Path)
+            else runs_root
+        )
+    )
+    if not rows or len(rows) > _MAX_TOTAL_SOURCES:
+        msg = "reused W6 source manifest is empty or exceeds the score ceiling"
+        raise StopConditionError(msg)
+    if formal and len(rows) < _MIN_FORMAL_SOURCES:
+        msg = "formal MuseScore supplement requires at least 2,500 sources"
+        raise StopConditionError(msg)
+    seen: set[str] = set()
+    verified: list[Row] = []
+    for raw in rows:
+        row = dict(raw)
+        if (
+            row.get("corpus") not in {"OpenScore Lieder", "PDMX"}
+            or row.get("rights_variant") != "permissive"
+            or row.get("license_url") not in _PERMISSIVE_REUSE_LICENSES
+        ):
+            msg = "expected permissive W6 source manifest rows"
+            raise StopConditionError(msg)
+        digest = _field(row, "canonical_v2_sha256")
+        if digest in seen:
+            msg = "duplicate canonical score in reused W6 source manifest"
+            raise StopConditionError(msg)
+        seen.add(digest)
+        root_str = row.get("canonical_root")
+        raw_root = (
+            Path(root_str)
+            if isinstance(root_str, str) and root_str
+            else fallback_root
+        )
+        check_no_symlink_under(raw_root, Path(raw_root.anchor))
+        root = raw_root.resolve()
+        if (
+            len(root.parts) < 4  # noqa: PLR2004
+            or root.parts[-2:] != ("synthetic", "permissive")
+            or root.parents[2] != runs_root.resolve()
+            or not root.parents[1].name.startswith(("w6-slice-a-", "w4-"))
+        ):
+            msg = "reused W6 canonical_root escapes canonical synthetic runs"
+            raise StopConditionError(msg)
+        check_no_symlink_under(root, runs_root)
+        row["canonical_root"] = str(root)
+        verified.append(row)
+    gate.audit_admitted_manifest(verified)
+    for row in verified:
+        _source_score(row, Path(_field(row, "canonical_root")))
+    return verified
+
+
+ACCEPTED_W6_BASE_PACKAGE_RUNS: Mapping[str, Mapping[str, str]] = {
+    "w6-slice-a-package-formal-4": {
+        "w6-packaging.json": (
+            "260b461d20c7647415d60f9fb3f025fc33b290cf7a92ef7c4d7db85bcc9f22c3"
+        ),
+        "sources-manifest.jsonl": (
+            "5af7cd631cbf9294358874fb159280db6139be34cf0de49b3186ae9782390366"
+        ),
+        "w6-crops-50k/summary.json": (
+            "fc32a37ffe93c6a30b4219fad01c4cfb7bc3568931f07b8658c702139d7c9b83"
+        ),
+        "w6-crops-50k/synth_train/crops.jsonl": (
+            "3b4ca45079ac5638e83d7b58531a6b7b35a9bcd7eb71644f88fd8466501d461d"
+        ),
+        "w6-crops-50k/synth_val/crops.jsonl": (
+            "53319194b570ef32a5a5e66dfe3527a80de1ee4c52cf63cd623247ffc3ebf530"
+        ),
+        "w6-crops-50k/synth_train/page-boxes.jsonl": (
+            "a9147492bd0aeb7196c0be7e013b620287eb922e68e5a1e12cda1c317605506e"
+        ),
+        "w6-crops-50k/synth_val/page-boxes.jsonl": (
+            "aa4c3e1b9a60b6f30e85b8bf3bf24a8f5dd7a51f10a87e3d6860d3d4d085761c"
+        ),
+    }
+}
+
+
+def _read_verified_base_blobs(
+    base_run: Path, milestone: str, *, formal: bool
+) -> tuple[dict[str, bytes], dict[str, str]]:
+    files = {
+        "w6-packaging.json": base_run / "report" / "w6-packaging.json",
+        "sources-manifest.jsonl": (
+            base_run / "synthetic" / "permissive" / "sources-manifest.jsonl"
+        ),
+        f"{milestone}/summary.json": (
+            base_run / "datasets" / milestone / "summary.json"
+        ),
+    }
+    for sp in _SPLITS:
+        split_dir = base_run / "datasets" / milestone / sp
+        files[f"{milestone}/{sp}/crops.jsonl"] = split_dir / "crops.jsonl"
+        files[f"{milestone}/{sp}/page-boxes.jsonl"] = (
+            split_dir / "page-boxes.jsonl"
+        )
+    blobs: dict[str, bytes] = {}
+    digests: dict[str, str] = {}
+    for key, path in files.items():
+        check_no_symlink_under(path, base_run)
+        if not path.is_file():
+            msg = f"missing required base W6 packaging artifact: {key}"
+            raise StopConditionError(msg)
+        raw = path.read_bytes()
+        blobs[key] = raw
+        digests[key] = _sha(raw)
+    if formal:
+        expected = ACCEPTED_W6_BASE_PACKAGE_RUNS.get(base_run.name)
+        if expected is None or digests != dict(expected):
+            msg = (
+                "formal base W6 run lacks accepted completed-run digest "
+                "provenance"
+            )
+            raise StopConditionError(msg)
+    return blobs, digests
+
+
+def _verify_base_page_row(
+    base_datasets: Path, row: Mapping[str, object], split_name: str
+) -> None:
+    from sheet_music_omr.training import models as w6_models  # noqa: PLC0415
+
+    page_id = row.get("page_id")
+    boxes = row.get("boxes")
+    if (
+        row.get("schema") != "omr-w6-page-boxes-v1"
+        or not isinstance(page_id, str)
+        or not page_id
+        or not isinstance(boxes, list)
+    ):
+        msg = f"invalid base W6 page-boxes manifest in {split_name}"
+        raise StopConditionError(msg)
+    width = _int(row.get("page_width_px"), 1)
+    height = _int(row.get("page_height_px"), 1)
+    for box in boxes:
+        cls = box.get("class_id") if isinstance(box, dict) else None
+        if type(cls) is not int or cls not in {0, 1}:
+            msg = f"invalid base W6 page box class_id in {split_name}"
+            raise StopConditionError(msg)
+    try:
+        for box in boxes:
+            w6_models._manifest_box(  # noqa: SLF001
+                cast("dict[str, object]", box).get("box_px"), width, height
+            )
+        w6_models._packaged_png(  # noqa: SLF001
+            base_datasets,
+            row.get("page_relpath"),
+            row.get("sha256"),
+            (width, height),
+        )
+    except ValueError as exc:
+        msg = f"corrupted base W6 page raster or box in {split_name}"
+        raise StopConditionError(msg) from exc
+
+
+def _verify_base_crop_rows(
+    base_datasets: Path, crop_rows: Sequence[Row], split_name: str
+) -> None:
+    from sheet_music_omr.training import models as w6_models  # noqa: PLC0415
+
+    if not crop_rows or any(
+        c.get("schema") != "omr-w6-crop-dataset-v1" for c in crop_rows
+    ):
+        msg = f"invalid base W6 crop manifest in {split_name}"
+        raise StopConditionError(msg)
+    verify_complete_variant_sequences(crop_rows)
+    for c in crop_rows:
+        try:
+            w6_models._packaged_png(  # noqa: SLF001
+                base_datasets,
+                c.get("crop_relpath"),
+                c.get("sha256"),
+                (_int(c.get("crop_width"), 1), _int(c.get("crop_height"), 1)),
+            )
+        except ValueError as exc:
+            msg = f"corrupted base W6 crop raster in {split_name}"
+            raise StopConditionError(msg) from exc
+
+
+def _load_verified_base_datasets(
+    base_datasets: Path,
+    milestone: str,
+    blobs: Mapping[str, bytes],
+    expected_splits: Mapping[tuple[str, str], str],
+) -> tuple[list[Row], list[Row], dict[Path, Path]]:
+    check_no_symlink_under(base_datasets, base_datasets.parent)
+    base_crops: list[Row] = []
+    base_pages: list[Row] = []
+    base_links: dict[Path, Path] = {}
+    for split_name in _SPLITS:
+        crop_rows = _jsonl_bytes_rows(
+            blobs[f"{milestone}/{split_name}/crops.jsonl"]
+        )
+        page_rows = _jsonl_bytes_rows(
+            blobs[f"{milestone}/{split_name}/page-boxes.jsonl"]
+        )
+        _verify_base_crop_rows(base_datasets, crop_rows, split_name)
+        for p in page_rows:
+            _verify_base_page_row(base_datasets, p, split_name)
+        for r in (*crop_rows, *page_rows):
+            if r.get("split") != split_name or any(
+                expected_splits.get((k, _field(r, k))) != split_name
+                for k in ("canonical_composer", "work_group_id", "source_id")
+            ):
+                msg = "base W6 manifest row violates source split assignment"
+                raise StopConditionError(msg)
+        for r, rel_key in (
+            *((c, "crop_relpath") for c in crop_rows),
+            *((p, "page_relpath") for p in page_rows),
+        ):
+            rel = Path(_field(r, rel_key))
+            if (
+                rel.is_absolute()
+                or ".." in rel.parts
+                or rel.parts[:1] != ("assets",)
+            ):
+                msg = "base W6 asset relpath escapes datasets/assets"
+                raise StopConditionError(msg)
+            src = base_datasets / rel
+            check_no_symlink_under(src, base_datasets)
+            if not stat.S_ISREG(src.stat(follow_symlinks=False).st_mode):
+                msg = "missing or non-regular base W6 asset file"
+                raise StopConditionError(msg)
+            base_links.setdefault(rel, src)
+        base_crops.extend(crop_rows)
+        base_pages.extend(page_rows)
+    verify_complete_variant_sequences(base_crops)
+    return base_crops, base_pages, base_links
+
+
+def _load_verified_base_run(  # noqa: PLR0913
+    base_run_dir: Path,
+    *,
+    run: Path,
+    downloads: Path,
+    runs_root: Path,
+    gate: MetadataOnlyTestExclusion,
+    formal: bool,
+) -> tuple[
+    list[Row],
+    list[Row],
+    list[Row],
+    Row,
+    list[Row],
+    list[Row],
+    dict[Path, Path],
+    dict[str, str],
+]:
+    check_no_symlink_under(base_run_dir, Path(base_run_dir.anchor))
+    base_run = base_run_dir.resolve()
+    if (
+        base_run == run.resolve()
+        or base_run.parent != runs_root
+        or not base_run.name.startswith("w6-slice-a-")
+    ):
+        msg = "base W6 run must be a distinct sibling w6-slice-a-* directory"
+        raise StopConditionError(msg)
+    check_no_symlink_under(base_run, runs_root)
+    if formal:
+        verify_completed_w6_render_run(downloads, base_run.name)
+    milestone = "w6-crops-50k" if formal else "fixture-crops-full"
+    blobs, digests = _read_verified_base_blobs(
+        base_run, milestone, formal=formal
+    )
+    base_report = json.loads(blobs["w6-packaging.json"].decode("utf-8"))
+    split_meta = (
+        base_report.get("split") if isinstance(base_report, dict) else None
+    )
+    if not isinstance(split_meta, dict):
+        msg = "base W6 packaging report is missing its split metadata"
+        raise StopConditionError(msg)
+    target_val_works = _int(split_meta.get("target_val_works"), 1)
+    if formal and target_val_works < _FORMAL_VAL_FLOOR:
+        msg = "formal base W6 run has fewer than 150 validation works"
+        raise StopConditionError(msg)
+    rows = _verify_reused_manifest(
+        blobs["sources-manifest.jsonl"],
+        runs_root,
+        gate,
+        formal=formal,
+        default_root=base_run / "synthetic" / "permissive",
+    )
+    train, val, split = split_admitted_sources_by_composer(
+        rows, min_val_works=target_val_works
+    )
+    if split != split_meta:
+        msg = "recomputed W6 composer split differs from base packaging report"
+        raise StopConditionError(msg)
+    expected_splits = {
+        (key, _field(row, key)): split_name
+        for split_name, group in ((_TRAIN, train), (_VAL, val))
+        for row in group
+        for key in ("canonical_composer", "work_group_id", "source_id")
+    }
+    base_crops, base_pages, base_links = _load_verified_base_datasets(
+        base_run / "datasets", milestone, blobs, expected_splits
+    )
+    provenance = {
+        "base_run_id": base_run.name,
+        "base_packaging_report_sha256": digests["w6-packaging.json"],
+        "reused_sources_manifest_sha256": digests["sources-manifest.jsonl"],
+        "base_milestone_summary_sha256": digests[f"{milestone}/summary.json"],
+    }
+    return (
+        rows,
+        train,
+        val,
+        split,
+        base_crops,
+        base_pages,
+        base_links,
+        provenance,
+    )
+
+
+def run_musescore_supplement_and_package(  # noqa: PLR0913
+    downloads_dir: Path,
+    run_dir: Path,
+    *,
+    base_run_dir: Path,
+    test_exclusion: Path,
+    test_status: Path,
+    musescore: MuseScore,
+    planned_pages: int = 1_500,
+    formal: bool = True,
+    calibrated_identity: tuple[str, str] | None = None,
+    supplement_train_crops: int = 2_700,
+    supplement_val_crops: int = 300,
+    target_train_crops: int = 45_000,
+    target_val_crops: int = 5_000,
+    prefix_train_crops: int = 18_000,
+    prefix_val_crops: int = 2_000,
+    workers: int = 1,
+) -> Row:
+    """Augment a verified W6 run with targeted full-category MuseScore crops."""
+    run, downloads = run_dir.absolute(), downloads_dir.absolute()
+    runs_root = check_w6_runs_root(downloads, run.parent)
+    crop_targets = (
+        prefix_train_crops,
+        prefix_val_crops,
+        target_train_crops,
+        target_val_crops,
+    )
+    validate_w6_supplement_minima(
+        formal=formal,
+        supplement_train_crops=supplement_train_crops,
+        supplement_val_crops=supplement_val_crops,
+        crop_targets=crop_targets,
+    )
+    repo = repository_root()
+    if (
+        not run.name.startswith("w6-slice-a-")
+        or musescore.confinement.run != run
+        or musescore.confinement.downloads != downloads
+        or repo is None
+        or any(p.is_relative_to(repo) for p in (run, downloads))
+    ):
+        msg = "invalid W6 packaging write roots"
+        raise StopConditionError(msg)
+    check_no_symlink_under(run, Path(run.anchor))
+    check_no_symlink_under(downloads, Path(downloads.anchor))
+    state = source_state()
+    if formal and state["dirty"]:
+        msg = "formal Slice A run requires a clean code tree"
+        raise StopConditionError(msg)
+    reserve = reserve_w6_render_run(
+        downloads,
+        run_id=run.name,
+        git_commit=str(state["commit"]),
+        clean_tree=not state["dirty"],
+        command="run-musescore-supplement-and-package",
+        planned_pages=planned_pages,
+        runs_parent=run.parent,
+    )
+    meter = _PageMeter(planned_pages)
+    status = "failed"
+    try:
+        environment = verify_w6_training_assets(downloads)
+        if sha256_file(musescore.executable) != musescore.executable_sha256:
+            msg = "host MuseScore binary drifted before W6 rendering"
+            raise StopConditionError(msg)
+        _verify_musescore_output_bound_preconditions(musescore)
+        with w6_disk_lock(downloads, run.parent) as runs:
+            gate = MetadataOnlyTestExclusion(test_exclusion, test_status)
+            (
+                rows,
+                train,
+                val,
+                split,
+                base_crops,
+                base_pages,
+                base_links,
+                provenance,
+            ) = _load_verified_base_run(
+                base_run_dir,
+                run=run,
+                downloads=downloads,
+                runs_root=runs_root,
+                gate=gate,
+                formal=formal,
+            )
+            environment |= {
+                "git": state,
+                "offline_env": W6_OFFLINE_ENV,
+                "musescore_version": musescore.version,
+                "musescore_binary_sha256": musescore.executable_sha256,
+            } | provenance
+            env_path = run / "environment.json"
+            check_no_symlink_under(env_path, run.parent)
+            environment_text = json.dumps(environment) + "\n"
+            _check_w6_disk_cap(
+                runs,
+                additional_bytes=len(environment_text.encode()),
+            )
+            atomic_write_text(env_path, environment_text)
+        train_plans, train_buckets = _interleave_supplement_plans(train)
+        val_plans, val_buckets = _interleave_supplement_plans(val)
+        ordered_plans = [
+            plan
+            for step in zip_longest(train_plans, val_plans, fillvalue=None)
+            for plan in step
+            if plan is not None
+        ]
+
+        def validate_before_publish() -> None:
+            if sha256_file(musescore.executable) != musescore.executable_sha256:
+                msg = "host MuseScore binary changed during W6 rendering"
+                raise StopConditionError(msg)
+
+        result = _package_rendered_variants(
+            _render_variants(
+                rows,
+                run=run,
+                downloads=downloads,
+                musescore=replace(
+                    musescore,
+                    launcher=_make_offline_musescore(
+                        downloads, reservation_id=reserve
+                    ),
+                ),
+                meter=meter,
+                calibrated_identity=calibrated_identity,
+                targets={
+                    _TRAIN: supplement_train_crops,
+                    _VAL: supplement_val_crops,
+                },
+                verovio_workers=workers,
+                musescore_page_cap=None,
+                musescore_supplement=True,
+                precomputed_plans=ordered_plans,
+                reservation_id=reserve,
+            ),
+            run,
+            downloads_dir=downloads,
+            target_train_crops=supplement_train_crops,
+            target_val_crops=supplement_val_crops,
+            prefix_train_crops=prefix_train_crops,
+            prefix_val_crops=prefix_val_crops,
+            _formal_milestones=formal,
+            _base_tail=(
+                base_crops,
+                base_pages,
+                base_links,
+                {_TRAIN: target_train_crops, _VAL: target_val_crops},
+            ),
+            validate_before_publish=validate_before_publish,
+            _meter=meter,
+        )
+        result |= provenance | {
+            "admitted_scores": len(rows),
+            "split": split,
+            "supplement_rendered_crops": dict(meter.crop_counts),
+            "supplement_buckets": {
+                _TRAIN: train_buckets,
+                _VAL: val_buckets,
+            },
+            "rendered_pages": meter.actual,
+            "gate_summary": meter.gate_summary(),
+        }
+        _write_packaging_report(run, downloads, result)
+        status = "completed"
+        return result
+    finally:
+        settle_w6_run(
+            downloads,
+            reserve,
+            status=status,
+            actual_pages=max(planned_pages, meter.actual)
+            if (meter.uncounted_worker or has_pending_w6_native_worker(reserve))
             else meter.actual,
         )
