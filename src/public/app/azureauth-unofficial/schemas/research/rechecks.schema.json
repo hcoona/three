@@ -4,11 +4,7 @@
   "title": "Upstream Recheck Registry",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schema_version",
-    "governance",
-    "rechecks"
-  ],
+  "required": ["schema_version", "governance", "rechecks"],
   "properties": {
     "schema_version": {
       "const": 1
@@ -27,12 +23,7 @@
     "governance": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "evaluator",
-        "trigger_action",
-        "fallback_review",
-        "trigger_events"
-      ],
+      "required": ["evaluator", "trigger_action", "fallback_review", "trigger_events"],
       "properties": {
         "evaluator": {
           "type": "string",
@@ -49,11 +40,7 @@
         "trigger_events": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "decision",
-            "release",
-            "workstream"
-          ],
+          "required": ["decision", "release", "workstream"],
           "properties": {
             "decision": {
               "$ref": "#/$defs/triggerEventMap"
@@ -82,13 +69,7 @@
     "recheck": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "subject",
-        "sources",
-        "triggers",
-        "required_outcome"
-      ],
+      "required": ["id", "subject", "sources", "triggers", "required_outcome"],
       "properties": {
         "id": {
           "type": "string",
@@ -123,18 +104,11 @@
     "trigger": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "kind",
-        "value"
-      ],
+      "required": ["kind", "value"],
       "properties": {
         "kind": {
           "type": "string",
-          "enum": [
-            "decision",
-            "release",
-            "workstream"
-          ]
+          "enum": ["decision", "release", "workstream"]
         },
         "value": {
           "type": "string",

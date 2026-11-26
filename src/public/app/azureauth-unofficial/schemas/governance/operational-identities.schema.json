@@ -4,12 +4,7 @@
   "title": "Operational Identity Registry",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schema_version",
-    "selection_policy",
-    "reserved_upstream",
-    "selected_v2"
-  ],
+  "required": ["schema_version", "selection_policy", "reserved_upstream", "selected_v2"],
   "properties": {
     "schema_version": {
       "const": 2
@@ -17,10 +12,7 @@
     "selection_policy": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "evidence_requirement",
-        "ownership_rule"
-      ],
+      "required": ["evidence_requirement", "ownership_rule"],
       "properties": {
         "evidence_requirement": {
           "type": "string",
@@ -49,11 +41,7 @@
     "reserved": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "area",
-        "identifiers",
-        "rule"
-      ],
+      "required": ["area", "identifiers", "rule"],
       "properties": {
         "area": {
           "type": "string",
@@ -77,11 +65,7 @@
     "selection": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "value",
-        "required_before"
-      ],
+      "required": ["id", "value", "required_before"],
       "properties": {
         "id": {
           "type": "string",
@@ -149,20 +133,14 @@
                 "type": "string"
               }
             },
-            "required": [
-              "value"
-            ]
+            "required": ["value"]
           },
           "then": {
-            "required": [
-              "selection_evidence"
-            ]
+            "required": ["selection_evidence"]
           },
           "else": {
             "not": {
-              "required": [
-                "selection_evidence"
-              ]
+              "required": ["selection_evidence"]
             }
           }
         }
