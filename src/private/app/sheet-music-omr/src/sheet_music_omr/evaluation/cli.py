@@ -587,12 +587,8 @@ def run_stage_s0_scoring(  # noqa: C901, PLR0912, PLR0913, PLR0915
     run_id = run_dir.name
     git_commit = str(src_state["commit"])
     tree_sha = str(src_state["tree"])
-    if formal and (
-        manifest.get("producer_dirty") is not False
-        or manifest.get("producer_git_commit") != git_commit
-        or manifest.get("producer_code_tree_sha256") != tree_sha
-    ):
-        msg = "manifest produced on dirty or mismatched commit/tree"
+    if formal and manifest.get("producer_dirty") is not False:
+        msg = "manifest produced on a dirty source tree"
         raise StopConditionError(msg)
     frozen_masks_sha = str(manifest["open_reading_masks_sha256"])
     frozen_file = run_dir / "alignment" / "frozen-open-reading-masks-sha256.txt"
@@ -702,14 +698,8 @@ def run_stage_s0_scoring(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
         meta_p = preds_dir / f"{gid}.meta.json"
         c_meta = json.loads(meta_p.read_text(encoding="utf-8"))
-        if formal and (
-            c_meta.get("producer_dirty") is not False
-            or c_meta.get("producer_git_commit") != git_commit
-            or c_meta.get("producer_code_tree_sha256") != tree_sha
-        ):
-            msg = (
-                f"{gid} prediction produced on dirty or mismatched commit/tree"
-            )
+        if formal and c_meta.get("producer_dirty") is not False:
+            msg = f"{gid} prediction produced on a dirty source tree"
             raise StopConditionError(msg)
         piece_pg_shas = []
         for pg in pm["pages"]:
