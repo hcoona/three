@@ -5,6 +5,20 @@ All notable changes to **steam-account-history-to-csv** will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Firefox Add-ons (AMO) listed extension metadata (`browser_specific_settings.gecko` with add-on ID and `data_collection_permissions: { required: ['none'] }`).
+- Reproducible workspace-rooted AMO `-sources.zip` archive packaging with `BROWSER_EXTENSION_VERSION` manifest-version override for source rebuilds without Git history.
+- Canonical GitHub project, changelog, privacy policy, license, and issue-tracker links in the bundled user documentation, plus store dashboard metadata verification notes.
+
+### Fixed
+
+- Build reliability: await directory creation in `@wxt-dev/auto-icons` before writing generated PNG icons.
+- TypeScript strictness: narrow indexed row cells in `account-history.content.ts` so `tsgo` succeeds under `noUncheckedIndexedAccess`.
+- Tooling and build dependencies updated for Node.js 22+, WXT 0.21, and TypeScript 7.
+
 ## [1.1.0] - 2025-12-19
 
 ### Added
