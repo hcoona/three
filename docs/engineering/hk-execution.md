@@ -141,14 +141,17 @@ The temporary file is removed after the child finishes, including failure;
 the helper propagates the child's exit status. PR/push source checks use this
 transport. Explicit full/manual CI uses `--all` because it has no event baseline.
 
-These are impact paths used for HK selection. Only opted-in file-reading steps
-set `HK_SKIP_MISSING_FILES=1`; their wrappers then omit absent operands.
-Deletion-only lists return successfully without invoking a tool's implicit
-full scan. Directory-to-file replacements count as absent old paths; permission
-errors and other filesystem failures remain errors. Unconditional checks,
-tool preparation and lock validation retain their own
-inputs and do not inherit this opt-in. HK still owns source conformance;
-product tests remain in their explicit local commands and selected CI jobs.
+These are impact paths used for HK selection. `workflow_delivery_v3_hk.py`
+omits paths replaced on disk by a regular directory before invoking HK so HK
+does not walk replacement directories, and fails closed on symlinks to
+directories. HK `2.13.0+` omits
+deleted and directory-to-file absent paths before expanding `{{files}}` and
+skips filtered steps when no existing operands remain, while still running
+unconditional checks. Steps configured with `HK_SKIP_MISSING_FILES=1` in
+`hk.pkl` (or direct wrapper callers setting `HK_SKIP_MISSING_FILES=1`) also
+omit absent operands in the wrapper; permission errors and other filesystem
+failures remain errors. HK still owns source conformance; product tests remain
+in their explicit local commands and selected CI jobs.
 
 File-reading `hk_exec.py` commands use `--hk-files` to mark the start of file
 operands. The first such marker is the boundary, so wrapped commands may retain
@@ -165,22 +168,26 @@ snapshot when reporting validation. See the [local check command](../../CONTRIBU
 
 When the compared paths include `mise.lock`, `uv.lock` or `pnpm-lock.yaml`,
 the helper evaluates the checked-out `hk.pkl` with the locked Pkl and maps
-each `check` hook file step (a command with `{{files}}`) to its linter: the
-executable named after `hk_exec.py`, `uv run` or `pnpm exec --`. It reads that
+each `check` hook file step (a command with `{{files}}` or
+`{{workspace_files}}`) to its linter: the executable resolved from structured
+`Config.Command` `argv` (with optional list `prefix` or `CommandSpec` wrapper)
+or `hk_exec.py`, unwrapping `uv run` and `pnpm exec [--]`. It reads that
 linter's locked versions at both endpoints from the provider's committed lock.
 `mise which --plugin` names the mise tool whose `mise.lock` entries are read;
 `uv.lock` packages match the executable's normalized name; `pnpm list
 --lockfile-only` over each endpoint's root `package.json` and `pnpm-lock.yaml`
 selects the root dependency named after the executable, with or without its
-npm scope. Launchers and runtimes such as uv, pnpm, Node.js and Python are not
-linters, so their lock changes do not widen a step.
+npm scope. Launchers and runtimes such as uv, uvx, pnpm, pnpx, Node.js, npx and
+Python are not linters, so commands resolving to them fail closed to unresolved
+rather than binding to runtime locks.
 
 A step whose linter version differs runs on all its covered files. The helper
 skips it in the changed-path HK run, runs it in a second
 `<command> --all --step=<step>` run, reports each widened step and reason on
 stderr, and fails when either run fails. When a tool lock changes, a step whose
 command has another form (for example the actionlint and Pkl evaluation
-wrappers) or whose linter has no entry in its provider lock at either endpoint
+wrappers or a script invoked via a runtime binary) or whose linter has no entry
+in its provider lock at either endpoint
 (for example `taplo`, which `pnpm exec` finds on the mise `PATH`) also runs on
 all its files. Resolution never narrows a run, and a failed Pkl evaluation
 fails the helper. Other steps, including lock and configuration checks, keep
@@ -189,9 +196,15 @@ the changed-path input. The SDK's `dotnet format` resolves to the mise
 a local .NET tool.
 With `--staged`, the endpoints are `HEAD` and the index.
 
-## Quoted Paths and Watchdogs
+## Hook Timeout, Quoted Paths, and Watchdogs
 
-[hk_exec.py](../../eng/scripts/hk_exec.py) normalizes quoted file arguments
+[hk.pkl](../../hk.pkl) requires HK `2.13.0+`, configures a hook-level
+`timeout = "12m"` across `pre-commit`, `check`, and `fix`, and runs operand-free
+guard and lock-verification steps directly through shell-free `Config.Command`
+definitions.
+
+For steps still wrapped in [hk_exec.py](../../eng/scripts/hk_exec.py), the
+wrapper normalizes quoted file arguments
 and splits the command from the file list at the first `--hk-files` marker,
 falling back to the **last** `--` for the legacy form, as described above.
 By default it passes the surviving file batch to one command invocation under
