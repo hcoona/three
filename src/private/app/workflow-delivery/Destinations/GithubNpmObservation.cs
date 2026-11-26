@@ -9,9 +9,6 @@ using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Destinations;
 
-internal sealed record GithubNpmObservationResult(ReleaseObservation Observation,
-    DestinationRead[] Reads, string? TarballUrlSha256 = null) : IReleaseObservation;
-
 // Native package control and exact originals are the destination contract.
 // No approval mirror, version reservation, package witness or tag certificate.
 internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? clock = null)
@@ -31,7 +28,7 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
         return package;
     }
 
-    internal async Task<GithubNpmObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
         string credential, CancellationToken token)
     {
         string bare = Package(prepared)[Scope.Length..];
@@ -102,14 +99,14 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
             return Result(ReleaseFileState.Unknown);
         }
 
-        GithubNpmObservationResult Result(ReleaseFileState state, long? size = null,
+        ReleaseObservationResult Result(ReleaseFileState state, long? size = null,
             string? digest = null) => new(new(prepared.Subject,
                 [new(file.Output, file.Name, file.Version, state, size, digest)],
                 ["native-package-control", "native-metadata-visibility"],
                 [new("native-package-control", control), new("native-metadata-visibility",
                     state is ReleaseFileState.Absent or ReleaseFileState.Exact
                         ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed)]),
-                [.. session.Reads], tarballUrlSha256);
+                [.. session.Reads], TarballUrlSha256: tarballUrlSha256);
     }
 
     private static string? Text(JsonElement value, string name) =>

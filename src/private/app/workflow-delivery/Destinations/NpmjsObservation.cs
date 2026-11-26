@@ -6,16 +6,13 @@ using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Destinations;
 
-internal sealed record NpmjsObservationResult(ReleaseObservation Observation,
-    DestinationRead[] Reads) : IReleaseObservation;
-
 // This concrete destination exposes only GET. Native registry state and original
 // bytes are compared without a package witness or an application approval chain.
 internal sealed class NpmjsObservation(HttpClient client, TimeProvider? timeProvider = null)
 {
     private const string Host = "registry.npmjs.org";
 
-    internal async Task<NpmjsObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
         CancellationToken token)
     {
         if (prepared.Subject.Destination != "npmjs" || prepared.Files is not
@@ -69,7 +66,7 @@ internal sealed class NpmjsObservation(HttpClient client, TimeProvider? timeProv
             return Result(ReleaseFileState.Unknown);
         }
 
-        NpmjsObservationResult Result(ReleaseFileState state, long? size = null,
+        ReleaseObservationResult Result(ReleaseFileState state, long? size = null,
             string? sha256 = null) => new(new(prepared.Subject,
                 [new(file.Output, file.Name, file.Version, state, size, sha256)],
                 ["native-metadata-visibility"],

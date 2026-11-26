@@ -19,7 +19,7 @@ public sealed class NpmjsObservationTests(TestContext context)
             ? Response(200, Metadata()) : Response(200, original));
         using var client = new HttpClient(handler);
 
-        NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(prepared,
+        ReleaseObservationResult result = await new NpmjsObservation(client).ObserveAsync(prepared,
             context.CancellationToken);
 
         ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
@@ -48,7 +48,7 @@ public sealed class NpmjsObservationTests(TestContext context)
         using var handler = new ScriptedHttpHandler((_, _) => Response(status, ""));
         using var client = new HttpClient(handler);
 
-        NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
+        ReleaseObservationResult result = await new NpmjsObservation(client).ObserveAsync(
             Prepare([1, 2, 3]), context.CancellationToken);
 
         Assert.AreEqual(Enum.Parse<ReleaseFileState>(state),
@@ -65,7 +65,7 @@ public sealed class NpmjsObservationTests(TestContext context)
             ? Response(200, Metadata()) : Response(status, ""));
         using var client = new HttpClient(handler);
 
-        NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
+        ReleaseObservationResult result = await new NpmjsObservation(client).ObserveAsync(
             Prepare([1, 2, 3]), context.CancellationToken);
 
         Assert.AreEqual(ReleaseFileState.Unknown,
@@ -80,7 +80,7 @@ public sealed class NpmjsObservationTests(TestContext context)
             ? Response(200, Metadata()) : Response(200, new byte[] { 1, 2, 4 }));
         using var client = new HttpClient(handler);
 
-        NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
+        ReleaseObservationResult result = await new NpmjsObservation(client).ObserveAsync(
             Prepare([1, 2, 3]), context.CancellationToken);
 
         Assert.AreEqual(ReleaseFileState.Conflict,
@@ -101,7 +101,7 @@ public sealed class NpmjsObservationTests(TestContext context)
         using var handler = new ScriptedHttpHandler((_, _) => Response(200, metadata));
         using var client = new HttpClient(handler);
 
-        NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
+        ReleaseObservationResult result = await new NpmjsObservation(client).ObserveAsync(
             Prepare([1, 2, 3]), context.CancellationToken);
 
         Assert.AreEqual(ReleaseFileState.Unknown,

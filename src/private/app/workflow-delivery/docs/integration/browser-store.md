@@ -101,10 +101,12 @@ Before dispatching a new live Edge request after an unknown outcome, the owner
 checks the product in Partner Center and dispatches only if the version was not
 received.
 
-The adapters live in [`Destinations/`](../../Destinations) (`ChromeWebStore`,
-`FirefoxAmo`, `EdgeAddons` and the shared bounded `StoreHttp`).
-[`BrowserStoreRelease`](../../Release/BrowserStoreRelease.cs) owns describe,
-publish and complete. Scenario tests use HTTP fakes in
+The store adapters live in [`Destinations/`](../../Destinations)
+(`ChromeWebStore`, `FirefoxAmo`, `EdgeAddons`, the shared bounded `StoreHttp`
+and [`BrowserStoreDestinationAdapter`](../../Destinations/ReleaseAdapters.cs)),
+while [`ReleaseEngine`](../../Release/ReleaseEngine.cs) owns the shared
+describe, publish and complete protocol across all destinations. Scenario tests
+use HTTP fakes in
 [`BrowserStoreReleaseTests`](../../../../../../tests/private/app/workflow-delivery/Release/BrowserStoreReleaseTests.cs)
 and fake native builds in
 [`BrowserStorePreparationTests`](../../../../../../tests/private/app/workflow-delivery/Release/BrowserStorePreparationTests.cs).

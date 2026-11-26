@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 using WorkflowDelivery.Tests.CI;
@@ -43,7 +44,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     {
         using Fixture fixture = new(store);
 
-        BrowserStorePreparationResult result = await fixture.RunAsync(
+        ReleasePreparationResult result = await fixture.RunAsync(
             context.CancellationToken);
 
         Assert.IsEmpty(result.Errors);
@@ -61,7 +62,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
         Assert.IsTrue(result.Commands.All(command => !command.Command.InheritEnvironment &&
             command.Command.Environment!["HOME"] == Path.Combine(fixture.Scratch, "home") &&
             !command.Command.Environment.ContainsKey("GITHUB_TOKEN")));
-        BrowserStoreRelease.Validate(result);
+        ReleaseAdapters.BrowserStore.ValidatePreparation(result);
     }
 
     [TestMethod]
@@ -128,7 +129,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
 
     private async Task AssertUnqualifiedAsync(Fixture fixture, string failed)
     {
-        BrowserStorePreparationResult result = await fixture.RunAsync(
+        ReleasePreparationResult result = await fixture.RunAsync(
             context.CancellationToken);
 
         Assert.IsEmpty(result.Prepared.Files);
@@ -166,7 +167,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
             { Channel = "buddy" }
         };
 
-        BrowserStorePreparationResult result = await fixture.RunAsync(
+        ReleasePreparationResult result = await fixture.RunAsync(
             context.CancellationToken);
 
         Assert.IsEmpty(result.Errors);
@@ -177,7 +178,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     {
         private readonly string root = Directory.CreateTempSubdirectory("browser-store-").FullName;
         private readonly string checkout;
-        internal BrowserStorePreparationRequest Request { get; set; }
+        internal ReleasePreparationRequest Request { get; set; }
         internal string Scratch => Request.Scratch;
         internal string? OmitArchive { get; init; }
         internal Action<string, Dictionary<string, string>>? ChangeArchive { get; set; }
@@ -191,8 +192,8 @@ public sealed class BrowserStorePreparationTests(TestContext context)
                 Request = new(new(sharedRevision, "refs/heads/feature",
                         BrowserStorePreparation.Unit, BrowserStorePreparation.Declaration,
                         "official", store, true),
-                    new(store, "item", store == "chrome-web-store" ? "publisher" : null),
-                    checkout, Directory.CreateDirectory(Path.Combine(root, "prepared")).FullName);
+                    checkout, Directory.CreateDirectory(Path.Combine(root, "prepared")).FullName,
+                    Target: new(store, "item", store == "chrome-web-store" ? "publisher" : null));
             }
             catch
             {
@@ -238,7 +239,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
             return commit;
         }
 
-        internal Task<BrowserStorePreparationResult> RunAsync(CancellationToken token) =>
+        internal Task<ReleasePreparationResult> RunAsync(CancellationToken token) =>
             BrowserStorePreparation.PrepareAsync(Request, ExecuteAsync,
                 (_, _, _, _) => new("1.2.0.7", "1.2.0-dev.7"), token);
 

@@ -28,10 +28,10 @@ public sealed class GithubReleaseTests(TestContext context)
     public async Task WindowsPreparationBuildsOnceAndConsumesBothPackages()
     {
         using var fixture = await PreparationFixture.CreateAsync(context.CancellationToken);
-        GithubReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
 
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
-        GithubRelease.Validate(result);
+        ReleaseAdapters.GithubRelease.ValidatePreparation(result);
         string version = result.Native["version"];
         Assert.AreEqual("buddy/image-occlusion-editor/v" + version, result.Native["tag"]);
         CollectionAssert.AreEquivalent(new[]
@@ -86,7 +86,7 @@ public sealed class GithubReleaseTests(TestContext context)
         fixture.InstallerExit = installerExit;
         if (!publicRelease) fixture.Subject = Subject(official: true) with
         { Revision = fixture.Subject.Revision };
-        GithubReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
 
         Assert.IsNotEmpty(result.Errors);
         ReleaseCheck[] checks = result.Prepared.Checks;
@@ -96,7 +96,8 @@ public sealed class GithubReleaseTests(TestContext context)
         Assert.IsTrue(checks.Skip(index + 1).All(check =>
             check.Status == ReleaseCheckStatus.Skipped));
         Assert.IsEmpty(result.Prepared.Files);
-        Assert.ThrowsExactly<InvalidDataException>(() => GithubRelease.Validate(result));
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ReleaseAdapters.GithubRelease.ValidatePreparation(result));
     }
 
     [TestMethod]
@@ -108,17 +109,18 @@ public sealed class GithubReleaseTests(TestContext context)
         using var github = new FakeGithub();
         using var originals = new Originals();
         string preparation = originals.Save("prepared.json", Preparation(official),
-            TransferJson.Default.GithubReleasePreparationResult);
+            TransferJson.Default.ReleasePreparationResult);
         var (initial, initialPath) = Execute("observe", ["release", "observe-github-release",
-            preparation, originals.Root], TransferJson.Default.GithubReleaseObservationResult);
+            preparation, originals.Root], TransferJson.Default.ReleaseObservationResult);
         Assert.IsTrue(initial.Observation.Files.All(file =>
             file.State == ReleaseFileState.Absent));
 
         var (publication, publicationPath) = Execute("publish",
             ["release", "publish-github-release", preparation, originals.Root, initialPath],
-            TransferJson.Default.GithubReleasePublicationResult);
+            TransferJson.Default.ReleasePublicationResult);
         Assert.IsEmpty(publication.Errors);
-        Assert.IsTrue(publication.Creation!.Succeeded);
+        Assert.IsTrue(publication.Steps.SingleOrDefault(step =>
+            step.Kind == "container")?.Command!.Succeeded);
         Assert.HasCount(2, publication.Uploads);
         Assert.AreEqual(Revision, github.TagCommit);
         Assert.AreEqual((official ? "release/" : "buddy/") + "image-occlusion-editor/v" +
@@ -128,11 +130,11 @@ public sealed class GithubReleaseTests(TestContext context)
         Assert.AreEqual(official ? null : "false", github.Release.MakeLatest);
 
         var (final, finalPath) = Execute("verify", ["release", "observe-github-release",
-            preparation, originals.Root], TransferJson.Default.GithubReleaseObservationResult);
+            preparation, originals.Root], TransferJson.Default.ReleaseObservationResult);
         Assert.IsTrue(final.Observation.Files.All(file => file.State == ReleaseFileState.Exact));
         var (completion, _) = Execute("complete",
             ["release", "complete-github-release", preparation, initialPath, finalPath,
-                publicationPath], TransferJson.Default.GithubReleaseCompletionResult);
+                publicationPath], TransferJson.Default.ReleaseCompletionResult);
         Assert.AreEqual(ReleaseBusinessState.Satisfied, completion.Outcome.State,
             string.Join("; ", completion.Outcome.Reasons));
         Assert.IsTrue(completion.MutationAttempted);
@@ -147,8 +149,8 @@ public sealed class GithubReleaseTests(TestContext context)
             {
                 Environment.SetEnvironmentVariable("GITHUB_TOKEN", "controlled-token");
                 using var output = new StringWriter();
-                Assert.AreEqual(0, GithubReleaseCli.Run(arguments, output,
-                    client: github.CreateClient));
+                Assert.AreEqual(0, ReleaseCli.Run(arguments, output,
+                    new(HttpClientFactory: github.CreateClient)));
                 string path = Path.Combine(originals.Root, phase + ".json");
                 File.WriteAllText(path, output.ToString());
                 return (ReleaseCli.Read(path, type), path);
@@ -165,14 +167,16 @@ public sealed class GithubReleaseTests(TestContext context)
     {
         using var github = new FakeGithub();
         github.Publish(Revision, prerelease: true, ("setup", Setup), ("portable", Portable));
-        PreparedRelease prepared = Preparation(false).Prepared;
-        GithubReleaseObservationResult observed = await github.Destination().ObserveAsync(
+        ReleasePreparationResult preparation = Preparation(false);
+        PreparedRelease prepared = preparation.Prepared;
+        ReleaseObservationResult observed = await github.Destination().ObserveAsync(
             prepared, context.CancellationToken);
 
         Assert.IsTrue(observed.Observation.Files.All(file =>
             file.State == ReleaseFileState.Exact));
-        Assert.IsEmpty(GithubRelease.Missing(prepared, observed));
-        GithubReleaseCompletionResult completion = GithubRelease.Complete(prepared, observed,
+        Assert.IsEmpty(Planned(preparation, observed));
+        ReleaseCompletionResult completion = ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
+            preparation, observed,
             observed, null);
         Assert.AreEqual(ReleaseBusinessState.Satisfied, completion.Outcome.State);
         Assert.IsFalse(completion.MutationAttempted);
@@ -221,15 +225,15 @@ public sealed class GithubReleaseTests(TestContext context)
         using var github = new FakeGithub();
         using var originals = new Originals();
         arrange(github);
-        GithubReleasePreparationResult preparation = Preparation(false);
+        ReleasePreparationResult preparation = Preparation(false);
         PreparedRelease prepared = preparation.Prepared;
         GithubReleaseDestination destination = github.Destination();
-        GithubReleaseObservationResult observed = await destination.ObserveAsync(prepared,
+        ReleaseObservationResult observed = await destination.ObserveAsync(prepared,
             context.CancellationToken);
 
         Assert.Contains(expected, observed.Observation.Files.Select(file => file.State));
         Assert.ThrowsExactly<InvalidDataException>(() =>
-            GithubRelease.Missing(prepared, observed));
+            Planned(preparation, observed));
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => Publish(preparation,
             originals, observed, destination));
         ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, observed.Observation, []);
@@ -243,20 +247,21 @@ public sealed class GithubReleaseTests(TestContext context)
         using var github = new FakeGithub();
         using var originals = new Originals();
         github.Publish(Revision, prerelease: true, ("setup", Setup));
-        GithubReleasePreparationResult preparation = Preparation(false);
+        ReleasePreparationResult preparation = Preparation(false);
         PreparedRelease prepared = preparation.Prepared;
         GithubReleaseDestination destination = github.Destination();
-        GithubReleaseObservationResult initial = await destination.ObserveAsync(prepared,
+        ReleaseObservationResult initial = await destination.ObserveAsync(prepared,
             context.CancellationToken);
 
-        GithubReleasePublicationResult publication = await Publish(preparation, originals,
+        ReleasePublicationResult publication = await Publish(preparation, originals,
             initial, destination);
-        GithubReleaseObservationResult final = await destination.ObserveAsync(prepared,
+        ReleaseObservationResult final = await destination.ObserveAsync(prepared,
             context.CancellationToken);
-        GithubReleaseCompletionResult result = GithubRelease.Complete(prepared, initial,
+        ReleaseCompletionResult result = ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
+            preparation, initial,
             final, publication);
 
-        Assert.IsNull(publication.Creation);
+        Assert.IsNull(publication.Steps.SingleOrDefault(step => step.Kind == "container")?.Command);
         Assert.AreEqual("portable", Assert.ContainsSingle(publication.Uploads).Output);
         Assert.AreEqual("uploads.github.com", Assert.ContainsSingle(github.Requests.Where(
             request => request.Method == HttpMethod.Post)).Uri.Host);
@@ -274,20 +279,21 @@ public sealed class GithubReleaseTests(TestContext context)
         github.Publish(Revision, prerelease: true, complete
             ? [("setup", Setup), ("portable", Portable)] : [("setup", Setup)]);
         github.DeleteTag();
-        GithubReleasePreparationResult preparation = Preparation(false);
+        ReleasePreparationResult preparation = Preparation(false);
         GithubReleaseDestination destination = github.Destination();
-        GithubReleaseObservationResult observed = await destination.ObserveAsync(
+        ReleaseObservationResult observed = await destination.ObserveAsync(
             preparation.Prepared, context.CancellationToken);
 
         // Exact assets alone do not bind the release to the prepared commit.
         Assert.IsTrue(observed.Observation.Files.All(file =>
             file.State == ReleaseFileState.Conflict));
         Assert.ThrowsExactly<InvalidDataException>(() =>
-            GithubRelease.Missing(preparation.Prepared, observed));
+            Planned(preparation, observed));
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => Publish(preparation,
             originals, observed, destination));
-        Assert.ThrowsExactly<InvalidDataException>(() => GithubRelease.Complete(
-            preparation.Prepared, observed, observed, null));
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
+            preparation, observed, observed, null));
         Assert.AreEqual(ReleaseBusinessState.Unsatisfied, ReleaseCompletion.Evaluate(
             preparation.Prepared, observed.Observation, []).State);
         Assert.IsFalse(github.Requests.Any(request => request.Method != HttpMethod.Get));
@@ -301,19 +307,21 @@ public sealed class GithubReleaseTests(TestContext context)
         using var originals = new Originals();
         foreach (bool official in new[] { false, true })
         {
-            GithubReleasePreparationResult preparation = Preparation(official);
+            ReleasePreparationResult preparation = Preparation(official);
             GithubReleaseDestination destination = github.Destination();
-            GithubReleaseObservationResult initial = await destination.ObserveAsync(
+            ReleaseObservationResult initial = await destination.ObserveAsync(
                 preparation.Prepared, context.CancellationToken);
             // The earlier Buddy prerelease does not occupy the Official coordinate.
             Assert.IsTrue(initial.Observation.Files.All(file =>
                 file.State == ReleaseFileState.Absent));
-            GithubReleasePublicationResult publication = await Publish(preparation, originals,
+            ReleasePublicationResult publication = await Publish(preparation, originals,
                 initial, destination);
-            GithubReleaseObservationResult final = await destination.ObserveAsync(
+            ReleaseObservationResult final = await destination.ObserveAsync(
                 preparation.Prepared, context.CancellationToken);
-            Assert.AreEqual(ReleaseBusinessState.Satisfied, GithubRelease.Complete(
-                preparation.Prepared, initial, final, publication).Outcome.State);
+            ReleaseCompletionResult completion =
+                ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
+                preparation, initial, final, publication);
+            Assert.AreEqual(ReleaseBusinessState.Satisfied, completion.Outcome.State);
         }
         CollectionAssert.AreEquivalent(new[]
         {
@@ -327,18 +335,18 @@ public sealed class GithubReleaseTests(TestContext context)
     {
         using var github = new FakeGithub();
         using var originals = new Originals();
-        GithubReleasePreparationResult preparation = Preparation(false);
+        ReleasePreparationResult preparation = Preparation(false);
         GithubReleaseDestination destination = github.Destination();
-        GithubReleaseObservationResult initial = await destination.ObserveAsync(
+        ReleaseObservationResult initial = await destination.ObserveAsync(
             preparation.Prepared, context.CancellationToken);
         // Another writer publishes different bytes after the reviewed observation.
         github.Publish(Revision, prerelease: true, ("setup", Encoding.ASCII.GetBytes(
             "MZ other bytes!!!!")));
 
-        GithubReleasePublicationResult publication = await Publish(preparation, originals,
+        ReleasePublicationResult publication = await Publish(preparation, originals,
             initial, destination);
         Assert.IsNotEmpty(publication.Errors);
-        Assert.IsNull(publication.Creation);
+        Assert.IsNull(publication.Steps.SingleOrDefault(step => step.Kind == "container")?.Command);
         Assert.IsEmpty(publication.Uploads);
         Assert.IsFalse(github.Requests.Any(request => request.Method != HttpMethod.Get));
     }
@@ -350,15 +358,17 @@ public sealed class GithubReleaseTests(TestContext context)
     {
         using var github = new FakeGithub { CreatedId = id };
         using var originals = new Originals();
-        GithubReleasePreparationResult preparation = Preparation(false);
+        ReleasePreparationResult preparation = Preparation(false);
         GithubReleaseDestination destination = github.Destination();
-        GithubReleaseObservationResult initial = await destination.ObserveAsync(
+        ReleaseObservationResult initial = await destination.ObserveAsync(
             preparation.Prepared, context.CancellationToken);
 
-        GithubReleasePublicationResult publication = await Publish(preparation, originals,
+        ReleasePublicationResult publication = await Publish(preparation, originals,
             initial, destination);
 
-        Assert.AreEqual(NativeTermination.InvalidOutput, publication.Creation?.Termination);
+        ReleaseWriteStep? creation = publication.Steps.SingleOrDefault(step =>
+            step.Kind == "container");
+        Assert.AreEqual(NativeTermination.InvalidOutput, creation?.Command?.Termination);
         Assert.IsNotEmpty(publication.Errors);
         Assert.IsEmpty(publication.Uploads);
         Assert.HasCount(1, github.Requests.Where(request => request.Method == HttpMethod.Post));
@@ -373,34 +383,41 @@ public sealed class GithubReleaseTests(TestContext context)
     {
         using var github = new FakeGithub { RejectWrite = failWrite };
         using var originals = new Originals();
-        GithubReleasePreparationResult preparation = Preparation(false);
+        ReleasePreparationResult preparation = Preparation(false);
         GithubReleaseDestination destination = github.Destination();
-        GithubReleaseObservationResult initial = await destination.ObserveAsync(
+        ReleaseObservationResult initial = await destination.ObserveAsync(
             preparation.Prepared, context.CancellationToken);
 
-        GithubReleasePublicationResult publication = await Publish(preparation, originals,
+        ReleasePublicationResult publication = await Publish(preparation, originals,
             initial, destination);
         Assert.IsNotEmpty(publication.Errors);
         Assert.HasCount(uploads, publication.Uploads);
         Assert.AreEqual(retainedAssets, github.Release?.Assets.Count ?? 0);
         Assert.HasCount(failWrite, github.Requests.Where(request =>
             request.Method == HttpMethod.Post));
-        GithubReleaseObservationResult final = await destination.ObserveAsync(
+        ReleaseObservationResult final = await destination.ObserveAsync(
             preparation.Prepared, context.CancellationToken);
-        GithubReleaseCompletionResult completion = GithubRelease.Complete(preparation.Prepared,
+        ReleaseCompletionResult completion = ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
+            preparation,
             initial, final, publication);
         Assert.AreEqual(ReleaseBusinessState.Unsatisfied, completion.Outcome.State);
         // Without the publication result the effects of a required write stay unknown.
-        Assert.AreEqual(ReleaseBusinessState.Unknown, GithubRelease.Complete(
-            preparation.Prepared, initial, final, null).Outcome.State);
+        Assert.AreEqual(ReleaseBusinessState.Unknown,
+            ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
+            preparation, initial, final, null).Outcome.State);
     }
 
-    private static Task<GithubReleasePublicationResult> Publish(
-        GithubReleasePreparationResult preparation, Originals originals,
-        GithubReleaseObservationResult initial, GithubReleaseDestination destination) =>
-        GithubRelease.PublishAsync(preparation, originals.Root, initial,
+    private static Task<ReleasePublicationResult> Publish(
+        ReleasePreparationResult preparation, Originals originals,
+        ReleaseObservationResult initial, GithubReleaseDestination destination) =>
+        ReleaseAdapters.GithubRelease.PublishAsync(preparation, originals.Root, initial,
             destination.ObserveAsync, destination.CreateAsync, destination.UploadAsync,
             CancellationToken.None);
+
+    private static string[] Planned(ReleasePreparationResult preparation,
+        ReleaseObservationResult observed) =>
+        ReleaseEngine.PlannedOutputs(ReleaseAdapters.GithubRelease, preparation, observed,
+            "Current state cannot permit creation.");
 
     private static ReleaseSubject Subject(bool official) => new(Revision,
         official ? "refs/heads/main" : "refs/heads/development",
@@ -410,7 +427,7 @@ public sealed class GithubReleaseTests(TestContext context)
 
     private static string Name(string kind) => GithubReleaseUnits.Asset(kind, Version);
 
-    private static GithubReleasePreparationResult Preparation(bool official)
+    private static ReleasePreparationResult Preparation(bool official)
     {
         ReleaseFile File(string output, string kind, byte[] bytes, string path) =>
             new("windows-app", output, kind, Name(kind), Version, path, bytes.LongLength,
@@ -641,7 +658,7 @@ public sealed class GithubReleaseTests(TestContext context)
             catch { repo.Dispose(); throw; }
         }
 
-        internal Task<GithubReleasePreparationResult> RunAsync(CancellationToken token) =>
+        internal Task<ReleasePreparationResult> RunAsync(CancellationToken token) =>
             GithubReleasePreparation.PrepareAsync(new(Subject, repo.Directory, Scratch),
                 ExecuteAsync, Windows, token);
 

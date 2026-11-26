@@ -6,22 +6,18 @@ using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
 
-internal sealed record GithubNpmPublicationResult(ReleaseSubject Subject,
-    GithubNpmObservationResult Before, ReleaseUpload[] Uploads,
-    GithubNpmObservationResult After, string[] Errors);
-
 internal static partial class GithubNpmPublication
 {
-    internal static async Task<GithubNpmPublicationResult> PublishAsync(PreparedRelease prepared,
+    internal static async Task<ReleasePublicationResult> PublishAsync(PreparedRelease prepared,
         string originals, string scratch, string toolchain, string credential,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        Func<PreparedRelease, string, CancellationToken, Task<GithubNpmObservationResult>> observe,
+        Func<PreparedRelease, string, CancellationToken, Task<ReleaseObservationResult>> observe,
         CancellationToken token)
     {
         if (prepared.Subject.DryRun)
             throw new InvalidDataException("Unsupported live GitHub npm request.");
         _ = GithubNpmObservation.Package(prepared);
-        var (before, uploads, after, errors) = await GithubNpmRuntime.PublishCoreAsync(prepared,
+        return await GithubNpmRuntime.PublishCoreAsync(prepared,
             prepared.Files[0], originals, scratch, toolchain, execute,
             cancellation => observe(prepared, credential, cancellation), ConfigureEnvironment,
             ["--registry", GithubNpmObservation.Registry, "--tag",
@@ -29,7 +25,6 @@ internal static partial class GithubNpmPublication
             userConfig: "@hcoona:registry=https://npm.pkg.github.com\n"
                 + "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}\n",
             packageJson: "{\"name\":\"workflow-delivery-consumer\",\"private\":true}\n");
-        return new(prepared.Subject, before, uploads, after, errors);
 
         string ConfigureEnvironment(Dictionary<string, string?> environment)
         {
@@ -46,16 +41,14 @@ internal sealed record GithubNpmToolSelection(string Node, string Npm);
 
 internal static partial class GithubNpmRuntime
 {
-    internal static async Task<(TObservation Before, ReleaseUpload[] Uploads,
-        TObservation After, string[] Errors)> PublishCoreAsync<TObservation>(
+    internal static async Task<ReleasePublicationResult> PublishCoreAsync(
         PreparedRelease prepared, ReleaseFile file, string originals, string scratch,
         string toolchain, Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        Func<CancellationToken, Task<TObservation>> observe,
+        Func<CancellationToken, Task<ReleaseObservationResult>> observe,
         Func<Dictionary<string, string?>, string> configureEnvironment,
         string[] publishOptions, int deadlineSeconds, CancellationToken token,
         bool closeStandardInput = false, string userConfig = "", string? packageJson = null,
         (Version Node, Version Npm)? minimumVersions = null)
-        where TObservation : IReleaseObservation
     {
         string archive = Path.Combine(originals, file.Path);
         if (await NpmPackageOperations.OriginalAsync(archive, token) != (file.Size, file.Sha256))
@@ -72,13 +65,13 @@ internal static partial class GithubNpmRuntime
                 (executable == "npm" ? minimum.Npm : minimum.Node))
                 throw new InvalidDataException("Selected npm tools cannot use trusted publishing.");
         }
-        TObservation before = await observe(token);
+        ReleaseObservationResult before = await observe(token);
         ReleaseFileState state = ValidateObservation(prepared, file, before.Observation);
         if (state == ReleaseFileState.Exact)
-            return (before, [], before, []);
+            return new(prepared.Subject, before, [], before, []);
         if (state != ReleaseFileState.Absent || before.Observation.Checks.Any(check =>
                 check.Status != ReleaseCheckStatus.Passed))
-            return (before, [], before,
+            return new(prepared.Subject, before, [], before,
                 ["Current destination state does not permit native creation."]);
         // Recheck the actual original at the write boundary. The platform owns approval.
         if (await NpmPackageOperations.OriginalAsync(archive, token) != (file.Size, file.Sha256))
@@ -86,11 +79,12 @@ internal static partial class GithubNpmRuntime
         NativeCommandResult actual = await execute(Command("npm",
             ["publish", archive, .. publishOptions, "--ignore-scripts", "--fetch-retries=0"],
             deadlineSeconds), token);
-        ReleaseUpload[] uploads = [new(file.Output, Sanitize(actual, secretToRedact))];
+        ReleaseWriteStep[] steps = [ReleaseWriteStep.FromUpload(
+            new(file.Output, Sanitize(actual, secretToRedact)))];
         // A handled abnormal native outcome permits reads, never another upload.
-        TObservation after = await observe(token);
+        ReleaseObservationResult after = await observe(token);
         ValidateObservation(prepared, file, after.Observation);
-        return (before, uploads, after, []);
+        return new(prepared.Subject, before, steps, after, []);
 
         NativeCommand Command(string executable, string[] arguments, int seconds) =>
             new(Path.Combine(toolchain, executable), scratch, arguments, seconds,

@@ -20,7 +20,7 @@ internal sealed class FirefoxAmo(HttpClient client, ReleaseSubject subject,
 
     private string Addon => $"addons/addon/{Uri.EscapeDataString(target.Item)}/";
 
-    public Task<StoreObservation> ObserveAsync(CancellationToken cancel) =>
+    public Task<ReleaseObservationResult> ObserveAsync(CancellationToken cancel) =>
         StoreHttp.ObserveAsync(subject, target, version, http.Reads, async () =>
         {
             StoreResponse response = await http.SendAsync("version",
@@ -41,8 +41,8 @@ internal sealed class FirefoxAmo(HttpClient client, ReleaseSubject subject,
             return Classify(document.RootElement, version);
         });
 
-    public async Task<StoreObservation?> PublishAsync(StoreFile[] files,
-        List<StoreOperation> operations, CancellationToken cancel)
+    public async Task<ReleaseObservationResult?> PublishAsync(StoreFile[] files,
+        List<ReleaseWriteStep> operations, CancellationToken cancel)
     {
         string package = files.Single(file => file.Output == "firefox-zip").Path;
         string source = files.Single(file => file.Output == "firefox-sources").Path;
@@ -80,7 +80,7 @@ internal sealed class FirefoxAmo(HttpClient client, ReleaseSubject subject,
         if (valid != true)
             return await Final("upload", false, valid is null
                 ? "Upload validation did not finish." : "Upload is invalid or another version.");
-        operations.Add(new("upload", true, "Package upload validated."));
+        operations.Add(ReleaseWriteStep.FromStore("upload", true, "Package upload validated."));
         var create = Request(HttpMethod.Post, Addon + "versions/");
         create.Content = new MultipartFormDataContent
         {
@@ -98,9 +98,9 @@ internal sealed class FirefoxAmo(HttpClient client, ReleaseSubject subject,
         return await Final("create-version", created.Status == 201,
             $"Version create status {created.Status}.");
 
-        async Task<StoreObservation?> Final(string operation, bool succeeded, string text)
+        async Task<ReleaseObservationResult?> Final(string operation, bool succeeded, string text)
         {
-            operations.Add(new(operation, succeeded, text));
+            operations.Add(ReleaseWriteStep.FromStore(operation, succeeded, text));
             return await ObserveAsync(cancel);
         }
     }

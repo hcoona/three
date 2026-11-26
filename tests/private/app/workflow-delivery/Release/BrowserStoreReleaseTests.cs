@@ -45,15 +45,17 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         using var handler = new ScriptedHttpHandler((_, _) => Response(200, body));
         using var client = new HttpClient(handler);
 
-        StoreObservation result = await Chrome(client).ObserveAsync(context.CancellationToken);
+        ReleaseObservationResult result =
+            await Chrome(client).ObserveAsync(context.CancellationToken);
 
-        Assert.AreEqual(Enum.Parse<StoreState>(state), result.State);
+        Assert.AreEqual(Enum.Parse<StoreState>(state), result.StoreState!.Value);
         var request = Assert.ContainsSingle(handler.Requests);
         Assert.AreEqual(HttpMethod.Get, request.Method);
         Assert.AreEqual("https://chromewebstore.googleapis.com/v2/publishers/publisher/items/" +
             "item:fetchStatus", request.Uri.AbsoluteUri);
         Assert.AreEqual("Bearer token", request.Headers.Authorization?.ToString());
-        Assert.IsFalse(JsonSerializer.Serialize(result, TransferJson.Default.StoreObservation)
+        Assert.IsFalse(JsonSerializer.Serialize(result,
+            TransferJson.Default.ReleaseObservationResult)
             .Contains("token", StringComparison.Ordinal));
     }
 
@@ -65,9 +67,10 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         using var handler = new ScriptedHttpHandler((_, _) => Response(status, "{}"));
         using var client = new HttpClient(handler);
 
-        StoreObservation result = await Chrome(client).ObserveAsync(context.CancellationToken);
+        ReleaseObservationResult result =
+            await Chrome(client).ObserveAsync(context.CancellationToken);
 
-        Assert.AreEqual(Enum.Parse<StoreState>(state), result.State);
+        Assert.AreEqual(Enum.Parse<StoreState>(state), result.StoreState!.Value);
     }
 
     [TestMethod]
@@ -89,18 +92,18 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         using var handler = new ScriptedHttpHandler((_, _) => Response(200, body));
         using var client = new HttpClient(handler);
         using var files = new Originals(["chrome-zip"]);
-        BrowserStorePreparationResult preparation = files.Preparation("chrome-web-store",
+        ReleasePreparationResult preparation = files.Preparation("chrome-web-store",
             live: true);
-        var store = new ChromeWebStore(client, preparation.Prepared.Subject, preparation.Target,
+        var store = new ChromeWebStore(client, preparation.Prepared.Subject, preparation.Target!,
             Version, "token");
 
-        BrowserStorePublicationResult result = await BrowserStoreRelease.PublishAsync(
-            preparation, files.Files, Observation(preparation, StoreState.Absent), store,
+        ReleasePublicationResult result = await PublishAsync(
+            preparation, files, Observation(preparation, StoreState.Absent), store,
             context.CancellationToken);
 
-        Assert.AreEqual(StoreState.Unknown, result.Before.State);
-        Assert.IsNotEmpty(result.Before.Reasons);
-        Assert.IsEmpty(result.Operations);
+        Assert.AreEqual(StoreState.Unknown, result.Before.StoreState!.Value);
+        Assert.IsNotEmpty(result.Before.Observation.Reasons ?? []);
+        Assert.IsEmpty(result.Steps);
         Assert.AreEqual(HttpMethod.Get, Assert.ContainsSingle(handler.Requests).Method);
     }
 
@@ -116,15 +119,15 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         });
         using var client = new HttpClient(handler);
         using var files = new Originals(["chrome-zip"]);
-        var operations = new List<StoreOperation>();
+        var operations = new List<ReleaseWriteStep>();
 
-        StoreObservation? final = await Chrome(client).PublishAsync(files.Files, operations,
+        ReleaseObservationResult? final = await Chrome(client).PublishAsync(files.Files, operations,
             context.CancellationToken);
 
         Assert.IsNull(final);
         Assert.IsTrue(operations.All(operation => operation.Succeeded));
         Assert.AreEqual("upload,publish", string.Join(",", operations.Select(operation =>
-            operation.Operation)));
+            operation.Target)));
         Assert.AreEqual("https://chromewebstore.googleapis.com/upload/v2/publishers/" +
             "publisher/items/item:upload", handler.Requests[0].Uri.AbsoluteUri);
         Assert.AreEqual("application/zip", handler.Requests[0].ContentType);
@@ -140,7 +143,7 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
             Response(200, """{"uploadState":"FAILED"}"""));
         using var client = new HttpClient(handler);
         using var files = new Originals(["chrome-zip"]);
-        var operations = new List<StoreOperation>();
+        var operations = new List<ReleaseWriteStep>();
 
         _ = await Chrome(client).PublishAsync(files.Files, operations,
             context.CancellationToken);
@@ -167,9 +170,9 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
             number == 0 ? Response(status, body) : Response(addon, "{}"));
         using var client = new HttpClient(handler);
 
-        StoreObservation result = await Amo(client).ObserveAsync(context.CancellationToken);
+        ReleaseObservationResult result = await Amo(client).ObserveAsync(context.CancellationToken);
 
-        Assert.AreEqual(Enum.Parse<StoreState>(state), result.State);
+        Assert.AreEqual(Enum.Parse<StoreState>(state), result.StoreState!.Value);
         Assert.AreEqual("https://addons.mozilla.org/api/v5/addons/addon/item/versions/v1.2.0.7/",
             handler.Requests[0].Uri.AbsoluteUri);
     }
@@ -187,12 +190,12 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         }, captureBody: true);
         using var client = new HttpClient(handler);
         using var files = new Originals(["firefox-zip", "firefox-sources"]);
-        var operations = new List<StoreOperation>();
+        var operations = new List<ReleaseWriteStep>();
 
-        StoreObservation? final = await Amo(client).PublishAsync(files.Files, operations,
+        ReleaseObservationResult? final = await Amo(client).PublishAsync(files.Files, operations,
             context.CancellationToken);
 
-        Assert.AreEqual(StoreState.InReview, final!.State);
+        Assert.AreEqual(StoreState.InReview, final!.StoreState!.Value);
         Assert.IsTrue(operations.All(operation => operation.Succeeded));
         Assert.AreEqual("https://addons.mozilla.org/api/v5/addons/upload/",
             handler.Requests[0].Uri.AbsoluteUri);
@@ -238,15 +241,14 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         });
         using var client = new HttpClient(handler);
         using var files = new Originals(["firefox-zip", "firefox-sources"]);
-        BrowserStorePreparationResult preparation = files.Preparation("firefox-amo", live: true);
-        StoreObservation initial = BrowserStoreRelease.Unobserved(preparation);
-        var store = new FirefoxAmo(client, preparation.Prepared.Subject, preparation.Target,
+        ReleasePreparationResult preparation = files.Preparation("firefox-amo", live: true);
+        ReleaseObservationResult initial = BrowserStoreDestinationAdapter.Unobserved(preparation);
+        var store = new FirefoxAmo(client, preparation.Prepared.Subject, preparation.Target!,
             Version, "issuer", "secret");
 
-        BrowserStorePublicationResult publication = await BrowserStoreRelease.PublishAsync(
-            preparation, files.Files, initial, store, context.CancellationToken);
-        BrowserStoreCompletionResult completion = BrowserStoreRelease.Complete(preparation,
-            initial, null, publication);
+        ReleasePublicationResult publication = await PublishAsync(
+            preparation, files, initial, store, context.CancellationToken);
+        ReleaseCompletionResult completion = Complete(preparation, initial, null, publication);
 
         var create = Assert.ContainsSingle(handler.Requests.Where(request =>
             request.Method == HttpMethod.Post && request.Uri.AbsolutePath ==
@@ -256,11 +258,11 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         Assert.AreEqual(HttpMethod.Get, handler.Requests[^1].Method);
         Assert.AreEqual("/api/v5/addons/addon/item/versions/v" + Version + "/",
             handler.Requests[^1].Uri.AbsolutePath);
-        Assert.IsFalse(Assert.ContainsSingle(publication.Operations.Where(operation =>
-            operation.Operation == "create-version")).Succeeded);
+        Assert.IsFalse(Assert.ContainsSingle(publication.Steps.Where(operation =>
+            operation.Target == "create-version")).Succeeded);
         Assert.StartsWith("create-version:", Assert.ContainsSingle(publication.Errors));
-        Assert.AreEqual(StoreState.InReview, publication.Final!.State);
-        Assert.AreEqual(StoreState.InReview, completion.State);
+        Assert.AreEqual(StoreState.InReview, publication.After!.StoreState!.Value);
+        Assert.AreEqual(StoreState.InReview, completion.StoreState!.Value);
         Assert.AreEqual(ReleaseBusinessState.Satisfied, completion.Outcome.State);
         Assert.IsTrue(completion.MutationAttempted);
     }
@@ -276,15 +278,15 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         });
         using var client = new HttpClient(handler);
         using var files = new Originals(["firefox-zip", "firefox-sources"]);
-        var operations = new List<StoreOperation>();
+        var operations = new List<ReleaseWriteStep>();
 
-        StoreObservation? final = await Amo(client).PublishAsync(files.Files, operations,
+        ReleaseObservationResult? final = await Amo(client).PublishAsync(files.Files, operations,
             context.CancellationToken);
 
         Assert.IsFalse(Assert.ContainsSingle(operations).Succeeded);
         Assert.IsFalse(handler.Requests.Any(request => request.Uri.AbsolutePath.EndsWith(
             "/versions/", StringComparison.Ordinal) && request.Method == HttpMethod.Post));
-        Assert.AreNotEqual(StoreState.Received, final!.State);
+        Assert.AreNotEqual(StoreState.Received, final!.StoreState!.Value);
     }
 
     [TestMethod]
@@ -303,19 +305,18 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         });
         using var client = new HttpClient(handler);
         using var files = new Originals(["edge-zip"]);
-        BrowserStorePreparationResult preparation = files.Preparation("edge-addons", live: true);
-        var store = new EdgeAddons(client, preparation.Prepared.Subject, preparation.Target,
+        ReleasePreparationResult preparation = files.Preparation("edge-addons", live: true);
+        var store = new EdgeAddons(client, preparation.Prepared.Subject, preparation.Target!,
             Version, "key", "client", (_, _) => Task.CompletedTask, attempts: 2);
 
-        StoreObservation initial = await store.ObserveAsync(context.CancellationToken);
-        Assert.AreEqual(StoreState.Unobserved, initial.State);
+        ReleaseObservationResult initial = await store.ObserveAsync(context.CancellationToken);
+        Assert.AreEqual(StoreState.Unobserved, initial.StoreState!.Value);
         Assert.IsEmpty(handler.Requests);
-        BrowserStorePublicationResult publication = await BrowserStoreRelease.PublishAsync(
-            preparation, files.Files, initial, store, context.CancellationToken);
-        BrowserStoreCompletionResult completion = BrowserStoreRelease.Complete(preparation,
-            initial, null, publication);
+        ReleasePublicationResult publication = await PublishAsync(
+            preparation, files, initial, store, context.CancellationToken);
+        ReleaseCompletionResult completion = Complete(preparation, initial, null, publication);
 
-        Assert.AreEqual(Enum.Parse<StoreState>(state), completion.State);
+        Assert.AreEqual(Enum.Parse<StoreState>(state), completion.StoreState!.Value);
         Assert.AreEqual(state switch
         {
             "Received" => ReleaseBusinessState.Satisfied,
@@ -343,39 +344,41 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     {
         const string Store = "firefox-amo";
         using var files = new Originals(BrowserStorePreparation.StoreOutputs(Store));
-        BrowserStorePreparationResult preparation = files.Preparation(Store);
+        ReleasePreparationResult preparation = files.Preparation(Store);
         string root = Directory.CreateTempSubdirectory("browser-store-dry-").FullName;
         try
         {
             string prepared = Path.Combine(root, "preparation.json");
             File.WriteAllText(prepared, JsonSerializer.Serialize(preparation,
-                TransferJson.Default.BrowserStorePreparationResult));
-            string originals = Path.GetDirectoryName(Path.GetDirectoryName(
-                files.Files[0].Path))!;
+                TransferJson.Default.ReleasePreparationResult));
             int factory = 0;
             string Run(params string[] args)
             {
                 using var output = new StringWriter();
-                Assert.AreEqual(0, BrowserStoreReleaseCli.Run(["release", .. args], output,
-                    store: (_, _, _) => { factory++; throw new InvalidOperationException(); },
-                    environment: name => throw new AssertFailedException(
-                        "A dry run must not resolve store credentials: " + name)));
+                Assert.AreEqual(0, ReleaseCli.Run(["release", .. args], output,
+                    new(BrowserStoreFactory: (_, _, _) =>
+                    {
+                        factory++;
+                        throw new InvalidOperationException();
+                    }, Environment: name => throw new AssertFailedException(
+                        "A dry run must not resolve store credentials: " + name))));
                 return output.ToString();
             }
             string observation = Path.Combine(root, "observation.json");
-            File.WriteAllText(observation, Run("observe-browser-store", prepared, originals));
+            File.WriteAllText(observation, Run("observe-browser-store", prepared, files.Root));
             ReleaseDryRun result = JsonSerializer.Deserialize(Run("describe-browser-store",
                 prepared, observation), TransferJson.Default.ReleaseDryRun)!;
 
             Assert.AreEqual(0, factory);
-            Assert.AreEqual(StoreState.Unobserved, JsonSerializer.Deserialize(
-                File.ReadAllText(observation), TransferJson.Default.StoreObservation)!.State);
+            Assert.AreEqual(StoreState.Unobserved, ReleaseCli.Read(observation,
+                TransferJson.Default.ReleaseObservationResult).StoreState!.Value);
             Assert.IsTrue(result.Ready);
             Assert.HasCount(2, result.HypotheticalWrites);
             Assert.AreEqual("The store was not observed: a dry run acquires no store " +
                 "credential.", result.Reasons[0]);
-            Assert.ThrowsExactly<InvalidDataException>(() => BrowserStoreRelease.Describe(
-                preparation, Observation(preparation, StoreState.Absent)));
+            Assert.ThrowsExactly<InvalidDataException>(() => ReleaseEngine.Describe(
+                ReleaseAdapters.BrowserStore, preparation,
+                Observation(preparation, StoreState.Absent)));
         }
         finally { Directory.Delete(root, recursive: true); }
     }
@@ -384,18 +387,18 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     public async Task SatisfiedStoreIsNeverWrittenByThePublisher()
     {
         using var files = new Originals(["chrome-zip"]);
-        BrowserStorePreparationResult preparation = files.Preparation("chrome-web-store",
+        ReleasePreparationResult preparation = files.Preparation("chrome-web-store",
             live: true);
         var store = new FakeStore(Observation(preparation, StoreState.InReview));
 
-        BrowserStorePublicationResult result = await BrowserStoreRelease.PublishAsync(
-            preparation, files.Files, Observation(preparation, StoreState.Absent), store,
+        ReleasePublicationResult result = await PublishAsync(
+            preparation, files, Observation(preparation, StoreState.Absent), store,
             context.CancellationToken);
 
         Assert.AreEqual(0, store.Publications);
         Assert.IsEmpty(result.Errors);
-        Assert.AreEqual(StoreState.InReview, result.Final!.State);
-        BrowserStoreCompletionResult missingFinal = BrowserStoreRelease.Complete(preparation,
+        Assert.AreEqual(StoreState.InReview, result.After!.StoreState!.Value);
+        ReleaseCompletionResult missingFinal = Complete(preparation,
             Observation(preparation, StoreState.Absent), final: null, result);
         Assert.AreEqual(ReleaseBusinessState.Unknown, missingFinal.Outcome.State);
         Assert.AreEqual(false, missingFinal.MutationAttempted);
@@ -407,45 +410,42 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     public async Task PublisherSubmitsAnAbsentVersionAndCompletesFromTheStoreReport()
     {
         using var files = new Originals(["firefox-zip", "firefox-sources"]);
-        BrowserStorePreparationResult preparation = files.Preparation("firefox-amo",
+        ReleasePreparationResult preparation = files.Preparation("firefox-amo",
             live: true);
-        StoreObservation initial = BrowserStoreRelease.Unobserved(preparation);
+        ReleaseObservationResult initial = BrowserStoreDestinationAdapter.Unobserved(preparation);
         var store = new FakeStore(Observation(preparation, StoreState.Absent),
             Observation(preparation, StoreState.InReview));
 
-        BrowserStorePublicationResult publication = await BrowserStoreRelease.PublishAsync(
-            preparation, files.Files, initial, store, context.CancellationToken);
-        BrowserStoreCompletionResult completion = BrowserStoreRelease.Complete(preparation,
-            initial, null, publication);
+        ReleasePublicationResult publication = await PublishAsync(
+            preparation, files, initial, store, context.CancellationToken);
+        ReleaseCompletionResult completion = Complete(preparation, initial, null, publication);
 
         Assert.AreEqual(1, store.Publications);
         Assert.AreEqual(ReleaseBusinessState.Satisfied, completion.Outcome.State);
         Assert.IsTrue(completion.MutationAttempted);
-        Assert.AreEqual(ReleaseBusinessState.Unknown, BrowserStoreRelease.Complete(
-            preparation, initial, null, null).Outcome.State);
+        Assert.AreEqual(ReleaseBusinessState.Unknown,
+            Complete(preparation, initial, null, null).Outcome.State);
     }
 
     [TestMethod]
     public void MissingPublisherResultLeavesALaterPublishedStateUnknown()
     {
         using var files = new Originals(["chrome-zip"]);
-        BrowserStorePreparationResult preparation = files.Preparation("chrome-web-store",
+        ReleasePreparationResult preparation = files.Preparation("chrome-web-store",
             live: true);
 
-        BrowserStoreCompletionResult completion = BrowserStoreRelease.Complete(preparation,
-            Observation(preparation, StoreState.Absent),
-            Observation(preparation, StoreState.Published), null);
+        ReleaseObservationResult published = Observation(preparation, StoreState.Published);
+        ReleaseCompletionResult completion = Complete(preparation,
+            Observation(preparation, StoreState.Absent), published, null);
 
         Assert.AreEqual(ReleaseBusinessState.Unknown, completion.Outcome.State);
-        Assert.AreEqual(StoreState.Published, completion.State);
+        Assert.AreEqual(StoreState.Published, completion.StoreState!.Value);
         Assert.IsNull(completion.MutationAttempted);
         Assert.IsNull(completion.Publication);
-        Assert.AreEqual(ReleaseBusinessState.Satisfied, BrowserStoreRelease.Complete(
-            preparation, Observation(preparation, StoreState.Published),
-            Observation(preparation, StoreState.Published), null).Outcome.State);
-        Assert.AreEqual(ReleaseBusinessState.Unknown, BrowserStoreRelease.Complete(
-            preparation, Observation(preparation, StoreState.Published),
-            final: null, publication: null).Outcome.State);
+        Assert.AreEqual(ReleaseBusinessState.Satisfied,
+            Complete(preparation, published, published, null).Outcome.State);
+        Assert.AreEqual(ReleaseBusinessState.Unknown,
+            Complete(preparation, published, null, null).Outcome.State);
     }
 
     [TestMethod]
@@ -454,23 +454,23 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     public void CompletePublisherOnlyStoreRejectsExternalFinalObservation(string store)
     {
         using var files = new Originals(BrowserStorePreparation.StoreOutputs(store));
-        BrowserStorePreparationResult preparation = files.Preparation(store, live: true);
-        StoreObservation initial = BrowserStoreRelease.Unobserved(preparation);
-        StoreObservation final = Observation(preparation, StoreState.Received);
+        ReleasePreparationResult preparation = files.Preparation(store, live: true);
+        ReleaseObservationResult initial = BrowserStoreDestinationAdapter.Unobserved(preparation);
+        ReleaseObservationResult final = Observation(preparation, StoreState.Received);
 
         Assert.ThrowsExactly<InvalidDataException>(() =>
-            BrowserStoreRelease.Complete(preparation, initial, final, publication: null));
+            Complete(preparation, initial, final, publication: null));
     }
 
     [TestMethod]
     public async Task DryRunAndBuddyLiveCannotPublish()
     {
         using var files = new Originals(["chrome-zip"]);
-        BrowserStorePreparationResult dry = files.Preparation("chrome-web-store");
-        await Assert.ThrowsAsync<InvalidDataException>(() => BrowserStoreRelease.PublishAsync(
-            dry, files.Files, Observation(dry, StoreState.Absent),
+        ReleasePreparationResult dry = files.Preparation("chrome-web-store");
+        await Assert.ThrowsAsync<InvalidDataException>(() => PublishAsync(
+            dry, files, Observation(dry, StoreState.Absent),
             new FakeStore(Observation(dry, StoreState.Absent)), context.CancellationToken));
-        BrowserStorePreparationResult buddy = dry with
+        ReleasePreparationResult buddy = dry with
         {
             Prepared = dry.Prepared with
             {
@@ -482,7 +482,8 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
                 }
             }
         };
-        Assert.ThrowsExactly<InvalidDataException>(() => BrowserStoreRelease.Validate(buddy));
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ReleaseAdapters.BrowserStore.ValidatePreparation(buddy));
     }
 
     [TestMethod]
@@ -520,15 +521,15 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
                 "prepared/request.json")));
             Assert.AreEqual("item", request.RootElement.GetProperty("target")
                 .GetProperty("item").GetString());
-            BrowserStorePreparationResult preparation = originals.Preparation(store,
+            ReleasePreparationResult preparation = originals.Preparation(store,
                 live: true);
             File.WriteAllText(Path.Combine(root, "prepared/preparation.json"),
                 JsonSerializer.Serialize(preparation,
-                    TransferJson.Default.BrowserStorePreparationResult));
+                    TransferJson.Default.ReleasePreparationResult));
             Assert.AreEqual(0, Run("receive", "observation"));
             File.WriteAllText(Path.Combine(root, "observation/observation.json"),
                 JsonSerializer.Serialize(Observation(preparation, Enum.Parse<StoreState>(
-                    state)), TransferJson.Default.StoreObservation));
+                    state)), TransferJson.Default.ReleaseObservationResult));
             Assert.AreEqual(0, Run("state"));
             Assert.AreEqual("write-needed=" + needed + "\n", File.ReadAllText(env[
                 "GITHUB_OUTPUT"]));
@@ -548,9 +549,21 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     private static BrowserStoreTarget Target(string store) => new(store, "item",
         store == "chrome-web-store" ? "publisher" : null);
 
-    private static StoreObservation Observation(BrowserStorePreparationResult preparation,
-        StoreState state) => new(preparation.Prepared.Subject, preparation.Target, Version,
-        state, [], []);
+    private static ReleaseObservationResult Observation(ReleasePreparationResult preparation,
+        StoreState state) => StoreHttp.Observation(preparation.Prepared.Subject,
+            preparation.Target!, Version, state, [], []);
+
+    private static Task<ReleasePublicationResult> PublishAsync(ReleasePreparationResult preparation,
+        Originals originals, ReleaseObservationResult initial, IBrowserStore store,
+        CancellationToken token) =>
+        ReleaseAdapters.BrowserStore.PublishAsync(preparation, originals.Root, originals.Files,
+            initial, store, token);
+
+    private static ReleaseCompletionResult Complete(ReleasePreparationResult preparation,
+        ReleaseObservationResult initial, ReleaseObservationResult? final,
+        ReleasePublicationResult? publication) =>
+        ReleaseEngine.Complete(ReleaseAdapters.BrowserStore, preparation, initial, final,
+            publication);
 
     private static ChromeWebStore Chrome(HttpClient client) => new(client,
         Subject("chrome-web-store"), Target("chrome-web-store"), Version, "token",
@@ -575,31 +588,29 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
             _ => RegistryHttpClientTests.Ok("{}"));
         await using var origin = new RegistryHttpClientTests.LoopbackServer(tls: null,
             _ => RegistryHttpClientTests.Redirect($"http://127.0.0.1:{target.Port}/other"));
-        using var originals = new Originals(["edge-zip"]);
         string storeName = publish ? BrowserStorePreparation.EdgeAddons
             : BrowserStorePreparation.ChromeWebStore;
-        BrowserStorePreparationResult preparation = originals.Preparation(storeName, live: true);
+        using var originals = new Originals(BrowserStorePreparation.StoreOutputs(storeName));
+        ReleasePreparationResult preparation = originals.Preparation(storeName, live: true);
         string dir = Directory.CreateTempSubdirectory("browser-store-cli-").FullName;
         try
         {
             string prepPath = Path.Combine(dir, "preparation.json");
             string initPath = Path.Combine(dir, "initial.json");
             File.WriteAllText(prepPath, JsonSerializer.Serialize(preparation,
-                TransferJson.Default.BrowserStorePreparationResult));
+                TransferJson.Default.ReleasePreparationResult));
             File.WriteAllText(initPath, JsonSerializer.Serialize(
-                BrowserStoreRelease.Unobserved(preparation),
-                TransferJson.Default.StoreObservation));
-            string originalsRoot = Path.GetDirectoryName(
-                Path.GetDirectoryName(originals.Files[0].Path)!)!;
+                BrowserStoreDestinationAdapter.Unobserved(preparation),
+                TransferJson.Default.ReleaseObservationResult));
             HttpStatusCode? observedStatus = null;
             using var output = new StringWriter();
 
-            _ = BrowserStoreReleaseCli.Run(publish
-                    ? ["release", "publish-browser-store", prepPath, originalsRoot, initPath]
-                    : ["release", "observe-browser-store", prepPath, originalsRoot],
-                output, store: (prep, _, client) => new RedirectProbeStore(prep, client,
-                    new Uri($"http://127.0.0.1:{origin.Port}/status"),
-                    status => observedStatus = status));
+            _ = ReleaseCli.Run(publish
+                    ? ["release", "publish-browser-store", prepPath, originals.Root, initPath]
+                    : ["release", "observe-browser-store", prepPath, originals.Root],
+                output, new(BrowserStoreFactory: (prep, _, client) => new RedirectProbeStore(
+                    prep, client, new Uri($"http://127.0.0.1:{origin.Port}/status"),
+                    status => observedStatus = status)));
 
             Assert.AreEqual(HttpStatusCode.Found, observedStatus);
             Assert.HasCount(1, origin.Requests);
@@ -611,21 +622,21 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         }
     }
 
-    private sealed class RedirectProbeStore(BrowserStorePreparationResult preparation,
+    private sealed class RedirectProbeStore(ReleasePreparationResult preparation,
         HttpClient client, Uri uri, Action<HttpStatusCode> record) : IBrowserStore
     {
-        public async Task<StoreObservation> ObserveAsync(CancellationToken token)
+        public async Task<ReleaseObservationResult> ObserveAsync(CancellationToken token)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             request.Headers.Add("X-ClientID", "secret-client-id");
             using HttpResponseMessage response = await client.SendAsync(request, token);
             record(response.StatusCode);
-            return new(preparation.Prepared.Subject, preparation.Target, Version,
+            return StoreHttp.Observation(preparation.Prepared.Subject, preparation.Target!, Version,
                 StoreState.Unknown, ["Redirect blocked."], []);
         }
 
-        public async Task<StoreObservation?> PublishAsync(StoreFile[] files,
-            List<StoreOperation> operations, CancellationToken token) =>
+        public async Task<ReleaseObservationResult?> PublishAsync(StoreFile[] files,
+            List<ReleaseWriteStep> operations, CancellationToken token) =>
             await ObserveAsync(token);
     }
 
@@ -639,20 +650,20 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         return response;
     }
 
-    private sealed class FakeStore(params StoreObservation[] observations) : IBrowserStore
+    private sealed class FakeStore(params ReleaseObservationResult[] observations) : IBrowserStore
     {
         private int observed;
         internal int Publications { get; private set; }
 
-        public Task<StoreObservation> ObserveAsync(CancellationToken token) =>
+        public Task<ReleaseObservationResult> ObserveAsync(CancellationToken token) =>
             Task.FromResult(observations[Math.Min(observed++, observations.Length - 1)]);
 
-        public Task<StoreObservation?> PublishAsync(StoreFile[] files,
-            List<StoreOperation> operations, CancellationToken token)
+        public Task<ReleaseObservationResult?> PublishAsync(StoreFile[] files,
+            List<ReleaseWriteStep> operations, CancellationToken token)
         {
             Publications++;
-            operations.Add(new("submit", true, "Submitted."));
-            return Task.FromResult<StoreObservation?>(observations[^1]);
+            operations.Add(ReleaseWriteStep.FromStore("submit", true, "Submitted."));
+            return Task.FromResult<ReleaseObservationResult?>(observations[^1]);
         }
     }
 
@@ -662,6 +673,7 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         private readonly string root = Directory.CreateTempSubdirectory(
             "browser-store-originals-").FullName;
         private readonly string[] outputs;
+        internal string Root => root;
         internal StoreFile[] Files { get; }
 
         internal Originals(string[] outputs)
@@ -676,7 +688,7 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
             }).ToArray();
         }
 
-        internal BrowserStorePreparationResult Preparation(string store, bool live = false)
+        internal ReleasePreparationResult Preparation(string store, bool live = false)
         {
             ReleaseFile[] files = outputs.Select(output =>
             {
@@ -690,9 +702,9 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
                 "original-bytes"];
             return new(new(Subject(store, live), files, required, required.Select(id =>
                     new ReleaseCheck(id, ReleaseCheckStatus.Passed)).ToArray()),
-                Target(store), [new("build", new("pnpm", root, ["run", "zip"], 600),
+                new(StringComparer.Ordinal), [new("build", new("pnpm", root, ["run", "zip"], 600),
                     new NativeCommandResult(NativeTermination.Exited, 0, "", "", 0.25, null))],
-                []);
+                [], Target: Target(store));
         }
 
         public void Dispose()

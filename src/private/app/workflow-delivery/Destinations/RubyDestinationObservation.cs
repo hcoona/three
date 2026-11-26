@@ -4,16 +4,13 @@ using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
 
-internal sealed record RubyObservationResult(ReleaseObservation Observation,
-    RubySourceReadResult Read) : IReleaseObservation;
-
 internal static class RubyDestinationObservation
 {
-    internal static Task<RubyObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal static Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
         RubySourceTools tools, RubyReadCredential? credential, CancellationToken token) =>
         ObserveAsync(prepared, tools, credential, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<RubyObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal static async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
         RubySourceTools tools, RubyReadCredential? credential,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
@@ -50,6 +47,7 @@ internal static class RubyDestinationObservation
         return new(new(prepared.Subject,
             [new(original.Output, original.Name, original.Version, state,
                 read.Original?.Size, read.Original?.Sha256)],
-            ["native-source-original"], [new("native-source-original", status)]), read);
+            ["native-source-original"], [new("native-source-original", status)]), [],
+            RubySource: read);
     }
 }

@@ -3,6 +3,7 @@ using System.Text.Json;
 using WorkflowDelivery.CI.Callers;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
+using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Tests.Release;
@@ -43,7 +44,7 @@ public sealed class NuGetLibraryPreparationNativeTests(TestContext context)
             var subject = new ReleaseSubject(revision, "refs/heads/main", id, unit.Declaration,
                 "official", "nugetorg", false);
 
-            NuGetPreparationResult result = await NuGetPreparation.PrepareAsync(new(subject,
+            ReleasePreparationResult result = await NuGetPreparation.PrepareAsync(new(subject,
                 checkout, scratch), token);
 
             Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(new
@@ -58,7 +59,7 @@ public sealed class NuGetLibraryPreparationNativeTests(TestContext context)
                         command.Result.Stderr
                     }),
             }));
-            NuGetRelease.Validate(result);
+            ReleaseAdapters.NuGet.ValidatePreparation(result);
             ReleaseFile file = Assert.ContainsSingle(result.Prepared.Files);
             Assert.AreEqual(unit.PackageId, file.Name);
             Assert.IsFalse(file.Version.Contains(".g", StringComparison.Ordinal), file.Version);

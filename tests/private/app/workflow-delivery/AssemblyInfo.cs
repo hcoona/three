@@ -1,3 +1,5 @@
+global using NuGetCompletionResult = WorkflowDelivery.Release.ReleaseCompletionResult;
+
 using System.Diagnostics;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Tests.Repository;

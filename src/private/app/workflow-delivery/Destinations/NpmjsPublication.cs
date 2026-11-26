@@ -5,10 +5,6 @@ using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
 
-internal sealed record NpmjsPublicationResult(ReleaseSubject Subject,
-    NpmjsObservationResult Before, ReleaseUpload[] Uploads, NpmjsObservationResult After,
-    string[] Errors);
-
 // npm trusted publishing owns the OIDC exchange and provenance; this boundary passes only
 // the Actions identity context to the locked npm CLI and never handles a registry token.
 internal static partial class NpmjsPublication
@@ -24,11 +20,11 @@ internal static partial class NpmjsPublication
         "GITHUB_REPOSITORY_OWNER_ID", "GITHUB_REF", "GITHUB_SHA", "GITHUB_RUN_ID",
         "GITHUB_RUN_ATTEMPT", "RUNNER_ENVIRONMENT"];
 
-    internal static async Task<NpmjsPublicationResult> PublishAsync(PreparedRelease prepared,
+    internal static async Task<ReleasePublicationResult> PublishAsync(PreparedRelease prepared,
         string originals, string scratch, string toolchain,
         IReadOnlyDictionary<string, string?> platform,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        Func<PreparedRelease, CancellationToken, Task<NpmjsObservationResult>> observe,
+        Func<PreparedRelease, CancellationToken, Task<ReleaseObservationResult>> observe,
         CancellationToken token)
     {
         NpmReleaseUnit unit = NpmReleaseUnits.Admit(prepared.Subject);
@@ -38,12 +34,11 @@ internal static partial class NpmjsPublication
             throw new InvalidDataException("Unsupported live npmjs request.");
         string tag = DistTag(file.Version);
         // Empty configuration: no token exists, so npm can only use trusted publishing.
-        var (before, uploads, after, errors) = await GithubNpmRuntime.PublishCoreAsync(prepared,
+        return await GithubNpmRuntime.PublishCoreAsync(prepared,
             file, originals, scratch, toolchain, execute,
             cancellation => observe(prepared, cancellation), ConfigureEnvironment,
             ["--registry", Registry, "--access", "public", "--provenance", "--tag", tag],
             180, token, closeStandardInput: true, minimumVersions: (MinimumNode, MinimumNpm));
-        return new(prepared.Subject, before, uploads, after, errors);
 
         string ConfigureEnvironment(Dictionary<string, string?> environment)
         {

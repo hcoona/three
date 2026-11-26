@@ -5,148 +5,520 @@ using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Release;
 
+internal sealed record ReleaseCliOverrides(
+    Func<ReleasePreparationRequest, CancellationToken, Task<ReleasePreparationResult>>? Prepare =
+        null,
+    Func<PreparedRelease, string, CancellationToken, Task<ReleaseObservationResult>>?
+        ObserveNuGet = null,
+    TimeSpan? SettleInterval = null,
+    Func<PreparedRelease, CancellationToken, Task<ReleaseObservationResult>>? ObserveNpmjs = null,
+    Func<PreparedRelease, PythonIndexTools, CancellationToken, Task<ReleaseObservationResult>>?
+        ObservePython = null,
+    Func<PreparedRelease, string, string, PythonPublisherTools, CancellationToken,
+        Task<PythonPublishResult>>? PublishPython = null,
+    Func<PreparedRelease, RubySourceTools, RubyReadCredential?, CancellationToken,
+        Task<ReleaseObservationResult>>? ObserveRuby = null,
+    Func<ReleasePreparationResult, string, RubyPublisherTools,
+        IReadOnlyDictionary<string, string?>, CancellationToken, Task<RubyPublishResult>>?
+        PublishRuby = null,
+    Func<HttpClient>? HttpClientFactory = null,
+    Func<ReleasePreparationResult, bool, HttpClient, IBrowserStore>? BrowserStoreFactory = null,
+    Func<string, string?>? Environment = null);
+
 internal static class ReleaseCli
 {
     internal static int? Run(string[] args, TextWriter output,
-        Func<ReleasePreparationRequest, CancellationToken, Task<NpmPreparationResult>>?
-            prepare = null,
-        Func<PreparedRelease, CancellationToken, Task<NpmjsObservationResult>>? observe = null)
+        ReleaseCliOverrides? overrides = null)
     {
-        if (ReleaseJobInputs.Run(args) is { } jobStatus) return jobStatus;
-        if (PythonReleaseCli.Run(args, output) is { } pythonStatus) return pythonStatus;
-        if (NuGetReleaseCli.Run(args, output) is { } nugetStatus) return nugetStatus;
-        if (RubyReleaseCli.Run(args, output) is { } rubyStatus) return rubyStatus;
-        if (GithubReleaseCli.Run(args, output) is { } githubStatus) return githubStatus;
-        if (BrowserStoreReleaseCli.Run(args, output) is { } storeStatus) return storeStatus;
-        if (args is ["release", "prepare-npm", var requestPath])
+        if (ReleaseJobInputs.Run(args, overrides?.Environment) is { } jobStatus) return jobStatus;
+        if (args is not ["release", var action, .. var rest]) return null;
+
+        if (action == "prepare-python-index-tools" && rest is [var toolRequest])
         {
-            NpmPreparationResult result = (prepare ?? NpmPreparation.PrepareAsync)(
+            PythonIndexToolResult result = PythonIndexToolPreparation.PrepareAsync(
+                Read(toolRequest, TransferJson.Default.PythonIndexToolRequest),
+                CancellationToken.None).GetAwaiter().GetResult();
+            Write(output, result, TransferJson.Default.PythonIndexToolResult);
+            return result.Errors.Length == 0 ? 0 : 1;
+        }
+
+        if (action.StartsWith("prepare-", StringComparison.Ordinal) && rest is [var requestPath])
+        {
+            (IDestinationAdapter? adapter, Func<ReleasePreparationRequest, CancellationToken,
+                Task<ReleasePreparationResult>>? defaultPrepare) = PrepareTarget(
+                    action["prepare-".Length..]);
+            if (adapter is null || defaultPrepare is null) return null;
+            ReleasePreparationResult result = (overrides?.Prepare ?? defaultPrepare)(
                 Read(requestPath, TransferJson.Default.ReleasePreparationRequest),
                 CancellationToken.None).GetAwaiter().GetResult();
-            if (result.Prepared.Files.Length != 0) ReleaseCompletion.Validate(result.Prepared);
-            Write(output, result, TransferJson.Default.NpmPreparationResult);
-            return result.Errors.Length == 0 && result.Prepared.Files.Length != 0 &&
-                ReleasePolicy.Qualified(result.Prepared.RequiredChecks, result.Prepared.Checks)
-                ? 0 : 1;
+            Write(output, result, TransferJson.Default.ReleasePreparationResult);
+            if (result.Errors.Length != 0 || result.Prepared.Files.Length == 0) return 1;
+            adapter.ValidatePreparation(result);
+            return 0;
         }
-        if (args is ["release", "observe-npmjs", var preparationPath, var scratch])
+
+        if (action.StartsWith("describe-", StringComparison.Ordinal) &&
+            rest is [var describePreparedPath, var describeObservedPath])
         {
-            PreparedRelease prepared = Read(preparationPath,
-                TransferJson.Default.NpmPreparationResult).Prepared;
-            NpmRelease.VerifyOriginals(prepared, scratch);
-            NpmjsObservationResult result;
-            if (observe is null)
+            (IDestinationAdapter? adapter, string? expectedDestination) =
+                ResolveTarget(action["describe-".Length..]);
+            if (adapter is null) return null;
+            ReleasePreparationResult preparation = Preparation(describePreparedPath);
+            RequireDestination(preparation.Prepared.Subject, expectedDestination);
+            ReleaseObservationResult observed = Observation(describeObservedPath);
+            ReleaseDryRun result = ReleaseEngine.Describe(adapter, preparation, observed);
+            Write(output, result, TransferJson.Default.ReleaseDryRun);
+            return result.Ready ? 0 : 1;
+        }
+
+        if (action.StartsWith("complete-", StringComparison.Ordinal) &&
+            rest is [var completePreparedPath, var initialPath, var finalPath, var publishedPath])
+        {
+            (IDestinationAdapter? adapter, string? expectedDestination) =
+                ResolveTarget(action["complete-".Length..]);
+            if (adapter is null) return null;
+            ReleasePreparationResult preparation = Preparation(completePreparedPath);
+            RequireDestination(preparation.Prepared.Subject, expectedDestination);
+            ReleaseCompletionResult result = ReleaseEngine.Complete(adapter, preparation,
+                Observation(initialPath),
+                ReadOptional(finalPath, TransferJson.Default.ReleaseObservationResult),
+                ReadOptional(publishedPath, TransferJson.Default.ReleasePublicationResult));
+            Write(output, result, TransferJson.Default.ReleaseCompletionResult);
+            return result.Outcome.State == ReleaseBusinessState.Satisfied ? 0 : 1;
+        }
+
+        return (action, rest) switch
+        {
+            ("observe-nuget", [var prepPath, var originals, var publicationPath]) =>
+                ObserveNuGet(prepPath, originals, publicationPath, output, overrides),
+            ("publish-nuget", [var prepPath, var originals]) =>
+                PublishNuGet(prepPath, originals, output, overrides),
+            ("observe-npmjs", [var prepPath, var originals]) =>
+                ObserveNpm(prepPath, originals, "npmjs", output, overrides),
+            ("observe-github-npm", [var prepPath, var originals]) =>
+                ObserveNpm(prepPath, originals, "github-packages-npm", output, overrides),
+            ("publish-npmjs", [var prepPath, var originals, var scratch, var toolchain]) =>
+                PublishNpm(prepPath, originals, scratch, toolchain, "npmjs", output, overrides),
+            ("publish-github-npm", [var prepPath, var originals, var scratch, var toolchain]) =>
+                PublishNpm(prepPath, originals, scratch, toolchain, "github-packages-npm", output,
+                    overrides),
+            ("observe-python", [var prepPath, var originals, var indexToolsPath]) =>
+                ObservePython(prepPath, originals, indexToolsPath, output, overrides),
+            ("publish-python", [var prepPath, var originals, var initialObsPath, var indexToolsPath,
+                var publisherToolsPath]) =>
+                PublishPython(prepPath, originals, initialObsPath, indexToolsPath,
+                    publisherToolsPath, output, overrides),
+            ("observe-ruby", [var prepPath, var originals, var toolsPath]) =>
+                ObserveRuby(prepPath, originals, toolsPath, output, overrides),
+            ("publish-ruby", [var prepPath, var originals, var initialObsPath, var readToolsPath,
+                var publisherToolsPath]) =>
+                PublishRuby(prepPath, originals, initialObsPath, readToolsPath, publisherToolsPath,
+                    output, overrides),
+            ("observe-github-release", [var prepPath, var originals]) =>
+                ObserveGithubRelease(prepPath, originals, output, overrides),
+            ("publish-github-release", [var prepPath, var originals, var initialObsPath]) =>
+                PublishGithubRelease(prepPath, originals, initialObsPath, output, overrides),
+            ("observe-browser-store", [var prepPath, var originals]) =>
+                ObserveBrowserStore(prepPath, originals, output, overrides),
+            ("publish-browser-store", [var prepPath, var originals, var initialObsPath]) =>
+                PublishBrowserStore(prepPath, originals, initialObsPath, output, overrides),
+            _ => null,
+        };
+    }
+
+    private static (IDestinationAdapter? Adapter, Func<ReleasePreparationRequest, CancellationToken,
+        Task<ReleasePreparationResult>>? Prepare) PrepareTarget(string ecosystem) =>
+        ecosystem switch
+        {
+            "nuget" => (ReleaseAdapters.NuGet, NuGetPreparation.PrepareAsync),
+            "npm" => (ReleaseAdapters.Npm, NpmPreparation.PrepareAsync),
+            "python" => (ReleaseAdapters.Python, PythonPreparation.PrepareAsync),
+            "ruby" => (ReleaseAdapters.Ruby, RubyPreparation.PrepareAsync),
+            "github-release" => (ReleaseAdapters.GithubRelease,
+                GithubReleasePreparation.PrepareAsync),
+            "browser-store" => (ReleaseAdapters.BrowserStore,
+                BrowserStorePreparation.PrepareAsync),
+            _ => (null, null),
+        };
+
+    private static (IDestinationAdapter? Adapter, string? ExpectedDestination) ResolveTarget(
+        string target) => target switch
+        {
+            "nuget" => (ReleaseAdapters.NuGet, null),
+            "npmjs" => (ReleaseAdapters.Npm, "npmjs"),
+            "github-npm" => (ReleaseAdapters.Npm, "github-packages-npm"),
+            "python" => (ReleaseAdapters.Python, null),
+            "ruby" => (ReleaseAdapters.Ruby, null),
+            "github-release" => (ReleaseAdapters.GithubRelease, null),
+            "browser-store" => (ReleaseAdapters.BrowserStore, null),
+            _ => (null, null),
+        };
+
+    private static void RequireDestination(ReleaseSubject subject, string? expected)
+    {
+        if (expected is not null && subject.Destination != expected)
+            throw new InvalidDataException("Unsupported destination for release route.");
+    }
+
+    private static int ObserveNuGet(string preparationPath, string originals,
+        string publicationPath, TextWriter output, ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        ReleaseAdapters.NuGet.VerifyOriginals(preparation, originals);
+        using HttpClient client = RegistryHttpClient.Create();
+        bool settle = ReadOptional(publicationPath, TransferJson.Default.ReleasePublicationResult)
+            ?.Invocation is { ReturnedSuccessfully: true };
+        string credential = NuGetObserveCredential(preparation.Prepared, overrides?.Environment);
+        Func<PreparedRelease, string, CancellationToken, Task<ReleaseObservationResult>> reader =
+            overrides?.ObserveNuGet ?? NuGetObserver(preparation.Prepared, client);
+        ReleaseObservationResult result = ReleaseEngine.SettleAsync(preparation.Prepared,
+            (prepared, token) => reader(prepared, credential, token),
+            settle ? ReleaseEngine.DefaultSettleDeadline : TimeSpan.Zero,
+            overrides?.SettleInterval ?? ReleaseEngine.DefaultSettleInterval,
+            CancellationToken.None).GetAwaiter().GetResult();
+        return EmitObservation(ReleaseAdapters.NuGet, preparation, result, output);
+    }
+
+    private static int PublishNuGet(string preparationPath, string originals, TextWriter output,
+        ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        using HttpClient client = RegistryHttpClient.Create();
+        PreparedRelease selected = preparation.Prepared;
+        Func<PreparedRelease, string, CancellationToken, Task<ReleaseObservationResult>> reader =
+            overrides?.ObserveNuGet ?? NuGetObserver(selected, client);
+        string observeCredential = NuGetObserveCredential(selected, overrides?.Environment);
+        string publishCredential = RequiredEnv(
+            selected.Subject.Destination == "nugetorg" ? "NUGET_API_KEY" : "GITHUB_TOKEN",
+            "Current destination credential is unavailable.", overrides?.Environment);
+        ReleasePublicationResult result = ReleaseAdapters.NuGet.PublishAsync(preparation,
+            originals, publishCredential,
+            (prepared, _, token) => reader(prepared, observeCredential, token),
+            (prepared, directory, endpoint, credential, token) =>
+                NuGetPublisher.PushAsync(prepared, directory, endpoint, credential, token),
+            CancellationToken.None).GetAwaiter().GetResult();
+        return EmitPublication(result, output);
+    }
+
+    private static Func<PreparedRelease, string, CancellationToken, Task<ReleaseObservationResult>>
+        NuGetObserver(PreparedRelease prepared, HttpClient client) =>
+        prepared.Subject.Destination == "nugetorg"
+            ? new NuGetOrgObservation(client).ObserveAsync
+            : new GithubNuGetObservation(client).ObserveAsync;
+
+    private static string NuGetObserveCredential(PreparedRelease prepared,
+        Func<string, string?>? environment) =>
+        prepared.Subject.Destination == "nugetorg"
+            ? ""
+            : RequiredEnv("GITHUB_TOKEN", "Current destination credential is unavailable.",
+                environment);
+
+    private static int ObserveNpm(string preparationPath, string originals, string destination,
+        TextWriter output, ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        RequireDestination(preparation.Prepared.Subject, destination);
+        ReleaseEngine.VerifyOriginals(preparation.Prepared, originals);
+        ReleaseObservationResult result;
+        if (destination == "npmjs")
+        {
+            if (overrides?.ObserveNpmjs is { } controlled)
+                result = controlled(preparation.Prepared, CancellationToken.None)
+                    .GetAwaiter().GetResult();
+            else
             {
                 using HttpClient client = RegistryHttpClient.Create();
-                result = new NpmjsObservation(client).ObserveAsync(prepared, CancellationToken.None)
+                result = new NpmjsObservation(client)
+                    .ObserveAsync(preparation.Prepared, CancellationToken.None)
                     .GetAwaiter().GetResult();
             }
-            else result = observe(prepared, CancellationToken.None).GetAwaiter().GetResult();
-            Write(output, result, TransferJson.Default.NpmjsObservationResult);
-            return ReleaseCompletion.ObservationProceeds(result.Observation) ? 0 : 1;
         }
-        if (args is ["release", "publish-npmjs", var officialPreparedPath, var officialOriginals,
-                var officialScratch, var officialToolchain])
+        else
         {
-            PreparedRelease prepared = Read(officialPreparedPath,
-                TransferJson.Default.NpmPreparationResult).Prepared;
-            NpmRelease.VerifyOriginals(prepared, officialOriginals);
             using HttpClient client = RegistryHttpClient.Create();
-            var reader = new NpmjsObservation(client);
-            var platform = Environment.GetEnvironmentVariables().Cast<System.Collections
-                .DictionaryEntry>().ToDictionary(entry => (string)entry.Key,
-                    entry => (string?)entry.Value, StringComparer.Ordinal);
-            NpmjsPublicationResult result = NpmjsPublication.PublishAsync(prepared,
-                officialOriginals, officialScratch, officialToolchain, platform,
-                Platform.NativeProcess.ExecuteAsync, reader.ObserveAsync, CancellationToken.None)
-                .GetAwaiter().GetResult();
-            Write(output, result, TransferJson.Default.NpmjsPublicationResult);
-            // Handled upload failure is data. Required verification owns completion.
-            return result.Errors.Length == 0 ? 0 : 1;
+            result = new GithubNpmObservation(client).ObserveAsync(preparation.Prepared,
+                RequiredEnv("GITHUB_TOKEN", "Current GitHub read/write credential is unavailable.",
+                    overrides?.Environment), CancellationToken.None).GetAwaiter().GetResult();
         }
-        if (args is ["release", "complete-npmjs", var officialCompletePrepared,
-                var officialInitial, var officialFinal, var officialPublished])
-        {
-            PreparedRelease prepared = Read(officialCompletePrepared,
-                TransferJson.Default.NpmPreparationResult).Prepared;
-            NpmjsPublicationResult? published = ReadOptional(officialPublished,
-                TransferJson.Default.NpmjsPublicationResult);
-            ReleaseOutcome result = NpmRelease.Complete(prepared, Read(officialInitial,
-                    TransferJson.Default.NpmjsObservationResult).Observation,
-                Read(officialFinal, TransferJson.Default.NpmjsObservationResult).Observation,
-                published);
-            Write(output, result, TransferJson.Default.ReleaseOutcome);
-            return result.State == ReleaseBusinessState.Satisfied ? 0 : 1;
-        }
-        if (args is ["release", "describe-npmjs", var preparedPath, var observedPath])
-        {
-            PreparedRelease prepared = Read(preparedPath,
-                TransferJson.Default.NpmPreparationResult).Prepared;
-            ReleaseObservation observation = Read(observedPath,
-                TransferJson.Default.NpmjsObservationResult).Observation;
-            ReleaseDryRun result = NpmRelease.DescribeNpmjs(prepared, observation);
-            Write(output, result, TransferJson.Default.ReleaseDryRun);
-            return result.Ready ? 0 : 1;
-        }
-        if (args is ["release", "observe-github-npm", var observePreparedPath,
-                var observeOriginals])
-        {
-            PreparedRelease prepared = Read(observePreparedPath,
-                TransferJson.Default.NpmPreparationResult).Prepared;
-            NpmRelease.VerifyOriginals(prepared, observeOriginals);
-            using HttpClient client = RegistryHttpClient.Create();
-            GithubNpmObservationResult result = new GithubNpmObservation(client).ObserveAsync(
-                prepared, RequiredEnv("GITHUB_TOKEN",
-                    "Current GitHub read/write credential is unavailable."),
-                CancellationToken.None).GetAwaiter().GetResult();
-            Write(output, result, TransferJson.Default.GithubNpmObservationResult);
-            return ReleaseCompletion.ObservationProceeds(result.Observation) ? 0 : 1;
-        }
-        if (args is ["release", "publish-github-npm", var publishPreparedPath, var publishOriginals,
-                var publishScratch, var publishToolchain])
-        {
-            PreparedRelease prepared = Read(publishPreparedPath,
-                TransferJson.Default.NpmPreparationResult).Prepared;
-            NpmRelease.VerifyOriginals(prepared, publishOriginals);
-            using HttpClient client = RegistryHttpClient.Create();
-            var reader = new GithubNpmObservation(client);
-            GithubNpmPublicationResult result = GithubNpmPublication.PublishAsync(prepared,
-                publishOriginals, publishScratch, publishToolchain, RequiredEnv("GITHUB_TOKEN",
-                    "Current GitHub read/write credential is unavailable."),
-                Platform.NativeProcess.ExecuteAsync, reader.ObserveAsync, CancellationToken.None)
-                .GetAwaiter().GetResult();
-            Write(output, result, TransferJson.Default.GithubNpmPublicationResult);
-            // Handled upload failure is data. Required verification owns completion.
-            return result.Errors.Length == 0 ? 0 : 1;
-        }
-        if (args is ["release", "describe-github-npm", var describePreparation,
-                var describeObservation])
-        {
-            PreparedRelease prepared = Read(describePreparation,
-                TransferJson.Default.NpmPreparationResult).Prepared;
-            GithubNpmObservationResult observed = Read(describeObservation,
-                TransferJson.Default.GithubNpmObservationResult);
-            ReleaseDryRun result = NpmRelease.DescribeGithubNpm(prepared, observed.Observation);
-            Write(output, result, TransferJson.Default.ReleaseDryRun);
-            return result.Ready ? 0 : 1;
-        }
-        if (args is ["release", "complete-github-npm", var completePreparedPath,
-                var completeInitialPath, var completeObservedPath, var completePublishedPath])
-        {
-            PreparedRelease prepared = Read(completePreparedPath,
-                TransferJson.Default.NpmPreparationResult).Prepared;
-            GithubNpmPublicationResult? published = ReadOptional(completePublishedPath,
-                TransferJson.Default.GithubNpmPublicationResult);
-            ReleaseOutcome result = NpmRelease.Complete(prepared, Read(completeInitialPath,
-                    TransferJson.Default.GithubNpmObservationResult).Observation,
-                Read(completeObservedPath,
-                    TransferJson.Default.GithubNpmObservationResult).Observation,
-                published);
-            Write(output, result, TransferJson.Default.ReleaseOutcome);
-            return result.State == ReleaseBusinessState.Satisfied ? 0 : 1;
-        }
-        return null;
+        return EmitObservation(ReleaseAdapters.Npm, preparation, result, output);
     }
+
+    private static int PublishNpm(string preparationPath, string originals, string scratch,
+        string toolchain, string destination, TextWriter output, ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        RequireDestination(preparation.Prepared.Subject, destination);
+        ReleaseEngine.VerifyOriginals(preparation.Prepared, originals);
+        using HttpClient client = RegistryHttpClient.Create();
+        ReleasePublicationResult result;
+        if (destination == "npmjs")
+        {
+            var reader = new NpmjsObservation(client);
+            var platform = Environment.GetEnvironmentVariables()
+                .Cast<System.Collections.DictionaryEntry>()
+                .ToDictionary(entry => (string)entry.Key, entry => (string?)entry.Value,
+                    StringComparer.Ordinal);
+            result = NpmjsPublication.PublishAsync(preparation.Prepared, originals, scratch,
+                toolchain, platform, NativeProcess.ExecuteAsync, reader.ObserveAsync,
+                CancellationToken.None).GetAwaiter().GetResult();
+        }
+        else
+        {
+            var reader = new GithubNpmObservation(client);
+            result = GithubNpmPublication.PublishAsync(preparation.Prepared, originals, scratch,
+                toolchain, RequiredEnv("GITHUB_TOKEN",
+                    "Current GitHub read/write credential is unavailable.",
+                    overrides?.Environment),
+                NativeProcess.ExecuteAsync, reader.ObserveAsync, CancellationToken.None)
+                .GetAwaiter().GetResult();
+        }
+        return EmitPublication(result, output);
+    }
+
+    private static int ObservePython(string preparationPath, string originals,
+        string indexToolsPath, TextWriter output, ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        ReleaseAdapters.Python.VerifyOriginals(preparation, originals);
+        ReleaseObservationResult result = PythonObserveAsync(preparation.Prepared,
+            Read(indexToolsPath, TransferJson.Default.PythonIndexTools), overrides,
+            CancellationToken.None).GetAwaiter().GetResult();
+        return EmitObservation(ReleaseAdapters.Python, preparation, result, output);
+    }
+
+    private static int PublishPython(string preparationPath, string originals, string initialPath,
+        string indexToolsPath, string publisherToolsPath, TextWriter output,
+        ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        PythonIndexTools indexTools = Read(indexToolsPath, TransferJson.Default.PythonIndexTools);
+        PythonPublisherTools publisherTools = Read(publisherToolsPath,
+            TransferJson.Default.PythonPublisherTools);
+        ReleasePublicationResult result = ReleaseEngine.PublishAsync(ReleaseAdapters.Python,
+            preparation, originals, Observation(initialPath), new(
+                ObserveAsync: (prepared, token) => PythonObserveAsync(prepared, indexTools with
+                {
+                    Scratch = FreshScratch(indexTools.Scratch,
+                        "Python phase scratch parent must be absolute."),
+                }, overrides, token),
+                WriteOutputAsync: async (file, token) =>
+                {
+                    PythonPublisherTools stepTools = publisherTools with
+                    {
+                        Scratch = FreshScratch(publisherTools.Scratch,
+                            "Python phase scratch parent must be absolute."),
+                    };
+                    PythonPublishResult invocation = overrides?.PublishPython is { } controlled
+                        ? await controlled(preparation.Prepared, originals, file.Output,
+                            stepTools, token)
+                        : await DefaultPythonPublishAsync(preparation.Prepared, originals,
+                            file.Output, stepTools, overrides?.Environment, token);
+                    return ReleaseWriteStep.FromUpload(invocation.Upload,
+                        invocation.MaskForwardingFailed);
+                }), CancellationToken.None).GetAwaiter().GetResult();
+        return EmitPublication(result, output);
+    }
+
+    private static async Task<ReleaseObservationResult> PythonObserveAsync(PreparedRelease prepared,
+        PythonIndexTools tools, ReleaseCliOverrides? overrides, CancellationToken token)
+    {
+        if (overrides?.ObservePython is { } controlled)
+            return await controlled(prepared, tools, token);
+        using HttpClient client = RegistryHttpClient.Create();
+        return await new PythonIndexObservation(client, tools).ObserveAsync(prepared, token);
+    }
+
+    private static Task<PythonPublishResult> DefaultPythonPublishAsync(PreparedRelease prepared,
+        string originals, string selected, PythonPublisherTools tools,
+        Func<string, string?>? env, CancellationToken token)
+    {
+        Func<string, string?> get = env ?? Environment.GetEnvironmentVariable;
+        var platform = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (string name in new[] { "GITHUB_ACTIONS", "ACTIONS_ID_TOKEN_REQUEST_URL",
+                     "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "SystemRoot" })
+            platform[name] = get(name);
+        return PythonNativePublisher.PublishAsync(prepared, originals, selected, tools, platform,
+            Console.Error, token);
+    }
+
+    private static int ObserveRuby(string preparationPath, string originals, string toolsPath,
+        TextWriter output, ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        ReleaseAdapters.Ruby.VerifyOriginals(preparation, originals);
+        ReleaseObservationResult result = RubyObserveAsync(preparation.Prepared,
+            Read(toolsPath, TransferJson.Default.RubySourceTools), overrides,
+            CancellationToken.None).GetAwaiter().GetResult();
+        return EmitObservation(ReleaseAdapters.Ruby, preparation, result, output);
+    }
+
+    private static int PublishRuby(string preparationPath, string originals, string initialPath,
+        string readToolsPath, string publisherToolsPath, TextWriter output,
+        ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        RubySourceTools readTools = Read(readToolsPath, TransferJson.Default.RubySourceTools);
+        RubyPublisherTools publisherTools = Read(publisherToolsPath,
+            TransferJson.Default.RubyPublisherTools);
+        Func<string, string?> get = overrides?.Environment ?? Environment.GetEnvironmentVariable;
+        var platform = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (string name in new[] { "GITHUB_TOKEN", "GEM_HOST_API_KEY" })
+            platform[name] = get(name);
+        ReleasePublicationResult result = ReleaseEngine.PublishAsync(ReleaseAdapters.Ruby,
+            preparation, originals, Observation(initialPath), new(
+                ObserveAsync: (prepared, token) => RubyObserveAsync(prepared, readTools with
+                {
+                    Scratch = FreshScratch(readTools.Scratch,
+                        "Ruby phase scratch parent must be absolute."),
+                }, overrides, token),
+                WriteOutputAsync: async (_, token) =>
+                {
+                    RubyPublishResult invocation = await (overrides?.PublishRuby
+                        ?? RubyNativePublisher.PublishAsync)(preparation, originals,
+                            publisherTools with
+                            {
+                                Scratch = FreshScratch(publisherTools.Scratch,
+                                    "Ruby phase scratch parent must be absolute."),
+                            }, platform, token);
+                    if (invocation.Subject != preparation.Prepared.Subject)
+                        throw new InvalidDataException("Ruby publisher returned another request.");
+                    return ReleaseWriteStep.FromUpload(invocation.Upload);
+                },
+                Readback: DestinationReadbackMode.AllowCancellation),
+            CancellationToken.None).GetAwaiter().GetResult();
+        return EmitPublication(result, output);
+    }
+
+    private static Task<ReleaseObservationResult> RubyObserveAsync(PreparedRelease prepared,
+        RubySourceTools tools, ReleaseCliOverrides? overrides, CancellationToken token)
+    {
+        Func<string, string?> get = overrides?.Environment ?? Environment.GetEnvironmentVariable;
+        RubyReadCredential? credential = prepared.Subject.Destination == "github-packages-ruby"
+            ? new(get("GITHUB_ACTOR") ?? "", get("GITHUB_TOKEN") ?? "") : null;
+        return (overrides?.ObserveRuby ?? RubyDestinationObservation.ObserveAsync)(
+            prepared, tools, credential, token);
+    }
+
+    private static int ObserveGithubRelease(string preparationPath, string originals,
+        TextWriter output, ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        ReleaseEngine.VerifyOriginals(preparation.Prepared, originals);
+        ReleaseObservationResult result = WithGithubReleaseDestination(overrides, write: false,
+            destination => destination.ObserveAsync(preparation.Prepared, CancellationToken.None));
+        return EmitObservation(ReleaseAdapters.GithubRelease, preparation, result, output);
+    }
+
+    private static int PublishGithubRelease(string preparationPath, string originals,
+        string initialPath, TextWriter output, ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        ReleaseObservationResult initial = Observation(initialPath);
+        ReleasePublicationResult result = WithGithubReleaseDestination(overrides, write: true,
+            destination => ReleaseAdapters.GithubRelease.PublishAsync(preparation, originals,
+                initial, destination.ObserveAsync, destination.CreateAsync,
+                destination.UploadAsync, CancellationToken.None));
+        return EmitPublication(result, output);
+    }
+
+    private static T WithGithubReleaseDestination<T>(ReleaseCliOverrides? overrides, bool write,
+        Func<GithubReleaseDestination, Task<T>> action)
+    {
+        using HttpClient http = overrides?.HttpClientFactory?.Invoke()
+            ?? RegistryHttpClient.Create();
+        using HttpClient? writeHttp = write && overrides?.HttpClientFactory is null
+            ? RegistryHttpClient.CreateNoRedirect() : null;
+        return action(new(http, RequiredEnv("GITHUB_TOKEN",
+            "GitHub Release requires GITHUB_TOKEN.", overrides?.Environment),
+            writeClient: writeHttp)).GetAwaiter().GetResult();
+    }
+
+    private static int ObserveBrowserStore(string preparationPath, string originals,
+        TextWriter output, ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        _ = BrowserStoreDestinationAdapter.OriginalsAsync(preparation, originals,
+            CancellationToken.None).GetAwaiter().GetResult();
+        ReleaseObservationResult result;
+        if (preparation.Target?.Store == BrowserStorePreparation.ChromeWebStore &&
+            !preparation.Prepared.Subject.DryRun)
+        {
+            using HttpClient client = RegistryHttpClient.CreateNoRedirect();
+            IBrowserStore store = (overrides?.BrowserStoreFactory ?? CreateBrowserStore)(
+                preparation, false, client);
+            result = store.ObserveAsync(CancellationToken.None).GetAwaiter().GetResult();
+        }
+        else
+            result = BrowserStoreDestinationAdapter.Unobserved(preparation);
+        return EmitObservation(ReleaseAdapters.BrowserStore, preparation, result, output);
+
+        IBrowserStore CreateBrowserStore(ReleasePreparationResult prep, bool writeAccess,
+            HttpClient client) => DefaultBrowserStore(prep, writeAccess, client,
+                overrides?.Environment);
+    }
+
+    private static int PublishBrowserStore(string preparationPath, string originals,
+        string initialPath, TextWriter output, ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        StoreFile[] files = BrowserStoreDestinationAdapter.OriginalsAsync(preparation, originals,
+            CancellationToken.None).GetAwaiter().GetResult();
+        using HttpClient client = RegistryHttpClient.CreateNoRedirect();
+        IBrowserStore store = (overrides?.BrowserStoreFactory
+            ?? ((prep, writeAccess, http) => DefaultBrowserStore(prep, writeAccess, http,
+                overrides?.Environment)))(preparation, true, client);
+        ReleasePublicationResult result = ReleaseAdapters.BrowserStore.PublishAsync(preparation,
+            originals, files, Observation(initialPath), store, CancellationToken.None)
+            .GetAwaiter().GetResult();
+        return EmitPublication(result, output);
+    }
+
+    private static IBrowserStore DefaultBrowserStore(ReleasePreparationResult preparation,
+        bool write, HttpClient client, Func<string, string?>? environment)
+    {
+        ReleaseSubject subject = preparation.Prepared.Subject;
+        BrowserStoreTarget target = preparation.Target
+            ?? throw new InvalidDataException("Missing browser-store target.");
+        string version = preparation.Prepared.Files[0].Version;
+        return target.Store switch
+        {
+            BrowserStorePreparation.ChromeWebStore => new ChromeWebStore(client, subject, target,
+                version, RequiredEnv("CWS_ACCESS_TOKEN",
+                    "Missing store credential: CWS_ACCESS_TOKEN", environment)),
+            BrowserStorePreparation.FirefoxAmo when write => new FirefoxAmo(client, subject,
+                target, version, RequiredEnv("AMO_JWT_ISSUER",
+                    "Missing store credential: AMO_JWT_ISSUER", environment),
+                RequiredEnv("AMO_JWT_SECRET", "Missing store credential: AMO_JWT_SECRET",
+                    environment)),
+            BrowserStorePreparation.EdgeAddons when write => new EdgeAddons(client, subject,
+                target, version, RequiredEnv("EDGE_API_KEY",
+                    "Missing store credential: EDGE_API_KEY", environment),
+                RequiredEnv("EDGE_CLIENT_ID", "Missing store credential: EDGE_CLIENT_ID",
+                    environment)),
+            _ => throw new InvalidDataException("Store has no read outside its publisher."),
+        };
+    }
+
+    private static int EmitObservation(IDestinationAdapter adapter,
+        ReleasePreparationResult preparation, ReleaseObservationResult result, TextWriter output)
+    {
+        adapter.ValidateObservation(preparation, result);
+        Write(output, result, TransferJson.Default.ReleaseObservationResult);
+        return ReleaseEngine.ObservationProceeds(adapter.Profile(preparation.Prepared.Subject),
+            result.Observation) ? 0 : 1;
+    }
+
+    private static int EmitPublication(ReleasePublicationResult result, TextWriter output)
+    {
+        Write(output, result, TransferJson.Default.ReleasePublicationResult);
+        return result.Errors.Length == 0 ? 0 : 1;
+    }
+
+    private static ReleasePreparationResult Preparation(string path) =>
+        Read(path, TransferJson.Default.ReleasePreparationResult);
+
+    private static ReleaseObservationResult Observation(string path) =>
+        Read(path, TransferJson.Default.ReleaseObservationResult);
 
     internal static T? ReadOptional<T>(string path, JsonTypeInfo<T> type) where T : class =>
         path == "-" ? null : Read(path, type);

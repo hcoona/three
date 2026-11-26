@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using WorkflowDelivery.Platform;
+using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Release;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
@@ -44,7 +45,7 @@ public sealed class PythonPreparationTests(TestContext context)
     public async Task CompletePairAndConsumersQualifyRelease()
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision);
-        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual("", await NativeProcess.RunAsync("git", fixture.Repo.Directory,
             GitStatusArguments, context.CancellationToken),
             "Preparation must leave the shared checkout clean.");
@@ -110,7 +111,7 @@ public sealed class PythonPreparationTests(TestContext context)
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Subject = fixture.Subject with { Destination = "pypi" };
-        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.IsEmpty(result.Commands);
@@ -192,7 +193,7 @@ public sealed class PythonPreparationTests(TestContext context)
             SelectedRef = "refs/heads/main"
         };
         fixture.ChangeFacts = facts => facts["public_release"] = false;
-        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
@@ -210,7 +211,7 @@ public sealed class PythonPreparationTests(TestContext context)
             facts["local_version"] = "g1234567";
             facts["public_release"] = false;
         };
-        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors);
         Assert.HasCount(2, result.Prepared.Files);
         Assert.IsTrue(result.Prepared.Files.All(file => file.Version == fixture.Version));
@@ -230,7 +231,7 @@ public sealed class PythonPreparationTests(TestContext context)
         fixture.Override = command => command.Arguments.Contains(argument) ?
             new(termination, termination == NativeTermination.Exited ? 1 : null,
                 "partial output", "native diagnostic", 0.5, null) : null;
-        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         ReleaseCommand failed = Assert.ContainsSingle(result.Commands.Where(command =>
             !command.Result.Succeeded));
         Assert.AreEqual(termination, failed.Result.Termination);
@@ -277,7 +278,7 @@ public sealed class PythonPreparationTests(TestContext context)
                     "original.whl"), "changed!");
             return null;
         };
-        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.Contains("bytes changed", string.Join(";", result.Errors));
         Assert.IsTrue(result.Commands.All(command => command.Result.Succeeded));
@@ -300,7 +301,7 @@ public sealed class PythonPreparationTests(TestContext context)
         };
         fixture.Override = command => tool == "uv" && command.Arguments.Contains("--short")
             ? Fixture.Success(version) : null;
-        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
@@ -317,7 +318,7 @@ public sealed class PythonPreparationTests(TestContext context)
         using var fixture = await Fixture.CreateAsync(
             (path, content) => RepositoryToolSelection.RaiseMajor(path, content, "python"),
             context.CancellationToken);
-        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors);
         Assert.AreEqual(other, result.Native["python"]);
     }
@@ -328,7 +329,7 @@ public sealed class PythonPreparationTests(TestContext context)
         using var fixture = Fixture.Shared(shared!, sharedRevision);
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
-        PythonPreparationResult result = await fixture.RunAsync(cancelled.Token);
+        ReleasePreparationResult result = await fixture.RunAsync(cancelled.Token);
         Assert.HasCount(6, result.Prepared.Checks);
         Assert.AreEqual(ReleaseCheckStatus.Cancelled, result.Prepared.Checks[0].Status);
         Assert.IsTrue(result.Prepared.Checks.Skip(1).All(check =>
@@ -358,9 +359,9 @@ public sealed class PythonPreparationTests(TestContext context)
             SelectedRef = "refs/heads/main"
         };
         fixture.Version = "2.1.0.dev1";
-        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
-        PythonRelease.Validate(result);
+        ReleaseAdapters.Python.ValidatePreparation(result);
         CollectionAssert.AreEqual(Tested, result.Prepared.RequiredChecks);
         CollectionAssert.AreEqual(Tested, result.Prepared.Checks.Select(check => check.Id)
             .ToArray());
@@ -398,7 +399,7 @@ public sealed class PythonPreparationTests(TestContext context)
         fixture.Version = "2.1.0.dev1";
         fixture.Override = command => command.Arguments.Contains("pytest")
             ? new(NativeTermination.Exited, 1, "1 failed", "", 0.1, null) : null;
-        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         CollectionAssert.AreEqual(Tested, result.Prepared.RequiredChecks);
         CollectionAssert.AreEqual(new[] { ReleaseCheckStatus.Passed, ReleaseCheckStatus.Passed,
             ReleaseCheckStatus.Passed, ReleaseCheckStatus.Passed, ReleaseCheckStatus.Passed,
@@ -569,8 +570,9 @@ public sealed class PythonPreparationTests(TestContext context)
             return new JsonArray(value).ToJsonString();
         }
 
-        internal Task<PythonPreparationResult> RunAsync(CancellationToken token) =>
-            PythonPreparation.PrepareAsync(new(Subject, Repo.Directory, Scratch, Repo.Directory),
+        internal Task<ReleasePreparationResult> RunAsync(CancellationToken token) =>
+            PythonPreparation.PrepareAsync(new(Subject, Repo.Directory, Scratch,
+                MiseDataDirectory: Repo.Directory),
                 ExecuteAsync, token);
 
         private async Task<NativeCommandResult> ExecuteAsync(NativeCommand command,

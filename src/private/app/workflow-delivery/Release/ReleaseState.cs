@@ -1,3 +1,9 @@
+global using NuGetPreparationResult = WorkflowDelivery.Release.ReleasePreparationResult;
+global using NuGetObservationResult = WorkflowDelivery.Release.ReleaseObservationResult;
+global using NuGetCompletionResult = WorkflowDelivery.Release.ReleaseCompletionResult;
+
+using System.Text.Json.Serialization;
+using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Release;
@@ -15,27 +21,45 @@ internal sealed record ReleaseCommand(string Check, NativeCommand Command,
 internal sealed record PreparedRelease(ReleaseSubject Subject, ReleaseFile[] Files,
     string[] RequiredChecks, ReleaseCheck[] Checks);
 
-// Available is the exact coordinate reported available without a served-byte claim; only
-// destinations under the WD-REL-009 version-observation exception may report it.
-internal sealed record ReleasePreparationRequest(ReleaseSubject Subject, string Checkout,
-    string Scratch);
+internal sealed record BrowserStoreTarget(string Store, string Item,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Publisher = null);
 
-internal interface IReleasePreparation
+internal sealed record RubyPreparationTools(string Ruby, string Gem, string Dotnet, string Mise);
+
+internal sealed record ReleasePreparationRequest(
+    ReleaseSubject Subject,
+    string Checkout,
+    string Scratch,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    BrowserStoreTarget? Target = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    RubyPreparationTools? Tools = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? MiseDataDirectory = null);
+
+internal enum ReleaseFileState
 {
-    PreparedRelease Prepared { get; }
-    void Validate();
+    Absent,
+    Exact,
+    Conflict,
+    Unknown,
+    Available,
+    Accepted,
+    Unobserved,
 }
 
-internal interface IReleaseObservation
-{
-    ReleaseObservation Observation { get; }
-}
-
-internal enum ReleaseFileState { Absent, Exact, Conflict, Unknown, Available }
 internal sealed record ReleaseFileObservation(string Output, string Name, string Version,
     ReleaseFileState State, long? Size, string? Sha256);
-internal sealed record ReleaseObservation(ReleaseSubject Subject,
-    ReleaseFileObservation[] Files, string[] RequiredChecks, ReleaseCheck[] Checks);
+
+internal sealed record ReleaseObservation(
+    ReleaseSubject Subject,
+    ReleaseFileObservation[] Files,
+    string[] RequiredChecks,
+    ReleaseCheck[] Checks,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string[]? Reasons = null);
+
 internal sealed record ReleaseUpload(string Output, NativeCommandResult Command);
 
 internal enum ReleaseBusinessState { Satisfied, Unsatisfied, Unknown }
@@ -43,6 +67,93 @@ internal sealed record ReleaseOutcome(ReleaseSubject Subject, ReleaseBusinessSta
     ReleaseUpload[] Uploads, string[] Reasons);
 internal sealed record ReleaseDryRun(ReleaseSubject Subject, bool Ready,
     string[] HypotheticalWrites, string[] Reasons);
+
+internal sealed record ReleasePreparationResult(
+    PreparedRelease Prepared,
+    Dictionary<string, string> Native,
+    ReleaseCommand[] Commands,
+    string[] Errors,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    BrowserStoreTarget? Target = null);
+
+internal sealed record ReleaseObservationResult(
+    ReleaseObservation Observation,
+    DestinationRead[] Reads,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    NuGetResources? Resources = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    long? ReleaseId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    RubySourceReadResult? RubySource = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    StoreState? StoreState = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    BrowserStoreTarget? StoreTarget = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? TarballUrlSha256 = null);
+
+internal sealed record ReleaseWriteStep(
+    string Kind,
+    string Target,
+    bool Succeeded,
+    bool Acknowledged,
+    double DurationSeconds,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Detail = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    NativeCommandResult? Command = null,
+    bool MaskForwardingFailed = false,
+    bool Cancelled = false)
+{
+    internal static ReleaseWriteStep FromUpload(ReleaseUpload upload,
+        bool maskForwardingFailed = false) =>
+        new("upload", upload.Output, upload.Command.Succeeded,
+            upload.Command.Succeeded && upload.Command.Error is null && !maskForwardingFailed,
+            upload.Command.DurationSeconds, upload.Command.Error, upload.Command,
+            maskForwardingFailed);
+
+    internal static ReleaseWriteStep FromContainer(NativeCommandResult command,
+        bool resourceCreated) =>
+        new("container", "release", command.Succeeded && resourceCreated,
+            command.Succeeded && command.Error is null && resourceCreated,
+            command.DurationSeconds, command.Error, command);
+
+    internal static ReleaseWriteStep FromPush(string target, NuGetPushResult push) =>
+        new("push", target, push.ReturnedSuccessfully, push.ReturnedSuccessfully,
+            push.DurationSeconds, push.FailureType, null, false, push.Cancelled);
+
+    internal static ReleaseWriteStep FromStore(string operation, bool succeeded, string detail) =>
+        new("store", operation, succeeded, succeeded, 0, detail);
+}
+
+internal sealed record ReleasePublicationResult(
+    ReleaseSubject Subject,
+    ReleaseObservationResult Before,
+    ReleaseWriteStep[] Steps,
+    ReleaseObservationResult? After,
+    string[] Errors)
+{
+    [JsonIgnore]
+    internal ReleaseUpload[] Uploads => [.. Steps
+        .Where(step => step.Kind == "upload" && step.Command is not null)
+        .Select(step => new ReleaseUpload(step.Target, step.Command!))];
+
+    [JsonIgnore]
+    internal NuGetPushResult? Invocation => Steps.SingleOrDefault(step => step.Kind == "push")
+        is { } push
+            ? new(push.Succeeded, push.Cancelled, push.Detail, push.DurationSeconds)
+            : null;
+}
+
+internal sealed record ReleaseCompletionResult(
+    ReleaseOutcome Outcome,
+    bool? MutationAttempted,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    ReleasePublicationResult? Publication = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    NuGetPushResult? Invocation = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    StoreState? StoreState = null);
 
 // Application-owned Release request policy. Live ref eligibility is checked where the
 // request is formed and again by the privileged publisher; dry runs have no write capability.
@@ -176,13 +287,14 @@ internal static class ReleaseCompletion
     private static readonly string[] VersionObserved = ["nugetorg"];
 
     internal static ReleaseOutcome Evaluate(PreparedRelease prepared,
-        ReleaseObservation? observation, ReleaseUpload[] uploads)
+        ReleaseObservation? observation, ReleaseUpload[] uploads,
+        DestinationProfile? profile = null)
     {
         Validate(prepared);
         if (prepared.Subject.DryRun)
             throw new InvalidDataException("Dry run cannot produce a live completion result.");
         ValidateUploads(prepared, uploads);
-        (ReleaseBusinessState state, string[] reasons) = Assess(prepared, observation);
+        (ReleaseBusinessState state, string[] reasons) = Assess(prepared, observation, profile);
         if (state == ReleaseBusinessState.Unsatisfied && observation is not null)
             reasons = [.. reasons, .. observation.Files.Where(file =>
                 file.State == ReleaseFileState.Absent).Select(file =>
@@ -191,12 +303,13 @@ internal static class ReleaseCompletion
     }
 
     internal static ReleaseDryRun Describe(PreparedRelease prepared,
-        ReleaseObservation? observation, string[] supportedMissingWrites)
+        ReleaseObservation? observation, string[] supportedMissingWrites,
+        DestinationProfile? profile = null)
     {
         Validate(prepared);
         if (!prepared.Subject.DryRun)
             throw new InvalidDataException("Hypothetical work requires a dry-run request.");
-        (ReleaseBusinessState state, string[] reasons) = Assess(prepared, observation);
+        (ReleaseBusinessState state, string[] reasons) = Assess(prepared, observation, profile);
         if (state == ReleaseBusinessState.Unknown || reasons.Length != 0)
             return new(prepared.Subject, false, [], reasons);
         string[] missing = MissingOutputs(observation!);
@@ -238,14 +351,14 @@ internal static class ReleaseCompletion
     }
 
     internal static void ValidateObservation(PreparedRelease prepared,
-        ReleaseObservation observation)
+        ReleaseObservation observation, DestinationProfile? profile = null)
     {
         Validate(prepared);
-        _ = AssessObservation(prepared, observation);
+        _ = AssessObservation(prepared, observation, profile);
     }
 
     private static (ReleaseBusinessState, string[]) Assess(PreparedRelease prepared,
-        ReleaseObservation? observation)
+        ReleaseObservation? observation, DestinationProfile? profile)
     {
         var reasons = CheckFailures(prepared.RequiredChecks, prepared.Checks);
         if (observation is null)
@@ -254,7 +367,7 @@ internal static class ReleaseCompletion
             return (ReleaseBusinessState.Unknown, [.. reasons]);
         }
         (bool unknown, bool absent, List<string> observedReasons) =
-            AssessObservation(prepared, observation);
+            AssessObservation(prepared, observation, profile);
         reasons.AddRange(observedReasons);
         if (unknown) return (ReleaseBusinessState.Unknown, [.. reasons]);
         if (reasons.Count != 0 || absent) return (ReleaseBusinessState.Unsatisfied, [.. reasons]);
@@ -262,7 +375,7 @@ internal static class ReleaseCompletion
     }
 
     private static (bool Unknown, bool Absent, List<string> Reasons) AssessObservation(
-        PreparedRelease prepared, ReleaseObservation observation)
+        PreparedRelease prepared, ReleaseObservation observation, DestinationProfile? profile)
     {
         if (observation.Subject != prepared.Subject)
             throw new InvalidDataException("Destination observation belongs to another request.");
@@ -272,6 +385,10 @@ internal static class ReleaseCompletion
             observation.Files.Select(file => file.Output).Distinct(StringComparer.Ordinal).Count()
                 != observation.Files.Length)
             throw new InvalidDataException("Destination observation must cover the complete set.");
+        bool allowVersion = profile is not null
+            ? profile.Verification == DestinationVerificationMode.VersionAvailable
+            : VersionObserved.Contains(prepared.Subject.Destination, StringComparer.Ordinal);
+        bool allowStore = profile?.Verification == DestinationVerificationMode.StoreAccepted;
         bool unknown = false;
         bool absent = false;
         foreach (ReleaseFile file in prepared.Files)
@@ -289,11 +406,21 @@ internal static class ReleaseCompletion
                         throw new InvalidDataException("Exact state differs from original bytes.");
                     break;
                 case ReleaseFileState.Available:
-                    if (!VersionObserved.Contains(prepared.Subject.Destination,
-                            StringComparer.Ordinal) || actual.Size is not null ||
-                        actual.Sha256 is not null)
+                    if (!allowVersion || actual.Size is not null || actual.Sha256 is not null)
                         throw new InvalidDataException(
                             "Unsupported version-only destination observation.");
+                    break;
+                case ReleaseFileState.Accepted:
+                    if (!allowStore || actual.Size is not null || actual.Sha256 is not null)
+                        throw new InvalidDataException(
+                            "Unsupported store-accepted destination observation.");
+                    break;
+                case ReleaseFileState.Unobserved:
+                    if (!allowStore || actual.Size is not null || actual.Sha256 is not null)
+                        throw new InvalidDataException(
+                            "Unsupported unobserved destination observation.");
+                    unknown = true;
+                    reasons.Add($"Destination state is unobserved for {file.Output}.");
                     break;
                 case ReleaseFileState.Absent:
                     absent = true;

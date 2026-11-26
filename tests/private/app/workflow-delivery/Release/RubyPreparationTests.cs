@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using WorkflowDelivery.Platform;
+using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Release;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
@@ -65,12 +66,12 @@ public sealed class RubyPreparationTests(TestContext context)
         fixture.ChangeAnswer("projection", answer => answer["PublicRelease"] = publicRelease);
         if (!allowed)
         {
-            RubyPreparationResult rejected = await StoppedAsync(fixture, "native-input");
+            ReleasePreparationResult rejected = await StoppedAsync(fixture, "native-input");
             Assert.AreEqual("Native Ruby source/ref projection differs.",
                 Assert.ContainsSingle(rejected.Errors));
             return;
         }
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
         ReleaseCompletion.Validate(result.Prepared);
         Assert.AreEqual(fixture.Subject, result.Prepared.Subject);
@@ -138,7 +139,7 @@ public sealed class RubyPreparationTests(TestContext context)
             SelectedRef = officialDryRunRef ?? fixture.Subject.SelectedRef,
             DryRun = officialDryRunRef is not null,
         };
-        RubyPreparationResult result = await StoppedAsync(fixture, "native-input");
+        ReleasePreparationResult result = await StoppedAsync(fixture, "native-input");
         Assert.AreEqual(fixture.Subject, result.Prepared.Subject);
         Assert.AreEqual(diagnostic, Assert.ContainsSingle(result.Errors));
         Assert.IsEmpty(result.Commands);
@@ -191,7 +192,7 @@ public sealed class RubyPreparationTests(TestContext context)
         using var fixture = Fixture.Shared(repository, revision, Product);
         fixture.Override = _ => throw new AssertFailedException("Unexpected native preparation.");
 
-        RubyPreparationResult result = await StoppedAsync(fixture, "native-input");
+        ReleasePreparationResult result = await StoppedAsync(fixture, "native-input");
         Assert.AreEqual(Recipe, Assert.ContainsSingle(result.Errors));
         Assert.IsEmpty(result.Commands);
     }
@@ -210,7 +211,7 @@ public sealed class RubyPreparationTests(TestContext context)
             if (sourceObject is null) answer[field] = value;
             else answer[sourceObject]![field] = Path.GetFullPath(value, fixture.Checkout);
         });
-        RubyPreparationResult result = await StoppedAsync(fixture, "native-input");
+        ReleasePreparationResult result = await StoppedAsync(fixture, "native-input");
         Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
         if (diagnostic is not null)
         {
@@ -234,14 +235,14 @@ public sealed class RubyPreparationTests(TestContext context)
             context.CancellationToken);
         if (omit is null)
         {
-            RubyPreparationResult selected = await fixture.RunAsync(context.CancellationToken);
+            ReleasePreparationResult selected = await fixture.RunAsync(context.CancellationToken);
             Assert.IsEmpty(selected.Errors, string.Join("; ", selected.Errors));
             string expected = RepositoryToolSelection.NextMajor(
                 RepositoryToolSelection.Locked("ruby"));
             Assert.AreEqual(expected, selected.Native["ruby"]);
             return;
         }
-        RubyPreparationResult result = await StoppedAsync(fixture, "native-input");
+        ReleasePreparationResult result = await StoppedAsync(fixture, "native-input");
         if (diagnostic is not null)
         {
             Assert.AreEqual(diagnostic, Assert.ContainsSingle(result.Errors));
@@ -272,9 +273,9 @@ public sealed class RubyPreparationTests(TestContext context)
             Destination = "rubygems",
             SelectedRef = "refs/heads/main"
         };
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
-        RubyRelease.Validate(result);
+        ReleaseAdapters.Ruby.ValidatePreparation(result);
         Assert.AreEqual(Fixture.Latexmath, Assert.ContainsSingle(result.Prepared.Files).Name);
         CollectionAssert.AreEqual(Tested, result.Prepared.RequiredChecks);
         string gemfile = Path.Combine(fixture.Checkout, "latexmath", "Gemfile");
@@ -317,7 +318,7 @@ public sealed class RubyPreparationTests(TestContext context)
             else if (append) answer[field]!.AsArray().Add(JsonNode.Parse(value));
             else answer[field] = JsonNode.Parse(value);
         });
-        RubyPreparationResult result = await StoppedAsync(fixture, "contents",
+        ReleasePreparationResult result = await StoppedAsync(fixture, "contents",
             expected: latexmath ? Tested : Checks);
         Assert.AreEqual("contents", result.Commands[^1].Check);
         Assert.IsTrue(result.Commands.All(command => command.Result.Succeeded));
@@ -360,10 +361,10 @@ public sealed class RubyPreparationTests(TestContext context)
                 "native diagnostic", 0.25, "controlled failure");
         fixture.Override = command => fixture.SmokePhase(command) == phase &&
             (argument is null || command.Arguments.Contains(argument)) ? native : null;
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RubyPreparationResult transfer = JsonSerializer.Deserialize(
-            JsonSerializer.Serialize(result, TransferJson.Default.RubyPreparationResult),
-            TransferJson.Default.RubyPreparationResult)!;
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult transfer = JsonSerializer.Deserialize(
+            JsonSerializer.Serialize(result, TransferJson.Default.ReleasePreparationResult),
+            TransferJson.Default.ReleasePreparationResult)!;
         RequireStopped(transfer, phase, Enum.Parse<ReleaseCheckStatus>(status));
         ReleaseCommand failed = transfer.Commands[^1];
         if (!native.Succeeded)
@@ -390,7 +391,7 @@ public sealed class RubyPreparationTests(TestContext context)
             else File.WriteAllText(fixture.Original, content);
             return null;
         };
-        RubyPreparationResult result = await StoppedAsync(fixture, phase);
+        ReleasePreparationResult result = await StoppedAsync(fixture, phase);
         Assert.Contains("Original gem changed", string.Join(";", result.Errors));
         Assert.IsTrue(result.Commands.All(command => command.Result.Succeeded));
     }
@@ -401,7 +402,7 @@ public sealed class RubyPreparationTests(TestContext context)
         using var fixture = Smoke();
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
-        RubyPreparationResult result = await fixture.RunAsync(cancelled.Token);
+        ReleasePreparationResult result = await fixture.RunAsync(cancelled.Token);
         RequireStopped(result, "native-input", ReleaseCheckStatus.Cancelled);
         Assert.IsEmpty(result.Commands);
     }
@@ -420,7 +421,7 @@ public sealed class RubyPreparationTests(TestContext context)
         using var fixture = Smoke();
         string unowned = Path.Combine(fixture.Scratch, "unowned");
         if (unownedContent is not null) File.WriteAllText(unowned, unownedContent);
-        RubyPreparationRequest request = fixture.Request with
+        ReleasePreparationRequest request = fixture.Request with
         {
             Checkout = checkout ?? fixture.Checkout,
             Scratch = nestedScratch ? fixture.Checkout : fixture.Scratch,
@@ -435,20 +436,20 @@ public sealed class RubyPreparationTests(TestContext context)
         if (unownedContent is not null) Assert.AreEqual(unownedContent, File.ReadAllText(unowned));
     }
 
-    private async Task AssertPathsRejectedAsync(RubyPreparationRequest request) =>
+    private async Task AssertPathsRejectedAsync(ReleasePreparationRequest request) =>
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             RubyPreparation.PrepareAsync(request, (_, _) => throw new AssertFailedException(
                 "Invalid owned state cannot execute native commands."), context.CancellationToken));
 
-    private async Task<RubyPreparationResult> StoppedAsync(Fixture fixture, string phase,
+    private async Task<ReleasePreparationResult> StoppedAsync(Fixture fixture, string phase,
         string[]? expected = null)
     {
-        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, phase, ReleaseCheckStatus.Failed, expected);
         return result;
     }
 
-    private static void RequireStopped(RubyPreparationResult result, string phase,
+    private static void RequireStopped(ReleasePreparationResult result, string phase,
         ReleaseCheckStatus status, string[]? expected = null)
     {
         string[] checks = expected ?? Checks;
@@ -489,8 +490,8 @@ public sealed class RubyPreparationTests(TestContext context)
             Path.Combine(Checkout, "gem"), Path.Combine(Checkout, "dotnet"),
             Path.Combine(Checkout, "provider", "mise"));
         internal const string RubyGems = "fixture-rubygems";
-        internal RubyPreparationRequest Request => new(Subject, Checkout, Scratch, Tools,
-            Path.Combine(Checkout, "mise-data"));
+        internal ReleasePreparationRequest Request => new(Subject, Checkout, Scratch, Tools: Tools,
+            MiseDataDirectory: Path.Combine(Checkout, "mise-data"));
         private Action<string, JsonObject>? changeAnswer;
         internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
 
@@ -604,7 +605,7 @@ public sealed class RubyPreparationTests(TestContext context)
             return files;
         }
 
-        internal Task<RubyPreparationResult> RunAsync(CancellationToken token) =>
+        internal Task<ReleasePreparationResult> RunAsync(CancellationToken token) =>
             RubyPreparation.PrepareAsync(Request, ExecuteAsync, token);
 
         internal string SmokePhase(NativeCommand command)

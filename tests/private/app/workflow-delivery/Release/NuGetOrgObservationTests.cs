@@ -55,7 +55,7 @@ public sealed class NuGetOrgObservationTests(TestContext context)
         });
         using var client = new HttpClient(handler);
 
-        NuGetObservationResult result = await new NuGetOrgObservation(client).ObserveAsync(
+        ReleaseObservationResult result = await new NuGetOrgObservation(client).ObserveAsync(
             Prepared(), "", context.CancellationToken);
 
         ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);

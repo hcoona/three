@@ -6,13 +6,6 @@ using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Release;
 
-internal sealed record NuGetPreparationResult(PreparedRelease Prepared,
-    Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors)
-    : IReleasePreparation
-{
-    public void Validate() => NuGetRelease.Validate(this);
-}
-
 // The adopted Release recipes use native versioning and packaging independently of CI. The
 // smoke recipe packs one framework; the shared library recipe packs the native multi-target
 // outer build of an ordinary registered library.
@@ -31,10 +24,10 @@ internal static class NuGetPreparation
     internal const string SuppressCloudVariables =
         "-property:NBGV_SetCloudBuildVersionVars=false";
 
-    internal static Task<NuGetPreparationResult> PrepareAsync(ReleasePreparationRequest request,
+    internal static Task<ReleasePreparationResult> PrepareAsync(ReleasePreparationRequest request,
         CancellationToken token) => PrepareAsync(request, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<NuGetPreparationResult> PrepareAsync(
+    internal static async Task<ReleasePreparationResult> PrepareAsync(
         ReleasePreparationRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)

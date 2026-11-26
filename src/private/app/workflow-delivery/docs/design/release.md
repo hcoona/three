@@ -132,10 +132,19 @@ use bounded reads. This does not remove fresh manual same-revision recovery.
 For NuGet, the [native publisher source basis](../research/nuget-native-publisher.md)
 records the accepted integration boundary and the selected client's behavior.
 
-Release owns permission to proceed and business completion. The adapter owns native
-identity, endpoint, response and partial-set semantics. Do not encode npm tags as
-universal identity or Python's two-file behavior as a universal transaction. A
-supported interface does not require each method to have its own class or record.
+Release owns permission to proceed and business completion through the pure
+[`ReleaseEngine`](../../Release/ReleaseEngine.cs) protocol core and four shared
+stage transfer envelopes (`ReleasePreparationResult`,
+`ReleaseObservationResult`, `ReleasePublicationResult` and
+`ReleaseCompletionResult`). Each concrete
+[`IDestinationAdapter`](../../Destinations/ReleaseAdapters.cs) declares its
+`DestinationProfile` (`ExactBytes`, `VersionAvailable` or `StoreAccepted`
+verification; `Immediate`, `EventualIndex` or `BoundedSettle` visibility;
+optional `PublisherOnlyRead` and ordered multi-file kinds) and owns native
+identity, endpoint, response and partial-set semantics. Do not encode npm tags
+as universal identity or Python's two-file behavior as a universal transaction.
+A supported interface does not require each method to have its own class or
+record.
 
 Each concrete integration specifies native non-overwrite reliance, required
 files, metadata/readback, credential scope, redirect handling, visibility/read
@@ -316,11 +325,11 @@ runner, additional checks and non-claims.
 
 ## Validation Scenarios
 
-| Contract   | Required cases                                                                                                                               | Primary validation boundary                                       |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Completion | Initially exact; absent; supported subset; conflict; delayed visibility; upload error with complete/incomplete readback                      | Destination contract and Release state scenarios                  |
-| Recovery   | Interruption; unknown effects; fresh original-revision rebuild; only supported missing-file writes                                           | End-to-end use-case scenarios with bounded dependency substitutes |
-| Channel    | Buddy development branch ref; Official ref outside scope rejected at preparation and publisher; dry run from a development ref with no write | Release state and preparation/publisher scenarios                 |
+| Contract   | Required cases                                                                                                                               | Primary validation boundary                                                                                         |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Completion | Initially exact; absent; supported subset; conflict; delayed visibility; upload error with complete/incomplete readback                      | Destination contract, Release state scenarios and exhaustive BFS model checking (`ReleaseEngineModelCheckingTests`) |
+| Recovery   | Interruption; unknown effects; fresh original-revision rebuild; only supported missing-file writes                                           | End-to-end use-case scenarios with bounded dependency substitutes                                                   |
+| Channel    | Buddy development branch ref; Official ref outside scope rejected at preparation and publisher; dry run from a development ref with no write | Release state and preparation/publisher scenarios                                                                   |
 
 Use the destination sections reached through the
 [review core](#release-integration-review), and the

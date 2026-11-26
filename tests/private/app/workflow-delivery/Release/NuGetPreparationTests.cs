@@ -38,7 +38,7 @@ public sealed class NuGetPreparationTests(TestContext context)
         // The fake Pack produces no archive, so the furthest defect-free stage is the
         // original archive check; every earlier stage must qualify from the shared input.
         using var fixture = Fixture.Shared(shared!, sharedRevision);
-        NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Passed, result.Prepared.Checks.Single(item =>
             item.Id == "native-input").Status);
         Assert.AreEqual(ReleaseCheckStatus.Passed, result.Prepared.Checks.Single(item =>
@@ -70,7 +70,7 @@ public sealed class NuGetPreparationTests(TestContext context)
             command.Arguments.Contains("-target:" + phase) ?
                 new(termination, termination == NativeTermination.Exited ? 1 : null,
                     "partial native output", "native diagnostic", 0.1, null) : null;
-        NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         string check = phase == "restore" ? "native-input" : "pack";
         Assert.AreEqual(expected, result.Prepared.Checks.Single(item => item.Id == check).Status);
         Assert.IsTrue(result.Prepared.Checks.TakeWhile(item => item.Id != check)
@@ -102,7 +102,7 @@ public sealed class NuGetPreparationTests(TestContext context)
         using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Modify = (phase, document) =>
         { if (phase == target) document["Properties"]![property] = value; };
-        NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
         // The defect-free shared control fails at pack for a missing archive, so each row
         // must fail at its own check for its own reason, after every earlier check passed.
@@ -125,7 +125,7 @@ public sealed class NuGetPreparationTests(TestContext context)
         using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Modify = (phase, document) =>
         { if (phase == target) document["TargetResults"]!.AsObject().Clear(); };
-        NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.Contains("Missing or failed native package target", string.Join(";", result.Errors));
         Assert.IsTrue(result.Commands.All(item => item.Result.Succeeded));
@@ -137,7 +137,7 @@ public sealed class NuGetPreparationTests(TestContext context)
         // Private repository: the unknown preset requires a different committed revision.
         using var fixture = await Fixture.CreateAsync(context.CancellationToken,
             "dotnet/unknown-v1");
-        NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
         Assert.IsEmpty(result.Commands);
         Assert.IsEmpty(result.Prepared.Files);
@@ -154,7 +154,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Shape[property] = value;
-        NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
         Assert.Contains("variants or required tests", string.Join(";", result.Errors));
@@ -165,7 +165,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     public async Task MissingOriginalOutputDoesNotBecomeEmptySuccessfulRelease()
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision);
-        NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks.Single(item => item.Id
             == "pack").Status);
         Assert.IsEmpty(result.Prepared.Files);
@@ -181,7 +181,7 @@ public sealed class NuGetPreparationTests(TestContext context)
         using var fixture = Fixture.Shared(shared!, sharedRevision);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
-        NuGetPreparationResult result = await fixture.RunAsync(cancellation.Token);
+        ReleasePreparationResult result = await fixture.RunAsync(cancellation.Token);
         Assert.AreEqual(ReleaseCheckStatus.Cancelled, result.Prepared.Checks[0].Status);
         Assert.HasCount(6, result.Prepared.Checks);
         Assert.IsEmpty(result.Commands);
@@ -192,7 +192,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     public async Task EveryNativeCommandUsesSelectedVersionContextAndOwnedVariableOutput()
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision);
-        NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         // Preparation does not branch on DryRun; the request subject is carried unchanged.
         Assert.AreEqual(fixture.Subject, result.Prepared.Subject);
         Assert.IsTrue(result.Prepared.Subject.DryRun);
@@ -291,7 +291,7 @@ public sealed class NuGetPreparationTests(TestContext context)
             await repo.GitAsync("reset", "--hard", revision);
             return revision;
         }
-        internal Task<NuGetPreparationResult> RunAsync(CancellationToken token) =>
+        internal Task<ReleasePreparationResult> RunAsync(CancellationToken token) =>
             NuGetPreparation.PrepareAsync(new(Subject, Repo.Directory, scratch), ExecuteAsync,
                 token);
         private async Task<NativeCommandResult> ExecuteAsync(NativeCommand command,

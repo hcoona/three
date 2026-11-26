@@ -298,7 +298,7 @@ public sealed class RubyNativePublisherTests(TestContext context)
         internal string Originals { get; set; }
         internal string Archive { get; }
         internal RubyPublisherTools Tools { get; set; }
-        internal RubyPreparationResult Preparation { get; private set; }
+        internal ReleasePreparationResult Preparation { get; private set; }
         internal ReleaseFile Original => Preparation.Prepared.Files[0];
         internal Action? KeyLookup { get; set; }
         internal Dictionary<string, string?> Platform { get; } = new(StringComparer.Ordinal)

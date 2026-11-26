@@ -6,9 +6,6 @@ using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
 
-internal sealed record GithubReleaseObservationResult(ReleaseObservation Observation,
-    long? ReleaseId, DestinationRead[] Reads) : IReleaseObservation;
-
 // The repository's GitHub Release for one tag. GitHub owns tags, releases and asset
 // storage; the application reads the tag's commit, the release's channel and every served
 // asset, and compares each with the qualified original byte for byte.
@@ -22,7 +19,7 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
     private const string Uploads = "https://" + UploadHost + "/repos/" + Repository;
     private const int MetadataLimit = 2 * 1024 * 1024;
 
-    internal async Task<GithubReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
         CancellationToken token)
     {
         (string tag, bool buddy) = Identity(prepared);
@@ -102,7 +99,8 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
                     : Observed(file, ReleaseFileState.Conflict, served.Size, served.Sha256));
             }
             return new(new(prepared.Subject, [.. files], [Check],
-                [new(Check, ReleaseCheckStatus.Passed)]), releaseId, [.. session.Reads]);
+                [new(Check, ReleaseCheckStatus.Passed)]), [.. session.Reads],
+                ReleaseId: releaseId);
         }
         catch (OperationCanceledException)
         {
@@ -120,9 +118,9 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
             return Result(ReleaseFileState.Unknown, ReleaseCheckStatus.Failed);
         }
 
-        GithubReleaseObservationResult Result(ReleaseFileState state, ReleaseCheckStatus check) =>
+        ReleaseObservationResult Result(ReleaseFileState state, ReleaseCheckStatus check) =>
             new(new(prepared.Subject, [.. prepared.Files.Select(file => Observed(file, state))],
-                [Check], [new(Check, check)]), releaseId, [.. session.Reads]);
+                [Check], [new(Check, check)]), [.. session.Reads], ReleaseId: releaseId);
     }
 
     // One native create of a published release at the selected commit; GitHub creates a

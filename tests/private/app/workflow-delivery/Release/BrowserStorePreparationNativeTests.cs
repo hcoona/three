@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text.Json;
+using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -55,9 +56,9 @@ public sealed class BrowserStorePreparationNativeTests(TestContext context)
             var subject = new ReleaseSubject(revision, "refs/heads/preparation-development",
                 BrowserStorePreparation.Unit, BrowserStorePreparation.Declaration, "official",
                 BrowserStorePreparation.FirefoxAmo, true);
-            BrowserStorePreparationResult result = await BrowserStorePreparation.PrepareAsync(
-                new(subject, new(BrowserStorePreparation.FirefoxAmo, "item", null), checkout,
-                    scratch), context.CancellationToken);
+            ReleasePreparationResult result = await BrowserStorePreparation.PrepareAsync(
+                new(subject, checkout, scratch, Target: new(BrowserStorePreparation.FirefoxAmo,
+                    "item")), context.CancellationToken);
             string retained = Directory.CreateDirectory(Path.Combine(context.TestResultsDirectory!,
                 "browser-store-native", Guid.NewGuid().ToString("N"))).FullName;
             string binding = Path.Combine(retained, "preparation.json");
@@ -69,7 +70,7 @@ public sealed class BrowserStorePreparationNativeTests(TestContext context)
                 result.Errors,
                 FailedCommands = result.Commands.Where(command => !command.Result.Succeeded)
             }));
-            BrowserStoreRelease.Validate(result);
+            ReleaseAdapters.BrowserStore.ValidatePreparation(result);
             Assert.IsTrue(result.Prepared.Checks.All(check =>
                 check.Status == ReleaseCheckStatus.Passed));
             Assert.AreEqual("firefox-zip,firefox-sources", string.Join(",",

@@ -20,22 +20,23 @@ internal sealed class EdgeAddons(HttpClient client, ReleaseSubject subject,
 
     private string Product => "v1/products/" + Uri.EscapeDataString(target.Item);
 
-    public Task<StoreObservation> ObserveAsync(CancellationToken cancel) =>
+    public Task<ReleaseObservationResult> ObserveAsync(CancellationToken cancel) =>
         Task.FromResult(Unobserved(subject, target, version));
 
-    internal static StoreObservation Unobserved(ReleaseSubject subject, BrowserStoreTarget
-        target, string version) => new(subject, target, version, StoreState.Unobserved,
-        ["The store exposes no version read before submission."], []);
+    internal static ReleaseObservationResult Unobserved(ReleaseSubject subject,
+        BrowserStoreTarget target, string version) =>
+        StoreHttp.Observation(subject, target, version, StoreState.Unobserved,
+            ["The store exposes no version read before submission."], []);
 
-    public async Task<StoreObservation?> PublishAsync(StoreFile[] files,
-        List<StoreOperation> operations, CancellationToken cancel)
+    public async Task<ReleaseObservationResult?> PublishAsync(StoreFile[] files,
+        List<ReleaseWriteStep> operations, CancellationToken cancel)
     {
         var upload = Request(HttpMethod.Post, Product + "/submissions/draft/package");
         upload.Content = new StreamContent(File.OpenRead(files.Single().Path));
         upload.Content.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         (bool uploaded, string uploadDetail) = await OperationAsync("upload", upload,
             Product + "/submissions/draft/package/operations/", cancel);
-        operations.Add(new("upload", uploaded, uploadDetail));
+        operations.Add(ReleaseWriteStep.FromStore("upload", uploaded, uploadDetail));
         if (!uploaded)
             return Final(StoreState.Unknown, "Package upload did not succeed.");
         var submit = Request(HttpMethod.Post, Product + "/submissions");
@@ -45,13 +46,14 @@ internal sealed class EdgeAddons(HttpClient client, ReleaseSubject subject,
             "application/json");
         (bool submitted, string submitDetail) = await OperationAsync("submit", submit,
             Product + "/submissions/operations/", cancel);
-        operations.Add(new("submit", submitted, submitDetail));
+        operations.Add(ReleaseWriteStep.FromStore("submit", submitted, submitDetail));
         return submitted ? Final(StoreState.Received, "")
             : Final(submitDetail.StartsWith("Failed", StringComparison.Ordinal)
                 ? StoreState.Conflict : StoreState.Unknown, "Submission did not succeed.");
 
-        StoreObservation Final(StoreState state, string reason) => new(subject, target,
-            version, state, reason.Length == 0 ? [] : [reason], [.. http.Reads]);
+        ReleaseObservationResult Final(StoreState state, string reason) =>
+            StoreHttp.Observation(subject, target, version, state,
+                reason.Length == 0 ? [] : [reason], [.. http.Reads]);
     }
 
     // Starts an asynchronous operation (202 with its id in Location) and polls its status.
