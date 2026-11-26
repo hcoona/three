@@ -315,15 +315,14 @@ internal sealed class FreshNames
 [Pass(typeof(LACS), typeof(RawTerm))]
 internal sealed partial class GenerateJavaScript
 {
-    private const string Runtime = """
-        // JavaScript Primitives
-        function plus(...args) { return args.reduce((r, x) => r + x, 0); }
-        function minus(first, ...rest) { return rest.reduce((r, x) => r - x, first); }
-        function mult(...args) { return args.reduce((r, x) => r * x, 1); }
-        function div(first, ...rest) { return rest.reduce((r, x) => r / x, first); }
-        function zero_p(v) { return v === 0; }
-        // CoreScheme Program
-        """;
+    private const string Runtime =
+        "// JavaScript Primitives\n"
+        + "function plus(...args) { return args.reduce((r, x) => r + x, 0); }\n"
+        + "function minus(first, ...rest) { return rest.reduce((r, x) => r - x, first); }\n"
+        + "function mult(...args) { return args.reduce((r, x) => r * x, 1); }\n"
+        + "function div(first, ...rest) { return rest.reduce((r, x) => r / x, first); }\n"
+        + "function zero_p(v) { return v === 0; }\n"
+        + "// CoreScheme Program";
 
     public SExpr Run(LACS.Term input)
     {
