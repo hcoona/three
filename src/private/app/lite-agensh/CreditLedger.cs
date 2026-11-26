@@ -25,6 +25,9 @@ public sealed class CreditLedger
     private readonly decimal campaignAllowance;
 
     public CreditLedger(string path, decimal allowance)
+        : this(path, allowance, requireExisting: false) { }
+
+    internal CreditLedger(string path, decimal allowance, bool requireExisting)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentOutOfRangeException.ThrowIfLessThan(allowance, 30);
@@ -33,10 +36,14 @@ public sealed class CreditLedger
             throw new ArgumentException("The campaign ledger path must be absolute.", nameof(path));
         }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        connectionString = Sql.ConnectionStringFor(path);
+        if (!requireExisting)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        }
+
+        connectionString = Sql.ConnectionStringFor(path, create: !requireExisting);
         campaignAllowance = allowance;
-        using SqliteConnection connection = Open();
+        using SqliteConnection connection = Open(requireExisting);
         Sql.Execute(connection, "PRAGMA journal_mode=WAL;");
         using SqliteTransactionScope transaction =
             Sql.BeginTransaction(connection, deferred: false);
@@ -66,6 +73,15 @@ public sealed class CreditLedger
                 FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
             CREATE TABLE IF NOT EXISTS credit_sdk_owners(
                 reservation_id TEXT PRIMARY KEY, pid INTEGER NOT NULL, start_ticks INTEGER NOT NULL,
+                FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
+            CREATE TABLE IF NOT EXISTS credit_cancellation_disqualifiers(
+                reservation_id TEXT PRIMARY KEY, reported_nano_aiu TEXT,
+                status TEXT, reported_requests INTEGER, created_at TEXT NOT NULL,
+                FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
+            CREATE TABLE IF NOT EXISTS credit_cancellations(
+                reservation_id TEXT PRIMARY KEY, reason TEXT NOT NULL, proof TEXT NOT NULL,
+                inspection TEXT NOT NULL, application_build TEXT NOT NULL,
+                created_at TEXT NOT NULL,
                 FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
             """,
             transaction
@@ -316,10 +332,6 @@ public sealed class CreditLedger
         {
             Sql.Execute(connection,
                 """
-                CREATE TABLE IF NOT EXISTS credit_cancellation_disqualifiers(
-                    reservation_id TEXT PRIMARY KEY, reported_nano_aiu TEXT,
-                    status TEXT, reported_requests INTEGER, created_at TEXT NOT NULL,
-                    FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
                 INSERT OR IGNORE INTO credit_cancellation_disqualifiers(
                     reservation_id,reported_nano_aiu,status,reported_requests,created_at)
                 VALUES($id,$nano,$status,$requests,$time);
@@ -467,9 +479,6 @@ public sealed class CreditLedger
         CreditReservation row = Read(connection, transaction)
             .Single(item => item.Id == expected.Id);
         if (Sql.Scalar(connection,
-                "SELECT name FROM sqlite_master WHERE type='table' "
-                    + "AND name='credit_cancellation_disqualifiers';", transaction) is string
-            && Sql.Scalar(connection,
                 "SELECT reservation_id FROM credit_cancellation_disqualifiers "
                     + "WHERE reservation_id=$id;", transaction, ("$id", row.Id)) is string)
         {
@@ -520,13 +529,6 @@ public sealed class CreditLedger
             }
         }
 
-        Sql.Execute(connection,
-            """
-            CREATE TABLE IF NOT EXISTS credit_cancellations(
-                reservation_id TEXT PRIMARY KEY, reason TEXT NOT NULL, proof TEXT NOT NULL,
-                inspection TEXT NOT NULL, application_build TEXT NOT NULL, created_at TEXT NOT NULL,
-                FOREIGN KEY(reservation_id) REFERENCES credit_reservations(id));
-            """, transaction);
         string? existing = Sql.Scalar(connection,
             "SELECT proof FROM credit_cancellations WHERE reservation_id=$id;",
             transaction, ("$id", row.Id)) as string;
@@ -586,11 +588,32 @@ public sealed class CreditLedger
         decimal runAllowance,
         string usagePath,
         bool shared = false
+    ) => ReserveCore(runId, worker, allowance, runAllowance, usagePath, shared);
+
+    internal CreditReservation ReservePerSessionShare(
+        string runId,
+        string worker,
+        int remainingWorkers,
+        decimal runAllowance,
+        string usagePath
+    ) => ReserveCore(
+        runId, worker, allowance: null, runAllowance, usagePath, shared: false, remainingWorkers
+    );
+
+    private CreditReservation ReserveCore(
+        string runId,
+        string worker,
+        decimal? allowance,
+        decimal runAllowance,
+        string usagePath,
+        bool shared,
+        int remainingWorkers = 1
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
         ArgumentException.ThrowIfNullOrWhiteSpace(worker);
-        if (shared ? allowance != 0 : allowance < 30)
+        ArgumentOutOfRangeException.ThrowIfLessThan(remainingWorkers, 1);
+        if (allowance is decimal requested && (shared ? requested != 0 : requested < 30))
         {
             throw new ArgumentOutOfRangeException(nameof(allowance));
         }
@@ -628,9 +651,18 @@ public sealed class CreditLedger
             );
         }
 
-        decimal campaignUsed = rows.Sum(Charge);
-        decimal runUsed = rows.Where(row => row.RunId == runId).Sum(Charge);
-        if (campaignUsed + allowance > campaignAllowance || runUsed + allowance > runAllowance)
+        decimal campaignRemaining = campaignAllowance - rows.Sum(Charge);
+        decimal runRemaining = runAllowance - rows.Where(row => row.RunId == runId).Sum(Charge);
+        decimal reservedAllowance = allowance
+            ?? Math.Floor(Math.Min(runRemaining, campaignRemaining) / remainingWorkers * 100) / 100;
+        if (allowance is null && reservedAllowance < 30)
+        {
+            throw new OperationException(
+                "credit_exhausted",
+                "Remaining durable allowance is below the native 30-credit minimum per worker."
+            );
+        }
+        if (reservedAllowance > campaignRemaining || reservedAllowance > runRemaining)
         {
             throw new OperationException(
                 "credit_exhausted",
@@ -642,7 +674,7 @@ public sealed class CreditLedger
             Guid.NewGuid().ToString("N"),
             runId,
             worker,
-            allowance,
+            reservedAllowance,
             "reserved",
             Path.GetFullPath(usagePath),
             Guid.NewGuid().ToString("D"),
@@ -664,7 +696,7 @@ public sealed class CreditLedger
             ("$run", runId),
             ("$worker", worker),
             ("$shared", shared),
-            ("$allowance", Format(allowance)),
+            ("$allowance", Format(reservedAllowance)),
             ("$runAllowance", Format(runAllowance)),
             ("$path", reservation.UsagePath),
             ("$session", reservation.SessionId),
@@ -1026,6 +1058,24 @@ public sealed class CreditLedger
         };
     }
 
+    internal decimal ReadRunActualReported(string runId)
+    {
+        using SqliteConnection connection = Open();
+        using SqliteCommand command = Sql.Command(
+            connection,
+            "SELECT actual FROM credit_reservations WHERE run_id=$run AND actual IS NOT NULL;",
+            null,
+            ("$run", runId)
+        );
+        using ObservedSqliteReader reader = Sql.Reader(command);
+        decimal actual = 0;
+        while (reader.Read())
+        {
+            actual += Parse(reader.GetString(0));
+        }
+        return actual;
+    }
+
     public JsonObject Status(string runId, decimal runAllowance)
     {
         IReadOnlyList<CreditReservation> rows = Reservations();
@@ -1033,17 +1083,20 @@ public sealed class CreditLedger
         using SqliteConnection connection = Open();
         JsonArray reported = [];
         JsonArray cancellations = [];
-        if (Sql.Scalar(connection,
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='credit_cancellations';")
-            is string)
-        {
-            using SqliteCommand command = Sql.Command(connection,
+        using (
+            SqliteCommand command = Sql.Command(
+                connection,
                 """
                 SELECT c.reservation_id,c.reason,c.inspection,c.application_build,c.created_at
                 FROM credit_cancellations c JOIN credit_reservations r ON r.id=c.reservation_id
                 WHERE r.run_id=$run ORDER BY c.reservation_id;
-                """, null, ("$run", runId));
-            using ObservedSqliteReader reader = Sql.Reader(command);
+                """,
+                null,
+                ("$run", runId)
+            )
+        )
+        using (ObservedSqliteReader reader = Sql.Reader(command))
+        {
             while (reader.Read())
             {
                 cancellations.Add(new JsonObject
@@ -1280,9 +1333,21 @@ public sealed class CreditLedger
         }
     }
 
-    private SqliteConnection Open()
+    private SqliteConnection Open(bool requireExisting = false)
     {
         SqliteConnection connection = new(connectionString);
-        return Sql.Open(connection, "campaign");
+        try
+        {
+            return Sql.Open(connection, "campaign");
+        }
+        catch (SqliteException exception)
+            when (requireExisting && exception.SqliteErrorCode == 14)
+        {
+            throw new OperationException(
+                "credit_unknown",
+                "Retained recovery requires its original campaign ledger.",
+                exception
+            );
+        }
     }
 }

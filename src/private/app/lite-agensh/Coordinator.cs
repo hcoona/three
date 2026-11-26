@@ -22,6 +22,7 @@ public sealed class Coordinator
     private readonly Action<IReadOnlyList<Task>>? observeWorkerCompletion;
     private readonly string nativeEvidenceKind;
     private readonly string ledgerBinding;
+    private readonly bool hadInitialLedgerBinding;
 
     private string PreflightReceiptKey =>
         nativeEvidenceKind == "native-sdk"
@@ -69,9 +70,12 @@ public sealed class Coordinator
         this.git = git;
         this.observeWorkerCompletion = observeWorkerCompletion;
         processes = new(database);
+        string? initialBinding = database.ReadMetadata("native:ledger_binding");
+        hadInitialLedgerBinding = initialBinding is not null;
         credits = new(
             database.Configuration.CampaignLedgerPath,
-            database.Configuration.CampaignAiCreditAllowance
+            database.Configuration.CampaignAiCreditAllowance,
+            requireExisting: hadInitialLedgerBinding
         );
         nativeEvidenceKind = nativeWorkerFactory is null
             ? "native-sdk"
@@ -149,6 +153,12 @@ public sealed class Coordinator
         }
         try
         {
+            if (!hadInitialLedgerBinding)
+            {
+                throw new OperationException(
+                    "credit_unknown", "Retained recovery requires its original campaign ledger."
+                );
+            }
             if (database.ReadMetadata("native:ledger_binding") != ledgerBinding)
             {
                 throw new OperationException(
@@ -566,6 +576,12 @@ public sealed class Coordinator
         bool settlementOnly = false;
         try
         {
+            if (mode == "reconnect" && !hadInitialLedgerBinding)
+            {
+                throw new OperationException(
+                    "credit_unknown", "Retained recovery requires its original campaign ledger."
+                );
+            }
             settlementOnly = ValidateMode(mode);
             if (settlementOnly)
             {
@@ -600,9 +616,9 @@ public sealed class Coordinator
             return settlementOnly ? ClosedRecoveryResult(exception) : Failure(exception);
         }
 
-        List<INativeWorker> workers = [];
+        List<(string Id, INativeWorker Worker)> workers = [];
         Lock workerMembership = new();
-        List<Task> loops = [];
+        List<(string Id, Task Loop)> loops = [];
         using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken
         );
@@ -614,6 +630,7 @@ public sealed class Coordinator
         long segment = 0;
         bool finalize = false;
         Exception? failure = null;
+        bool persistenceFailed = false;
         JsonArray settlementFailures = [];
         JsonArray settlementDetails = [];
         WorkAdmission? workAdmission = null;
@@ -624,6 +641,19 @@ public sealed class Coordinator
         OperationException? drainAccountingStop = null;
         long drainAccountingObserved = 0;
         string? drainAccountingCause = null;
+        void PersistShutdown(Action persist)
+        {
+            try
+            {
+                persist();
+            }
+            catch (Exception persistenceException) when (IsExpected(persistenceException))
+            {
+                persistenceFailed = true;
+                failure ??= persistenceException;
+            }
+        }
+
         bool IsNonRequestCancellation(OperationCanceledException exception) =>
             exception.Data["liteagensh.nativeFailureObserved"] is long observed
             && observed <= Volatile.Read(ref stopObserved)
@@ -638,7 +668,7 @@ public sealed class Coordinator
             INativeWorker[] snapshot;
             lock (workerMembership)
             {
-                snapshot = [.. workers];
+                snapshot = [.. workers.Select(item => item.Worker)];
             }
             Exception? originating = snapshot.Select(worker => worker.FirstFailure)
                 .OfType<Exception>()
@@ -698,7 +728,7 @@ public sealed class Coordinator
                 bool released = !planning;
                 Dictionary<string, CreditReservation> allocations = [];
                 HashSet<string> reconnecting = [];
-                Task? admission = null;
+                Task<INativeWorker>? admission = null;
                 string? admissionId = null;
                 async Task WaitForProgressAsync(Task[] subjects)
                 {
@@ -738,7 +768,7 @@ public sealed class Coordinator
                     }
                 }
 
-                async Task StartWorkerAsync(string id)
+                async Task<INativeWorker> StartWorkerAsync(string id)
                 {
                     admissionBudget.ThrowIfClosed();
                     INativeWorker native = nativeWorkers.Create(
@@ -748,7 +778,7 @@ public sealed class Coordinator
                     native.BindOwner(stop.Token);
                     lock (workerMembership)
                     {
-                        workers.Add(native);
+                        workers.Add((id, native));
                     }
                     string? exact = reconnecting.Contains(id) ? allocations[id].SessionId : null;
                     try
@@ -766,7 +796,7 @@ public sealed class Coordinator
                         await native.DisposeAsync().ConfigureAwait(false);
                         lock (workerMembership)
                         {
-                            workers.Remove(native);
+                            workers.Remove((id, native));
                         }
                         admissionBudget.ThrowIfClosed();
                         CreditReservation fresh = Reserve(id, 1);
@@ -777,7 +807,7 @@ public sealed class Coordinator
                         replacement.BindOwner(stop.Token);
                         lock (workerMembership)
                         {
-                            workers.Add(replacement);
+                            workers.Add((id, replacement));
                         }
                         await replacement
                             .StartAsync(
@@ -789,7 +819,9 @@ public sealed class Coordinator
                                 admission: admissionBudget
                             )
                             .ConfigureAwait(false);
+                        return replacement;
                     }
+                    return native;
                 }
 
                 void StartLoop(string id, INativeWorker native)
@@ -808,24 +840,30 @@ public sealed class Coordinator
                         );
                     }
 
-                    loops.Add(
-                        WorkerLoopAsync(
-                            id,
-                            native,
-                            () => !planning || released || id == "worker1",
-                            planning && id == "worker1",
-                            admissionBudget,
-                            stop.Token
-                        )
+                    Task loop = WorkerLoopAsync(
+                        id,
+                        native,
+                        () => !planning || released || id == "worker1",
+                        planning && id == "worker1",
+                        admissionBudget,
+                        stop.Token
                     );
+                    loops.Add((id, loop));
                 }
 
                 async Task DrainAsync()
                 {
                     draining = true;
                     await admissionBudget.CloseAsync().ConfigureAwait(false);
-                    database.WriteMetadata("lifecycle", "draining");
-                    RecordDeadlineDrain(segment, deadline, "draining", "deadline");
+                    PersistShutdown(() => database.WriteMetadata("lifecycle", "draining"));
+                    PersistShutdown(() =>
+                        RecordDeadlineDrain(segment, deadline, "draining", "deadline")
+                    );
+                    if (persistenceFailed)
+                    {
+                        drainOutcome = "interrupted";
+                        return;
+                    }
                     DateTimeOffset drainDeadline = deadline.AddSeconds(DeadlineDrainSeconds);
                     TimeSpan grace = drainDeadline - database.Now;
                     if (grace <= TimeSpan.Zero)
@@ -839,12 +877,12 @@ public sealed class Coordinator
                         // Keep completions that race the checks below, but do not
                         // repeatedly wake on already-consumed successful idle loops.
                         Task[] pending = loops
+                            .Select(item => item.Loop)
                             .Concat(admission is null ? [] : new[] { admission })
                             .Where(task => !task.IsCompleted)
                             .ToArray();
                         CheckNativeFailures();
-                        long? control = PendingControl(out string? action);
-                        if (control is not null)
+                        if (PendingControl() is { } action)
                         {
                             reason = action == "pause" ? "owner-pause" : "owner-finalize";
                             finalize = action == "finalize";
@@ -858,7 +896,8 @@ public sealed class Coordinator
                             drainOutcome = "interrupted";
                             return;
                         }
-                        foreach (Task loop in loops.Where(task => task.IsCompleted))
+                        foreach (Task loop in loops.Select(item => item.Loop)
+                            .Where(task => task.IsCompleted))
                         {
                             await loop.ConfigureAwait(false);
                         }
@@ -895,10 +934,11 @@ public sealed class Coordinator
                             drainOutcome = "timed-out";
                             return;
                         }
-                        if (loops.All(task => task.IsCompleted)
+                        if (loops.All(item => item.Loop.IsCompleted)
                             && (admission is null || admission.IsCompleted))
                         {
-                            await Task.WhenAll(loops).ConfigureAwait(false);
+                            await Task.WhenAll(loops.Select(item => item.Loop))
+                                .ConfigureAwait(false);
                             if (admission is not null)
                             {
                                 try
@@ -952,8 +992,7 @@ public sealed class Coordinator
                             while (!admission.IsCompleted)
                             {
                                 CheckNativeFailures();
-                                long? control = PendingControl(out string? action);
-                                if (control is not null)
+                                if (PendingControl() is { } action)
                                 {
                                     reason = action == "pause" ? "owner-pause" : "owner-finalize";
                                     finalize = action == "finalize";
@@ -990,13 +1029,100 @@ public sealed class Coordinator
                         finalize = true;
                     }
 
-                    foreach ((string id, INativeWorker native) in ids.Zip(workers))
+                    foreach ((string id, INativeWorker native) in workers)
                     {
                         StartLoop(id, native);
                     }
 
                     HashSet<int> reminders =
                         (deadline - database.Now).TotalSeconds <= 900 ? [900] : [];
+                    bool creditWarningSent = database.ReadMetadata("lifecycle:credit_warning")
+                        == "sent";
+                    async Task<bool> RunSupervisedGitPassAsync()
+                    {
+                        using CancellationTokenSource gitPassStop =
+                            CancellationTokenSource.CreateLinkedTokenSource(
+                                admissionBudget.Token, stop.Token
+                            );
+                        Task gitPass = git.ProcessPendingAsync(gitPassStop.Token);
+                        try
+                        {
+                            while (!gitPass.IsCompleted && !gitPassStop.IsCancellationRequested)
+                            {
+                                CheckNativeFailures();
+                                if (PendingControl() == "pause")
+                                {
+                                    reason = "owner-pause";
+                                    finalize = false;
+                                    await stop.CancelAsync().ConfigureAwait(false);
+                                    break;
+                                }
+
+                                string? rootClosedDuringGit =
+                                    database.ReadMetadata("lifecycle:root_closed_by");
+                                if (rootClosedDuringGit is not null and not "owner")
+                                {
+                                    collaboration.ReopenWorkerClosedRoot();
+                                }
+
+                                if (
+                                    loops.FirstOrDefault(item =>
+                                        item.Loop.IsFaulted
+                                        || (!admissionBudget.IsClosed && item.Loop.IsCompleted)
+                                    ) is { Loop: Task endedDuringGit }
+                                )
+                                {
+                                    await endedDuringGit.ConfigureAwait(false);
+                                    if (!admissionBudget.IsClosed)
+                                    {
+                                        throw new OperationException(
+                                            "worker_stopped",
+                                            "A worker loop ended before run quiescence."
+                                        );
+                                    }
+                                }
+
+                                try
+                                {
+                                    await gitPass
+                                        .WaitAsync(
+                                            TimeSpan.FromMilliseconds(50),
+                                            CancellationToken.None
+                                        )
+                                        .ConfigureAwait(false);
+                                }
+                                catch (TimeoutException)
+                                {
+                                }
+                            }
+                        }
+                        catch
+                        {
+                            try
+                            {
+                                await Task.WhenAll(gitPass, gitPassStop.CancelAsync())
+                                    .ConfigureAwait(false);
+                            }
+                            catch
+                            {
+                                // Observe the pass without replacing the supervision failure.
+                            }
+                            throw;
+                        }
+
+                        try
+                        {
+                            await gitPass.ConfigureAwait(false);
+                            return reason != "owner-pause";
+                        }
+                        catch (OperationCanceledException) when (
+                            gitPassStop.IsCancellationRequested && reason == "owner-pause"
+                        )
+                        {
+                            return false;
+                        }
+                    }
+
                     while (!stop.IsCancellationRequested)
                     {
                         CheckNativeFailures();
@@ -1007,8 +1133,7 @@ public sealed class Coordinator
                             break;
                         }
 
-                        long? control = PendingControl(out string? action);
-                        if (control is not null)
+                        if (PendingControl() is { } action)
                         {
                             reason = action == "pause" ? "owner-pause" : "owner-finalize";
                             finalize = action == "finalize";
@@ -1028,9 +1153,11 @@ public sealed class Coordinator
                             collaboration.ReopenWorkerClosedRoot();
                         }
 
-                        observeWorkerCompletion?.Invoke(loops);
-                        Task? ended = loops.FirstOrDefault(task => task.IsCompleted);
-                        if (ended is not null)
+                        observeWorkerCompletion?.Invoke(
+                            loops.Select(item => item.Loop).ToArray()
+                        );
+                        if (loops.FirstOrDefault(item => item.Loop.IsCompleted)
+                            is { Loop: Task ended })
                         {
                             await ended.ConfigureAwait(false);
                             if (admissionBudget.IsClosed)
@@ -1045,9 +1172,9 @@ public sealed class Coordinator
 
                         if (admission is { IsCompleted: true })
                         {
-                            Task completedAdmission = admission;
+                            Task<INativeWorker> completedAdmission = admission;
                             admission = null;
-                            await completedAdmission.ConfigureAwait(false);
+                            INativeWorker native = await completedAdmission.ConfigureAwait(false);
                             admissionBudget.ThrowIfClosed();
                             if (workers.Count == 1)
                             {
@@ -1059,7 +1186,7 @@ public sealed class Coordinator
                             nextAdmission = database.Now.AddSeconds(
                                 database.Configuration.WorkerStartIntervalSeconds
                             );
-                            StartLoop(admissionId!, workers[^1]);
+                            StartLoop(admissionId!, native);
                             continue;
                         }
 
@@ -1084,7 +1211,10 @@ public sealed class Coordinator
                             continue;
                         }
 
-                        await git.ProcessPendingAsync(admissionBudget.Token).ConfigureAwait(false);
+                        if (!await RunSupervisedGitPassAsync().ConfigureAwait(false))
+                        {
+                            break;
+                        }
                         if (
                             planning
                             && !released
@@ -1106,9 +1236,10 @@ public sealed class Coordinator
                         }
 
                         PublishReminders(deadline, reminders);
-                        PublishCreditWarning();
+                        PublishCreditWarning(ref creditWarningSent);
                         await WaitForProgressAsync(
-                                loops.Concat(admission is null ? [] : new[] { admission }).ToArray()
+                                loops.Select(item => item.Loop)
+                                    .Concat(admission is null ? [] : new[] { admission }).ToArray()
                             )
                             .ConfigureAwait(false);
                     }
@@ -1165,7 +1296,9 @@ public sealed class Coordinator
                     }
                     finally
                     {
-                        HashSet<string> owned = [.. workers.Select(worker => worker.ReservationId)];
+                        HashSet<string> owned = [
+                            .. workers.Select(item => item.Worker.ReservationId)
+                        ];
                         foreach (
                             CreditReservation allocation in allocations.Values.Where(item =>
                                 !owned.Contains(item.Id)
@@ -1223,7 +1356,14 @@ public sealed class Coordinator
         }
         finally
         {
-            await stop.CancelAsync().ConfigureAwait(false);
+            try
+            {
+                await stop.CancelAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+            }
             if (!draining && requestDeadlineToken.IsCancellationRequested)
             {
                 draining = true;
@@ -1231,13 +1371,15 @@ public sealed class Coordinator
             }
             if (draining)
             {
-                RecordDeadlineDrain(
-                    segment, workDeadline, drainOutcome ?? "interrupted", reason,
-                    drainAccountingStop
+                PersistShutdown(() =>
+                    RecordDeadlineDrain(
+                        segment, workDeadline, drainOutcome ?? "interrupted", reason,
+                        drainAccountingStop
+                    )
                 );
             }
-            database.WriteMetadata("lifecycle", "pausing");
-            database.WriteMetadata("lifecycle:stop_reason", reason);
+            PersistShutdown(() => database.WriteMetadata("lifecycle", "pausing"));
+            PersistShutdown(() => database.WriteMetadata("lifecycle:stop_reason", reason));
             try
             {
                 collaboration.Invoke(
@@ -1262,7 +1404,29 @@ public sealed class Coordinator
                 failure ??= exception;
             }
 
-            foreach (INativeWorker worker in workers)
+            void RecordWorkerSettlementFailure(
+                string id, INativeWorker worker, string phase, Exception exception
+            )
+            {
+                failure ??= exception;
+                AddSettlementDetails(settlementDetails, id, worker.ReservationId, phase, exception);
+                settlementFailures.Add(
+                    new JsonObject
+                    {
+                        ["worker"] = id,
+                        ["reservationId"] = worker.ReservationId,
+                        ["phase"] = phase,
+                        ["message"] = exception.Message,
+                    }
+                );
+                PersistShutdown(() => database.WriteMetadata(
+                    "lifecycle:settlement_failures", settlementFailures.ToJsonString()
+                ));
+                PersistShutdown(() => database.WriteMetadata("lifecycle", "unresolved"));
+            }
+
+            bool workerStopFailed = false;
+            foreach ((string id, INativeWorker worker) in workers)
             {
                 try
                 {
@@ -1270,33 +1434,14 @@ public sealed class Coordinator
                 }
                 catch (Exception exception)
                 {
-                    failure ??= exception;
-                    AddSettlementDetails(
-                        settlementDetails,
-                        database.Configuration.WorkerIds[workers.IndexOf(worker)],
-                        worker.ReservationId, "stop", exception
-                    );
-                    settlementFailures.Add(
-                        new JsonObject
-                        {
-                            ["worker"] = database.Configuration.WorkerIds[workers.IndexOf(worker)],
-                            ["reservationId"] = worker.ReservationId,
-                            ["phase"] = "stop",
-                            ["message"] = exception.Message,
-                        }
-                    );
-                    database.WriteMetadata(
-                        "lifecycle:settlement_failures",
-                        settlementFailures.ToJsonString()
-                    );
-                    database.WriteMetadata("lifecycle", "unresolved");
-                    database.WriteMetadata("lifecycle:failure", failure.Message);
+                    workerStopFailed = true;
+                    RecordWorkerSettlementFailure(id, worker, "stop", exception);
                 }
             }
 
-            if (database.ReadMetadata("lifecycle") != "unresolved")
+            if (!workerStopFailed)
             {
-                foreach (INativeWorker worker in workers)
+                foreach ((string id, INativeWorker worker) in workers)
                 {
                     try
                     {
@@ -1304,34 +1449,14 @@ public sealed class Coordinator
                     }
                     catch (Exception exception)
                     {
-                        failure ??= exception;
-                        AddSettlementDetails(
-                            settlementDetails,
-                            database.Configuration.WorkerIds[workers.IndexOf(worker)],
-                            worker.ReservationId, "dispose", exception
-                        );
-                        settlementFailures.Add(
-                            new JsonObject
-                            {
-                                ["worker"] =
-                                    database.Configuration.WorkerIds[workers.IndexOf(worker)],
-                                ["reservationId"] = worker.ReservationId,
-                                ["phase"] = "dispose",
-                                ["message"] = exception.Message,
-                            }
-                        );
-                        database.WriteMetadata(
-                            "lifecycle:settlement_failures",
-                            settlementFailures.ToJsonString()
-                        );
-                        database.WriteMetadata("lifecycle", "unresolved");
+                        RecordWorkerSettlementFailure(id, worker, "dispose", exception);
                     }
                 }
             }
 
             try
             {
-                await Task.WhenAll(loops)
+                await Task.WhenAll(loops.Select(item => item.Loop))
                     .WaitAsync(TimeSpan.FromSeconds(15), CancellationToken.None)
                     .ConfigureAwait(false);
             }
@@ -1344,7 +1469,7 @@ public sealed class Coordinator
                 failure ??= exception;
                 if (exception is TimeoutException)
                 {
-                    database.WriteMetadata("lifecycle", "unresolved");
+                    PersistShutdown(() => database.WriteMetadata("lifecycle", "unresolved"));
                 }
             }
             bool accountingFailure = drainAccountingStop is not null
@@ -1356,9 +1481,10 @@ public sealed class Coordinator
                 long observedBefore = accountingFailure
                     ? drainAccountingObserved : Volatile.Read(ref stopObserved);
                 // A later cancellation-induced fault cannot become the original interruption.
-                Exception? originating = loops.Where(loop => loop.IsFaulted)
+                Exception? originating = loops.Select(item => item.Loop)
+                    .Where(loop => loop.IsFaulted)
                     .SelectMany(loop => loop.Exception!.Flatten().InnerExceptions)
-                    .Concat(workers.Select(worker => worker.FirstFailure).OfType<Exception>())
+                    .Concat(workers.Select(item => item.Worker.FirstFailure).OfType<Exception>())
                     .Where(error => error.Data["liteagensh.nativeFailureObserved"] is long observed
                         && observed <= observedBefore
                         && (accountingFailure
@@ -1396,11 +1522,10 @@ public sealed class Coordinator
                         settlementFailures.Add(item!.DeepClone());
                     }
                 }
-                database.WriteMetadata(
+                PersistShutdown(() => database.WriteMetadata(
                     "lifecycle:settlement_failures", settlementFailures.ToJsonString()
-                );
-                database.WriteMetadata("lifecycle", "unresolved");
-                database.WriteMetadata("lifecycle:failure", failure.Message);
+                ));
+                PersistShutdown(() => database.WriteMetadata("lifecycle", "unresolved"));
             }
         }
 
@@ -1408,26 +1533,29 @@ public sealed class Coordinator
 
         if (draining)
         {
-            database.WriteMetadata("lifecycle:stop_reason", reason);
-            RecordDeadlineDrain(
-                segment, workDeadline, drainOutcome ?? "interrupted", reason, drainAccountingStop
+            PersistShutdown(() => database.WriteMetadata("lifecycle:stop_reason", reason));
+            PersistShutdown(() =>
+                RecordDeadlineDrain(
+                    segment, workDeadline, drainOutcome ?? "interrupted", reason,
+                    drainAccountingStop
+                )
             );
         }
 
-        if (failure is not null)
+        if (failure is { } primaryFailure)
         {
             try
             {
                 JsonArray workerDetails = [];
-                for (int index = 0; index < loops.Count; index++)
+                foreach ((string id, Task loop) in loops)
                 {
-                    if (loops[index].Exception is { } errors)
+                    if (loop.Exception is { } errors)
                     {
                         foreach (Exception error in errors.Flatten().InnerExceptions)
                         {
                             workerDetails.Add(new JsonObject
                             {
-                                ["worker"] = database.Configuration.WorkerIds[index],
+                                ["worker"] = id,
                                 ["error"] = ExceptionDetails(error),
                             });
                         }
@@ -1437,16 +1565,16 @@ public sealed class Coordinator
                     $"lifecycle:failure_details:{segment}",
                     new JsonObject
                     {
-                        ["primary"] = ExceptionDetails(failure),
+                        ["primary"] = ExceptionDetails(primaryFailure),
                         ["workers"] = workerDetails,
                         ["settlements"] = settlementDetails,
                         ["factorySettlements"] = new JsonArray(nativeWorkers.SettlementDetails
                             .Select(item => item!.DeepClone()).ToArray()),
-                        ["nativeFailures"] = new JsonArray(workers.Select((worker, index) =>
-                            worker.NativeFailure is { } message
+                        ["nativeFailures"] = new JsonArray(workers.Select(item =>
+                            item.Worker.NativeFailure is { } message
                                 ? (JsonNode)new JsonObject
                                 {
-                                    ["worker"] = database.Configuration.WorkerIds[index],
+                                    ["worker"] = item.Id,
                                     ["message"] = message,
                                     ["detailsKind"] = "native-message-only",
                                 } : null).OfType<JsonNode>().ToArray()),
@@ -1458,97 +1586,164 @@ public sealed class Coordinator
                 // Diagnostic retention must not replace the original failure or settlement.
             }
 
-            IEnumerable<string> loopFailures = loops
-                .SelectMany(
-                    (loop, index) =>
-                        loop.IsFaulted
-                            ? loop.Exception!.Flatten().InnerExceptions
-                                .Where(exception => exception.Message != failure.Message)
-                                .Select(exception =>
-                                    database.Configuration.WorkerIds[index]
-                                    + ": "
-                                    + exception.Message
-                                )
-                            : []
-                );
+            IEnumerable<string> loopFailures = loops.SelectMany(item =>
+                item.Loop.IsFaulted
+                    ? item.Loop.Exception!.Flatten().InnerExceptions
+                        .Where(exception => exception.Message != primaryFailure.Message)
+                        .Select(exception => item.Id + ": " + exception.Message)
+                    : []
+            );
             string[] otherFailures = loopFailures
-                .Concat(
-                    workers.SelectMany(
-                        (worker, index) =>
-                            worker.NativeFailure is { } nativeFailure
-                            && nativeFailure != failure.Message
-                                ? [database.Configuration.WorkerIds[index] + ": " + nativeFailure]
-                                : Array.Empty<string>()
-                    )
-                )
+                .Concat(workers.SelectMany(item =>
+                    item.Worker.NativeFailure is { } nativeFailure
+                    && nativeFailure != primaryFailure.Message
+                        ? [item.Id + ": " + nativeFailure]
+                        : Array.Empty<string>()
+                ))
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
             if (otherFailures.Length > 0)
             {
                 failure = new OperationException(
-                    failure is OperationException operation ? operation.Code : "unavailable",
-                    failure.Message
+                    primaryFailure is OperationException operation ? operation.Code : "unavailable",
+                    primaryFailure.Message
                         + "\nOther worker failures:\n"
                         + string.Join("\n", otherFailures)
                 );
             }
 
-            database.WriteMetadata("lifecycle:failure", failure.Message);
+            string failureMessage = failure!.Message;
+            PersistShutdown(() => database.WriteMetadata("lifecycle:failure", failureMessage));
         }
 
-        if (
-            !string.IsNullOrEmpty(database.ReadMetadata("lifecycle:completion_ambiguity"))
-            || !string.IsNullOrEmpty(database.ReadMetadata("lifecycle:ownership_ambiguity"))
-        )
+        bool unresolved = false;
+        if (!persistenceFailed)
         {
-            database.WriteMetadata("lifecycle", "unresolved");
+            PersistShutdown(() =>
+            {
+                unresolved =
+                    database.ReadMetadata("lifecycle") == "unresolved"
+                    || !string.IsNullOrEmpty(
+                        database.ReadMetadata("lifecycle:completion_ambiguity")
+                    )
+                    || !string.IsNullOrEmpty(
+                        database.ReadMetadata("lifecycle:ownership_ambiguity")
+                    );
+            });
         }
 
-        if (database.ReadMetadata("lifecycle") == "unresolved")
+        JsonObject? result = null;
+        string terminalState = "unresolved";
+        if (!persistenceFailed && !unresolved)
         {
-            EndSegment(segment, "unresolved", reason);
-            return Failure(
+            if (failure is not null)
+            {
+                terminalState = "stopped";
+                result = Failure(failure);
+            }
+            else if (finalize)
+            {
+                try
+                {
+                    if (
+                        reason is "owner-finalize" or "owner-root-closure"
+                        && workDeadline - database.Now is var remainingForGit
+                        && remainingForGit > TimeSpan.Zero
+                    )
+                    {
+                        using CancellationTokenSource finalGitWindow = new(
+                            remainingForGit,
+                            database.TimeProvider
+                        );
+                        using CancellationTokenSource finalGitStop =
+                            CancellationTokenSource.CreateLinkedTokenSource(
+                                cancellationToken,
+                                finalGitWindow.Token
+                            );
+                        try
+                        {
+                            await git.ProcessPendingAsync(finalGitStop.Token).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException)
+                            when (!cancellationToken.IsCancellationRequested
+                                && finalGitWindow.IsCancellationRequested)
+                        {
+                        }
+                    }
+
+                    (result, terminalState) = await FinalizeOwnedAsync(CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    reason = "caller-cancelled";
+                    PersistShutdown(() => database.WriteMetadata("lifecycle:stop_reason", reason));
+                    terminalState = "paused";
+                    result = Failure(
+                        "cancelled",
+                        "The operation was cancelled; inspect retained run status before "
+                            + "replacement."
+                    );
+                }
+                catch (SqliteException sqliteFailure)
+                {
+                    persistenceFailed = true;
+                    failure ??= sqliteFailure;
+                }
+                catch (Exception exception) when (IsExpected(exception))
+                {
+                    PersistShutdown(() =>
+                        database.WriteMetadata("lifecycle:failure", exception.Message)
+                    );
+                    terminalState = "stopped";
+                    result = Failure(exception);
+                }
+            }
+            else
+            {
+                terminalState = "paused";
+                result = Success(
+                    new { lifecycle = "paused", stopReason = reason },
+                    "Owned native processes settled; work is retained."
+                );
+            }
+        }
+
+        if (!persistenceFailed && !unresolved && result is not null)
+        {
+            PersistShutdown(() =>
+                RecordTerminalOutcome(
+                    segment,
+                    reason,
+                    terminalState,
+                    result,
+                    completePause: true,
+                    completeFinalize: finalize
+                )
+            );
+        }
+
+        if (persistenceFailed || unresolved)
+        {
+            JsonObject unresolvedResult = Failure(
                 "ownership_or_usage_unresolved",
                 failure?.Message ?? "Quiescence could not be established."
             );
-        }
-
-        JsonObject result;
-        if (failure is not null)
-        {
-            database.WriteMetadata("lifecycle", "stopped");
-            result = Failure(failure);
-        }
-        else if (finalize)
-        {
-            try
-            {
-                result = await FinalizeOwnedAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception exception) when (IsExpected(exception))
-            {
-                database.WriteMetadata("lifecycle", "stopped");
-                database.WriteMetadata("lifecycle:failure", exception.Message);
-                result = Failure(exception);
-            }
-        }
-        else
-        {
-            database.WriteMetadata("lifecycle", "paused");
-            result = Success(
-                new { lifecycle = "paused", stopReason = reason },
-                "Owned native processes settled; work is retained."
+            PersistShutdown(() =>
+                RecordTerminalOutcome(
+                    segment,
+                    reason,
+                    "unresolved",
+                    unresolvedResult,
+                    completePause: true,
+                    completeFinalize: finalize
+                )
             );
+            return unresolvedResult;
         }
 
-        CompleteControls(result, "pause");
-        if (database.ReadMetadata("lifecycle") == "finalized")
-        {
-            CompleteControls(result, "finalize");
-        }
-        EndSegment(segment, database.ReadMetadata("lifecycle") ?? "stopped", reason);
         cancellationToken.ThrowIfCancellationRequested();
-        return result;
+        return result!;
     }
 
     public async Task<JsonObject> FinalizeAsync(CancellationToken cancellationToken = default)
@@ -1559,19 +1754,93 @@ public sealed class Coordinator
             return RequestControl("finalize");
         }
 
+        string? initialLifecycle = null;
+        bool recoverySettled = false;
         try
         {
-            await SettleRecoveryAsync(cancellationToken).ConfigureAwait(false);
-            JsonObject result = await FinalizeOwnedAsync(cancellationToken).ConfigureAwait(false);
-            CompleteControls(result, "pause");
-            CompleteControls(result, "finalize");
+            initialLifecycle = database.ReadMetadata("lifecycle");
+            if (
+                initialLifecycle
+                    is not (null or "initialized" or "paused" or "finalized" or "stopped" or "finalizing")
+                || HasOpenSegment()
+            )
+            {
+                JsonObject notQuiescent = Failure(
+                    "conflict",
+                    "Quiescent coordinator lifecycle is required."
+                );
+                CompleteControls(notQuiescent, "finalize");
+                return notQuiescent;
+            }
+
+            await SettleRecoveryAsync(cancellationToken, deferUnresolvedLifecycle: true)
+                .ConfigureAwait(false);
+            recoverySettled = true;
+            (JsonObject result, string state) = await FinalizeOwnedAsync(
+                    cancellationToken,
+                    initialLifecycle ?? "initialized"
+                )
+                .ConfigureAwait(false);
+            RecordTerminalOutcome(
+                0,
+                "",
+                state,
+                result,
+                completePause: state == "finalized",
+                completeFinalize: true
+            );
             return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (recoverySettled)
+            {
+                string restored = RestoredQuiescentLifecycle(initialLifecycle);
+                JsonObject cancelled = Failure(
+                    "cancelled",
+                    "The operation was cancelled; inspect retained run status before replacement."
+                );
+                try
+                {
+                    RecordTerminalOutcome(
+                        0,
+                        "",
+                        restored,
+                        cancelled,
+                        completePause: false,
+                        completeFinalize: true
+                    );
+                }
+                catch (Exception persistenceException) when (IsExpected(persistenceException))
+                {
+                }
+            }
+
+            throw;
         }
         catch (Exception exception) when (IsExpected(exception))
         {
-            database.WriteMetadata("lifecycle", "unresolved");
-            database.WriteMetadata("lifecycle:failure", exception.Message);
-            return Failure(exception);
+            JsonObject failure = Failure(exception);
+            try
+            {
+                RecordTerminalOutcome(
+                    0,
+                    "",
+                    "unresolved",
+                    failure,
+                    completePause: false,
+                    completeFinalize: true,
+                    failureMessage: exception.Message
+                );
+                return failure;
+            }
+            catch (Exception persistenceException) when (IsExpected(persistenceException))
+            {
+                return Failure(
+                    "ownership_or_usage_unresolved",
+                    $"{exception.Message} ({persistenceException.Message})"
+                );
+            }
         }
     }
 
@@ -1969,7 +2238,8 @@ public sealed class Coordinator
         CancellationToken cancellationToken,
         bool allowUnknownUsage = false,
         bool recoverNativeUsage = false,
-        bool settlementOnly = false
+        bool settlementOnly = false,
+        bool deferUnresolvedLifecycle = false
     )
     {
         CreditReservation? recovering = null;
@@ -2106,7 +2376,7 @@ public sealed class Coordinator
                     // Retention failure must not replace the recovery's original cause.
                 }
             }
-            else
+            else if (!deferUnresolvedLifecycle)
             {
                 database.WriteMetadata("lifecycle", "unresolved");
             }
@@ -2215,33 +2485,12 @@ public sealed class Coordinator
             );
         }
 
-        JsonObject status = credits.Status(
-            database.RunId,
-            database.Configuration.RunAiCreditAllowance
-        );
-        decimal runRemaining =
-            database.Configuration.RunAiCreditAllowance
-            - status["runCommitted"]!.GetValue<decimal>();
-        decimal campaignRemaining =
-            database.Configuration.CampaignAiCreditAllowance
-            - status["campaignCommitted"]!.GetValue<decimal>();
-        decimal allowance =
-            Math.Floor(Math.Min(runRemaining, campaignRemaining) / remainingWorkers * 100) / 100;
-        if (allowance < 30)
-        {
-            throw new OperationException(
-                "credit_exhausted",
-                "Remaining durable allowance is below the native 30-credit minimum per worker."
-            );
-        }
-
-        string path = EvidencePath(worker);
-        return credits.Reserve(
+        return credits.ReservePerSessionShare(
             database.RunId,
             worker,
-            allowance,
+            remainingWorkers,
             database.Configuration.RunAiCreditAllowance,
-            path
+            EvidencePath(worker)
         );
     }
 
@@ -2350,6 +2599,20 @@ public sealed class Coordinator
             Sql.Scalar(connection, "SELECT last_insert_rowid();", transaction)
             ?? throw new InvalidOperationException()
         );
+        if (mode == "resume")
+        {
+            Sql.Execute(
+                connection,
+                """
+                DELETE FROM meta WHERE key='lifecycle:root_closed_by' AND value='owner';
+                UPDATE tasks SET state='open',closed_by=NULL,updated_at=$time
+                WHERE id=1 AND state='closed' AND closed_by='owner';
+                """,
+                transaction,
+                ("$time", database.Now.ToString("O"))
+            );
+        }
+
         Sql.Execute(
             connection,
             "UPDATE meta SET value='false' WHERE key='git:finalized';",
@@ -2392,72 +2655,150 @@ public sealed class Coordinator
         ) is long segment ? ParseMetadata($"lifecycle:deadline_drain:{segment}") : null;
     }
 
-    private void EndSegment(long segment, string state, string reason)
+    private static void UpdateSegment(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        long segment,
+        string state,
+        string reason,
+        string endedAt
+    )
     {
         if (segment == 0)
         {
             return;
         }
 
-        using SqliteConnection connection = database.Open();
         Sql.Execute(
             connection,
             """
             UPDATE coordinator_segments SET state=$state,stop_reason=$reason,ended_at=$time
             WHERE id=$id;
             """,
-            null,
+            transaction,
             ("$state", state),
             ("$reason", reason),
-            ("$time", database.Now.ToString("O")),
+            ("$time", endedAt),
             ("$id", segment)
         );
     }
 
-    private long? PendingControl(out string? action)
+    private string? PendingControl()
     {
         using SqliteConnection connection = database.Open();
-        using SqliteCommand command = Sql.Command(
-            connection,
-            "SELECT id,action FROM coordinator_controls WHERE state='pending' ORDER BY id LIMIT 1;"
-        );
-        using ObservedSqliteReader reader = Sql.Reader(command);
-        if (!reader.Read())
-        {
-            action = null;
-            return null;
-        }
+        return Sql.Scalar(
+                connection,
+                """
+                SELECT action FROM coordinator_controls WHERE state='pending'
+                ORDER BY CASE WHEN action='pause' THEN 0 ELSE 1 END, id LIMIT 1;
+                """
+            ) as string;
+    }
 
-        action = reader.GetString(1);
-        return reader.GetInt64(0);
+    private bool HasOpenSegment()
+    {
+        using SqliteConnection connection = database.Open();
+        return Sql.Scalar(
+                connection,
+                "SELECT id FROM coordinator_segments WHERE ended_at IS NULL LIMIT 1;"
+            )
+            is not null;
+    }
+
+    private void RecordTerminalOutcome(
+        long segment,
+        string reason,
+        string state,
+        JsonObject result,
+        bool completePause,
+        bool completeFinalize,
+        string? failureMessage = null
+    )
+    {
+        using SqliteConnection connection = database.Open();
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
+        string now = database.Now.ToString("O");
+        Sql.Execute(
+            connection,
+            """
+            INSERT INTO meta(key,value) VALUES('lifecycle',$state)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+            """,
+            transaction,
+            ("$state", state)
+        );
+        if (failureMessage is not null)
+        {
+            Sql.Execute(
+                connection,
+                """
+                INSERT INTO meta(key,value) VALUES('lifecycle:failure',$failure)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+                """,
+                transaction,
+                ("$failure", failureMessage)
+            );
+        }
+        if (completePause)
+        {
+            CompleteControls(connection, transaction, result, "pause", now);
+        }
+        if (completeFinalize)
+        {
+            CompleteControls(connection, transaction, result, "finalize", now);
+        }
+        UpdateSegment(connection, transaction, segment, state, reason, now);
+        transaction.Commit();
     }
 
     private void CompleteControls(JsonObject result, string action)
     {
         using SqliteConnection connection = database.Open();
+        CompleteControls(connection, null, result, action, database.Now.ToString("O"));
+    }
+
+    private static void CompleteControls(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        JsonObject result,
+        string action,
+        string completedAt
+    ) =>
         Sql.Execute(
             connection,
             """
             UPDATE coordinator_controls SET state='completed',completed_at=$time,result=$result
             WHERE state='pending' AND action=$action;
             """,
-            null,
-            ("$time", database.Now.ToString("O")),
+            transaction,
+            ("$time", completedAt),
             ("$result", result.ToJsonString()),
             ("$action", action)
         );
-    }
 
-    private async Task<JsonObject> FinalizeOwnedAsync(CancellationToken cancellationToken)
+    private async Task<(JsonObject Result, string Lifecycle)> FinalizeOwnedAsync(
+        CancellationToken cancellationToken,
+        string? priorLifecycle = null
+    )
     {
+        priorLifecycle ??= database.ReadMetadata("lifecycle") ?? "stopped";
         database.WriteMetadata("lifecycle", "finalizing");
         JsonObject delivery = Classify(
             await git.FinalizeAsync(cancellationToken).ConfigureAwait(false)
         );
-        database.WriteMetadata("lifecycle:delivery", delivery.ToJsonString());
-        database.WriteMetadata("lifecycle", "finalized");
-        return delivery;
+        if (delivery["data"] is JsonObject)
+        {
+            database.WriteMetadata("lifecycle:delivery", delivery.ToJsonString());
+            return (delivery, "finalized");
+        }
+
+        return (delivery, RestoredQuiescentLifecycle(priorLifecycle));
     }
+
+    private static string RestoredQuiescentLifecycle(string? priorLifecycle) =>
+        priorLifecycle is null or "initialized" ? "initialized"
+        : priorLifecycle is "paused" or "stopped" or "finalized" ? priorLifecycle
+        : "stopped";
 
     private void RecordCompletedTurn(long batchId, string worker, string stopReason)
     {
@@ -2554,43 +2895,43 @@ public sealed class Coordinator
         }
     }
 
-    private void PublishCreditWarning()
+    private void PublishCreditWarning(ref bool creditWarningSent)
     {
-        JsonObject status = credits.Status(
-            database.RunId,
-            database.Configuration.RunAiCreditAllowance
-        );
-        decimal actual = status["actualReported"]!.GetValue<decimal>();
-        if (
-            actual >= database.Configuration.RunAiCreditAllowance * 0.9m
-            && database.ReadMetadata("lifecycle:credit_warning") != "sent"
-        )
+        if (creditWarningSent)
         {
-            JsonObject result = collaboration.Invoke(
-                "owner",
-                "message_send",
-                new()
-                {
-                    ["recipient"] = "team",
-                    ["body"] =
-                        "At least 90% of the run's native-reported AI Credits have been spent. "
-                        + "Wrap up checked work, retain commits and record open "
-                        + "tasks/board findings. "
-                        + "Do not start large new pieces. Native soft limits may "
-                        + "overshoot one in-flight response.",
-                    ["urgent"] = true,
-                }
-            );
-            if (result["ok"]?.GetValue<bool>() != true)
-            {
-                throw new OperationException(
-                    "lifecycle_alert_failed",
-                    result["message"]?.GetValue<string>() ?? "Credit warning could not be recorded."
-                );
-            }
-
-            database.WriteMetadata("lifecycle:credit_warning", "sent");
+            return;
         }
+        decimal actual = credits.ReadRunActualReported(database.RunId);
+        if (actual < database.Configuration.RunAiCreditAllowance * 0.9m)
+        {
+            return;
+        }
+
+        JsonObject result = collaboration.Invoke(
+            "owner",
+            "message_send",
+            new()
+            {
+                ["recipient"] = "team",
+                ["body"] =
+                    "At least 90% of the run's native-reported AI Credits have been spent. "
+                    + "Wrap up checked work, retain commits and record open "
+                    + "tasks/board findings. "
+                    + "Do not start large new pieces. Native soft limits may "
+                    + "overshoot one in-flight response.",
+                ["urgent"] = true,
+            }
+        );
+        if (result["ok"]?.GetValue<bool>() != true)
+        {
+            throw new OperationException(
+                "lifecycle_alert_failed",
+                result["message"]?.GetValue<string>() ?? "Credit warning could not be recorded."
+            );
+        }
+
+        database.WriteMetadata("lifecycle:credit_warning", "sent");
+        creditWarningSent = true;
     }
 
     private JsonNode? ParseMetadata(string key)

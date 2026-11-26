@@ -997,6 +997,43 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
         );
     }
 
+    [TestMethod]
+    [TestCategory("DeliveryReportAndOwnedCleanup")]
+    public async Task InitializedRunCanFinalizeAndCleanupWithoutStartingWorkers()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using GitScenarioState state = await GitScenarioState
+            .CreateAsync(
+                token,
+                finalChecks: [ControlledCheck(0)],
+                configuredCheck: RunControlledExitCheckAsync
+            )
+            .ConfigureAwait(false);
+        Coordinator coordinator = new(state.Database, state.Collaboration, state.Operations);
+        GitScenarioState.Data(await coordinator.InitializeAsync(token).ConfigureAwait(false));
+        Assert.AreEqual(
+            "initialized",
+            GitScenarioState.Data(coordinator.Status())["lifecycle"]!.GetValue<string>()
+        );
+
+        JsonObject finalized = GitScenarioState.Data(
+            await coordinator.FinalizeAsync(token).ConfigureAwait(false)
+        );
+        Assert.IsTrue(finalized["accepted"]!.GetValue<bool>());
+        Assert.AreEqual(
+            "finalized",
+            GitScenarioState.Data(coordinator.Status())["lifecycle"]!.GetValue<string>()
+        );
+
+        JsonObject cleaned = GitScenarioState.Data(
+            await coordinator.CleanupAsync(token).ConfigureAwait(false)
+        );
+        CollectionAssert.AreEquivalent(
+            OwnedResources(state).Select(resource => resource.Ref).ToArray(),
+            cleaned["removed"]!.AsArray().Select(item => item!.GetValue<string>()).ToArray()
+        );
+    }
+
     private static CheckCommand ControlledCheck(int exitCode) =>
         new()
         {
