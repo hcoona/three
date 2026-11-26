@@ -386,4 +386,36 @@ public sealed class GitMaterializationTests(TestContext context)
         Assert.StartsWith("1.0.", version);
     }
 
+    [TestMethod]
+    public async Task BindPreservesLfsCleanFilterForStatDirtyHydratedFile()
+    {
+        const string hydrated = "hydrated-soundfont-binary-payload\n";
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        string hooks = Directory.CreateDirectory(Path.Combine(repo.Directory, ".git", "hooks"))
+            .FullName.Replace('\\', '/');
+        await repo.GitAsync("config", "core.hooksPath", hooks);
+        await repo.GitAsync("lfs", "install", "--local");
+        await File.WriteAllTextAsync(Path.Combine(repo.Directory, ".gitattributes"),
+            "*.sf2 filter=lfs diff=lfs merge=lfs -text\n", context.CancellationToken);
+        await repo.GitAsync("add", ".gitattributes");
+        await repo.GitAsync("commit", "-q", "-m", "attributes");
+
+        string asset = Path.Combine(repo.Directory, "asset.sf2");
+        await File.WriteAllTextAsync(asset, hydrated, context.CancellationToken);
+        await repo.GitAsync("add", "asset.sf2");
+        await repo.GitAsync("commit", "-q", "-m", "hydrated");
+        string stored = await repo.GitAsync("show", "HEAD:asset.sf2");
+        Assert.StartsWith("version https://git-lfs.github.com/spec/v1\n", stored);
+
+        File.SetLastWriteTimeUtc(asset, DateTime.UtcNow.AddMinutes(-2));
+        GitMaterialization bound = await GitMaterialization.BindHeadAsync(repo.Directory,
+            context.CancellationToken);
+        Assert.AreEqual(hydrated, await bound.ReadOptionalTextAsync("asset.sf2",
+            context.CancellationToken));
+
+        await File.WriteAllTextAsync(asset, "modified-payload\n", context.CancellationToken);
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            GitMaterialization.BindHeadAsync(repo.Directory, context.CancellationToken));
+    }
+
 }

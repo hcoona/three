@@ -7,16 +7,6 @@ namespace WorkflowDelivery.Repository;
 // no checkout manager, historical path audit or content-proof record is introduced.
 internal sealed class GitMaterialization
 {
-    internal static readonly string[] NoLfsFilterArguments =
-    [
-        "-c", "filter.lfs.process=",
-        "-c", "filter.lfs.smudge=",
-        "-c", "filter.lfs.clean=",
-        "-c", "filter.lfs.required=false",
-    ];
-    private static readonly IReadOnlyDictionary<string, string> NoLfsEnvironment =
-        new Dictionary<string, string>(StringComparer.Ordinal) { ["GIT_LFS_SKIP_SMUDGE"] = "1" };
-
     internal string Root { get; }
     internal GitRevision Revision { get; }
     private readonly Dictionary<string, GitEntry> entries;
@@ -103,10 +93,9 @@ internal sealed class GitMaterialization
     private static async Task RequireCleanAsync(string root, CancellationToken token)
     {
         string status = await NativeProcess.RunAsync("git", root,
-            [.. NoLfsFilterArguments, "--no-optional-locks", "--no-lazy-fetch",
-                "--no-replace-objects", "status", "--porcelain=v1", "-z",
-                "--untracked-files=no", "--ignore-submodules=none"],
-            token, NoLfsEnvironment);
+            ["--no-optional-locks", "--no-lazy-fetch", "--no-replace-objects", "status",
+                "--porcelain=v1", "-z", "--untracked-files=no", "--ignore-submodules=none"],
+            token);
         if (status.Length != 0)
             throw new InvalidDataException("Planning requires a clean tracked checkout. " +
                 $"Root: \"{JsonEncodedText.Encode(root)}\"; " +

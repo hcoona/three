@@ -103,7 +103,7 @@ public sealed class CiCallerTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task CallerMaterializationAndCleanBindingBypassRequiredLfsFilters()
+    public async Task CallerMaterializationBypassesRequiredLfsFilters()
     {
         const string pointer = "version https://git-lfs.github.com/spec/v1\n" +
             "oid sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n" +
@@ -113,18 +113,15 @@ public sealed class CiCallerTests(TestContext context)
         await repo.SetAsync("asset.sf2", pointer);
         await repo.SetAsync(ControlTestInputs.Project, "<Project />");
         string commit = await repo.CommitAsync();
-        foreach ((string key, string value) in new[]
-                 {
-                     ("filter.lfs.process", "git --invalid-lfs-filter"),
-                     ("filter.lfs.smudge", "git --invalid-lfs-filter"),
-                     ("filter.lfs.clean", "git --invalid-lfs-filter"),
-                     ("filter.lfs.required", "true"),
-                 })
-            await repo.GitAsync("config", key, value);
+        string hooks = Directory.CreateDirectory(Path.Combine(repo.Directory, ".git", "hooks"))
+            .FullName.Replace('\\', '/');
+        await repo.GitAsync("config", "core.hooksPath", hooks);
+        await repo.GitAsync("lfs", "install", "--local");
 
         using var files = new State();
         NativeCommandResult bare = await NativeProcess.ExecuteAsync(new("git", repo.Directory,
-            ["worktree", "add", "--detach", files.At("bare"), commit], 30),
+            ["worktree", "add", "--detach", files.At("bare"), commit], 30,
+            new Dictionary<string, string?> { ["GIT_LFS_SKIP_SMUDGE"] = null }),
             context.CancellationToken);
         Assert.IsFalse(bare.Succeeded);
 
@@ -151,8 +148,6 @@ public sealed class CiCallerTests(TestContext context)
         }, TransferJson.Default.NodeGroupReadback);
         var runtime = Run(0, "caller-node", "runtime", repo.Directory, nodeState, "node22")
             .Read(TransferJson.Default.NodeRunRequest);
-        string asset = Path.Combine(runtime.Checkout, "asset.sf2");
-        File.SetLastWriteTimeUtc(asset, DateTime.UtcNow.AddMinutes(-2));
         GitMaterialization bound = await GitMaterialization.BindAsync(runtime.Checkout, commit,
             context.CancellationToken);
         Assert.AreEqual(pointer, (await bound.ReadOptionalTextAsync("asset.sf2",

@@ -113,13 +113,20 @@ internal static class CiCallerTransfer
         return new(basis, candidate, full);
     }
 
+    private static readonly string[] NoLfsFilterArguments =
+    [
+        "-c", "filter.lfs.process=",
+        "-c", "filter.lfs.smudge=",
+        "-c", "filter.lfs.clean=",
+        "-c", "filter.lfs.required=false",
+    ];
     private static readonly IReadOnlyDictionary<string, string?> CheckoutEnvironment =
         new Dictionary<string, string?>(StringComparer.Ordinal) { ["GIT_LFS_SKIP_SMUDGE"] = "1" };
 
     internal static Task<NativeCommandResult> CheckoutAsync(string root, string checkout,
         string revision, int deadlineSeconds, string directory, string label,
         CancellationToken token) =>
-        RunAsync(new("git", root, [.. GitMaterialization.NoLfsFilterArguments,
+        RunAsync(new("git", root, [.. NoLfsFilterArguments,
             "--no-lazy-fetch", "--no-replace-objects", "worktree", "add", "--detach",
             checkout, revision], deadlineSeconds, CheckoutEnvironment), directory, label, token);
 
