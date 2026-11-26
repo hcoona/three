@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["packaging==26.3", "PyYAML==6.0.2"]
+# dependencies = ["packaging==26.3", "PyYAML==6.0.4"]
 # ///
 """Report public release changes without dispatching or publishing releases."""
 
