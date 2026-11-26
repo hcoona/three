@@ -10,12 +10,13 @@ owns current commands, callers and local validation. The
 change.
 
 The accepted [Wave](../../../../../docs/delivery-wave.md) governs feature,
-capability, architectural, public-contract, and external-risk work under the
+capability, architectural, public-contract, and non-routine external-risk work
+under the
 [record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency),
-while contract-preserving routine maintenance without new external or
-credentialed effects uses ordinary pull requests. A PR, proposed document,
-research result, local observation or merged source cannot grant itself broader
-effects. Do not use Workflow v1/v2 to fill a V3 decision gap. Internal formats may break; there is no requirement to retain old readers
+while contract-preserving routine maintenance and owner-governed release
+operations for admitted public product release units follow that policy
+directly. A PR, proposed document, research result, local observation or merged
+source cannot grant itself broader effects. Do not use Workflow v1/v2 to fill a V3 decision gap. Internal formats may break; there is no requirement to retain old readers
 in the new core. Historical readers use
 [actual producer-qualified source](validation/historical-readers.md); no
 compatibility tree, runtime replay service or parallel source authority is
@@ -84,18 +85,30 @@ Their record-specific terms and original outcomes remain in the
 [historical campaign records](validation/historical-readers.md#retired-campaign-records).
 Their operation slots, failed lifetimes and dispatch/recovery ceilings remain
 spent. No source change, artifact download, requirements revision, Wave
-contraction or evidence acceptance authorizes a new campaign generation, rerun,
-release/proving dispatch, publication, authentication, Environment, account,
-publisher or access change. Existing external resources and publisher
-registrations are unchanged by source retirement. Native experiments still
-require their exact accepted bounded protocol and effects authorization.
+contraction or evidence acceptance reopens a proving campaign or authorizes a
+new campaign generation, proving rerun, autonomous agent release dispatch,
+Environment approval, out-of-band publication, or authentication, Environment,
+account, publisher or access change. Internal `hcoona-release-smoke-*` proving
+fixture operations across npm, NuGet, Python and Ruby remain closed and require
+concrete `Delivery Wave` authorization. Existing external resources and
+publisher registrations are unchanged by source retirement. Native experiments
+still require their exact accepted bounded protocol and effects authorization.
 
-Ordinary CI/PR delivery is separate from a release request. Local or controlled
-checks establish only their actual application/tool/environment scope. They do
-not establish deployed destination behavior, OIDC or publication. Changed
-source, fixture paths or inherited configuration requires its own ordinary
-qualification; an earlier passing native run cannot qualify a different source.
-No manually initiated postmerge validation is implied.
+Routine release preparation, owner-governed `workflow-delivery-v3-*-release.yml`
+dispatches, and existing publisher/storefront maintenance for already-admitted
+public product release units (`src/public/**` in
+[Official channel scope](integration/common.md#official-channel-scope),
+excluding `hcoona-release-smoke-*` fixtures) follow
+[work authorization](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency);
+agents never autonomously dispatch release workflows, approve Environments, or
+run publication commands without an explicit operational instruction from the
+repository owner for that specific operation. Ordinary CI/PR delivery remains
+separate from a release request. Local or controlled checks establish only their
+actual application/tool/environment scope; they do not establish deployed
+destination behavior, OIDC or publication. Changed source, fixture paths or
+inherited configuration requires its own ordinary qualification; an earlier
+passing native run cannot qualify a different source. No manually initiated
+postmerge validation is implied.
 
 ### npm retained limits
 
@@ -126,7 +139,9 @@ postpublication audit retain their original source and support scope. The
 fixture/provider, prebuilt consumer, native suite and normal-run lifetimes.
 Do not replay, rebuild historical helpers as current qualification, dispatch,
 republish, change feed/package access or repeat completed verification.
-Future exceptional or live operations require their own concrete authorization.
+Future smoke, proving or exceptional operations require their own concrete
+authorization; routine releases of admitted library units follow
+[work authorization](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency).
 
 ### Python retained limits
 

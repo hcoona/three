@@ -98,6 +98,8 @@ The handoff's [authority and purpose](src/private/app/workflow-delivery/docs/age
 section routes current work. All Workflow Delivery proving campaigns are closed,
 and the handoff's [closed-campaign limits](src/private/app/workflow-delivery/docs/agent-handoff.md#authorization-and-closed-campaigns)
 remain in force. The former separate NuGet implementation authorization ended
-with its campaign and is not renewed. Repository governance does not reopen the
-campaigns or supply permission for native operations, publication, dispatch,
-authentication, or access changes.
+with its campaign and is not renewed. Repository governance does not reopen
+closed proving campaigns or permit autonomous agent release dispatch,
+Environment approval, publication, authentication, or access changes; routine
+controlled release operations follow
+[work authorization](docs/governance/record-system.md#work-authorization-and-concurrency).
