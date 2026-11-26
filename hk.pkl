@@ -175,9 +175,6 @@ local pwsh_linters = new Mapping<String, Step> {
     batch = true
     glob = powershell_files
     stage = powershell_files
-    env {
-      ["HK_EXEC_PER_FILE"] = "0"
-    }
     check =
       "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-FormatterWrapper.ps1 -Mode Check -Path --hk-files {{files}}"
     fix =
@@ -191,7 +188,6 @@ local pwsh_linters = new Mapping<String, Step> {
     glob = powershell_files
     stage = powershell_files
     env {
-      ["HK_EXEC_PER_FILE"] = "0"
       ["HK_EXEC_TIMEOUT_SECONDS"] = "300"
     }
     check =
@@ -213,9 +209,6 @@ local dotnet_linters = new Mapping<String, Step> {
     batch = true
     glob = csharp_files
     stage = csharp_files
-    env {
-      ["HK_EXEC_PER_FILE"] = "0"
-    }
     check =
       "python eng/scripts/hk_exec.py dotnet format whitespace --folder --verify-no-changes --include --hk-files {{files}}"
     fix =

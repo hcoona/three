@@ -105,12 +105,12 @@ def parse_wrapper_options(
 
 
 def resolve_per_file_mode() -> bool:
-    """Check whether per-file execution mode is enabled."""
-    return os.getenv("HK_EXEC_PER_FILE", "1").strip().lower() not in {
-        "0",
-        "false",
-        "no",
-        "off",
+    """Check whether opt-in per-file diagnostic execution is enabled."""
+    return os.getenv("HK_EXEC_PER_FILE", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
     }
 
 
@@ -136,10 +136,8 @@ def kill_process_tree(
         )
         return
 
-    try:
+    with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        return
 
 
 def run_with_watchdog(  # noqa: PLR0913, PLR0917
@@ -150,41 +148,40 @@ def run_with_watchdog(  # noqa: PLR0913, PLR0917
     total: int,
     label: str,
 ) -> tuple[int | None, float, bool]:
-    """Run a command with periodic heartbeat and timeout."""
+    """Run a command with blocking wait, periodic heartbeat, and timeout."""
     process = subprocess.Popen(
         command,
         start_new_session=os.name != "nt",
     )
 
     start = time.monotonic()
-    next_heartbeat = heartbeat_seconds
+    next_heartbeat = float(heartbeat_seconds)
 
     while True:
-        returncode = process.poll()
         elapsed = time.monotonic() - start
-
-        if returncode is not None:
-            return returncode, elapsed, False
-
-        if elapsed >= next_heartbeat:
-            print(
-                f"[{now_iso()}] [{index}/{total}]"
-                f" still running"
-                f" elapsed={elapsed:.0f}s:"
-                f" {label}",
-                flush=True,
-            )
-            next_heartbeat += heartbeat_seconds
-
-        if elapsed >= timeout_seconds:
+        remaining_timeout = timeout_seconds - elapsed
+        if remaining_timeout <= 0:
             kill_process_tree(process)
-            with contextlib.suppress(
-                subprocess.TimeoutExpired,
-            ):
+            with contextlib.suppress(subprocess.TimeoutExpired):
                 process.wait(timeout=5)
-            return None, elapsed, True
+            return None, time.monotonic() - start, True
 
-        time.sleep(1)
+        wait_window = min(remaining_timeout, max(0.0, next_heartbeat - elapsed))
+        try:
+            returncode = process.wait(timeout=wait_window)
+        except subprocess.TimeoutExpired:
+            elapsed = time.monotonic() - start
+            if elapsed >= next_heartbeat and elapsed < timeout_seconds:
+                print(
+                    f"[{now_iso()}] [{index}/{total}] still running"
+                    f" elapsed={elapsed:.0f}s: {label}",
+                    flush=True,
+                )
+                while next_heartbeat <= elapsed:
+                    next_heartbeat += heartbeat_seconds
+            continue
+
+        return returncode, time.monotonic() - start, False
 
 
 def split_command_and_files(
@@ -240,113 +237,96 @@ def main() -> int:
     return run_command(cmd_args, norm_files, timeout)
 
 
-def run_command(
-    cmd_args: list[str], norm_files: list[str], timeout: int
+def _run_supervised_item(  # noqa: PLR0913, PLR0917
+    command: list[str],
+    cmd_str: str,
+    label: str,
+    timeout: int,
+    heartbeat: int,
+    index: int,
+    total: int,
 ) -> int:
-    """Execute an explicit file batch or an intentionally operand-free tool."""
-    heartbeat = resolve_heartbeat_seconds()
-    per_file = resolve_per_file_mode()
+    print(
+        f"[{now_iso()}] [{index}/{total}] {cmd_str} {label}"
+        f" (timeout={timeout}s)",
+        flush=True,
+    )
+    rc, elapsed, timed_out = run_with_watchdog(
+        command,
+        timeout,
+        heartbeat,
+        index,
+        total,
+        label,
+    )
+    if timed_out:
+        print(
+            f"[{now_iso()}] [{index}/{total}] timed out after {timeout}s:"
+            f" {label}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 1
+
+    print(
+        f"[{now_iso()}] [{index}/{total}] finished exit={rc}"
+        f" elapsed={elapsed:.1f}s",
+        flush=True,
+    )
+    return 0 if rc is None else rc
+
+
+def run_command(
+    cmd_args: list[str],
+    norm_files: list[str],
+    timeout: int,
+    heartbeat: int | None = None,
+    *,
+    allow_per_file: bool = True,
+) -> int:
+    """Execute an explicit file batch, opt-in per-file loop, or bare tool."""
+    resolved_heartbeat = (
+        resolve_heartbeat_seconds() if heartbeat is None else heartbeat
+    )
     cmd_str = " ".join(cmd_args)
-
     if not norm_files:
-        label = "(no explicit files)"
-        print(
-            f"[{now_iso()}] [1/1] {cmd_str} {label} (timeout={timeout}s)",
-            flush=True,
-        )
-        rc, elapsed, timed_out = run_with_watchdog(
+        return _run_supervised_item(
             cmd_args,
+            cmd_str,
+            "(no explicit files)",
             timeout,
-            heartbeat,
+            resolved_heartbeat,
             1,
             1,
-            label,
         )
-        if timed_out:
-            print(
-                f"[{now_iso()}] [1/1] timed out after {timeout}s: {label}",
-                file=sys.stderr,
-                flush=True,
+
+    if allow_per_file and resolve_per_file_mode():
+        has_error = False
+        total = len(norm_files)
+        for index, path in enumerate(norm_files, start=1):
+            rc = _run_supervised_item(
+                [*cmd_args, path],
+                cmd_str,
+                path,
+                timeout,
+                resolved_heartbeat,
+                index,
+                total,
             )
-            return 1
+            has_error = has_error or rc != 0
+        return 1 if has_error else 0
 
-        print(
-            f"[{now_iso()}] [1/1] finished exit={rc} elapsed={elapsed:.1f}s",
-            flush=True,
-        )
-        return 0 if rc is None else rc
-
-    if not per_file:
-        n = len(norm_files)
-        batch_label = f"<batch {n} files>"
-        print(
-            f"[{now_iso()}] [1/1] {cmd_str} {batch_label} (timeout={timeout}s)",
-            flush=True,
-        )
-        rc, elapsed, timed_out = run_with_watchdog(
-            [*cmd_args, *norm_files],
-            timeout,
-            heartbeat,
-            1,
-            1,
-            batch_label,
-        )
-        if timed_out:
-            print(
-                f"[{now_iso()}] [1/1]"
-                f" timed out after"
-                f" {timeout}s: {batch_label}",
-                file=sys.stderr,
-                flush=True,
-            )
-            return 1
-
-        print(
-            f"[{now_iso()}] [1/1] finished exit={rc} elapsed={elapsed:.1f}s",
-            flush=True,
-        )
-        return 0 if rc is None else rc
-
-    has_error = False
-    total = len(norm_files)
-
-    for index, path in enumerate(norm_files, start=1):
-        print(
-            f"[{now_iso()}] [{index}/{total}]"
-            f" {cmd_str} {path}"
-            f" (timeout={timeout}s)",
-            flush=True,
-        )
-
-        rc, elapsed, timed_out = run_with_watchdog(
-            [*cmd_args, path],
-            timeout,
-            heartbeat,
-            index,
-            total,
-            path,
-        )
-
-        if timed_out:
-            print(
-                f"[{now_iso()}] [{index}/{total}]"
-                f" timed out after"
-                f" {timeout}s: {path}",
-                file=sys.stderr,
-                flush=True,
-            )
-            has_error = True
-            continue
-
-        print(
-            f"[{now_iso()}] [{index}/{total}]"
-            f" finished exit={rc}"
-            f" elapsed={elapsed:.1f}s",
-            flush=True,
-        )
-        has_error = has_error or (rc is not None and rc != 0)
-
-    return 1 if has_error else 0
+    count = len(norm_files)
+    label = norm_files[0] if count == 1 else f"<batch {count} files>"
+    return _run_supervised_item(
+        [*cmd_args, *norm_files],
+        cmd_str,
+        label,
+        timeout,
+        resolved_heartbeat,
+        1,
+        1,
+    )
 
 
 if __name__ == "__main__":
