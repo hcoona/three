@@ -6,7 +6,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -18,30 +17,71 @@ from .ci_workflow_shell import load_script
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HELPER = REPO_ROOT / "eng/scripts/workflow_delivery_v3_hk.py"
 SEEDED = "SEEDED_FINDING"
-HK_EXEC = "python eng/scripts/hk_exec.py"
 # Commands keep the evaluated root hk.pkl forms of the steps they stand for.
-FILES = "--hk-files {{files}}"
-RUFF_FORMAT = f"{HK_EXEC} uv run ruff format --quiet --force-exclude"
+RUFF_FORMAT_ARGV = [
+    "uv",
+    "run",
+    "ruff",
+    "format",
+    "--quiet",
+    "--force-exclude",
+]
 STEPS: dict[str, dict[str, Any]] = {
     "ruff": {
         "glob": ["*.py"],
-        "check": f"{HK_EXEC} uv run ruff check --force-exclude {FILES}",
-        "fix": f"{HK_EXEC} uv run ruff check --force-exclude --fix {FILES}",
+        "check": {
+            "argv": [
+                "uv",
+                "run",
+                "ruff",
+                "check",
+                "--force-exclude",
+                "--",
+                "{{files}}",
+            ]
+        },
+        "fix": {
+            "argv": [
+                "uv",
+                "run",
+                "ruff",
+                "check",
+                "--force-exclude",
+                "--fix",
+                "--",
+                "{{files}}",
+            ]
+        },
     },
     "ruff_format": {
         "glob": ["*.py"],
-        "check": f"{RUFF_FORMAT} --check {FILES}",
-        "check_diff": f"{RUFF_FORMAT} --diff {FILES}",
+        "check": {"argv": [*RUFF_FORMAT_ARGV, "--check", "--", "{{files}}"]},
+        "check_diff": {
+            "argv": [*RUFF_FORMAT_ARGV, "--diff", "--", "{{files}}"]
+        },
     },
     "markdown-prettier": {
         "glob": ["*.md"],
-        "check": f"{HK_EXEC} pnpm exec -- prettier --check {FILES}",
+        "check": {
+            "argv": [
+                "pnpm",
+                "exec",
+                "--",
+                "prettier",
+                "--check",
+                "--",
+                "{{files}}",
+            ]
+        },
     },
     "shellcheck": {
         "glob": ["*.sh"],
-        "check": f"{HK_EXEC} shellcheck {FILES}",
+        "check": {"argv": ["shellcheck", "--", "{{files}}"]},
     },
-    "uv-lock": {"glob": ["uv.lock"], "check": "uv lock --check"},
+    "uv-lock": {
+        "glob": ["uv.lock"],
+        "check": {"argv": ["uv", "lock", "--check"]},
+    },
 }
 MISE_TOOLS = {"shellcheck": "github:koalaman/shellcheck", "pkl": "pkl"}
 HK_COMMAND = ("hk", "check", "--check", "--no-stage")
@@ -335,14 +375,27 @@ def test_unrelated_lock_change_keeps_changed_file_scope(
 @pytest.mark.parametrize(
     ("step", "check"),
     [
-        ("markdown-prettier", "python eng/scripts/hk_actionlint.py {{files}}"),
-        ("markdown-prettier", f"{HK_EXEC} pnpm exec -- taplo check {FILES}"),
+        ("markdown-prettier", "python eng/scripts/custom_check.py {{files}}"),
+        (
+            "markdown-prettier",
+            {
+                "argv": [
+                    "pnpm",
+                    "exec",
+                    "--",
+                    "taplo",
+                    "check",
+                    "--",
+                    "{{files}}",
+                ]
+            },
+        ),
         ("shellcheck", None),
     ],
     ids=["unresolved-command", "unlocked-pnpm-bin", "unresolved-mise-tool"],
 )
 def test_unresolved_mapping_widens_when_a_tool_lock_changes(
-    fixture: dict[str, Any], step: str, check: str | None
+    fixture: dict[str, Any], step: str, check: object
 ) -> None:
     """A step with no resolvable linter lock runs on all its files."""
     if check:
@@ -455,222 +508,15 @@ def test_hk_scope_drift_reports_a_wildcard_shell_exclusion():
     assert hk_scope_drift.drift({"shellcheck": step}, rules, {"small"})
 
 
-# Batched execution and blocking watchdog supervision
-
-HK_EXEC_SCRIPT = REPO_ROOT / "eng/scripts/hk_exec.py"
-HK_ACTIONLINT_SCRIPT = REPO_ROOT / "eng/scripts/hk_actionlint.py"
-RECORDER_TOOL = r"""
-import json
-import os
-import sys
-from pathlib import Path
-
-with Path(os.environ["TOOL_LOG"]).open("a", encoding="utf-8") as stream:
-    stream.write(json.dumps(sys.argv[1:]) + "\n")
-"""
-
-
-def test_hk_exec_batches_surviving_operands_without_poll_sleep(
-    tmp_path: Path,
-):
-    """Surviving operands run in one fast batch without poll sleep."""
-    (tmp_path / "alpha.txt").write_text("alpha\n", encoding="utf-8")
-    (tmp_path / "-dash.txt").write_text("dash\n", encoding="utf-8")
-    tool = tmp_path / "fake-linter"
-    _executable(tool, RECORDER_TOOL)
-    tool_log = tmp_path / "calls.jsonl"
-    env = {
-        **os.environ,
-        "HK_SKIP_MISSING_FILES": "1",
-        "TOOL_LOG": str(tool_log),
-    }
-
-    start = time.monotonic()
-    result = subprocess.run(  # noqa: S603
-        (
-            sys.executable,
-            str(HK_EXEC_SCRIPT),
-            str(tool),
-            "--check",
-            "--hk-files",
-            '"alpha.txt"',
-            "deleted.txt",
-            "-dash.txt",
-        ),
-        cwd=tmp_path,
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    elapsed = time.monotonic() - start
-
-    assert result.returncode == 0, result.stderr
-    assert elapsed < 0.9
-    calls = [json.loads(line) for line in tool_log.read_text().splitlines()]
-    assert calls == [["--check", "alpha.txt", "./-dash.txt"]]
-
-    tool_log.unlink()
-    start = time.monotonic()
-    per_file = subprocess.run(  # noqa: S603
-        (
-            sys.executable,
-            str(HK_EXEC_SCRIPT),
-            str(tool),
-            "--check",
-            "--hk-files",
-            "alpha.txt",
-            "-dash.txt",
-        ),
-        cwd=tmp_path,
-        env={**env, "HK_EXEC_PER_FILE": "1"},
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert per_file.returncode == 0, per_file.stderr
-    assert time.monotonic() - start < 0.9
-    calls = [json.loads(line) for line in tool_log.read_text().splitlines()]
-    assert calls == [["--check", "alpha.txt"], ["--check", "./-dash.txt"]]
-
-
-def test_hk_wrappers_skip_deletion_only_operands_without_spawning_tool(
-    tmp_path: Path,
-):
-    """All-deleted operand lists exit 0 without triggering implicit scans."""
-    tools = tmp_path / "tools"
-    _executable(tools / "actionlint", RECORDER_TOOL)
-    tool_log = tmp_path / "calls.jsonl"
-    env = {
-        **os.environ,
-        "PATH": f"{tools}{os.pathsep}{os.environ['PATH']}",
-        "HK_SKIP_MISSING_FILES": "1",
-        "TOOL_LOG": str(tool_log),
-    }
-
-    for command in (
-        (
-            sys.executable,
-            str(HK_EXEC_SCRIPT),
-            "actionlint",
-            "--hk-files",
-            "removed.yml",
-        ),
-        (sys.executable, str(HK_ACTIONLINT_SCRIPT), "removed.yml"),
-    ):
-        result = subprocess.run(  # noqa: S603
-            command,
-            cwd=tmp_path,
-            env=env,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, result.stderr
-
-    assert not tool_log.exists()
-
-
-def test_hk_actionlint_batches_multiple_workflows_and_enforces_timeout(
-    tmp_path: Path,
-):
-    """Batched actionlint passes all files at once and kills hung processes."""
-    for name in ("ci.yml", "release.yml"):
-        (tmp_path / name).write_text("name: test\n", encoding="utf-8")
-    tools = tmp_path / "tools"
-    _executable(tools / "actionlint", RECORDER_TOOL)
-    tool_log = tmp_path / "calls.jsonl"
-    env = {
-        **os.environ,
-        "PATH": f"{tools}{os.pathsep}{os.environ['PATH']}",
-        "HK_SKIP_MISSING_FILES": "1",
-        "HK_ACTIONLINT_SHELLCHECK": "custom-shellcheck",
-        "TOOL_LOG": str(tool_log),
-    }
-
-    start = time.monotonic()
-    result = subprocess.run(  # noqa: S603
-        (sys.executable, str(HK_ACTIONLINT_SCRIPT), '"ci.yml"', "release.yml"),
-        cwd=tmp_path,
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    assert time.monotonic() - start < 0.9
-    calls = [json.loads(line) for line in tool_log.read_text().splitlines()]
-    assert calls == [["-shellcheck=custom-shellcheck", "ci.yml", "release.yml"]]
-
-    hung = subprocess.run(  # noqa: S603
-        (
-            sys.executable,
-            str(HK_EXEC_SCRIPT),
-            "--timeout-seconds",
-            "1",
-            sys.executable,
-            "-c",
-            "import time; time.sleep(10)",
-        ),
-        cwd=tmp_path,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert hung.returncode == 1
-    assert "timed out after 1s" in hung.stderr
-
-
-# Structured Config.Command linter resolution and deleted-path partitioning
-
-
-def test_structured_command_steps_resolve_locks_and_widen_when_changed(
-    fixture: dict[str, Any],
-) -> None:
-    """Structured Config.Command argv entries map to uv, pnpm and mise locks."""
-    structured = {
-        "ruff": {
-            "glob": ["*.py"],
-            "check": {
-                "argv": ["uv", "run", "ruff", "check", "--", "{{files}}"]
-            },
-        },
-        "markdown-prettier": {
-            "glob": ["*.md"],
-            "check": {
-                "command": {
-                    "argv": [
-                        "pnpm",
-                        "exec",
-                        "--",
-                        "prettier",
-                        "--check",
-                        "{{files}}",
-                    ]
-                },
-                "effect": "read",
-            },
-        },
-        "shellcheck": {
-            "glob": ["*.sh"],
-            "check": {"argv": ["shellcheck", "{{files}}"]},
-        },
-        "uv-lock": {"glob": ["uv.lock"], "check": {"argv": ["uv", "lock"]}},
-    }
-    fixture["env"]["FIXTURE_STEPS"] = json.dumps(structured)
-    endpoints = _commit_candidate(
-        fixture["repository"], _bumped("uv.lock", "ruff", "0.17.1")
-    )
-    result, runs = _run(fixture, endpoints)
-    assert result.returncode == 1
-    changed, complete = runs
-    assert changed["ran"] == {"uv-lock": ["uv.lock"]}
-    assert complete["ran"] == {"ruff": ["changed.py", "unchanged.py"]}
-
-
-def test_command_linter_rejects_runtimes_and_mismatched_prefixes() -> None:
-    """Launcher/runtime binaries and incompatible prefixes resolve to None."""
+def test_command_linter_supports_command_spec_and_rejects_runtimes() -> None:
+    """CommandSpec unwraps; runtime binaries and bad prefixes return None."""
     helper = load_script(HELPER)
+    assert helper.command_linter(
+        {
+            "command": {"argv": ["pnpm", "exec", "prettier", "{{files}}"]},
+            "effect": "read",
+        }
+    ) == ("pnpm", "prettier")
     assert (
         helper.command_linter({"argv": ["node", "lint.mjs", "{{files}}"]})
         is None
@@ -682,13 +528,6 @@ def test_command_linter_rejects_runtimes_and_mismatched_prefixes() -> None:
     assert (
         helper.command_linter(
             {"argv": ["taplo", "check", "{{files}}"]}, prefix="pnpm exec --"
-        )
-        is None
-    )
-    assert (
-        helper.command_linter(
-            "python eng/scripts/hk_exec.py taplo check --hk-files {{files}}",
-            prefix=["mise", "exec"],
         )
         is None
     )

@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shlex
 import stat
 import subprocess
 import sys
@@ -221,19 +220,11 @@ def _structured_linter(
 def command_linter(
     spec: object, prefix: object = None
 ) -> tuple[str, str] | None:
-    """Return the provider and linter a structured or wrapped step runs."""
+    """Return the provider and linter a structured `Config.Command` runs."""
     unwrapped = _unwrap_command_spec(spec)
     if isinstance(unwrapped, dict):
         return _structured_linter(unwrapped, prefix)
-    if not isinstance(unwrapped, str) or (
-        prefix is not None and not isinstance(prefix, str)
-    ):
-        return None
-    text = f"{prefix} {unwrapped}" if prefix else unwrapped
-    words = shlex.split(text)
-    if len(words) < 3 or words[1] != "eng/scripts/hk_exec.py":  # noqa: PLR2004
-        return None
-    return _linter_from_tokens(words[2:])
+    return None
 
 
 def file_step_linters(

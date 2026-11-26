@@ -1,7 +1,8 @@
 # HK Execution and Platform Boundaries
 
 Repository tooling maintainers maintain this guide from [hk.pkl](../../hk.pkl),
-[the shared HK component](../../src/private/lib/hk/), and the wrapper sources.
+[the shared HK component](../../src/private/lib/hk/), and
+[the Git helper](../../eng/scripts/workflow_delivery_v3_hk.py).
 Contributors use it when a check hangs, receives incorrectly quoted paths,
 or appears to pass without inspecting its inputs. The root
 [toolchain guide](../../README.md#repository-toolchain) owns installation;
@@ -162,8 +163,8 @@ When the compared paths include `mise.lock`, `uv.lock` or `pnpm-lock.yaml`,
 the helper evaluates the checked-out `hk.pkl` with the locked Pkl and maps
 each `check` hook file step (a command with `{{files}}` or
 `{{workspace_files}}`) to its linter: the executable resolved from structured
-`Config.Command` `argv` (with optional list `prefix` or `CommandSpec` wrapper)
-or `hk_exec.py`, unwrapping `uv run` and `pnpm exec [--]`. It reads that
+`Config.Command` `argv` (with optional list `prefix` or `CommandSpec` wrapper),
+unwrapping `uv run` and `pnpm exec [--]`. It reads that
 linter's locked versions at both endpoints from the provider's committed lock.
 `mise which --plugin` names the mise tool whose `mise.lock` entries are read;
 `uv.lock` packages match the executable's normalized name; `pnpm list
@@ -177,32 +178,27 @@ A step whose linter version differs runs on all its covered files. The helper
 skips it in the changed-path HK run, runs it in a second
 `<command> --all --step=<step>` run, reports each widened step and reason on
 stderr, and fails when either run fails. When a tool lock changes, a step whose
-command has another form (for example a script invoked via a runtime binary) or
-whose linter has no entry in its provider lock at either endpoint
-(for example `taplo`, which `pnpm exec` finds on the mise `PATH`) also runs on
-all its files. Resolution never narrows a run, and a failed Pkl evaluation
-fails the helper. Other steps, including lock and configuration checks, keep
-the changed-path input. The SDK's `dotnet format` resolves to the mise
-`dotnet` entry; `.config/dotnet-tools.json` joins these locks once a step runs
-a local .NET tool.
+command has another form (for example a shell string or a script invoked via a
+runtime binary) or whose linter has no entry in its provider lock at either
+endpoint (for example `taplo`, which `pnpm exec` finds on the mise `PATH`) also
+runs on all its files. Resolution never narrows a run, and a failed Pkl
+evaluation fails the helper. Other steps, including lock and configuration
+checks, keep the changed-path input. The SDK's `dotnet format` resolves to the
+mise `dotnet` entry; `.config/dotnet-tools.json` joins these locks once a step
+runs a local .NET tool.
 With `--staged`, the endpoints are `HEAD` and the index.
 
-## Direct Command Execution and Retained Wrapper Scripts
+## Direct Command Execution and Hook Timeouts
 
 [hk.pkl](../../hk.pkl) and [the shared HK steps](../../src/private/lib/hk/)
 require HK `2.13.0+`, configure a hook-level `timeout = "12m"` across
 `pre-commit`, `check`, and `fix`, and execute both guard steps and file-reading
 linters directly through shell-free `Config.Command` definitions (passing `--`
-before `{{files}}` on tools that accept end-of-options markers). Direct
-`actionlint` execution uses actionlint's default shellcheck/pyflakes behavior;
-this configuration does not prove that either optional executable is installed
-or that a complete Windows workflow check passes.
-
-Legacy wrapper scripts ([hk_exec.py](../../eng/scripts/hk_exec.py),
-[hk_actionlint.py](../../eng/scripts/hk_actionlint.py),
-[hk_pkl_eval.py](../../eng/scripts/hk_pkl_eval.py), and
-[hk_file_operands.py](../../eng/scripts/hk_file_operands.py)) are no longer
-wired into `hk.pkl` and remain only pending final script retirement.
+before `{{files}}` on positional-file linters so option-like filenames stay
+literal). Direct `actionlint` execution uses actionlint's default
+shellcheck/pyflakes behavior; this configuration does not prove that either
+optional executable is installed or that a complete Windows workflow check
+passes.
 
 The shared [Typos step](../../src/private/lib/hk/steps/Typos.pkl) uses
 `--force-exclude` so explicit HK file lists respect [.typos.toml](../../.typos.toml).
@@ -221,14 +217,12 @@ repository checks were green. Its per-step counts and completion chronology
 remain in Git rather than becoming current compatibility promises.
 
 The snapshot also said actionlint's shellcheck/pyflakes integrations were
-disabled by default. That description differs from the accepted wrapper
-source described above. The snapshot and implementation were inspected at
-`b673ee27aab8553a4ee259bcaca87a197178463c`; this migration ran on Linux and did
-not revalidate Windows parity or settle the original observation. Before
-relying on that old mitigation for release hardening, the tooling maintainer
-must verify the actual command, installed tools, and result in the intended
-Windows environment. Any change to integration behavior remains separate
-from this record relocation.
+disabled by default, which differed from the former actionlint wrapper at
+`b673ee27aab8553a4ee259bcaca87a197178463c`. Subsequent migration to direct
+`Config.Command` execution ran on Linux and did not revalidate Windows parity
+or settle that historical observation. Before relying on that old snapshot for
+release hardening, the tooling maintainer must verify the actual command,
+installed tools, and result in the intended Windows environment.
 
 [cancellation]: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation
 [status-checks]: https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions

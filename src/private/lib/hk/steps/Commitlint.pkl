@@ -1,6 +1,8 @@
 import "../Config.pkl"
 
 commitlint = new Config.Step {
-  prefix = "pnpm exec --"
-  check = "commitlint --strict --edit"
+  prefix = List("pnpm", "exec", "--")
+  check = new Config.Command {
+    argv = List("commitlint", "--strict", "--edit", "{{commit_msg_file}}")
+  }
 }

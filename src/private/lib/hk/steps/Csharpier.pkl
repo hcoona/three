@@ -2,8 +2,12 @@ import "../Config.pkl"
 
 csharpier = new Config.Step {
   batch = true
-  check = "csharpier check {{files}}"
-  fix = "csharpier format {{files}}"
+  check = new Config.Command {
+    argv = List("csharpier", "check", "--", "{{files}}")
+  }
+  fix = new Config.Command {
+    argv = List("csharpier", "format", "--", "{{files}}")
+  }
   glob = List("*.cs")
   stage = List("*.cs")
 }
