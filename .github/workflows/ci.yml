@@ -14,6 +14,7 @@ permissions:
 
 env:
   MISE_LOCKED: '1'
+  GIT_LFS_SKIP_SMUDGE: '1'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref || github.run_id }}
