@@ -4,6 +4,10 @@ markdownlint_cli2 = new Config.Step {
   batch = true
   glob = List("*.md")
   stage = List("*.md")
-  check = "markdownlint-cli2 {{files}}"
-  fix = "markdownlint-cli2 --fix {{files}}"
+  check = new Config.Command {
+    argv = List("markdownlint-cli2", "--", "{{files}}")
+  }
+  fix = new Config.Command {
+    argv = List("markdownlint-cli2", "--fix", "--", "{{files}}")
+  }
 }

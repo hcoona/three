@@ -3,5 +3,7 @@ import "../Config.pkl"
 pkl_eval = new Config.Step {
   batch = true
   glob = List("*.pkl")
-  check = "python eng/scripts/hk_pkl_eval.py {{files}}"
+  check = new Config.Command {
+    argv = List("pkl", "eval", "--", "{{files}}")
+  }
 }
