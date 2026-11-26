@@ -64,10 +64,7 @@ STEPS: dict[str, dict[str, Any]] = {
         "glob": ["*.md"],
         "check": {
             "argv": [
-                "pnpm",
-                "exec",
-                "--",
-                "prettier",
+                "./node_modules/.bin/prettier",
                 "--check",
                 "--",
                 "{{files}}",
@@ -380,10 +377,7 @@ def test_unrelated_lock_change_keeps_changed_file_scope(
             "markdown-prettier",
             {
                 "argv": [
-                    "pnpm",
-                    "exec",
-                    "--",
-                    "taplo",
+                    "./node_modules/.bin/taplo",
                     "check",
                     "--",
                     "{{files}}",
@@ -509,14 +503,26 @@ def test_hk_scope_drift_reports_a_wildcard_shell_exclusion():
 
 
 def test_command_linter_supports_command_spec_and_rejects_runtimes() -> None:
-    """CommandSpec unwraps; runtime binaries and bad prefixes return None."""
+    """CommandSpec unwraps; wrappers, runtimes, and bad prefixes return None."""
     helper = load_script(HELPER)
     assert helper.command_linter(
         {
-            "command": {"argv": ["pnpm", "exec", "prettier", "{{files}}"]},
+            "command": {"argv": ["./node_modules/.bin/prettier", "{{files}}"]},
             "effect": "read",
         }
     ) == ("pnpm", "prettier")
+    assert (
+        helper.command_linter(
+            {"argv": ["pnpm", "exec", "--", "prettier", "{{files}}"]}
+        )
+        is None
+    )
+    assert (
+        helper.command_linter(
+            {"argv": ["./node_modules/.bin/node", "lint.mjs", "{{files}}"]}
+        )
+        is None
+    )
     assert (
         helper.command_linter({"argv": ["node", "lint.mjs", "{{files}}"]})
         is None

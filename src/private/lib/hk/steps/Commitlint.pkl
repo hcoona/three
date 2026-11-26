@@ -1,8 +1,7 @@
 import "../Config.pkl"
 
 commitlint = new Config.Step {
-  prefix = List("pnpm", "exec", "--")
   check = new Config.Command {
-    argv = List("commitlint", "--strict", "--edit", "{{commit_msg_file}}")
+    argv = List("./node_modules/.bin/commitlint", "--strict", "--edit", "{{commit_msg_file}}")
   }
 }

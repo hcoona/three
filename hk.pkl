@@ -69,18 +69,9 @@ local pipeline_linters = new Mapping<String, Step> {
 local markdown_linters = new Mapping<String, Step> {
   local markdown_append_only_artifact_exclude = List(".testagent/**")
 
-  ["markdownlint-cli2"] {
+  ["markdownlint-cli2"] = (Steps.markdownlint_cli2) {
     profiles = List("small")
     exclude = general_exclude_list + markdown_append_only_artifact_exclude
-    batch = true
-    glob = List("*.md")
-    stage = List("*.md")
-    check = new Command {
-      argv = List("pnpm", "exec", "--", "markdownlint-cli2", "--", "{{files}}")
-    }
-    fix = new Command {
-      argv = List("pnpm", "exec", "--", "markdownlint-cli2", "--fix", "--", "{{files}}")
-    }
   }
 
   ["markdown-prettier"] {
@@ -89,10 +80,10 @@ local markdown_linters = new Mapping<String, Step> {
     glob = List("*.md")
     stage = List("*.md")
     check = new Command {
-      argv = List("pnpm", "exec", "--", "prettier", "--check", "--", "{{files}}")
+      argv = List("./node_modules/.bin/prettier", "--check", "--", "{{files}}")
     }
     fix = new Command {
-      argv = List("pnpm", "exec", "--", "prettier", "--write", "--", "{{files}}")
+      argv = List("./node_modules/.bin/prettier", "--write", "--", "{{files}}")
     }
   }
 }
@@ -115,15 +106,18 @@ local json_linters = new Mapping<String, Step> {
     stage = List("*.json", "*.jsonc")
     check = new Command {
       argv =
-        List("pnpm", "exec", "--", "biome", "check", "--no-errors-on-unmatched", "--", "{{files}}")
+        List(
+          "./node_modules/.bin/biome",
+          "check",
+          "--no-errors-on-unmatched",
+          "--",
+          "{{files}}",
+        )
     }
     fix = new Command {
       argv =
         List(
-          "pnpm",
-          "exec",
-          "--",
-          "biome",
+          "./node_modules/.bin/biome",
           "check",
           "--write",
           "--no-errors-on-unmatched",
@@ -141,10 +135,10 @@ local yaml_linters = new Mapping<String, Step> {
     glob = List("*.yml", "*.yaml")
     stage = List("*.yml", "*.yaml")
     check = new Command {
-      argv = List("pnpm", "exec", "--", "prettier", "--check", "--", "{{files}}")
+      argv = List("./node_modules/.bin/prettier", "--check", "--", "{{files}}")
     }
     fix = new Command {
-      argv = List("pnpm", "exec", "--", "prettier", "--write", "--", "{{files}}")
+      argv = List("./node_modules/.bin/prettier", "--write", "--", "{{files}}")
     }
   }
 }
@@ -155,7 +149,7 @@ local toml_linters = new Mapping<String, Step> {
     exclude = general_exclude_list
     glob = List("**/*.toml")
     check = new Command {
-      argv = List("pnpm", "exec", "--", "taplo", "check", "--", "{{files}}")
+      argv = List("taplo", "check", "--", "{{files}}")
     }
   }
 
@@ -165,13 +159,13 @@ local toml_linters = new Mapping<String, Step> {
     glob = List("**/*.toml")
     stage = List("<JOB_FILES>")
     check = new Command {
-      argv = List("pnpm", "exec", "--", "taplo", "format", "--check", "--", "{{files}}")
+      argv = List("taplo", "format", "--check", "--", "{{files}}")
     }
     check_diff = new Command {
-      argv = List("pnpm", "exec", "--", "taplo", "format", "--check", "--diff", "--", "{{files}}")
+      argv = List("taplo", "format", "--check", "--diff", "--", "{{files}}")
     }
     fix = new Command {
-      argv = List("pnpm", "exec", "--", "taplo", "format", "--", "{{files}}")
+      argv = List("taplo", "format", "--", "{{files}}")
     }
   }
 }
@@ -343,15 +337,18 @@ local javascript_typescript_linters = new Mapping<String, Step> {
     stage = javascript_typescript_files
     check = new Command {
       argv =
-        List("pnpm", "exec", "--", "biome", "check", "--no-errors-on-unmatched", "--", "{{files}}")
+        List(
+          "./node_modules/.bin/biome",
+          "check",
+          "--no-errors-on-unmatched",
+          "--",
+          "{{files}}",
+        )
     }
     fix = new Command {
       argv =
         List(
-          "pnpm",
-          "exec",
-          "--",
-          "biome",
+          "./node_modules/.bin/biome",
           "check",
           "--write",
           "--no-errors-on-unmatched",
