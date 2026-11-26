@@ -487,23 +487,19 @@ synthetic + TRAIN_DEV replay` ablation.
 
 Before GPU recognizer training, Slice A shall measure a zero-training
 per-system crop baseline reserving `1` ledger slot **before** opening any
-locator or private file, resolving inputs strictly beneath a pre-staged sealed
-read-only `TRAIN_DEV`-only directory root (`--traindev-root`, containing `69`
-`TRAIN_DEV` page PNGs, `16` accepted `accepted.musicxml` files, `16` Stage S0
-initial `draft.musicxml` files, and a `TRAIN_DEV`-only `traindev-manifest.json`,
-anchored externally by `staging_attestation_sha256` and root `(st_dev, st_ino)`
-in `DOWNLOADS/w6-slice-a-run-ledger.jsonl` outside `--traindev-root`, and opened
-from `/` via component-by-component `dir_fd` `O_NOFOLLOW` traversal that
-verifies `fstat` ownership, read-only mode and `(st_dev, st_ino, st_size,
-st_mtime_ns)` against the ledger-authenticated `staging-attestation.json`
-**before** reading any payload bytes, alongside a single committed portable
-aggregate `SHA-256` digest — never opening `batch-status.json`,
-`test-exclusion.json` or the `23`-piece W3 manifest, and never committing
-per-file private hashes or boxes), and feeding W5's blind `comb_dp_blind`
-2-staff crops from the `69` `TRAIN_DEV` pages (`0` `TEST` touches) into a single
-persistent offline `unshare -rn` supervisor/worker pair with a `300`-second
-per-page watchdog that reaps the inference child cleanly (`returncode >= 0`) and
-settles without spawning a replacement worker on stall. Piece scoring shall preserve `(page, system)` boundaries, restrict
+locator or private file, resolving inputs strictly beneath a dedicated
+symlink-free, worktree-disjoint `TRAIN_DEV`-only directory root
+(`--traindev-root`, containing `69` `TRAIN_DEV` page PNGs, `16` accepted
+`accepted.musicxml` files, `16` Stage S0 initial `draft.musicxml` files, and a
+`TRAIN_DEV`-only `traindev-manifest.json`, verified against the exact `102`-leaf
+relative-path allowlist and `asset_locks.py`'s committed portable aggregate
+`SHA-256` digest without host-inode or permission sealing — never opening
+`batch-status.json`, `test-exclusion.json` or the `23`-piece W3 manifest, and
+never committing per-file private hashes or boxes), and feeding W5's blind
+`comb_dp_blind` 2-staff crops from the `69` `TRAIN_DEV` pages (`0` `TEST`
+touches) into a single persistent offline `unshare -rn` worker with a
+`300`-second per-page heartbeat timeout that terminates the worker process group
+cleanly on stall and settles without spawning a replacement worker. Piece scoring shall preserve `(page, system)` boundaries, restrict
 candidate-to-reference measure alignment strictly to each crop's `1:1`-matched
 oracle system range, force unmatched spurious crops to incur W2 extra-measure
 penalties, and score all measures of missed, merged, split or unparsed oracle

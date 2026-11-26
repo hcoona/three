@@ -112,14 +112,13 @@ flowchart TB
 sequenceDiagram
   participant CLI as Planned run-copista-per-system
   participant Ledger as w6-slice-a-run-ledger.jsonl
-  participant NetNS as 1 Persistent unshare -rn --pid Worker
+  participant NetNS as 1 Persistent unshare -rn Worker
   participant Val as Candidate XML Merge + W2 Scorer
   CLI->>CLI: Check clean git tree & worktree confinement (0 data/locator files opened)
   CLI->>Ledger: Lock + reserve 1 invocation slot before opening any locator or private file
-  CLI->>CLI: dir_fd O_NOFOLLOW walk under --traindev-root; verify relpath-bound aggregate SHA-256
-  CLI->>NetNS: Spawn namespace PID 1 supervisor + PID 2 copista-28m batch worker
-  NetNS->>NetNS: 300s/page watchdog in PID 1 kills/reaps PID 2 & exits 124 (returncode >= 0)
-  NetNS-->>CLI: Return per-crop XMLs + posteriors; reap PID 1 & clean scratch dir
+  CLI->>CLI: Verify symlink-free 102-leaf TRAIN_DEV allowlist & portable aggregate SHA-256
+  CLI->>NetNS: Spawn unshare -rn copista-28m batch worker with 300s/page heartbeat
+  NetNS-->>CLI: Return per-crop XMLs + posteriors (or killpg -> 124 on stall) & clean scratch
   CLI->>Val: Map blind crops to oracle systems; align strictly within each system's measures
   Val-->>CLI: TRAIN_DEV parse-survival, Layer-1 A-error & second-reader baseline
   CLI->>Ledger: Settle 1 invocation record & scrub local output paths
@@ -638,21 +637,18 @@ null`: `null` on `synth_val` or unaligned prediction measures where no
 
 ## Offline per-system copista-28m TRAIN_DEV baseline protocol
 
-1. **Pre-staged sealed `TRAIN_DEV`-only starting-state root, ledger-anchored
-   attestation, zero-file pre-reservation, and from-`/` `dir_fd` `O_NOFOLLOW`
-   pre-read `fstat` guard (`0` `TEST` touches):**
-    - **Threat boundary and pre-staged starting state
+1. **Portable `TRAIN_DEV`-only starting-state verification and zero-file
+   pre-reservation (`0` `TEST` touches):**
+    - **Threat boundary and portable starting state
       (`docs/engineering/engineering-principles.md#security`):** runs execute on
-      a single-operator local workstation where `--traindev-root` is an
-      **already lawfully staged, verified, sealed (`0o500` directories, `0o400`
-      leaves owned by `os.geteuid()`) and ledger-anchored `TRAIN_DEV`-only
-      starting-state directory** supplied by the repository owner / local
-      operator (failing closed immediately if either `--traindev-root` or its
-      external ledger anchor is absent; any new preparation of private
+      a single-operator local workstation where `--traindev-root` is a dedicated
+      symlink-free, worktree-disjoint `TRAIN_DEV`-only directory supplied by the
+      repository owner / local operator (any new preparation of private
       `TRAIN_DEV` artifacts requires an accepted
       [Delivery Wave](../../../../../docs/delivery-wave.md) entry now that the
-      `#1766`/`#1769` W6 Slice A grant is retired, and no Slice A runner command
-      scans or copies from mixed `23`-piece directories). `--traindev-root` holds
+      `#1766`/`#1769` W6 Slice A grant is retired, and no Slice A or Slice B
+      runner scans or copies from mixed `23`-piece directories).
+      `--traindev-root` holds
       strictly the `102` `TRAIN_DEV` leaves across `gold-07`–`gold-17` and
       `gold-19`–`gold-23` (`pages/gold-{07..17,19..23}-p<NN>.png`,
       `gold/gold-{07..17,19..23}/accepted.musicxml`, normalized Stage S0 initial
@@ -660,62 +656,42 @@ null`: `null` on `synth_val` or unaligned prediction measures where no
       `build-01/score.musicxml` on `15` pieces and `draft.musicxml` on
       `gold-07`, and `traindev-manifest.json` carrying `TRAIN_DEV`-only approved
       system boxes, measure ranges, `converged_aspects` and
-      `open_reading_masks`), plus read-only `staging-attestation.json` (`0o400`)
-      binding root `(st_dev, st_ino)` and every leaf's `(deterministic_relpath,
-st_dev, st_ino, st_size, st_mtime_ns, expected_sha256)`, whose
-      `staging_attestation_sha256` and root `(st_dev, st_ino)` are anchored in
-      `DOWNLOADS/w6-slice-a-run-ledger.jsonl` outside `--traindev-root` and
-      whose portable `(gold_id, deterministic_relpath, expected_sha256,
-oracle_boxes, masks)` payload matches `asset_locks.py`'s single committed
-      aggregate `SHA-256` ([OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance):
+      `open_reading_masks`), whose canonical `(gold_id, relpath,
+expected_sha256)` inventory (`omr-w6-traindev-portable-v1`) matches
+      `asset_locks.py`'s single committed `EXPECTED_TRAINDEV_PORTABLE_SHA256`
+      digest ([OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance):
       zero individual private hashes, paths or boxes committed in git;
-      adversarial same-UID forgery of the pre-staged starting state is outside
-      the threat model).
-    - **Zero-file pre-start reservation and external anchor check:** during
-      `run-copista-per-system`, **before opening `--traindev-root` or any
-      private file**, the runner checks git clean-tree state (on `--formal`),
-      acquires `.w6-slice-a-run-ledger.lock`, reads the `"traindev-root-anchor"`
-      record (`staging_attestation_sha256` and root `(st_dev, st_ino)`) from
-      `DOWNLOADS/w6-slice-a-run-ledger.jsonl`, and writes `1` pre-start
-      invocation reservation (retained on any subsequent failure or abort).
-    - **From-`/` `dir_fd` walk, pre-read `fstat` guard and streaming hash check:**
-      strictly **after** reservation, the runner walks from `/` (`os.open("/",
-os.O_RDONLY | os.O_DIRECTORY)`) with `O_NOFOLLOW | O_DIRECTORY`
-      (`dir_fd=parent_fd`) to `--traindev-root`, verifying `fstat(root_fd)`
-      matches the ledger-anchored root `(st_dev, st_ino)`, `st_uid == geteuid()`,
-      mode `0o500`, and lies outside every git worktree, then verifies
-      `staging-attestation.json` against both `staging_attestation_sha256` and
-      `asset_locks.py`'s committed portable aggregate `SHA-256` **before**
-      opening any PNG, XML or `traindev-manifest.json` leaf. Every leaf is
-      checked against the deterministic `16`-piece allowlist, opened via `dir_fd`
-      `O_NOFOLLOW`, **checked via `os.fstat(leaf_fd)` BEFORE reading a single
-      payload byte** (`S_ISREG`, `st_uid == geteuid()`, mode `0o400`, and exact
-      `(st_dev, st_ino, st_size, st_mtime_ns)` match to the ledger-authenticated
-      `staging-attestation.json` — covered by Slice A tests proving that
-      replacing `--traindev-root` together with its `staging-attestation.json`,
-      or substituting a same-size regular file at an allowed path, aborts with
-      `0` payload bytes read), and hashed as bytes are read against
-      `expected_sha256`.
-2. **Single-namespace PID-1 supervisor + PID-2 batch worker (`1` CLI run = `1`
-   `unshare` invocation = `1` ledger slot):**
+      legacy `staging-attestation.json` or `traindev-root-anchor` records
+      written during Slice A remain tolerated without host `(st_dev, st_ino)` or
+      `0o500`/`0o400` permission sealing so `--traindev-root` relocates portably
+      across hosts).
+    - **Zero-file pre-start reservation:** during `run-copista-per-system`,
+      **before opening `--traindev-root` or any private file**, the runner
+      checks git clean-tree state (on `--formal`), acquires
+      `.w6-slice-a-run-ledger.lock`, verifies preserved prior campaign ledgers,
+      and writes `1` pre-start invocation reservation (retained on any
+      subsequent failure or abort).
+    - **Pre-read relpath confinement and `SHA-256` verification:** strictly
+      **after** reservation, `open_verified_traindev_root` verifies
+      `--traindev-root` is symlink-free and outside every git worktree, checks
+      the directory's exact `102`-relpath `TRAIN_DEV` allowlist and
+      `traindev-manifest.json`'s `16`-piece header before reading any page or
+      MusicXML payload, and verifies all `102` leaf `SHA-256` digests against
+      `EXPECTED_TRAINDEV_PORTABLE_SHA256`.
+2. **Single persistent `unshare -rn` batch worker (`1` CLI run = `1`
+   `unshare -rn` worker = `1` ledger slot):**
     - Extracts blind `comb_dp_blind` `2`-staff system crop PNGs across the `69`
-      attested `TRAIN_DEV` page PNGs (`0` manual `box-overrides.json` boxes),
+      verified `TRAIN_DEV` page PNGs (`0` manual `box-overrides.json` boxes),
       freezes those blind crop coordinates before consulting W3 oracle boxes,
-      and spawns **one** `unshare -rn --pid --fork --kill-child=SIGKILL`
-      namespace (`close_fds=True`, `lo`-only verified) whose **PID `1` is a
-      lightweight standard-library Python watchdog supervisor** that spawns the
-      single persistent `DOWNLOADS/w2-copista-venv` (`copisteria@2be4a9d8`,
-      `copista-28m@44464d1`) inference worker as namespace **PID `2`**.
-    - Namespace PID `1` enforces a monotonic `300`-second per-page pipe
-      heartbeat outside the PyTorch inference process: if PID `2` stalls in
-      native C++/PyTorch past `300` seconds on any page, PID `1` sends `SIGKILL`
-      to PID `2`, calls `os.waitpid` to reap PID `2` inside the namespace, and
-      exits normally with status `124` so `unshare` returns **`proc.returncode
-== 124 >= 0`** to the host parent (allowing safe scratch-directory deletion
-      after verified teardown while retaining scratch and aborting fail-closed
-      if `unshare` itself dies by signal `< 0` or fails to exit within `5.0 s`),
-      marking stalled/remaining pages fail-closed and **settling the `1` charged
-      invocation without spawning any replacement worker**.
+      and spawns **one** `unshare -rn` persistent `DOWNLOADS/w2-copista-venv`
+      (`copisteria@2be4a9d8`, `copista-28m@44464d1`) inference worker in its own
+      process group (`start_new_session=True`, `close_fds=True`).
+    - The parent monitors a monotonic `300`-second per-page pipe heartbeat: if
+      the worker stalls past `300` seconds on any page, the parent terminates
+      the worker process group (`os.killpg(..., SIGKILL)`), records status
+      `124`, marks stalled/remaining pages fail-closed, cleans the scratch
+      directory after process exit, and **settles the `1` charged invocation
+      without spawning any replacement worker**.
 3. **Oracle-system-partitioned alignment, spurious-crop penalty and fail-closed
    scoring:**
     - Concatenates surviving per-crop MusicXMLs per piece with `(page_index,
@@ -740,20 +716,18 @@ system_index)` `<print>` boundaries and isolated spanner numbers without
 ## Finite execution bounds, ledgers, stops, privacy and cleanup
 
 - **Persistent non-resettable Slice A safeguards (implemented in
-  `sheet_music_omr.training.ledgers`; initialize once via
-  `setup-w6-slice-a --init-campaign`, rebind only after copying preserved
-  ledgers and moving retained `w6-slice-a-*` run directories via
-  `migrate-w6-downloads --from-downloads OLD --to-downloads NEW`, and never
-  delete or reset either Slice A ledger while preserving earlier W1, W2/W3 and
-  W4/W5 ledgers untouched):**
+  `sheet_music_omr.training.ledgers` as self-contained files inside
+  `DOWNLOADS/`, relocating portably across hosts without hidden `~/.local/state`
+  anchors while preserving earlier W1, W2/W3 and W4/W5 ledgers untouched and
+  never deleting or resetting either Slice A ledger):**
     1. **Download ledger (`DOWNLOADS/w6-slice-a-download-ledger.json`):** under
-       an exclusive lock, meters every HTTP `HEAD`/`GET` probe and reserves
-       exact byte budgets against `asset_locks.py` before fetching any
-       `w6-train-venv` wheel or `w6-model-meta` file (retaining failed or
-       crashed reservations conservatively, reusing verified cached files at `0`
-       new bytes, and failing closed on any unmetered transfer, remote `.py`
-       file or checkpoint weight file), stopping before cumulative Slice A
-       downloads exceed **`15,000,000,000` bytes (`15 GB`)**.
+       an exclusive lock, reserves artifact byte budgets against
+       `asset_locks.py` before fetching any `w6-train-venv` wheel or
+       `w6-model-meta` file (retaining failed or crashed reservations
+       conservatively, reusing verified cached files at `0` new bytes, and
+       failing closed on any remote `.py` file or checkpoint weight file),
+       stopping before cumulative Slice A downloads exceed **`15,000,000,000`
+       bytes (`15 GB`)**.
     2. **Generated disk cap:** all local Slice A dataset and run directories
        reside under `RUNS/w6-slice-a-*`, stopping before combined Slice A disk
        usage exceeds **`100,000,000,000` bytes (`100 GB`)**.
@@ -774,16 +748,18 @@ system_index)` `<print>` boundaries and isolated spanner numbers without
           non-exempt Slice A rendering runs;
         - **`10` cumulative private-input `copista-28m` per-system
           invocations**; or
-        - **`0` `TEST` touches** (enforced via the attested `16`-piece
+        - **`0` `TEST` touches** (enforced via the verified `16`-piece
           `TRAIN_DEV` allowlist and `TEST` digest exclusion check).
           Only repository-fixture and synthetic-fixture CPU unit/scenario/smoke
           tests with zero network fetches, zero staged-corpus batch rendering
           and zero private-input access remain exempt.
-- **Stop conditions and cleanup:** identical parent-reaper `unshare` scratch
-  cleanup (`proc.returncode >= 0` within `5.0 s`, retaining scratch and aborting
-  fail-closed otherwise), clean-tree and per-run renderer/asset digest
-  attestation on `--formal` runs, drifted-pin blocking under the mutable-source
-  recheck gate, and two-tier [OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance)
+- **Stop conditions and cleanup:** process-group termination and scratch cleanup
+  on worker exit or timeout, clean-tree and per-run renderer/asset digest
+  attestation on `--formal` runs (accepting any `MuseScore 4.x` release via
+  cached `.mpos / 12.0 <= 2.0 px` calibration and recording `(version,
+executable_sha256)` provenance at start/end without binary-hash allowlists),
+  drifted-pin blocking under the mutable-source recheck gate, and two-tier
+  [OMR-REQ-015](requirements.md#omr-req-015-privacy-and-fixture-provenance)
   privacy enforcement: `run-copista-per-system` remains confined strictly to
   `--traindev-root` (`16` `TRAIN_DEV` pieces) and runs path-pattern scrubbing on
   its local outputs, while a separate standalone read-only publication gate
