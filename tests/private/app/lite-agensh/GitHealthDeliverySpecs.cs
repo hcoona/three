@@ -1016,6 +1016,22 @@ public sealed class GitHealthDeliverySpecs(TestContext testContext)
             GitScenarioState.Data(coordinator.Status())["lifecycle"]!.GetValue<string>()
         );
 
+        JsonObject queuedFinalize = GitScenarioState.Data(coordinator.RequestControl("finalize"));
+        using (CancellationTokenSource preCancelled = new())
+        {
+            await preCancelled.CancelAsync().ConfigureAwait(false);
+            _ = await Assert
+                .ThrowsAsync<OperationCanceledException>(
+                    () => coordinator.FinalizeAsync(preCancelled.Token)
+                )
+                .ConfigureAwait(false);
+        }
+        Assert.AreEqual(
+            queuedFinalize["requestId"]!.GetValue<long>(),
+            GitScenarioState.Data(coordinator.RequestControl("finalize"))["requestId"]!
+                .GetValue<long>()
+        );
+
         JsonObject finalized = GitScenarioState.Data(
             await coordinator.FinalizeAsync(token).ConfigureAwait(false)
         );
