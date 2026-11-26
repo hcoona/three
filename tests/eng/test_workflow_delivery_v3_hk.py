@@ -75,6 +75,20 @@ STEPS: dict[str, dict[str, Any]] = {
         "glob": ["*.sh"],
         "check": {"argv": ["shellcheck", "--", "{{files}}"]},
     },
+    "tla-sany": {
+        "glob": ["*.tla"],
+        "check": {
+            "argv": [
+                "python",
+                "eng/scripts/tla.py",
+                "sany",
+                "--driver",
+                "eng/linter/TlaSanyCheck.java",
+                "--",
+                "{{files}}",
+            ]
+        },
+    },
     "uv-lock": {
         "glob": ["uv.lock"],
         "check": {"argv": ["uv", "lock", "--check"]},
@@ -208,7 +222,12 @@ def _pnpm_lock(versions: dict[str, str]) -> str:
 
 BASE_LOCKS = {
     "uv.lock": {"ruff": "0.17.0", "pytest": "9.1.0"},
-    "mise.lock": {"github:koalaman/shellcheck": "0.11.0", "pkl": "0.32.1"},
+    "mise.lock": {
+        "github:koalaman/shellcheck": "0.11.0",
+        "github:tlaplus/tlaplus": "1.7.4",
+        "java": "temurin-25.0.4+101.0.LTS",
+        "pkl": "0.32.1",
+    },
     "pnpm-lock.yaml": {"prettier": "3.9.9", "ap-style-title-case": "2.0.0"},
 }
 WRITERS = {"uv.lock": _uv_lock, "mise.lock": _mise_lock}
@@ -234,6 +253,7 @@ def fixture(tmp_path: Path) -> dict[str, Any]:
         "changed.py": "VALUE = 1\n",
         "unchanged.py": f"# {SEEDED} predates the comparison.\n",
         "README.md": "# Fixture\n",
+        "Spec.tla": "---- MODULE Spec ----\n====\n",
         "build.sh": "echo build\n",
     }
     for name, content in files.items():
@@ -324,6 +344,8 @@ def test_ruff_bump_checks_all_covered_files_and_fails_on_unchanged_finding(
     [
         ("pnpm-lock.yaml", "prettier", "3.9.10", "markdown-prettier"),
         ("mise.lock", "github:koalaman/shellcheck", "0.11.1", "shellcheck"),
+        ("mise.lock", "github:tlaplus/tlaplus", "1.7.5", "tla-sany"),
+        ("mise.lock", "java", "temurin-25.0.5+101.0.LTS", "tla-sany"),
     ],
 )
 def test_each_provider_lock_widens_only_its_linter_steps(

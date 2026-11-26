@@ -677,6 +677,7 @@
         "github:koalaman/shellcheck",
         "go:mvdan.cc/sh/v3/cmd/shfmt",
         "github:hadolint/hadolint",
+        "github:tlaplus/tlaplus",
         "dotenv-linter",
         "fd",
         "ripgrep",
@@ -684,6 +685,12 @@
       ],
       "groupName": "Mise Repository Tools",
       "automerge": true
+    },
+    {
+      "description": "Pin TLA+ tools strictly to immutable stable vX.Y.Z releases (excluding rolling or overwritten pre-release assets).",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["github:tlaplus/tlaplus"],
+      "allowedVersions": "/^v?\\d+\\.\\d+\\.\\d+$/"
     },
     {
       "description": "Update the HK binary and its Pkl schema together.",

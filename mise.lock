@@ -400,6 +400,23 @@ checksum_source = "mise-versions"
 url = "https://github.com/microsoft/apm/releases/download/v0.38.1/apm-windows-x86_64.zip"
 url_api = "https://api.github.com/repos/microsoft/apm/releases/assets/782265392"
 
+[[tools."github:tlaplus/tlaplus"]]
+version = "1.7.4"
+backend = "github:tlaplus/tlaplus"
+
+[tools."github:tlaplus/tlaplus".options]
+asset_pattern = "tla2tools.jar"
+
+[tools."github:tlaplus/tlaplus"."platforms.linux-x64"]
+checksum = "sha256:936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
+url = "https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar"
+url_api = "https://api.github.com/repos/tlaplus/tlaplus/releases/assets/184694200"
+
+[tools."github:tlaplus/tlaplus"."platforms.windows-x64"]
+checksum = "sha256:936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
+url = "https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar"
+url_api = "https://api.github.com/repos/tlaplus/tlaplus/releases/assets/184694200"
+
 [[tools.go]]
 version = "1.26.1"
 backend = "core:go"

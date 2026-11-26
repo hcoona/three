@@ -306,7 +306,7 @@ jobs:
     name: Source conformance
     runs-on: ubuntu-latest
     env:
-      MISE_DISABLE_TOOLS: dotnet,java,node,powershell,python,ruby,gopass
+      MISE_DISABLE_TOOLS: dotnet,node,powershell,python,ruby,gopass
 
     needs: scope
     if: ${{ !cancelled() }}

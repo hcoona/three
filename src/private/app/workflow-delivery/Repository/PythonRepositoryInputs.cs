@@ -167,6 +167,9 @@ internal static class PythonRepositoryInputs
             path is "renovate.json" or ".github/renovate/global.cjs" or
                 "src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/" +
                 "Update-LocalSvgEditor.ps1") ||
+        (target == "tests/eng/test_tla_tools.py" &&
+            path is "eng/scripts/tla.py" or "eng/linter/TlaSanyCheck.java" or
+                "renovate.json") ||
         (target == "tests/eng/test_release_triage.py" &&
             (path is "eng/scripts/release_triage.py" or ".github/workflows/release-triage.yml" or
                 "version.json" || IsPublicInventoryInput(path))) ||

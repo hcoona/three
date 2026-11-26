@@ -959,6 +959,8 @@ public sealed class CiScopeTests
 
     [TestMethod]
     [DataRow("eng/scripts/hk_scope_drift.py", true)]
+    [DataRow("eng/scripts/tla.py", true)]
+    [DataRow("eng/linter/TlaSanyCheck.java", true)]
     [DataRow("src/private/app/workflow-delivery/Repository/resources/hk-scope-copies.json", false)]
     public void HkScopeDriftInputsResolveAgainstCommittedHk(string path, bool python)
     {

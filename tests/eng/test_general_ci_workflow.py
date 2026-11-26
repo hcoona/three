@@ -712,7 +712,8 @@ def test_validation_installs_locked_tools_before_bootstrap_and_hk(
         if item["command"][0] in {"mise", "hk"}:
             disabled = item["disabled_tools"].split(",")
             assert "gopass" in disabled
-            # The locked mise Pkl serves HK; no second Pkl setup exists.
+            # Locked mise Java and Pkl serve HK; no second setup exists.
+            assert "java" not in disabled
             assert "pkl" not in disabled
 
 
