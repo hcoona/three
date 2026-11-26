@@ -12,6 +12,268 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     private static readonly string[] peerActors = ["worker1", "worker2"];
 
     [TestMethod]
+    [TestCategory("EndReasonAndDeliveryControl")]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task ActiveGitCheckSupervisionHonorsOwnerPauseAndRefusedFinalizePreservesDeliveryState()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        int checkPhase = 0;
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource resumeHeldEntered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        TaskCompletionSource releaseResumeHeld = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun.CreateAsync(
+            testContext,
+            token,
+            ownedHosts: false,
+            realGit: true,
+            configuredCheck: async (executable, _, _, _, checkToken) =>
+            {
+                if (executable == "held-candidate-check")
+                {
+                    if (Volatile.Read(ref checkPhase) == 0)
+                    {
+                        entered.TrySetResult();
+                        await Task.Delay(Timeout.InfiniteTimeSpan, checkToken)
+                            .ConfigureAwait(false);
+                    }
+
+                    if (Interlocked.CompareExchange(ref checkPhase, 2, 1) == 1)
+                    {
+                        resumeHeldEntered.TrySetResult();
+                        await releaseResumeHeld.Task.WaitAsync(checkToken).ConfigureAwait(false);
+                    }
+
+                    return new ProcessResult(0, "Controlled candidate check passed.", "", false);
+                }
+
+                Assert.AreEqual("pass-final", executable);
+                return new ProcessResult(0, "Controlled final check passed.", "", false);
+            }
+        ).ConfigureAwait(false);
+        await state.RunBodyAsync(async () =>
+        {
+            state.Database.SaveConfiguration(state.Database.Configuration with
+            {
+                CandidateChecks = [new() { Executable = "held-candidate-check", TimeoutSeconds = 120 }],
+                FinalChecks = [new() { Executable = "pass-final", TimeoutSeconds = 30 }],
+            });
+            Coordinator inspector = state.Coordinator("status");
+            _ = state.Start();
+            ControlledSessionPool.Turn[] initial = await ReadPeerTurnsAsync(state, token)
+                .ConfigureAwait(false);
+            ObservedManualClock.ObservedPoll ownerPoll = await state.ObserveOwnerPollAsync(token)
+                .ConfigureAwait(false);
+            const string FileName = "retained-candidate.txt";
+            const string Content = "Preserve the worker's unintegrated change.\n";
+            (JsonObject change, JsonObject originalRequest) = await SubmitReviewedAsync(
+                state, "worker1", "worker2", FileName, Content, token
+            ).ConfigureAwait(false);
+            state.Clock.Advance(ownerPoll, state.WorkDeadline, token);
+            await state.FixedAsync(entered.Task, token).ConfigureAwait(false);
+
+            // Return terminal responses for the Git notices before cancelling the held check.
+            await CompletePeerTurnsAsync(state, initial, token).ConfigureAwait(false);
+            ControlledSessionPool.Turn[] notices = await ReadPeerTurnsAsync(state, token)
+                .ConfigureAwait(false);
+            await CompletePeerTurnsAsync(state, notices, token).ConfigureAwait(false);
+
+            Assert.IsFalse(state.Active.IsCompleted);
+            GitScenarioState.Data(inspector.RequestControl("pause"));
+            await state.UntilAsync(state.Handoff!.OwnerStopped.Task, state.WorkDeadline, token)
+                .ConfigureAwait(false);
+            JsonObject paused = GitScenarioState.Data(await state.Active
+                .WaitAsync(TimeSpan.FromSeconds(15), token).ConfigureAwait(false));
+            Assert.AreEqual("paused", paused["lifecycle"]!.GetValue<string>());
+            Assert.AreEqual("owner-pause", paused["stopReason"]!.GetValue<string>());
+            AssertManagedWorkersSettled(state);
+
+            long changeId = change["id"]!.GetValue<long>();
+            string head = change["head"]!.GetValue<string>();
+            JsonObject retained = await state.GitToolAsync(
+                "owner", "change_read", new() { ["id"] = changeId }, token
+            ).ConfigureAwait(false);
+            Assert.AreEqual("open", retained["state"]!.GetValue<string>());
+            Assert.AreEqual(head, retained["head"]!.GetValue<string>());
+            JsonObject cancelled = Assert.ContainsSingle(
+                retained["checks"]!.AsArray().OfType<JsonObject>()
+            );
+            Assert.AreEqual("cancelled", cancelled["status"]!.GetValue<string>());
+            JsonObject failed = Assert.ContainsSingle(
+                retained["integrationRequests"]!.AsArray().OfType<JsonObject>()
+            );
+            Assert.AreEqual(originalRequest["requestId"]!.GetValue<long>(),
+                failed["requestId"]!.GetValue<long>());
+            Assert.AreEqual("failed", failed["state"]!.GetValue<string>());
+            Assert.AreEqual("unavailable", failed["resultCode"]!.GetValue<string>());
+            Assert.IsNull(failed["integratedCommit"]);
+            string integration = $"refs/heads/lite-agensh/{state.Database.RunId}/integration";
+            Assert.AreEqual(state.Git.BaseCommit, await state.Git.ResolveAsync(integration, token)
+                .ConfigureAwait(false));
+            Assert.AreEqual(Content, await File.ReadAllTextAsync(
+                Path.Combine(state.WorkerPath("worker1"), FileName), token
+            ).ConfigureAwait(false));
+
+            JsonObject delivery = await inspector.FinalizeAsync(token).ConfigureAwait(false);
+            Assert.IsTrue(GitScenarioState.Data(delivery)["accepted"]!.GetValue<bool>());
+            Assert.AreEqual("finalized", StatusData(inspector)["lifecycle"]!.GetValue<string>());
+            string? persistedDelivery = state.Database.ReadMetadata("lifecycle:delivery");
+            Assert.IsNotNull(persistedDelivery);
+            Assert.IsTrue(JsonNode.DeepEquals(delivery, JsonNode.Parse(persistedDelivery)));
+
+            _ = state.Start("resume");
+            ControlledSessionPool.Turn[] resumed = await ReadPeerTurnsAsync(state, token)
+                .ConfigureAwait(false);
+            ObservedManualClock.ObservedPoll resumePoll = await state.ObserveOwnerPollAsync(token)
+                .ConfigureAwait(false);
+            await CompletePeerTurnsAsync(state, resumed, token).ConfigureAwait(false);
+            GitScenarioState.Data(await state.StopRunningAsync("pause", resumePoll, token)
+                .ConfigureAwait(false));
+
+            JsonObject pending = await state.GitToolAsync("worker1", "change_write", new()
+            {
+                ["action"] = "integrate",
+                ["id"] = changeId,
+                ["head"] = head,
+            }, token).ConfigureAwait(false);
+            Assert.AreEqual("pending", pending["state"]!.GetValue<string>());
+            JsonObject finalizeControl = GitScenarioState.Data(inspector.RequestControl("finalize"));
+            JsonObject refused = await inspector.FinalizeAsync(token).ConfigureAwait(false);
+            Assert.IsFalse(refused["ok"]!.GetValue<bool>());
+            Assert.AreEqual("conflict", refused["code"]!.GetValue<string>());
+            Assert.Contains("Pending integrations", refused["message"]!.GetValue<string>());
+            JsonObject status = StatusData(inspector);
+            Assert.AreEqual("paused", status["lifecycle"]!.GetValue<string>());
+            Assert.IsTrue(JsonNode.DeepEquals(delivery, status["delivery"]));
+            Assert.AreEqual(persistedDelivery, state.Database.ReadMetadata("lifecycle:delivery"));
+            Assert.AreEqual("pending", state.Value(
+                "SELECT state FROM integration_requests WHERE id=$id;",
+                ("$id", pending["requestId"]!.GetValue<long>())
+            ));
+            Assert.AreEqual("completed", state.Value(
+                "SELECT state FROM coordinator_controls WHERE id=$id;",
+                ("$id", finalizeControl["requestId"]!.GetValue<long>())
+            ));
+            JsonObject recordedControl = JsonNode.Parse((string)state.Value(
+                "SELECT result FROM coordinator_controls WHERE id=$id;",
+                ("$id", finalizeControl["requestId"]!.GetValue<long>())
+            )!)!.AsObject();
+            Assert.AreEqual("conflict", recordedControl["code"]!.GetValue<string>());
+
+            // Resume must not livelock on the consumed refused finalize control, and a second
+            // integration enqueued while the first check is held (after that pass's snapshot)
+            // must stay pending across the active pass and be drained by the post-quiescence
+            // Git pass when finalize is requested.
+            Volatile.Write(ref checkPhase, 1);
+            _ = state.Start("resume");
+            ControlledSessionPool.Turn[] postRefusalTurns = await ReadPeerTurnsAsync(state, token)
+                .ConfigureAwait(false);
+            await state.FixedAsync(resumeHeldEntered.Task, token).ConfigureAwait(false);
+
+            (JsonObject secondChange, JsonObject secondPending) = await SubmitReviewedAsync(
+                state, "worker2", "worker1", "second-candidate.txt", "Second change.\n", token
+            ).ConfigureAwait(false);
+            releaseResumeHeld.TrySetResult();
+
+            await state.WaitDurableAsync(
+                () =>
+                    (string?)state.Value(
+                        "SELECT state FROM integration_requests WHERE id=$id;",
+                        ("$id", pending["requestId"]!.GetValue<long>())
+                    ) == "succeeded",
+                state.WorkDeadline,
+                token
+            ).ConfigureAwait(false);
+            ObservedManualClock.ObservedPoll finalPoll =
+                await state.ObserveOwnerPollAsync(token).ConfigureAwait(false);
+            Assert.AreEqual("pending", state.Value(
+                "SELECT state FROM integration_requests WHERE id=$id;",
+                ("$id", secondPending["requestId"]!.GetValue<long>())
+            ));
+            await CompletePeerTurnsAsync(state, postRefusalTurns, token).ConfigureAwait(false);
+            ControlledSessionPool.Turn[] integratedNotices =
+                await ReadPeerTurnsAsync(state, token).ConfigureAwait(false);
+            await CompletePeerTurnsAsync(state, integratedNotices, token).ConfigureAwait(false);
+            GitScenarioState.Data(inspector.RequestControl("finalize"));
+            state.Clock.Advance(finalPoll, state.WorkDeadline, token);
+
+            JsonObject finalizedAfterResume = GitScenarioState.Data(await state.Active
+                .WaitAsync(TimeSpan.FromSeconds(15), token).ConfigureAwait(false));
+            Assert.IsTrue(finalizedAfterResume["accepted"]!.GetValue<bool>());
+            Assert.AreEqual("finalized", StatusData(inspector)["lifecycle"]!.GetValue<string>());
+            Assert.AreEqual("succeeded", state.Value(
+                "SELECT state FROM integration_requests WHERE id=$id;",
+                ("$id", pending["requestId"]!.GetValue<long>())
+            ));
+            Assert.AreEqual("succeeded", state.Value(
+                "SELECT state FROM integration_requests WHERE id=$id;",
+                ("$id", secondPending["requestId"]!.GetValue<long>())
+            ));
+            _ = secondChange;
+
+            // Standalone FinalizeAsync throwing an expected recovery exception must also
+            // record a terminal control result rather than stranding a pending finalize row.
+            state.Database.WriteMetadata("lifecycle:ownership_ambiguity", "injected ambiguity");
+            JsonObject thrownControl = GitScenarioState.Data(inspector.RequestControl("finalize"));
+            JsonObject thrownFinalize = await inspector.FinalizeAsync(token).ConfigureAwait(false);
+            Assert.IsFalse(thrownFinalize["ok"]!.GetValue<bool>());
+            Assert.AreEqual("ownership_unresolved", thrownFinalize["code"]!.GetValue<string>());
+            Assert.AreEqual("completed", state.Value(
+                "SELECT state FROM coordinator_controls WHERE id=$id;",
+                ("$id", thrownControl["requestId"]!.GetValue<long>())
+            ));
+            Assert.IsTrue(JsonNode.DeepEquals(
+                thrownFinalize,
+                JsonNode.Parse((string)state.Value(
+                    "SELECT result FROM coordinator_controls WHERE id=$id;",
+                    ("$id", thrownControl["requestId"]!.GetValue<long>())
+                )!)
+            ));
+            state.Database.WriteMetadata("lifecycle:ownership_ambiguity", "");
+        }).ConfigureAwait(false);
+    }
+
+    [TestMethod]
+    [TestCategory("EndReasonAndDeliveryControl")]
+    [Timeout(30_000, CooperativeCancellation = true)]
+    public async Task ShutdownMetadataContentionStillSettlesWorkersAndRuntimeFailClosed()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun.CreateAsync(
+            testContext, token, ownedHosts: false, realGit: false
+        ).ConfigureAwait(false);
+        await state.RunBodyAsync(async () =>
+        {
+            Coordinator inspector = state.Coordinator("status");
+            Task<JsonObject> run = state.Start();
+            ControlledSessionPool.Turn[] turns = await ReadPeerTurnsAsync(state, token)
+                .ConfigureAwait(false);
+            state.Execute(
+                """
+                CREATE TRIGGER block_shutdown BEFORE UPDATE ON meta
+                WHEN NEW.key='lifecycle' AND NEW.value='pausing'
+                BEGIN SELECT RAISE(ABORT, 'simulated shutdown persistence failure'); END;
+                """
+            );
+            await CompletePeerTurnsAsync(state, turns, token).ConfigureAwait(false);
+            state.CancelCaller();
+
+            JsonObject stopped = await run.WaitAsync(token).ConfigureAwait(false);
+            AssertManagedWorkersSettled(state);
+            Assert.IsFalse(stopped["ok"]!.GetValue<bool>());
+            Assert.AreEqual("ownership_or_usage_unresolved", stopped["code"]!.GetValue<string>());
+            Assert.Contains("simulated shutdown persistence failure",
+                stopped["message"]!.GetValue<string>());
+            JsonObject status = StatusData(inspector);
+            Assert.AreEqual("unresolved", status["lifecycle"]!.GetValue<string>());
+            Assert.IsFalse(status["active"]!.GetValue<bool>());
+        }).ConfigureAwait(false);
+    }
+
+    [TestMethod]
     [TestCategory("TwoPeersCooperateWithoutScheduler")]
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task PeersSelectWorkCommunicateAndIntegrateIndependentlyReviewedChanges()
@@ -1169,7 +1431,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                     .ConfigureAwait(false);
                 JsonObject reopenedRoot = state.Invoke("owner", "task_read", new() { ["id"] = 1 });
                 Assert.AreEqual("open", reopenedRoot["state"]!.GetValue<string>());
-                Assert.AreEqual("worker1", reopenedRoot["closedBy"]!.GetValue<string>());
+                Assert.IsNull(reopenedRoot["closedBy"]);
                 Assert.IsNull(StatusData(inspector)["stopReason"]);
                 Assert.IsFalse(one.Token.IsCancellationRequested);
                 Assert.IsFalse(two.Token.IsCancellationRequested);
@@ -1579,6 +1841,52 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
 
     private static JsonObject StatusData(Coordinator inspector) =>
         GitScenarioState.Data(inspector.Status());
+
+    private static async Task<ControlledSessionPool.Turn[]> ReadPeerTurnsAsync(
+        CoordinatorScenarioRun state, CancellationToken token
+    )
+    {
+        List<ControlledSessionPool.Turn> turns = [];
+        foreach (string worker in peerActors)
+        {
+            turns.Add(await state.FixedAsync(next => state.Sessions.NextTurnAsync(worker, next), token)
+                .ConfigureAwait(false));
+        }
+        return [.. turns];
+    }
+
+    private static async Task CompletePeerTurnsAsync(
+        CoordinatorScenarioRun state, ControlledSessionPool.Turn[] turns, CancellationToken token
+    )
+    {
+        foreach (ControlledSessionPool.Turn turn in turns)
+        {
+            long batch = state.SendingBatch(turn.Session.Worker);
+            turn.Complete();
+            await state.WaitAckAsync(batch, state.WorkDeadline, token).ConfigureAwait(false);
+        }
+    }
+
+    private static void AssertManagedWorkersSettled(CoordinatorScenarioRun state)
+    {
+        ControlledSessionPool.Host[] hosts = state.Sessions.Hosts
+            .Where(host => host.Operation == "run").ToArray();
+        Assert.IsNotEmpty(hosts);
+        ControlledSessionPool.Session[] started = hosts.SelectMany(host => host.Sessions)
+            .Where(session => session.HasSession).ToArray();
+        foreach (string worker in peerActors)
+        {
+            Assert.Contains(worker, started.Select(session => session.Worker));
+        }
+        foreach (ControlledSessionPool.Session session in started)
+        {
+            Assert.IsTrue(session.Disposed, session.Worker);
+        }
+        foreach (ControlledSessionPool.Host host in hosts)
+        {
+            Assert.IsTrue(host.Witness["managedSettlementBeforeWrapperDispose"]!.GetValue<bool>());
+        }
+    }
 
     private static JsonObject WorkerStatus(Coordinator inspector, string worker) =>
         StatusData(inspector)["workers"]!

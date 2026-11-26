@@ -19,6 +19,43 @@ public sealed class CreditWindowSpecs
     }
 
     [TestMethod]
+    public void MissingBoundCampaignLedgerFailsCoordinatorOpenWithoutCreatingReplacementFile()
+    {
+        using ScratchDirectory scratch = new();
+        RunConfiguration configuration = new()
+        {
+            RepositoryPath = scratch.PathFor("checkout"),
+            StatePath = scratch.PathFor("run"),
+            CampaignLedgerPath = scratch.PathFor("campaign.sqlite"),
+            Goal = "Do not replace a missing campaign ledger for a bound run.",
+        };
+        RunDatabase database = new(configuration.StatePath, configuration);
+        CollaborationOperations collaboration = new(database);
+        LightweightGitWorkspace workspace = new(database, collaboration);
+        _ = new Coordinator(database, collaboration, workspace, nativeWorkerFactory: null);
+        string? binding = database.ReadMetadata("native:ledger_binding");
+        Assert.IsNotNull(binding);
+
+        string path = configuration.CampaignLedgerPath;
+        Assert.IsTrue(File.Exists(path));
+        using (SqliteConnection connection = new(Sql.ConnectionStringFor(path)))
+        {
+            SqliteConnection.ClearPool(connection);
+        }
+        File.Delete(path);
+        File.Delete(path + "-wal");
+        File.Delete(path + "-shm");
+        Assert.IsFalse(File.Exists(path));
+
+        OperationException refused = Assert.ThrowsExactly<OperationException>(() =>
+            new Coordinator(database, collaboration, workspace, nativeWorkerFactory: null)
+        );
+        Assert.AreEqual("credit_unknown", refused.Code);
+        Assert.IsFalse(File.Exists(path));
+        Assert.AreEqual(binding, database.ReadMetadata("native:ledger_binding"));
+    }
+
+    [TestMethod]
     [TestCategory("SharedBackingAndReuse")]
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task PeerExceedsEqualShareAndCompletedWindowsReturnReusableBacking()
