@@ -499,6 +499,27 @@ local dotenv_linter = new Mapping<String, Step> {
   }
 }
 
+local tla_linters = new Mapping<String, Step> {
+  ["tla-sany"] {
+    profiles = List("small")
+    exclude = general_exclude_list
+    batch = true
+    glob = List("*.tla")
+    check = new Command {
+      argv =
+        List(
+          "python",
+          "eng/scripts/tla.py",
+          "sany",
+          "--driver",
+          "eng/linter/TlaSanyCheck.java",
+          "--",
+          "{{files}}",
+        )
+    }
+  }
+}
+
 local commit_message_linters = new Mapping<String, Step> {
   ["commitlint"] = (Steps.commitlint) { check_first = true }
 }
@@ -518,6 +539,7 @@ local file_steps = new Mapping<String, Step> {
   ...javascript_typescript_linters
   ...python_linters
   ...dotenv_linter
+  ...tla_linters
 }
 
 local configured_steps = new Mapping<String, Step> {

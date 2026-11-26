@@ -59,6 +59,9 @@ typos = "latest"
 # .env
 dotenv-linter = "latest"
 
+# TLA+
+"github:tlaplus/tlaplus" = { version = "v1.7.4", asset_pattern = "tla2tools.jar" }
+
 #
 # Utilities
 #
@@ -157,6 +160,10 @@ run = "apm install --only mcp"
 [tasks."nanopass:verify-formal-spec"]
 description = "Run the clean-room Z3 formal specification checks for Hcoona.Nanopass"
 run = "uv run --script src/public/lib/Nanopass/scripts/verify_formal_spec.py"
+
+[tasks."tla:tlc"]
+description = "Run TLC finite-state model checking with an isolated temporary -metadir"
+run = "python eng/scripts/tla.py tlc"
 
 [tasks."records:check"]
 description = "Validate repository records against an explicit base and candidate"

@@ -34,6 +34,12 @@ PROVIDER_LOCKS = {
 NON_LINTER_EXECUTABLES = frozenset(
     {"python", "python3", "node", "npx", "uv", "uvx", "pnpm", "pnpx"}
 )
+SCRIPT_LINTERS: dict[tuple[str, ...], tuple[tuple[str, str], ...]] = {
+    ("python", "eng/scripts/tla.py", "sany"): (
+        ("mise", "java"),
+        ("mise", "github:tlaplus/tlaplus"),
+    ),
+}
 NODE_BIN_PREFIX = "./node_modules/.bin/"
 PKL = ("mise", "exec", "--locked", "pkl", "--", "pkl", "eval", "-f", "json")
 STEP_COMMANDS = ("check", "check_diff", "fix")
@@ -203,9 +209,9 @@ def _linter_from_tokens(rest: list[str]) -> tuple[str, str] | None:
     return provider, rest[0]
 
 
-def _structured_linter(
+def _structured_tokens(
     unwrapped: dict[str, object], prefix: object
-) -> tuple[str, str] | None:
+) -> list[str] | None:
     argv = unwrapped.get("argv")
     if not isinstance(argv, list) or not all(
         isinstance(item, str) for item in argv
@@ -217,7 +223,7 @@ def _structured_linter(
     ):
         return None
     head = list(prefix) if isinstance(prefix, list) else []
-    return _linter_from_tokens([*head, *argv])
+    return [*head, *argv]
 
 
 def command_linter(
@@ -225,9 +231,26 @@ def command_linter(
 ) -> tuple[str, str] | None:
     """Return the provider and linter a structured `Config.Command` runs."""
     unwrapped = _unwrap_command_spec(spec)
-    if isinstance(unwrapped, dict):
-        return _structured_linter(unwrapped, prefix)
+    if isinstance(unwrapped, dict) and (
+        tokens := _structured_tokens(unwrapped, prefix)
+    ):
+        return _linter_from_tokens(tokens)
     return None
+
+
+def command_linters(
+    spec: object, prefix: object = None
+) -> tuple[tuple[str, str] | None, ...]:
+    """Return every locked tool a structured `Config.Command` depends on."""
+    unwrapped = _unwrap_command_spec(spec)
+    if isinstance(unwrapped, dict) and (
+        tokens := _structured_tokens(unwrapped, prefix)
+    ):
+        for script_prefix, linters in SCRIPT_LINTERS.items():
+            if tuple(tokens[: len(script_prefix)]) == script_prefix:
+                return linters
+        return (_linter_from_tokens(tokens),)
+    return (None,)
 
 
 def file_step_linters(
@@ -243,7 +266,7 @@ def file_step_linters(
             step[key] for key in STEP_COMMANDS if step.get(key) is not None
         ]
         mapping[name] = frozenset(
-            command_linter(spec, prefix) for spec in specs
+            linter for spec in specs for linter in command_linters(spec, prefix)
         )
     return mapping
 
@@ -362,11 +385,11 @@ class _LockedVersions:
                     if _normalize_python_name(package["name"])
                     == _normalize_python_name(linter)
                 }
-            elif tool := self._mise_tool(linter):
-                found = {
-                    entry["version"]
-                    for entry in lock.get("tools", {}).get(tool, [])
-                }
+            else:
+                tools = lock.get("tools", {})
+                tool = linter if linter in tools else self._mise_tool(linter)
+                if tool:
+                    found = {entry["version"] for entry in tools.get(tool, [])}
         return frozenset(found) or None
 
 
