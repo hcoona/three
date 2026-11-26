@@ -166,6 +166,9 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_release_triage.py" &&
             (path is "eng/scripts/release_triage.py" or ".github/workflows/release-triage.yml" or
                 "version.json" || IsPublicInventoryInput(path))) ||
+        (target == "tests/eng/test_workflow_delivery_v3_hk.py" &&
+            path is "eng/scripts/hk_exec.py" or "eng/scripts/hk_actionlint.py" or
+                "eng/scripts/hk_file_operands.py") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
             path is "eng/scripts/sync_python_version.py" or
                 "eng/scripts/workflow_delivery_v3_hk.py" or

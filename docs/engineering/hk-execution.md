@@ -194,13 +194,17 @@ With `--staged`, the endpoints are `HEAD` and the index.
 [hk_exec.py](../../eng/scripts/hk_exec.py) normalizes quoted file arguments
 and splits the command from the file list at the first `--hk-files` marker,
 falling back to the **last** `--` for the legacy form, as described above.
-It also supports per-file execution, heartbeats, timeout handling, and process-tree termination. Its controls are
-`HK_EXEC_TIMEOUT_SECONDS`, `HK_EXEC_HEARTBEAT_SECONDS`, and `HK_EXEC_PER_FILE`;
+By default it passes the surviving file batch to one command invocation under
+blocking `process.wait` supervision with heartbeats, timeout handling, and
+process-tree termination, retaining opt-in per-file diagnostic execution via
+`HK_EXEC_PER_FILE`. Its controls are `HK_EXEC_TIMEOUT_SECONDS` (or
+`--timeout-seconds`), `HK_EXEC_HEARTBEAT_SECONDS`, and `HK_EXEC_PER_FILE`;
 the implementation owns their defaults and command-line overrides.
 
 [hk_pkl_eval.py](../../eng/scripts/hk_pkl_eval.py) evaluates Pkl files
 individually, preserving failure output and normalizing quoted paths.
-[hk_actionlint.py](../../eng/scripts/hk_actionlint.py) adds a watchdog with
+[hk_actionlint.py](../../eng/scripts/hk_actionlint.py) runs a batched
+`actionlint` invocation under the same watchdog with
 `HK_ACTIONLINT_TIMEOUT_SECONDS` and `HK_ACTIONLINT_HEARTBEAT_SECONDS`, plus
 optional `HK_ACTIONLINT_SHELLCHECK` and `HK_ACTIONLINT_PYFLAKES` executable
 overrides. In the inspected accepted source, unset integration overrides add

@@ -227,6 +227,9 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_node_release_schedule.py", "tests/eng/ci_workflow_shell.py")]
     [DataRow("tests/eng/test_release_batch_dispatch.py", "tests/eng/ci_workflow_shell.py")]
     [DataRow("tests/eng/test_workflow_delivery_v3_hk.py", "tests/eng/ci_workflow_shell.py")]
+    [DataRow("tests/eng/test_workflow_delivery_v3_hk.py", "eng/scripts/hk_exec.py")]
+    [DataRow("tests/eng/test_workflow_delivery_v3_hk.py", "eng/scripts/hk_actionlint.py")]
+    [DataRow("tests/eng/test_workflow_delivery_v3_hk.py", "eng/scripts/hk_file_operands.py")]
     [DataRow("tests/eng/test_python_release_caller.py", "global.json")]
     [DataRow("tests/eng/test_python_release_caller.py", "tests/eng/ci_workflow_shell.py")]
     [DataRow("tests/eng/test_browser_store_release_caller.py",
