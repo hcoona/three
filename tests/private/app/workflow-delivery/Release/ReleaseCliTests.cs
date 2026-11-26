@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Destinations;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Tests.Release;
@@ -263,6 +264,61 @@ public sealed class ReleaseCliTests
         Assert.IsEmpty(result.Prepared.Files);
     }
 
+    [TestMethod]
+    [DataRow("unknown-unit", "official", "npmjs", "Unsupported npm Release unit.")]
+    [DataRow(NpmReleaseUnits.Hexo, "buddy", "npmjs",
+        "Unsupported selected npm destination and mode.")]
+    [DataRow(NpmReleaseUnits.Hexo, "official", "github-packages-npm",
+        "Unsupported selected npm destination and mode.")]
+    public void StandaloneNpmCommandsRejectUnadmittedUnitsAndMismatchedChannelPairs(string unit,
+        string channel, string destination, string expectedDiagnostic)
+    {
+        using var files = new Files();
+        string suffix = destination == "npmjs" ? "npmjs" : "github-npm";
+        string check = destination == "npmjs" ? "metadata" : "visibility";
+        ReleaseFile file = files.Prepared.Files[0];
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        (string dryPrepared, string dryObserved) = WriteCase(dryRun: true);
+        Assert.AreEqual(2, Program.Run(["release", "describe-" + suffix, dryPrepared, dryObserved],
+            output, error));
+        Assert.AreEqual("", output.ToString());
+        Assert.Contains(expectedDiagnostic, error.ToString());
+
+        output.GetStringBuilder().Clear();
+        error.GetStringBuilder().Clear();
+        (string livePrepared, string liveObserved) = WriteCase(dryRun: false);
+        Assert.AreEqual(2, Program.Run(["release", "complete-" + suffix, livePrepared,
+            liveObserved, liveObserved, "-"], output, error));
+        Assert.AreEqual("", output.ToString());
+        Assert.Contains(expectedDiagnostic, error.ToString());
+
+        (string PreparedPath, string ObservedPath) WriteCase(bool dryRun)
+        {
+            string tag = dryRun ? "dry" : "live";
+            PreparedRelease candidate = files.Prepared with
+            {
+                Subject = files.Prepared.Subject with
+                {
+                    Unit = unit,
+                    Channel = channel,
+                    Destination = destination,
+                    DryRun = dryRun,
+                },
+            };
+            string prep = files.Write(tag + "-prepared.json", JsonSerializer.Serialize(
+                new ReleasePreparationResult(candidate, new(StringComparer.Ordinal), [], []),
+                TransferJson.Default.ReleasePreparationResult));
+            string obs = files.Write(tag + "-observed.json", JsonSerializer.Serialize(
+                new ReleaseObservationResult(new(candidate.Subject,
+                    [new(file.Output, file.Name, file.Version, ReleaseFileState.Absent, null,
+                        null)], [check], [new(check, ReleaseCheckStatus.Passed)]), []),
+                TransferJson.Default.ReleaseObservationResult));
+            return (prep, obs);
+        }
+    }
+
     private sealed class Files : IDisposable
     {
         internal string Root { get; } = Directory.CreateTempSubdirectory("release-cli-").FullName;
@@ -273,8 +329,9 @@ public sealed class ReleaseCliTests
             byte[] bytes = [1, 2, 3];
             Directory.CreateDirectory(Path.Combine(Root, "original"));
             File.WriteAllBytes(Path.Combine(Root, "original/package.tgz"), bytes);
-            Prepared = new(new(new('a', 40), "refs/heads/feature", "example",
-                "product/release.yml", github ? "buddy" : "official",
+            Prepared = new(new(new('a', 40), "refs/heads/main", NpmReleaseUnits.Hexo,
+                "src/public/lib/hexo-renderer-asciidoc/workflow-delivery.release-unit.yml",
+                github ? "buddy" : "official",
                 github ? "github-packages-npm" : "npmjs", true),
                 [new("build", "archive", "npm-tarball", "@example/package", "1.2.3",
                     "original/package.tgz", bytes.Length,
