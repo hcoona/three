@@ -14,10 +14,16 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     [TestMethod]
     [TestCategory("EndReasonAndDeliveryControl")]
     [Timeout(60_000, CooperativeCancellation = true)]
-    public async Task ActiveGitCheckSupervisionHonorsOwnerPauseAndRefusedFinalizePreservesDeliveryState()
+    public async Task
+        ActiveGitCheckSupervisionHonorsOwnerPauseAndRefusedFinalizePreservesDeliveryState()
     {
         CancellationToken token = testContext.CancellationToken;
+        const string SecondCandidateFile = "second-candidate.txt";
+        const string UnresolvedLeaseFile = "unresolved-lease.txt";
         int checkPhase = 0;
+        int finalChecks = 0;
+        int holdFinalCheck = 0;
+        RunDatabase? scenarioDatabase = null;
         TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource resumeHeldEntered = new(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -25,15 +31,55 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
         TaskCompletionSource releaseResumeHeld = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
+        TaskCompletionSource postQuiescenceEntered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        TaskCompletionSource finalHeldEntered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        TaskCompletionSource directFinalHeldEntered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        TaskCompletionSource unresolvedEntered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        TaskCompletionSource releaseUnresolved = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         CoordinatorScenarioRun state = await CoordinatorScenarioRun.CreateAsync(
             testContext,
             token,
             ownedHosts: false,
             realGit: true,
-            configuredCheck: async (executable, _, _, _, checkToken) =>
+            configuredCheck: async (executable, _, cwd, _, checkToken) =>
             {
                 if (executable == "held-candidate-check")
                 {
+                    if (File.Exists(Path.Combine(cwd, UnresolvedLeaseFile)))
+                    {
+                        unresolvedEntered.TrySetResult();
+                        try
+                        {
+                            await releaseUnresolved.Task.WaitAsync(checkToken)
+                                .ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                        }
+                        using var connection = scenarioDatabase!.Open();
+                        Sql.Execute(
+                            connection,
+                            """
+                            INSERT INTO process_leases(pid,start_ticks,kind,state,created_at)
+                            VALUES(999999,1,'command','unresolved','2026-04-01T00:00:00.0000000Z');
+                            """
+                        );
+                        throw new InvalidOperationException(
+                            "Owned command or inherited pipes did not settle; "
+                                + "replacement is blocked."
+                        );
+                    }
+
                     if (Volatile.Read(ref checkPhase) == 0)
                     {
                         entered.TrySetResult();
@@ -47,18 +93,47 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                         await releaseResumeHeld.Task.WaitAsync(checkToken).ConfigureAwait(false);
                     }
 
+                    if (File.Exists(Path.Combine(cwd, SecondCandidateFile))
+                        && Interlocked.CompareExchange(ref checkPhase, 3, 2) == 2)
+                    {
+                        postQuiescenceEntered.TrySetResult();
+                        await Task.Delay(Timeout.InfiniteTimeSpan, checkToken)
+                            .ConfigureAwait(false);
+                    }
+
                     return new ProcessResult(0, "Controlled candidate check passed.", "", false);
                 }
 
                 Assert.AreEqual("pass-final", executable);
-                return new ProcessResult(0, "Controlled final check passed.", "", false);
+                int call = Interlocked.Increment(ref finalChecks);
+                int holdMode = Interlocked.Exchange(ref holdFinalCheck, 0);
+                if (holdMode == 1)
+                {
+                    finalHeldEntered.TrySetResult();
+                    await Task.Delay(Timeout.InfiniteTimeSpan, checkToken).ConfigureAwait(false);
+                }
+
+                if (holdMode == 2)
+                {
+                    directFinalHeldEntered.TrySetResult();
+                    await Task.Delay(Timeout.InfiniteTimeSpan, checkToken).ConfigureAwait(false);
+                }
+
+                return new ProcessResult(
+                    0,
+                    $"Controlled final check #{call} passed.",
+                    "",
+                    false
+                );
             }
         ).ConfigureAwait(false);
+        scenarioDatabase = state.Database;
         await state.RunBodyAsync(async () =>
         {
             state.Database.SaveConfiguration(state.Database.Configuration with
             {
-                CandidateChecks = [new() { Executable = "held-candidate-check", TimeoutSeconds = 120 }],
+                CandidateChecks =
+                    [new() { Executable = "held-candidate-check", TimeoutSeconds = 120 }],
                 FinalChecks = [new() { Executable = "pass-final", TimeoutSeconds = 30 }],
             });
             Coordinator inspector = state.Coordinator("status");
@@ -140,7 +215,8 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
                 ["head"] = head,
             }, token).ConfigureAwait(false);
             Assert.AreEqual("pending", pending["state"]!.GetValue<string>());
-            JsonObject finalizeControl = GitScenarioState.Data(inspector.RequestControl("finalize"));
+            JsonObject finalizeControl =
+                GitScenarioState.Data(inspector.RequestControl("finalize"));
             JsonObject refused = await inspector.FinalizeAsync(token).ConfigureAwait(false);
             Assert.IsFalse(refused["ok"]!.GetValue<bool>());
             Assert.AreEqual("conflict", refused["code"]!.GetValue<string>());
@@ -164,9 +240,8 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
             Assert.AreEqual("conflict", recordedControl["code"]!.GetValue<string>());
 
             // Resume must not livelock on the consumed refused finalize control, and a second
-            // integration enqueued while the first check is held (after that pass's snapshot)
-            // must stay pending across the active pass and be drained by the post-quiescence
-            // Git pass when finalize is requested.
+            // integration enqueued after that pass's snapshot must stay pending for the
+            // post-quiescence Git pass when finalize is requested.
             Volatile.Write(ref checkPhase, 1);
             _ = state.Start("resume");
             ControlledSessionPool.Turn[] postRefusalTurns = await ReadPeerTurnsAsync(state, token)
@@ -174,7 +249,7 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
             await state.FixedAsync(resumeHeldEntered.Task, token).ConfigureAwait(false);
 
             (JsonObject secondChange, JsonObject secondPending) = await SubmitReviewedAsync(
-                state, "worker2", "worker1", "second-candidate.txt", "Second change.\n", token
+                state, "worker2", "worker1", SecondCandidateFile, "Second change.\n", token
             ).ConfigureAwait(false);
             releaseResumeHeld.TrySetResult();
 
@@ -197,42 +272,336 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
             ControlledSessionPool.Turn[] integratedNotices =
                 await ReadPeerTurnsAsync(state, token).ConfigureAwait(false);
             await CompletePeerTurnsAsync(state, integratedNotices, token).ConfigureAwait(false);
-            GitScenarioState.Data(inspector.RequestControl("finalize"));
+            JsonObject interruptedFinalize =
+                GitScenarioState.Data(inspector.RequestControl("finalize"));
             state.Clock.Advance(finalPoll, state.WorkDeadline, token);
+            await state.FixedAsync(postQuiescenceEntered.Task, token).ConfigureAwait(false);
+            Assert.IsTrue(state.Handoff!.OwnerStopped.Task.IsCompletedSuccessfully);
+            Assert.IsFalse(state.Active.IsCompleted);
 
-            JsonObject finalizedAfterResume = GitScenarioState.Data(await state.Active
+            JsonObject postQuiescencePause =
+                GitScenarioState.Data(inspector.RequestControl("pause"));
+            JsonObject pausedAfterQuiescence = GitScenarioState.Data(await state.Active
                 .WaitAsync(TimeSpan.FromSeconds(15), token).ConfigureAwait(false));
-            Assert.IsTrue(finalizedAfterResume["accepted"]!.GetValue<bool>());
+            Assert.AreEqual("paused", pausedAfterQuiescence["lifecycle"]!.GetValue<string>());
+            Assert.AreEqual("owner-pause", pausedAfterQuiescence["stopReason"]!.GetValue<string>());
+            Assert.AreEqual("owner-pause", StatusData(inspector)["stopReason"]!.GetValue<string>());
+            Assert.AreEqual(1, Volatile.Read(ref finalChecks));
+            Assert.AreEqual("completed", state.Value(
+                "SELECT state FROM coordinator_controls WHERE id=$id;",
+                ("$id", postQuiescencePause["requestId"]!.GetValue<long>())
+            ));
+            Assert.AreEqual("pending", state.Value(
+                "SELECT state FROM coordinator_controls WHERE id=$id;",
+                ("$id", interruptedFinalize["requestId"]!.GetValue<long>())
+            ));
+            Assert.AreEqual("failed", state.Value(
+                "SELECT state FROM integration_requests WHERE id=$id;",
+                ("$id", secondPending["requestId"]!.GetValue<long>())
+            ));
+
+            // Cancellation retains the candidate but terminates its attempt. Retry the same head.
+            JsonObject retry = await state.GitToolAsync("worker2", "change_write", new()
+            {
+                ["action"] = "integrate",
+                ["id"] = secondChange["id"]!.GetValue<long>(),
+                ["head"] = secondChange["head"]!.GetValue<string>(),
+            }, token).ConfigureAwait(false);
+            Assert.AreEqual("pending", retry["state"]!.GetValue<string>());
+
+            // Consume the retained finalize request as a quiescent refusal before resuming,
+            // after verifying a pre-cancelled direct FinalizeAsync does not consume it.
+            using (CancellationTokenSource preCancelled = new())
+            {
+                await preCancelled.CancelAsync().ConfigureAwait(false);
+                _ = await Assert
+                    .ThrowsAsync<OperationCanceledException>(
+                        () => inspector.FinalizeAsync(preCancelled.Token)
+                    )
+                    .ConfigureAwait(false);
+            }
+            Assert.AreEqual("pending", state.Value(
+                "SELECT state FROM coordinator_controls WHERE id=$id;",
+                ("$id", interruptedFinalize["requestId"]!.GetValue<long>())
+            ));
+            JsonObject retryRefusal = await inspector.FinalizeAsync(token).ConfigureAwait(false);
+            Assert.AreEqual("conflict", retryRefusal["code"]!.GetValue<string>());
+            _ = state.Start("resume");
+            ControlledSessionPool.Turn[] retryTurns = await ReadPeerTurnsAsync(state, token)
+                .ConfigureAwait(false);
+            await state.WaitDurableAsync(
+                () => (string?)state.Value(
+                    "SELECT state FROM integration_requests WHERE id=$id;",
+                    ("$id", retry["requestId"]!.GetValue<long>())
+                ) == "succeeded",
+                state.WorkDeadline,
+                token
+            ).ConfigureAwait(false);
+            ObservedManualClock.ObservedPoll retryPoll =
+                await state.ObserveOwnerPollAsync(token).ConfigureAwait(false);
+            await CompletePeerTurnsAsync(state, retryTurns, token).ConfigureAwait(false);
+            ControlledSessionPool.Turn[] retryNotices = await ReadPeerTurnsAsync(state, token)
+                .ConfigureAwait(false);
+            await CompletePeerTurnsAsync(state, retryNotices, token).ConfigureAwait(false);
+
+            // Hold the final-delivery check itself and verify pause interrupts finalization
+            // without marking the interrupted finalize control completed or publishing delivery.
+            Volatile.Write(ref holdFinalCheck, 1);
+            JsonObject heldFinalize =
+                GitScenarioState.Data(inspector.RequestControl("finalize"));
+            state.Clock.Advance(retryPoll, state.WorkDeadline, token);
+            await state.FixedAsync(finalHeldEntered.Task, token).ConfigureAwait(false);
+            Assert.IsFalse(state.Active.IsCompleted);
+
+            JsonObject finalCheckPause =
+                GitScenarioState.Data(inspector.RequestControl("pause"));
+            JsonObject pausedDuringFinalCheck = GitScenarioState.Data(await state.Active
+                .WaitAsync(TimeSpan.FromSeconds(15), token).ConfigureAwait(false));
+            Assert.AreEqual("paused", pausedDuringFinalCheck["lifecycle"]!.GetValue<string>());
+            Assert.AreEqual(
+                "owner-pause",
+                pausedDuringFinalCheck["stopReason"]!.GetValue<string>()
+            );
+            Assert.AreEqual("false", state.Database.ReadMetadata("git:finalized"));
+            Assert.AreEqual(2, Volatile.Read(ref finalChecks));
+            Assert.AreEqual("completed", state.Value(
+                "SELECT state FROM coordinator_controls WHERE id=$id;",
+                ("$id", finalCheckPause["requestId"]!.GetValue<long>())
+            ));
+            Assert.AreEqual("pending", state.Value(
+                "SELECT state FROM coordinator_controls WHERE id=$id;",
+                ("$id", heldFinalize["requestId"]!.GetValue<long>())
+            ));
+
+            // Direct quiescent FinalizeAsync cancellation restores quiescent lifecycle without
+            // consuming the queued finalize request.
+            Volatile.Write(ref holdFinalCheck, 2);
+            using (
+                CancellationTokenSource directCancel =
+                    CancellationTokenSource.CreateLinkedTokenSource(token)
+            )
+            {
+                Task<JsonObject> directFinalize = inspector.FinalizeAsync(directCancel.Token);
+                await directFinalHeldEntered.Task
+                    .WaitAsync(TimeSpan.FromSeconds(15), token)
+                    .ConfigureAwait(false);
+                await directCancel.CancelAsync().ConfigureAwait(false);
+                _ = await Assert
+                    .ThrowsAsync<OperationCanceledException>(() => directFinalize)
+                    .ConfigureAwait(false);
+            }
+            Assert.AreEqual("paused", StatusData(inspector)["lifecycle"]!.GetValue<string>());
+            Assert.AreEqual("pending", state.Value(
+                "SELECT state FROM coordinator_controls WHERE id=$id;",
+                ("$id", heldFinalize["requestId"]!.GetValue<long>())
+            ));
+
+            // Completing finalization while quiescent fulfills the retained pending finalize.
+            JsonObject finalizedAfterPause = GitScenarioState.Data(
+                await inspector.FinalizeAsync(token).ConfigureAwait(false)
+            );
+            Assert.IsTrue(finalizedAfterPause["accepted"]!.GetValue<bool>());
             Assert.AreEqual("finalized", StatusData(inspector)["lifecycle"]!.GetValue<string>());
+            Assert.AreEqual(4, Volatile.Read(ref finalChecks));
+            Assert.AreEqual("completed", state.Value(
+                "SELECT state FROM coordinator_controls WHERE id=$id;",
+                ("$id", heldFinalize["requestId"]!.GetValue<long>())
+            ));
             Assert.AreEqual("succeeded", state.Value(
                 "SELECT state FROM integration_requests WHERE id=$id;",
                 ("$id", pending["requestId"]!.GetValue<long>())
             ));
             Assert.AreEqual("succeeded", state.Value(
                 "SELECT state FROM integration_requests WHERE id=$id;",
-                ("$id", secondPending["requestId"]!.GetValue<long>())
+                ("$id", retry["requestId"]!.GetValue<long>())
             ));
-            _ = secondChange;
 
-            // Standalone FinalizeAsync throwing an expected recovery exception must also
-            // record a terminal control result rather than stranding a pending finalize row.
+            // An unsettled process lease recorded during a segment Git pass blocks quiescent
+            // publication and leaves any pending pause control unacknowledged.
+            _ = state.Start("resume");
+            ControlledSessionPool.Turn[] leaseTurns = await ReadPeerTurnsAsync(state, token)
+                .ConfigureAwait(false);
+            ObservedManualClock.ObservedPoll leasePoll =
+                await state.ObserveOwnerPollAsync(token).ConfigureAwait(false);
+            _ = await SubmitReviewedAsync(
+                state, "worker1", "worker2", UnresolvedLeaseFile, "Unsettled pipe.\n", token
+            ).ConfigureAwait(false);
+            state.Clock.Advance(leasePoll, state.WorkDeadline, token);
+            await state.FixedAsync(unresolvedEntered.Task, token).ConfigureAwait(false);
+            await CompletePeerTurnsAsync(state, leaseTurns, token).ConfigureAwait(false);
+            ControlledSessionPool.Turn[] leaseNotices = await ReadPeerTurnsAsync(state, token)
+                .ConfigureAwait(false);
+            await CompletePeerTurnsAsync(state, leaseNotices, token).ConfigureAwait(false);
+            JsonObject unresolvedPause =
+                GitScenarioState.Data(inspector.RequestControl("pause"));
+            releaseUnresolved.TrySetResult();
+            JsonObject unresolvedSegment = await state.Active
+                .WaitAsync(TimeSpan.FromSeconds(15), token)
+                .ConfigureAwait(false);
+            Assert.IsFalse(unresolvedSegment["ok"]!.GetValue<bool>());
+            Assert.AreEqual(
+                "ownership_or_usage_unresolved",
+                unresolvedSegment["code"]!.GetValue<string>()
+            );
+            Assert.AreEqual("unresolved", StatusData(inspector)["lifecycle"]!.GetValue<string>());
+            Assert.AreEqual("pending", state.Value(
+                "SELECT state FROM coordinator_controls WHERE id=$id;",
+                ("$id", unresolvedPause["requestId"]!.GetValue<long>())
+            ));
+            using (var connection = state.Database.Open())
+            {
+                Sql.Execute(
+                    connection,
+                    "UPDATE process_leases SET state='exited' WHERE state='unresolved';"
+                );
+            }
+            state.Database.WriteMetadata("lifecycle", "finalized");
+
+            // An expected recovery exception does not establish quiescence.
             state.Database.WriteMetadata("lifecycle:ownership_ambiguity", "injected ambiguity");
             JsonObject thrownControl = GitScenarioState.Data(inspector.RequestControl("finalize"));
             JsonObject thrownFinalize = await inspector.FinalizeAsync(token).ConfigureAwait(false);
             Assert.IsFalse(thrownFinalize["ok"]!.GetValue<bool>());
             Assert.AreEqual("ownership_unresolved", thrownFinalize["code"]!.GetValue<string>());
-            Assert.AreEqual("completed", state.Value(
+            Assert.AreEqual("pending", state.Value(
                 "SELECT state FROM coordinator_controls WHERE id=$id;",
                 ("$id", thrownControl["requestId"]!.GetValue<long>())
             ));
-            Assert.IsTrue(JsonNode.DeepEquals(
-                thrownFinalize,
-                JsonNode.Parse((string)state.Value(
-                    "SELECT result FROM coordinator_controls WHERE id=$id;",
-                    ("$id", thrownControl["requestId"]!.GetValue<long>())
-                )!)
-            ));
+            Assert.AreEqual("unresolved", StatusData(inspector)["lifecycle"]!.GetValue<string>());
             state.Database.WriteMetadata("lifecycle:ownership_ambiguity", "");
+
+            // Direct FinalizeAsync cancelled before recovery settles still exposes an unsettled
+            // lease as unresolved rather than masking it behind OperationCanceledException.
+            state.Database.WriteMetadata("lifecycle", "paused");
+            using (var connection = state.Database.Open())
+            {
+                Sql.Execute(
+                    connection,
+                    """
+                    INSERT INTO process_leases(pid,start_ticks,kind,state,created_at)
+                    VALUES(999998,1,'command','unresolved','2026-04-01T00:00:00.0000000Z');
+                    """
+                );
+            }
+            using (CancellationTokenSource preRecoveryCancel = new())
+            {
+                await preRecoveryCancel.CancelAsync().ConfigureAwait(false);
+                JsonObject cancelledUnresolved = await inspector
+                    .FinalizeAsync(preRecoveryCancel.Token)
+                    .ConfigureAwait(false);
+                Assert.IsFalse(cancelledUnresolved["ok"]!.GetValue<bool>());
+                Assert.AreEqual(
+                    "ownership_or_usage_unresolved",
+                    cancelledUnresolved["code"]!.GetValue<string>()
+                );
+            }
+            Assert.AreEqual("unresolved", StatusData(inspector)["lifecycle"]!.GetValue<string>());
+            Assert.AreEqual("pending", state.Value(
+                "SELECT state FROM coordinator_controls WHERE id=$id;",
+                ("$id", thrownControl["requestId"]!.GetValue<long>())
+            ));
+            using (var connection = state.Database.Open())
+            {
+                Sql.Execute(
+                    connection,
+                    "UPDATE process_leases SET state='exited' WHERE state='unresolved';"
+                );
+            }
+
+            // Unsettled reservation state and unreadable ledger during pre-recovery cancellation
+            // also commit unresolved without consuming pending controls.
+            state.Database.WriteMetadata("lifecycle", "paused");
+            CreditReservation unsettledReservation = state.Ledger.Reserve(
+                state.Database.RunId,
+                "worker1",
+                0,
+                state.Database.Configuration.RunAiCreditAllowance,
+                state.Database.CreateSdkEvidencePath("worker1"),
+                shared: true
+            );
+            using (CancellationTokenSource reservationCancel = new())
+            {
+                await reservationCancel.CancelAsync().ConfigureAwait(false);
+                JsonObject cancelledReservation = await inspector
+                    .FinalizeAsync(reservationCancel.Token)
+                    .ConfigureAwait(false);
+                Assert.AreEqual(
+                    "ownership_or_usage_unresolved",
+                    cancelledReservation["code"]!.GetValue<string>()
+                );
+            }
+            Assert.AreEqual("unresolved", StatusData(inspector)["lifecycle"]!.GetValue<string>());
+            Assert.AreEqual("pending", state.Value(
+                "SELECT state FROM coordinator_controls WHERE id=$id;",
+                ("$id", thrownControl["requestId"]!.GetValue<long>())
+            ));
+            state.Ledger.ReleaseUnstarted(unsettledReservation.Id);
+
+            state.Database.WriteMetadata("lifecycle", "paused");
+            using (var connection = state.Database.Open())
+            {
+                Sql.Execute(
+                    connection,
+                    """
+                    INSERT INTO process_leases(pid,start_ticks,kind,state,created_at)
+                    VALUES(999997,1,'command','running','2026-04-01T00:00:00.0000000Z');
+                    """
+                );
+            }
+            using (
+                Microsoft.Data.Sqlite.SqliteConnection ledgerStore = new(
+                    Sql.ConnectionStringFor(state.Database.Configuration.CampaignLedgerPath)
+                )
+            )
+            {
+                ledgerStore.Open();
+                Sql.Execute(
+                    ledgerStore,
+                    "ALTER TABLE credit_reservations RENAME TO credit_reservations_unavailable;"
+                );
+                try
+                {
+                    using CancellationTokenSource unreadableLedgerCancel = new();
+                    await unreadableLedgerCancel.CancelAsync().ConfigureAwait(false);
+                    JsonObject unreadableResult = await inspector
+                        .FinalizeAsync(unreadableLedgerCancel.Token)
+                        .ConfigureAwait(false);
+                    Assert.AreEqual(
+                        "ownership_or_usage_unresolved",
+                        unreadableResult["code"]!.GetValue<string>()
+                    );
+                    Assert.Contains(
+                        "credit_reservations",
+                        unreadableResult["message"]!.GetValue<string>()
+                    );
+                    Assert.Contains(
+                        "credit_reservations",
+                        state.Database.ReadMetadata("lifecycle:failure")!
+                    );
+                    Assert.AreEqual(
+                        "unresolved",
+                        state.Database.ReadMetadata("lifecycle")
+                    );
+                    Assert.AreEqual("pending", state.Value(
+                        "SELECT state FROM coordinator_controls WHERE id=$id;",
+                        ("$id", thrownControl["requestId"]!.GetValue<long>())
+                    ));
+                }
+                finally
+                {
+                    Sql.Execute(
+                        ledgerStore,
+                        "ALTER TABLE credit_reservations_unavailable RENAME TO credit_reservations;"
+                    );
+                }
+            }
+            using (var connection = state.Database.Open())
+            {
+                Sql.Execute(
+                    connection,
+                    "UPDATE process_leases SET state='exited' WHERE state='running';"
+                );
+            }
         }).ConfigureAwait(false);
     }
 
@@ -271,6 +640,47 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
             Assert.AreEqual("unresolved", status["lifecycle"]!.GetValue<string>());
             Assert.IsFalse(status["active"]!.GetValue<bool>());
         }).ConfigureAwait(false);
+
+        using ScratchDirectory calScratch = new();
+        RunConfiguration calConfiguration = new()
+        {
+            RepositoryPath = calScratch.PathFor("checkout"),
+            StatePath = calScratch.PathFor("cal-run"),
+            CampaignLedgerPath = calScratch.PathFor("cal-campaign.sqlite"),
+            Goal = "Settle shared calibration runtime even if failure persistence contends.",
+        };
+        RunDatabase calDatabase = new(calConfiguration.StatePath, calConfiguration);
+        CollaborationOperations calCollaboration = new(calDatabase);
+        LightweightGitWorkspace calGit = new(calDatabase, calCollaboration);
+        bool factoryCompleted = false;
+        Coordinator calCoordinator = new(
+            calDatabase,
+            calCollaboration,
+            calGit,
+            (_, _, _) => new FailingDisposeCalibrationFactory(() => factoryCompleted = true)
+        );
+        JsonObject preflighted = await calCoordinator.PreflightAsync(token).ConfigureAwait(false);
+        Assert.IsTrue(preflighted["ok"]!.GetValue<bool>());
+        factoryCompleted = false;
+        using (var connection = calDatabase.Open())
+        {
+            Sql.Execute(
+                connection,
+                """
+                CREATE TRIGGER block_cal_unresolved BEFORE UPDATE ON meta
+                WHEN NEW.key='lifecycle' AND NEW.value='unresolved'
+                BEGIN SELECT RAISE(ABORT, 'simulated calibration persistence failure'); END;
+                """
+            );
+        }
+        JsonObject calFailed = await calCoordinator.CalibrateAsync(token).ConfigureAwait(false);
+        Assert.IsTrue(factoryCompleted);
+        Assert.IsFalse(calFailed["ok"]!.GetValue<bool>());
+        Assert.AreEqual("credit_or_ownership_unknown", calFailed["code"]!.GetValue<string>());
+        Assert.Contains(
+            "simulated calibration persistence failure",
+            calFailed["message"]!.GetValue<string>()
+        );
     }
 
     [TestMethod]
@@ -1849,7 +2259,8 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
         List<ControlledSessionPool.Turn> turns = [];
         foreach (string worker in peerActors)
         {
-            turns.Add(await state.FixedAsync(next => state.Sessions.NextTurnAsync(worker, next), token)
+            turns.Add(await state.FixedAsync(
+                next => state.Sessions.NextTurnAsync(worker, next), token)
                 .ConfigureAwait(false));
         }
         return [.. turns];
@@ -2025,5 +2436,78 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
             )
             .ConfigureAwait(false);
         return (change, request);
+    }
+
+    private sealed class FailingDisposeCalibrationFactory(Action onComplete)
+        : INativeWorkerFactory
+    {
+        public JsonArray SettlementFailures { get; } = [];
+
+        public JsonArray SettlementDetails { get; } = [];
+
+        public INativeWorker Create(CreditReservation? reservation, bool calibration) =>
+            new FailingDisposeCalibrationWorker(reservation?.Id ?? "cal-res");
+
+        public Task<JsonObject> PreflightAsync(
+            IReadOnlyList<(string Worker, string Cwd)> peers,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                new JsonObject
+                {
+                    ["sessionId"] = "preflight-session",
+                    ["sessions"] = new JsonArray(),
+                }
+            );
+
+        public Task CompleteAsync()
+        {
+            onComplete();
+            return Task.CompletedTask;
+        }
+
+        public Task<RecoveredNativeUsage> ReadSettledUsageAsync(
+            CreditReservation reservation,
+            string cwd,
+            string evidencePrefix,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+    }
+
+    private sealed class FailingDisposeCalibrationWorker(string reservationId) : INativeWorker
+    {
+        public string? SessionId => "cal-session";
+
+        public string ReservationId { get; } = reservationId;
+
+        public JsonObject? Diagnostic => null;
+
+        public string? NativeFailure => null;
+
+        public Task StartAsync(
+            string cwd,
+            string? exactSession,
+            CancellationToken cancellationToken,
+            string? recoveryLabel = null,
+            WorkAdmission? admission = null
+        ) => Task.CompletedTask;
+
+        public Task<JsonObject> PromptAsync(
+            string text,
+            CancellationToken cancellationToken,
+            WorkAdmission? admission = null
+        ) => Task.FromResult(new JsonObject { ["text"] = "READY" });
+
+        public Task VerifyCreditsAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task StopAsync() => Task.CompletedTask;
+
+        public ValueTask DisposeAsync() =>
+            ValueTask.FromException(
+                new OperationException(
+                    "ownership_unresolved",
+                    "Simulated calibration session dispose failure."
+                )
+            );
     }
 }

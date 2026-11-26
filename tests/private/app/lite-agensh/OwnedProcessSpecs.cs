@@ -291,6 +291,30 @@ public sealed class OwnedProcessSpecs(TestContext context)
         Assert.AreEqual(unresolved, handoff.State.Lease(id: live.Id));
         Assert.IsFalse(holder.HasExited);
 
+        CollaborationOperations collaboration = new(handoff.State.Database);
+        LightweightGitWorkspace workspace = new(handoff.State.Database, collaboration);
+        Coordinator coordinator = new(
+            handoff.State.Database,
+            collaboration,
+            workspace,
+            nativeWorkerFactory: null
+        );
+        JsonObject pendingPause = GitScenarioState.Data(coordinator.RequestControl("pause"));
+        JsonObject finalizeRefusal = await coordinator
+            .FinalizeAsync(entry.Token)
+            .ConfigureAwait(false);
+        Assert.IsFalse(finalizeRefusal["ok"]!.GetValue<bool>());
+        Assert.AreEqual("unavailable", finalizeRefusal["code"]!.GetValue<string>());
+        Assert.AreEqual(
+            "unresolved",
+            GitScenarioState.Data(coordinator.Status())["lifecycle"]!.GetValue<string>()
+        );
+        Assert.AreEqual(
+            pendingPause["requestId"]!.GetValue<long>(),
+            GitScenarioState.Data(coordinator.RequestControl("pause"))["requestId"]!
+                .GetValue<long>()
+        );
+
         await handoff.HolderControl.ReleaseAsync(context.CancellationToken).ConfigureAwait(false);
         await JoinExitAsync(holder, context.CancellationToken).ConfigureAwait(false);
         handoff.Complete();
