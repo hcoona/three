@@ -403,3 +403,31 @@ and history.
   gold files; no unreviewed change to repository-locked tool/runtime versions or
   other projects' behavior; and no publication, release, credential or access
   change.
+
+### Provision native TLA+ toolchain and HK SANY source conformance
+
+- **Work carrier:** [Issue #1890](https://github.com/hcoona/three/issues/1890)
+  and its linked pull requests (prerequisite for
+  [Issue #1884](https://github.com/hcoona/three/issues/1884) and
+  [Issue #1897](https://github.com/hcoona/three/issues/1897)).
+- **Accepted inputs:** [governance](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [engineering principles](engineering/engineering-principles.md),
+  [workspaces](engineering/workspaces.md),
+  [HK execution](engineering/hk-execution.md), root `mise.toml`, `mise.lock`,
+  `hk.pkl`, `renovate.json`, `.github/workflows/ci.yml`, and Workflow Delivery
+  [repository selection](../src/private/app/workflow-delivery/docs/design/repository-and-selection.md).
+- **Advancement and outcome:** lock immutable upstream `tlaplus/tlaplus`
+  `tla2tools.jar` release assets (`linux-x64`, `windows-x64`) alongside locked
+  Temurin Java in `mise` with stable-only Renovate tracking; add fast `SANY`
+  syntax/semantic conformance for `*.tla` files in `hk.pkl` (with Java enabled
+  in CI `conformance` and HK lock-widening integration); provide an explicit
+  non-HK `mise` `TLC` runner using isolated temporary `-metadir` directories;
+  and document the `SANY` vs. `TLC` boundary in shared engineering guides.
+- **Exclusions and closure:** no MSBuild wrappers; keep `TLC` and `PlusCal`
+  outside HK hooks and `large` profiles; defer project `.tla`/`.cfg` `CiScope`
+  model-checking jobs, `Apalache`, `TLAPS`, `CommunityModules`, `tlafmt`, and
+  experimental native checkers until concrete specifications justify them; no
+  paid, credentialed, release, or repository-setting effects. Retain applicable
+  independent reviews and `GOV-011` disposition; delete this entry atomically in
+  the delivery PR that closes #1890.
