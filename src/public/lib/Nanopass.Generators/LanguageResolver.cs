@@ -199,9 +199,26 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
     private static void AddProduction(
         NonTerminalBuilder nonTerminal, LanguageModel.Production production)
     {
+        if (production.Alternative is { IsNonTerminal: true } inclusion
+            && Equal(inclusion.Target, nonTerminal.Name))
+        {
+            throw new Failure(
+                5, $"Nonterminal '{nonTerminal.Name}' cannot directly include itself.");
+        }
+
         if (nonTerminal.Productions.Any(item => Equal(item.Syntax, production.Syntax)))
         {
             throw new Failure(4, $"Duplicate production in add: '{production.Syntax}'.");
+        }
+
+        if (production.Alternative is { IsNonTerminal: true } targetInclusion
+            && nonTerminal.Productions.Any(item =>
+                item.Alternative is { IsNonTerminal: true } existing
+                && Equal(existing.Target, targetInclusion.Target)))
+        {
+            string message = $"Duplicate nonterminal inclusion in add: '{targetInclusion.Target}' "
+                + $"in '{nonTerminal.Name}'.";
+            throw new Failure(4, message);
         }
 
         nonTerminal.Productions.Add(production);

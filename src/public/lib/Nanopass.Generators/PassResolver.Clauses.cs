@@ -31,6 +31,12 @@ namespace Hcoona.Nanopass.Generators;
 
 internal sealed partial class PassResolver
 {
+    private readonly Dictionary<(PassModel.Kind From, PassModel.Kind To), bool>
+        inferredExistentialMemo = [];
+
+    private readonly Dictionary<(PassModel.Kind From, PassModel.Kind To), bool> inferredValidMemo =
+        [];
+
     private static string Node(PassModel.Processor processor) =>
         Local(processor.Method?.Parameters ?? processor.Parameters, "__np_node");
 
@@ -38,8 +44,75 @@ internal sealed partial class PassResolver
         PassModel.Processor processor, LanguageModel.Production rule, LanguageModel.Field field) =>
         rule.Alternative is not null ? Node(processor) : $"{Node(processor)}.{Id(field.Property)}";
 
+    private static HashSet<PassModel.Kind> ReachableTargetKinds(
+        PassGrammar grammar, PassModel.Kind root)
+    {
+        var kinds = new HashSet<PassModel.Kind> { root };
+        var queue = new Queue<PassModel.Kind>();
+        queue.Enqueue(root);
+        while (queue.Count > 0)
+        {
+            foreach (var candidate in grammar.Inclusions(queue.Dequeue()))
+            {
+                if (candidate.Alternative is { IsNonTerminal: true } inclusion
+                    && grammar.Find(inclusion) is { } nested
+                    && kinds.Add(nested))
+                {
+                    queue.Enqueue(nested);
+                }
+            }
+        }
+
+        return kinds;
+    }
+
     private static EquatableArray<LanguageModel.Field> Fields(LanguageModel.Production? rule) =>
         rule?.Alternative is { } alternative ? new([alternative]) : rule?.Fields ?? default;
+
+    private static void RelaxShortestInclusion(
+        PassModel.Kind nested,
+        PassModel.Kind current,
+        int nextDepth,
+        int currentPaths,
+        Dictionary<PassModel.Kind, int> depthByKind,
+        Dictionary<PassModel.Kind, int> pathCountByKind,
+        Dictionary<PassModel.Kind, PassModel.Kind> parentByKind,
+        Queue<PassModel.Kind> queue)
+    {
+        if (!depthByKind.TryGetValue(nested, out int bestDepth))
+        {
+            depthByKind[nested] = nextDepth;
+            pathCountByKind[nested] = currentPaths;
+            parentByKind[nested] = current;
+            queue.Enqueue(nested);
+        }
+        else if (bestDepth == nextDepth)
+        {
+            pathCountByKind[nested] = Math.Min(2, pathCountByKind[nested] + currentPaths);
+        }
+    }
+
+    private static ImmutableArray<PassModel.Kind> ReconstructAncestors(
+        Dictionary<PassModel.Kind, PassModel.Kind> parentByKind, PassModel.Kind target)
+    {
+        if (!parentByKind.TryGetValue(target, out var current))
+        {
+            return [];
+        }
+
+        var builder = ImmutableArray.CreateBuilder<PassModel.Kind>();
+        while (true)
+        {
+            builder.Add(current);
+            if (!parentByKind.TryGetValue(current, out current!))
+            {
+                break;
+            }
+        }
+
+        builder.Reverse();
+        return builder.ToImmutable();
+    }
 
     private static PassModel.SynthesizedReturn WithDefaults(
         PassModel.Processor processor, string expression)
@@ -467,7 +540,18 @@ internal sealed partial class PassResolver
             var selected = registered;
             if (selected is null && (!processor.Result.IsTuple || processor.Defaults.Count > 0))
             {
-                selected = this.SelectInclusion(
+                if (this.SelectMatchingTargetSubtype(processor, directSubtype) is
+                    { } matchedSubtype)
+                {
+                    selected = this.SelectInclusion(
+                        processor, directSubtype, matchedSubtype.Target, synthesize: true);
+                    if (selected is not null)
+                    {
+                        path = matchedSubtype.Path;
+                    }
+                }
+
+                selected ??= this.SelectInclusion(
                     processor, directSubtype, processor.To, synthesize: true);
             }
 
@@ -480,18 +564,16 @@ internal sealed partial class PassResolver
         }
 
         string? shape = this.source.Shape(rule);
-        var matches = Candidates(processor.To, [], new(StringComparer.Ordinal))
-            .Where(static candidate => candidate.Cost >= 0)
-            .OrderBy(static candidate => candidate.Path.Length)
-            .ThenBy(static candidate => candidate.Cost)
-            .Take(2).ToArray();
+        var (matches, parentByKind) = this.FindTargetMatches(processor, rule, shape);
         if (matches.Length == 0)
         {
             return null;
         }
 
-        if (matches.Length == 2 && matches[0].Path.Length == matches[1].Path.Length
-            && matches[0].Cost == matches[1].Cost)
+        if (matches[0].PathCount > 1
+            || (matches.Length == 2
+                && matches[0].Depth == matches[1].Depth
+                && matches[0].Cost == matches[1].Cost))
         {
             this.Invalid(
                 processor.Method,
@@ -513,11 +595,13 @@ internal sealed partial class PassResolver
             return null;
         }
 
+        ImmutableArray<PassModel.Kind> matchPath =
+            [.. ReconstructAncestors(parentByKind, matches[0].Kind), matches[0].Kind];
         string expression = match.Alternative is null
             ? $"new {Type(targetType)}({string.Join(", ", match.Fields.Zip(
                 mapped, static (to, field) => $"{Id(to.Property)}: {field}"))})"
             : mapped[0]!;
-        return WithDefaults(processor, Wrap(expression, matches[0].Path));
+        return WithDefaults(processor, Wrap(expression, matchPath));
 
         static string Wrap(string expression, ImmutableArray<PassModel.Kind> path)
         {
@@ -548,63 +632,737 @@ internal sealed partial class PassResolver
 
             return WithDefaults(processor, Wrap(call, path));
         }
+    }
 
-        IEnumerable<(LanguageModel.Production Rule, ImmutableArray<PassModel.Kind> Path, int Cost)>
-            Candidates(
-                PassModel.Kind kind, ImmutableArray<PassModel.Kind> path, HashSet<string> visited)
+    private (
+        (LanguageModel.Production Rule, PassModel.Kind Kind, int Depth, int Cost, int PathCount)[]
+            Matches,
+        Dictionary<PassModel.Kind, PassModel.Kind> ParentByKind)
+        FindTargetMatches(
+            PassModel.Processor processor, LanguageModel.Production rule, string? shape)
+    {
+        var queue = new Queue<PassModel.Kind>();
+        var depthByKind = new Dictionary<PassModel.Kind, int> { [processor.To] = 0 };
+        var pathCountByKind = new Dictionary<PassModel.Kind, int> { [processor.To] = 1 };
+        var parentByKind = new Dictionary<PassModel.Kind, PassModel.Kind>();
+        var visitedOrder = new List<PassModel.Kind>();
+        queue.Enqueue(processor.To);
+        while (queue.Count > 0)
         {
-            if (!visited.Add(kind.Name))
-            {
-                yield break;
-            }
-
-            path = path.Add(kind);
-            foreach (var candidate in this.target.MatchingShape(kind, shape))
-            {
-                int cost = this.MatchFields(Fields(rule), Fields(candidate), processor);
-                yield return (candidate, path, cost);
-            }
-
-            foreach (var candidate in this.target.Inclusions(kind))
+            var current = queue.Dequeue();
+            visitedOrder.Add(current);
+            int nextDepth = depthByKind[current] + 1;
+            int currentPaths = pathCountByKind[current];
+            foreach (var candidate in this.target.Inclusions(current))
             {
                 if (candidate.Alternative is { IsNonTerminal: true } inclusion
                     && this.target.Find(inclusion) is { } nested)
                 {
-                    foreach (var match in Candidates(nested, path, visited))
+                    RelaxShortestInclusion(
+                        nested,
+                        current,
+                        nextDepth,
+                        currentPaths,
+                        depthByKind,
+                        pathCountByKind,
+                        parentByKind,
+                        queue);
+                }
+            }
+        }
+
+        var found = new List<(
+            LanguageModel.Production Rule,
+            PassModel.Kind Kind,
+            int Depth,
+            int Cost,
+            int PathCount)>();
+        var sourceFields = Fields(rule);
+        foreach (var kind in visitedOrder)
+        {
+            int depth = depthByKind[kind];
+            int paths = pathCountByKind[kind];
+            foreach (var candidate in this.target.MatchingShape(kind, shape))
+            {
+                int cost = this.MatchFields(sourceFields, Fields(candidate), processor);
+                if (cost >= 0)
+                {
+                    found.Add((candidate, kind, depth, cost, paths));
+                }
+            }
+        }
+
+        if (found.Count > 1)
+        {
+            var feasible = found
+                .Where(item => this.AreNonTerminalFieldsFeasible(
+                    processor, sourceFields, Fields(item.Rule)))
+                .ToList();
+            if (feasible.Count > 0)
+            {
+                found = feasible;
+            }
+        }
+
+        var topMatches = found
+            .OrderBy(static item => item.Depth)
+            .ThenBy(static item => item.Cost)
+            .Take(2)
+            .ToArray();
+        return (topMatches, parentByKind);
+    }
+
+    private (bool HandledByExplicit, bool Ambiguous) ProbeExplicitFieldProcessor(
+        PassModel.Kind from,
+        PassModel.Kind to,
+        EquatableArray<PassInput.Parameter> ambient)
+    {
+        var candidates = this.processors
+            .Where(p => p.Method is not null
+                && !p.Result.IsTuple
+                && p.From == from
+                && p.To == to)
+            .Select(p => Bind(p, ambient))
+            .Where(static b => b is not null)
+            .OrderByDescending(static b => b!.Value.Matched)
+            .Take(2)
+            .ToArray();
+        if (candidates.Length == 0)
+        {
+            return (false, false);
+        }
+
+        return candidates.Length == 2
+            && candidates[0]!.Value.Matched == candidates[1]!.Value.Matched
+                ? (false, true)
+                : (true, false);
+    }
+
+    private bool AreNonTerminalFieldsFeasible(
+        PassModel.Processor processor,
+        EquatableArray<LanguageModel.Field> sourceFields,
+        EquatableArray<LanguageModel.Field> targetFields)
+    {
+        for (int i = 0; i < sourceFields.Count; i++)
+        {
+            if (!sourceFields[i].IsNonTerminal)
+            {
+                continue;
+            }
+
+            var fromFieldKind = this.source.Find(sourceFields[i])!;
+            var toFieldKind = this.target.Find(targetFields[i])!;
+            var (handledByExplicit, ambiguous) = this.ProbeExplicitFieldProcessor(
+                fromFieldKind, toFieldKind, processor.Parameters);
+            if (ambiguous
+                || (!handledByExplicit
+                    && !this.CanLowerExistentially(fromFieldKind, toFieldKind)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private (PassModel.Kind Target, ImmutableArray<PassModel.Kind> Path)?
+        SelectMatchingTargetSubtype(PassModel.Processor processor, PassModel.Kind directSubtype)
+    {
+        var queue = new Queue<PassModel.Kind>();
+        var depthByKind = new Dictionary<PassModel.Kind, int> { [processor.To] = 0 };
+        var pathCountByKind = new Dictionary<PassModel.Kind, int> { [processor.To] = 1 };
+        var parentByKind = new Dictionary<PassModel.Kind, PassModel.Kind>();
+        queue.Enqueue(processor.To);
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            int depth = depthByKind[current];
+            int currentPaths = pathCountByKind[current];
+            if (depth > 0
+                && string.Equals(current.Name, directSubtype.Name, StringComparison.Ordinal))
+            {
+                return currentPaths == 1
+                    && this.CanLowerWithinSubtype(processor, directSubtype, current)
+                        ? (current, ReconstructAncestors(parentByKind, current))
+                        : null;
+            }
+
+            int nextDepth = depth + 1;
+            foreach (var candidate in this.target.Inclusions(current))
+            {
+                if (candidate.Alternative is { IsNonTerminal: true } inclusion
+                    && this.target.Find(inclusion) is { } nested)
+                {
+                    RelaxShortestInclusion(
+                        nested,
+                        current,
+                        nextDepth,
+                        currentPaths,
+                        depthByKind,
+                        pathCountByKind,
+                        parentByKind,
+                        queue);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private bool CanLowerWithinSubtype(
+        PassModel.Processor processor,
+        PassModel.Kind sourceSubtype,
+        PassModel.Kind targetSubtype) =>
+        !this.HasOuterRegisteredInclusion(sourceSubtype, targetSubtype, processor.To)
+        && (this.CanLowerInferred(sourceSubtype, targetSubtype)
+            || !this.CanLowerInferred(sourceSubtype, processor.To));
+
+    private bool HasOuterRegisteredInclusion(
+        PassModel.Kind sourceRoot,
+        PassModel.Kind innerTarget,
+        PassModel.Kind outerTarget)
+    {
+        var innerCone = ReachableTargetKinds(this.target, innerTarget);
+        var outerCone = ReachableTargetKinds(this.target, outerTarget);
+        var pending = new Queue<PassModel.Kind>();
+        var visited = new HashSet<PassModel.Kind> { sourceRoot };
+        pending.Enqueue(sourceRoot);
+        while (pending.Count > 0)
+        {
+            var current = pending.Dequeue();
+            if (this.processors.Any(c =>
+                (c.Method is not null || this.Clauses(c).Count > 0)
+                && !(current == sourceRoot && c.To == innerTarget)
+                && !c.Result.IsTuple
+                && c.From == current
+                && innerCone.Contains(c.To)
+                && Bind(c, default) is not null))
+            {
+                continue;
+            }
+
+            if (this.processors.Any(c =>
+                (c.Method is not null || this.Clauses(c).Count > 0)
+                && !(current == sourceRoot && c.To == outerTarget)
+                && !c.Result.IsTuple
+                && c.From == current
+                && outerCone.Contains(c.To)
+                && !innerCone.Contains(c.To)
+                && Bind(c, default) is not null))
+            {
+                return true;
+            }
+
+            var anon = current == sourceRoot
+                ? this.processors.FirstOrDefault(p =>
+                    p.Method is null && p.From == sourceRoot && p.To == innerTarget)
+                : null;
+            if (anon is not null
+                && this.Clauses(anon).Any(c => c.Rule is null && c.Rewrite.Guard is null))
+            {
+                continue;
+            }
+
+            foreach (var rule in PassGrammar.Rules(current))
+            {
+                if (rule.Alternative is { IsNonTerminal: true } inclusion
+                    && (anon is null || !this.Clauses(anon).Any(c =>
+                        c.Rule == rule && c.Rewrite.Guard is null))
+                    && this.source.Find(inclusion) is { } nested
+                    && visited.Add(nested))
+                {
+                    pending.Enqueue(nested);
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private bool CanLowerExistentially(PassModel.Kind sourceRoot, PassModel.Kind targetRoot)
+    {
+        this.EnsureInferredClosure((sourceRoot, targetRoot));
+        return this.inferredExistentialMemo[(sourceRoot, targetRoot)];
+    }
+
+    private bool CanLowerInferred(PassModel.Kind sourceRoot, PassModel.Kind targetRoot)
+    {
+        this.EnsureInferredClosure((sourceRoot, targetRoot));
+        return this.inferredValidMemo[(sourceRoot, targetRoot)];
+    }
+
+    private void EnsureInferredClosure((PassModel.Kind From, PassModel.Kind To) rootPair)
+    {
+        if (this.inferredValidMemo.ContainsKey(rootPair))
+        {
+            return;
+        }
+
+        var specs =
+            new Dictionary<(PassModel.Kind From, PassModel.Kind To), InferredRuleSpec[]>();
+        var discoveryQueue = new Queue<(PassModel.Kind From, PassModel.Kind To)>();
+        discoveryQueue.Enqueue(rootPair);
+        while (discoveryQueue.Count > 0)
+        {
+            var pair = discoveryQueue.Dequeue();
+            if (this.inferredValidMemo.ContainsKey(pair) || specs.ContainsKey(pair))
+            {
+                continue;
+            }
+
+            var rules = this.BuildInferredRules(pair.From, pair.To);
+            if (rules is null)
+            {
+                this.inferredExistentialMemo[pair] = false;
+                this.inferredValidMemo[pair] = false;
+                continue;
+            }
+
+            specs[pair] = rules;
+            foreach (var ruleSpec in rules)
+            {
+                foreach (var candidate in ruleSpec.Candidates)
+                {
+                    foreach (var dep in candidate.Deps)
                     {
-                        yield return match;
+                        if (!this.inferredValidMemo.ContainsKey(dep) && !specs.ContainsKey(dep))
+                        {
+                            discoveryQueue.Enqueue(dep);
+                        }
                     }
                 }
             }
-
-            visited.Remove(kind.Name);
         }
+
+        if (specs.Count == 0)
+        {
+            return;
+        }
+
+        var existActive = new HashSet<(PassModel.Kind From, PassModel.Kind To)>(specs.Keys);
+        bool IsExistential((PassModel.Kind From, PassModel.Kind To) q) =>
+            existActive.Contains(q)
+            || (this.inferredExistentialMemo.TryGetValue(q, out bool ok) && ok);
+
+        bool shrank = true;
+        while (shrank)
+        {
+            shrank = false;
+            foreach (var kvp in specs)
+            {
+                if (existActive.Contains(kvp.Key)
+                    && !kvp.Value.All(r => r.Candidates.Any(c => c.Deps.All(IsExistential))))
+                {
+                    existActive.Remove(kvp.Key);
+                    shrank = true;
+                }
+            }
+        }
+
+        foreach (var p in specs.Keys)
+        {
+            this.inferredExistentialMemo[p] = existActive.Contains(p);
+        }
+
+        var ruleDisjuncts = new Dictionary<
+            (PassModel.Kind From, PassModel.Kind To),
+            (PassModel.Kind From, PassModel.Kind To)[][][]>();
+        foreach (var p in existActive)
+        {
+            var perRule = new List<(PassModel.Kind From, PassModel.Kind To)[][]>();
+            bool allRulesFeasible = true;
+            foreach (var r in specs[p])
+            {
+                if (r.IsInclusionFallback)
+                {
+                    var validOptions = r.Candidates
+                        .Where(c => c.Deps.All(IsExistential))
+                        .Select(static c => c.Deps)
+                        .ToArray();
+                    if (validOptions.Length == 0)
+                    {
+                        allRulesFeasible = false;
+                        break;
+                    }
+
+                    perRule.Add(validOptions);
+                    continue;
+                }
+
+                var top = r.Candidates.Where(c => c.Deps.All(IsExistential)).Take(2).ToArray();
+                if (top.Length == 0
+                    || top[0].TerminalFailed
+                    || top[0].PathCount != 1
+                    || (top.Length == 2
+                        && top[0].Depth == top[1].Depth
+                        && top[0].Cost == top[1].Cost))
+                {
+                    allRulesFeasible = false;
+                    break;
+                }
+
+                if (top[0].Deps.Length > 0)
+                {
+                    perRule.Add([top[0].Deps]);
+                }
+            }
+
+            if (allRulesFeasible)
+            {
+                ruleDisjuncts[p] = perRule.ToArray();
+            }
+        }
+
+        var validActive = new HashSet<(PassModel.Kind From, PassModel.Kind To)>(ruleDisjuncts.Keys);
+        bool IsValid((PassModel.Kind From, PassModel.Kind To) q) =>
+            validActive.Contains(q)
+            || (this.inferredValidMemo.TryGetValue(q, out bool ok) && ok);
+
+        shrank = true;
+        while (shrank)
+        {
+            shrank = false;
+            foreach (var kvp in ruleDisjuncts)
+            {
+                if (validActive.Contains(kvp.Key)
+                    && !kvp.Value.All(options => options.Any(deps => deps.All(IsValid))))
+                {
+                    validActive.Remove(kvp.Key);
+                    shrank = true;
+                }
+            }
+        }
+
+        foreach (var p in specs.Keys)
+        {
+            this.inferredValidMemo[p] = validActive.Contains(p);
+        }
+    }
+
+    private InferredRuleSpec[]? BuildInferredRules(PassModel.Kind s, PassModel.Kind t)
+    {
+        var anon = this.processors.FirstOrDefault(p =>
+            p.Method is null && p.From == s && p.To == t);
+        if (anon is not null
+            && this.Clauses(anon).Any(c => c.Rule is null && c.Rewrite.Guard is null))
+        {
+            return [];
+        }
+
+        var rules = PassGrammar.Rules(s);
+        if (rules.Length == 0)
+        {
+            return s.Name == t.Name && this.ConvertsPrimary(s.Type, t, t.Type) ? [] : null;
+        }
+
+        var probe = new PassModel.Processor(string.Empty, s, t, t.Type, default, null, default);
+        var builtRules = new List<InferredRuleSpec>();
+        foreach (var rule in rules)
+        {
+            if (anon is not null
+                && this.Clauses(anon).Any(c => c.Rule == rule && c.Rewrite.Guard is null))
+            {
+                continue;
+            }
+
+            if (this.source.RuleType(rule) is null)
+            {
+                return null;
+            }
+
+            if (rule.Alternative is { IsNonTerminal: true } directField
+                && this.source.Find(directField) is { } d)
+            {
+                var incSpec = this.BuildInclusionRuleCandidates(s, t, d);
+                if (incSpec is null)
+                {
+                    return null;
+                }
+
+                if (incSpec.Value.Candidates.Length > 0)
+                {
+                    builtRules.Add(incSpec.Value);
+                }
+
+                continue;
+            }
+
+            var prodCandidates = this.BuildProductionRuleCandidates(probe, t, rule);
+            if (prodCandidates is null)
+            {
+                return null;
+            }
+
+            builtRules.Add(new InferredRuleSpec(false, prodCandidates));
+        }
+
+        return builtRules.ToArray();
+    }
+
+    private InferredRuleSpec? BuildInclusionRuleCandidates(
+        PassModel.Kind s, PassModel.Kind t, PassModel.Kind d)
+    {
+        var queue = new Queue<PassModel.Kind>();
+        var depthByKind = new Dictionary<PassModel.Kind, int> { [t] = 0 };
+        var pathCountByKind = new Dictionary<PassModel.Kind, int> { [t] = 1 };
+        var parentByKind = new Dictionary<PassModel.Kind, PassModel.Kind>();
+        queue.Enqueue(t);
+        PassModel.Processor? registered = null;
+        int matchedDepth = -1;
+        while (queue.Count > 0)
+        {
+            var cur = queue.Dequeue();
+            int depth = depthByKind[cur];
+            if (registered is not null && depth > matchedDepth)
+            {
+                break;
+            }
+
+            var matches = d == s && cur == t
+                ? []
+                : this.processors
+                    .Where(p => (p.Method is not null || this.Clauses(p).Count > 0)
+                        && !p.Result.IsTuple
+                        && p.From == d
+                        && p.To == cur)
+                    .Select(p => (Processor: p, Binding: Bind(p, default)))
+                    .Where(static item => item.Binding is not null)
+                    .OrderByDescending(static item => item.Binding!.Value.Matched)
+                    .Take(2)
+                    .ToArray();
+            if (matches.Length == 2
+                && matches[0].Binding!.Value.Matched == matches[1].Binding!.Value.Matched)
+            {
+                return null;
+            }
+
+            int currentPaths = pathCountByKind[cur];
+            if (matches.Length > 0)
+            {
+                if (registered is not null || currentPaths > 1)
+                {
+                    return null;
+                }
+
+                registered = matches[0].Processor;
+                matchedDepth = depth;
+            }
+            else if (registered is null)
+            {
+                int nextDepth = depth + 1;
+                foreach (var candidate in PassGrammar.Rules(cur))
+                {
+                    if (candidate.Alternative is { } inc && this.target.Find(inc) is { } nested)
+                    {
+                        RelaxShortestInclusion(
+                            nested,
+                            cur,
+                            nextDepth,
+                            currentPaths,
+                            depthByKind,
+                            pathCountByKind,
+                            parentByKind,
+                            queue);
+                    }
+                }
+            }
+        }
+
+        if (registered is not null)
+        {
+            return registered.Method is not null
+                ? new InferredRuleSpec(false, [])
+                : new InferredRuleSpec(
+                    false, [new InferredCandidate(0, 0, 1, false, [(d, registered.To)])]);
+        }
+
+        var matchedSubtype = this.ProbeUniqueNamedTargetSubtype(t, d);
+        var options = new List<InferredCandidate>(2);
+        if (matchedSubtype is not null
+            && !(d == s && matchedSubtype == t)
+            && !this.HasOuterRegisteredInclusion(d, matchedSubtype, t))
+        {
+            options.Add(new InferredCandidate(0, 0, 1, false, [(d, matchedSubtype)]));
+        }
+
+        if (d != s)
+        {
+            options.Add(new InferredCandidate(1, 0, 1, false, [(d, t)]));
+        }
+
+        return options.Count == 0
+            ? null
+            : new InferredRuleSpec(true, options.ToArray());
+    }
+
+    private PassModel.Kind? ProbeUniqueNamedTargetSubtype(
+        PassModel.Kind rootTarget, PassModel.Kind directSubtype)
+    {
+        var queue = new Queue<PassModel.Kind>();
+        var depthByKind = new Dictionary<PassModel.Kind, int> { [rootTarget] = 0 };
+        var pathCountByKind = new Dictionary<PassModel.Kind, int> { [rootTarget] = 1 };
+        var parentByKind = new Dictionary<PassModel.Kind, PassModel.Kind>();
+        queue.Enqueue(rootTarget);
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            int depth = depthByKind[current];
+            if (depth > 0
+                && string.Equals(current.Name, directSubtype.Name, StringComparison.Ordinal))
+            {
+                return pathCountByKind[current] == 1 ? current : null;
+            }
+
+            int nextDepth = depth + 1;
+            int currentPaths = pathCountByKind[current];
+            foreach (var candidate in this.target.Inclusions(current))
+            {
+                if (candidate.Alternative is { IsNonTerminal: true } inc
+                    && this.target.Find(inc) is { } nested)
+                {
+                    RelaxShortestInclusion(
+                        nested,
+                        current,
+                        nextDepth,
+                        currentPaths,
+                        depthByKind,
+                        pathCountByKind,
+                        parentByKind,
+                        queue);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private InferredCandidate[]? BuildProductionRuleCandidates(
+        PassModel.Processor probe, PassModel.Kind t, LanguageModel.Production rule)
+    {
+        var queue = new Queue<PassModel.Kind>();
+        var depthByKind = new Dictionary<PassModel.Kind, int> { [t] = 0 };
+        var pathCountByKind = new Dictionary<PassModel.Kind, int> { [t] = 1 };
+        var parentByKind = new Dictionary<PassModel.Kind, PassModel.Kind>();
+        var visitedOrder = new List<PassModel.Kind>();
+        queue.Enqueue(t);
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            visitedOrder.Add(current);
+            int nextDepth = depthByKind[current] + 1;
+            int currentPaths = pathCountByKind[current];
+            foreach (var incRule in this.target.Inclusions(current))
+            {
+                if (incRule.Alternative is { IsNonTerminal: true } inc
+                    && this.target.Find(inc) is { } nested)
+                {
+                    RelaxShortestInclusion(
+                        nested,
+                        current,
+                        nextDepth,
+                        currentPaths,
+                        depthByKind,
+                        pathCountByKind,
+                        parentByKind,
+                        queue);
+                }
+            }
+        }
+
+        string? shape = this.source.Shape(rule);
+        var sourceFields = Fields(rule);
+        var candidates = new List<InferredCandidate>();
+        foreach (var kind in visitedOrder)
+        {
+            int depth = depthByKind[kind];
+            int paths = pathCountByKind[kind];
+            foreach (var candidate in this.target.MatchingShape(kind, shape))
+            {
+                if (this.target.RuleType(candidate) is null)
+                {
+                    continue;
+                }
+
+                var targetFields = Fields(candidate);
+                int cost = this.MatchFields(sourceFields, targetFields, probe);
+                if (cost < 0)
+                {
+                    continue;
+                }
+
+                bool terminalFailed = false;
+                bool impossibleField = false;
+                var deps = new List<(PassModel.Kind From, PassModel.Kind To)>();
+                for (int i = 0; i < sourceFields.Count; i++)
+                {
+                    var fromF = this.source.Find(sourceFields[i])!;
+                    var toF = this.target.Find(targetFields[i])!;
+                    var (handled, ambig) = this.ProbeExplicitFieldProcessor(fromF, toF, default);
+                    if (!sourceFields[i].IsNonTerminal)
+                    {
+                        terminalFailed |= ambig;
+                        continue;
+                    }
+
+                    if (ambig)
+                    {
+                        impossibleField = true;
+                        break;
+                    }
+
+                    if (!handled)
+                    {
+                        deps.Add((fromF, toF));
+                    }
+                }
+
+                if (!impossibleField)
+                {
+                    candidates.Add(
+                        new InferredCandidate(depth, cost, paths, terminalFailed, deps.ToArray()));
+                }
+            }
+        }
+
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        return candidates
+            .OrderBy(static item => item.Depth)
+            .ThenBy(static item => item.Cost)
+            .ToArray();
     }
 
     private (PassModel.Processor? Processor, ImmutableArray<PassModel.Kind> Path)
         SelectRegisteredInclusion(PassModel.Processor processor, PassModel.Kind from)
     {
         int errors = this.problems.Count;
-        var paths = new Queue<ImmutableArray<PassModel.Kind>>();
-        var visited = new HashSet<PassModel.Kind> { processor.To };
-        paths.Enqueue([processor.To]);
+        var queue = new Queue<PassModel.Kind>();
+        var depthByKind = new Dictionary<PassModel.Kind, int> { [processor.To] = 0 };
+        var pathCountByKind = new Dictionary<PassModel.Kind, int> { [processor.To] = 1 };
+        var parentByKind = new Dictionary<PassModel.Kind, PassModel.Kind>();
+        queue.Enqueue(processor.To);
         PassModel.Processor? registered = null;
+        int matchedDepth = -1;
         ImmutableArray<PassModel.Kind> ancestors = [];
-        while (paths.Count > 0)
+        while (queue.Count > 0)
         {
-            var path = paths.Dequeue();
-            if (registered is not null && path.Length > ancestors.Length + 1)
+            var target = queue.Dequeue();
+            int depth = depthByKind[target];
+            if (registered is not null && depth > matchedDepth)
             {
                 break;
             }
 
-            var target = path[path.Length - 1];
             var selected = this.SelectInclusion(processor, from, target, synthesize: false);
             if (this.problems.Count != errors)
             {
                 return (null, []);
             }
 
+            int currentPaths = pathCountByKind[target];
             if (selected is not null)
             {
                 if (registered is not null)
@@ -615,17 +1373,35 @@ internal sealed partial class PassResolver
                     return (null, []);
                 }
 
+                if (currentPaths > 1)
+                {
+                    string message = $"has ambiguous subtype paths from '{selected.To.Name}' to "
+                        + $"'{processor.To.Name}'.";
+                    this.Invalid(processor.Method, message);
+                    return (null, []);
+                }
+
                 registered = selected;
-                ancestors = path.RemoveAt(path.Length - 1);
+                matchedDepth = depth;
+                ancestors = ReconstructAncestors(parentByKind, target);
             }
             else if (registered is null)
             {
+                int nextDepth = depth + 1;
                 foreach (var candidate in PassGrammar.Rules(target))
                 {
                     if (candidate.Alternative is { } inclusion
-                        && this.target.Find(inclusion) is { } nested && visited.Add(nested))
+                        && this.target.Find(inclusion) is { } nested)
                     {
-                        paths.Enqueue(path.Add(nested));
+                        RelaxShortestInclusion(
+                            nested,
+                            target,
+                            nextDepth,
+                            currentPaths,
+                            depthByKind,
+                            pathCountByKind,
+                            parentByKind,
+                            queue);
                     }
                 }
             }
@@ -894,7 +1670,8 @@ internal sealed partial class PassResolver
                     processor.Parameters,
                     processor.Method,
                     synthesize: false,
-                    report: false) is null)
+                    report: false,
+                    compatibilityCost: static c => c.Result.IsTuple ? -1 : 0) is null)
             {
                 return -1;
             }
@@ -917,7 +1694,8 @@ internal sealed partial class PassResolver
             to,
             processor.Parameters,
             processor.Method,
-            synthesize: sourceField.IsNonTerminal);
+            synthesize: sourceField.IsNonTerminal,
+            compatibilityCost: static candidate => candidate.Result.IsTuple ? -1 : 0);
         string expression = FieldExpression(processor, rule, sourceField);
         if (chosen is null)
         {
@@ -934,8 +1712,7 @@ internal sealed partial class PassResolver
             expression,
             Type(to.Type),
             bound,
-            (value, receiver) =>
-                Result(chosen, this.InvokeFrom(processor, chosen, value, bound, receiver)));
+            (value, receiver) => this.InvokeFrom(processor, chosen, value, bound, receiver));
     }
 
     private void Missing(
@@ -968,6 +1745,33 @@ internal sealed partial class PassResolver
         string message = $"Pass '{input.Name}' needs a rewrite for '{rule.Syntax}' in language "
             + $"'{this.target.Language?.Name ?? "*"}', nonterminal '{processor.To.Name}'.";
         this.problems.Add(new(1, input.Location, message, stub));
+    }
+
+    private readonly struct InferredRuleSpec(
+        bool isInclusionFallback,
+        InferredCandidate[] candidates)
+    {
+        internal bool IsInclusionFallback { get; } = isInclusionFallback;
+
+        internal InferredCandidate[] Candidates { get; } = candidates;
+    }
+
+    private readonly struct InferredCandidate(
+        int depth,
+        int cost,
+        int pathCount,
+        bool terminalFailed,
+        (PassModel.Kind From, PassModel.Kind To)[] deps)
+    {
+        internal int Depth { get; } = depth;
+
+        internal int Cost { get; } = cost;
+
+        internal int PathCount { get; } = pathCount;
+
+        internal bool TerminalFailed { get; } = terminalFailed;
+
+        internal (PassModel.Kind From, PassModel.Kind To)[] Deps { get; } = deps;
     }
 
     private sealed class SlotSearch(int maxNodes, int budget)
