@@ -106,6 +106,28 @@ Existing .NET execution groups use the official setup action, reading the
 profile's committed lock; Scope and Node retain their locked mise preparation.
 This does not add a compiler variant, change target frameworks or widen feeds.
 
+## TLA+
+
+[`mise.toml`](../../mise.toml) and `mise.lock` provision Temurin Java (`java`)
+and the official immutable `tlaplus/tlaplus` `tla2tools.jar` release asset for
+`linux-x64` and `windows-x64`. Pin only immutable stable `vX.Y.Z` release tags;
+do not bind mutable rolling or overwritten pre-release assets.
+
+HK (`tla-sany`) runs fast `SANY` syntax, semantic, and level checks on `*.tla`
+files via [`eng/scripts/tla.py`](../../eng/scripts/tla.py) and
+[`eng/linter/TlaSanyCheck.java`](../../eng/linter/TlaSanyCheck.java), resolving
+sibling `EXTENDS` and `INSTANCE` modules from each checked module's directory.
+Finite-state model checking (`tlc2.TLC`) and `PlusCal` (`pcal.trans`) remain
+outside HK ([execution contract](hk-execution.md#ci-execution-contract)); invoke
+`TLC` explicitly with an isolated temporary `-metadir`:
+
+```powershell
+mise run tla:tlc -- -config path/to/Spec.cfg path/to/Spec.tla
+```
+
+Pass an explicit `-metadir <dir>` only when state-directory artifacts need to be
+retained outside the repository tree for local debugging.
+
 ## Repository toolchain
 
 Install the tool versions recorded in `mise.lock` from the repository root:
