@@ -10,14 +10,12 @@
   <ItemGroup>
     <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
     <EmbeddedResource Include="Repository/resources/hk-scope-copies.json" LogicalName="HkScopeCopies" />
-    <EmbeddedResource Include="../../../../src/public/**/workflow-delivery.release-unit.yml"
-                      LogicalName="ReleaseUnit:src/public/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
-    <EmbeddedResource Include="../../../../tests/private/app/workflow-delivery/fixtures/products/**/workflow-delivery.release-unit.yml"
-                      LogicalName="ReleaseUnit:tests/private/app/workflow-delivery/fixtures/products/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
-    <EmbeddedResource Include="../../../../src/public/lib/*/*.csproj;../../../../src/public/lib/*/package.json"
-                      Exclude="../../../../src/public/lib/*.Generators/*.csproj;../../../../src/public/lib/steam-account-history-to-csv/package.json"
-                      LogicalName="ReleaseManifest:$([System.IO.Path]::GetRelativePath('$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../../..'))', '%(FullPath)').Replace('\', '/'))" />
-    <EmbeddedResource Include="../../../../tests/private/app/workflow-delivery/fixtures/products/*/*.csproj;../../../../tests/private/app/workflow-delivery/fixtures/products/*/package.json"
+    <_ReleaseUnitSource Include="../../../../src/public/**/workflow-delivery.release-unit.yml;../../../../tests/private/app/workflow-delivery/fixtures/products/**/workflow-delivery.release-unit.yml">
+      <ManifestPath>$([System.Text.RegularExpressions.Regex]::Replace($([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('%(FullPath)')), '(?ms)(?&lt;=^\s*(?:-\s*)?definition:\s*[''"]?(?:dotnet/nuget-package-v1|node/npm-package-v1)[''"]?(?:\s*#[^\r\n]*)?$[\s\S]*?^\s*(?:-\s*)?entry-point:\s*[''"]?)[^\s#''"]+|(?&lt;=^\s*(?:-\s*)?entry-point:\s*[''"]?)[^\s#''"]+(?=[\s\S]*?^\s*(?:-\s*)?definition:\s*[''"]?(?:dotnet/nuget-package-v1|node/npm-package-v1)[''"]?(?:\s*#[^\r\n]*)?$)').Value), '^(.+)$', '%(RootDir)%(Directory)$1'))</ManifestPath>
+    </_ReleaseUnitSource>
+    <EmbeddedResource Include="@(_ReleaseUnitSource)"
+                      LogicalName="ReleaseUnit:$([System.IO.Path]::GetRelativePath('$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../../..'))', '%(FullPath)').Replace('\', '/'))" />
+    <EmbeddedResource Include="@(_ReleaseUnitSource->'%(ManifestPath)')"
                       LogicalName="ReleaseManifest:$([System.IO.Path]::GetRelativePath('$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../../..'))', '%(FullPath)').Replace('\', '/'))" />
     <PackageReference Include="YamlDotNet" />
     <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" />

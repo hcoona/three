@@ -44,7 +44,8 @@ internal static class RubySourceCollector
             execute);
         string name = Path.GetFileNameWithoutExtension(source.Gemspec);
         if (source.Directory == "." ||
-            name is not ("asciidoctor-latexmath" or "hcoona-release-smoke-ruby"))
+            (!Ecosystems.ReleaseUnitCatalog.IsRubyRegistered(name) &&
+             !await HasCommittedRubyDeclarationAsync(checkout, source.Gemspec, token)))
             throw new InvalidDataException("Unsupported native Ruby source input scope.");
         string project = Path.Combine(checkout.Root, source.Directory);
         string gemspec = Path.Combine(checkout.Root, source.Gemspec);
@@ -88,5 +89,28 @@ internal static class RubySourceCollector
         {
             throw new InvalidDataException("Incomplete native NBGV version answer.", error);
         }
+    }
+
+    private static async Task<bool> HasCommittedRubyDeclarationAsync(GitMaterialization checkout,
+        string gemspecPath, CancellationToken token)
+    {
+        foreach (GitEntry entry in checkout.Revision.Entries.Where(entry =>
+                     entry.Path == "workflow-delivery.release-unit.yml" ||
+                     entry.Path.EndsWith("/workflow-delivery.release-unit.yml",
+                         StringComparison.Ordinal)))
+        {
+            string? text = await checkout.ReadOptionalTextAsync(entry.Path, token);
+            if (text is null) continue;
+            ReleaseUnitDeclaration decl = ReleaseUnitDeclarationReader.Read(text, entry.Path);
+            string parent = NodePackageChecks.Parent(decl.SourcePath);
+            foreach (ReleaseBuild build in decl.Builds.Where(b => b.Definition ==
+                         RubyPackageChecks.Build))
+            {
+                string resolved = parent.Length == 0 ? build.EntryPoint :
+                    parent + "/" + build.EntryPoint;
+                if (resolved == gemspecPath) return true;
+            }
+        }
+        return false;
     }
 }

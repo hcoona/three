@@ -448,6 +448,38 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task RetiredBasisRubyGemReadsThroughFullCollectorWhileCandidateEnforcesCatalog()
+    {
+        const string directory = "src/retired";
+        const string retired = "retired-ruby-gem";
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        await repo.SetAsync(directory + "/" + retired + ".gemspec", "original gemspec");
+        await repo.SetAsync(directory + "/version.json", "{\"version\":\"1.0\"}");
+        await repo.SetAsync(directory + "/workflow-delivery.quality.yml",
+            "schema: workflow-delivery/v3/quality-selection\necosystems:\n  ruby:\n" +
+            "    preset: " + RubyPackageChecks.Preset + "\n");
+        await repo.SetAsync(directory + "/workflow-delivery.release-unit.yml", """
+            schema: workflow-delivery/v3/release-unit
+            release-unit: retired-ruby-gem
+            builds:
+              - id: ruby-gem
+                definition: ruby/gem-v1
+                entry-point: retired-ruby-gem.gemspec
+                outputs:
+                  - {id: gem, role: primary-package, kind: ruby-gem}
+            """);
+        GitMaterialization basisCheckout = await BindAsync(repo);
+        RubyRepositoryRequest request = Request(repo.Directory);
+        RubyRevisionInputs basis = await RubyRepositoryReader.ReadAsync(basisCheckout, request,
+            (command, token) => ReadGemAsync(command, repo.Directory, directory, "1.0.0", "1.0.0",
+                (retired, "1.0.0", "ruby"), token, retired), context.CancellationToken);
+
+        Assert.AreEqual(retired, Assert.ContainsSingle(basis.Facts.Owners).ReleaseUnit);
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            RubyRepositoryReader.RequireRegisteredPresets(basis));
+    }
+
+    [TestMethod]
     [DataRow("definition: ruby/gem-v1", "definition: ruby/other-v1",
         "Unresolved adopted native Ruby gem subject.")]
     [DataRow("entry-point: " + Smoke + ".gemspec", "entry-point: other.gemspec",
@@ -554,7 +586,8 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
 
     private static async Task<NativeCommandResult> ReadGemAsync(NativeCommand command, string root,
         string directory, string raw, string version,
-        (string Name, string Version, string Platform) gem, CancellationToken token)
+        (string Name, string Version, string Platform) gem, CancellationToken token,
+        string gemspecStem = Smoke)
     {
         string nbgv = Path.Combine(root, "nbgv");
         Assert.IsFalse(command.InheritEnvironment);
@@ -567,7 +600,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         }
         using JsonDocument input = JsonDocument.Parse(
             await File.ReadAllTextAsync(command.Arguments[^1], token));
-        string gemspec = Path.GetFullPath(Path.Combine(root, directory, Smoke + ".gemspec"));
+        string gemspec = Path.GetFullPath(Path.Combine(root, directory, gemspecStem + ".gemspec"));
         Assert.AreEqual(gemspec, Path.GetFullPath(
             input.RootElement.GetProperty("path").GetString()!));
         string? operation = input.RootElement.GetProperty("operation").GetString();
@@ -580,8 +613,10 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
                 literal = JsonSerializer.Serialize(version),
             });
         Assert.AreEqual("gemspec", operation);
-        Assert.Contains("VERSION = " + JsonSerializer.Serialize(version),
-            await File.ReadAllTextAsync(Path.Combine(root, directory + GeneratedVersion), token));
+        if (gemspecStem == Smoke)
+            Assert.Contains("VERSION = " + JsonSerializer.Serialize(version),
+                await File.ReadAllTextAsync(Path.Combine(root, directory + GeneratedVersion),
+                    token));
         return Answer(new
         {
             gemspec,

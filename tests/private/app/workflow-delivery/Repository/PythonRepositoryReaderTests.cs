@@ -227,12 +227,14 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         fixture.Identity = Success("{\"name\":\"" + package + "\",\"version\":\"2.1.0.dev1\"}");
         if (package != "nbgv-python")
         {
+            PythonRevisionInputs unregistered = await fixture.ReadAsync(context.CancellationToken);
             Assert.AreEqual("Unsupported Python Release unit.",
-                (await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-                    fixture.ReadAsync(context.CancellationToken))).Message);
+                Assert.ThrowsExactly<InvalidDataException>(() =>
+                    PythonRepositoryReader.RequireRegisteredUnits(unregistered)).Message);
             return;
         }
         PythonRevisionInputs inputs = await fixture.ReadAsync(context.CancellationToken);
+        PythonRepositoryReader.RequireRegisteredUnits(inputs);
         ProjectFacts owner = Assert.ContainsSingle(inputs.Facts.Packages);
         Assert.AreEqual("nbgv-python", owner.ReleaseUnit);
         Assert.AreEqual(PythonPackageChecks.Preset, owner.QualityPreset);
@@ -241,6 +243,35 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         Assert.IsTrue(owner.Checks.All(check => check.Required &&
             check.Package!.ExpectedVersion == "2.1.0.dev1"));
         Assert.AreEqual("src/c/tests", Assert.ContainsSingle(inputs.Targets.Targets).Target);
+    }
+
+    [TestMethod]
+    public async Task RetiredBasisPythonUnitReadsCleanlyWhileUnregisteredCandidateUnitFails()
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        const string retired = "retired-python-unit";
+        await fixture.UpdateAsync("src/c/workflow-delivery.release-unit.yml",
+            Fixture.Unit.Replace("product", retired, StringComparison.Ordinal),
+            context.CancellationToken);
+        fixture.Answer(retired);
+        fixture.Identity = Success("{\"name\":\"" + retired + "\",\"version\":\"1.0.0\"}");
+
+        PythonRevisionInputs basis = await fixture.ReadAsync(context.CancellationToken);
+        Assert.AreEqual(retired, Assert.ContainsSingle(basis.Facts.Packages).ReleaseUnit);
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            PythonRepositoryReader.RequireRegisteredUnits(basis));
+
+        await fixture.UpdateAsync("src/c/workflow-delivery.release-unit.yml", null,
+            context.CancellationToken);
+        await fixture.UpdateAsync("src/c/workflow-delivery.quality.yml", null,
+            context.CancellationToken);
+        PythonRevisionInputs candidate = await fixture.ReadAsync(context.CancellationToken);
+        PythonRepositoryReader.RequireRegisteredUnits(candidate);
+        CiPlan plan = PythonGroupPlanning.Plan(basis, candidate,
+            new(basis.Facts.Revision, candidate.Facts.Revision,
+                ["src/c/workflow-delivery.release-unit.yml",
+                    "src/c/workflow-delivery.quality.yml"]), false);
+        Assert.IsEmpty(plan.Checks.Where(c => c.Work.Package is not null));
     }
 
     [TestMethod]

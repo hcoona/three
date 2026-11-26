@@ -62,6 +62,7 @@ internal static class PythonGroupReader
         token.ThrowIfCancellationRequested();
         PythonRevisionInputs after = await collect(candidate, request.Candidate, token);
         token.ThrowIfCancellationRequested();
+        PythonRepositoryReader.RequireRegisteredUnits(after);
         before = WithOtherResponsibilities(before, scope.Basis);
         after = WithOtherResponsibilities(after, scope.Candidate);
         CiPlan plan = PythonGroupPlanning.Plan(before, after, comparison, request.Full);
