@@ -21,7 +21,8 @@ public static class RunnerCommandFiles
     {
         _ = context;
         RedirectTemporaryFiles();
-        foreach (string name in new[] { "GITHUB_OUTPUT", "GITHUB_STATE", "GITHUB_STEP_SUMMARY" })
+        foreach (string name in new[] { "GITHUB_OUTPUT", "GITHUB_STATE", "GITHUB_STEP_SUMMARY",
+                     "GIT_LFS_SKIP_SMUDGE" })
             Environment.SetEnvironmentVariable(name, null);
         directory = Directory.CreateTempSubdirectory("workflow-runner-files-").FullName;
         foreach ((string name, string file) in new[] { ("GITHUB_ENV", "env"),

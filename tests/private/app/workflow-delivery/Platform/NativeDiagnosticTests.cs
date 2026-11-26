@@ -21,4 +21,13 @@ public sealed class NativeDiagnosticTests
         Assert.AreEqual("[truncated] " + after, tail);
         Assert.IsFalse(tail.Any(char.IsSurrogate));
     }
+
+    [TestMethod]
+    public void OperationSkipsGitConfigPairsAndKeepsSubcommand()
+    {
+        var command = new NativeCommand("git", ".", ["-c", "filter.lfs.required=false",
+            "--no-lazy-fetch", "worktree", "add", "--detach", "/tmp/checkout", "HEAD"], 30);
+        Assert.AreEqual("git worktree", NativeDiagnostic.Operation(command));
+        Assert.AreEqual("git", NativeDiagnostic.Operation(new("git", ".", ["-c"], 30)));
+    }
 }

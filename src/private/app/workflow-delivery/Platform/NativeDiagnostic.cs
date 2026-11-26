@@ -7,10 +7,22 @@ internal static class NativeDiagnostic
     internal const int TailLength = 4096;
 
     // The tool and its first operation word, omitting options and absolute local paths.
-    internal static string Operation(NativeCommand command) => string.Join(' ',
-        new[] { Path.GetFileNameWithoutExtension(command.Executable) }.Concat(
-            command.Arguments.Where(argument => !argument.StartsWith('-') &&
-                !Path.IsPathRooted(argument)).Take(1)));
+    internal static string Operation(NativeCommand command)
+    {
+        string tool = Path.GetFileNameWithoutExtension(command.Executable);
+        for (int i = 0; i < command.Arguments.Length; i++)
+        {
+            string argument = command.Arguments[i];
+            if (argument == "-c")
+            {
+                i++;
+                continue;
+            }
+            if (!argument.StartsWith('-') && !Path.IsPathRooted(argument))
+                return tool + " " + argument;
+        }
+        return tool;
+    }
 
     // "<termination>, exit <code>." followed by the native error and a bounded stderr tail.
     // Tools that report errors on stdout (MSBuild) may add a bounded stdout tail as well.

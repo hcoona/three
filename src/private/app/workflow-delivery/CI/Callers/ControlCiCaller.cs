@@ -45,9 +45,8 @@ internal static class ControlCiCaller
             new MaterializedEndpoint(Path.Combine(directory, "basis"), requested.Basis);
         // Git creates each fresh detached checkout at the exact commit; consumers bind it.
         foreach (MaterializedEndpoint endpoint in new[] { candidate, basis }.Distinct())
-            await CiCallerTransfer.RunAsync(new("git", root, ["worktree", "add", "--detach",
-                endpoint.Directory, endpoint.Reference], 300), directory,
-                Path.GetFileName(endpoint.Directory) + "-checkout", token);
+            await CiCallerTransfer.CheckoutAsync(root, endpoint.Directory, endpoint.Reference, 300,
+                directory, Path.GetFileName(endpoint.Directory) + "-checkout", token);
         CiCallerTransfer.Write(Path.Combine(directory, "group-endpoints.json"),
             new CiCallerEndpoints(basis, candidate, requested.Full),
             TransferJson.Default.CiCallerEndpoints);

@@ -80,8 +80,8 @@ internal static class NodeCiCaller
         if (group.Adopted.Checks.Length == 0)
             throw new InvalidDataException("Empty Node plan has no runtime execution.");
         string checkout = Path.Combine(directory, key);
-        await CiCallerTransfer.RunAsync(new("git", root, ["worktree", "add", "--detach", checkout,
-            group.Adopted.Candidate], 900), directory, key + "-checkout", token);
+        await CiCallerTransfer.CheckoutAsync(root, checkout, group.Adopted.Candidate, 900,
+            directory, key + "-checkout", token);
         var request = new NodeRunRequest(checkout,
             CiCallerTransfer.Fresh(Path.Combine(directory, key + "-scratch")), key);
         CiCallerTransfer.Write(Path.Combine(directory, key + "-request.json"), request,
