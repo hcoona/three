@@ -21,25 +21,27 @@
 .DESCRIPTION
     This script downloads the svgedit package from the NPM registry, extracts it, and replaces the svg-edit folder in the current directory.
     The script performs the following steps:
-    1. Download svgedit-7.3.8.tgz file and verify its npm integrity (SHA-512)
+    1. Download the svgedit tarball and verify its npm integrity (SHA-512)
     2. Use 7-Zip to extract the tgz file (requires two extractions)
     3. Extract /package/dist/editor directory
     4. Replace the svg-edit folder in the current directory
 
 .PARAMETER Version
-    The svgedit version to download. Default is "7.3.8"
+    The svgedit version to download. Defaults to the pinned version.
 .PARAMETER Integrity
     The npm Subresource Integrity string (sha512-<base64>) of the svgedit package.
-    Defaults to the pinned value for version 7.3.8. Required when -Version differs from the default;
+    Defaults to the pinned integrity. Required when -Version differs from the pinned version;
     obtain it with: npm view svgedit@<version> dist.integrity
 .PARAMETER Force
     Force the operation, overwrite even if the target directory exists
 .PARAMETER KeepDownload
     Keep downloaded files, do not delete temporary files
+.PARAMETER RefreshPinnedIntegrity
+    Refresh the pinned version's integrity from npm metadata without downloading or extracting the package.
 
 .EXAMPLE
     .\Update-LocalSvgEditor.ps1
-    Update SVG Editor with default version 7.3.8
+    Update SVG Editor with the pinned version
 .EXAMPLE
     .\Update-LocalSvgEditor.ps1 -Version "7.4.0" -Integrity "sha512-..." -Force
     Force update SVG Editor with version 7.4.0
@@ -65,7 +67,7 @@
 param(
     [Parameter(HelpMessage = "svgedit version to download")]
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')]
-    [string]$Version = "7.3.8",
+    [string]$Version,
 
     [Parameter(HelpMessage = "npm integrity (sha512-<base64>) of the svgedit package")]
     [ValidatePattern('^sha512-[A-Za-z0-9+/]+={0,2}$')]
@@ -75,7 +77,10 @@ param(
     [switch]$Force,
 
     [Parameter(HelpMessage = "Keep downloaded temporary files")]
-    [switch]$KeepDownload
+    [switch]$KeepDownload,
+
+    [Parameter(HelpMessage = "Refresh the pinned integrity from npm metadata only")]
+    [switch]$RefreshPinnedIntegrity
 )
 
 Set-StrictMode -Version Latest
@@ -93,16 +98,37 @@ Write-Verbose "Script running directory: $ScriptRoot"
 # Define variables
 $PinnedVersion = "7.3.8"
 $PinnedIntegrity = "sha512-+miJUrUabSZCIscDsyZHRpg+EmVcMUOP11mPSgH4bh768bGmE43CdHuB5uYAWDulb5E7zuq+UTJIjjKG3tiHhA=="
+
+if ($RefreshPinnedIntegrity) {
+    $ScriptPath = $MyInvocation.MyCommand.Path
+    if ($PSCmdlet.ShouldProcess($ScriptPath, "Refresh integrity for svgedit $PinnedVersion")) {
+        $Response = Invoke-RestMethod -Uri "https://registry.npmjs.org/svgedit/$PinnedVersion"
+        $NewIntegrity = $Response.dist.integrity
+        if ($NewIntegrity -cnotmatch '^sha512-[A-Za-z0-9+/]+={0,2}$') {
+            throw "npm returned invalid integrity for svgedit $PinnedVersion."
+        }
+
+        $ScriptContent = [System.IO.File]::ReadAllText($ScriptPath)
+        $UpdatedContent = $ScriptContent -creplace '(?m)^\$PinnedIntegrity = "[^"\r\n]+"(?=\r?$)', ('$PinnedIntegrity = "{0}"' -f $NewIntegrity)
+        if ($UpdatedContent -ceq $ScriptContent -and $NewIntegrity -cne $PinnedIntegrity) {
+            throw "Failed to locate `$PinnedIntegrity assignment in $ScriptPath."
+        }
+        [System.IO.File]::WriteAllText($ScriptPath, $UpdatedContent)
+    }
+    return
+}
+
+$EffectiveVersion = if (-not $PSBoundParameters.ContainsKey('Version')) { $PinnedVersion } else { $Version }
 if (-not $Integrity) {
-    if ($Version -ne $PinnedVersion) {
-        throw "No integrity pinned for svgedit $Version. Pass -Integrity with the value from: npm view svgedit@$Version dist.integrity"
+    if ($EffectiveVersion -ne $PinnedVersion) {
+        throw "No integrity pinned for svgedit $EffectiveVersion. Pass -Integrity with the value from: npm view svgedit@$EffectiveVersion dist.integrity"
     }
     $Integrity = $PinnedIntegrity
 }
-$DownloadUrl = "https://registry.npmjs.org/svgedit/-/svgedit-$Version.tgz"
+$DownloadUrl = "https://registry.npmjs.org/svgedit/-/svgedit-$EffectiveVersion.tgz"
 $TempDir = Join-Path $env:TEMP "svgedit-update-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-$TgzFile = Join-Path $TempDir "svgedit-$Version.tgz"
-$TarFile = Join-Path $TempDir "svgedit-$Version.tar"
+$TgzFile = Join-Path $TempDir "svgedit-$EffectiveVersion.tgz"
+$TarFile = Join-Path $TempDir "svgedit-$EffectiveVersion.tar"
 $ExtractDir = Join-Path $TempDir "extracted"
 $TargetDir = Join-Path $ScriptRoot "svg-edit"
 
@@ -167,7 +193,7 @@ function Get-SvgEditPackage {
     )
 
     try {
-        Write-Information "Downloading svgedit-$Version.tgz..." -InformationAction Continue
+        Write-Information "Downloading svgedit-$EffectiveVersion.tgz..." -InformationAction Continue
         Write-Verbose "Download URL: $Url"
         Write-Verbose "Save to: $OutputPath"
 
@@ -357,7 +383,7 @@ function Remove-TempFile {
 
 # Main execution logic
 try {
-    Write-Information "Starting SVG Editor update (version: $Version)" -InformationAction Continue
+    Write-Information "Starting SVG Editor update (version: $EffectiveVersion)" -InformationAction Continue
 
     Write-Verbose "Validating prerequisites..."
 
@@ -379,7 +405,7 @@ try {
         throw "Insufficient permissions to write to target directory: $ScriptRoot"
     }
 
-    if ($PSCmdlet.ShouldProcess("svg-edit directory", "Update to version $Version")) {
+    if ($PSCmdlet.ShouldProcess("svg-edit directory", "Update to version $EffectiveVersion")) {
         New-TempDirectory -Path $TempDir
 
         try {

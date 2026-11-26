@@ -852,6 +852,7 @@ public sealed class CiScopeTests
     [DataRow("tests/tools/script.py")]
     [DataRow("eng/scripts/sync_python_version.py")]
     [DataRow("eng/scripts/release_batch_dispatch.py")]
+    [DataRow("eng/scripts/release_triage.py")]
     [DataRow("src/private/lib/scholarly-publication/tool.py")]
     [DataRow(".agents/tool.py")]
     [DataRow(".github/scripts/tool.py")]

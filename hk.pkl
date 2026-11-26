@@ -304,6 +304,11 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       )
     check = "python eng/scripts/hk_exec.py python eng/scripts/hk_scope_drift.py"
   }
+  ["public-release-inventory"] {
+    profiles = List("small")
+    check =
+      "python eng/scripts/hk_exec.py uv run python eng/scripts/release_triage.py --check-inventory"
+  }
 }
 
 local scholarly_publication_validation = new Mapping<String, Step> {

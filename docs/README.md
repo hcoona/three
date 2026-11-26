@@ -38,6 +38,9 @@ Neither this portal nor an old plan adds work to the accepted Wave.
   Windows evidence.
 - [Bounded agent execution](engineering/agent-execution.md), including recovery
   and mutable-interface rechecks.
+- [Public release triage and inventory gate](engineering/public-release-triage.md),
+  covering tiered release-diff inspection and `src/public/{app,lib}/*`
+  exhaustiveness.
 
 ## Libraries and Companion Interfaces
 

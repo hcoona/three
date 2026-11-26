@@ -506,6 +506,7 @@ internal static partial class CiScope
         AllInputs.Contains(path, StringComparer.Ordinal) ||
         PythonInputs.Contains(path, StringComparer.Ordinal) || Under(path, "tests/eng") ||
         path is "eng/scripts/release_batch_dispatch.py" or
+            "eng/scripts/release_triage.py" or
             ".github/workflows/workflow-delivery-v3-python-release.yml" or
             ".github/workflows/workflow-delivery-v3-ruby-release.yml" or ".typos.toml" ||
         PythonRepositoryInputs.BuddyGuardInputs.Contains(path, StringComparer.Ordinal) ||
