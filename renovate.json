@@ -44,6 +44,16 @@
     },
     {
       "customType": "regex",
+      "managerFilePatterns": [
+        "src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/Update-LocalSvgEditor.ps1"
+      ],
+      "matchStrings": ["(?m)^\\$PinnedVersion = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\"\\r?$"],
+      "depNameTemplate": "svgedit",
+      "datasourceTemplate": "npm",
+      "versioningTemplate": "npm"
+    },
+    {
+      "customType": "regex",
       "managerFilePatterns": ["/^src/private/lib/hk/Config\\.pkl$/"],
       "matchStrings": [
         "amends \"package://github\\.com/jdx/hk/releases/download/v(?<currentValue>[^/]+)/hk@[^#]+#/Config\\.pkl\""
@@ -111,6 +121,19 @@
       "matchFileNames": ["src/public/app/**", "src/private/app/**", "src/lab/**"],
       "rangeStrategy": "replace",
       "automerge": true
+    },
+    {
+      "description": "Refresh the bundled svgedit integrity when its pinned version changes.",
+      "matchManagers": ["custom.regex"],
+      "matchFileNames": ["src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/Update-LocalSvgEditor.ps1"],
+      "matchDepNames": ["svgedit"],
+      "postUpgradeTasks": {
+        "commands": [
+          "pwsh -NoLogo -NoProfile -NonInteractive -File src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/Update-LocalSvgEditor.ps1 -RefreshPinnedIntegrity"
+        ],
+        "fileFilters": ["src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/Update-LocalSvgEditor.ps1"],
+        "executionMode": "branch"
+      }
     },
     {
       "description": "Repository-level tooling may update lower bounds normally.",
