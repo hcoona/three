@@ -14,9 +14,9 @@ capability, architectural, public-contract, and non-routine external-risk work
 under the
 [record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency),
 while contract-preserving routine maintenance and owner-governed release
-operations for already-admitted release units follow that policy directly. A PR,
-proposed document, research result, local observation or merged source cannot
-grant itself broader effects. Do not use Workflow v1/v2 to fill a V3 decision gap. Internal formats may break; there is no requirement to retain old readers
+operations for admitted public product release units follow that policy
+directly. A PR, proposed document, research result, local observation or merged
+source cannot grant itself broader effects. Do not use Workflow v1/v2 to fill a V3 decision gap. Internal formats may break; there is no requirement to retain old readers
 in the new core. Historical readers use
 [actual producer-qualified source](validation/historical-readers.md); no
 compatibility tree, runtime replay service or parallel source authority is
@@ -88,14 +88,17 @@ spent. No source change, artifact download, requirements revision, Wave
 contraction or evidence acceptance reopens a proving campaign or authorizes a
 new campaign generation, proving rerun, autonomous agent release dispatch,
 Environment approval, out-of-band publication, or authentication, Environment,
-account, publisher or access change. Existing external resources and publisher
-registrations are unchanged by source retirement. Native experiments still
-require their exact accepted bounded protocol and effects authorization.
+account, publisher or access change. Internal `hcoona-release-smoke-*` proving
+fixture operations across npm, NuGet, Python and Ruby remain closed and require
+concrete `Delivery Wave` authorization. Existing external resources and
+publisher registrations are unchanged by source retirement. Native experiments
+still require their exact accepted bounded protocol and effects authorization.
 
 Routine release preparation, owner-governed `workflow-delivery-v3-*-release.yml`
 dispatches, and existing publisher/storefront maintenance for already-admitted
-release units ([Official channel scope](integration/common.md#official-channel-scope))
-follow
+public product release units (`src/public/**` in
+[Official channel scope](integration/common.md#official-channel-scope),
+excluding `hcoona-release-smoke-*` fixtures) follow
 [work authorization](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency);
 agents never autonomously dispatch release workflows, approve Environments, or
 run publication commands without an explicit operational instruction from the

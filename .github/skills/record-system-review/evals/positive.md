@@ -9,8 +9,9 @@ owning `.apm/skills/example` directory without changing its family responsibilit
 `apm.lock.yaml` source/deployment mappings, and passes all blocking hk checks and
 explicit-base `records:check`. The concerns, producers, maintainers, consumers, and review
 points are unchanged. A separate ordinary pull request transitions committed `version.json`
-and release notes for an already-admitted release unit without changing public APIs, target
-frameworks, or Workflow Delivery contracts, requiring no `Delivery Wave` entry.
+and release notes for an already-admitted public product release unit without changing
+public APIs, target frameworks, or Workflow Delivery contracts, requiring no `Delivery Wave`
+entry.
 
 ## Expected Review
 

@@ -68,8 +68,8 @@ to replace the applicable accepted instructions or enlarge work authorization.
    cannot establish complete repository coverage.
 2. Confirm either that the change qualifies as contract-preserving routine maintenance
    (including committed version or changelog/release-note transitions for already-admitted
-   release units without public API, target-framework, or Workflow Delivery contract
-   changes) without new external, paid, credentialed, or privacy effects
+   public product release units without public API, target-framework, or Workflow Delivery
+   contract changes) without new external, paid, credentialed, or privacy effects
    ([work authorization](../../../docs/governance/record-system.md#work-authorization-and-concurrency)),
    or that the target branch's accepted Delivery Wave contains an entry authorizing the
    change and the work remains inside that entry's scope, exclusions, and permitted
@@ -115,8 +115,8 @@ to replace the applicable accepted instructions or enlarge work authorization.
     admitting new release units or Official scope, changing release/qualification
     contracts, out-of-band publication, reopening closed proving campaigns, and
     external/paid empirical campaigns—(exempting contract-preserving routine maintenance
-    and owner-governed release operations gated by explicit repository-owner disposition
-    and destination GitHub Environments under
+    and owner-governed release operations, with live publication gated by destination
+    GitHub Environments, under
     [work authorization](../../../docs/governance/record-system.md#work-authorization-and-concurrency)),
     contains no progress or historical-status ledger, focuses on bounded scope/outcome,
     exclusions, and explicit external/risk effects, closes grants atomically by merged

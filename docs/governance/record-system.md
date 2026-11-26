@@ -165,23 +165,25 @@ Contract-preserving, non-feature defect and test fixes, CI
 troubleshooting/diagnostics, lint/formatting, doc-drift repairs, routine
 Renovate or dependency compatibility adjustments, and committed release or
 prerelease version and changelog/release-note transitions (`version.json`,
-static `pyproject.toml`, `version.rb`) for already-admitted release units
-([Official channel scope](../../src/private/app/workflow-delivery/docs/integration/common.md#official-channel-scope))
-that do not change public APIs, target frameworks, or Workflow Delivery
-contracts—all without new external, paid, credentialed, or privacy
-effects—execute directly through ordinary pull requests without a Delivery Wave
-entry.
+static `pyproject.toml`, `version.rb`) for already-admitted public product
+release units (`src/public/**` in
+[Official channel scope](../../src/private/app/workflow-delivery/docs/integration/common.md#official-channel-scope),
+excluding internal `hcoona-release-smoke-*` proving fixtures) that do not change
+public APIs, target frameworks, or Workflow Delivery contracts—all without new
+external, paid, credentialed, or privacy effects—execute directly through
+ordinary pull requests without a Delivery Wave entry.
 
-Routine controlled release operations for already-admitted release units also
-require no Delivery Wave entry: credential-free `dry-run` dispatches and live
-Buddy or Official dispatches (gated by the destination's GitHub Environment
-approval) of checked-in `.github/workflows/workflow-delivery-v3-*-release.yml`
-callers initiated by the repository owner—or executed by an agent only upon an
-explicit operational instruction from the repository owner for that specific
-dispatch—and repository-owner maintenance of existing external publisher or
-storefront registrations (such as renewing an expired OIDC trusted publisher).
-Agents must never autonomously dispatch release workflows, approve Environments,
-or run package or release publication commands during ordinary development,
+Routine controlled release operations for those admitted public product release
+units also require no Delivery Wave entry: publication-credential-free `dry-run`
+dispatches and eligible live Buddy or Official dispatches (with live publication
+gated by the destination's GitHub Environment approval) of checked-in
+`.github/workflows/workflow-delivery-v3-*-release.yml` callers initiated by the
+repository owner—or executed by an agent only upon an explicit operational
+instruction from the repository owner for that specific dispatch—and
+repository-owner maintenance of existing external publisher or storefront
+registrations (such as renewing an expired OIDC trusted publisher). Agents must
+never autonomously dispatch release workflows, approve Environments, or run
+package or release publication commands during ordinary development,
 maintenance, testing, or review without an explicit operational instruction from
 the repository owner for that specific operation.
 
@@ -191,10 +193,11 @@ architectural or public-contract changes, and non-routine external or
 risk-bearing operations—including admitting a new release unit or Official
 channel/destination scope, changing Workflow Delivery release or qualification
 contracts, out-of-band or manual package or release publication bypassing the
-governed release workflows and GitHub Environments, reopening closed proving
-campaigns, and running new external or paid empirical campaigns. Each entry
-identifies accepted inputs, one bounded advancement and outcome, material
-exclusions, and any explicitly permitted external or risk-bearing effects.
+governed release workflows and GitHub Environments, live or exceptional
+smoke/proving fixture operations, reopening closed proving campaigns, and
+running new external or paid empirical campaigns. Each entry identifies accepted
+inputs, one bounded advancement and outcome, material exclusions, and any
+explicitly permitted external or risk-bearing effects.
 
 Within authorized work, routine local editing, restore/build/lint/test/pilot
 debugging, out-of-repository scratch harnesses, read-only
