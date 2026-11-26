@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Microsoft.Data.Sqlite;
 
 namespace LiteAgensh;
 
@@ -35,6 +36,13 @@ public sealed class LocalTools
         JsonObject result = ToolCatalog.IsGitOperation(name)
             ? await Git.InvokeAsync(actor, name, arguments, cancellationToken).ConfigureAwait(false)
             : Collaboration.Invoke(actor, name, arguments);
-        return Collaboration.AddNotices(actor, result);
+        try
+        {
+            return Collaboration.AddNotices(actor, result);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6)
+        {
+            return Collaboration.UnleasedNotices(actor, result, degraded: true);
+        }
     }
 }

@@ -77,27 +77,12 @@ public sealed record RunConfiguration
             );
         }
 
-        string repository = Path.GetFullPath(RepositoryPath).TrimEnd(Path.DirectorySeparatorChar);
-        string state = Path.GetFullPath(StatePath).TrimEnd(Path.DirectorySeparatorChar);
-        if (
-            state.Equals(repository, StringComparison.OrdinalIgnoreCase)
-            || state.StartsWith(
-                repository + Path.DirectorySeparatorChar,
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
+        if (Paths.IsSameOrUnder(StatePath, RepositoryPath))
         {
             throw new ArgumentException("Run state must be outside the original checkout.");
         }
 
-        string ledger = Path.GetFullPath(CampaignLedgerPath);
-        if (
-            ledger.Equals(repository, StringComparison.OrdinalIgnoreCase)
-            || ledger.StartsWith(
-                repository + Path.DirectorySeparatorChar,
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
+        if (Paths.IsSameOrUnder(CampaignLedgerPath, RepositoryPath))
         {
             throw new ArgumentException(
                 "The campaign ledger must be outside the original checkout."

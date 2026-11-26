@@ -121,7 +121,7 @@ internal static class NoDispatchCancellation
             && hostBinding["runtimeLeaseId"]?.GetValue<long>() == leaseId
             && Text(hostBinding, "sessionId") == reservation.SessionId
             && Text(hostBinding, "worker") == reservation.Worker
-            && SamePath(Text(hostBinding, "workingDirectory"),
+            && Paths.AreSame(Text(hostBinding, "workingDirectory"),
                 Text(diagnostic, "workingDirectory"))
             && Text(lease, "kind") == $"native:runtime:{runtimeId}"
             && Text(lease, "state") == "exited"
@@ -155,7 +155,7 @@ internal static class NoDispatchCancellation
                 && Text(source, "runId") == database.RunId
                 && Text(source, "reservationId") == reservation.Id
                 && Text(source, "sessionId") == reservation.SessionId
-                && SamePath(Text(source, "workingDirectory"),
+                && Paths.AreSame(Text(source, "workingDirectory"),
                     Text(diagnostic, "workingDirectory"))
                 && Text(source, "evidenceKind") is "native-sdk" or "controlled-native-dependency",
                 "The persisted dispatch-contract provenance is unsupported."
@@ -188,7 +188,7 @@ internal static class NoDispatchCancellation
                 "SELECT COUNT(*) FROM coordinator_turns WHERE worker=$id;",
                 snapshot, ("$id", reservation.Worker))! == 0,
                 "Legacy evidence does not distinguish this worker's prior completed turns.");
-            Require(SamePath(
+            Require(Paths.AreSame(
                 Value(connection, snapshot, $"worktree:{reservation.Worker}")
                     ?? throw Unknown("The retained worktree binding is missing."),
                 Text(diagnostic, "workingDirectory")),
@@ -276,7 +276,7 @@ internal static class NoDispatchCancellation
         JsonObject preservation = Object(JsonNode.Parse(
             File.ReadAllBytes(Path.Combine(root, "source-after.json"))));
         JsonObject[] checkouts = Array(preservation["checkouts"]).OfType<JsonObject>()
-            .Where(item => SamePath(Text(item, "path"),
+            .Where(item => Paths.AreSame(Text(item, "path"),
                 Text(diagnostic, "workingDirectory"))).ToArray();
         Require(Array(preservation["changedOriginalFiles"]).Count == 0
             && checkouts.Length == 1
@@ -366,8 +366,20 @@ internal static class NoDispatchCancellation
         try
         {
             using Process process = Process.GetProcessById(pid);
-            Require(process.StartTime.ToUniversalTime().Ticks != ticks || process.HasExited,
-                "An exact original owner/runtime identity is still alive.");
+            try
+            {
+                if (process.HasExited)
+                {
+                    return;
+                }
+
+                Require(process.StartTime.ToUniversalTime().Ticks != ticks || process.HasExited,
+                    "An exact original owner/runtime identity is still alive.");
+            }
+            catch (InvalidOperationException) when (process.HasExited)
+            {
+                // Process exited between HasExited and StartTime inspection.
+            }
         }
         catch (ArgumentException)
         {
@@ -419,10 +431,6 @@ internal static class NoDispatchCancellation
     private static string Text(JsonObject value, string key) =>
         value[key]?.GetValue<string>()
             ?? throw Unknown($"Required evidence field {key} is missing.");
-
-    private static bool SamePath(string first, string second) =>
-        Path.GetFullPath(first).Equals(
-            Path.GetFullPath(second), StringComparison.OrdinalIgnoreCase);
 
     internal static string Marker(string id) => $"native:dispatch_contract:{id}";
 

@@ -1,7 +1,7 @@
 using System.Globalization;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
+using static LiteAgensh.ToolArguments;
 
 namespace LiteAgensh;
 
@@ -174,14 +174,36 @@ public sealed partial class CollaborationOperations
             || closedBy == "owner"
         )
         {
+            if (root["state"]!.GetValue<string>() == "open")
+            {
+                int cleaned = Sql.Execute(
+                    connection,
+                    """
+                    UPDATE tasks SET closed_by=NULL
+                    WHERE id=1 AND state='open' AND closed_by IS NOT NULL AND closed_by<>'owner';
+                    DELETE FROM meta WHERE key='lifecycle:root_closed_by' AND value<>'owner';
+                    """,
+                    transaction
+                );
+                if (cleaned > 0)
+                {
+                    transaction.Commit();
+                }
+            }
+
             return false;
         }
 
         Sql.Execute(
             connection,
-            "UPDATE tasks SET state='open',updated_at=$now WHERE id=1;",
+            "UPDATE tasks SET state='open',closed_by=NULL,updated_at=$now WHERE id=1;",
             transaction,
             ("$now", Timestamp)
+        );
+        Sql.Execute(
+            connection,
+            "DELETE FROM meta WHERE key='lifecycle:root_closed_by' AND value<>'owner';",
+            transaction
         );
         var payload = new JsonObject
         {
@@ -261,30 +283,7 @@ public sealed partial class CollaborationOperations
             ["members"] = Array(database.Members),
             ["repositoryPath"] = database.Configuration.RepositoryPath,
             ["statePath"] = database.StatePath,
-            ["capabilities"] = Array([
-                "run_info",
-                "agent_info",
-                "agent_list",
-                "task_write",
-                "task_read",
-                "task_list",
-                "work_search",
-                "message_send",
-                "message_read",
-                "message_thread",
-                "message_search",
-                "channel_read",
-                "channel_list",
-                "board_publish",
-                "board_recent",
-                "board_search",
-                "board_expand",
-                "change_write",
-                "change_read",
-                "change_list",
-                "change_review",
-                "check_read",
-            ]),
+            ["capabilities"] = Array(ToolCatalog.Names),
         };
     }
 
@@ -511,10 +510,19 @@ public sealed partial class CollaborationOperations
             ("$state", state),
             ("$limit", limit + 1)
         );
-        return Page(rows.Select(row => Task(connection, transaction, Id(row))).ToList(), limit);
+        var activeClaims = ActiveClaims(connection, transaction);
+        return Page(
+            rows.Select(row => Task(connection, transaction, Id(row), activeClaims)).ToList(),
+            limit
+        );
     }
 
-    private JsonObject Task(SqliteConnection connection, SqliteTransaction transaction, long id)
+    private JsonObject Task(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long id,
+        (string Actor, string Content)[]? activeClaims = null
+    )
     {
         var result =
             One(
@@ -540,26 +548,43 @@ public sealed partial class CollaborationOperations
                 .Select(row => (JsonNode)row)
                 .ToArray()
         );
-        var workers = database.Configuration.WorkerIds.ToHashSet(StringComparer.Ordinal);
-        var claimants = Rows(
-                connection,
-                transaction,
-                """
-                SELECT h.actor,h.content FROM board_history h
-                JOIN board_recent r ON r.revision_id=h.id
-                WHERE h.type='CLAIM' AND h.expires_at > $now ORDER BY h.id;
-                """,
-                ("$now", database.Now.ToUnixTimeMilliseconds())
-            )
-            .Where(row =>
-                workers.Contains(row["actor"]!.GetValue<string>())
-                && BoardPolicy.CitesTask(row["content"]!.GetValue<string>(), id)
-            )
-            .Select(row => row["actor"]!.GetValue<string>())
+        var claimants = (activeClaims ?? ActiveClaims(connection, transaction))
+            .Where(claim => BoardPolicy.CitesTask(claim.Content, id))
+            .Select(claim => claim.Actor)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal);
         result["assignees"] = Array(claimants);
         return result;
+    }
+
+    private (string Actor, string Content)[] ActiveClaims(
+        SqliteConnection connection,
+        SqliteTransaction transaction
+    )
+    {
+        var workers = database.Configuration.WorkerIds.ToHashSet(StringComparer.Ordinal);
+        using var command = Sql.Command(
+            connection,
+            """
+            SELECT h.actor,h.content FROM board_history h
+            JOIN board_recent r ON r.revision_id=h.id
+            WHERE h.type='CLAIM' AND h.expires_at > $now;
+            """,
+            transaction,
+            ("$now", database.Now.ToUnixTimeMilliseconds())
+        );
+        using var reader = Sql.Reader(command);
+        var claims = new List<(string Actor, string Content)>();
+        while (reader.Read())
+        {
+            string actor = reader.GetString(0);
+            if (workers.Contains(actor))
+            {
+                claims.Add((actor, reader.GetString(1)));
+            }
+        }
+
+        return claims.ToArray();
     }
 
     private static JsonObject SearchWork(
@@ -730,123 +755,4 @@ public sealed partial class CollaborationOperations
             ["nextCursor"] = more ? Id(rows[^1]) : null,
         };
     }
-
-    private static void Fields(JsonObject arguments, params string[] allowed)
-    {
-        foreach (var field in arguments)
-        {
-            if (!allowed.Contains(field.Key, StringComparer.Ordinal))
-            {
-                throw Invalid($"Unknown field '{field.Key}'.");
-            }
-        }
-    }
-
-    private static string Text(JsonObject arguments, string field)
-    {
-        if (
-            arguments[field] is not JsonValue value
-            || !value.TryGetValue<string>(out var text)
-            || string.IsNullOrWhiteSpace(text)
-        )
-        {
-            throw Invalid($"'{field}' must be a nonempty string.");
-        }
-
-        return text;
-    }
-
-    private static string? OptionalText(JsonObject arguments, string field, bool allowEmpty = false)
-    {
-        if (!arguments.ContainsKey(field))
-        {
-            return null;
-        }
-
-        if (!allowEmpty)
-        {
-            return Text(arguments, field);
-        }
-
-        if (arguments[field] is not JsonValue value || !value.TryGetValue<string>(out var text))
-        {
-            throw Invalid($"'{field}' must be a string.");
-        }
-
-        return text;
-    }
-
-    private static long Integer(JsonObject arguments, string field, long minimum = 1)
-    {
-        if (
-            arguments[field] is not JsonValue value
-            || value.GetValueKind() != JsonValueKind.Number
-            || !JsonSerializer.SerializeToElement(value, Json.Options).TryGetInt64(out var number)
-            || number < minimum
-        )
-        {
-            throw Invalid($"'{field}' must be a JSON integer >= {minimum}.");
-        }
-
-        return number;
-    }
-
-    private static bool Boolean(JsonObject arguments, string field)
-    {
-        if (!arguments.ContainsKey(field))
-        {
-            return false;
-        }
-
-        if (arguments[field] is not JsonValue value || !value.TryGetValue<bool>(out var boolean))
-        {
-            throw Invalid($"'{field}' must be a boolean.");
-        }
-
-        return boolean;
-    }
-
-    private static string[] Strings(JsonObject arguments, string field, bool required = false)
-    {
-        if (!arguments.ContainsKey(field) && !required)
-        {
-            return [];
-        }
-
-        if (arguments[field] is not JsonArray array)
-        {
-            throw Invalid($"'{field}' must be an array of strings.");
-        }
-
-        return array
-            .Select(node =>
-            {
-                if (node is not JsonValue value || !value.TryGetValue<string>(out var text))
-                {
-                    throw Invalid($"'{field}' must contain strings.");
-                }
-
-                return text;
-            })
-            .ToArray();
-    }
-
-    private static (long Cursor, int Limit) Pagination(JsonObject arguments) =>
-        (arguments.ContainsKey("cursor") ? Integer(arguments, "cursor", 0) : 0, Limit(arguments));
-
-    private static int Limit(JsonObject arguments)
-    {
-        var limit = arguments.ContainsKey("limit") ? Integer(arguments, "limit") : 50;
-        if (limit > 200)
-        {
-            throw Invalid("'limit' must be between 1 and 200.");
-        }
-
-        return (int)limit;
-    }
-
-    private static OperationException Invalid(string message) => new("invalid_arguments", message);
-
-    private static OperationException Missing(string kind, long id) =>
-        new("not_found", $"{kind} {id} does not exist.");
 }

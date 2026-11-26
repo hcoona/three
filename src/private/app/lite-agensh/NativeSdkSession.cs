@@ -647,12 +647,7 @@ internal sealed class NativeSdkSession : INativeSdkSession
             metadata.SessionId != expectedSession
             || activeSessionId != expectedSession
             || !Path.IsPathFullyQualified(metadata.WorkingDirectory)
-            || !Path.GetFullPath(metadata.WorkingDirectory)
-                .TrimEnd(Path.DirectorySeparatorChar)
-                .Equals(
-                    cwd.TrimEnd(Path.DirectorySeparatorChar),
-                    StringComparison.OrdinalIgnoreCase
-                )
+            || !Paths.AreSame(metadata.WorkingDirectory, cwd)
             || metadata.AlreadyInUse
             || metadata.IsRemote
             || (
