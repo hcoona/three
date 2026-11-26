@@ -17,11 +17,14 @@ linters; workflow YAML uses `actionlint`.
 
 ## CI Execution Contract
 
-HK owns fast source, configuration, link, and record conformance; project unit,
-scenario, and integration suites run in CI jobs selected by Workflow Delivery
+HK owns fast source, configuration, link, and record conformance (including
+`SANY` syntax/semantic parsing for `*.tla`); project unit, scenario, and
+integration suites—as well as `TLC` finite-state model checking and `PlusCal`
+translation—run in CI jobs selected by Workflow Delivery
 ([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) and
 [`src/private/app/workflow-delivery/docs/design/ci.md`](../../src/private/app/workflow-delivery/docs/design/ci.md))
-or through explicit local test commands—not HK's `large` profile.
+or through explicit local commands (`mise run tla:tlc`)—not HK's `large`
+profile.
 
 - **Single `Validate` merge gate:** The `main` ruleset requires `Validate`,
   which depends on every other job in `ci.yml` and fails on failed, skipped,
@@ -55,7 +58,8 @@ or through explicit local test commands—not HK's `large` profile.
   directories so HK does not recursively walk them, and fails closed on symlinks
   to directories. When `mise.lock`, `uv.lock`, or `pnpm-lock.yaml` changes,
   steps whose structured `Config.Command` linter version changed (or cannot be
-  resolved to an unchanged lock entry) automatically widen to
+  resolved to an unchanged lock entry, including multi-tool steps such as
+  `tla-sany` across `java` and `github:tlaplus/tlaplus`) automatically widen to
   `--all --step=<step>`.
 
 ## Retained Windows Evidence
