@@ -8,6 +8,9 @@ public static class ToolCatalog
 {
     public static IReadOnlyList<Tool> Definitions { get; } = CreateDefinitions();
 
+    internal static IReadOnlyList<string> Names { get; } =
+        [.. Definitions.Select(tool => tool.Name)];
+
     public static bool IsGitOperation(string name) =>
         name is "change_write" or "change_read" or "change_list" or "change_review" or "check_read";
 

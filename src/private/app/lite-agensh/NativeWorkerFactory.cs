@@ -412,7 +412,7 @@ internal sealed class NativeWorkerFactory(
             RequireRecoveryEvidence(
                 recovery.Metadata is JsonObject observed
                 && observed["sessionId"]?.GetValue<string>() == reservation.SessionId
-                && SameRecoveryPath(observed["workingDirectory"]?.GetValue<string>(), cwd)
+                && Paths.AreSame(observed["workingDirectory"]?.GetValue<string>(), cwd)
                 && observed["appliedLimit"]?.GetValue<double>() == backedLimit
                 && observed["alreadyInUse"]?.GetValue<bool>() == false
                 && observed["isRemote"]?.GetValue<bool>() == false
@@ -516,13 +516,13 @@ internal sealed class NativeWorkerFactory(
                 && start["runId"]?.GetValue<string>() == database.RunId
                 && start["reservationId"]?.GetValue<string>() == reservation.Id
                 && start["sessionId"]?.GetValue<string>() == reservation.SessionId
-                && SameRecoveryPath(start["workingDirectory"]?.GetValue<string>(), cwd)
+                && Paths.AreSame(start["workingDirectory"]?.GetValue<string>(), cwd)
                 && NoDispatchCancellation.IsEmpty(initial)
                 && initial["appliedLimit"]?.GetValue<double>() is double initialLimit
                 && initialLimit > 0 && initialLimit <= backedLimit
                 && retained["appliedLimit"]?.GetValue<double>() == backedLimit
                 && retained["sessionId"]?.GetValue<string>() == reservation.SessionId
-                && SameRecoveryPath(retained["workingDirectory"]?.GetValue<string>(), cwd)
+                && Paths.AreSame(retained["workingDirectory"]?.GetValue<string>(), cwd)
                 && retained["paidReservation"]?.GetValue<bool>() == true
                 && retained["alreadyInUse"]?.GetValue<bool>() == false
                 && retained["isRemote"]?.GetValue<bool>() == false
@@ -550,7 +550,7 @@ internal sealed class NativeWorkerFactory(
                 && JsonNode.DeepEquals(association["runtimeLeaseId"], retained["runtimeLeaseId"])
                 && association["sessionId"]?.GetValue<string>() == reservation.SessionId
                 && association["worker"]?.GetValue<string>() == reservation.Worker
-                && SameRecoveryPath(association["workingDirectory"]?.GetValue<string>(), cwd)
+                && Paths.AreSame(association["workingDirectory"]?.GetValue<string>(), cwd)
                 && (long)Sql.Scalar(connection,
                     "SELECT COUNT(*) FROM process_leases WHERE id=$lease AND kind=$kind "
                         + "AND state='exited' AND pid>0 AND start_ticks>0;",
@@ -603,11 +603,6 @@ internal sealed class NativeWorkerFactory(
                 "Original native limit evidence is malformed or incompatible.", exception);
         }
     }
-
-    private static bool SameRecoveryPath(string? path, string cwd) =>
-        path is not null && Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)).Equals(
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(cwd)),
-            StringComparison.OrdinalIgnoreCase);
 
     internal static bool IsPreActivationEligibilityRefusal(OperationException failure) =>
         failure.Data.Contains(RecoveryEligibilityMarker);

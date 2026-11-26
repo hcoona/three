@@ -9,6 +9,7 @@ public sealed class RunDatabase
 {
     private const int SchemaVersion = 1;
     private readonly string connectionString;
+    private IReadOnlyList<string> cachedMembers;
 
     public RunDatabase(
         string statePath,
@@ -65,10 +66,7 @@ public sealed class RunDatabase
                 throw new InvalidOperationException("Run configuration is missing.");
             }
 
-            if (
-                !Path.GetFullPath(configuration.StatePath)
-                    .Equals(StatePath, StringComparison.OrdinalIgnoreCase)
-            )
+            if (!Paths.AreSame(configuration.StatePath, StatePath))
             {
                 throw new ArgumentException(
                     "Configuration and database state paths disagree.",
@@ -103,6 +101,7 @@ public sealed class RunDatabase
         }
 
         transaction.Commit();
+        cachedMembers = Array.AsReadOnly(["owner", .. Configuration.WorkerIds]);
     }
 
     public string StatePath { get; }
@@ -116,7 +115,7 @@ public sealed class RunDatabase
     public string RunId =>
         ReadMetadata("run_id") ?? throw new InvalidOperationException("Run identity is missing.");
 
-    public IReadOnlyList<string> Members => ["owner", .. Configuration.WorkerIds];
+    public IReadOnlyList<string> Members => cachedMembers;
 
     public SqliteConnection Open()
     {
@@ -149,16 +148,17 @@ public sealed class RunDatabase
         configuration.Validate();
         WriteMetadata("configuration", JsonSerializer.Serialize(configuration, Json.Options));
         Configuration = configuration;
+        cachedMembers = Array.AsReadOnly(["owner", .. configuration.WorkerIds]);
     }
 }
 
 public static class Sql
 {
-    internal static string ConnectionStringFor(string path) =>
+    internal static string ConnectionStringFor(string path, bool create = true) =>
         new SqliteConnectionStringBuilder
         {
             DataSource = path,
-            Mode = SqliteOpenMode.ReadWriteCreate,
+            Mode = create ? SqliteOpenMode.ReadWriteCreate : SqliteOpenMode.ReadWrite,
             ForeignKeys = true,
             DefaultTimeout = 5,
             Pooling = true,

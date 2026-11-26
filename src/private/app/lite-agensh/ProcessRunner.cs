@@ -43,6 +43,19 @@ public sealed class ProcessRunner
 
     public long Register(Process process, string kind)
     {
+        long ticks;
+        try
+        {
+            ticks = process.StartTime.ToUniversalTime().Ticks;
+        }
+        catch (Exception exception)
+            when (kind == "command"
+                && exception is InvalidOperationException or System.ComponentModel.Win32Exception
+                && HasProcessExited(process))
+        {
+            ticks = 0;
+        }
+
         using SqliteConnection connection = database.Open();
         Sql.Execute(
             connection,
@@ -52,7 +65,7 @@ public sealed class ProcessRunner
             """,
             null,
             ("$pid", process.Id),
-            ("$ticks", process.StartTime.ToUniversalTime().Ticks),
+            ("$ticks", ticks),
             ("$kind", kind),
             ("$time", database.Now.ToString("O"))
         );
@@ -73,11 +86,28 @@ public sealed class ProcessRunner
         );
     }
 
-    public async Task<ProcessResult> RunAsync(
+    public Task<ProcessResult> RunAsync(
         string executable,
         IReadOnlyList<string> arguments,
         string workingDirectory,
         TimeSpan timeout,
+        CancellationToken cancellationToken = default
+    ) =>
+        RunAsync(
+            executable,
+            arguments,
+            workingDirectory,
+            timeout,
+            standardInput: null,
+            cancellationToken
+        );
+
+    internal async Task<ProcessResult> RunAsync(
+        string executable,
+        IReadOnlyList<string> arguments,
+        string workingDirectory,
+        TimeSpan timeout,
+        string? standardInput,
         CancellationToken cancellationToken = default
     )
     {
@@ -125,7 +155,6 @@ public sealed class ProcessRunner
             throw;
         }
 
-        process.StandardInput.Close();
         Task<string> output = process.StandardOutput.ReadToEndAsync(
             cancellationToken: CancellationToken.None
         );
@@ -135,6 +164,22 @@ public sealed class ProcessRunner
         bool timedOut = false;
         try
         {
+            try
+            {
+                if (standardInput is not null)
+                {
+                    await process
+                        .StandardInput.WriteAsync(standardInput.AsMemory(), linked.Token)
+                        .ConfigureAwait(false);
+                }
+
+                process.StandardInput.Close();
+            }
+            catch (IOException)
+            {
+                // The child may exit before consuming stdin; collect its actual exit and stderr.
+            }
+
             await process.WaitForExitAsync(linked.Token).ConfigureAwait(false);
             await Task.WhenAll(output, error).WaitAsync(linked.Token).ConfigureAwait(false);
         }
@@ -266,7 +311,30 @@ public sealed class ProcessRunner
 
             using (process)
             {
-                if (process.StartTime.ToUniversalTime().Ticks != ticks)
+                long processTicks;
+                try
+                {
+                    if (HasProcessExited(process))
+                    {
+                        Complete(id);
+                        continue;
+                    }
+
+                    processTicks = process.StartTime.ToUniversalTime().Ticks;
+                }
+                catch (InvalidOperationException) when (HasProcessExited(process))
+                {
+                    Complete(id);
+                    continue;
+                }
+                catch (System.ComponentModel.Win32Exception exception)
+                    when (exception.NativeErrorCode == 87 || HasProcessExited(process))
+                {
+                    Complete(id);
+                    continue;
+                }
+
+                if (processTicks != ticks)
                 {
                     Complete(id);
                     continue;
@@ -274,7 +342,14 @@ public sealed class ProcessRunner
 
                 if (!process.HasExited)
                 {
-                    process.Kill(entireProcessTree: true);
+                    try
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                    catch (InvalidOperationException) when (HasProcessExited(process))
+                    {
+                    }
+
                     await process
                         .WaitForExitAsync(cancellationToken)
                         .WaitAsync(TimeSpan.FromSeconds(5), cancellationToken)
@@ -283,6 +358,24 @@ public sealed class ProcessRunner
             }
 
             Complete(id);
+        }
+    }
+
+    private static bool HasProcessExited(Process process)
+    {
+        if (process.HasExited)
+        {
+            return true;
+        }
+
+        try
+        {
+            process.Refresh();
+            return process.HasExited;
+        }
+        catch (InvalidOperationException)
+        {
+            return true;
         }
     }
 }

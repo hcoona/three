@@ -12,6 +12,86 @@ public sealed class BoardDeliverySpecs(TestContext context)
 {
     [TestMethod]
     [TestCategory("BoardLifecycleAndVisibility")]
+    public void RootClosureReopenClearsWorkerClosureAndPreservesOwnerClosure()
+    {
+        using BoardDeliveryState state = new();
+        JsonObject close = new() { ["action"] = "close", ["id"] = 1 };
+        JsonObject root = new() { ["id"] = 1 };
+        JsonObject workerClosed = state.Invoke("worker1", "task_write", close);
+        Assert.AreEqual("closed", workerClosed["state"]!.GetValue<string>());
+        Assert.AreEqual("worker1", workerClosed["closedBy"]!.GetValue<string>());
+        Assert.IsTrue(state.Operations.ReopenWorkerClosedRoot());
+        JsonObject reopened = state.Invoke("owner", "task_read", root);
+        Assert.AreEqual("open", reopened["state"]!.GetValue<string>());
+        Assert.IsNull(reopened["closedBy"]);
+        Assert.IsFalse(state.Operations.ReopenWorkerClosedRoot());
+
+        // Normalize legacy retained state where an earlier build reopened the task without
+        // clearing worker closed_by / root_closed_by metadata.
+        using (SqliteConnection legacy = state.Database.Open())
+        {
+            Sql.Execute(
+                legacy,
+                """
+                UPDATE tasks SET closed_by='worker1' WHERE id=1;
+                INSERT OR REPLACE INTO meta(key,value) VALUES('lifecycle:root_closed_by','worker1');
+                """
+            );
+        }
+        Assert.IsFalse(state.Operations.ReopenWorkerClosedRoot());
+        Assert.IsNull(state.Invoke("owner", "task_read", root)["closedBy"]);
+        Assert.IsNull(state.Database.ReadMetadata("lifecycle:root_closed_by"));
+
+        JsonObject ownerClosed = state.Invoke("owner", "task_write", close);
+        Assert.AreEqual("owner", ownerClosed["closedBy"]!.GetValue<string>());
+        Assert.IsFalse(state.Operations.ReopenWorkerClosedRoot());
+        JsonObject retained = state.Invoke("owner", "task_read", root);
+        Assert.AreEqual("closed", retained["state"]!.GetValue<string>());
+        Assert.AreEqual("owner", retained["closedBy"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    [TestCategory("NoticeLeaseShowAndAck")]
+    [Timeout(30_000, CooperativeCancellation = true)]
+    public async Task ContendedNoticeLeasePreservesToolResultWithDegradedEnvelope()
+    {
+        using BoardDeliveryState state = new();
+        LocalTools tools = new(state.Database);
+        JsonObject message = state.Send("worker2", "worker1", "Retain this pending notice.");
+        CancellationToken token = context.CancellationToken;
+        JsonObject result;
+        using (SqliteConnection writer = state.Database.Open())
+        using (SqliteTransactionScope held = Sql.BeginTransaction(writer, deferred: false))
+        {
+            Sql.Execute(writer,
+                "INSERT INTO notice_leases(recipient,token,expires_at) VALUES('owner','held',0);",
+                held);
+            result = await tools.InvokeAsync("worker1", "run_info", new(), token)
+                .ConfigureAwait(false);
+        }
+
+        Assert.AreEqual(state.Database.Configuration.Goal,
+            GitScenarioState.Data(result)["goal"]!.GetValue<string>());
+        JsonObject notices = result["notices"]!.AsObject();
+        Assert.AreEqual("worker1", notices["recipient"]!.GetValue<string>());
+        Assert.IsEmpty(notices["items"]!.AsArray());
+        Assert.IsTrue(notices["degraded"]!.GetValue<bool>());
+        Assert.IsFalse(notices.ContainsKey("leaseToken"));
+        string diagnostics = Path.Combine(state.Database.StatePath, "run.sqlite.diagnostics");
+        Assert.IsTrue(Directory.EnumerateFiles(diagnostics, "incident-*.json")
+            .Select(path => JsonNode.Parse(File.ReadAllText(path))).Any(incident =>
+            incident?["failure"]?["primaryCode"]?.GetValue<int>() == 5
+            && incident["failure"]!["actor"]?.GetValue<string>() == "worker1"),
+            "The failed notice lease must retain a SQLite contention incident.");
+
+        JsonObject retried = await tools.InvokeAsync("worker1", "run_info", new(), token)
+            .ConfigureAwait(false);
+        Assert.ContainsSingle(NoticeItems(retried).Where(notice =>
+            notice["data"]?["messageId"]?.GetValue<long>() == Id(message)));
+    }
+
+    [TestMethod]
+    [TestCategory("BoardLifecycleAndVisibility")]
     public void AdvisoryClaimsExpireWithoutLockingTaskOrDestroyingHistory()
     {
         using BoardDeliveryState state = new();

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
+using static LiteAgensh.ToolArguments;
 
 namespace LiteAgensh;
 
@@ -470,7 +471,6 @@ public sealed partial class CollaborationOperations
         RequireActor(actor);
         using var diagnosticActor = SqliteDiagnostics.UseActor(actor);
         ArgumentNullException.ThrowIfNull(result);
-        var envelopeResult = (JsonObject)result.DeepClone();
         using var connection = database.Open();
         using var transaction = Sql.BeginTransaction(connection);
         var now = database.Now.ToUnixTimeMilliseconds();
@@ -488,19 +488,15 @@ public sealed partial class CollaborationOperations
             ("$until", now + 30000),
             ("$now", now)
         );
-        var notices = new JsonArray();
         if (acquired == 0)
         {
-            envelopeResult["notices"] = new JsonObject
-            {
-                ["recipient"] = actor,
-                ["items"] = notices,
-                ["snapshotAt"] = Timestamp,
-            };
+            JsonObject unleased = UnleasedNotices(actor, result);
             transaction.Commit();
-            return envelopeResult;
+            return unleased;
         }
 
+        var envelopeResult = (JsonObject)result.DeepClone();
+        var notices = new JsonArray();
         var events = Rows(
             connection,
             transaction,
@@ -613,6 +609,24 @@ public sealed partial class CollaborationOperations
             ("$token", token)
         );
         transaction.Commit();
+        return envelopeResult;
+    }
+
+    internal JsonObject UnleasedNotices(string actor, JsonObject result, bool degraded = false)
+    {
+        var envelopeResult = (JsonObject)result.DeepClone();
+        var notices = new JsonObject
+        {
+            ["recipient"] = actor,
+            ["items"] = new JsonArray(),
+            ["snapshotAt"] = Timestamp,
+        };
+        if (degraded)
+        {
+            notices["degraded"] = true;
+        }
+
+        envelopeResult["notices"] = notices;
         return envelopeResult;
     }
 
