@@ -1309,6 +1309,25 @@ def _safe_count_rasters(
     return observed
 
 
+def _invoke_musescore_job(
+    musescore: MuseScore,
+    output_dir: Path,
+    encoded: str,
+    style: LayoutStyle,
+    max_scratch_bytes: int | None,
+) -> None:
+    if max_scratch_bytes is None:
+        _musescore_job(musescore, output_dir, encoded, style)
+    else:
+        _musescore_job(
+            musescore,
+            output_dir,
+            encoded,
+            style,
+            max_scratch_bytes=max_scratch_bytes,
+        )
+
+
 def render_musescore(  # noqa: PLR0913
     x_inj: str,
     style: LayoutStyle,
@@ -1348,12 +1367,8 @@ def render_musescore(  # noqa: PLR0913
         stopped = False
         observed = 0
         try:
-            _musescore_job(
-                musescore,
-                output_dir,
-                encoded,
-                style,
-                max_scratch_bytes=max_scratch_bytes,
+            _invoke_musescore_job(
+                musescore, output_dir, encoded, style, max_scratch_bytes
             )
         except StopConditionError:
             stopped = True
