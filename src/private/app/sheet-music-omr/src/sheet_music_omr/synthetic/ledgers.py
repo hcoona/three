@@ -66,6 +66,7 @@ DOWNLOAD_LEDGER_NAME = "w4-w5-download-ledger.json"
 DOWNLOAD_LOCK_NAME = ".w4-w5-downloads.lock"
 RUN_LEDGER_NAME = "w4-w5-run-ledger.jsonl"
 RUN_LOCK_NAME = ".w4-w5-run-ledger.lock"
+_W4_W5_CAMPAIGN_RETIRED = True
 
 # Source-verified pins from docs/synthetic-protocol.md.
 VEROVIO_VERSION = "6.4.1"
@@ -128,6 +129,12 @@ HOMR_CPU_CHECKPOINTS: tuple[tuple[str, str, int], ...] = (
     ),
 )
 
+_RETIRED_W4_W5_DOWNLOAD_SHA256 = (
+    "0d02ff9024b42106422f3eb1dd50f087a7c5d17a3f96afcfed9d5d7db085e03e"
+)
+_RETIRED_W4_W5_RUN_SHA256 = (
+    "aef5ab7a5ba47c69a6fab574a83d275c81920f9debef51871e67d521318b8b57"
+)
 _METADATA_RESERVE_BYTES = 16 * 1024 * 1024
 _TITLE_LINE_RE = re.compile(
     r"(?im)^.*(?:title|composer|work-title|movement-title)\s*[:=].*$"
@@ -202,6 +209,12 @@ class W4W5DownloadLedger:
         return data
 
     def _save_unlocked(self, data: JsonDict) -> None:
+        if _W4_W5_CAMPAIGN_RETIRED or (
+            self.ledger_path.is_file()
+            and sha256_file(self.ledger_path) == _RETIRED_W4_W5_DOWNLOAD_SHA256
+        ):
+            msg = "W4/W5 download campaign (#1491/#1497) is retired"
+            raise StopConditionError(msg)
         atomic_write_text(
             self.ledger_path,
             json.dumps(data, indent=2, sort_keys=True) + "\n",
@@ -560,6 +573,12 @@ class W4W5RunLedger:
         return out
 
     def _append_unlocked(self, rec: JsonDict) -> None:
+        if _W4_W5_CAMPAIGN_RETIRED or (
+            self.ledger_path.is_file()
+            and sha256_file(self.ledger_path) == _RETIRED_W4_W5_RUN_SHA256
+        ):
+            msg = "W4/W5 run campaign (#1491/#1497) is retired"
+            raise StopConditionError(msg)
         self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
         with self.ledger_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, sort_keys=True) + "\n")
@@ -964,6 +983,9 @@ def setup_w4_w5_environments(  # noqa: C901, PLR0912, PLR0915
     include_homr: bool = True,
 ) -> JsonDict:
     """Phase 1 (`setup-w4-w5`): metered zero-private-input tool provisioning."""
+    if _W4_W5_CAMPAIGN_RETIRED:
+        msg = "W4/W5 setup campaign (#1491/#1497) is retired"
+        raise StopConditionError(msg)
     check_outside_repository(downloads_dir)
     if downloads_dir.resolve().is_relative_to(repo_root.resolve()):
         msg = "the download directory must be outside the repository"

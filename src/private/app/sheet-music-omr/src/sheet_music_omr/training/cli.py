@@ -16,9 +16,9 @@ from sheet_music_omr.evaluation.alignment import (
 from sheet_music_omr.harness.confine import Confinement
 from sheet_music_omr.harness.musescore import (
     MuseScore,
+    active_host_settings_path,
     cli_version,
     default_executable,
-    settings_path,
 )
 from sheet_music_omr.harness.privacy import scrub_paths
 from sheet_music_omr.harness.records import (
@@ -29,9 +29,11 @@ from sheet_music_omr.harness.stops import StopConditionError
 from sheet_music_omr.training.copista_per_system import run_copista_per_system
 from sheet_music_omr.training.ledgers import (
     _check_w6_disk_cap,
+    _is_retired_production_campaign,
     check_w6_runs_root,
     scan_public_report,
     setup_w6_slice_a,
+    verify_prior_campaign_ledgers,
     verify_w6_training_assets,
     w6_disk_lock,
 )
@@ -209,11 +211,21 @@ def _prepare_packaging_context(
     if args.formal and source_state()["dirty"]:
         msg = "formal Slice A run requires a clean code tree"
         raise StopConditionError(msg)
+    verify_prior_campaign_ledgers(downloads)
+    if _is_retired_production_campaign():
+        msg = "W6 Slice A packaging campaign (#1766/#1769) is retired"
+        raise StopConditionError(msg)
     with w6_disk_lock(downloads, run.parent) as runs:
         _check_w6_disk_cap(runs, additional_bytes=1_048_576)
-        active_settings = (
-            settings_path() if args.settings is None else args.settings
-        )
+        active_settings = active_host_settings_path()
+        if (
+            args.settings is not None
+            and args.settings.resolve() != active_settings.resolve()
+        ):
+            msg = (
+                "W6 packaging requires the active host MuseScore settings path"
+            )
+            raise StopConditionError(msg)
         exe = default_executable() if args.musescore is None else args.musescore
         if not exe.is_file():
             msg = f"MuseScore is not installed at {exe}"
@@ -230,7 +242,7 @@ def _prepare_packaging_context(
             conf,
             executable=exe,
             settings=active_settings,
-            allow_missing_settings=True,
+            allow_missing_settings=args.settings is None,
             version_lookup=lambda: cli_version(exe, _offline_musescore),
             launcher=_offline_musescore,
         )

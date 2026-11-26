@@ -54,6 +54,9 @@ from sheet_music_omr.harness.confine import Confinement
 from sheet_music_omr.harness.corpora import CorpusError
 from sheet_music_omr.harness.musescore import (
     MuseScore,
+    active_host_settings_path,
+    executable_cli_version,
+    verify_rendering_preferences,
 )
 from sheet_music_omr.harness.records import (
     check_outside_repository,
@@ -97,6 +100,7 @@ from sheet_music_omr.synthetic.intake import (
     iter_pdmx_candidates,
 )
 from sheet_music_omr.synthetic.ledgers import (
+    _W4_W5_CAMPAIGN_RETIRED,
     RESVG_VERSION,
     RESVG_WHEEL_SHA256,
     VEROVIO_VERSION,
@@ -116,7 +120,7 @@ from sheet_music_omr.synthetic.renderers import (
     MUSESCORE_CALIBRATION_CACHE_NAME,
     RenderGate,
     RenderGateLedger,
-    ensure_musescore_calibrated,
+    ensure_musescore_calibrated_with_basis,
     render_musescore,
     render_synthetic_probe_png,
     render_verovio,
@@ -406,19 +410,36 @@ def _exclusion_gate(args: argparse.Namespace) -> TestExclusionGate:
     )
 
 
+def _open_campaign_musescore(
+    conf: Confinement, args: argparse.Namespace
+) -> MuseScore:
+    active = active_host_settings_path()
+    if (
+        args.settings is not None
+        and args.settings.resolve() != active.resolve()
+    ):
+        msg = "campaign MuseScore requires active host MuseScore settings"
+        raise StopConditionError(msg)
+    return MuseScore.open(
+        conf,
+        executable=args.musescore,
+        settings=active,
+        allow_missing_settings=False,
+        version_lookup=lambda: executable_cli_version(args.musescore),
+    )
+
+
 def _run_intake(conf: Confinement, args: argparse.Namespace) -> Json:
+    if _W4_W5_CAMPAIGN_RETIRED:
+        msg = "W4a intake campaign (#1491) is retired"
+        raise StopConditionError(msg)
     gate = _exclusion_gate(args)
     ms: MuseScore | None = None
 
     def export(raw: bytes) -> bytes:
         nonlocal ms
         if ms is None:
-            ms = MuseScore.open(
-                conf,
-                executable=args.musescore,
-                settings=args.settings,
-                allow_missing_settings=True,
-            )
+            ms = _open_campaign_musescore(conf, args)
         with _owned_scratch(conf, "lieder-") as directory:
             input_path = conf.write_bytes(directory / "source.mscx", raw)
             output_path = directory / "source.musicxml"
@@ -549,6 +570,9 @@ def _metered_run(
     pages: int,
     commit: str | None,
 ) -> Iterator[_PageCount]:
+    if _W4_W5_CAMPAIGN_RETIRED:
+        msg = "W4/W5 campaign (#1491/#1497) is retired"
+        raise StopConditionError(msg)
     counter = _PageCount(pages)
     if commit is None:
         yield counter
@@ -1541,19 +1565,26 @@ def _prepare_s3_environment(
 ) -> tuple[Json, tuple[str, str] | None]:
     verify_w4_w5_live_assets(conf.downloads, require_s3=True)
     calibrated_identity: tuple[str, str] | None = None
+    assurance = "unverified_stub"
     if hasattr(ms, "confinement"):
+        verify_rendering_preferences(ms)
         with _owned_scratch(conf, "musescore-cal-") as cal_dir:
-            calibrated_identity = ensure_musescore_calibrated(
-                ms,
-                cal_dir / "job",
-                cache_path=conf.downloads / MUSESCORE_CALIBRATION_CACHE_NAME,
-                count_rasters=counter.add,
+            calibrated_identity, assurance = (
+                ensure_musescore_calibrated_with_basis(
+                    ms,
+                    cal_dir / "job",
+                    cache_path=(
+                        conf.downloads / MUSESCORE_CALIBRATION_CACHE_NAME
+                    ),
+                    count_rasters=counter.add,
+                )
             )
     environment: Json = {
         "workspace": _workspace_versions(),
         "musescore_version": ms.version,
         "musescore_executable_sha256": ms.executable_sha256,
-        "musescore_pixel_calibrated": calibrated_identity is not None,
+        "musescore_geometry_assurance": assurance,
+        "musescore_pixel_calibrated": assurance == "calibrated_in_run",
         "verovio_version": VEROVIO_VERSION,
         "verovio_wheel_sha256": VEROVIO_WHEEL_SHA256,
         "resvg_version": RESVG_VERSION,
@@ -1565,6 +1596,9 @@ def _prepare_s3_environment(
 
 def _run_s3(conf: Confinement, args: argparse.Namespace) -> Json:
     commit = _formal_source(conf, locked=False) if args.formal else None
+    if _W4_W5_CAMPAIGN_RETIRED:
+        msg = "Stage S3 campaign (#1491) is retired"
+        raise StopConditionError(msg)
     if args.formal and (
         args.roundtrip_pieces < _MIN_ROUNDTRIP
         or args.timing_pages < _MIN_TIMING
@@ -1607,11 +1641,19 @@ def _run_s3(conf: Confinement, args: argparse.Namespace) -> Json:
         attestation = verify_w3_snapshot_attestation(
             args.w3_run_dir, include_test_pages=False
         )
+        active = active_host_settings_path()
+        if (
+            args.settings is not None
+            and args.settings.resolve() != active.resolve()
+        ):
+            msg = "Stage S3 requires the active host MuseScore settings"
+            raise StopConditionError(msg)
         ms = MuseScore.open(
             conf,
             executable=args.musescore,
-            settings=args.settings,
-            allow_missing_settings=True,
+            settings=active,
+            allow_missing_settings=False,
+            version_lookup=lambda: executable_cli_version(args.musescore),
         )
         private = _private(conf, args)
         environment, calibrated_identity = _prepare_s3_environment(

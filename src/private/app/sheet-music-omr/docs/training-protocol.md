@@ -379,8 +379,8 @@ ornament`, `3: grace`, `4: ottava`, `5: hairpin`, `6: mid-score clef change`,
       `w6-crops-50k`), and execute on public `permissive` synthetic scores
       through the `SHA-256`-verified host `MuseScore 4.x` CLI under its local
       batch lock per [synthetic-protocol.md](synthetic-protocol.md) lines
-      `125`–`129` (retaining `.w6-scratch-reservation.json` and aborting
-      fail-closed via `StopConditionError` on batch worker timeout). After
+      `125`–`129` (aborting fail-closed via `StopConditionError` on batch worker
+      timeout). After
       rendering `>= 2,700` `synth_train` and `>= 300` `synth_val` complete
       `MuseScore` crops on `--formal` and verifying realized positive coverage
       across all `7` rarity-bucket categories in the supplement, the packager
@@ -665,12 +665,15 @@ expected_sha256)` inventory (`omr-w6-traindev-portable-v1`) matches
       written during Slice A remain tolerated without host `(st_dev, st_ino)` or
       `0o500`/`0o400` permission sealing so `--traindev-root` relocates portably
       across hosts).
-    - **Zero-file pre-start reservation:** during `run-copista-per-system`,
-      **before opening `--traindev-root` or any private file**, the runner
-      checks git clean-tree state (on `--formal`), acquires
-      `.w6-slice-a-run-ledger.lock`, verifies preserved prior campaign ledgers,
-      and writes `1` pre-start invocation reservation (retained on any
-      subsequent failure or abort).
+    - **Historical Slice A zero-file pre-start reservation:** during the
+      completed Slice A `run-copista-per-system` baseline (now retired on `main`,
+      with `DOWNLOADS/w6-slice-a-run-ledger.jsonl` preserved read-only and active
+      execution routed to W6 GPU Slice B), **before opening `--traindev-root` or
+      any private file**, the runner checked git clean-tree state (on `--formal`),
+      acquired `.w6-slice-a-run-ledger.lock`, verified preserved prior campaign
+      ledgers, and wrote `1` pre-start invocation reservation (retained on any
+      subsequent failure or abort; production Slice A CLI writes now fail closed
+      as retired while offline fixture tests exercise the reservation contract).
     - **Pre-read relpath confinement and `SHA-256` verification:** strictly
       **after** reservation, `open_verified_traindev_root` verifies
       `--traindev-root` is symlink-free and outside every git worktree, checks
@@ -715,35 +718,41 @@ system_index)` `<print>` boundaries and isolated spanner numbers without
 
 ## Finite execution bounds, ledgers, stops, privacy and cleanup
 
-- **Persistent non-resettable Slice A safeguards (implemented in
-  `sheet_music_omr.training.ledgers` as self-contained files inside
-  `DOWNLOADS/`, relocating portably across hosts without hidden `~/.local/state`
-  anchors while preserving earlier W1, W2/W3 and W4/W5 ledgers untouched and
-  never deleting or resetting either Slice A ledger):**
-    1. **Download ledger (`DOWNLOADS/w6-slice-a-download-ledger.json`):** under
-       an exclusive lock, reserves artifact byte budgets against
+- **Persistent non-resettable Slice A safeguards (historical Slice A campaign
+  completed and retired on `main`; implemented in
+  `sheet_music_omr.training.ledgers` as self-contained files inside `DOWNLOADS/`
+  that Slice B imports and verifies read-only by `SHA-256` without hidden
+  `~/.local/state` anchors, while active GPU provisioning, training, and
+  evaluation route to W6 Slice B under
+  [`docs/delivery-wave.md`](../../../../../docs/delivery-wave.md)):**
+    1. **Download ledger (`DOWNLOADS/w6-slice-a-download-ledger.json`, settled at
+       `443,814,298 / 15,000,000,000` bytes and now read-only in production):**
+       under an exclusive lock, reserved artifact byte budgets against
        `asset_locks.py` before fetching any `w6-train-venv` wheel or
        `w6-model-meta` file (retaining failed or crashed reservations
        conservatively, reusing verified cached files at `0` new bytes, and
        failing closed on any remote `.py` file or checkpoint weight file),
-       stopping before cumulative Slice A downloads exceed **`15,000,000,000`
+       stopping before cumulative Slice A downloads exceeded **`15,000,000,000`
        bytes (`15 GB`)**.
     2. **Generated disk cap:** all local Slice A dataset and run directories
-       reside under `RUNS/w6-slice-a-*`, stopping before combined Slice A disk
-       usage exceeds **`100,000,000,000` bytes (`100 GB`)**.
+       reside under `RUNS/w6-slice-a-*` (`56,639,196,692 / 100,000,000,000`
+       bytes settled on Slice A retirement; no further Slice A campaign runs are
+       authorized, while fixture/test packaging retains per-worker Verovio and
+       sink headroom checks against `100,000,000,000` bytes).
     3. **Per-run and per-worker bounds:** at most **`15,000` reserved or
        rendered pages** in any single rendering run and **`300` seconds** per
        renderer batch worker or per-page `copista` deadline.
-    4. **Persistent run ledger (`DOWNLOADS/w6-slice-a-run-ledger.jsonl`):**
-       under an exclusive lock (`.w6-slice-a-run-ledger.lock`), writes an atomic
-       pre-start reservation **before** starting (i) **any** non-exempt staged-
-       corpus synthetic rendering run (`>= 1` planned page, regardless of page
-       count, `--formal` flag or outcome, charging full `reserved_pages` on
-       unsettled crashes and `max(actual_pages, 1)` on aborted starts) or (ii)
-       **every** private-input `copista-28m` per-system invocation (`1:1`
-       single-worker architecture, regardless of purpose — benchmark, debugging
-       or smoke — page count, `--formal` flag or outcome). Execution stops
-       fail-closed before exceeding:
+    4. **Persistent run ledger (`DOWNLOADS/w6-slice-a-run-ledger.jsonl`, settled
+       at `18,150` charged pages and `3 / 10` `copista-28m` starts and now
+       read-only in production):** under an exclusive lock
+       (`.w6-slice-a-run-ledger.lock`), wrote an atomic pre-start reservation
+       **before** starting (i) **any** non-exempt staged-corpus synthetic
+       rendering run (`>= 1` planned page, regardless of page count, `--formal`
+       flag or outcome, charging full `reserved_pages` on unsettled crashes and
+       `max(actual_pages, 1)` on aborted starts) or (ii) **every** private-input
+       `copista-28m` per-system invocation (`1:1` single-worker architecture,
+       regardless of purpose — benchmark, debugging or smoke — page count,
+       `--formal` flag or outcome), stopping fail-closed before exceeding:
         - **`35,000` cumulative reserved/settled rendered pages** across all
           non-exempt Slice A rendering runs;
         - **`10` cumulative private-input `copista-28m` per-system

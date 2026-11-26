@@ -45,6 +45,9 @@ from sheet_music_omr.evaluation.alignment import (
 )
 from sheet_music_omr.harness.downloads import sha256_file
 from sheet_music_omr.harness.musescore import (
+    UNREAPED_NAME,
+    MuseScoreUnreapedError,
+    _terminate_musescore_process,
     verify_rendering_preferences,
     wsl_translate_command,
 )
@@ -1797,6 +1800,7 @@ def _execute_prepared_variant(  # noqa: PLR0913
                 ledger,
                 max_pages=max_pages,
                 count_rasters=add_pages,
+                max_scratch_bytes=max_pages * WORKER_SCRATCH_HEADROOM_BYTES,
             )
         scratch_bytes = max(
             peak_scratch_bytes,
@@ -1853,6 +1857,7 @@ def _stage_verovio_parent_job(
             ledger,
             max_pages=max_pages,
             count_rasters=add_pages,
+            max_scratch_bytes=max_pages * WORKER_SCRATCH_HEADROOM_BYTES,
         )
         scratch_bytes = max(
             peak_scratch_bytes,
@@ -2353,9 +2358,13 @@ def _offline_musescore(
     timeout: float,
 ) -> tuple[int | None, str]:
     limit_sec = min(timeout, W6_WORKER_TIMEOUT_SECONDS)
+    translated = wsl_translate_command(command)
+    is_wsl_exe = sys.platform != "win32" and translated[0].lower().endswith(
+        ".exe"
+    )
     try:
         process = subprocess.Popen(  # noqa: S603
-            wsl_translate_command(command),
+            translated,
             env=os.environ | W6_OFFLINE_ENV,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -2368,12 +2377,19 @@ def _offline_musescore(
     try:
         out, _ = process.communicate(timeout=limit_sec)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        with contextlib.suppress(OSError):
-            process.kill()
-        with contextlib.suppress(OSError, subprocess.TimeoutExpired):
-            process.communicate(timeout=5.0)
+        _terminate_musescore_process(process, is_wsl_exe=is_wsl_exe)
+        if process.stdout is not None:
+            process.stdout.close()
         msg = "MuseScore batch worker timed out"
         raise StopConditionError(msg) from exc
+    except BaseException:
+        _terminate_musescore_process(process, is_wsl_exe=is_wsl_exe)
+        if process.stdout is not None:
+            process.stdout.close()
+        raise
+    if is_wsl_exe and process.returncode is not None and process.returncode < 0:
+        msg = "WSL MuseScore signaled exit cannot confirm native Windows exit"
+        raise MuseScoreUnreapedError(msg)
     return process.returncode, out.decode("utf-8", errors="replace")
 
 
@@ -2399,11 +2415,22 @@ def _calibrate_w6_musescore(
             cache_path=downloads / renderers.MUSESCORE_CALIBRATION_CACHE_NAME,
             count_rasters=record_cal_pages,
         )
-        meter.add(counted)
     finally:
-        if cal_dir.exists():
+        unreaped = (downloads / UNREAPED_NAME).exists()
+        meter.add(max(counted, 1) if unreaped else counted)
+        if cal_dir.exists() and not unreaped:
             shutil.rmtree(cal_dir, ignore_errors=True)
     return identity, counted
+
+
+def _write_environment_snapshot(
+    run: Path, runs: Path, environment: Mapping[str, object]
+) -> None:
+    env_path = run / "environment.json"
+    check_no_symlink_under(env_path, run.parent)
+    text = json.dumps(dict(environment)) + "\n"
+    _check_w6_disk_cap(runs, additional_bytes=len(text.encode()))
+    atomic_write_text(env_path, text)
 
 
 def _write_packaging_report(run: Path, downloads: Path, result: Row) -> None:
@@ -2485,13 +2512,6 @@ def run_expanded_w4a_and_package(  # noqa: C901, PLR0913, PLR0915
         if sha256_file(musescore.executable) != musescore.executable_sha256:
             msg = "host MuseScore binary drifted before W6 rendering"
             raise StopConditionError(msg)
-        cal_pages = 0
-        if musescore_page_cap != 0:
-            verify_rendering_preferences(musescore)
-            if calibrated_identity is None:
-                calibrated_identity, cal_pages = _calibrate_w6_musescore(
-                    musescore, run=run, downloads=downloads, meter=meter
-                )
         environment |= {
             "git": state,
             "offline_env": W6_OFFLINE_ENV,
@@ -2503,14 +2523,15 @@ def run_expanded_w4a_and_package(  # noqa: C901, PLR0913, PLR0915
             "resvg_wheel_sha256": RESVG_WHEEL_SHA256,
         }
         with w6_disk_lock(downloads, run.parent) as runs:
-            env_path = run / "environment.json"
-            check_no_symlink_under(env_path, run.parent)
-            environment_text = json.dumps(environment) + "\n"
-            _check_w6_disk_cap(
-                runs,
-                additional_bytes=len(environment_text.encode()),
-            )
-            atomic_write_text(env_path, environment_text)
+            _write_environment_snapshot(run, runs, environment)
+        cal_pages = 0
+        if musescore_page_cap != 0:
+            verify_rendering_preferences(musescore)
+            if calibrated_identity is None:
+                calibrated_identity, cal_pages = _calibrate_w6_musescore(
+                    musescore, run=run, downloads=downloads, meter=meter
+                )
+        with w6_disk_lock(downloads, run.parent) as runs:
             gate = MetadataOnlyTestExclusion(test_exclusion, test_status)
             rows, funnel = _expanded_intake(
                 run,
@@ -3097,6 +3118,14 @@ def run_musescore_supplement_and_package(  # noqa: PLR0913
         if sha256_file(musescore.executable) != musescore.executable_sha256:
             msg = "host MuseScore binary drifted before W6 rendering"
             raise StopConditionError(msg)
+        initial_env = environment | {
+            "git": state,
+            "offline_env": W6_OFFLINE_ENV,
+            "musescore_version": musescore.version,
+            "musescore_binary_sha256": musescore.executable_sha256,
+        }
+        with w6_disk_lock(downloads, run.parent) as runs:
+            _write_environment_snapshot(run, runs, initial_env)
         verify_rendering_preferences(musescore)
         if calibrated_identity is None:
             calibrated_identity, _ = _calibrate_w6_musescore(
@@ -3121,20 +3150,8 @@ def run_musescore_supplement_and_package(  # noqa: PLR0913
                 gate=gate,
                 formal=formal,
             )
-            environment |= {
-                "git": state,
-                "offline_env": W6_OFFLINE_ENV,
-                "musescore_version": musescore.version,
-                "musescore_binary_sha256": musescore.executable_sha256,
-            } | provenance
-            env_path = run / "environment.json"
-            check_no_symlink_under(env_path, run.parent)
-            environment_text = json.dumps(environment) + "\n"
-            _check_w6_disk_cap(
-                runs,
-                additional_bytes=len(environment_text.encode()),
-            )
-            atomic_write_text(env_path, environment_text)
+            environment = initial_env | provenance
+            _write_environment_snapshot(run, runs, environment)
         train_plans, train_buckets = _interleave_supplement_plans(train)
         val_plans, val_buckets = _interleave_supplement_plans(val)
         ordered_plans = [

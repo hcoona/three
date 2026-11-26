@@ -571,6 +571,11 @@ def run_stage_s0_scoring(  # noqa: C901, PLR0912, PLR0913, PLR0915
     formal: bool,
 ) -> JsonDict:
     """Execute Stage S0 scoring, calibration, pass-model fit and reporting."""
+    from sheet_music_omr.evaluation import copista as cop_mod  # noqa: PLC0415
+
+    if cop_mod._W2_S0_CAMPAIGN_RETIRED:  # noqa: SLF001
+        msg = "Stage S0 scoring campaign (#1489/#1490) is retired"
+        raise StopConditionError(msg)
     run_dir = confinement.run
     downloads_dir = confinement.downloads
     src_state = source_state(run_git)

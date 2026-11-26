@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import io
 import json
 import math
@@ -92,13 +91,26 @@ class WorkerOutcome:
     completed_pages: int
 
 
+class WorkerUnreapedError(StopConditionError):
+    """Raised when an isolated worker did not exit after SIGKILL."""
+
+
 def _kill_worker_group(process: subprocess.Popen[bytes]) -> None:
-    if process.poll() is not None:
-        return
-    with contextlib.suppress(ProcessLookupError, OSError):
+    try:
         os.killpg(process.pid, signal.SIGKILL)
-    with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+        killed_group = True
+    except ProcessLookupError:
+        killed_group = True
+    except OSError:
+        killed_group = False
+    try:
         process.wait(timeout=_REAP_SECONDS)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        msg = "Copista worker could not be reaped after SIGKILL"
+        raise WorkerUnreapedError(msg) from exc
+    if not killed_group:
+        msg = "Copista worker process group cleanup could not be confirmed"
+        raise WorkerUnreapedError(msg)
 
 
 def _monitor_worker(
@@ -181,6 +193,8 @@ def run_supervised_worker(  # noqa: PLR0913
         raise StopConditionError(msg) from exc
     try:
         result = _monitor_worker(proc, page_count, page_timeout)
+        if result.returncode != 0 or result.completed_pages != page_count:
+            _kill_worker_group(proc)
     except BaseException:
         _kill_worker_group(proc)
         raise

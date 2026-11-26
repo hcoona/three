@@ -456,8 +456,17 @@ def test_stats_bootstrap_calibration_ranking_and_pass_model() -> None:
     assert expected_review_passes(0.4, d=0.6, phi=0.5) > 2  # noqa: PLR2004
 
 
-def test_test_touch_circuit_breaker(tmp_path: Path) -> None:
-    """w2-touch-log.jsonl enforces the 6-touch Stage S0 TEST cap."""
+@pytest.fixture(autouse=True)
+def _allow_w2_fixture_tests() -> Any:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(cop_mod, "_W2_S0_CAMPAIGN_RETIRED", False)
+        yield
+
+
+def test_test_touch_circuit_breaker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """w2-touch-log.jsonl enforces S0 cap and 1-touch W6-pilot-final suffix."""
     log_p = tmp_path / "w2-touch-log.jsonl"
     for idx in range(6):
         cnt = append_test_touch(
@@ -486,6 +495,58 @@ def test_test_touch_circuit_breaker(tmp_path: Path) -> None:
             piece_count=7,
             command=["score-s0"],
             cap=6,
+        )
+
+    prefix_sha = sha256_bytes(log_p.read_bytes())
+    monkeypatch.setattr(cop_mod, "PRESERVED_W2_S0_TOUCH_LOG_SHA256", prefix_sha)
+    monkeypatch.setattr(cop_mod, "_W2_S0_CAMPAIGN_RETIRED", True)
+    slice_b_ledger = tmp_path / "w6-slice-b-run-ledger.jsonl"
+    slice_b_ledger.write_text(
+        json.dumps(
+            {
+                "run_id": "w6-slice-b-final-1",
+                "purpose": "W6-pilot-final",
+                "status": "started",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert (
+        cop_mod.verify_w2_touch_log_bytes(
+            log_p.read_bytes(), slice_b_run_ledger_path=slice_b_ledger
+        )
+        == 0
+    )
+    (pilot_cnt,) = cop_mod.append_test_touches(
+        touch_log_path=log_p,
+        run_id="w6-slice-b-final-1",
+        git_commit="abc",
+        code_tree_sha256="def",
+        readers=[("qwen3-vl-2b-lora", "rsha", "wsha")],
+        piece_count=7,
+        command=["run-w6-pilot-final"],
+        purpose="W6-pilot-final",
+        slice_b_run_ledger_path=slice_b_ledger,
+    )
+    assert pilot_cnt == 1
+    assert (
+        cop_mod.verify_w2_touch_log_bytes(
+            log_p.read_bytes(), slice_b_run_ledger_path=slice_b_ledger
+        )
+        == 1
+    )
+    with pytest.raises(StopConditionError, match="zero prior pilot touches"):
+        cop_mod.append_test_touches(
+            touch_log_path=log_p,
+            run_id="w6-slice-b-final-1",
+            git_commit="abc",
+            code_tree_sha256="def",
+            readers=[("qwen3-vl-2b-lora", "rsha", "wsha")],
+            piece_count=7,
+            command=["run-w6-pilot-final"],
+            purpose="W6-pilot-final",
+            slice_b_run_ledger_path=slice_b_ledger,
         )
 
 

@@ -485,7 +485,9 @@ synthetic + TRAIN_DEV replay` ablation.
 
 ### OMR-REQ-029: Offline per-system copista-28m TRAIN_DEV baseline
 
-Before GPU recognizer training, Slice A shall measure a zero-training
+Before GPU recognizer training, Slice A (`w6-slice-a-copista-formal-2`, now
+completed and retired with its `DOWNLOADS/w6-slice-a-run-ledger.jsonl`
+preserved read-only for Slice B) shall measure a zero-training
 per-system crop baseline reserving `1` ledger slot **before** opening any
 locator or private file, resolving inputs strictly beneath a dedicated
 symlink-free, worktree-disjoint `TRAIN_DEV`-only directory root
@@ -510,9 +512,12 @@ second-reader baseline alongside whole-page Stage S0 `copista-28m`.
 
 ### OMR-REQ-030: Slice A execution governance, ledgers and zero-TEST-touch isolation
 
-All W6 Slice A external installations, expanded W4a intake runs, bulk
+All historical W6 Slice A external installations, expanded W4a intake runs, bulk
 `20k`/`50k`-crop synthetic rendering runs and private-input `copista-28m`
-per-system runs shall follow the
+per-system runs (completed and retired on `main`; Slice B imports Slice A's
+settled `w6-slice-a-download-ledger.json` and `w6-slice-a-run-ledger.jsonl`
+read-only and routes active GPU training/evaluation to W6 Slice B) shall follow
+the
 [W6 training, bulk-packaging and page-detector protocol](training-protocol.md)
 accepted on `main` under record-system review, research-evidence review and
 shared engineering guidance (routine local unit, scenario and

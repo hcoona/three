@@ -363,6 +363,20 @@ class Ledger:
         self.sync_mirror(confinement)
 
 
+RETIRED_W1_LEDGER_SHA256 = (
+    "b6f071893803a2f2ddea4cf5c454a9b484f5a736d1ba7b30159898c2bf52e47b"
+)
+_W1_CAMPAIGN_RETIRED = True
+
+
+def _check_w1_ledger_writable(path: Path) -> None:
+    if _W1_CAMPAIGN_RETIRED or (
+        path.is_file() and sha256_file(path) == RETIRED_W1_LEDGER_SHA256
+    ):
+        msg = "W1 download campaign (#1488) is retired and read-only"
+        raise LedgerError(msg)
+
+
 def _write_ledger(
     path: Path,
     prior_total: int,
@@ -370,6 +384,7 @@ def _write_ledger(
     entries: tuple[LedgerEntry, ...],
     confinement: Confinement,
 ) -> None:
+    _check_w1_ledger_writable(path)
     data = {
         "format": LEDGER_FORMAT,
         "limit": LIMIT,
@@ -535,8 +550,10 @@ def fetch_file(
     with _shared_ledger_guard(ledger, confinement):
         target = confinement.check(confinement.downloads / file.name)
         if _is_published(target, file):
-            ledger.sync_mirror(confinement)
+            if not _W1_CAMPAIGN_RETIRED:
+                ledger.sync_mirror(confinement)
             return target
+        _check_w1_ledger_writable(ledger.path)
         if ledger.total + file.size > LIMIT:
             message = (
                 f"downloading {file.key} ({file.size} bytes) would take the W1"
@@ -629,8 +646,10 @@ def fetch_hf_file(
     with _shared_ledger_guard(ledger, confinement):
         target = confinement.check(confinement.downloads / file.local_name)
         if _is_published_hf(target, file):
-            ledger.sync_mirror(confinement)
+            if not _W1_CAMPAIGN_RETIRED:
+                ledger.sync_mirror(confinement)
             return target
+        _check_w1_ledger_writable(ledger.path)
         if ledger.total + file.size > LIMIT:
             message = (
                 f"downloading {file.repo}/{file.filename} ({file.size} bytes) "

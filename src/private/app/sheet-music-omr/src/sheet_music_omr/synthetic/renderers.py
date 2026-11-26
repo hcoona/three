@@ -10,6 +10,7 @@ import math
 import os
 import random
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -41,10 +42,11 @@ from sheet_music_omr.comparison import (
     annotate,
 )
 from sheet_music_omr.harness.musescore import (
-    LOCK_NAME,
     STEP_SECONDS,
     _windows_path_for_wsl,
     has_source_verified_defaults,
+    profile_invocation_fence,
+    verify_rendering_preferences,
 )
 from sheet_music_omr.harness.stops import StopConditionError
 from sheet_music_omr.harness.systems import (
@@ -1136,32 +1138,29 @@ SOURCE_VERIFIED_MUSESCORE_BUILDS: frozenset[tuple[str, str]] = frozenset(
     }
 )
 MUSESCORE_CALIBRATION_CACHE_NAME = ".musescore-calibrated.json"
+MUSESCORE_UNREAPED_NAME = ".musescore-unreaped"
 
 
-def _musescore_batch_jobs(
+def _musescore_job(
     ms: MuseScore,
-    batch_dir: Path,
-    items: Sequence[tuple[Path, str]],
-    musescore_style: str,
+    directory: Path,
+    xml: str,
+    style: LayoutStyle,
 ) -> None:
-    owned = ms.confinement.check(batch_dir)
+    owned = ms.confinement.check(directory)
     owned.mkdir(parents=True, exist_ok=True)
-    mss = ms.confinement.write_text(owned / "style.mss", musescore_style)
+    mss = ms.confinement.write_text(owned / "style.mss", style.musescore_style)
     exe = ms.executable
-    job = []
-    for item_dir, xml in items:
-        item_owned = ms.confinement.check(item_dir)
-        item_owned.mkdir(parents=True, exist_ok=False)
-        source = ms.confinement.write_text(item_owned / "input.musicxml", xml)
-        job.append(
-            {
-                "in": _batch_path(source, exe),
-                "out": [
-                    _batch_path(item_owned / f"score.{ext}", exe)
-                    for ext in ("png", "musicxml", "mpos", "spos")
-                ],
-            }
-        )
+    source = ms.confinement.write_text(owned / "input.musicxml", xml)
+    job = [
+        {
+            "in": _batch_path(source, exe),
+            "out": [
+                _batch_path(owned / f"score.{ext}", exe)
+                for ext in ("png", "musicxml", "mpos", "spos")
+            ],
+        }
+    ]
     job_path = ms.confinement.write_text(owned / "job.json", json.dumps(job))
     cmd = [
         str(exe),
@@ -1172,11 +1171,12 @@ def _musescore_batch_jobs(
         "-r",
         "300",
     ]
-    with ms.confinement.lock(ms.confinement.downloads / LOCK_NAME):
+    with profile_invocation_fence(ms.confinement, ms.settings):
+        verify_rendering_preferences(ms)
         ms.check_settings()
         launched_ok = False
         try:
-            code, _ = ms.launcher(cmd, STEP_SECONDS * max(1, len(items)))
+            code, _ = ms.launcher(cmd, STEP_SECONDS)
             launched_ok = True
         finally:
             if launched_ok:
@@ -1190,21 +1190,6 @@ def _musescore_batch_jobs(
     if code != 0:
         msg = f"MuseScore W4 job did not complete successfully ({code})"
         raise RenderRejected(msg)
-
-
-def _musescore_job(
-    ms: MuseScore,
-    directory: Path,
-    xml: str,
-    style: LayoutStyle,
-) -> None:
-    _musescore_batch_jobs(
-        ms, directory, ((directory / "item-0", xml),), style.musescore_style
-    )
-    item_dir = directory / "item-0"
-    for child in item_dir.iterdir():
-        child.replace(directory / child.name)
-    item_dir.rmdir()
 
 
 def _numbered_pngs(directory: Path) -> tuple[bytes, ...]:
@@ -1317,17 +1302,17 @@ def calibrate_musescore_pixel_scale(
     return (musescore.version, musescore.executable_sha256)
 
 
-def ensure_musescore_calibrated(
+def ensure_musescore_calibrated_with_basis(
     musescore: MuseScore,
     scratch_dir: Path,
     *,
     cache_path: Path | None = None,
     count_rasters: Callable[[int], None] | None = None,
-) -> tuple[str, str]:
-    """Skip pixel calibration for source-verified or cached 4.x builds."""
+) -> tuple[tuple[str, str], str]:
+    """Return calibrated ``(version, sha256)`` and assurance basis."""
     identity = (musescore.version, musescore.executable_sha256)
     if identity in SOURCE_VERIFIED_MUSESCORE_BUILDS:
-        return identity
+        return identity, "source_verified"
     cached: list[list[str]] = []
     if cache_path is not None and cache_path.is_file():
         with contextlib.suppress(OSError, ValueError, TypeError):
@@ -1339,7 +1324,7 @@ def ensure_musescore_calibrated(
                     if isinstance(row, list) and len(row) == 2  # noqa: PLR2004
                 ]
         if [identity[0], identity[1]] in cached:
-            return identity
+            return identity, "cached_calibration"
     verified = calibrate_musescore_pixel_scale(
         musescore, scratch_dir, count_rasters=count_rasters
     )
@@ -1351,7 +1336,24 @@ def ensure_musescore_calibrated(
         tmp = cache_path.with_name(f".{cache_path.name}.{uuid4().hex}")
         tmp.write_text(json.dumps(cached, indent=2) + "\n", encoding="utf-8")
         tmp.replace(cache_path)
-    return verified
+    return verified, "calibrated_in_run"
+
+
+def ensure_musescore_calibrated(
+    musescore: MuseScore,
+    scratch_dir: Path,
+    *,
+    cache_path: Path | None = None,
+    count_rasters: Callable[[int], None] | None = None,
+) -> tuple[str, str]:
+    """Skip pixel calibration for source-verified or cached 4.x builds."""
+    identity, _ = ensure_musescore_calibrated_with_basis(
+        musescore,
+        scratch_dir,
+        cache_path=cache_path,
+        count_rasters=count_rasters,
+    )
+    return identity
 
 
 def _safe_count_rasters(
@@ -2206,11 +2208,61 @@ for page in range(1, count + 1):
 
 
 def _rendered_raster_count(directory: Path) -> int:
+    if not directory.exists():
+        return 0
     return sum(
         re.fullmatch(r"score(?:-\d+)?\.png", path.name) is not None
-        for path in directory.glob("score*.png")
+        for path in directory.rglob("score*.png")
         if path.is_file()
     )
+
+
+def _reap_verovio_process(proc: subprocess.Popen[bytes]) -> bool:
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+        killed_group = True
+    except ProcessLookupError:
+        killed_group = True
+    except OSError:
+        killed_group = False
+    try:
+        proc.wait(timeout=5.0)
+    except subprocess.TimeoutExpired, OSError:
+        return False
+    return killed_group
+
+
+def _await_verovio_worker(
+    proc: subprocess.Popen[bytes],
+    work: Path,
+    *,
+    max_pages: int,
+    count_rasters: Callable[[int], None] | None,
+    unreaped: list[bool],
+) -> None:
+    try:
+        proc.communicate(timeout=WORKER_TIMEOUT_SECONDS)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        reaped = _reap_verovio_process(proc)
+        unreaped[0] = not reaped
+        if count_rasters is not None:
+            count_rasters(_rendered_raster_count(work) if reaped else max_pages)
+        if isinstance(exc, subprocess.TimeoutExpired) or not reaped:
+            msg = "Verovio W4 job timed out or left an unconfirmed worker group"
+            raise StopConditionError(msg) from exc
+        raise
+    except BaseException:
+        reaped = _reap_verovio_process(proc)
+        unreaped[0] = not reaped
+        if count_rasters is not None:
+            count_rasters(_rendered_raster_count(work) if reaped else max_pages)
+        raise
+    if proc.returncode != 0 and not _reap_verovio_process(proc):
+        unreaped[0] = True
+        if count_rasters is not None:
+            count_rasters(max_pages)
+        msg = "Verovio W4 worker failed with unconfirmed process-group cleanup"
+        raise StopConditionError(msg)
 
 
 def _run_verovio(  # noqa: PLR0913
@@ -2221,14 +2273,16 @@ def _run_verovio(  # noqa: PLR0913
     *,
     max_pages: int,
     count_rasters: Callable[[int], None] | None,
+    max_scratch_bytes: int = 0,
 ) -> tuple[str, tuple[tuple[str, bytes], ...]]:
     scratch_root = scratch_root.resolve()
     scratch_root.mkdir(parents=True, exist_ok=True)
     python = downloads.resolve() / "w4-synth-venv" / "bin" / "python"
     rendered: list[tuple[str, bytes]] = []
     mei = ""
-    with tempfile.TemporaryDirectory(prefix="vrv-", dir=scratch_root) as raw:
-        work = Path(raw)
+    work = Path(tempfile.mkdtemp(prefix="vrv-", dir=scratch_root))
+    unreaped = [False]
+    try:
         staged = work / "input.musicxml"
         staged.write_text(xml, encoding="utf-8")
         env = {
@@ -2252,7 +2306,7 @@ def _run_verovio(  # noqa: PLR0913
                 str(max_pages),
                 VEROVIO_VERSION,
                 RESVG_VERSION,
-                "0",
+                str(max(0, max_scratch_bytes)),
             ],
             cwd=work,
             env=env,
@@ -2261,25 +2315,27 @@ def _run_verovio(  # noqa: PLR0913
             close_fds=True,
             start_new_session=True,
         )
-        try:
-            proc.communicate(timeout=WORKER_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired as exc:
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(proc.pid, signal.SIGKILL)
-            proc.wait(timeout=5.0)
-            if count_rasters is not None:
-                count_rasters(_rendered_raster_count(work))
-            msg = "Verovio W4 job timed out"
-            raise StopConditionError(msg) from exc
+        _await_verovio_worker(
+            proc,
+            work,
+            max_pages=max_pages,
+            count_rasters=count_rasters,
+            unreaped=unreaped,
+        )
         rasters = _rendered_raster_count(work)
         if count_rasters is not None:
             count_rasters(rasters)
+        if proc.returncode == 93:  # noqa: PLR2004
+            msg = "Verovio scratch output exceeded byte budget"
+            raise StopConditionError(msg)
         reexport = work / "score.mei"
         if proc.returncode == 0 and reexport.is_file() and rasters > 0:
-            with contextlib.suppress(RenderRejected, OSError):
+            with contextlib.suppress(
+                RenderRejected, OSError, UnicodeDecodeError
+            ):
                 pngs = _numbered_pngs(work)
-                mei = reexport.read_text(encoding="utf-8")
-                rendered.extend(
+                mei_candidate = reexport.read_text(encoding="utf-8")
+                pairs = [
                     (
                         (work / f"score-{page}.svg").read_text(
                             encoding="utf-8"
@@ -2287,8 +2343,21 @@ def _run_verovio(  # noqa: PLR0913
                         png,
                     )
                     for page, png in enumerate(pngs, 1)
-                )
+                ]
+                mei = mei_candidate
+                rendered = pairs
         returncode = proc.returncode
+        if (returncode or not mei or not rendered) and not (
+            _reap_verovio_process(proc)
+        ):
+            unreaped[0] = True
+            if count_rasters is not None and max_pages > rasters:
+                count_rasters(max_pages - rasters)
+            msg = "Verovio W4 worker incomplete with unconfirmed group cleanup"
+            raise StopConditionError(msg)
+    finally:
+        if not unreaped[0]:
+            shutil.rmtree(work, ignore_errors=True)
     if returncode or not mei or not rendered:
         msg = f"Verovio W4 job failed or was incomplete ({returncode})"
         raise RenderRejected(msg)
@@ -2363,6 +2432,7 @@ def stage_verovio_subprocess(  # noqa: PLR0913
     *,
     max_pages: int = 5_000,
     count_rasters: Callable[[int], None] | None = None,
+    max_scratch_bytes: int = 0,
 ) -> RenderResult | StagedVerovio:
     """Run the isolated Verovio subprocess and return raw SVG/PNG/MEI data."""
     engine = "verovio"
@@ -2392,6 +2462,7 @@ def stage_verovio_subprocess(  # noqa: PLR0913
             scratch_root,
             max_pages=max_pages,
             count_rasters=count_rasters,
+            max_scratch_bytes=max_scratch_bytes,
         )
     except _SAMPLE_ERRORS:
         return _result(
@@ -2460,6 +2531,7 @@ def render_verovio(  # noqa: PLR0913
     *,
     max_pages: int = 5_000,
     count_rasters: Callable[[int], None] | None = None,
+    max_scratch_bytes: int = 0,
 ) -> RenderResult:
     """Render and admit a sample only with exact SVG and symbolic gates."""
     staged = stage_verovio_subprocess(
@@ -2470,6 +2542,7 @@ def render_verovio(  # noqa: PLR0913
         ledger,
         max_pages=max_pages,
         count_rasters=count_rasters,
+        max_scratch_bytes=max_scratch_bytes,
     )
     if isinstance(staged, RenderResult):
         return staged

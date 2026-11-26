@@ -80,7 +80,7 @@ _PRIOR_SETTLEMENTS = [
 ]
 
 
-def _seed_prior_ledgers(downloads, monkeypatch, *, init_campaign=True):  # noqa: ARG001
+def _seed_prior_ledgers(downloads, monkeypatch, *, init_campaign=True):
     downloads.mkdir(parents=True, exist_ok=True)
     (downloads.parent / "runs").mkdir(parents=True, exist_ok=True)
     for name, field_name, total in (
@@ -101,6 +101,9 @@ def _seed_prior_ledgers(downloads, monkeypatch, *, init_campaign=True):  # noqa:
             for name in ledgers.PRIOR_CAMPAIGN_LEDGER_SHA256S
         },
     )
+    dl_ledger = downloads / ledgers.W6_DOWNLOAD_LEDGER_NAME
+    if init_campaign and not dl_ledger.exists():
+        ledgers.W6DownloadLedger(downloads, allow_init=True).total_bytes()
 
 
 @pytest.mark.parametrize(
@@ -300,7 +303,14 @@ def test_setup_uses_verified_cache_and_installs_locked_wheels_offline(
 
     monkeypatch.setattr(ledgers.subprocess, "run", launch)
     monkeypatch.setattr(ledgers, "_venv_versions", lambda *_: {})
-    assert ledgers.setup_w6_slice_a(downloads)["download_bytes"] == 0
+    with pytest.raises(StopConditionError, match="missing Slice A download"):
+        ledgers.setup_w6_slice_a(downloads)
+    assert (
+        ledgers.setup_w6_slice_a(downloads, init_campaign=True)[
+            "download_bytes"
+        ]
+        == 0
+    )
     create, install = commands
     assert create[-2:] == ["venv", str(downloads / "w6-train-venv")]
     assert {"--no-index", "--no-deps", str(cached)} <= set(install)
@@ -467,10 +477,10 @@ def sealed(tmp_path, monkeypatch):
     root = tmp_path / "outside" / "sealed"
     root.mkdir(parents=True)
     rels: list[tuple[str, str]] = [("TRAIN_DEV", _MANIFEST)]
-    for i, gid in enumerate(sorted(ledgers.TRAINDEV_GOLD_IDS)):
+    for gid in sorted(ledgers.TRAINDEV_GOLD_IDS):
         rels.extend(
             (gid, f"pages/{gid}-p{page:02d}.png")
-            for page in range(1, 6 if i < 5 else 5)  # noqa: PLR2004
+            for page in range(1, asset_locks.TRAINDEV_PAGE_COUNTS[gid] + 1)
         )
         rels.extend(
             (gid, f"gold/{gid}/{k}.musicxml") for k in ("accepted", "draft")
@@ -532,6 +542,15 @@ def test_portable_traindev_root_relocates_and_rejects_symlinks_or_drift(
     (copied / rel).write_bytes(b"tampered payload")
     with pytest.raises(StopConditionError, match="digest drift"):
         ledgers.open_verified_traindev_root(copied, anchor, [worktree])
+
+    # Wrong 69-page distribution across 16 IDs is rejected before file reads.
+    wrong_dist = tmp_path / "wrong-dist" / "traindev-root"
+    shutil.copytree(root, wrong_dist)
+    (wrong_dist / "pages/gold-07-p05.png").rename(
+        wrong_dist / "pages/gold-08-p03.png"
+    )
+    with pytest.raises(StopConditionError, match="exact allowlist"):
+        ledgers.open_verified_traindev_root(wrong_dist, anchor, [worktree])
 
 
 def _public_mapping():
@@ -1344,7 +1363,7 @@ def packaging_run(tmp_path, monkeypatch):
     executable.write_bytes(b"fixture")
     musescore = MuseScore(
         executable,
-        "4.0",
+        "4.7.7",
         _sha(b"fixture"),
         tmp_path / "settings",
         Confinement(run, downloads),
@@ -1997,7 +2016,7 @@ def test_musescore_preference_guard_and_cached_calibration(
         raise AssertionError(msg)
 
     monkeypatch.setattr(renderers, "render_musescore", forbidden)
-    with pytest.raises(StopConditionError, match="importInferTextType=false"):
+    with pytest.raises(StopConditionError, match="preferences set explicitly"):
         list(
             packaging._render_variants(  # noqa: SLF001
                 rows,
@@ -2005,6 +2024,20 @@ def test_musescore_preference_guard_and_cached_calibration(
                 downloads=tmp_path / "dl",
                 musescore=ms,
                 meter=meter,
+                calibrated_identity=None,
+                targets={"synth_train": 1},
+            )
+        )
+    meter2 = packaging._PageMeter(16)  # noqa: SLF001
+    meter2.disk = packaging._DatasetSink(tmp_path)  # noqa: SLF001
+    with pytest.raises(StopConditionError, match="importInferTextType=false"):
+        list(
+            packaging._render_variants(  # noqa: SLF001
+                rows,
+                run=tmp_path,
+                downloads=tmp_path / "dl",
+                musescore=replace(ms, version="4.7.7"),
+                meter=meter2,
                 calibrated_identity=None,
                 targets={"synth_train": 1},
             )
@@ -2571,17 +2604,53 @@ def test_musescore_timeout_and_batch_jobs(tmp_path):
     assert clean_outcome.result.gate.status == "dropped"
     assert not list((timeout_run / "tmp").iterdir())
 
-    outcome = packaging._execute_prepared_variant(  # noqa: SLF001
+    # Partial PNGs emitted before nonzero MuseScore exit are counted, and an
+    # unreaped SIGKILL blocks shared-profile reuse.
+    def partial_fail_launcher(_cmd, _t):
+        for target in (timeout_run / "tmp").iterdir():
+            if target.is_dir():
+                (target / "score-1.png").write_bytes(b"png")
+                (target / "score-2.png").write_bytes(b"png")
+        return (1, "partial failure")
+
+    partial_outcome = packaging._execute_prepared_variant(  # noqa: SLF001
         ms_prep,
         run=timeout_run,
         downloads=downloads,
-        musescore=replace(ms, launcher=lambda _c, _t: (None, "timed out")),
+        musescore=replace(ms, launcher=partial_fail_launcher),
         calibrated_identity=None,
         musescore_lock=packaging.threading.Lock(),
         max_pages=4,
     )
-    assert isinstance(outcome.result, StopConditionError)
-    assert outcome.pages == 4  # noqa: PLR2004
+    assert partial_outcome.pages == 2  # noqa: PLR2004
+
+    from sheet_music_omr.harness.musescore import MuseScoreUnreapedError  # noqa: PLC0415
+
+    def unreaped_launcher(_cmd, _t):
+        msg = "not reaped"
+        raise MuseScoreUnreapedError(msg)
+
+    unreaped = packaging._execute_prepared_variant(  # noqa: SLF001
+        ms_prep,
+        run=timeout_run,
+        downloads=downloads,
+        musescore=replace(ms, launcher=unreaped_launcher),
+        calibrated_identity=None,
+        musescore_lock=packaging.threading.Lock(),
+        max_pages=4,
+    )
+    assert isinstance(unreaped.result, MuseScoreUnreapedError)
+    blocked = packaging._execute_prepared_variant(  # noqa: SLF001
+        ms_prep,
+        run=timeout_run,
+        downloads=downloads,
+        musescore=replace(ms, launcher=lambda _c, _t: (0, "")),
+        calibrated_identity=None,
+        musescore_lock=packaging.threading.Lock(),
+        max_pages=4,
+    )
+    assert isinstance(blocked.result, StopConditionError)
+    assert "shared-profile reuse" in str(blocked.result)
 
 
 def test_spacer_only_measure_excluded_from_musescore_supplement(tmp_path):
