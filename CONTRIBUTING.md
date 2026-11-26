@@ -12,15 +12,15 @@ Read the accepted target-branch [governance policy](docs/governance/governance-s
 are proposals and cannot authorize themselves.
 
 Confirm whether the work qualifies as contract-preserving routine maintenance
-without new external, paid, credentialed, or privacy effects, or requires an
-accepted Delivery Wave entry (identifying its bounded outcome, inputs,
-exclusions, and any permitted external effects), then read the owning project
-authorities. Within authorized work, routine local editing,
+or an owner-governed release operation under
+[work authorization](docs/governance/record-system.md#work-authorization-and-concurrency),
+or requires an accepted Delivery Wave entry (identifying its bounded outcome,
+inputs, exclusions, and any permitted external effects), then read the owning
+project authorities. Within authorized work, routine local editing,
 build/lint/test/pilot debugging, and ordinary CI validation are permitted by
 default without attempt quotas, and implementation may evolve concurrently with
 its owning records in one branch or across a stacked PR chain so long as each
-merge into `main` is self-consistent
-([work authorization](docs/governance/record-system.md#work-authorization-and-concurrency)).
+merge into `main` is self-consistent.
 Use an Issue when several contributors or PRs need coordination; a bounded
 single change may use its PR as the work carrier. Neither carrier enlarges
 authorization, and project records do not add workflow gates on local
@@ -28,8 +28,10 @@ development ([project namespaces](docs/governance/record-system.md#project-names
 
 If a relied-on shared canonical authority changes on `main`, pause affected
 work and refresh scope, validation, and review. Preserve unrelated work and
-human-source inputs. Explicit Wave risk dispositions and accepted protocols
-still gate external or paid effects.
+human-source inputs. Outside owner-governed release operations defined in
+[work authorization](docs/governance/record-system.md#work-authorization-and-concurrency),
+explicit Wave risk dispositions and accepted protocols still gate external or
+paid effects.
 
 For design, security or test/evidence decisions, apply the relevant
 [shared engineering principles](docs/engineering/engineering-principles.md)
