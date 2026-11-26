@@ -6,17 +6,17 @@ Rather than embedding a Lisp macro sub-language inside strings or runtime expres
 
 ## Capabilities and Current Scope
 
-### Implemented (`define-language` Ecosystem)
+### Implemented (`define-language` and `define-pass` Ecosystems)
 
 - **Native C# 15 Type-First & Clause-Based IR Definitions**: Define base languages either directly with C# 15 `partial union` and `sealed record` declarations or with concise Nanopass S-expression production attributes (`[Terminal]`, `[NonTerminalDef]`).
 - **Incremental Grammar Algebra**: Derive new IR stages via `[Extends(typeof(LBase))]`, `[Remove(...)]`, `[RemoveTerminal(...)]`, `[ExtendNonTerminal(...)]`, and `[PrunedLanguage(typeof(LSource))]` across arbitrarily deep inheritance chains within one compilation or across assemblies.
 - **Value-Equatable AST Containers**: `Seq<T>` provides deep structural equality, hash codes, C# collection-expression construction (`[a, b, .. rest]`), and C# list-pattern slicing (`[var head, .. var tail]`).
 - **S-Expression Tooling**: Generated `Parse`, `Unparse` (raw and `=>` pretty modes), `ToSExpression`, `DiffTo`, `Prune`, `CountNodes`, and language/nonterminal predicates (`IsLanguageTerm`, `Is<NonTerminal>`).
-- **Compile-Time Language Diagnostics**: Static validation (`NP0101`–`NP0105`) for unrecognized base languages, cyclic extensions, invalid subtractions, duplicate productions, and malformed grammar patterns.
+- **Automatic Pass Synthesis & Catamorphisms**: Declare transformations via `[Pass(typeof(LIn), typeof(LOut))]`, `[Processor]`, `[Rewrite]`, and `[Recur]` catamorphisms over scalars, `Maybe` (`?`), nested `Seq<T>`, and extra-return tuples, with parameter-name context forwarding, guarded clauses, `IsElse` fallbacks, `RawTerm` (`*`) endpoints, `PassDescriptor` introspection, `PassTrace`, and strongly typed `Pipeline` composition.
+- **Compile-Time Diagnostics & IDE Code Fixes**: Static grammar validation (`NP0101`–`NP0105`), pass completeness/signature analysis (`NP1001`–`NP1003`), and `MissingRewriteRuleCodeFixProvider` (single-rule and BatchFixer `[Rewrite]` stub generation).
 
 ### Planned Stacked Advancements ([#1779](https://github.com/hcoona/three/issues/1779))
 
-- **Pass Synthesis & Tooling**: `[Pass]`, `[Processor]`, `[Rewrite]`, `[Recur]` catamorphisms, automatic boilerplate clause and processor generation, first-class `PassDescriptor` introspection, `NP10xx` completeness diagnostics, and missing-rule IDE Code Fixes.
 - **Reference Multi-Pass Compilers**: Full C# 15 ports of the upstream CoreScheme-to-JavaScript compiler and 20-pass Scheme compiler test suites.
 
 ### Explicit Non-Goals
@@ -52,10 +52,37 @@ public static partial class L1;
 
 `L1.Expr` is generated as a distinct C# 15 `union` over `L1.Int`, `L1.Add`, and `L1.Sub`: constructing or nesting an `L0.Neg` inside an `L1.Expr` is a compile-time type error, and `switch` expressions over `L1.Expr` are exhaustively checked without a `Neg` arm. To add new production records onto an inherited nonterminal in a derived type-first language, declare a `[NonTerminal] public readonly partial struct` container (for example `[NonTerminal] public readonly partial struct Expr { public sealed record Mul(Expr Left, Expr Right); }`) rather than a partial `union` with an incomplete case list.
 
+### Defining a Nanopass Transformation with Catamorphism
+
+```csharp
+[Pass(typeof(L0), typeof(L1))]
+public partial class LowerNegation
+{
+    [Rewrite(typeof(L0.Neg))]
+    private static L1.Expr LowerNeg([Recur] L1.Expr operand) =>
+        new L1.Sub(new L1.Int(0), operand);
+
+    public static L1.Expr Demo()
+    {
+        var pipeline = Pipeline.Start<L0.Expr>().Then(new LowerNegation());
+        return pipeline.Run(new L0.Add(new L0.Neg(new L0.Int(3)), new L0.Int(5)));
+        // Returns: Add(Sub(Int(0), Int(3)), Int(5))
+    }
+}
+```
+
+Only the `L0.Neg` rule is written by hand; `Int`, `Add`, and `Sub` are synthesized automatically with recursive traversal. Removing `LowerNeg` reports compile-time error `NP1001` and offers an IDE Code Fix to generate the missing `[Rewrite]` stub.
+
 ### Nanopass Clause Syntax with Parser and Pretty Unparser
 
 ```csharp
 using Hcoona.Nanopass;
+
+// Round-trip S-expressions and inspect the grammar:
+LLet.Expr term = LLet.Parse("(let ([a (num 1)] [b (num 2)]) a b)");
+string pretty = LLet.UnparseToString(term);          // (let ((a 1) (b 2)) a b)
+string raw = LLet.UnparseToString(term, raw: true);  // (let ((a (num 1)) (b (num 2))) a b)
+int nodes = LLet.CountNodes(term);                   // 5
 
 [Language]
 [Terminal(typeof(Symbol), "x")]
@@ -67,12 +94,6 @@ using Hcoona.Nanopass;
     "(num n) => n",
     "(let ([x* e*] ...) body* ... body)")]
 public static partial class LLet;
-
-// Round-trip S-expressions and inspect the grammar:
-LLet.Expr term = LLet.Parse("(let ([a (num 1)] [b (num 2)]) a b)");
-string pretty = LLet.UnparseToString(term);          // (let ((a 1) (b 2)) a b)
-string raw = LLet.UnparseToString(term, raw: true);  // (let ((a (num 1)) (b (num 2))) a b)
-int nodes = LLet.CountNodes(term);                   // 5
 ```
 
 ## Releasing

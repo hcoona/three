@@ -16,26 +16,26 @@ This record owns the internal structure, dependency boundaries, and compile-time
 ```mermaid
 flowchart LR
     subgraph Consumer["Consumer Compiler Assembly (net11.0 / C# 15)"]
-        Decl["[Language] / [Extends] Declarations"]
-        GenIR["Generated C# 15 Unions, Records & Language API"]
+        Decl["[Language] / [Extends] & [Pass] Declarations"]
+        GenIR["Generated C# 15 Unions, Records, Passes & Descriptors"]
     end
 
     subgraph Generator["Hcoona.Nanopass.Generators (netstandard2.0)"]
-        Reader["LanguageInputReader & ProductionReader"]
-        Model["Immutable Equatable LanguageModel"]
-        Resolver["Topological LanguageResolver & Diagnostics (NP01xx)"]
-        Codec["LanguageMetadataCodec"]
-        Emitter["LanguageEmitter"]
+        Reader["LanguageInputReader & PassInputReader"]
+        Model["Immutable Equatable LanguageModel & PassInput"]
+        Resolver["LanguageResolver & PassResolver"]
+        Analyzer["NanopassPassAnalyzer (NP10xx) & MissingRewriteRuleCodeFixProvider"]
+        Emitter["LanguageEmitter & PassEmitter"]
     end
 
     subgraph Runtime["Hcoona.Nanopass Runtime (net11.0)"]
         Primitives["Seq&lt;T&gt;, Symbol, SExpr Codec"]
-        Services["LanguageDescriptor, LanguageServices & LanguageRuntime"]
+        Services["LanguageDescriptor, PassDescriptor, Pipeline & PassTrace"]
     end
 
     Decl --> Reader --> Resolver --> Model
-    Codec <--> Resolver
     Model --> Emitter --> GenIR
+    Decl --> Analyzer
     GenIR --> Primitives
     GenIR --> Services
 ```
@@ -74,3 +74,18 @@ Roslyn `IIncrementalGenerator` implementations execute in a single pass and do n
 | `NP0103` | Unrecognized terminal, nonterminal, or production in a subtraction (`-` / `[Remove]`).            |
 | `NP0104` | Duplicate terminal or duplicate production within a base nonterminal or extension addition (`+`). |
 | `NP0105` | Malformed terminal/production pattern syntax or unrecognized metavariable reference.              |
+
+### Pass Synthesis, Catamorphisms, and Subtype Inclusion
+
+- **Incremental Value-Equatable Pass Pipeline**: `PassInputReader` extracts a pure, value-equatable `PassInput` per `[Pass]` declaration (including decoded `[LanguageMetadata]` for external language references) without combining with `CompilationProvider` or retaining Roslyn symbols/syntax nodes, so unrelated edits and method-body edits hit Roslyn incremental cache steps.
+- **Structural Synthesis and `build-subtype-call` Parity**: For each processor `(From -> To)`, `PassResolver` synthesizes boilerplate clauses when a compatible production exists in `To` (or transitively included output nonterminals, wrapping union conversions along the inclusion path) and terminal identities match (`left.Target == right.Target` or an explicit terminal processor applies). Standalone input nonterminal inclusions search `To` and its transitively included nonterminals/terminals by shortest inclusion path for registered (`[Processor]` or `[Rewrite]`-seeded) processors—forwarding compatible tuple extra returns—and otherwise synthesize `Subtype -> To` cleanly across full preservation, partial/full flattening, and splitting.
+- **Catamorphisms, Guards, and Parameter-Name Matching**: Guard methods (`Guard = nameof(...)`) execute on the matched input node and matched context parameters _before_ evaluating `[Recur]` catamorphisms over scalars, `Maybe` (`?`), nested `Seq<T>`, and extra-return tuples. Extra processor parameters bind by parameter name (`Ordinal`) from the caller's scope (plus production fields when `[Recur(Arguments = ...)]` is specified), falling back to C# optional parameter defaults.
+- **First-Class Pass Introspection and IDE Tooling**: Generated passes implement `INanopassPass` and `INanopassPassMetadata` (`PassDescriptor` exposing `InputLanguage`, `OutputLanguage`, `ParseInput`, `UnparseOutput`, and `Processors`), plus `IPass<TInput, TOutput>` for `Pipeline` composition. `NanopassPassAnalyzer` reports `NP1001`–`NP1003` while `NanopassGenerator` emits compilable placeholder stubs so IDE code fixes operate without cascading C# compiler errors; `MissingRewriteRuleCodeFixProvider` generates single-rule and BatchFixer `[Rewrite]` method stubs.
+
+## Compile-Time Diagnostic Codes (`define-pass`)
+
+| Code     | Condition                                                                                                                    |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `NP1001` | Missing transformation rule when no compatible production exists in the target nonterminal (fixable via IDE Code Fix).       |
+| `NP1002` | No compatible processor exists and automatic processor synthesis is disallowed or impossible (including terminal subterms).  |
+| `NP1003` | Invalid `[Pass]`, `[Processor]`, `[Rewrite]`, `[Recur]`, or `Guard` declaration, unknown language/nonterminal, or ambiguity. |

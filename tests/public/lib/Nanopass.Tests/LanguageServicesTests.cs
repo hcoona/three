@@ -65,6 +65,18 @@ public sealed class LanguageServicesTests
     }
 
     [TestMethod]
+    public void Diff_ChangedTerminalMetavariables_EmitsRemovalAndAddition()
+    {
+        LanguageDescriptor source = new("L0", "Expr", [new("symbol", ["x", "y"])], []);
+        LanguageDescriptor target = new("L1", "Expr", [new("symbol", ["y", "x"])], []);
+
+        Assert.AreEqual(
+            SExpr.Parse("(define-language L1 (extends L0) (entry Expr) "
+                + "(terminals (- (symbol (x y))) (+ (symbol (y x)))))"),
+            LanguageServices.Diff(source, target));
+    }
+
+    [TestMethod]
     public void Prune_FollowsImplicitOptionalDottedAndCyclicReferencesToFixedPoint()
     {
         LanguageDescriptor language = new(

@@ -7,7 +7,7 @@
     <PackageId>Hcoona.Nanopass</PackageId>
     <AssemblyName>Hcoona.Nanopass</AssemblyName>
     <RootNamespace>Hcoona.Nanopass</RootNamespace>
-    <PackageDescription>Strongly typed Nanopass intermediate-representation grammar framework for C# 15 and .NET 11 with incremental language definitions, C# 15 union code generation, and S-expression tooling.</PackageDescription>
+    <PackageDescription>Strongly typed Nanopass compiler framework for C# 15 and .NET 11 with incremental grammar definitions, automatic pass synthesis, catamorphisms, S-expression tooling, and Roslyn diagnostics and code fixes.</PackageDescription>
     <PackageTags>compiler nanopass ir ast csharp15 union source-generator roslyn</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageReleaseNotes>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/ReleaseNotes.md'))</PackageReleaseNotes>
