@@ -5,8 +5,9 @@ My polyglot monorepo. It keeps the projects I rely on most under a single roof s
 ## Documentation and contribution
 
 Start with the [documentation portal](docs/README.md) for repository and project
-records, and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution and review.
-The [Delivery Wave](docs/delivery-wave.md) identifies current authorized work.
+records, [CONTRIBUTING.md](CONTRIBUTING.md) for contribution and review, and
+[SECURITY.md](SECURITY.md) for private vulnerability reporting. The
+[Delivery Wave](docs/delivery-wave.md) identifies current authorized work.
 
 ## Why this repo exists
 
