@@ -37,7 +37,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hcoona/three.git"
+    "url": "git+https://github.com/hcoona/three.git",
+    "directory": "src/public/lib/hexo-renderer-asciidoc"
   },
   "keywords": [
     "hexo",
@@ -52,7 +53,7 @@
   "bugs": {
     "url": "https://github.com/hcoona/three/issues"
   },
-  "homepage": "https://github.com/hcoona/three",
+  "homepage": "https://github.com/hcoona/three/tree/main/src/public/lib/hexo-renderer-asciidoc#readme",
   "engines": {
     "node": ">=22"
   },

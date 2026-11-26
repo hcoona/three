@@ -14,13 +14,21 @@ Add native [AsciiDoc](https://asciidoc.org/) rendering to Hexo using `@asciidoct
 
 ## Installation
 
-Published-prerelease users should first confirm the published dist-tags:
+Install the latest stable release in your Hexo site:
+
+```bash
+npm install hexo-renderer-asciidoc --save
+# or
+pnpm add hexo-renderer-asciidoc
+```
+
+To check which release lines are currently published to `latest` and `beta` (for example, while `4.0.0-beta.*` prereleases precede stable `4.0.0` on `latest`):
 
 ```bash
 npm view hexo-renderer-asciidoc dist-tags
 ```
 
-When the output lists the explicitly published `beta` dist-tag, install it with:
+To explicitly opt into a published `beta` prerelease when available:
 
 ```bash
 npm install hexo-renderer-asciidoc@beta --save
@@ -28,8 +36,7 @@ npm install hexo-renderer-asciidoc@beta --save
 pnpm add hexo-renderer-asciidoc@beta
 ```
 
-The unqualified package may still resolve to stable v3 until v4 becomes
-`latest`; do not use it to test v4. Testers of an unpublished candidate must
+Testers of an unpublished candidate must
 use the checkout instructions and evidence from the authoritative migration PR
 or prerelease announcement. That source must designate the immutable candidate
 SHA and the acceptance evidence/check URLs. Do not infer a candidate from
@@ -79,12 +86,12 @@ package via `file:../..`; it is not included as a runnable site in the installed
 package. Rebuild the parent and reinstall this local dependency before
 regenerating the example after renderer changes. For an already independently
 verified and trusted source checkout,
-follow `src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md`. Reviewers of an unpublished candidate
+follow [`src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md`](https://github.com/hcoona/three/blob/main/src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md). Reviewers of an unpublished candidate
 must use the checkout instructions and acceptance evidence designated by the
 authoritative migration PR or prerelease announcement, as described above.
 
 Published-package users can instead create a regular Hexo site and install the
-explicit `@beta` package as described in [Installation](#installation).
+published package as described in [Installation](#installation).
 
 ## Behavior summary
 
@@ -96,6 +103,16 @@ explicit `@beta` package as described in [Installation](#installation).
 - Re-renders only the recognized direct listing-block chain `div.listingblock > div.content > pre > code` with `hexo-util.highlight`, using fixed options `autoDetect: false`, `gutter: false`, and `wrap: false`.
 - After highlighting, globally encodes every literal `{` / `}` in the generated HTML as `&#123;` / `&#125;` to prevent downstream Hexo tag or template interpretation where applicable. Browsers decode numeric character references in ordinary HTML text and attribute values for display or use, but HTML raw-text elements such as `<script>` and `<style>` do not decode them: the references remain literal source text and can alter or break embedded JavaScript or CSS.
 - Does **not** sanitize arbitrary HTML, so this package is not suitable for untrusted input. An HTML sanitizer cannot prevent an AsciiDoc include from disclosing file contents.
+
+## Release history
+
+4.x highlights:
+
+- Asynchronous `Promise<string>` renderer contract backed by `@asciidoctor/core` 4.x (`renderSync` is unsupported for AsciiDoc input).
+- Dual ESM and CommonJS entrypoints with TypeScript declarations, requiring Node.js `>=22` and Hexo `>=8.0.0`.
+- Static syntax highlighting scoped strictly to direct `div.listingblock > div.content > pre > code` blocks.
+
+See [`CHANGELOG.md`](https://github.com/hcoona/three/blob/main/src/public/lib/hexo-renderer-asciidoc/CHANGELOG.md) on GitHub (also bundled in the published npm package) for full release notes and 3.x-to-4.x migration guidance.
 
 ## License
 
