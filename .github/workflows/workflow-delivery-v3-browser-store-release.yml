@@ -50,7 +50,7 @@ jobs:
           persist-credentials: false
       - name: Read committed tool versions
         id: tools
-        run: python3 eng/scripts/locked_tool_versions.py dotnet node pnpm >> "$GITHUB_OUTPUT"
+        run: python3 eng/scripts/locked_tool_versions.py dotnet dotnet-frameworks node pnpm >> "$GITHUB_OUTPUT"
       - &mise
         name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
@@ -61,11 +61,12 @@ jobs:
       - name: Install selected runtimes
         env:
           DOTNET_VERSION: ${{ steps.tools.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ steps.tools.outputs.dotnet-frameworks }}
           NODE_VERSION: ${{ steps.tools.outputs.node }}
           PNPM_VERSION: ${{ steps.tools.outputs.pnpm }}
         run: |
           set -Eeuo pipefail
-          mise install --yes "dotnet@$DOTNET_VERSION" "node@$NODE_VERSION" "pnpm@$PNPM_VERSION"
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION" "node@$NODE_VERSION" "pnpm@$PNPM_VERSION"
           printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)" >> "$GITHUB_ENV"
         working-directory: ${{ runner.temp }}
       - name: Build complete control before product execution
@@ -113,6 +114,7 @@ jobs:
     outputs:
       control-id: ${{ steps.control.outputs.artifact-id }}
       dotnet: ${{ steps.tools.outputs.dotnet }}
+      dotnet-frameworks: ${{ steps.tools.outputs.dotnet-frameworks }}
       preparation-id: ${{ steps.retain.outputs.artifact-id }}
   observe:
     runs-on: ubuntu-24.04
@@ -140,9 +142,10 @@ jobs:
         name: Install selected control runtime
         env:
           DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
         run: |
           set -Eeuo pipefail
-          mise install --yes "dotnet@$DOTNET_VERSION"
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION"
           printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)" >> "$GITHUB_ENV"
         working-directory: ${{ runner.temp }}
       - name: Receive transferred preparation

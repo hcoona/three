@@ -43,7 +43,7 @@ jobs:
           persist-credentials: false
       - name: Read committed tool versions
         id: tools
-        run: python3 eng/scripts/locked_tool_versions.py dotnet python uv >> "$GITHUB_OUTPUT"
+        run: python3 eng/scripts/locked_tool_versions.py dotnet dotnet-frameworks python uv >> "$GITHUB_OUTPUT"
       - name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
@@ -53,11 +53,12 @@ jobs:
       - name: Install selected runtimes
         env:
           DOTNET_VERSION: ${{ steps.tools.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ steps.tools.outputs.dotnet-frameworks }}
           PYTHON_VERSION: ${{ steps.tools.outputs.python }}
           UV_VERSION: ${{ steps.tools.outputs.uv }}
         run: |
           set -Eeuo pipefail
-          mise install --yes "dotnet@$DOTNET_VERSION" "python@$PYTHON_VERSION" "uv@$UV_VERSION"
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION" "python@$PYTHON_VERSION" "uv@$UV_VERSION"
           {
             printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
             printf 'UV_EXECUTABLE=%s\n' "$(mise which --tool "uv@$UV_VERSION" uv)"
@@ -102,6 +103,7 @@ jobs:
     outputs:
       control-id: ${{ steps.control.outputs.artifact-id }}
       dotnet: ${{ steps.tools.outputs.dotnet }}
+      dotnet-frameworks: ${{ steps.tools.outputs.dotnet-frameworks }}
       python: ${{ steps.tools.outputs.python }}
       uv: ${{ steps.tools.outputs.uv }}
       preparation-id: ${{ steps.retain.outputs.artifact-id }}
@@ -134,11 +136,12 @@ jobs:
       - name: Install selected runtimes
         env:
           DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
           PYTHON_VERSION: ${{ needs.prepare.outputs.python }}
           UV_VERSION: ${{ needs.prepare.outputs.uv }}
         run: |
           set -Eeuo pipefail
-          mise install --yes "dotnet@$DOTNET_VERSION" "python@$PYTHON_VERSION" "uv@$UV_VERSION"
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION" "python@$PYTHON_VERSION" "uv@$UV_VERSION"
           {
             printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
             printf 'UV_EXECUTABLE=%s\n' "$(mise which --tool "uv@$UV_VERSION" uv)"
@@ -208,11 +211,12 @@ jobs:
       - name: Install selected runtimes
         env:
           DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
           PYTHON_VERSION: ${{ needs.prepare.outputs.python }}
           UV_VERSION: ${{ needs.prepare.outputs.uv }}
         run: |
           set -Eeuo pipefail
-          mise install --yes "dotnet@$DOTNET_VERSION" "python@$PYTHON_VERSION" "uv@$UV_VERSION"
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION" "python@$PYTHON_VERSION" "uv@$UV_VERSION"
           {
             printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
             printf 'UV_EXECUTABLE=%s\n' "$(mise which --tool "uv@$UV_VERSION" uv)"
@@ -284,11 +288,12 @@ jobs:
       - name: Install selected runtimes
         env:
           DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
           PYTHON_VERSION: ${{ needs.prepare.outputs.python }}
           UV_VERSION: ${{ needs.prepare.outputs.uv }}
         run: |
           set -Eeuo pipefail
-          mise install --yes "dotnet@$DOTNET_VERSION" "python@$PYTHON_VERSION" "uv@$UV_VERSION"
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION" "python@$PYTHON_VERSION" "uv@$UV_VERSION"
           {
             printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
             printf 'UV_EXECUTABLE=%s\n' "$(mise which --tool "uv@$UV_VERSION" uv)"

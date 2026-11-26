@@ -14,6 +14,7 @@ import yaml
 
 from .ci_workflow_shell import (
     action_steps,
+    effective_env,
     load_script,
     output_values,
     resolve,
@@ -283,6 +284,95 @@ def test_framework_provider_reaches_every_native_sdk_root(tmp_path):
         for step in action_steps(job, "actions/setup-dotnet"):
             assert resolve(step["with"]["dotnet-version"], bindings) == provider
             assert "global-json-file" in step["with"]
+
+
+def test_standalone_delivery_workflows_provision_framework_provider():
+    """Standalone Workflow Delivery v3 workflows provision locked .NET 10."""
+    sdk = locked.locked_version(ROOT, "dotnet")
+    provider = locked.locked_version(ROOT, "dotnet-frameworks")
+    bindings = {
+        "steps.tools.outputs.dotnet": sdk,
+        "steps.tools.outputs.dotnet-frameworks": provider,
+        "needs.prepare.outputs.dotnet": sdk,
+        "needs.prepare.outputs.dotnet-frameworks": provider,
+    }
+    workflows_dir = ROOT / ".github/workflows"
+    repro_path = (
+        workflows_dir / "workflow-delivery-v3-nuget-reproducibility.yml"
+    )
+    repro = yaml.safe_load(repro_path.read_text())
+    push_paths = set(repro[True]["push"]["paths"])
+    assert {
+        "eng/dotnet-frameworks/mise.toml",
+        "eng/dotnet-frameworks/mise.lock",
+        "eng/scripts/locked_tool_versions.py",
+    } <= push_paths
+    (repro_job,) = repro["jobs"].values()
+    repro_reader = next(
+        step for step in repro_job["steps"] if step.get("id") == "tools"
+    )
+    assert "locked_tool_versions.py dotnet-frameworks" in repro_reader["run"]
+    (setup_step,) = action_steps(repro_job, "actions/setup-dotnet")
+    assert resolve(setup_step["with"]["dotnet-version"], bindings) == provider
+    assert setup_step["with"]["global-json-file"] == "global.json"
+
+    release_workflows = sorted(
+        workflows_dir.glob("workflow-delivery-v3-*-release.yml")
+    )
+    assert len(release_workflows) == 6
+    for path in release_workflows:
+        workflow = yaml.safe_load(path.read_text())
+        prepare = workflow["jobs"]["prepare"]
+        reader = next(
+            step for step in prepare["steps"] if step.get("id") == "tools"
+        )
+        assert "locked_tool_versions.py" in reader["run"]
+        for required in ("dotnet", "dotnet-frameworks"):
+            assert re.search(rf"\b{re.escape(required)}\b", reader["run"]), (
+                path,
+                required,
+            )
+        assert resolve(prepare["outputs"]["dotnet"], bindings) == sdk, path
+        assert (
+            resolve(prepare["outputs"]["dotnet-frameworks"], bindings)
+            == provider
+        ), path
+        for job_name, job in workflow["jobs"].items():
+            mise_actions = action_steps(job, "jdx/mise-action")
+            assert len(mise_actions) == 1, (path, job_name)
+            install_args = mise_actions[0].get("with", {}).get("install_args")
+            if install_args is not None:
+                tokens = shlex.split(install_args)
+                assert tokens[:2] == ["--jobs", "1"], (path, job_name)
+                assert "dotnet" in tokens, (path, job_name)
+                assert any(
+                    "mise install --monorepo --locked --jobs 1 dotnet"
+                    in step.get("run", "")
+                    for step in job["steps"]
+                ), (path, job_name)
+                continue
+            install_step = next(
+                step
+                for step in job["steps"]
+                if "mise install" in step.get("run", "")
+            )
+            merged_env = effective_env(workflow, job, install_step)
+            assert (
+                resolve(str(merged_env["DOTNET_VERSION"]), bindings) == sdk
+            ), (path, job_name)
+            assert (
+                resolve(str(merged_env["DOTNET_FRAMEWORKS_VERSION"]), bindings)
+                == provider
+            ), (path, job_name)
+            run_text = install_step["run"]
+            assert "mise install --jobs 1 --yes" in run_text, (path, job_name)
+            assert re.search(r"dotnet@\$(?:env:)?DOTNET_VERSION\b", run_text), (
+                path,
+                job_name,
+            )
+            assert re.search(
+                r"dotnet@\$(?:env:)?DOTNET_FRAMEWORKS_VERSION\b", run_text
+            ), (path, job_name)
 
 
 @pytest.mark.parametrize("defect", ["missing", "malformed"])

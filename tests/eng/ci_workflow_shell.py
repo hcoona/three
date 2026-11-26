@@ -334,12 +334,16 @@ def selected_control_call(
 ) -> list[str]:
     """Run runtime setup and the first control command across GITHUB_ENV."""
     lock = tomllib.loads((root / "mise.lock").read_text())["tools"]
+    framework_lock = tomllib.loads(
+        (root / "eng/dotnet-frameworks/mise.lock").read_text()
+    )["tools"]
     committed = {
         name: lock[name][0]["version"] for name in tools if name != "dotnet"
     }
     committed["dotnet"] = json.loads((root / "global.json").read_text())["sdk"][
         "version"
     ]
+    committed["dotnet-frameworks"] = framework_lock["dotnet"][0]["version"]
     jobs = workflow["jobs"]
     job = jobs[job_name]
     defaults = {"defaults": workflow.get("defaults", {})}
@@ -408,10 +412,16 @@ def selected_control_call(
     )
     assert result.returncode == 0, result.stderr
     installed = json.loads((cwd / "install.json").read_text())
+    assert installed[:2] == ["--jobs", "1"]
     assert {item for item in installed if "@" in item} == {
-        f"{tool}@{version}"
-        for tool, version in committed.items()
-        if tool == "dotnet" or job_name == "prepare" or tool in {"python", "uv"}
+        f"dotnet@{committed['dotnet']}",
+        f"dotnet@{committed['dotnet-frameworks']}",
+        *{
+            f"{tool}@{version}"
+            for tool, version in committed.items()
+            if tool not in {"dotnet", "dotnet-frameworks"}
+            and (job_name == "prepare" or tool in {"python", "uv"})
+        },
     }
     env.update(output_values(cwd / "github-env"))
     result = run_step(

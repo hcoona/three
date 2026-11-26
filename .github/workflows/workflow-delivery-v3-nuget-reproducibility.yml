@@ -15,6 +15,9 @@ on:
       - main
     paths:
       - global.json
+      - eng/dotnet-frameworks/mise.toml
+      - eng/dotnet-frameworks/mise.lock
+      - eng/scripts/locked_tool_versions.py
       - Directory.Build.props
       - Directory.Packages.props
       - tests/Directory.Build.props
@@ -52,10 +55,18 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Read committed framework provider version
+        id: tools
+        shell: pwsh
+        run: |
+          $output = python eng/scripts/locked_tool_versions.py dotnet-frameworks
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $output | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: ${{ steps.tools.outputs.dotnet-frameworks }}
       - name: Prepare pinned native product dependencies
         shell: pwsh
         run: |

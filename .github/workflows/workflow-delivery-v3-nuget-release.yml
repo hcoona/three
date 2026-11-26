@@ -37,6 +37,7 @@ jobs:
     outputs:
       control-id: ${{ steps.control.outputs.artifact-id }}
       dotnet: ${{ steps.tools.outputs.dotnet }}
+      dotnet-frameworks: ${{ steps.tools.outputs.dotnet-frameworks }}
       preparation-id: ${{ steps.originals.outputs.artifact-id }}
     steps:
       - name: Check out exact source without credentials
@@ -45,18 +46,24 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Read committed SDK version
+      - name: Read committed tool versions
         id: tools
         run: |
-          $version = (Get-Content -LiteralPath global.json -Raw | ConvertFrom-Json).sdk.version
-          "dotnet=$version" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+          $versions = python eng/scripts/locked_tool_versions.py dotnet dotnet-frameworks
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $versions | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+          $version = ($versions | Where-Object { $_ -like 'dotnet=*' }).Substring(7)
           "DOTNET_VERSION=$version" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
       - name: Prepare selected native tools
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
           version: 2026.11.13
           experimental: true
-          install_args: dotnet
+          install_args: --jobs 1 dotnet
+      - name: Prepare required frameworks in the native SDK root
+        run: |
+          mise install --monorepo --locked --jobs 1 dotnet
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build complete control before product execution
         run: |
           mise exec --locked dotnet -- dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj -p:RestoreLockedMode=true -o "$env:RUNNER_TEMP/control"
@@ -128,8 +135,9 @@ jobs:
         working-directory: ${{ runner.temp }}
         env:
           DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
         run: |
-          mise install --yes "dotnet@$env:DOTNET_VERSION"
+          mise install --jobs 1 --yes "dotnet@$env:DOTNET_VERSION" "dotnet@$env:DOTNET_FRAMEWORKS_VERSION"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "DOTNET_VERSION=$env:DOTNET_VERSION" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
       - name: Receive transferred preparation

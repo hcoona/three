@@ -45,7 +45,7 @@ jobs:
           persist-credentials: false
       - name: Read committed tool versions
         id: tools
-        run: python3 eng/scripts/locked_tool_versions.py dotnet ruby >> "$GITHUB_OUTPUT"
+        run: python3 eng/scripts/locked_tool_versions.py dotnet dotnet-frameworks ruby >> "$GITHUB_OUTPUT"
       - name: Prepare selected runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
@@ -55,10 +55,11 @@ jobs:
       - name: Install selected native tools
         env:
           DOTNET_VERSION: ${{ steps.tools.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ steps.tools.outputs.dotnet-frameworks }}
           RUBY_VERSION: ${{ steps.tools.outputs.ruby }}
         run: |
           set -Eeuo pipefail
-          mise install --yes "dotnet@$DOTNET_VERSION" "ruby@$RUBY_VERSION"
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION" "ruby@$RUBY_VERSION"
           {
             printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
             printf 'RUBY_EXECUTABLE=%s\n' "$(mise which --tool "ruby@$RUBY_VERSION" ruby)"
@@ -117,6 +118,7 @@ jobs:
     outputs:
       control-id: ${{ steps.control.outputs.artifact-id }}
       dotnet: ${{ steps.tools.outputs.dotnet }}
+      dotnet-frameworks: ${{ steps.tools.outputs.dotnet-frameworks }}
       ruby: ${{ steps.tools.outputs.ruby }}
       preparation-id: ${{ steps.retain.outputs.artifact-id }}
   observe:
@@ -147,10 +149,11 @@ jobs:
       - name: Install selected native tools
         env:
           DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
           RUBY_VERSION: ${{ needs.prepare.outputs.ruby }}
         run: |
           set -Eeuo pipefail
-          mise install --yes "dotnet@$DOTNET_VERSION" "ruby@$RUBY_VERSION"
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION" "ruby@$RUBY_VERSION"
           {
             printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
             printf 'RUBY_EXECUTABLE=%s\n' "$(mise which --tool "ruby@$RUBY_VERSION" ruby)"
@@ -227,10 +230,11 @@ jobs:
       - name: Install selected native tools
         env:
           DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
           RUBY_VERSION: ${{ needs.prepare.outputs.ruby }}
         run: |
           set -Eeuo pipefail
-          mise install --yes "dotnet@$DOTNET_VERSION" "ruby@$RUBY_VERSION"
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION" "ruby@$RUBY_VERSION"
           {
             printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
             printf 'RUBY_EXECUTABLE=%s\n' "$(mise which --tool "ruby@$RUBY_VERSION" ruby)"
@@ -303,10 +307,11 @@ jobs:
       - name: Install selected native tools
         env:
           DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
           RUBY_VERSION: ${{ needs.prepare.outputs.ruby }}
         run: |
           set -Eeuo pipefail
-          mise install --yes "dotnet@$DOTNET_VERSION" "ruby@$RUBY_VERSION"
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION" "ruby@$RUBY_VERSION"
           {
             printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
             printf 'RUBY_EXECUTABLE=%s\n' "$(mise which --tool "ruby@$RUBY_VERSION" ruby)"
@@ -398,10 +403,11 @@ jobs:
       - name: Install selected native tools
         env:
           DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
           RUBY_VERSION: ${{ needs.prepare.outputs.ruby }}
         run: |
           set -Eeuo pipefail
-          mise install --yes "dotnet@$DOTNET_VERSION" "ruby@$RUBY_VERSION"
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION" "ruby@$RUBY_VERSION"
           {
             printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
             printf 'RUBY_EXECUTABLE=%s\n' "$(mise which --tool "ruby@$RUBY_VERSION" ruby)"
