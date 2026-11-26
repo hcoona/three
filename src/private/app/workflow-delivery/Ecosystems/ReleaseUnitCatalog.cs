@@ -14,8 +14,8 @@ internal sealed record NuGetReleaseUnit(string Id, string Declaration, string En
 {
     internal bool Library => Probe is not null;
     internal bool SmokeFixture => Source.SourcePath.StartsWith("tests/", StringComparison.Ordinal);
-    internal string ProjectPath => ReleaseUnitCatalog.ParentDirectory(Declaration) + "/" +
-        EntryPoint;
+    internal string ProjectPath => ReleaseUnitCatalog.NormalizeRelativePath(
+        ReleaseUnitCatalog.ParentDirectory(Declaration) + "/" + EntryPoint);
 }
 
 internal sealed record NpmReleaseUnit(string Id, string Declaration, string SourceName,
@@ -77,7 +77,7 @@ internal static class ReleaseUnitCatalog
         Snapshot.Value.Declarations.Values;
 
     internal static IEnumerable<NuGetReleaseUnit> NuGetUnits =>
-        ByDefinition("dotnet/nuget-package-v1").Select(ToNuGet);
+        ByDefinition("dotnet/nuget-package-v1").Select(decl => ToNuGet(decl));
 
     internal static IEnumerable<NpmReleaseUnit> NpmUnits =>
         ByDefinition("node/npm-package-v1").Select(ToNpm);
@@ -234,7 +234,7 @@ internal static class ReleaseUnitCatalog
         return ProjectRootElement.Create(xmlReader, collection);
     }
 
-    private static string NormalizeRelativePath(string path)
+    internal static string NormalizeRelativePath(string path)
     {
         var stack = new List<string>();
         foreach (string part in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
@@ -262,19 +262,22 @@ internal static class ReleaseUnitCatalog
             .Where(decl => decl.Builds is [var b] && b.Definition == definition)
             .OrderBy(decl => decl.Id, StringComparer.Ordinal);
 
-    private static NuGetReleaseUnit ToNuGet(ReleaseUnitDeclaration decl)
+    internal static NuGetReleaseUnit ToNuGet(ReleaseUnitDeclaration decl,
+        IReadOnlyDictionary<string, string>? manifests = null)
     {
         ReleaseBuild build = decl.Builds.Single();
         string directory = ParentDirectory(decl.SourcePath);
-        string manifestPath = directory + "/" + build.EntryPoint;
-        string csprojXml = Snapshot.Value.Manifests.TryGetValue(manifestPath, out string? xml)
+        string manifestPath = NormalizeRelativePath(directory + "/" + build.EntryPoint);
+        string projectDirectory = ParentDirectory(manifestPath);
+        IReadOnlyDictionary<string, string> store = manifests ?? Snapshot.Value.Manifests;
+        string csprojXml = store.TryGetValue(manifestPath, out string? xml)
             ? xml
             : throw new InvalidDataException($"Missing embedded .csproj manifest {manifestPath}.");
         ProjectRootElement root = OpenProjectRoot(csprojXml);
         string stem = Path.GetFileNameWithoutExtension(build.EntryPoint);
         string packageId = ReadUnconditionalProperty(root, "PackageId") ?? stem;
         string assemblyName = ReadUnconditionalProperty(root, "AssemblyName") ?? stem;
-        string[] companions = [.. CompanionDirectoriesFromCsproj(directory, csprojXml)
+        string[] companions = [.. CompanionDirectoriesFromCsproj(projectDirectory, csprojXml)
             .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
         return new(decl.Id, decl.SourcePath, build.EntryPoint, packageId, assemblyName,
             build.Qualification?.Probe, build.Qualification?.Analyzers ?? [],
@@ -291,7 +294,7 @@ internal static class ReleaseUnitCatalog
     {
         ReleaseBuild build = decl.Builds.Single();
         string directory = ParentDirectory(decl.SourcePath);
-        string manifestPath = directory + "/" + build.EntryPoint;
+        string manifestPath = NormalizeRelativePath(directory + "/" + build.EntryPoint);
         string packageJson = Snapshot.Value.Manifests.TryGetValue(manifestPath, out string? json)
             ? json
             : throw new InvalidDataException($"Missing embedded npm manifest {manifestPath}.");

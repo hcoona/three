@@ -122,5 +122,31 @@ public sealed class NuGetReleaseUnitsTests
             """, "src/public/lib/nested-pkg/workflow-delivery.release-unit.yml");
         Assert.AreEqual("src/public/lib/nested-pkg/nested",
             ReleaseUnitCatalog.ToPython(nestedPython).ProjectDirectory);
+
+        ReleaseUnitDeclaration nestedNuGet = ReleaseUnitDeclarationReader.Read("""
+            schema: workflow-delivery/v3/release-unit
+            release-unit: nested-nuget
+            builds:
+              - id: nuget-package
+                definition: dotnet/nuget-package-v1
+                entry-point: nested/NestedLib.csproj
+                outputs:
+                  - {id: nuget-package, role: primary-package, kind: nuget-package}
+            """, "src/public/lib/nested-nuget/workflow-delivery.release-unit.yml");
+        var manifests = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["src/public/lib/nested-nuget/nested/NestedLib.csproj"] = """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <ItemGroup>
+                    <ProjectReference Include="..\..\SharedGen\SharedGen.csproj" />
+                  </ItemGroup>
+                </Project>
+                """,
+        };
+        NuGetReleaseUnit resolvedNuGet = ReleaseUnitCatalog.ToNuGet(nestedNuGet, manifests);
+        Assert.AreEqual("src/public/lib/nested-nuget/nested/NestedLib.csproj",
+            resolvedNuGet.ProjectPath);
+        Assert.AreEqual("src/public/lib/SharedGen",
+            Assert.ContainsSingle(resolvedNuGet.CompanionDirectories));
     }
 }
