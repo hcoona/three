@@ -457,6 +457,18 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       argv = List("uv", "run", "python", "eng/scripts/release_triage.py", "--check-inventory")
     }
   }
+  ["markdown-links"] {
+    profiles = List("small")
+    check = new Command {
+      argv = List("lychee", "--config", ".lychee.toml", "--no-progress", ".")
+    }
+  }
+  ["records-check"] {
+    profiles = List("small")
+    check = new Command {
+      argv = List("mise", "run", "records:check")
+    }
+  }
 }
 
 local scholarly_publication_validation = new Mapping<String, Step> {
