@@ -25,7 +25,7 @@ internal static class PythonGroupExecution
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> metadata,
         CancellationToken token)
     {
-        ResultCollector.Collect(plan, []);
+        plan.Validate();
         if (plan.Scope != PythonFactsAssembler.Scope)
             throw new InvalidDataException("Unsupported native Python group scope.");
         foreach (PlannedCheck item in plan.Checks)
@@ -34,27 +34,14 @@ internal static class PythonGroupExecution
                 !(item.Origins.SequenceEqual([CheckOrigin.Preset]) &&
                     item.QualityPresets.SequenceEqual([PythonPackageChecks.Preset])))
                 throw new InvalidDataException("Unsupported native Python group contract.");
-        CiPlan pytestPlan = plan with
-        {
-            Checks = plan.Checks.Where(item =>
-            item.Origins.SequenceEqual([CheckOrigin.NativeRetained])).ToArray()
-        };
-        CiPlan packagePlan = plan with
-        {
-            Checks = plan.Checks.Where(item =>
-            item.Origins.SequenceEqual([CheckOrigin.Preset])).ToArray()
-        };
-        ResultCollector.Collect(pytestPlan, []);
-        ResultCollector.Collect(packagePlan, []);
+        (CiPlan pytestPlan, CiPlan packagePlan) = plan.Partition(item =>
+            item.Origins[0] == CheckOrigin.NativeRetained);
 
         PythonPytestRunRequest native = request.Native;
-        string checkout = OwnedPath.Absolute(native.Checkout, PathMessage);
-        string scratch = OwnedPath.Absolute(native.Scratch, PathMessage);
         _ = OwnedPath.Absolute(native.Interpreter, PathMessage);
-        if (native.DeadlineSeconds <= 0 || !Directory.Exists(checkout) ||
-            !Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
-            OwnedPath.Overlap(scratch, checkout))
-            throw new InvalidDataException("Python group requires fresh external scratch.");
+        if (native.DeadlineSeconds <= 0)
+            throw new InvalidDataException("Python group execution requires a positive deadline.");
+        string scratch = OwnedPath.Absolute(native.Scratch, PathMessage);
         if (packagePlan.Checks.Length != 0)
         {
             _ = OwnedPath.Absolute(request.PackageHelper, PathMessage);
@@ -62,6 +49,8 @@ internal static class PythonGroupExecution
             PythonPackageOperations.RequireGitFreeScratch(scratch,
                 "Python package consumers require Git-free scratch.");
         }
+        (string checkout, _) = OwnedPath.RequireFreshExternalScratch(native.Checkout, scratch,
+            "Python group requires fresh external scratch.", PathMessage);
         if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Python group requires its exact candidate.");
         GitMaterialization materialization = await GitMaterialization.BindAsync(checkout,
@@ -104,7 +93,7 @@ internal static class PythonGroupExecution
         if (retained.Candidate != plan.Candidate || package.Candidate != plan.Candidate)
             throw new InvalidDataException("Python group result has a different candidate.");
         CheckResult[] results = [.. retained.Results, .. package.Results];
-        CiOutcome outcome = ResultCollector.Collect(plan, results);
+        CiOutcome outcome = ResultCollector.CollectValidated(plan, results);
         return new(plan.Candidate, results, retained, package, outcome);
 
         CheckResult[] Cancelled(CiPlan partition) => partition.Checks.Select(item =>

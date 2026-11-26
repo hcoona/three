@@ -11,33 +11,16 @@ public sealed class DotNetGroupReaderTests(TestContext context)
     private const string ControlSource = "control/Source.cs";
     private static readonly string[] NativeOwners = ["node", "dotnet"];
     private static readonly string[] NativeProjects = ["product/A.csproj", "product/B.csproj"];
-    private static DotNetEndpointFixture? shared;
+    private static DotNetEndpointFixture.ReadOnlyEndpoint? shared;
 
     [ClassInitialize]
-    public static async Task InitializeAsync(TestContext classContext)
-    {
-        var fixture = await DotNetEndpointFixture.CreateAsync(classContext.CancellationToken);
-        try
-        {
-            foreach (string path in new[] { NodeGroupReader.ControlProject,
-                         ControlTestInputs.Project, ControlSource,
-                         "src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs",
-                         ".config/dotnet-tools.json", "mise.toml", "mise.lock",
-                         "eng/dotnet-frameworks/mise.toml", "eng/dotnet-frameworks/mise.lock",
-                         ".github/workflows/ci.yml", CiScope.SkippedTestSummary })
-                await fixture.Repo.SetAsync(path);
-            await fixture.CommitAsync();
-            shared = fixture;
-        }
-        catch
-        {
-            fixture.Dispose();
-            throw;
-        }
-    }
-
-    [ClassCleanup]
-    public static void Cleanup() => shared?.Dispose();
+    public static async Task InitializeAsync(TestContext classContext) =>
+        shared = new(await DotNetEndpointFixture.CreateAsync(classContext.CancellationToken,
+            [NodeGroupReader.ControlProject, ControlTestInputs.Project, ControlSource,
+                "src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs",
+                ".config/dotnet-tools.json", "mise.toml", "mise.lock",
+                "eng/dotnet-frameworks/mise.toml", "eng/dotnet-frameworks/mise.lock",
+                ".github/workflows/ci.yml", CiScope.SkippedTestSummary]));
 
     [TestMethod]
     public void NodeOnlyFixtureDoesNotSelectExcludedDotNetParent()
@@ -206,7 +189,7 @@ public sealed class DotNetGroupReaderTests(TestContext context)
     [DataRow(CiScope.SkippedTestSummary)]
     public async Task ControlInputsReachAllActualDotNetConsumers(string caller)
     {
-        DotNetEndpointFixture fixture = shared!;
+        var fixture = shared!;
         DotNetRevisionInputs inputs = await fixture.BindAsync(
             fixture.Response(testProject: ControlTestInputs.Project), context.CancellationToken);
         var control = new ControlInputFacts(inputs.Revision.Commit, NodeGroupReader.ControlProject,
@@ -227,7 +210,7 @@ public sealed class DotNetGroupReaderTests(TestContext context)
     [TestMethod]
     public async Task ControlRunInputsAreReportedApartFromNativeConsumers()
     {
-        DotNetEndpointFixture fixture = shared!;
+        var fixture = shared!;
         const string source = ControlSource;
         const string caller = "mise.toml";
         const string node = "src/adopted";

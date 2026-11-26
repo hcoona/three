@@ -29,15 +29,20 @@ internal static class PythonPackageExecution
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token, GitMaterialization? bound = null)
     {
-        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
+        if (bound is null) plan.Validate();
+        _ = OwnedPath.Absolute(request.Interpreter, PathMessage);
+        _ = OwnedPath.Absolute(request.Helper, PathMessage);
+        if (request.DeadlineSeconds <= 0)
+            throw new InvalidDataException("Python package execution needs a positive deadline.");
         string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
+        PythonPackageOperations.RequireGitFreeScratch(scratch);
+        (string checkout, _) = OwnedPath.RequireFreshExternalScratch(request.Checkout, scratch,
+            "Python package execution requires fresh external scratch.", PathMessage);
         // Planning queried the native version projection in this owned environment; an
         // inherited CI ref context would let NBGV select a different public-release projection.
         var tools = new PythonPackageTools(checkout, scratch, request.Uv, request.Interpreter,
             request.Helper, request.DeadlineSeconds, request.Environment,
             InheritEnvironment: false);
-        PythonPackageOperations.Validate(tools);
-        ResultCollector.Collect(plan, []);
         if (plan.Scope != PythonFactsAssembler.Scope)
             throw new InvalidDataException("Unsupported Python package execution scope.");
         if (!GitReader.IsCommitId(plan.Candidate))
@@ -46,7 +51,7 @@ internal static class PythonPackageExecution
         GitMaterialization materialization = await GitMaterialization.ReuseOrBindAsync(bound,
             checkout, plan.Candidate, token);
         await ReadChecksAsync(plan, request.Members, materialization, token);
-        var results = new Dictionary<CheckKey, CheckResult>();
+        var runner = new CheckExecutionRunner(plan, token);
         var commands = new List<PythonPackageCommand>();
         var distributions = new List<PythonOriginalDistribution>();
         var failures = new List<PythonPackageFailure>();
@@ -64,11 +69,9 @@ internal static class PythonPackageExecution
             {
                 CheckSpec check = plan.Checks.Single(item =>
                     item.Work.Key == (pack.Work.Key with { Check = kind })).Work;
-                CheckStatus status;
-                if (token.IsCancellationRequested) status = CheckStatus.Cancelled;
-                else if (check.Prerequisites.Any(key => results[key].Status != CheckStatus.Passed))
-                    status = CheckStatus.Skipped;
-                else try
+                await runner.RunAsync(check, async () =>
+                {
+                    try
                     {
                         if (kind == PythonPackageChecks.Build)
                         {
@@ -92,21 +95,24 @@ internal static class PythonPackageExecution
                                     ? "python-wheel" : "python-sdist", originals, name,
                                 subject.ExpectedVersion, RunAsync, token);
                         token.ThrowIfCancellationRequested();
-                        status = CheckStatus.Passed;
+                        return CheckStatus.Passed;
                     }
                     catch (PackageCommandFailure exception)
-                    { status = exception.Status; failures.Add(new(check.Key, exception.Message)); }
-                    catch (OperationCanceledException) { status = CheckStatus.Cancelled; }
+                    {
+                        failures.Add(new(check.Key, exception.Message));
+                        return exception.Status;
+                    }
+                    catch (OperationCanceledException) { return CheckStatus.Cancelled; }
                     catch (Exception exception) when (exception is IOException or
                         InvalidDataException or JsonException or
                         UnauthorizedAccessException or ArgumentException or
                             InvalidOperationException
                             or KeyNotFoundException)
                     {
-                        status = CheckStatus.Failed; failures.Add(new(check.Key,
-                        exception.Message));
+                        failures.Add(new(check.Key, exception.Message));
+                        return CheckStatus.Failed;
                     }
-                results.Add(check.Key, new(plan.Candidate, check.Key, status));
+                });
 
                 async Task<NativeCommandResult> RunAsync(NativeCommand command,
                     CancellationToken cancellation)
@@ -126,7 +132,7 @@ internal static class PythonPackageExecution
                 }
             }
         }
-        return new(plan.Candidate, plan.Checks.Select(item => results[item.Work.Key]).ToArray(),
+        return new(plan.Candidate, runner.InPlanOrder(),
             commands.ToArray(), distributions.ToArray(), failures.ToArray());
     }
 

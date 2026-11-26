@@ -56,10 +56,7 @@ internal static class RubyCiCaller
         CiCallerTransfer.Write(Path.Combine(directory, "readback.json"),
             new RubyCiCallerReadback(readback.Basis, readback.Candidate),
             TransferJson.Default.RubyCiCallerReadback);
-        CiCallerTransfer.Write(Path.Combine(directory, "plan.json"), readback.Plan,
-            TransferJson.Default.CiPlan);
-        CiCallerTransfer.Output("selected", (readback.Plan.Checks.Length !=
-            0).ToString().ToLowerInvariant());
+        CiCallerTransfer.WritePlan(directory, readback.Plan);
         CiCallerTransfer.Output("latexmath", readback.Plan.Checks.Any(check =>
             check.Work.Key.Target == "src/public/lib/asciidoctor-latexmath")
                 .ToString().ToLowerInvariant());
@@ -74,65 +71,46 @@ internal static class RubyCiCaller
         CiPlan plan = CiCallerTransfer.Read(Path.Combine(directory, "plan.json"),
             TransferJson.Default.CiPlan);
         CiCallerTransfer.Plan(plan, context.Basis.Reference, context.Candidate.Reference, Scope);
-        CheckResult[] results;
-        CiOutcome outcome;
-        CiCallerFailure[] failures = [];
-        (CheckKey, Platform.NativeCommand, Platform.NativeCommandResult)[] commands = [];
         if (plan.Checks.Length == 0)
-        {
-            results = [];
-            outcome = ResultCollector.Collect(plan, results);
-        }
-        else
-        {
-            RubyCiCallerReadback readback = CiCallerTransfer.Read(Path.Combine(directory,
-                "readback.json"),
-                TransferJson.Default.RubyCiCallerReadback);
-            RubyGroupPreparationResult preparation = CiCallerTransfer.Read(
-                Path.Combine(directory, "preparation.json"),
-                    TransferJson.Default.RubyGroupPreparationResult);
-            RubyGroupPreparationRequest original = CiCallerTransfer.Read(
-                Path.Combine(directory, "preparation-request.json"),
-                    TransferJson.Default.RubyGroupPreparationRequest);
-            RubyGroupEndpoint candidate = preparation.Request.Candidate;
-            if (candidate.Checkout != context.Candidate ||
-                preparation.Request.Basis.Checkout != context.Basis || preparation.Request.Full
-                    != context.Full ||
-                readback.Candidate.Facts.Revision.Commit != context.Candidate.Reference)
-                throw new InvalidDataException("Prepared Ruby candidate differs from execution.");
-            var request = new RubyGroupRunRequest(context.Candidate.Directory,
-                CiCallerTransfer.Fresh(Path.Combine(directory, "execution")),
-                    candidate.Collection.Tools,
-                original.Tools.Gem, original.Tools.Bundle, candidate.Collection.Nbgv,
-                    readback.Candidate);
-            CiCallerTransfer.Write(Path.Combine(directory, "execution-request.json"), request,
-                TransferJson.Default.RubyGroupRunRequest);
-            RubyGroupRun result = await (execute ?? RubyGroupExecution.RunAsync)(plan, request,
-                token);
-            CiCallerTransfer.Write(Path.Combine(directory, "result.json"), result,
-                TransferJson.Default.RubyGroupRun);
-            results = result.Results;
-            outcome = CiCallerTransfer.Outcome(plan, result.Outcome);
-            failures = [.. result.RSpec
-                    .Select(run => (run.Check, Error: RSpecDiagnostic(run.Run)))
-                    .Where(run => run.Error is not null)
-                    .Select(run => new CiCallerFailure(run.Check, run.Error!)),
-                .. result.Packages.Failures.Select(failure => new CiCallerFailure(failure.Check,
-                    failure.Error))];
+            return CiCallerTransfer.WriteOutcome(directory, plan, ResultCollector.Collect(plan, []),
+                [], [], [], diagnostics);
+
+        RubyCiCallerReadback readback = CiCallerTransfer.Read(Path.Combine(directory,
+            "readback.json"), TransferJson.Default.RubyCiCallerReadback);
+        RubyGroupPreparationResult preparation = CiCallerTransfer.Read(
+            Path.Combine(directory, "preparation.json"),
+            TransferJson.Default.RubyGroupPreparationResult);
+        RubyGroupPreparationRequest original = CiCallerTransfer.Read(
+            Path.Combine(directory, "preparation-request.json"),
+            TransferJson.Default.RubyGroupPreparationRequest);
+        RubyGroupEndpoint candidate = preparation.Request.Candidate;
+        if (candidate.Checkout != context.Candidate ||
+            preparation.Request.Basis.Checkout != context.Basis ||
+            preparation.Request.Full != context.Full ||
+            readback.Candidate.Facts.Revision.Commit != context.Candidate.Reference)
+            throw new InvalidDataException("Prepared Ruby candidate differs from execution.");
+        var request = new RubyGroupRunRequest(context.Candidate.Directory,
+            CiCallerTransfer.Fresh(Path.Combine(directory, "execution")),
+            candidate.Collection.Tools, original.Tools.Gem, original.Tools.Bundle,
+            candidate.Collection.Nbgv, readback.Candidate);
+        CiCallerTransfer.Write(Path.Combine(directory, "execution-request.json"), request,
+            TransferJson.Default.RubyGroupRunRequest);
+        RubyGroupRun result = await (execute ?? RubyGroupExecution.RunAsync)(plan, request, token);
+        CiCallerTransfer.Write(Path.Combine(directory, "result.json"), result,
+            TransferJson.Default.RubyGroupRun);
+        return CiCallerTransfer.WriteOutcome(directory, plan, result.Outcome, result.Results, [
+            .. result.RSpec.Select(run => (run.Check, Error: RSpecDiagnostic(run.Run)))
+                .Where(run => run.Error is not null)
+                .Select(run => new CiCallerFailure(run.Check, run.Error!)),
+            .. result.Packages.Failures.Select(failure => new CiCallerFailure(failure.Check,
+                failure.Error))], [
             // A failed install is also the suite's Run; report each native command once.
-            commands = [.. result.RSpec.SelectMany(run => run.Installs
-                    .Where(install => !ReferenceEquals(install.Command, run.Run.Command))
-                    .Select(install => (run.Check, install.Command, install.Result))
-                    .Append((run.Check, run.Run.Command, run.Run.Result))),
-                .. result.Packages.Commands.Select(command => (command.Check, command.Command,
-                    command.Result))];
-        }
-        CiCallerTransfer.Write(Path.Combine(directory, "results.json"), results,
-            TransferJson.Default.CheckResultArray);
-        CiCallerTransfer.Write(Path.Combine(directory, "outcome.json"), outcome,
-            TransferJson.Default.CiOutcome);
-        CiCallerTransfer.Report(outcome, failures, commands, diagnostics);
-        return outcome;
+            .. result.RSpec.SelectMany(run => run.Installs
+                .Where(install => !ReferenceEquals(install.Command, run.Run.Command))
+                .Select(install => (run.Check, install.Command, install.Result))
+                .Append((run.Check, run.Run.Command, run.Run.Result))),
+            .. result.Packages.Commands.Select(command => (command.Check, command.Command,
+                command.Result))], diagnostics);
     }
 
     private static string? RSpecDiagnostic(RubyRSpecRun run)

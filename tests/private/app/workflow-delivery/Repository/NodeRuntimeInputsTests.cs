@@ -331,6 +331,36 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task RuntimeProjectionRejectsAnEdgeToAnUnavailablePrerequisiteVariant()
+    {
+        const string newerMember = "packages/newer";
+        CiPlan original = await PackagePlanAsync();
+        NodeRuntimeInputs inputs = Inputs(original.Candidate);
+        inputs = inputs with
+        {
+            Members = [.. inputs.Members, new(newerMember, new System.Version(24, 0, 0))],
+        };
+        PlannedCheck build = original.Checks.Single(item =>
+            item.Work.Key.Check == "node/project-build-v1");
+        CheckKey prerequisite = build.Work.Key with { Target = newerMember };
+        PlannedCheck test = original.Checks.Single(item =>
+            item.Work.Key.Check == "node/project-test-v1");
+        var plan = original with
+        {
+            Checks =
+            [
+                .. original.Checks.Where(item => item != test),
+                build with { Work = build.Work with { Key = prerequisite } },
+                test with { Work = test.Work with { Prerequisites = [prerequisite] } },
+            ],
+        };
+        plan.Validate();
+
+        Assert.Contains("A Node runtime does not admit a prerequisite",
+            Assert.ThrowsExactly<InvalidDataException>(() => inputs.Expand(plan)).Message);
+    }
+
+    [TestMethod]
     public void EmptyProjectionKeepsTheComparisonAndCandidate()
     {
         var original = new CiPlan(NodeScenario.Basis, NodeScenario.Candidate,

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using WorkflowDelivery.Platform;
+using static WorkflowDelivery.Platform.StrictJson;
 
 namespace WorkflowDelivery.Repository;
 
@@ -41,7 +42,7 @@ internal sealed class PythonPassiveReader
                 NativeDiagnostic.Describe(result));
         try
         {
-            using JsonDocument document = JsonDocument.Parse(result.Stdout);
+            using JsonDocument document = StrictJson.Parse(result.Stdout);
             JsonElement facts = document.RootElement;
             if (facts.GetProperty("directory").GetString() != directory)
                 throw new InvalidDataException("Python passive context differs from its request.");
@@ -52,9 +53,12 @@ internal sealed class PythonPassiveReader
                         .EnumerateArray().Select(Text).ToArray())).ToArray();
             var sources = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (JsonProperty source in facts.GetProperty("sources").EnumerateObject())
-                if (Text(source.Value) is not ("workspace" or "unsupported") ||
-                    !sources.TryAdd(source.Name, source.Value.GetString()!))
+            {
+                string kind = Text(source.Value);
+                if (kind is not ("workspace" or "unsupported"))
                     throw new InvalidDataException("Invalid Python passive source class.");
+                sources.Add(source.Name, kind);
+            }
             JsonElement plugin = facts.GetProperty("nbgv");
             PythonNbgvCoordinates? coordinates = null;
             if (plugin.ValueKind != JsonValueKind.Null)
@@ -105,7 +109,7 @@ internal sealed class PythonPassiveReader
                 NativeDiagnostic.Describe(preflight));
         try
         {
-            using JsonDocument result = JsonDocument.Parse(preflight.Stdout);
+            using JsonDocument result = StrictJson.Parse(preflight.Stdout);
             string?[] observed = result.RootElement.GetProperty("configuration_inputs")
                 .EnumerateArray().Select(input => input.GetString()).ToArray();
             if (!observed.Order(StringComparer.Ordinal).SequenceEqual(inputs,
@@ -121,10 +125,6 @@ internal sealed class PythonPassiveReader
         }
     }
 
-    private static string Text(JsonElement value) => value.ValueKind == JsonValueKind.String &&
-        !string.IsNullOrWhiteSpace(value.GetString()) ? value.GetString()!
-            : throw new InvalidDataException("Invalid Python passive input coordinate.");
-
     private static string Absolute(string path)
     {
         if (!Path.IsPathFullyQualified(path))
@@ -132,11 +132,6 @@ internal sealed class PythonPassiveReader
         return path;
     }
 
-    private static void CanonicalEndpoint(string path)
-    {
-        if (!Path.IsPathFullyQualified(path) ||
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)) != path)
-            throw new InvalidDataException(
-                "Python passive paths must be canonical absolute paths.");
-    }
+    private static void CanonicalEndpoint(string path) => OwnedPath.RequireCanonical(path,
+        "Python passive paths must be canonical absolute paths.");
 }

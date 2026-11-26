@@ -262,32 +262,34 @@ public sealed class PythonFactsAssemblerTests
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public void EitherMalformedActualOwnerFailsBeforeScopeCertification(bool invalidBasis)
+    [DataRow("checks", true)]
+    [DataRow("preset", false)]
+    [DataRow("origin", true)]
+    [DataRow("member", false)]
+    [DataRow("relation", true)]
+    [DataRow("prerequisite", false)]
+    [DataRow("duplicate input", true)]
+    public void MalformedActualOwnerFailsBeforeScopeCertification(string defect, bool invalidBasis)
     {
         var package = Package("src/package");
         var valid = Endpoint("valid", [Member("."), Member("src/package"),
             Member("src/input")], ["tests/standalone.py"], [package]);
-        Reject(package with { Checks = [] }, "missing checks");
-        Reject(package with { QualityPreset = null }, "missing preset");
-        Reject(package with { Origin = CheckOrigin.NativeRetained }, "wrong origin");
-        Reject(package with { Directory = "src/missing" }, "unknown member");
-        Reject(package with { Dependencies = ["src/input"] }, "unexpected relation");
-        Reject(package with
-        { Checks = [Check("src/package", prerequisites: [Check("missing").Key])] },
-            "unknown prerequisite");
-        Reject(package with
-        { OwnedPaths = ["src/package/pyproject.toml", "src/package/pyproject.toml"] },
-            "duplicate input");
-
-        void Reject(ProjectFacts invalid, string scenario)
+        ProjectFacts invalid = defect switch
         {
-            var malformed = valid with { Packages = [invalid] };
-            Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
-                invalidBasis ? malformed : valid, invalidBasis ? valid : malformed, [], false),
-                scenario);
-        }
+            "checks" => package with { Checks = [] },
+            "preset" => package with { QualityPreset = null },
+            "origin" => package with { Origin = CheckOrigin.NativeRetained },
+            "member" => package with { Directory = "src/missing" },
+            "relation" => package with { Dependencies = ["src/input"] },
+            "prerequisite" => package with
+            { Checks = [Check("src/package", prerequisites: [Check("missing").Key])] },
+            "duplicate input" => package with
+            { OwnedPaths = ["src/package/pyproject.toml", "src/package/pyproject.toml"] },
+            _ => throw new AssertFailedException(defect),
+        };
+        var malformed = valid with { Packages = [invalid] };
+        Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
+            invalidBasis ? malformed : valid, invalidBasis ? valid : malformed, [], false));
     }
 
     [TestMethod]

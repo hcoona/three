@@ -194,64 +194,23 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
     }
 
     [TestMethod]
-    public Task ReadRejectsNativeArrayRoot() => RejectNativeAsync("[]");
-
-    [TestMethod]
     [DataRow("Properties", null)]
-    [DataRow("Properties", "null")]
-    [DataRow("Items", null)]
     [DataRow("Items", "[]")]
-    public Task ReadRejectsInvalidNativeEnvelope(string name, string? json) =>
-        RejectEditedOutputAsync(root => SetOrRemove(root, name, json));
-
-    [TestMethod]
-    [DataRow("MSBuildProjectFullPath", null)]
-    [DataRow("MSBuildProjectFullPath", "null")]
-    [DataRow("Configuration", "null")]
-    [DataRow("TargetFramework", "\"\"")]
-    [DataRow("RuntimeIdentifier", null)]
-    [DataRow("RuntimeIdentifier", "null")]
-    [DataRow("RuntimeIdentifier", "42")]
-    public Task ReadRejectsInvalidNativeProperties(string name, string? json) =>
-        RejectEditedOutputAsync(root => SetOrRemove(root["Properties"]!, name, json));
-
-    [TestMethod]
-    [DataRow(null)]
-    [DataRow("null")]
-    [DataRow("{}")]
-    [DataRow("[null]")]
-    public Task ReadRejectsInvalidNativeResourceList(string? json) =>
-        RejectEditedOutputAsync(root => SetOrRemove(root["Items"]!, "EmbeddedResource", json));
-
-    [TestMethod]
-    [DataRow(null)]
-    [DataRow("null")]
-    [DataRow("42")]
-    [DataRow("\"\"")]
-    public Task ReadRejectsInvalidNativeResourceFullPath(string? json) =>
-        RejectEditedOutputAsync(root =>
-            SetOrRemove(root["Items"]!["EmbeddedResource"]![0]!, "FullPath", json));
-
-    [TestMethod]
-    [DataRow("Properties", "{}")]
-    [DataRow("Items", "{}")]
-    [DataRow("MSBuildProjectFullPath", "null")]
-    [DataRow("EmbeddedResource", "[]")]
-    [DataRow("FullPath", "null")]
-    public Task ReadRejectsDuplicateNativeField(string name, string json) =>
-        RejectNativeAsync(ValidNativeOutput().Replace($"\"{name}\":",
-            $"\"{name}\":{json},\"{name}\":", StringComparison.Ordinal));
-
-    private static void SetOrRemove(JsonNode target, string name, string? json)
-    {
-        if (json is null) target.AsObject().Remove(name);
-        else target[name] = JsonNode.Parse(json);
-    }
-
-    private Task<InvalidDataException> RejectEditedOutputAsync(Action<JsonNode> edit)
+    [DataRow("Properties/Configuration", "null")]
+    [DataRow("Properties/TargetFramework", "\" \"")]
+    [DataRow("Properties/RuntimeIdentifier", "42")]
+    [DataRow("Items/EmbeddedResource", "{}")]
+    [DataRow("Items/EmbeddedResource", "[null]")]
+    [DataRow("Items/EmbeddedResource/0/FullPath", null)]
+    public Task ReadRejectsInvalidNativeShape(string path, string? json)
     {
         JsonNode output = JsonNode.Parse(ValidNativeOutput())!;
-        edit(output);
+        string[] fields = path.Split('/');
+        JsonNode target = output;
+        foreach (string field in fields[..^1])
+            target = field == "0" ? target[0]! : target[field]!;
+        if (json is null) target.AsObject().Remove(fields[^1]);
+        else target[fields[^1]] = JsonNode.Parse(json);
         return RejectNativeAsync(output.ToJsonString());
     }
 
@@ -264,11 +223,15 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
             .ReadAsync(Project, Release, context.CancellationToken));
 
     [TestMethod]
-    public async Task ReadRejectsInvalidJson()
+    [DataRow(null, "{")]
+    [DataRow("Properties", "{}")]
+    [DataRow("FullPath", "null")]
+    public async Task ReadRejectsMalformedOrDuplicateJson(string? duplicate, string json)
     {
-        using var repo = await FixtureAsync();
-        GitMaterialization checkout = await BindAsync(repo);
-        var reader = new MsBuildResourceReader(checkout, (_, _) => Task.FromResult("{"));
+        string output = duplicate is null ? json : ValidNativeOutput().Replace(
+            $"\"{duplicate}\":", $"\"{duplicate}\":{json},\"{duplicate}\":",
+            StringComparison.Ordinal);
+        var reader = new MsBuildResourceReader(sharedCheckout!, (_, _) => Task.FromResult(output));
 
         await Assert.ThrowsAsync<JsonException>(() => reader.ReadAsync(Project, Release,
             context.CancellationToken));

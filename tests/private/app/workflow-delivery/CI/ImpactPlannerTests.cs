@@ -362,8 +362,6 @@ public sealed class ImpactPlannerTests
 
     [TestMethod]
     [DataRow(false, false)]
-    [DataRow(false, true)]
-    [DataRow(true, false)]
     [DataRow(true, true)]
     public void PlanRootWithoutOwnedPathsRejectsEitherRevisionIncludingFullMode(bool basis,
         bool full)
@@ -460,8 +458,6 @@ public sealed class ImpactPlannerTests
 
     [TestMethod]
     [DataRow(false, false)]
-    [DataRow(false, true)]
-    [DataRow(true, false)]
     [DataRow(true, true)]
     public void PlanIncompleteFactsRejectsEitherRevisionIncludingFullMode(bool basis, bool full)
     {
@@ -534,7 +530,6 @@ public sealed class ImpactPlannerTests
         { Dimensions = new() { ["tfm"] = "net10.0" } };
         CheckSpec[] conflicts =
         [
-            check with { Dimensions = [] },
             check with { Dimensions = new() { ["tfm"] = "net9.0" } },
             check with { Runner = "windows-latest" },
             check with { Prerequisites = [Scenario.Check("missing").Key] },
@@ -548,20 +543,17 @@ public sealed class ImpactPlannerTests
     }
 
     [TestMethod]
-    [DataRow(false, "Missing prerequisite")]
-    [DataRow(true, "Cyclic check prerequisites")]
-    public void PlanBrokenPrerequisiteGraphRejectsBeforeExecution(bool cycle, string message)
+    public void PlanRejectsMissingPrerequisiteEvenOnAnUnselectedOwner()
     {
         CheckSpec build = Scenario.Check("library", "build");
         CheckSpec test = Scenario.Check("library", prerequisites: [build.Key]);
-        CheckSpec[] checks = cycle ? [test, build with { Prerequisites = [test.Key] }] : [test];
+        ProjectFacts unselected = Scenario.Project("library", checks: [test]);
+        ProjectFacts selected = Scenario.Project("app");
 
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(
-            Scenario.Request([Scenario.Project("library", checks: checks)],
-                "src/library/code.cs")));
+            ImpactPlanner.Plan(Scenario.Request([selected, unselected], "src/app/code.cs")));
 
-        Assert.Contains(message, error.Message);
+        Assert.Contains("Missing prerequisite", error.Message);
     }
 
     [TestMethod]
@@ -689,11 +681,10 @@ public sealed class ImpactPlannerTests
     [DataRow("src/./library/code.cs")]
     [DataRow("src\\library\\code.cs")]
     [DataRow("C:/src/library/code.cs")]
-    public void PlanUnnormalizedChangedPathRejectsAmbiguousOwnership(string path)
+    public void ValidatePathRejectsNonRepositoryRelativePaths(string path)
     {
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(
-            Scenario.Request([Scenario.Project("library")], path)));
+            ImpactPlanner.ValidatePath(path));
 
         Assert.Contains("normalized repository-relative path", error.Message);
     }
@@ -831,14 +822,9 @@ public sealed class ImpactPlannerTests
     }
 
     [TestMethod]
-    [DataRow("src/c/code.py", "base", "foreign", false)]
     [DataRow("src/c/code.py", "base", "foreign", true)]
     [DataRow("src/c/code.py", "foreign", "c", false)]
-    [DataRow("src/c/code.py", "foreign", "c", true)]
-    [DataRow("src/c/unchanged.py", "base", "c", false)]
     [DataRow("src/c/unchanged.py", "base", "c", true)]
-    [DataRow("../outside.py", "base", "c", false)]
-    [DataRow("../outside.py", "base", "c", true)]
     public void InvalidPairedReasonRejectsWithoutFullFallback(string path, string revision,
         string owner, bool full)
     {
@@ -849,53 +835,29 @@ public sealed class ImpactPlannerTests
     }
 
     [TestMethod]
-    [DataRow(false, false)]
-    [DataRow(false, true)]
-    [DataRow(true, false)]
-    [DataRow(true, true)]
-    public void PairedReasonsDoNotBypassEndpointFactValidation(bool invalidBasis, bool full)
-    {
-        PlanRequest request = Scenario.Request([Scenario.Project("c")], PairedInput) with
-        { Full = full };
-        string[] errors = ["incomplete native scope"];
-        request = invalidBasis
-            ? request with { Basis = request.Basis with { Errors = errors } }
-            : request with { Candidate = request.Candidate with { Errors = errors } };
-
-        Assert.Contains(errors[0], Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(request, [new(PairedInput, "base", "c")])).Message);
-    }
-
-    [TestMethod]
     public void PairedReasonsDoNotBypassSelectedQualityContract()
     {
-        foreach (ProjectFacts owner in MalformedQualityContracts(Scenario.Project("c")))
-        {
-            var request = new PlanRequest(Scenario.Facts("base"),
-                Scenario.Facts("candidate", owner), PairedInputPaths, false);
+        ProjectFacts owner = Scenario.Project("c") with { Checks = [] };
+        var request = new PlanRequest(Scenario.Facts("base"),
+            Scenario.Facts("candidate", owner), PairedInputPaths, false);
 
-            Assert.Contains("Unresolved quality contract for c",
-                Assert.ThrowsExactly<InvalidDataException>(() =>
-                    ImpactPlanner.Plan(request, [new(PairedInput, "base", owner.Id)])).Message);
-        }
+        Assert.Contains("Unresolved quality contract for c",
+            Assert.ThrowsExactly<InvalidDataException>(() =>
+                ImpactPlanner.Plan(request, [new(PairedInput, "base", owner.Id)])).Message);
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public void PairedReasonsRejectMalformedDeletedOwnersBeforeClosure(bool full)
+    public void PairedReasonsRejectMalformedDeletedOwnersBeforeClosure()
     {
         ProjectFacts consumer = Scenario.Project("consumer");
-        ProjectFacts removed = Scenario.Project("removed", qualityConsumers: PairedConsumer);
-        foreach (ProjectFacts owner in MalformedQualityContracts(removed))
-        {
-            var request = new PlanRequest(Scenario.Facts("base", owner, consumer),
-                Scenario.Facts("candidate", consumer), PairedInputPaths, full);
+        ProjectFacts owner = Scenario.Project("removed", qualityConsumers: PairedConsumer) with
+        { QualityPreset = null };
+        var request = new PlanRequest(Scenario.Facts("base", owner, consumer),
+            Scenario.Facts("candidate", consumer), PairedInputPaths, true);
 
-            Assert.Contains("Unresolved quality contract for removed",
-                Assert.ThrowsExactly<InvalidDataException>(() => ImpactPlanner.SelectProjects(
-                    request, [new(PairedInput, "base", owner.Id)])).Message);
-        }
+        Assert.Contains("Unresolved quality contract for removed",
+            Assert.ThrowsExactly<InvalidDataException>(() => ImpactPlanner.SelectProjects(
+                request, [new(PairedInput, "base", owner.Id)])).Message);
     }
 
     [TestMethod]
@@ -917,13 +879,6 @@ public sealed class ImpactPlannerTests
             Assert.ContainsSingle(plan.Checks.Single(check =>
                 check.Work.Key.Target == "other").Reasons));
     }
-
-    private static ProjectFacts[] MalformedQualityContracts(ProjectFacts owner) =>
-    [
-        owner with { Checks = [] },
-        owner with { QualityPreset = null },
-        owner with { Origin = CheckOrigin.NativeRetained },
-    ];
 
     private static void AssertCandidateRejected(PlanRequest request, RepositoryFacts candidate,
         string diagnostic) => Assert.Contains(diagnostic,

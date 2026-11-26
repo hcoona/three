@@ -464,12 +464,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         GitMaterialization checkout = await StageGemAsync(repo, directory,
             GemDeclaration.Replace(original, replacement, StringComparison.Ordinal));
 
-        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            RubyRepositoryReader.ReadAsync(checkout, Request(repo.Directory),
-                (command, token) => ReadGemAsync(command, repo.Directory, directory,
-                    "1.2.3", "1.2.3", (Smoke, "1.2.3", "ruby"), token),
-                context.CancellationToken));
-        Assert.Contains(diagnostic, failure.Message);
+        await RejectGemAsync(checkout, directory, (Smoke, "1.2.3", "ruby"), diagnostic);
     }
 
     [TestMethod]
@@ -484,12 +479,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
         GitMaterialization checkout = await StageGemAsync(repo, directory, GemDeclaration);
 
-        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            RubyRepositoryReader.ReadAsync(checkout, Request(repo.Directory),
-                (command, token) => ReadGemAsync(command, repo.Directory, directory,
-                    "1.2.3", "1.2.3", (name, version, platform), token),
-                context.CancellationToken));
-        Assert.Contains(diagnostic, failure.Message);
+        await RejectGemAsync(checkout, directory, (name, version, platform), diagnostic);
     }
 
     [TestMethod]
@@ -501,15 +491,20 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         await repo.SetAsync(generated, "committed version");
         GitMaterialization checkout = await StageGemAsync(repo, directory, GemDeclaration);
 
-        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            RubyRepositoryReader.ReadAsync(checkout, Request(repo.Directory),
-                (command, token) => ReadGemAsync(command, repo.Directory, directory,
-                    "1.2.3", "1.2.3", (Smoke, "1.2.3", "ruby"), token),
-                context.CancellationToken));
-
-        Assert.Contains("Generated Ruby version is a committed input", failure.Message);
+        await RejectGemAsync(checkout, directory, (Smoke, "1.2.3", "ruby"),
+            "Generated Ruby version is a committed input");
         Assert.AreEqual("committed version", await File.ReadAllTextAsync(
             Path.Combine(repo.Directory, generated), context.CancellationToken));
+    }
+
+    private async Task RejectGemAsync(GitMaterialization checkout, string directory,
+        (string Name, string Version, string Platform) gem, string diagnostic)
+    {
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            RubyRepositoryReader.ReadAsync(checkout, Request(checkout.Root),
+                (command, token) => ReadGemAsync(command, checkout.Root, directory,
+                    "1.2.3", "1.2.3", gem, token), context.CancellationToken));
+        Assert.Contains(diagnostic, failure.Message);
     }
 
     [TestMethod]

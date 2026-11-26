@@ -17,10 +17,11 @@ import tarfile
 import zipfile
 from email.parser import BytesParser
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from hatchling.metadata.core import ProjectMetadata
+    from packaging.version import Version
 
 # Iterating a compressed sdist decompresses every member, so declared contents
 # and member headers bound that expansion. A wheel reads only its directory and
@@ -94,6 +95,16 @@ def native_identity(project: Path) -> dict:
     return {"name": metadata.core.name, "version": metadata.version}
 
 
+def _version_facts(metadata: ProjectMetadata, version: Version) -> dict:
+    return {
+        "name": metadata.core.name,
+        "version": str(version),
+        "local_version": version.local,
+        "dependencies": metadata.core.dependencies,
+        **_interpreter_facts(),
+    }
+
+
 def native_version_facts(project: Path) -> dict:
     """Expose maintained backend and version facts for the caller."""
     from packaging.version import Version  # noqa: PLC0415
@@ -110,13 +121,9 @@ def native_version_facts(project: Path) -> dict:
         raise ValueError(message)
     native = data["metadata"]
     return {
-        "name": metadata.core.name,
-        "version": str(version),
+        **_version_facts(metadata, version),
         "commit": native["GitCommitId"],
         "public_release": native["PublicRelease"],
-        "local_version": version.local,
-        "dependencies": metadata.core.dependencies,
-        **_interpreter_facts(),
     }
 
 
@@ -128,14 +135,7 @@ def native_static_version_facts(project: Path) -> dict:
     if "version" in metadata.core.dynamic:
         message = "Unsupported selected native version source"
         raise ValueError(message)
-    version = Version(metadata.version)
-    return {
-        "name": metadata.core.name,
-        "version": str(version),
-        "local_version": version.local,
-        "dependencies": metadata.core.dependencies,
-        **_interpreter_facts(),
-    }
+    return _version_facts(metadata, Version(metadata.version))
 
 
 def member_path(name: str) -> str:
@@ -349,11 +349,9 @@ def consume(name: str, version: str, quality: str) -> dict:
     if files is None:
         message = "Installed distribution has no native file inventory"
         raise ValueError(message)
-    installed = {
-        Path(distribution.locate_file(file)).resolve() for file in files
-    }
+    installed = {_installed_path(distribution, file) for file in files}
     module = importlib.import_module(selected["module"])
-    origin = Path(module.__file__).resolve()
+    origin = Path(cast("str", module.__file__)).resolve()
     if (
         sys.prefix == sys.base_prefix
         or not origin.is_relative_to(root)
@@ -376,6 +374,13 @@ def consume(name: str, version: str, quality: str) -> dict:
     }
 
 
+def _installed_path(
+    distribution: importlib.metadata.Distribution, file: str | PurePosixPath
+) -> Path:
+    # Only filesystem-backed distributions can supply installed origins.
+    return Path(cast("Path", distribution.locate_file(file))).resolve()
+
+
 def _installed_requirements(requires: list, root: Path) -> bool:
     """Declared runtime requirements resolve from this venv, not the base."""
     for value in requires:
@@ -383,7 +388,7 @@ def _installed_requirements(requires: list, root: Path) -> bool:
         from packaging.requirements import Requirement  # noqa: PLC0415
 
         dependency = importlib.metadata.distribution(Requirement(value).name)
-        if not Path(dependency.locate_file("")).resolve().is_relative_to(root):
+        if not _installed_path(dependency, "").is_relative_to(root):
             return False
     return True
 

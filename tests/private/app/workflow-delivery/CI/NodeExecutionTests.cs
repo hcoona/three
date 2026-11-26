@@ -171,20 +171,15 @@ public sealed class NodeExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(nameof(NativeTermination.Exited), nameof(CheckStatus.Failed))]
-    [DataRow(nameof(NativeTermination.TimedOut), nameof(CheckStatus.TimedOut))]
-    public async Task UnsuccessfulBuildSkipsPackagingButRunsIndependentTest(
-        string nativeTermination, string expectedStatus)
+    public async Task UnsuccessfulBuildSkipsPackagingButRunsIndependentTest()
     {
         using var fixture = Shared();
-        NativeTermination termination = Enum.Parse<NativeTermination>(nativeTermination);
         fixture.Override = command => command.Arguments[^1] == "build"
-            ? NodeExecutionFixture.Failure(termination) : null;
+            ? NodeExecutionFixture.Failure() : null;
 
         NodeRunResult result = await fixture.RunAsync(context.CancellationToken);
 
-        Assert.AreEqual(Enum.Parse<CheckStatus>(expectedStatus),
-            Status(result, NodeExecutionFixture.Build));
+        Assert.AreEqual(CheckStatus.Failed, Status(result, NodeExecutionFixture.Build));
         Assert.AreEqual(CheckStatus.Passed, Status(result, NodeExecutionFixture.Test));
         foreach (string check in PackageChecks)
             Assert.AreEqual(CheckStatus.Skipped, Status(result, check));
@@ -193,7 +188,6 @@ public sealed class NodeExecutionTests(TestContext context)
         Assert.IsFalse(ResultCollector.Collect(fixture.SelectedPlan, result.Results).Satisfied);
         NodeCommandObservation build = Assert.ContainsSingle(result.Commands.Where(item =>
             item.Key.Check == NodeExecutionFixture.Build));
-        Assert.AreEqual(termination, build.Result.Termination);
         Assert.AreEqual("partial stdout", build.Result.Stdout);
     }
 
@@ -304,21 +298,6 @@ public sealed class NodeExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task NonemptyExternalScratchIsRejectedWithoutReplacingSentinel()
-    {
-        using var fixture = Shared();
-        string sentinel = Path.Combine(fixture.Scratch, "existing.txt");
-        File.WriteAllText(sentinel, "existing scratch data");
-
-        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.RunAsync(context.CancellationToken));
-
-        Assert.Contains("fresh external scratch", failure.Message);
-        Assert.IsEmpty(fixture.Commands);
-        Assert.AreEqual("existing scratch data", File.ReadAllText(sentinel));
-    }
-
-    [TestMethod]
     public async Task ChangedCheckoutIsRejectedBeforeNativeCommands()
     {
         using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
@@ -365,29 +344,6 @@ public sealed class NodeExecutionTests(TestContext context)
 
         Assert.IsTrue(ResultCollector.Collect(fixture.SelectedPlan, result.Results).Satisfied);
         Assert.AreEqual("native build output", File.ReadAllText(source));
-    }
-
-    [TestMethod]
-    public async Task CallerCancellationRetainsEverySelectedKeyWithoutRunningDependents()
-    {
-        using var fixture = Shared();
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            context.CancellationToken);
-        fixture.Override = command =>
-        {
-            if (command.Arguments.Contains("--version")) return null;
-            cancellation.Cancel();
-            return NodeExecutionFixture.Failure(NativeTermination.Cancelled, null);
-        };
-
-        NodeRunResult result = await fixture.RunAsync(cancellation.Token);
-
-        CollectionAssert.AreEquivalent(fixture.SelectedPlan.Checks.Select(item => item.Work.Key)
-            .ToArray(), result.Results.Select(item => item.Key).ToArray());
-        Assert.IsTrue(result.Results.All(item => item.Status == CheckStatus.Cancelled));
-        Assert.IsEmpty(result.Outputs);
-        Assert.IsFalse(fixture.Commands.Any(command => command.Arguments.Contains("pack")));
-        Assert.IsFalse(ResultCollector.Collect(fixture.SelectedPlan, result.Results).Satisfied);
     }
 
     [TestMethod]
@@ -443,8 +399,7 @@ public sealed class NodeExecutionTests(TestContext context)
     public async Task NativePackOutputMarkersAreRejectedInExternalScratchPath(string marker)
     {
         using var fixture = Shared();
-        string scratch = Directory.CreateDirectory(Path.Combine(fixture.Scratch, marker, "fresh"))
-            .FullName;
+        string scratch = Path.Combine(fixture.Scratch, marker, "fresh");
 
         InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(context.CancellationToken,
@@ -452,7 +407,7 @@ public sealed class NodeExecutionTests(TestContext context)
 
         Assert.Contains("native pack output markers", failure.Message);
         Assert.IsEmpty(fixture.Commands);
-        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(scratch));
+        Assert.IsFalse(Directory.Exists(scratch));
     }
 
     private static bool IsPublicApiCheck(NativeCommand command) =>

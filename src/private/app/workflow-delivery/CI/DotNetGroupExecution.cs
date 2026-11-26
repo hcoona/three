@@ -20,7 +20,7 @@ internal static class DotNetGroupExecution
         CancellationToken token,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>>? execute = null)
     {
-        ResultCollector.Collect(plan, []);
+        plan.Validate();
         if (plan.Scope != DotNetFactsAssembler.Scope)
             throw new InvalidDataException("Unsupported native .NET group scope.");
         foreach (PlannedCheck item in plan.Checks)
@@ -29,30 +29,17 @@ internal static class DotNetGroupExecution
                 !(item.Origins.SequenceEqual([CheckOrigin.Preset]) &&
                     item.QualityPresets.SequenceEqual([DotNetPackageChecks.Preset])))
                 throw new InvalidDataException("Unsupported native .NET group contract.");
-        CiPlan nativePlan = plan with
-        {
-            Checks = plan.Checks.Where(item =>
-            item.Origins.SequenceEqual([CheckOrigin.NativeRetained])).ToArray()
-        };
-        CiPlan packagePlan = plan with
-        {
-            Checks = plan.Checks.Where(item =>
-            item.Origins.SequenceEqual([CheckOrigin.Preset])).ToArray()
-        };
-        ResultCollector.Collect(nativePlan, []);
-        ResultCollector.Collect(packagePlan, []);
+        (CiPlan nativePlan, CiPlan packagePlan) = plan.Partition(item =>
+            item.Origins[0] == CheckOrigin.NativeRetained);
         DotNetToolGroup[] present = DotNetTools.Groups(plan).Where(group =>
             plan.Checks.Any(check => DotNetTools.Group(check) == group.Key)).ToArray();
         if (present.Length > 1)
             throw new InvalidDataException("A native group executes one external tool group.");
-        string checkout = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Checkout));
-        string scratch = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Scratch));
-        if (!Path.IsPathFullyQualified(request.Checkout) ||
-            !Path.IsPathFullyQualified(request.Scratch) || request.DeadlineSeconds <= 0 ||
-            !Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
-            OwnedPath.Overlap(scratch, checkout))
-            throw new InvalidDataException(
-                "Native group execution requires fresh external scratch.");
+        if (request.DeadlineSeconds <= 0)
+            throw new InvalidDataException("Native group execution requires a positive deadline.");
+        (string checkout, string scratch) = OwnedPath.RequireFreshExternalScratch(
+            request.Checkout, request.Scratch,
+            "Native group execution requires fresh external scratch.");
         if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Native group execution requires its exact candidate.");
         GitMaterialization materialization = await GitMaterialization.BindAsync(checkout,
@@ -91,7 +78,7 @@ internal static class DotNetGroupExecution
                 [], [], [], []);
         }
         CheckResult[] results = [.. native.Results, .. package.Results];
-        CiOutcome outcome = ResultCollector.Collect(plan, results);
+        CiOutcome outcome = ResultCollector.CollectValidated(plan, results);
         if (native.Candidate != plan.Candidate || package.Candidate != plan.Candidate)
             throw new InvalidDataException("Native group result has a different candidate.");
         return new(plan.Candidate, results, native, package, outcome);

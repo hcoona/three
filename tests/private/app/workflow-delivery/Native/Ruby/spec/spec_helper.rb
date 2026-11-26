@@ -17,6 +17,7 @@ module NativeHelpers
   ROOT = CARRIER.ascend.find { |path| (path / "mise.toml").file? }
   HELPERS = ROOT / "src/private/app/workflow-delivery/Native/Ruby"
   CONTRACTS = ROOT / "src/private/app/workflow-delivery/Native/contracts"
+  SCHEMAS = {}
   NAME = "hcoona-release-smoke-ruby"
   RUBY = File.realpath(RbConfig.ruby)
   Context = Struct.new(:gemfile, :version, :environment, keyword_init: true)
@@ -37,10 +38,13 @@ module NativeHelpers
   end
 
   def validate_schema(name, value)
-    description = JSON.parse((CONTRACTS / "#{name}.schema.json").read)
-    expect(JSONSchemer.validate_schema(description).to_a).to eq([])
-    schema = JSONSchemer.schema(description)
-    expect(schema.validate(value).to_a).to eq([]), "Invalid #{name}: #{schema.validate(value).to_a}"
+    schema = SCHEMAS[name] ||= begin
+      description = JSON.parse((CONTRACTS / "#{name}.schema.json").read)
+      expect(JSONSchemer.validate_schema(description).to_a).to eq([])
+      JSONSchemer.schema(description)
+    end
+    errors = schema.validate(value).to_a
+    expect(errors).to eq([]), "Invalid #{name}: #{errors}"
   end
 
   def digest(path)

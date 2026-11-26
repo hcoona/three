@@ -21,55 +21,52 @@ internal static class RubyGroupExecution
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        ResultCollector.Collect(plan, []);
+        plan.Validate();
         if (plan.Scope != RubyFactsAssembler.Scope ||
             request.Candidate.Facts.Revision.Commit != plan.Candidate)
             throw new InvalidDataException("Ruby execution requires its original candidate facts.");
-        foreach (string path in new[] { request.Checkout, request.Scratch, request.Gem,
-                     request.Bundle, request.Nbgv, request.Facts.Ruby, request.Facts.Helper })
+        (CiPlan suitePlan, CiPlan packagePlan) = plan.Partition(item =>
+            item.Work.Key.Check == RubyProjectChecks.RSpec);
+        const string pathMessage = "Ruby execution requires prepared native paths.";
+        foreach (string path in new[] { request.Gem, request.Bundle, request.Nbgv,
+                     request.Facts.Ruby, request.Facts.Helper })
             if (!Path.IsPathFullyQualified(path))
-                throw new InvalidDataException("Ruby execution requires prepared native paths.");
-        string scratch = Path.GetFullPath(request.Scratch);
-        string checkout = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Checkout));
-        if (!Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
-            OwnedPath.Overlap(scratch, checkout))
-            throw new InvalidDataException("Ruby execution requires fresh external scratch.");
+                throw new InvalidDataException(pathMessage);
+        (string checkout, string scratch) = OwnedPath.RequireFreshExternalScratch(
+            request.Checkout, request.Scratch, "Ruby execution requires fresh external scratch.",
+            pathMessage);
         if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Ruby execution requires the exact original plan.");
         GitMaterialization bound = await GitMaterialization.BindAsync(checkout, plan.Candidate,
             token);
         var suites = new List<(PlannedCheck Check, RubyBundleFacts Bundle)>();
-        var packages = new List<PlannedCheck>();
-        foreach (PlannedCheck check in plan.Checks)
+        foreach (PlannedCheck check in suitePlan.Checks)
         {
-            if (!check.Origins.SequenceEqual([CheckOrigin.Preset]))
-                throw new InvalidDataException("Unsupported Ruby execution origin.");
-            if (check.QualityPresets is [RubyProjectChecks.Preset or
-                    RubyPackageChecks.RSpecPreset] &&
-                check.Work.Key.Check == RubyProjectChecks.RSpec &&
-                check.Work.Key.Variant == "default" && check.Work.Package is null &&
-                check.Work.Dimensions.Count == 0 && check.Work.Prerequisites.Length == 0)
-            {
-                string directory = Path.GetFullPath(Path.Combine(checkout, check.Work.Key.Target));
-                RubyBundleFacts[] contexts = request.Candidate.Bundles.Where(bundle =>
-                    Path.GetDirectoryName(Path.GetFullPath(bundle.Gemfile)) == directory).ToArray();
-                if (contexts.Length != 1)
-                    throw new InvalidDataException("Selected RSpec bundle is unresolved.");
-                suites.Add((check, contexts[0]));
-            }
-            else if (check.QualityPresets is [RubyPackageChecks.Preset or
-                    RubyPackageChecks.RSpecPreset] &&
-                RubyPackageChecks.Kinds.Contains(check.Work.Key.Check, StringComparer.Ordinal))
-                packages.Add(check);
-            else throw new InvalidDataException("Unsupported adopted Ruby execution recipe.");
+            if (!check.Origins.SequenceEqual([CheckOrigin.Preset]) ||
+                check.QualityPresets is not [RubyProjectChecks.Preset or
+                    RubyPackageChecks.RSpecPreset] ||
+                check.Work.Key.Variant != "default" || check.Work.Package is not null ||
+                check.Work.Dimensions.Count != 0 || check.Work.Prerequisites.Length != 0)
+                throw new InvalidDataException("Unsupported adopted Ruby execution recipe.");
+            string directory = Path.GetFullPath(Path.Combine(checkout, check.Work.Key.Target));
+            RubyBundleFacts[] contexts = request.Candidate.Bundles.Where(bundle =>
+                Path.GetDirectoryName(Path.GetFullPath(bundle.Gemfile)) == directory).ToArray();
+            if (contexts.Length != 1)
+                throw new InvalidDataException("Selected RSpec bundle is unresolved.");
+            suites.Add((check, contexts[0]));
         }
-        foreach (PlannedCheck check in packages)
+        foreach (PlannedCheck check in packagePlan.Checks)
         {
+            if (!check.Origins.SequenceEqual([CheckOrigin.Preset]) ||
+                check.QualityPresets is not [RubyPackageChecks.Preset or
+                    RubyPackageChecks.RSpecPreset] ||
+                !RubyPackageChecks.Kinds.Contains(check.Work.Key.Check, StringComparer.Ordinal))
+                throw new InvalidDataException("Unsupported adopted Ruby execution recipe.");
             PackageTarget subject = check.Work.Package ?? throw new InvalidDataException(
                 "Ruby gem check lacks its original subject.");
             if (subject.Definition != RubyPackageChecks.Build ||
                 subject.Outputs is not [{ Role: "primary-package", Kind: "ruby-gem" }] ||
-                RubyPackageChecks.Kinds.Any(kind => !packages.Any(other =>
+                RubyPackageChecks.Kinds.Any(kind => !packagePlan.Checks.Any(other =>
                     other.Work.Key == (check.Work.Key with { Check = kind }) &&
                     ImpactPlanner.SamePackage(other.Work.Package, subject))))
                 throw new InvalidDataException("Incomplete original Ruby gem obligations.");
@@ -138,15 +135,15 @@ internal static class RubyGroupExecution
                 NativeDiagnostic.Describe(result));
         }
         RubyPackageRun gem;
-        if (packages.Count == 0) gem = new([], [], [], []);
-        else if (token.IsCancellationRequested) gem = new(packages.Select(check =>
+        if (packagePlan.Checks.Length == 0) gem = new([], [], [], []);
+        else if (token.IsCancellationRequested) gem = new(packagePlan.Checks.Select(check =>
             new CheckResult(plan.Candidate, check.Work.Key, CheckStatus.Cancelled)).ToArray(),
             [], [], []);
-        else gem = await RubyPackageExecution.RunAsync(plan with { Checks = packages.ToArray() },
+        else gem = await RubyPackageExecution.RunAsync(packagePlan,
             new(checkout, Directory.CreateDirectory(Path.Combine(scratch, "packages")).FullName,
                 request.Facts, request.Gem, request.Nbgv), bound, execute, token);
         results.AddRange(gem.Results);
         CheckResult[] observed = results.ToArray();
-        return new(observed, runs.ToArray(), gem, ResultCollector.Collect(plan, observed));
+        return new(observed, runs.ToArray(), gem, ResultCollector.CollectValidated(plan, observed));
     }
 }

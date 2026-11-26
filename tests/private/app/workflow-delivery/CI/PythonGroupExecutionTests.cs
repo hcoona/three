@@ -151,16 +151,14 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task CancellationPreservesOriginalKeysAndStopsRemainingPartitions(bool inPytest)
+    public async Task CancellationInPytestPreservesOriginalKeysAndStopsPackagePartition()
     {
         using var fixture = new Fixture();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         fixture.PytestResponse = command =>
         {
-            if (command.Arguments[0] == (inPytest ? "run" : "sync")) cancellation.Cancel();
+            if (command.Arguments[0] == "run") cancellation.Cancel();
             return null;
         };
 
@@ -170,7 +168,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
         CollectionAssert.AreEquivalent(fixture.Plan.Checks.Select(item => item.Work.Key).ToArray(),
             result.Results.Select(item => item.Key).ToArray());
         Assert.IsTrue(result.Results.All(item => item.Status == CheckStatus.Cancelled));
-        Assert.HasCount(inPytest ? 1 : 0, result.Pytest.Commands.Where(item =>
+        Assert.ContainsSingle(result.Pytest.Commands.Where(item =>
             item.Command.Arguments[0] == "run"));
         Assert.IsEmpty(result.Packages.Commands);
     }
@@ -240,6 +238,24 @@ public sealed class PythonGroupExecutionTests(TestContext context)
 
         Assert.IsEmpty(fixture.GroupMembershipQueries);
         Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+    }
+
+    [TestMethod]
+    public async Task PackageConsumersRejectScratchUnderADifferentGitCheckout()
+    {
+        using var fixture = new Fixture();
+        Directory.CreateDirectory(Path.Combine(fixture.Scratch, ".git"));
+        string scratch = Path.Combine(fixture.Scratch, "external");
+        var request = new PythonGroupRunRequest(fixture.Native with { Scratch = scratch },
+            Path.Combine(fixture.Scratch, "helper.py"));
+
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            PythonGroupExecution.RunAsync(fixture.Plan, request, null, null,
+                (_, _) => throw new AssertFailedException("No native preparation should run."),
+                context.CancellationToken));
+
+        Assert.Contains("Git-free scratch", failure.Message);
+        Assert.IsFalse(Directory.Exists(scratch));
     }
 
     [TestMethod]

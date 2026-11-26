@@ -733,8 +733,7 @@ public sealed class NodeFactsAssemblerTests
     public async Task UnavailableNativeScriptsPreventPlanning()
     {
         IOException error = await Assert.ThrowsExactlyAsync<IOException>(() =>
-            PlanPackageWithReaders((_, _) => throw new IOException("pnpm unavailable"),
-                (_, _) => Task.FromResult("1.2.3")));
+            PlanPackageWithReaders(scripts: (_, _) => throw new IOException("pnpm unavailable")));
 
         Assert.AreEqual("pnpm unavailable", error.Message);
     }
@@ -743,24 +742,22 @@ public sealed class NodeFactsAssemblerTests
     public async Task ScriptsForAnotherProjectCannotSupplyPackageWork()
     {
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            PlanPackageWithReaders((_, _) =>
-                Task.FromResult(new PnpmScripts("src/wrong", new Dictionary<string, string>())),
-                (_, _) => Task.FromResult("1.2.3")));
+            PlanPackageWithReaders(scripts: (_, _) =>
+                Task.FromResult(new PnpmScripts("src/wrong", new Dictionary<string, string>()))));
     }
 
     [TestMethod]
     public async Task UnavailableNativeVersionPreventsPlanning()
     {
         IOException error = await Assert.ThrowsExactlyAsync<IOException>(() =>
-            PlanPackageWithReaders((project, _) => Task.FromResult(NodeScenario.Scripts(project)),
-                (_, _) => throw new IOException("NBGV unavailable")));
+            PlanPackageWithReaders(version: (_, _) => throw new IOException("NBGV unavailable")));
 
         Assert.AreEqual("NBGV unavailable", error.Message);
     }
 
     private static Task<CiPlan> PlanPackageWithReaders(
-        Func<PnpmProject, CancellationToken, Task<PnpmScripts>> scripts,
-        Func<PnpmProject, CancellationToken, Task<string>> version)
+        Func<PnpmProject, CancellationToken, Task<PnpmScripts>>? scripts = null,
+        Func<PnpmProject, CancellationToken, Task<string>>? version = null)
     {
         NodeRevisionInputs basis = NodeScenario.Inputs(NodeScenario.Basis,
             NodeScenario.Project("src/a"));
@@ -768,7 +765,8 @@ public sealed class NodeFactsAssemblerTests
             NodeScenario.Inputs(NodeScenario.Candidate, NodeScenario.Project("src/a")),
             NodeScenario.Unit("product", ("build", "src/a")));
         return NodeFactsAssembler.PlanAsync(basis, candidate, ["src/a/index.js"], false,
-            scripts, version, CancellationToken.None);
+            scripts ?? ((project, _) => Task.FromResult(NodeScenario.Scripts(project))),
+            version ?? ((_, _) => Task.FromResult("1.2.3")), CancellationToken.None);
     }
 
     [TestMethod]

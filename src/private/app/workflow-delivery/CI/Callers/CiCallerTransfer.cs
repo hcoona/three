@@ -18,8 +18,7 @@ internal static class CiCallerTransfer
     internal static T Read<T>(string path, JsonTypeInfo<T> type) => ReleaseCli.Read(path, type);
 
     internal static void Write<T>(string path, T value, JsonTypeInfo<T> type) =>
-        File.WriteAllText(path, JsonSerializer.Serialize(value, type) + "\n",
-            new System.Text.UTF8Encoding(false, true));
+        File.WriteAllText(path, JsonSerializer.Serialize(value, type) + "\n", StrictJson.Utf8);
 
     internal static void Output(string key, string value)
     {
@@ -164,6 +163,12 @@ internal static class CiCallerTransfer
         _ = ResultCollector.Collect(plan, []);
     }
 
+    internal static void WritePlan(string directory, CiPlan plan)
+    {
+        Write(Path.Combine(directory, "plan.json"), plan, TransferJson.Default.CiPlan);
+        Output("selected", plan.Checks.Length != 0 ? "true" : "false");
+    }
+
     internal static CiOutcome Outcome(CiPlan plan, CiOutcome reported)
     {
         if (reported is null || reported.Checks is null || reported.Errors is null ||
@@ -171,6 +176,19 @@ internal static class CiCallerTransfer
             reported.Scope != plan.Scope)
             throw new InvalidDataException("Group outcome lacks its original plan binding.");
         return reported;
+    }
+
+    internal static CiOutcome WriteOutcome(string directory, CiPlan plan, CiOutcome reported,
+        CheckResult[] results, IEnumerable<CiCallerFailure> failures,
+        IEnumerable<(CheckKey Key, NativeCommand Command, NativeCommandResult Result)> commands,
+        TextWriter? diagnostics)
+    {
+        CiOutcome outcome = Outcome(plan, reported);
+        Write(Path.Combine(directory, "results.json"), results,
+            TransferJson.Default.CheckResultArray);
+        Write(Path.Combine(directory, "outcome.json"), outcome, TransferJson.Default.CiOutcome);
+        Report(outcome, failures, commands, diagnostics);
+        return outcome;
     }
 
     // Caller-visible failure text beside the unchanged outcome contract: one header per

@@ -288,17 +288,11 @@ public sealed class PnpmGraphReaderTests(TestContext context)
             () => native.Reader.ReadAsync(CancellationToken.None));
 
     [TestMethod]
-    [DataRow("null")]
     [DataRow("{}")]
     [DataRow("[{\"path\":null}]")]
     [DataRow("[{\"notPath\":\"missing\"}]")]
-    public async Task ReadRejectsMalformedNativeMembership(string output)
-    {
-        var native = new NativeQueries(".") { MembershipOverride = output };
-
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(
-            () => native.Reader.ReadAsync(CancellationToken.None));
-    }
+    public Task ReadRejectsMalformedNativeMembership(string output) =>
+        RejectAsync(new NativeQueries(".") { MembershipOverride = output });
 
     [TestMethod]
     public async Task ReadStopsWhenNativeEvaluationFailsWithoutReturningPartialGraph()

@@ -1,10 +1,81 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Tests;
 
 [TestClass]
 public sealed class ScratchRootsTests
 {
+    private const string FreshScratch = "Expected fresh external scratch.";
+
+    [TestMethod]
+    public void RequireFreshExternalScratchAcceptsAnExistingEmptySibling()
+    {
+        using var root = new Sandbox();
+        string scratch = Directory.CreateDirectory(Path.Combine(root.Directory,
+            "checkout-scratch")).FullName;
+
+        var paths = OwnedPath.RequireFreshExternalScratch(
+            root.Checkout + Path.DirectorySeparatorChar, scratch, FreshScratch);
+
+        Assert.AreEqual((root.Checkout, scratch), paths);
+        Assert.IsEmpty(Directory.GetFileSystemEntries(scratch));
+        Assert.AreEqual(paths,
+            OwnedPath.RequireFreshExternalScratch(root.Checkout, scratch, FreshScratch));
+    }
+
+    [TestMethod]
+    public void RequireFreshExternalScratchRejectsOverlapAndInvalidPathsWithoutCreatingThem()
+    {
+        using var root = new Sandbox();
+        string nested = Path.Combine(root.Checkout, "nested");
+        string sibling = Path.Combine(root.Directory, "sibling");
+
+        Reject(root.Checkout, root.Directory);
+        Reject(root.Checkout, root.Checkout);
+        Reject(root.Checkout, nested);
+        Reject(root.Checkout, "relative-scratch");
+        Reject(root.Checkout, sibling);
+        Reject("relative-checkout", sibling);
+        Reject(Path.Combine(root.Directory, "missing-checkout"), sibling);
+        Assert.IsFalse(Directory.Exists(nested));
+        Assert.IsFalse(Directory.Exists(sibling));
+    }
+
+    [TestMethod]
+    public void RequireFreshExternalScratchPreservesExistingData()
+    {
+        using var root = new Sandbox();
+        string scratch = Directory.CreateDirectory(Path.Combine(root.Directory, "scratch"))
+            .FullName;
+        string sentinel = Path.Combine(scratch, "sentinel");
+        File.WriteAllText(sentinel, "existing data");
+
+        Reject(root.Checkout, scratch);
+        Reject(root.Checkout, sentinel);
+
+        Assert.AreEqual("existing data", File.ReadAllText(sentinel));
+    }
+
+    private static void Reject(string checkout, string scratch) =>
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            OwnedPath.RequireFreshExternalScratch(checkout, scratch, FreshScratch));
+
+    private sealed class Sandbox : IDisposable
+    {
+        internal Sandbox()
+        {
+            Directory = System.IO.Directory.CreateTempSubdirectory("wdt-owned-path-").FullName;
+            Checkout = System.IO.Directory.CreateDirectory(Path.Combine(Directory, "checkout"))
+                .FullName;
+        }
+
+        internal string Directory { get; }
+        internal string Checkout { get; }
+
+        public void Dispose() => System.IO.Directory.Delete(Directory, recursive: true);
+    }
+
     [TestMethod]
     public void SweepNeverFollowsALinkedStaleRoot()
     {

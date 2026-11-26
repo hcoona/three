@@ -357,8 +357,7 @@ internal sealed class DotNetRepositoryReader
     }
 
     private bool IsInside(string path) => Path.GetFullPath(path).StartsWith(checkout.Root +
-        Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        Path.DirectorySeparatorChar, OwnedPath.Comparison);
 
     private string Relative(string absolute)
     {

@@ -25,13 +25,13 @@ internal static class PythonPytestExecution
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token, GitMaterialization? bound = null)
     {
-        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
-        string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
+        if (bound is null) plan.Validate();
         _ = OwnedPath.Absolute(request.Interpreter, PathMessage);
-        if (request.DeadlineSeconds <= 0 || !Directory.Exists(checkout) ||
-            !Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
-            OwnedPath.Overlap(scratch, checkout))
-            throw new InvalidDataException("Pytest execution requires fresh external scratch.");
+        if (request.DeadlineSeconds <= 0)
+            throw new InvalidDataException("Pytest execution requires a positive deadline.");
+        (string checkout, string scratch) = OwnedPath.RequireFreshExternalScratch(
+            request.Checkout, request.Scratch, "Pytest execution requires fresh external scratch.",
+            PathMessage);
         if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Pytest execution requires its exact candidate.");
         GitMaterialization materialization = await GitMaterialization.ReuseOrBindAsync(bound,
@@ -175,7 +175,6 @@ internal static class PythonPytestExecution
     internal static void ReadChecks(CiPlan plan, PythonPytestRunRequest request,
         GitRevision revision)
     {
-        ResultCollector.Collect(plan, []);
         if (plan.Scope != PythonFactsAssembler.Scope || plan.Candidate != revision.Commit ||
             request.Targets.Revision != plan.Candidate)
             throw new InvalidDataException("Conflicting native pytest candidate or scope.");

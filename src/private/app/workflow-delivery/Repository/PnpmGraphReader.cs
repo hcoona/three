@@ -1,5 +1,6 @@
 using System.Text.Json;
 using WorkflowDelivery.Platform;
+using static WorkflowDelivery.Platform.StrictJson;
 
 namespace WorkflowDelivery.Repository;
 
@@ -19,7 +20,6 @@ internal sealed class PnpmGraphReader
     // PNPM 12.8.1 silently stops at dependency level 256. Its renderer adds
     // two JSON containers per level plus the outer array/project: reject 514,
     // while accepting the complete level-255 shape at JSON depth 512.
-    private static readonly JsonDocumentOptions TreeOptions = new() { MaxDepth = 512 };
     private readonly string root;
     private readonly Func<string[], CancellationToken, Task<string>> query;
 
@@ -45,7 +45,7 @@ internal sealed class PnpmGraphReader
         using JsonDocument lockDirectory = await ReadJsonAsync(
             ["config", "get", "lockfile-dir", "--json"], cancellationToken);
         if (lockDirectory.RootElement.ValueKind != JsonValueKind.Null &&
-            Absolute(RequiredString(lockDirectory.RootElement), root) != root)
+            Absolute(Text(lockDirectory.RootElement), root) != root)
             throw new InvalidDataException(
                 "PNPM analysis requires the lockfile at its workspace root.");
         // A project or global pnpmfile or a config dependency can narrow these queries through
@@ -77,10 +77,10 @@ internal sealed class PnpmGraphReader
             string? output = null;
             if (!string.IsNullOrWhiteSpace(metadata))
             {
-                using JsonDocument value = JsonDocument.Parse(metadata);
+                using JsonDocument value = StrictJson.Parse(metadata);
                 if (value.RootElement.ValueKind != JsonValueKind.Null)
                 {
-                    string path = Absolute(RequiredString(value.RootElement), directory);
+                    string path = Absolute(Text(value.RootElement), directory);
                     output = Relative(path);
                     AddOwner(path, identity);
                 }
@@ -117,12 +117,12 @@ internal sealed class PnpmGraphReader
                     "PNPM full query must return exactly its requested project.");
             foreach (JsonElement node in WalkDependencies(tree))
             {
-                string nativePath = Absolute(RequiredString(Property(node, "path")), root);
+                string nativePath = Absolute(Text(Property(node, "path")), root);
                 var owners = new HashSet<string>(StringComparer.Ordinal);
                 if (directories.TryGetValue(nativePath, out string? pathOwner))
                     owners.Add(pathOwner);
 
-                string version = RequiredString(Property(node, "version"));
+                string version = Text(Property(node, "version"));
                 if (!node.TryGetProperty("resolved", out JsonElement resolved))
                 {
                     // Decode a resolved native directory coordinate, never a manifest specifier.
@@ -147,11 +147,12 @@ internal sealed class PnpmGraphReader
                         throw new InvalidDataException(
                             "Unsupported aliased PNPM file: dependency coordinate: " + version);
                 }
-                else if (RequiredString(resolved).StartsWith("file:", StringComparison.Ordinal))
+                else
                 {
-                    // A native tarball resolution is an archive input, including when names match.
-                    AddInput(Relative(Absolute(RequiredString(resolved)[5..], root)),
-                        false, identity);
+                    string coordinate = Text(resolved);
+                    // A native tarball is an archive input, including when names match.
+                    if (coordinate.StartsWith("file:", StringComparison.Ordinal))
+                        AddInput(Relative(Absolute(coordinate[5..], root)), false, identity);
                 }
                 if (owners.Count > 1)
                     throw new InvalidDataException(
@@ -163,7 +164,7 @@ internal sealed class PnpmGraphReader
                 related.Order(StringComparer.Ordinal).ToArray())
             {
                 Name = members[directory].TryGetProperty("name", out JsonElement name)
-                    ? RequiredString(name) : null,
+                    ? Text(name) : null,
             });
         }
         return new(projects.OrderBy(p => p.Directory, StringComparer.Ordinal).ToArray(),
@@ -187,7 +188,7 @@ internal sealed class PnpmGraphReader
     }
 
     private async Task<JsonDocument> ReadJsonAsync(string[] arguments, CancellationToken token) =>
-        JsonDocument.Parse(await query(arguments, token), TreeOptions);
+        StrictJson.Parse(await query(arguments, token), maxDepth: 512);
 
     private static string[] ListArguments(string depth) =>
         ["list", "--recursive", "--include-workspace-root", "--lockfile-only",
@@ -203,7 +204,7 @@ internal sealed class PnpmGraphReader
         var projects = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (JsonElement project in value.EnumerateArray())
         {
-            string path = Absolute(RequiredString(Property(project, "path")), root);
+            string path = Absolute(Text(Property(project, "path")), root);
             _ = Relative(path);
             if (!projects.TryAdd(path, project))
                 throw new InvalidDataException("PNPM returned a duplicate project directory.");
@@ -230,28 +231,9 @@ internal sealed class PnpmGraphReader
         }
     }
 
-    private string Relative(string path)
-    {
-        string relative = Path.GetRelativePath(root, path)
-            .Replace(Path.DirectorySeparatorChar, '/');
-        if (Path.IsPathRooted(relative) || relative == ".." ||
-            relative.StartsWith("../", StringComparison.Ordinal))
-            throw new InvalidDataException(
-                "PNPM reported an input outside the supported repository root.");
-        return relative;
-    }
+    private string Relative(string path) => OwnedPath.RelativeWithin(root, path,
+        "PNPM reported an input outside the supported repository root.");
 
     private static string Absolute(string path, string basis) =>
         Path.TrimEndingDirectorySeparator(Path.GetFullPath(path, basis));
-
-    private static JsonElement Property(JsonElement value, string name) =>
-        value.ValueKind == JsonValueKind.Object &&
-            value.TryGetProperty(name, out JsonElement property)
-            ? property : throw new InvalidDataException(
-                "PNPM omitted a required native identity field.");
-
-    private static string RequiredString(JsonElement value) =>
-        value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(value.GetString())
-            ? value.GetString()!
-            : throw new InvalidDataException("PNPM returned an invalid native identity or path.");
 }

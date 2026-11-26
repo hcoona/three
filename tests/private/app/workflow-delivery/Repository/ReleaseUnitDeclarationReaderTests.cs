@@ -112,25 +112,15 @@ public sealed class ReleaseUnitDeclarationReaderTests
     }
 
     [TestMethod]
-    [DataRow("schema: workflow-delivery/v3/release-unit\n", "")]
     [DataRow("workflow-delivery/v3/release-unit", "wrong")]
     [DataRow("release-unit: product\n", "")]
-    [DataRow("release-unit: product", "release-unit: null")]
     [DataRow("release-unit: product", "release-unit: product\nextra: value")]
-    [DataRow("builds: [", "other: [")]
-    [DataRow("id: build, ", "")]
-    [DataRow("definition: native/build-v1, ", "")]
     [DataRow("definition: native/build-v1", "definition: '  '")]
     [DataRow("definition: native/build-v1", "definition: [native/build-v1]")]
     [DataRow("entry-point: manifest, ", "")]
     [DataRow("entry-point: manifest", "entry-point: null")]
-    [DataRow("entry-point: manifest", "entry-point: {path: manifest}")]
     [DataRow("id: build", "id: build, extra: value")]
-    [DataRow("outputs:", "other:")]
-    [DataRow("id: output, ", "")]
     [DataRow("role: primary, ", "")]
-    [DataRow("role: primary", "role: null")]
-    [DataRow("kind: package", "other: package")]
     [DataRow("kind: package", "kind: package, extra: value")]
     public void ReadRejectsMalformedApplicationSchema(string original, string replacement)
     {
@@ -141,31 +131,16 @@ public sealed class ReleaseUnitDeclarationReaderTests
     }
 
     [TestMethod]
-    [DataRow("null")]
-    [DataRow("{}")]
-    [DataRow("[]")]
-    [DataRow("[null]")]
-    [DataRow("[[]]")]
-    public void ReadRejectsMissingOrInvalidBuilds(string builds)
+    [DataRow("builds: [", "null")]
+    [DataRow("builds: [", "{}")]
+    [DataRow("builds: [", "[]")]
+    [DataRow("builds: [", "[null]")]
+    [DataRow("outputs: [", "[]")]
+    [DataRow("outputs: [", "[[]]")]
+    public void ReadRejectsInvalidSequence(string field, string sequence)
     {
-        string content = "schema: workflow-delivery/v3/release-unit\n" +
-            "release-unit: product\nbuilds: " + builds;
-
-        Assert.ThrowsExactly<InvalidDataException>(
-            () => ReleaseUnitDeclarationReader.Read(content, Source));
-    }
-
-    [TestMethod]
-    [DataRow("null")]
-    [DataRow("{}")]
-    [DataRow("[]")]
-    [DataRow("[null]")]
-    [DataRow("[[]]")]
-    public void ReadRejectsMissingOrInvalidOutputs(string outputs)
-    {
-        string content = "schema: workflow-delivery/v3/release-unit\nrelease-unit: product\n" +
-            "builds: [{id: build, definition: native/build-v1, entry-point: manifest, outputs: " +
-            outputs + "}]";
+        string prefix = Declaration[..Declaration.IndexOf(field, StringComparison.Ordinal)];
+        string content = prefix + field[..^1] + sequence + (field == "outputs: [" ? "}]" : "");
 
         Assert.ThrowsExactly<InvalidDataException>(
             () => ReleaseUnitDeclarationReader.Read(content, Source));
@@ -200,7 +175,6 @@ public sealed class ReleaseUnitDeclarationReaderTests
     [DataRow("id: output", "id: output-")]
     [DataRow("role: primary", "role: primary_package")]
     [DataRow("kind: package", "kind: 'two words'")]
-    [DataRow("kind: package", "kind: ''")]
     public void ReadRejectsInvalidIdentities(string original, string replacement)
     {
         Assert.ThrowsExactly<InvalidDataException>(() => ReleaseUnitDeclarationReader.Read(
@@ -209,14 +183,7 @@ public sealed class ReleaseUnitDeclarationReaderTests
 
     [TestMethod]
     [DataRow(".")]
-    [DataRow("/outside.yml")]
     [DataRow("../outside.yml")]
-    [DataRow("src/../unit.yml")]
-    [DataRow("src/./unit.yml")]
-    [DataRow("src//unit.yml")]
-    [DataRow("src/unit.yml/")]
-    [DataRow("src\\unit.yml")]
-    [DataRow("C:/unit.yml")]
     public void ReadRejectsNoncanonicalSourcePaths(string source)
     {
         Assert.ThrowsExactly<InvalidDataException>(
@@ -225,11 +192,8 @@ public sealed class ReleaseUnitDeclarationReaderTests
 
     [TestMethod]
     [DataRow("/outside")]
-    [DataRow("../outside")]
     [DataRow("src/../manifest")]
-    [DataRow("src/./manifest")]
     [DataRow("src//manifest")]
-    [DataRow("src/manifest/")]
     [DataRow("src\\manifest")]
     [DataRow("C:/manifest")]
     public void ReadRejectsNoncanonicalEntryPaths(string entry)

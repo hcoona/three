@@ -26,14 +26,12 @@ internal static class DotNetPackageExecution
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token, GitMaterialization? bound = null)
     {
-        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
-        string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
-        if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            OwnedPath.Overlap(scratch, checkout) ||
-            Directory.EnumerateFileSystemEntries(scratch).Any() || request.DeadlineSeconds <= 0)
-            throw new InvalidDataException(
-                "Native package execution requires fresh external scratch.");
-        ResultCollector.Collect(plan, []);
+        if (bound is null) plan.Validate();
+        if (request.DeadlineSeconds <= 0)
+            throw new InvalidDataException("Native package execution needs a positive deadline.");
+        (string checkout, string scratch) = OwnedPath.RequireFreshExternalScratch(
+            request.Checkout, request.Scratch,
+            "Native package execution requires fresh external scratch.", PathMessage);
         if (plan.Scope != DotNetFactsAssembler.Scope)
             throw new InvalidDataException("Unsupported native package execution scope.");
         RequireContract(plan);
@@ -43,7 +41,7 @@ internal static class DotNetPackageExecution
         GitMaterialization materialization = await GitMaterialization.ReuseOrBindAsync(bound,
             checkout, plan.Candidate, token);
         var facts = await ReadChecksAsync(plan, materialization, token);
-        var results = new Dictionary<CheckKey, CheckResult>();
+        var runner = new CheckExecutionRunner(plan, token);
         var commands = new List<DotNetCommandObservation>();
         var packages = new List<DotNetOriginalPackage>();
         var outputs = new List<DotNetNativeOutput>();
@@ -60,11 +58,9 @@ internal static class DotNetPackageExecution
             {
                 CheckSpec check = plan.Checks.Single(item =>
                     item.Work.Key == (pack.Work.Key with { Check = kind })).Work;
-                CheckStatus status;
-                if (token.IsCancellationRequested) status = CheckStatus.Cancelled;
-                else if (check.Prerequisites.Any(key => results[key].Status != CheckStatus.Passed))
-                    status = CheckStatus.Skipped;
-                else try
+                await runner.RunAsync(check, async () =>
+                {
+                    try
                     {
                         if (kind == DotNetPackageChecks.Pack)
                         {
@@ -98,20 +94,23 @@ internal static class DotNetPackageExecution
                             original!, post!, Path.Combine(root, "probe"), request.DeadlineSeconds,
                             RunAsync, token)));
                         token.ThrowIfCancellationRequested();
-                        status = CheckStatus.Passed;
+                        return CheckStatus.Passed;
                     }
                     catch (NativePackageFailure failure)
-                    { status = failure.Status; failures.Add(new(check.Key, failure.Message)); }
-                    catch (OperationCanceledException) { status = CheckStatus.Cancelled; }
+                    {
+                        failures.Add(new(check.Key, failure.Message));
+                        return failure.Status;
+                    }
+                    catch (OperationCanceledException) { return CheckStatus.Cancelled; }
                     catch (Exception exception) when (exception is IOException or
                         InvalidDataException or JsonException or UnauthorizedAccessException or
                         ArgumentException or FormatException or BadImageFormatException
                             or XmlException)
                     {
-                        status = CheckStatus.Failed;
                         failures.Add(new(check.Key, exception.Message));
+                        return CheckStatus.Failed;
                     }
-                results.Add(check.Key, new(plan.Candidate, check.Key, status));
+                });
 
                 async Task<NativeCommandResult> RunAsync(NativeCommand command,
                     CancellationToken cancellation)
@@ -130,7 +129,7 @@ internal static class DotNetPackageExecution
                 }
             }
         }
-        return new(plan.Candidate, plan.Checks.Select(item => results[item.Work.Key]).ToArray(),
+        return new(plan.Candidate, runner.InPlanOrder(),
             commands.ToArray(), packages.ToArray(), outputs.ToArray(), failures.ToArray());
     }
 

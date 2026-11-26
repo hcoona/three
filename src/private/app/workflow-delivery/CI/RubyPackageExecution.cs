@@ -30,19 +30,15 @@ internal static class RubyPackageExecution
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        ResultCollector.Collect(plan, []);
-        foreach (string path in new[] { request.Checkout, request.Scratch, request.Gem,
-                     request.Nbgv })
-            if (!Path.IsPathFullyQualified(path))
-                throw new InvalidDataException(
-                    "Ruby gem execution requires prepared native paths.");
-        if (plan.Scope != RubyFactsAssembler.Scope || !Directory.Exists(request.Scratch) ||
-            Directory.EnumerateFileSystemEntries(request.Scratch).Any())
-            throw new InvalidDataException("Ruby gem execution requires fresh external scratch.");
-        string checkoutRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Checkout));
-        string scratchRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Scratch));
-        if (OwnedPath.Overlap(scratchRoot, checkoutRoot))
-            throw new InvalidDataException("Gem consumer scratch must be outside the checkout.");
+        if (bound is null) plan.Validate();
+        const string pathMessage = "Ruby gem execution requires prepared native paths.";
+        _ = OwnedPath.Absolute(request.Gem, pathMessage);
+        _ = OwnedPath.Absolute(request.Nbgv, pathMessage);
+        if (plan.Scope != RubyFactsAssembler.Scope)
+            throw new InvalidDataException("Unsupported Ruby gem execution scope.");
+        (string checkoutRoot, string scratchRoot) = OwnedPath.RequireFreshExternalScratch(
+            request.Checkout, request.Scratch,
+            "Ruby gem execution requires fresh external scratch.", pathMessage);
         if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Ruby gem plan requires its complete native candidate.");
         GitMaterialization checkout = await GitMaterialization.ReuseOrBindAsync(bound,
@@ -61,7 +57,7 @@ internal static class RubyPackageExecution
                     ImpactPlanner.SamePackage(other.Package, subject))))
                 throw new InvalidDataException("Incomplete adopted Ruby gem check set.");
         }
-        var results = new Dictionary<CheckKey, CheckResult>();
+        var runner = new CheckExecutionRunner(plan, token);
         var commands = new List<RubyPackageCommand>();
         var gems = new List<RubyOriginalGem>();
         var failures = new List<RubyPackageFailure>();
@@ -80,12 +76,9 @@ internal static class RubyPackageExecution
             {
                 CheckSpec check = checks.Single(item =>
                     item.Key == (build.Key with { Check = kind }));
-                CheckStatus status;
-                if (token.IsCancellationRequested) status = CheckStatus.Cancelled;
-                else if (check.Prerequisites.Any(key =>
-                             !results.TryGetValue(key, out var previous) ||
-                             previous.Status != CheckStatus.Passed)) status = CheckStatus.Skipped;
-                else try
+                await runner.RunAsync(check, async () =>
+                {
+                    try
                     {
                         if (kind == RubyPackageChecks.Build)
                         {
@@ -101,19 +94,19 @@ internal static class RubyPackageExecution
                                 Path.GetFullPath(Path.Combine(checkoutRoot, subject.Directory)),
                                 original!, subject.ExpectedVersion, release: false, ExecuteAsync,
                                 token);
-                        status = CheckStatus.Passed;
+                        return CheckStatus.Passed;
                     }
                     catch (OperationCanceledException) when (token.IsCancellationRequested)
                     {
-                        status = CheckStatus.Cancelled;
+                        return CheckStatus.Cancelled;
                     }
                     catch (Exception error) when (error is IOException or
                         InvalidDataException or InvalidOperationException)
                     {
                         failures.Add(new(check.Key, error.Message));
-                        status = CheckStatus.Failed;
+                        return CheckStatus.Failed;
                     }
-                results.Add(check.Key, new(plan.Candidate, check.Key, status));
+                });
 
                 async Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
                     CancellationToken cancellation)
@@ -124,7 +117,7 @@ internal static class RubyPackageExecution
                 }
             }
         }
-        return new(results.Values.ToArray(), commands.ToArray(), gems.ToArray(),
+        return new(runner.InExecutionOrder(), commands.ToArray(), gems.ToArray(),
             failures.ToArray());
     }
 }
