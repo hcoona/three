@@ -21,6 +21,7 @@ name: Workflow Delivery v3 NuGet Release
           - microsoft-extensions-logging-mstest
           - microsoft-extensions-logging-xunit
           - microsoft-extensions-options-dedup-change-extensions
+          - nanopass
           - phi-failure-detector
           - webhdfs-extensions-file-providers
       dry-run:

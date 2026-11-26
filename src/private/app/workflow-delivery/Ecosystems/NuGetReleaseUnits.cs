@@ -7,7 +7,8 @@ namespace WorkflowDelivery.Ecosystems;
 // whose consumer prints Probe and expects the assembly name. Official accepts only units
 // marked here.
 internal sealed record NuGetReleaseUnit(string Id, string Declaration, string PackageId,
-    string AssemblyName, string[] Frameworks, string? Probe, bool Official)
+    string AssemblyName, string[] Frameworks, string? Probe, bool Official, string[] Analyzers,
+    string? Declarations = null)
 {
     internal bool Library => Probe is not null;
 }
@@ -21,7 +22,7 @@ internal static class NuGetReleaseUnits
     [
         new(Smoke, "tests/private/app/workflow-delivery/fixtures/products/" + Smoke +
             "/workflow-delivery.release-unit.yml", "Hcoona.ReleaseSmoke.GithubPackages",
-            "Hcoona.ReleaseSmoke.GithubPackages", ["net10.0"], null, false),
+            "Hcoona.ReleaseSmoke.GithubPackages", ["net10.0"], null, false, []),
         Library("circular-list", "CircularList", "IO.Github.Hcoona.Collections.CircularList",
             "CircularList", Ordinary,
             "typeof(IO.Github.Hcoona.Collections.CircularList<int>).Assembly.GetName().Name"),
@@ -49,6 +50,16 @@ internal static class NuGetReleaseUnits
             "MicrosoftExtensions.Options.DedupChangeExtensions", Ordinary,
             "typeof(Microsoft.Extensions.Options.OptionsDedupChangeExtensions).Assembly" +
             ".GetName().Name"),
+        Library("nanopass", "Nanopass", "Hcoona.Nanopass", "Hcoona.Nanopass", "net11.0",
+            """
+            ProbeLang.Descriptor.Name.Name == "ProbeLang"
+                ? typeof(Hcoona.Nanopass.SExpr).Assembly.GetName().Name : ""
+            """,
+            ["analyzers/dotnet/cs/Hcoona.Nanopass.Generators.dll"],
+            """
+            [Hcoona.Nanopass.Language, Hcoona.Nanopass.NonTerminalDef("Expr", ["e"], "(unit)")]
+            internal static partial class ProbeLang;
+            """),
         Library("phi-failure-detector", "PhiFailureDetector", "PhiFailureDetector",
             "PhiFailureDetector", Ordinary,
             "typeof(global::PhiFailureDetector.PhiFailureDetector).Assembly.GetName().Name"),
@@ -60,14 +71,16 @@ internal static class NuGetReleaseUnits
 
     internal static IEnumerable<NuGetReleaseUnit> All => Units;
 
-    // Source directories whose changes can alter the unit's prepared package: its
-    // declaration's project directory and the generator that Memoization compiles in.
+    // Include companion projects whose changes can alter the prepared package.
     internal static string[] PreparationRoots(NuGetReleaseUnit unit)
     {
         string project = unit.Declaration[..unit.Declaration.LastIndexOf('/')];
-        return unit.Id == "memoization"
-            ? [project, "src/public/lib/Memoization.Generators"]
-            : [project];
+        return unit.Id switch
+        {
+            "memoization" => [project, "src/public/lib/Memoization.Generators"],
+            "nanopass" => [project, "src/public/lib/Nanopass.Generators"],
+            _ => [project],
+        };
     }
 
     internal static bool Registered(string id) => Units.Any(unit => unit.Id == id);
@@ -90,7 +103,8 @@ internal static class NuGetReleaseUnits
     }
 
     private static NuGetReleaseUnit Library(string id, string directory, string package,
-        string assembly, string frameworks, string probe) => new(id,
+        string assembly, string frameworks, string probe, string[]? analyzers = null,
+        string? declarations = null) => new(id,
         "src/public/lib/" + directory + "/workflow-delivery.release-unit.yml", package,
-        assembly, frameworks.Split(';'), probe, true);
+        assembly, frameworks.Split(';'), probe, true, analyzers ?? [], declarations);
 }

@@ -18,7 +18,7 @@ is not an Official route.
 | Python          | PyPI                 | Smoke unit and `nbgv-python`; live publication only from `refs/heads/main`                   |
 | Ruby            | RubyGems.org         | Smoke unit and `asciidoctor-latexmath`; live publication only from `refs/heads/main`         |
 | npm             | npmjs                | `hexo-renderer-asciidoc` only; live only from `refs/heads/main`                              |
-| NuGet           | nuget.org            | The eight library product units only; live publication only from `refs/heads/main`           |
+| NuGet           | nuget.org            | The nine library product units only; live publication only from `refs/heads/main`            |
 | GitHub Releases | GitHub release       | `image-occlusion-editor` only; live publication only from `refs/heads/main`                  |
 | Browser         | Chrome Web Store     | `steam-account-history-to-csv` only; live only from `refs/heads/main`; Buddy is dry run only |
 | Browser         | Firefox AMO          | `steam-account-history-to-csv` only; live only from `refs/heads/main`; Buddy is dry run only |
@@ -37,7 +37,7 @@ and Python Official accept every unit registered in `RubyReleaseUnits` and
 npm Official accepts only `hexo-renderer-asciidoc` live; the
 `hcoona-release-smoke-npm` unit remains dry-run only, and `NpmReleaseUnits.Admit`
 rejects it live with Official before preparation. NuGet Official accepts only the
-eight library units
+nine library units
 [registered for the product recipe](dotnet.md#concrete-nuget-release-integration);
 `NuGetReleaseUnits.Admit` rejects the `hcoona-release-smoke-github-packages`
 smoke unit with Official before preparation. GitHub Releases accepts only the

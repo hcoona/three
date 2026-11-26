@@ -75,6 +75,17 @@ string raw = LLet.UnparseToString(term, raw: true);  // (let ((a (num 1)) (b (nu
 int nodes = LLet.CountNodes(term);                   // 5
 ```
 
+## Releasing
+
+Workflow Delivery releases the `Hcoona.Nanopass` package through the manually dispatched
+`.github/workflows/workflow-delivery-v3-nuget-release.yml` caller with `unit: nanopass`,
+as declared by `workflow-delivery.release-unit.yml`. Use `registry: github-packages` for
+GitHub Packages (Buddy) from any branch, or `registry: nugetorg` for nuget.org (Official)
+from `main` only. Preparation packs `lib/net11.0/Hcoona.Nanopass.dll` together with
+`analyzers/dotnet/cs/Hcoona.Nanopass.Generators.dll`, verifies the native archive and
+NBGV assembly metadata, and exercises both the packed source generator and runtime in an
+isolated consumer project before any publication.
+
 ## Project Records
 
 - [Architecture and Design Invariants](https://github.com/hcoona/three/blob/main/src/public/lib/Nanopass/docs/architecture.md)

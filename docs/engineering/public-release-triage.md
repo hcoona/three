@@ -34,6 +34,8 @@ enforces two deterministic invariants:
    non-release allowlist:
     - `src/public/lib/Memoization.Generators` — Roslyn source-generator build
       component packed inside `Memoization`.
+    - `src/public/lib/Nanopass.Generators` — Roslyn source-generator and
+      analyzer companion packed inside `Nanopass`.
       Stale allowlist entries (missing directory or a directory that now commits
       `workflow-delivery.release-unit.yml`) fail validation.
 2. **Fail-closed recipe classification:** every discovered

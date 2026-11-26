@@ -142,7 +142,7 @@ internal static class NuGetPreparation
         {
             DotNetPackageArchive.RequireOriginal(original!);
             DotNetPackageArchive.Contents(original!.Path, native,
-                registered.Library ? registered.Frameworks : null);
+                registered.Library ? registered.Frameworks : null, registered.Analyzers);
             return Task.CompletedTask;
         });
         await qualification.CheckAsync("consumer", async () =>
@@ -150,7 +150,8 @@ internal static class NuGetPreparation
                 300, (command, cancellation) => RunAsync("consumer", command, cancellation),
                 token, registered.Library ? new("net" +
                     Version.Parse(native["NETCoreSdkVersion"]).Major + ".0",
-                    registered.Probe!, registered.AssemblyName, true) : null));
+                    registered.Probe!, registered.AssemblyName, true, registered.Declarations)
+                    : null));
         await qualification.CheckAsync("original-bytes", () =>
         {
             DotNetPackageArchive.RequireOriginal(original!);

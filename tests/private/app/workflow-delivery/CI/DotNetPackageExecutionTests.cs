@@ -181,6 +181,46 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow("analyzers/dotnet/cs/WorkflowDelivery.Tests.dll", false)]
+    [DataRow(null, true)]
+    [DataRow("Analyzers/dotnet/cs/WorkflowDelivery.Tests.dll", true)]
+    public void ArchiveContentsRejectsDifferentAnalyzerPaths(string? actual, bool expected)
+    {
+        using var fixture = Shared();
+        string path = Path.Combine(fixture.Scratch, "original.nupkg");
+        fixture.CreateArchive(path);
+        if (actual is not null)
+        {
+            using ZipArchive archive = ZipFile.Open(path, ZipArchiveMode.Update);
+            archive.CreateEntryFromFile(typeof(DotNetPackageExecutionTests).Assembly.Location,
+                actual);
+        }
+
+        var error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            DotNetPackageArchive.Contents(path, fixture.Values, ["net10.0"],
+                expected ? ["analyzers/dotnet/cs/WorkflowDelivery.Tests.dll"] : null));
+
+        Assert.Contains("analyzer payload", error.Message);
+    }
+
+    [TestMethod]
+    public void ArchiveContentsRequiresTheAnalyzerAssemblyToMatchItsPath()
+    {
+        using var fixture = Shared();
+        string path = Path.Combine(fixture.Scratch, "original.nupkg");
+        fixture.CreateArchive(path);
+        const string analyzer = "analyzers/dotnet/cs/WrongAssembly.dll";
+        using (ZipArchive archive = ZipFile.Open(path, ZipArchiveMode.Update))
+            archive.CreateEntryFromFile(typeof(DotNetPackageExecutionTests).Assembly.Location,
+                analyzer);
+
+        var error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            DotNetPackageArchive.Contents(path, fixture.Values, ["net10.0"], [analyzer]));
+
+        Assert.Contains("assembly identity/version", error.Message);
+    }
+
+    [TestMethod]
     [DataRow("%52EADME.md")]
     [DataRow("../bad")]
     public async Task NativeArchiveWithAmbiguousOrUnsafeEntryCannotBeRetained(string name)

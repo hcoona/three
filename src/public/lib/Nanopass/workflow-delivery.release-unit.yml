@@ -1,0 +1,10 @@
+schema: workflow-delivery/v3/release-unit
+release-unit: nanopass
+builds:
+  - id: nuget-package
+    definition: dotnet/nuget-package-v1
+    entry-point: Hcoona.Nanopass.csproj
+    outputs:
+      - id: nuget-package
+        role: primary-package
+        kind: nuget-package

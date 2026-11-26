@@ -11,7 +11,7 @@ namespace WorkflowDelivery.Ecosystems;
 // The consumer program prints Expression and expects Expected. A dependency source resolves
 // every package other than the original from the public NuGet gallery.
 internal sealed record DotNetConsumerProbe(string Framework, string Expression, string Expected,
-    bool Dependencies);
+    bool Dependencies, string? Declarations = null);
 
 // A concrete external consumer of the inspected original package, not a test launcher.
 internal static class DotNetPackageConsumer
@@ -100,8 +100,10 @@ internal static class DotNetPackageConsumer
             writer.WriteEndObject();
             await writer.FlushAsync(token);
         }
+        string program = "System.Console.WriteLine(" + probe.Expression + ");";
+        if (probe.Declarations is not null) program += "\n" + probe.Declarations;
         await File.WriteAllTextAsync(Path.Combine(consumer, "Program.cs"),
-            "System.Console.WriteLine(" + probe.Expression + ");", token);
+            program, token);
         await run(new("dotnet", consumer,
             ["restore", DotNetCli.DisableBuildServers, project, "--configfile", config,
                 "--packages", packages],

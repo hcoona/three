@@ -563,6 +563,7 @@ public sealed class CiScopeTests
     [TestMethod]
     [DataRow("src/public/lib/CircularList/CircularList.cs", "circular-list")]
     [DataRow("src/public/lib/Memoization.Generators/MemoizationGenerator.cs", "memoization")]
+    [DataRow("src/public/lib/Nanopass.Generators/NanopassGenerator.cs", "nanopass")]
     [DataRow("src/public/lib/CircularList/CircularList.cs|src/public/lib/Hjg.Pngcs/PngReader.cs",
         "circular-list|hjg-pngcs")]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +

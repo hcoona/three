@@ -24,17 +24,14 @@ internal static class DotNetPackageArchive
         return new NuspecReader(nuspec).GetIdentity();
     }
 
-    internal static void Contents(string path, Dictionary<string, string> expected) =>
-        Contents(path, expected, null);
-
     // A null framework set is the single-framework smoke recipe without dependencies;
     // otherwise each declared framework has one library group and dependency groups stay
     // within that set.
     internal static void Contents(string path, Dictionary<string, string> expected,
-        string[]? frameworks)
+        string[]? frameworks = null, string[]? analyzers = null)
     {
         using var reader = new PackageArchiveReader(path);
-        Names(reader);
+        HashSet<string> names = Names(reader);
         using MemoryStream nuspecStream = Read(reader, reader.GetNuspecFile());
         var nuspec = new NuspecReader(nuspecStream);
         RequireIdentity(nuspec.GetIdentity(), expected);
@@ -57,11 +54,21 @@ internal static class DotNetPackageArchive
         {
             string assembly = Single(group, expected["AssemblyName"] + ".dll");
             string documentation = Single(group, documentationName);
-            using (MemoryStream dll = Read(reader, assembly)) Versions(dll, expected);
+            using (MemoryStream dll = Read(reader, assembly))
+                Versions(dll, expected["AssemblyName"], expected);
             using MemoryStream xml = Read(reader, documentation);
             if (XDocument.Load(xml).Root?.Element("assembly")?.Element("name")?.Value !=
                 expected["AssemblyName"])
                 throw new InvalidDataException("Missing or different native XML documentation.");
+        }
+        var analyzerFiles = names.Where(name => name.StartsWith("analyzers/",
+            StringComparison.OrdinalIgnoreCase)).ToHashSet(StringComparer.Ordinal);
+        if (!analyzerFiles.SetEquals(analyzers ?? []))
+            throw new InvalidDataException("Different or missing native package analyzer payload.");
+        foreach (string analyzer in analyzerFiles)
+        {
+            using MemoryStream dll = Read(reader, analyzer);
+            Versions(dll, Path.GetFileNameWithoutExtension(analyzer), expected);
         }
         string? readme = nuspec.GetReadme();
         if (readme != expected["PackageReadmeFile"])
@@ -102,7 +109,7 @@ internal static class DotNetPackageArchive
         OwnedFile.Verify(original.Path, original.Size, original.Sha256,
             "The original native package bytes are unavailable.");
 
-    private static void Names(PackageArchiveReader reader)
+    private static HashSet<string> Names(PackageArchiveReader reader)
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // GetFiles performs NuGet's decoding; no application ZIP decoder is involved.
@@ -110,6 +117,7 @@ internal static class DotNetPackageArchive
             if (name.Contains('\\') || name.Contains(':') || name.Contains('\0') ||
                 name.Split('/').Any(part => part is "" or "." or "..") || !names.Add(name))
                 throw new InvalidDataException("Unsafe or ambiguous native-decoded package name.");
+        return names;
     }
 
     // Reads a required member of the repository's own qualified Pack output, which is
@@ -130,12 +138,12 @@ internal static class DotNetPackageArchive
         catch { buffer.Dispose(); throw; }
     }
 
-    private static void Versions(Stream stream, Dictionary<string, string> expected)
+    private static void Versions(Stream stream, string name, Dictionary<string, string> expected)
     {
         using var pe = new PEReader(stream, PEStreamOptions.LeaveOpen);
         MetadataReader metadata = pe.GetMetadataReader();
         AssemblyDefinition assembly = metadata.GetAssemblyDefinition();
-        if (metadata.GetString(assembly.Name) != expected["AssemblyName"] ||
+        if (metadata.GetString(assembly.Name) != name ||
             assembly.Version != Version.Parse(expected["AssemblyVersion"]))
             throw new InvalidDataException("Different native package assembly identity/version.");
         var versions = new Dictionary<string, string?>(StringComparer.Ordinal);
