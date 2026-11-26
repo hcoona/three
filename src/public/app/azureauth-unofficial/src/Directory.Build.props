@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <TargetLatestRuntimePatch>true</TargetLatestRuntimePatch>
+    <RollForward>Disable</RollForward>
+    <!-- Expose the computed SemVer 2.0 package version to ProductVersion. -->
+    <NBGV_ThisAssemblyIncludesPackageVersion>true</NBGV_ThisAssemblyIncludesPackageVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Computes the product version from version.json and Git history; build-only. -->
+    <PackageReference Include="Nerdbank.GitVersioning" Version="[3.10.94]" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,485 @@
+schema_version: 1
+
+families:
+  - id: public-landing
+    state: current
+    concern: Public navigation to canonical project records
+    carrier: repository-file
+    path: README.md
+    format: markdown
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - Public readers evaluating the project
+    creation_trigger: The repository is presented as a distinct public project.
+    failure_mode: Readers cannot locate current identity, purpose, scope, or release authorities.
+    review_point: Pull requests that change public navigation or required notices
+
+  - id: human-record-portal
+    state: current
+    concern: Human navigation to canonical project records
+    carrier: repository-file
+    path: docs/README.md
+    format: markdown
+    producer: Record-system maintainer
+    maintainer: Record-system maintainer
+    consumers:
+      - Contributors locating the authority for a concern
+    creation_trigger: Canonical concerns span more than the public landing page.
+    failure_mode: Contributors rely on stale or duplicate records.
+    review_point: Pull requests that add, move, or remove canonical records
+
+  - id: agent-interface
+    state: current
+    concern: AI-agent repository behavior and stop conditions
+    carrier: repository-file
+    path: AGENTS.md
+    format: markdown
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - AI agents before repository work
+    creation_trigger: AI agents are permitted to act on the repository.
+    failure_mode: Agents infer authority, expose sensitive data, or expand scope.
+    review_point: Pull requests that change agent-relevant policy or workflow
+
+  - id: contributor-interface
+    state: current
+    concern: Human contribution workflow
+    carrier: repository-file
+    path: CONTRIBUTING.md
+    format: markdown
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - Human contributors preparing changes
+    creation_trigger: The repository accepts reviewable contributions.
+    failure_mode: Contributions bypass required records, checks, or review.
+    review_point: Pull requests that change contribution workflow
+
+  - id: pull-request-interface
+    state: current
+    concern: Non-authoritative pull-request prompts for scope, evidence, and record impact
+    carrier: repository-file
+    path: .github/pull_request_template.md
+    format: markdown
+    producer: Record-system maintainer
+    maintainer: Record-system maintainer
+    consumers:
+      - Contributors preparing a pull request
+    creation_trigger: Pull requests need consistent prompts for existing governance obligations.
+    failure_mode: Review begins without the scope, evidence, or record impact needed by current policies.
+    review_point: Pull requests that change contribution or review workflow
+
+  - id: upstream-policy
+    state: current
+    concern: Upstream relationship, provenance, and import boundaries
+    carrier: repository-file
+    path: UPSTREAM.md
+    format: markdown
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - Maintainers evaluating upstream evidence or imports
+    creation_trigger: The project derives from an upstream repository.
+    failure_mode: Upstream provenance or compatibility is misrepresented.
+    review_point: Pull requests that import or reinterpret upstream material
+
+  - id: delivery-wave
+    state: current
+    concern: Current positive work authorization for a finite set of bounded advancements
+    carrier: repository-file
+    path: docs/delivery-wave.md
+    format: markdown
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - Contributors and agents before executing work or accepting a prerequisite-dependent change
+      - Repository owner and reviewers when adding, changing, deleting, or replacing authorized advancements
+    creation_trigger: Current work must be explicitly selected without allowing an Issue, Milestone, branch, or pull request to authorize itself.
+    failure_mode: Work begins without a current bounded grant, or progress and historical status become a second authorization ledger.
+    review_point: Every pull request that adds, changes, deletes, or replaces a Delivery Wave entry
+
+  - id: governance-policy
+    state: current
+    concern: Durable project and record governance policies
+    carrier: repository-files
+    path: docs/governance/*.md
+    format: markdown
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - Contributors, agents, reviewers, and controls applying governance rules
+    creation_trigger: A stable governance concern needs independent authority.
+    failure_mode: Interfaces or controls create undeclared or conflicting policy.
+    review_point: Pull requests that change governance, records, or controls
+
+  - id: record-family-catalog
+    state: current
+    concern: Active and scheduled record-family routing
+    carrier: repository-file
+    path: docs/governance/record-families.yaml
+    format: yaml
+    schema: schemas/governance/record-families.schema.json
+    producer: Record-system maintainer
+    maintainer: Record-system maintainer
+    consumers:
+      - hk path checks and reviewer routing
+    creation_trigger: Record families require consistent paths and review procedures.
+    failure_mode: Records become orphaned or receive the wrong checks and reviews.
+    review_point: Pull requests that add, retire, or change a record family
+
+  - id: control-catalog
+    state: current
+    concern: Controls that implement declared policies and invariants
+    carrier: repository-file
+    path: docs/governance/controls.yaml
+    format: yaml
+    schema: schemas/governance/controls.schema.json
+    producer: Control maintainer
+    maintainer: Control maintainer
+    consumers:
+      - The repository checker under hk when validating control wiring, reviewer agents when routing review, and the repository owner at gates
+    creation_trigger: More than one control class must be routed consistently.
+    failure_mode: Controls drift from policy or execute at the wrong gate.
+    review_point: Pull requests that add, retire, or change a control
+
+  - id: operational-identity-registry
+    state: current
+    concern: Separation from upstream operational identifiers
+    carrier: repository-file
+    path: docs/governance/operational-identities.yaml
+    format: yaml
+    schema: schemas/governance/operational-identities.schema.json
+    producer: Architecture and release maintainers
+    maintainer: Repository owner
+    consumers:
+      - Architecture, implementation, packaging, cache, telemetry, and release maintainers when selecting or consuming an identity
+    creation_trigger: The fork must coexist without impersonating or mutating upstream state.
+    failure_mode: The project collides with or appears to be the upstream product.
+    review_point: Pull requests that select or consume an operational identity
+
+  - id: product-vision
+    state: current
+    concern: Product purpose and boundary
+    carrier: repository-file
+    path: docs/product/vision.md
+    format: markdown
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - Requirement authors, architecture maintainers, and the repository owner when defining or reviewing product scope
+    creation_trigger: The project needs a durable product boundary.
+    failure_mode: Requirements or implementation expand without a product basis.
+    review_point: Pull requests that change product purpose or scope
+
+  - id: product-user-stories
+    state: current
+    concern: User context and motivation for product requirements
+    carrier: repository-file
+    path: docs/product/user-stories.md
+    format: markdown
+    producer: Repository owner with consumer input
+    maintainer: Repository owner
+    consumers:
+      - Requirement authors and reviewers when deriving behavior from user goals and scenario context
+      - Validation and release reviewers when identifying the scenario whose evidence blocks release
+    creation_trigger: The accepted Delivery Wave requires user goals and a primary journey that the capability requirements do not preserve.
+    failure_mode: SDK mechanisms or implementation candidates displace the real consumer need, or stories become duplicate normative requirements.
+    review_point: Pull requests that change user journeys or their relationship to requirements and validation
+
+  - id: compatibility-policy
+    state: current
+    concern: Current compatibility and migration commitments
+    carrier: repository-file
+    path: docs/product/compatibility-and-migration.md
+    format: markdown
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - Requirement, architecture, validation, and release maintainers when evaluating compatibility or migration commitments
+    creation_trigger: Compatibility posture must be distinguished from upstream behavior.
+    failure_mode: Internal reuse or observed behavior becomes an accidental support promise.
+    review_point: Pull requests that change a compatibility or migration commitment
+
+  - id: product-requirements
+    state: current
+    concern: Capability-scoped required behavior
+    carrier: repository-files
+    path: docs/product/requirements/*.md
+    format: markdown
+    producer: Repository owner with engineering input
+    maintainer: Repository owner
+    consumers:
+      - Architecture, design, implementation, and validation owners when deriving or reviewing required behavior
+    creation_trigger: A capability has independently reviewable required behavior.
+    failure_mode: Behavior is implemented or tested without an accepted requirement.
+    review_point: Pull requests that add or change product behavior
+
+  - id: architecture-records
+    state: current
+    concern: Current system structure, boundaries, and invariants
+    carrier: repository-files
+    path: docs/architecture/*.md
+    format: markdown
+    producer: Architecture maintainer
+    maintainer: Architecture maintainer
+    consumers:
+      - Design, implementation, security, and validation owners when applying system boundaries or invariants
+    creation_trigger: A system-wide or independently reviewable architecture concern exists.
+    failure_mode: Implementations adopt incompatible boundaries or ownership.
+    review_point: Pull requests that change system structure or architecture invariants
+
+  - id: decision-records
+    state: current
+    concern: Durable high-cost choices and rationale
+    carrier: repository-files
+    path: docs/decisions/[0-9][0-9][0-9][0-9]-*.md
+    format: markdown
+    producer: Decision owner
+    maintainer: Repository owner
+    consumers:
+      - Maintainers revisiting choices with material reversal cost
+    creation_trigger: A durable choice constrains a future Slice, the product boundary, or a public contract, or otherwise has high reversal cost or non-obvious rationale.
+    failure_mode: A future change repeats settled analysis or violates a foundational choice.
+    review_point: Pull requests that introduce or reverse a qualifying decision
+
+  - id: v1-architecture-audit
+    state: current
+    concern: Public evidence for rejecting the v1 core as the v2 foundation
+    carrier: repository-file
+    path: docs/research/v1-architecture-audit.md
+    format: markdown
+    producer: Researcher
+    maintainer: Research maintainer
+    consumers:
+      - Architecture and implementation maintainers when evaluating whether v1 structure can be reused
+    creation_trigger: The inherited implementation is evaluated as a possible foundation.
+    failure_mode: v2 reuses unsafe or unsuitable v1 structure without evidence.
+    review_point: Pull requests that rely on or materially revise the v1 audit
+
+  - id: v1-public-contract-baseline
+    state: current
+    concern: Caller-visible AzureAuth v1 public-contract evidence used by v2 requirements authors
+    carrier: repository-file
+    path: docs/research/v1-public-contract-baseline.md
+    format: markdown
+    producer: Researcher
+    maintainer: Research maintainer
+    consumers:
+      - Requirements, compatibility, architecture, and validation maintainers
+    creation_trigger: V2 requirements analysis needs a fixed caller-visible v1 evidence baseline.
+    failure_mode: V1 behavior is omitted, misclassified, or elevated into a v2 product or compatibility commitment, or v2 evidence is mixed into the v1 baseline.
+    review_point: Pull requests that rely on or materially revise the v1 public-contract baseline
+
+  - id: experiment-safety
+    state: current
+    concern: Experiment environment and effects boundaries, evidence classification, and stop conditions
+    carrier: repository-file
+    path: docs/research/experiment-safety.md
+    format: markdown
+    producer: Security and research maintainers
+    maintainer: Repository owner
+    consumers:
+      - Anyone proposing or running an experiment
+    creation_trigger: Repository work may observe build, authentication, cache, or host behavior.
+    failure_mode: Experiments expose credentials, mutate state, or overstate observations.
+    review_point: Every experiment protocol and every change to experiment policy
+
+  - id: public-source-rechecks
+    state: current
+    concern: Mutable public facts that can change a current conclusion
+    carrier: repository-file
+    path: docs/research/rechecks.yaml
+    format: yaml
+    schema: schemas/research/rechecks.schema.json
+    producer: Researcher
+    maintainer: Research maintainer
+    consumers:
+      - Research reviewers when a recorded trigger fires and whenever a merged change modifies the current Delivery Wave
+    creation_trigger: A mutable public source could materially change a current conclusion.
+    failure_mode: A decision continues to rely on stale public behavior or guidance.
+    review_point: Recorded trigger events and every merged Delivery Wave change
+
+  - id: threat-model
+    state: current
+    concern: Security assumptions, assets, threats, and trust boundaries
+    carrier: repository-file
+    path: docs/security/threat-model.md
+    format: markdown
+    producer: Security and architecture maintainers
+    maintainer: Repository owner
+    consumers:
+      - Architecture, design, implementation, experiment, and release reviewers when evaluating security effects
+    creation_trigger: The project handles credentials, tokens, caches, or external identity systems.
+    failure_mode: Security controls address the wrong assets or trust boundaries.
+    review_point: Pull requests that change assets, trust boundaries, or security posture
+
+  - id: threat-model-native
+    state: current
+    concern: Executable data-flow model and tool-specific threat dispositions supporting the security rationale
+    carrier: repository-file
+    path: docs/security/authentication-engine.tm7
+    format: xml
+    producer: Security and architecture maintainers using Microsoft Threat Modeling Tool
+    maintainer: Security and architecture maintainers
+    consumers:
+      - Microsoft Threat Modeling Tool 7 and security reviewers opening the model and regenerating candidate threats during architecture review
+    creation_trigger: Security architecture uses TMT analysis of the authentication request and reusable-state boundaries.
+    failure_mode: Reviewers cannot reproduce the analyzer input or relate generated threats to the actual data flows.
+    review_point: Pull requests changing the model validate its native TMT 7 format by opening and analyzing it in TMT, and review dispositions against docs/security/threat-model.md.
+
+  - id: security-interface
+    state: current
+    concern: Public vulnerability-reporting boundary
+    carrier: repository-file
+    path: SECURITY.md
+    format: markdown
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - Security reporters choosing a public or private channel
+    creation_trigger: The public repository may receive vulnerability reports.
+    failure_mode: Sensitive reports are disclosed publicly or sent to the wrong project.
+    review_point: Pull requests that change reporting channels or support posture
+
+  - id: validation-strategy
+    state: current
+    concern: Evidence required for behavior and support claims
+    carrier: repository-file
+    path: docs/validation/strategy.md
+    format: markdown
+    producer: Validation maintainer
+    maintainer: Repository owner
+    consumers:
+      - Requirement authors, implementers, and release reviewers when selecting evidence for a claim
+    creation_trigger: Claims require consistent validation depth and evidence carriers.
+    failure_mode: Passing checks are mistaken for unsupported real-platform claims.
+    review_point: Pull requests that change claim scope or validation obligations
+
+  - id: structured-record-schemas
+    state: current
+    concern: Machine contracts for structured repository records
+    carrier: repository-files
+    path: schemas/**/*.schema.json
+    format: json-schema
+    producer: Structured-record maintainer
+    maintainer: Structured-record maintainer
+    consumers:
+      - hk schema validation and record authors
+    creation_trigger: A structured record needs deterministic validation.
+    failure_mode: Structured records become ambiguous or silently incompatible with consumers.
+    review_point: Pull requests that add or change a structured record
+
+  - id: public-contracts
+    state: current
+    concern: Serialized field shapes of versioned public request, result, and Profile contracts
+    carrier: repository-files
+    path: contracts/**/*.schema.json
+    format: json-schema
+    producer: Contract maintainer
+    maintainer: Contract maintainer
+    consumers:
+      - Implementation owners, protocol-adapter maintainers, and validation reviewers when consuming a public contract
+    creation_trigger: A bounded interface requires a versioned public contract before implementation.
+    failure_mode: Consumers depend on undocumented or unstable wire behavior.
+    review_point: Contract freeze and every compatible or breaking contract change
+
+  - id: design-records
+    state: current
+    concern: Implementation-boundary design requiring independent review
+    carrier: repository-files
+    path: docs/designs/*.md
+    format: markdown
+    producer: Implementation owner
+    maintainer: Implementation owner
+    consumers:
+      - Implementers and reviewers of the bounded subsystem
+      - Contract maintainers and adapter authors applying the command-line and process semantics alongside public schemas
+    creation_trigger: A coherent implementation boundary needs review beyond current architecture.
+    failure_mode: Material implementation choices remain implicit or fragmented across pull requests.
+    review_point: Independent architecture, consistency, minimality, and security review at design acceptance and before implementation of the bounded design
+
+  - id: windows-msal-account-metadata-evidence
+    state: current
+    concern: Completed bounded Windows MSAL account-visibility, result-metadata, and designated Git discovery observations, with the public-source probe basis, Client Profile and tenant mapping, and Azure Artifacts token-path findings that interpret them
+    carrier: repository-file
+    path: docs/research/experiments/windows-msal-account-metadata.md
+    format: markdown
+    producer: Research maintainer
+    maintainer: Research maintainer
+    consumers:
+      - Architecture and requirements reviewers relying on the observed account, metadata, broker-reuse, tenant-mapping, and token-path conclusions through the client-identity architecture, architecture overview, and validation strategy
+    creation_trigger: Issue #35 produced runtime observations that current architecture and research records cite; its procedure and history remain in Git.
+    failure_mode: Current conclusions cite observations whose scope, evidence level, or limitations can no longer be read.
+    review_point: Independent research-evidence review when a citing conclusion changes or the evidence is corrected
+
+  - id: windows-native-aot-evidence
+    state: current
+    concern: Completed synthetic Windows Native AOT publish and upstream native-import observations, with the public-source Native AOT assessment and RECHECK-008 refresh
+    carrier: repository-file
+    path: docs/research/experiments/windows-native-aot.md
+    format: markdown
+    producer: Research maintainer
+    maintainer: Research maintainer
+    consumers:
+      - Design, security, and validation reviewers relying on the bounded Native AOT conclusion
+    creation_trigger: Issues #76 and #92 produced synthetic observations that the Windows design, threat model, and validation strategy cite; the procedure and history remain in Git.
+    failure_mode: Native AOT compatibility is asserted beyond the scope and limitations of the recorded observations.
+    review_point: Independent research-evidence review when a citing conclusion changes or the evidence is corrected
+
+  - id: windows-slice-validation-evidence
+    state: current
+    concern: Completed selected-account, WSL, and parent-window observations from the first Windows authentication Slice, with their dated observation records, public-source dependency, host, and WSL findings, and Slice recheck evaluations
+    carrier: repository-file
+    path: docs/research/experiments/windows-slice-validation.md
+    format: markdown
+    producer: Validation maintainer
+    maintainer: Validation maintainer
+    consumers:
+      - Validation, design, and research reviewers relying on the recorded Windows Slice observations and their limitations
+    creation_trigger: Issue #108 produced real-host observations that the validation strategy, Windows design, threat model, and architecture cite; the procedure and history remain in Git.
+    failure_mode: Synthetic or partial observations are substituted for real-platform acceptance, or their limitations are lost.
+    review_point: Independent research-evidence review when a citing conclusion changes or the evidence is corrected
+
+  - id: real-host-validation-evidence
+    state: current
+    concern: Completed 2026-10-15 real-host validation of the main-v2 Windows product, with its observation method, sanitized results, bounded conclusions, limitations, and deviation dispositions
+    carrier: repository-file
+    path: docs/research/experiments/real-host-validation.md
+    format: markdown
+    producer: Validation maintainer
+    maintainer: Validation maintainer
+    consumers:
+      - Validation, design, and security reviewers relying on the recorded real-host observations and their limitations
+    creation_trigger: Issue #482 produced real-host observations that the validation strategy, Windows design, and threat model cite; the protocol, amendments, and execution history remain in Git.
+    failure_mode: Current conclusions cite real-host observations whose scope, evidence level, limitations, or deviations can no longer be read, or the observations are extended beyond the observed roles, callers, subjects, host, and existing state.
+    review_point: Independent research-evidence review when a citing conclusion changes or the evidence is corrected
+
+  - id: portable-package-host-test-evidence
+    state: current
+    concern: Completed 2026-10-29 host test of the locally built Windows portable package, with its accepted protocol as method, sanitized results, bounded conclusions, limitations, and deviation dispositions
+    carrier: repository-file
+    path: docs/research/experiments/portable-package-host-test.md
+    format: markdown
+    producer: Validation maintainer
+    maintainer: Validation maintainer
+    consumers:
+      - Validation, design, and security reviewers relying on the recorded observations and their limitations
+    creation_trigger: Issue #506 produced host-test observations of the portable package that the validation strategy cites; the protocol and its execution history remain in Git.
+    failure_mode: Current conclusions cite host-test observations whose scope, evidence level, limitations, or deviations can no longer be read, or the observations are extended beyond the observed roles, callers, subject, host, and existing state.
+    review_point: Independent research-evidence review when a citing conclusion changes or the evidence is corrected
+
+  - id: developer-tooling-evidence
+    state: current
+    concern: Completed developer-tool installation, client discovery, and public Learn retrieval observations
+    carrier: repository-file
+    path: docs/research/experiments/developer-tooling.md
+    format: markdown
+    producer: Tooling maintainer
+    maintainer: Tooling maintainer
+    consumers:
+      - Contributors and reviewers evaluating the reproducibility and actual host coverage behind the CONTRIBUTING.md tooling setup
+    creation_trigger: Issue #68 produced installation and discovery observations behind the locked contributor tooling; the procedure and history remain in Git.
+    failure_mode: Tooling setup is claimed to cover hosts, clients, or cache states it was never observed on.
+    review_point: Independent research-evidence review when the contributor tooling selection or its claimed coverage changes

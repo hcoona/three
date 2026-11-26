@@ -1,0 +1,249 @@
+schema_version: 2
+
+selection_policy:
+  evidence_requirement: >-
+    Every non-null selection records its owning component, storage or protocol location,
+    schema or version behavior, collision test, migration or import behavior, and cleanup
+    or uninstall owner.
+  ownership_rule: >-
+    Cleanup must not infer ownership from a shared parent directory or name prefix.
+
+reserved_upstream:
+  - area: product-and-command
+    identifiers:
+      - AzureAuth
+      - azureauth
+      - microsoft.authentication.azureauth
+    rule: Select distinct product, command, and package identities before distribution.
+
+  - area: dotnet-namespaces
+    identifiers:
+      - Microsoft.Authentication.AzureAuth
+      - Microsoft.Authentication.MSALWrapper
+      - Microsoft.Authentication.AdoPat
+    rule: Do not publish fork-owned assemblies under a Microsoft publisher namespace.
+
+  - area: installation
+    identifiers:
+      - "%LOCALAPPDATA%\\Programs\\AzureAuth"
+      - "~/.azureauth"
+      - /usr/bin/azureauth
+      - /usr/lib/azureauth
+    rule: Install side by side under a fork-owned root.
+
+  - area: configuration
+    identifiers:
+      - AZUREAUTH_*
+      - OEAUTH_MSAL_DISABLE_CACHE
+      - "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\AzureAuth"
+    rule: Use an independent environment-variable prefix and vendor path.
+
+  - area: msal-cache
+    identifiers:
+      - "%LOCALAPPDATA%\\.IdentityService"
+      - Microsoft.Developer.IdentityService
+      - "category:azureauth"
+      - com.microsoft.identity.tokencache
+      - .azureauth
+    rule: Define explicit v2 cache ownership and do not mutate upstream serialized stores.
+
+  - area: pat-storage
+    identifiers:
+      - azureauth-ado-pat.lock
+      - azureauth-pat.cache
+      - Microsoft-labeled Keychain and keyring values
+    rule: Use distinct names if PAT support is later accepted.
+
+  - area: telemetry
+    identifiers:
+      - AZUREAUTH_APPLICATION_INSIGHTS_INGESTION_TOKEN
+      - upstream registry configuration
+      - "event namespace:azureauth"
+    rule: Do not consume or emit under upstream telemetry configuration.
+
+  - area: release
+    identifiers:
+      - upstream archive names
+      - upstream package names
+      - upstream installer identity
+      - upstream signing identity
+      - upstream update channels
+    rule: Define independently controlled artifact provenance and update channels.
+
+  - area: client-application
+    identifiers:
+      - "Visual Studio public client: 872cd9fa-d31f-45e0-9eab-6e460a02d1f1"
+    rule: Represent only as an explicitly named externally owned compatibility profile.
+
+selected_v2:
+  - id: product-name
+    value: azureauth-unofficial
+    required_before: distribution
+    selection_evidence:
+      owning_component: Windows CLI project (src/Authentication.Cli) and the Windows packaging script
+      location: >-
+        Product name of the distributed Windows artifact, its Win32 version resource
+        product field, and the package README. The public display name AzureAuth
+        Unofficial V2 in docs/governance/project.md remains the project name.
+      version_behavior: >-
+        Unchanged across versions. Nerdbank.GitVersioning computes the SemVer 2.0
+        version 0.1.0-alpha.{height}+{commit} from version.json, with main-v2 as the
+        only public-release ref; other refs add the commit-ID prerelease suffix.
+      collision_test: >-
+        Differs from every reserved product-and-command identifier: the selected name
+        carries the -unofficial suffix, so it never equals AzureAuth, azureauth or
+        microsoft.authentication.azureauth. No Microsoft publisher namespace is used.
+      migration_or_import: No upstream product identity, configuration or state is imported.
+      cleanup_owner: >-
+        The user who extracted the archive; deleting the extraction directory removes the
+        product. No other product-owned file exists.
+
+  - id: command-name
+    value: azureauth-unofficial
+    required_before: distribution
+    selection_evidence:
+      owning_component: Windows CLI project (src/Authentication.Cli AssemblyName)
+      location: >-
+        Executable basename azureauth-unofficial.exe, the help usage lines and the
+        --version output.
+      version_behavior: >-
+        Unchanged across versions; --version prints the command name and the full
+        SemVer 2.0 version with the abbreviated commit as build metadata.
+      collision_test: >-
+        azureauth-unofficial.exe differs from the reserved azureauth command. The package
+        adds no PATH entry, alias or azureauth shim, so invoking azureauth never reaches it.
+      migration_or_import: No upstream command alias or shim is created.
+      cleanup_owner: The user who extracted the archive, by deleting the extraction directory.
+
+  - id: package-name
+    value: azureauth-unofficial-<version>-win-x64.zip
+    required_before: distribution
+    selection_evidence:
+      owning_component: packaging/windows/package.ps1
+      location: >-
+        Archive file name, with a SHA-256 checksum file named after the archive with a
+        .sha256 suffix. A symbols archive azureauth-unofficial-<version>-win-x64-symbols.zip
+        with its own .sha256 file holds the build's native and managed symbol files and is
+        published beside it.
+      version_behavior: >-
+        <version> is the computed SemVer 2.0 version without build metadata, for example
+        0.1.0-alpha.42; the archive name changes with each version.
+      collision_test: >-
+        Upstream archives are named azureauth-<version>-<rid>.zip with plain numeric
+        versions. The selected name begins with azureauth-unofficial-, so it never equals
+        an upstream archive name, and an upstream glob such as azureauth-*-win-x64.zip
+        matches it only if read with a version beginning with unofficial-.
+      migration_or_import: Not applicable; the archive contains no upstream artifact.
+      cleanup_owner: The user who downloaded the archive.
+
+  - id: installation-root
+    value: user-selected extraction directory
+    required_before: distribution
+    selection_evidence:
+      owning_component: Package README (packaging/windows/README.md)
+      location: >-
+        There is no default installation root. The user extracts the archive into a
+        directory of their choice; the README gives
+        %LOCALAPPDATA%\Programs\azureauth-unofficial only as an example.
+      version_behavior: >-
+        A newer version is extracted into a new or emptied directory chosen by the user;
+        there is no in-place updater.
+      collision_test: >-
+        The README tells the user not to extract into an AzureAuth installation directory
+        such as %LOCALAPPDATA%\Programs\AzureAuth, and its example root differs from every
+        reserved installation path. Nothing writes PATH, the registry or shortcuts.
+      migration_or_import: No upstream installation is read, modified or replaced.
+      cleanup_owner: >-
+        The user deletes the directory they created. Removal never deletes a directory
+        the user did not create and never infers ownership from a name prefix.
+
+  - id: configuration-prefix
+    value: null
+    required_before: persistent-configuration
+
+  - id: cache-namespace
+    value: null
+    required_before: persistent-cache
+
+  - id: lock-namespace
+    value: null
+    required_before: cross-process-coordination
+
+  - id: telemetry-identity
+    value: null
+    required_before: remote-telemetry
+
+  - id: diagnostic-identity
+    value: hcoona.microsoft-authentication-cli
+    required_before: distribution
+    selection_evidence:
+      owning_component: Core ActivitySource (AuthenticationTrace.SourceName)
+      location: >-
+        Name of the fork-owned ActivitySource whose stages --telemetry stderr projects
+        to stderr; there is no network export.
+      version_behavior: >-
+        The ActivitySource version is the computed SemVer 2.0 version without build
+        metadata.
+      collision_test: >-
+        The source name carries the fork owner and repository and differs from the
+        reserved event namespace azureauth and from upstream telemetry identities.
+      migration_or_import: No upstream telemetry configuration or identity is consumed.
+      cleanup_owner: The process; the listener and its events end with the invocation.
+
+  - id: signing-identity
+    value: unsigned
+    required_before: release
+    selection_evidence:
+      owning_component: Repository owner (Issue #505)
+      location: >-
+        Prerelease archives and their executables carry no Authenticode signature. The
+        package README states this and the archive is published with a SHA-256 checksum.
+      version_behavior: Applies to the 0.1.0-alpha prerelease line until Issue #505 selects a signing identity.
+      collision_test: No upstream signing identity, certificate or publisher is used.
+      migration_or_import: Not applicable.
+      cleanup_owner: Not applicable; no signing material exists.
+
+  - id: update-channel
+    value: GitHub Releases of hcoona/microsoft-authentication-cli, downloaded manually
+    required_before: release
+    selection_evidence:
+      owning_component: Repository owner and the release process
+      location: >-
+        Prerelease assets of this repository's GitHub Releases. The product never checks
+        for, downloads or applies updates.
+      version_behavior: >-
+        Each prerelease is tagged v<version>, where <version> is the computed SemVer 2.0
+        version without build metadata (for example v0.1.0-alpha.42), on the built commit;
+        its archives carry the same version in their names.
+      collision_test: >-
+        Upstream update channels are the AzureAD/microsoft-authentication-cli releases and
+        their installers; this channel is a different repository and archive name.
+      migration_or_import: No upstream update channel or installer is used.
+      cleanup_owner: Not applicable; no updater state exists.
+
+  - id: user-agent
+    value: hcoona-microsoft-authentication-cli
+    required_before: networked-implementation
+    selection_evidence:
+      owning_component: Windows MSAL adapter's managed HTTP client factory and handler
+      location: >-
+        HTTP User-Agent product token on requests sent through the fork-owned managed
+        transport. WAM/native broker transport remains dependency-owned and is not
+        represented as using this token.
+      version_behavior: >-
+        Append the computed SemVer 2.0 product version without build metadata, as
+        recorded for product-name. The token identifies this repository fork and build,
+        not a supported protocol or release.
+      collision_test: >-
+        The selected token includes the fork owner and repository identity and differs
+        from the reserved AzureAuth product and command identifiers. The controlled
+        HTTP handler test ManagedTransportScenarios verifies one exact fork
+        product/version token even when a dependency supplies another User-Agent, with
+        no account, tenant, Profile, token, machine or persistent identifier in it.
+      migration_or_import: >-
+        No upstream User-Agent configuration, environment value or persisted identity
+        is imported. Dependency-owned request headers and broker identity retain their
+        documented ownership; no OAuth registration or Profile is changed by this token.
+      cleanup_owner: >-
+        The one CLI process owns the managed HTTP client and transient headers. There
+        is no persisted identity or uninstall action; process exit releases its resources.

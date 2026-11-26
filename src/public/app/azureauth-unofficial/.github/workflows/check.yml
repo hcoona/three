@@ -1,0 +1,195 @@
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main-v2
+
+permissions:
+  contents: read
+
+env:
+  # The mise version CI pins; regenerate mise.lock with it (CONTRIBUTING.md).
+  # mise.toml sets the same min_version.
+  MISE_VERSION: 2026.10.22
+
+concurrency:
+  # A newer pull-request push supersedes its earlier run. Each main-v2 push gets its own
+  # group, so no push run is cancelled while pending or running.
+  group: check-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  repository:
+    name: Repository Controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Never auto-install the development SDK, APM, or Node.js for checks.
+      MISE_EXEC_AUTO_INSTALL: "false"
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          # Install only the check tools; the development SDK, APM, and Node.js are
+          # not needed for repository controls.
+          install_args: --locked actionlint gitleaks hk lychee pkl python shellcheck uv
+          cache: true
+
+      - name: Run repository controls
+        run: mise run check
+        env:
+          HK_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+
+      - name: Report commit messages that miss the commit shape (advisory)
+        run: mise exec -- python tools/check_commit_messages.py
+        env:
+          COMMIT_MESSAGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+
+  # Implementation notes (not part of the linux-scenario-tests control invariant):
+  # restore uses the committed package lock files in locked mode, and the job uses
+  # the pinned .NET SDK (http:dotnet-development) from mise.lock.
+  linux-scenarios:
+    name: Linux Scenario Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      TESTINGPLATFORM_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      # Install only the explicitly named SDK; never auto-install Node or APM.
+      MISE_EXEC_AUTO_INSTALL: "false"
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nerdbank.GitVersioning computes the product version from the full history.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install mise
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install: false
+          cache: true
+          # Keep a separate cache so this job never restores tools another job installed.
+          cache_key_prefix: mise-v1-scenarios
+
+      - name: Install the pinned .NET SDK
+        run: mise install --locked http:dotnet-development
+
+      - name: Restore with the committed lock files
+        run: mise exec -- dotnet restore Linux.slnx --locked-mode
+
+      - name: Build
+        run: mise exec -- dotnet build Linux.slnx --configuration Release --no-restore
+
+      - name: Run the platform-neutral scenario tests
+        run: mise exec -- dotnet tests/Authentication.Scenarios/bin/Release/net10.0/Authentication.Scenarios.dll
+
+  # Implementation notes (not part of the windows-build-and-scenarios control invariant):
+  # restore uses the committed package lock files in locked mode, and the job uses the
+  # pinned .NET SDK (http:dotnet-development) from mise.lock.
+  windows-build-on-linux:
+    name: Windows Build on Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      # Install only the explicitly named SDK; never auto-install Node or APM.
+      MISE_EXEC_AUTO_INSTALL: "false"
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nerdbank.GitVersioning computes the product version from the full history.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install mise
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install: false
+          cache: true
+          # Keep a separate cache so this job never restores tools another job installed.
+          cache_key_prefix: mise-v1-windows-build
+
+      - name: Install the pinned .NET SDK
+        run: mise install --locked http:dotnet-development
+
+      - name: Restore with the committed lock files
+        run: mise exec -- dotnet restore Windows.slnx --locked-mode -p:EnableWindowsTargeting=true
+
+      - name: Build with Windows targeting
+        run: mise exec -- dotnet build Windows.slnx --configuration Release --no-restore -p:EnableWindowsTargeting=true
+
+  # Implementation notes (not part of the windows-build-and-scenarios control invariant):
+  # restore uses the committed package lock files in locked mode, and the job uses the
+  # pinned .NET SDK (http:dotnet-development) from mise.lock. The published-executable
+  # scenarios run only through explicit --native-cli-executable and
+  # --native-profile-cases modes, which this job never passes.
+  windows-scenarios:
+    name: Windows Scenario Tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      TESTINGPLATFORM_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      # Install only the explicitly named SDK; never auto-install Node or APM.
+      MISE_EXEC_AUTO_INSTALL: "false"
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nerdbank.GitVersioning computes the product version from the full history.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install mise
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install: false
+          cache: true
+          # Keep a separate cache so this job never restores tools another job installed.
+          cache_key_prefix: mise-v1-windows-scenarios
+
+      - name: Install the pinned .NET SDK
+        run: mise install --locked http:dotnet-development
+
+      - name: Restore with the committed lock files
+        run: mise exec -- dotnet restore Windows.slnx --locked-mode
+
+      - name: Build
+        run: mise exec -- dotnet build Windows.slnx --configuration Release --no-restore
+
+      - name: Create a fresh scenario temporary directory
+        # The fixture reserves %TEMP%\process-<scenario> and latches a safety stop there,
+        # so each run attempt starts from its own new, empty directory.
+        run: New-Item -ItemType Directory -Path "${{ runner.temp }}\scenarios-${{ github.run_id }}-${{ github.run_attempt }}"
+
+      - name: Run the Windows synthetic scenarios without host-timing assertions
+        run: >-
+          mise exec -- dotnet
+          tests/Authentication.Windows.Scenarios/bin/Release/net10.0-windows/Authentication.Windows.Scenarios.dll
+          --filter "TestCategory!=WindowsHostTiming"
+        env:
+          TEMP: ${{ runner.temp }}\scenarios-${{ github.run_id }}-${{ github.run_attempt }}
+          TMP: ${{ runner.temp }}\scenarios-${{ github.run_id }}-${{ github.run_attempt }}

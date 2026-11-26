@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="src/Authentication.Core/Authentication.Core.csproj" />
+  <Project Path="src/Authentication.Windows/Authentication.Windows.csproj" />
+  <Project Path="src/Authentication.Cli/Authentication.Cli.csproj" />
+  <Project Path="tests/Authentication.Scenarios/Authentication.Scenarios.csproj" />
+  <Project Path="tests/Authentication.Windows.Scenarios/Authentication.Windows.Scenarios.csproj" />
+</Solution>

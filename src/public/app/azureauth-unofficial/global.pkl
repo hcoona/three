@@ -1,0 +1,27 @@
+// Generates global.json from the .NET SDK pinned in mise.toml and locked in mise.lock.
+// Do not edit global.json by hand; run: mise exec -- pkl eval -f json global.pkl -o global.json
+
+local miseLock = read("mise.lock").text
+local sdkBlockParts = miseLock.split("[[tools.\"http:dotnet-development\"]]")
+local sdkBlock =
+  if (sdkBlockParts.length == 2)
+    sdkBlockParts[1].split("\n[")[0]
+  else
+    throw("mise.lock must contain exactly one [[tools.\"http:dotnet-development\"]] block; found \(sdkBlockParts.length - 1).")
+local versionLines = sdkBlock.split("\n").filter((line) -> line.trim().startsWith("version = "))
+local versionParts =
+  if (versionLines.length == 1)
+    versionLines.single.split("\"")
+  else
+    throw("The locked .NET SDK must have exactly one version entry; found \(versionLines.length).")
+local sdkVersion =
+  if (versionParts.length == 2 && versionParts[1].matches(Regex(#"[0-9]+\.[0-9]+\.[0-9]+"#)))
+    versionParts[1]
+  else
+    throw("The locked .NET SDK version must be a quoted major.minor.patch string.")
+
+sdk {
+  version = sdkVersion
+  rollForward = "disable"
+  allowPrerelease = false
+}

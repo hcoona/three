@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hcoona/microsoft-authentication-cli/schemas/governance/operational-identities.schema.json",
+  "title": "Operational Identity Registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "selection_policy",
+    "reserved_upstream",
+    "selected_v2"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "selection_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_requirement",
+        "ownership_rule"
+      ],
+      "properties": {
+        "evidence_requirement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ownership_rule": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "reserved_upstream": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reserved"
+      }
+    },
+    "selected_v2": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/selection"
+      }
+    }
+  },
+  "$defs": {
+    "reserved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "area",
+        "identifiers",
+        "rule"
+      ],
+      "properties": {
+        "area": {
+          "type": "string",
+          "minLength": 1
+        },
+        "identifiers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "rule": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "value",
+        "required_before"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "value": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required_before": {
+          "type": "string",
+          "minLength": 1
+        },
+        "selection_evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "owning_component",
+            "location",
+            "version_behavior",
+            "collision_test",
+            "migration_or_import",
+            "cleanup_owner"
+          ],
+          "properties": {
+            "owning_component": {
+              "type": "string",
+              "minLength": 1
+            },
+            "location": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version_behavior": {
+              "type": "string",
+              "minLength": 1
+            },
+            "collision_test": {
+              "type": "string",
+              "minLength": 1
+            },
+            "migration_or_import": {
+              "type": "string",
+              "minLength": 1
+            },
+            "cleanup_owner": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "value"
+            ]
+          },
+          "then": {
+            "required": [
+              "selection_evidence"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "selection_evidence"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
