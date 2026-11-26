@@ -558,6 +558,14 @@ const main = () => {
       `Packed dependency @asciidoctor/core must be ${expectedAsciidoctorCoreVersion}.`,
     );
     assert(!('asciidoctor' in (packedManifest.dependencies ?? {})), 'Packed manifest must not depend on asciidoctor.');
+    for (const depField of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
+      for (const [depName, specifier] of Object.entries(packedManifest[depField] ?? {})) {
+        assert(
+          typeof specifier === 'string' && !specifier.startsWith('catalog:') && !specifier.startsWith('workspace:'),
+          `Packed ${depField}.${depName} has unresolved workspace/catalog protocol specifier: ${specifier}`,
+        );
+      }
+    }
     assert(
       packedManifest.exports?.['.']?.import?.default === './dist/index.js',
       'exports.import.default must point to dist/index.js.',

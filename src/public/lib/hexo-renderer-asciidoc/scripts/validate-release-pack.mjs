@@ -236,7 +236,7 @@ if (pkg.private) {
         phase: 'release-pack',
       },
     );
-    runner.run('npm', ['pack', '--ignore-scripts', '--pack-destination', artifactsDirectory], {
+    runner.run('pnpm', ['--config.ignore-scripts=true', 'pack', '--pack-destination', artifactsDirectory], {
       cwd: PACKAGE_ROOT,
       env: packEnvironment,
       label: 'release-pack-ignore-scripts',

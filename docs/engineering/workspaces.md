@@ -7,8 +7,10 @@ rather than maintaining a second project database.
 
 ## JavaScript and TypeScript
 
-[The pnpm workspace](../../pnpm-workspace.yaml) defines members and their shared
-lockfile/linking settings. [Root scripts](../../package.json) define the build,
+[The pnpm workspace](../../pnpm-workspace.yaml) defines members, their shared
+lockfile/linking and peer-dependency settings (`autoInstallPeers` and
+`strictPeerDependencies`), and the
+default `catalog` for shared workspace development tooling. [Root scripts](../../package.json) define the build,
 test, lint and format fan-out. Use [mise](../../mise.toml) for tool version intent
 and the lockfile for resolved tool versions.
 

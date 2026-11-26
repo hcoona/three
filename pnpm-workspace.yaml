@@ -10,7 +10,23 @@ allowBuilds:
   sharp: true
   spawn-sync: true
 
+autoInstallPeers: true
+
+catalog:
+  '@biomejs/biome': 2.6.8
+  '@types/node': ^26.0.0
+  '@typescript/native-preview': ^7.0.0-dev.20260523.1
+  markdownlint-cli2: 0.24.2
+  nerdbank-gitversioning: ^3.7.91
+  prettier: 3.10.1
+  typescript: ^7.0.0
+
 linkWorkspacePackages: true
+
+# @upstash/context7-mcp@4.7.3 combines @opentelemetry/*@^2.11.0 (peer @opentelemetry/api <1.10.0)
+# with @opentelemetry/api@^1.9.1; keep @opentelemetry/api on 1.9.x until its OpenTelemetry 3.x bump.
+overrides:
+  '@opentelemetry/api': ~1.9.1
 
 patchedDependencies:
   '@wxt-dev/auto-icons@1.1.2': src/public/lib/steam-account-history-to-csv/patches/@wxt-dev__auto-icons@1.1.2.patch
@@ -18,3 +34,5 @@ patchedDependencies:
 saveWorkspaceProtocol: true
 
 sharedWorkspaceLockfile: true
+
+strictPeerDependencies: true
