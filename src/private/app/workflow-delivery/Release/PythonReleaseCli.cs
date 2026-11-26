@@ -27,7 +27,7 @@ internal static class PythonReleaseCli
                 CancellationToken.None).GetAwaiter().GetResult();
             ReleaseCli.Write(output, result, TransferJson.Default.PythonPreparationResult);
             if (result.Errors.Length != 0 || result.Prepared.Files.Length == 0) return 1;
-            PythonRelease.Validate(result);
+            result.Validate();
             return 0;
         }
         if (args is ["release", "observe-python", var preparationPath, var originals,
@@ -40,9 +40,7 @@ internal static class PythonReleaseCli
                 CancellationToken.None).GetAwaiter().GetResult();
             PythonRelease.ValidateObservation(preparation.Prepared, result);
             ReleaseCli.Write(output, result, TransferJson.Default.PythonIndexObservationResult);
-            return result.Observation.Files.All(file => file.State is ReleaseFileState.Exact or
-                ReleaseFileState.Absent) && result.Observation.Checks.All(check =>
-                    check.Status == ReleaseCheckStatus.Passed) ? 0 : 1;
+            return ReleaseCompletion.ObservationProceeds(result.Observation) ? 0 : 1;
         }
         if (args is ["release", "describe-python", var describePreparation,
                 var describeObservation])

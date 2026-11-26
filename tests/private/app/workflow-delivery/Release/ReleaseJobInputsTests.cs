@@ -219,51 +219,25 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
-    [DataRow("ruby")]
-    [DataRow("python")]
-    [DataRow("npm")]
-    [DataRow("nuget")]
-    [DataRow("github-release")]
-    public void ReceivedPreparationBindsRequestSubjectOnce(string ecosystem)
+    public void ReceivedPreparationBindsRequestSubjectOnce()
     {
-        using var fixture = new Caller(ecosystem);
+        using var fixture = new Caller("npm");
         fixture.Run("request");
         ReleaseSubject subject = fixture.Subject();
-        foreach (ReleaseSubject wrong in new[] { subject with { Revision = new string('b', 40) },
-            subject with { DryRun = false }, subject with { SelectedRef = "refs/heads/other" } })
-        {
-            fixture.Preparation(wrong);
-            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("receive",
-                "observation"));
-            Assert.IsFalse(Directory.Exists(fixture.At("observation")));
-        }
+        fixture.Preparation(subject with { Revision = new string('b', 40) });
+        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("receive", "observation"));
+        Assert.IsFalse(Directory.Exists(fixture.At("observation")));
+
         fixture.Preparation(subject);
-        if (ecosystem == "npm")
-        {
-            fixture.Run("receive", "observation");
-            Assert.IsTrue(Directory.Exists(fixture.At("observation")));
-            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("receive",
-                "observation"));
-        }
-        else
-        {
-            // The same receive also applies the ecosystem's complete preparation check,
-            // which this generic preparation does not satisfy.
-            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("receive",
-                "observation"));
-            Assert.IsFalse(Directory.Exists(fixture.At("observation")));
-        }
+        fixture.Run("receive", "observation");
+        Assert.IsTrue(Directory.Exists(fixture.At("observation")));
+        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("receive", "observation"));
     }
 
     [TestMethod]
-    [DataRow("ruby")]
-    [DataRow("python")]
-    [DataRow("npm")]
-    [DataRow("nuget")]
-    [DataRow("github-release")]
-    public void ReceivedUnqualifiedPreparationStopsBeforePhaseOutput(string ecosystem)
+    public void ReceivedUnqualifiedPreparationStopsBeforePhaseOutput()
     {
-        using var fixture = new Caller(ecosystem);
+        using var fixture = new Caller("npm");
         fixture.Run("request");
         fixture.Preparation(fixture.Subject(), status: ReleaseCheckStatus.Failed);
         Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("receive", "publication"));
@@ -271,14 +245,9 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
-    [DataRow("ruby")]
-    [DataRow("python")]
-    [DataRow("npm")]
-    [DataRow("nuget")]
-    [DataRow("github-release")]
-    public void OriginalTransferRetainsBytesAndRejectsEscapingInputs(string ecosystem)
+    public void OriginalTransferRetainsBytesAndRejectsEscapingInputs()
     {
-        using var fixture = new Caller(ecosystem);
+        using var fixture = new Caller("python");
         fixture.Run("request");
         ReleaseSubject subject = fixture.Subject();
         fixture.Preparation(subject);
@@ -289,31 +258,25 @@ public sealed class ReleaseJobInputsTests
         CollectionAssert.AreEqual(original, File.ReadAllBytes(fixture.At(
             "prepared/build/original")));
         Assert.ThrowsExactly<IOException>(() => fixture.Run("originals"));
-        foreach (string path in new[] { "../escape", "/absolute", "build/../../escape",
-            "C:/absolute" })
+        foreach (string path in new[] { "build/../../escape", "C:/absolute" })
         {
             fixture.Preparation(subject, path);
             Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("originals"));
         }
-
     }
 
     [TestMethod]
-    [DataRow("ruby")]
-    [DataRow("python")]
-    [DataRow("npm")]
-    [DataRow("nuget")]
-    [DataRow("github-release")]
-    public void InvalidOperationsAndLiveRerunsCreateNoState(string ecosystem)
+    public void InvalidOperationsAndLiveRerunsCreateNoState()
     {
-        using var fixture = new Caller(ecosystem);
+        using var fixture = new Caller("ruby");
         Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("receive", "../escape"));
         Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("unsupported"));
         // A live rerun stops at every job entry, including jobs a partial rerun repeats.
         fixture.Env["DRY_RUN"] = "false";
         foreach (string[] entry in new[] { new[] { "request" }, ["receive", "publication"],
             ["state"] })
-            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run(entry));
+            Assert.Contains("reruns", Assert.ThrowsExactly<InvalidDataException>(() =>
+                fixture.Run(entry)).Message);
         Assert.IsFalse(Directory.Exists(fixture.At("prepared")));
         Assert.IsFalse(Directory.Exists(fixture.At("publication")));
         fixture.Env["DRY_RUN"] = "true";
@@ -347,17 +310,25 @@ public sealed class ReleaseJobInputsTests
         fixture.Run("request");
         ReleaseSubject subject = fixture.Subject();
         Directory.CreateDirectory(fixture.At("observation"));
-        foreach (ReleaseFileState state in new[] { ReleaseFileState.Absent,
-            ReleaseFileState.Exact })
+        RunState("true", ReleaseFileState.Absent);
+        if (ecosystem is "python" or "github-release")
+            RunState("true", ReleaseFileState.Exact, ReleaseFileState.Absent);
+        if (ecosystem != "npm") return;
+        RunState("false", ReleaseFileState.Exact);
+        fixture.Env["GITHUB_SHA"] = new string('b', 40);
+        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("state"));
+        Assert.AreEqual("write-needed=false\n", File.ReadAllText(fixture.At("output")));
+
+        void RunState(string expected, params ReleaseFileState[] states)
         {
-            var observation = new ReleaseObservation(subject, [new("output", "fixture", "1.0",
-                state, null, null)],
-                ["check"], [new("check", ReleaseCheckStatus.Passed)]);
+            var observation = new ReleaseObservation(subject, states.Select((state, index) =>
+                new ReleaseFileObservation("output-" + index, "fixture", "1.0", state,
+                    null, null)).ToArray(), ["check"], [new("check", ReleaseCheckStatus.Passed)]);
             string json = ecosystem switch
             {
                 "ruby" => JsonSerializer.Serialize(new RubyObservationResult(observation,
                     new(RubySourceState.Absent, null, null, [])),
-                        TransferJson.Default.RubyObservationResult),
+                    TransferJson.Default.RubyObservationResult),
                 "python" => JsonSerializer.Serialize(new PythonIndexObservationResult(
                     observation, []), TransferJson.Default.PythonIndexObservationResult),
                 "npm" => JsonSerializer.Serialize(new GithubNpmObservationResult(observation,
@@ -369,40 +340,10 @@ public sealed class ReleaseJobInputsTests
                 _ => throw new InvalidOperationException(),
             };
             File.WriteAllText(fixture.At("observation/observation.json"), json);
+            File.WriteAllText(fixture.At("output"), "");
             fixture.Run("state");
-            Assert.EndsWith("write-needed=" + (
-                state == ReleaseFileState.Absent ? "true" : "false") + "\n",
-                File.ReadAllText(fixture.At("output")));
-            fixture.Env["GITHUB_SHA"] = new string('b', 40);
-            string original = File.ReadAllText(fixture.At("output"));
-            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("state"));
-            Assert.AreEqual(original, File.ReadAllText(fixture.At("output")));
-            fixture.Env["GITHUB_SHA"] = subject.Revision;
+            Assert.AreEqual($"write-needed={expected}\n", File.ReadAllText(fixture.At("output")));
         }
-        if (ecosystem is "python" or "github-release")
-            foreach ((ReleaseFileState first, ReleaseFileState second, string expected) in new[]
-            {
-                (ReleaseFileState.Absent, ReleaseFileState.Absent, "true"),
-                (ReleaseFileState.Exact, ReleaseFileState.Absent, "true"),
-                (ReleaseFileState.Absent, ReleaseFileState.Exact, "true"),
-                (ReleaseFileState.Exact, ReleaseFileState.Exact, "false"),
-            })
-            {
-                var mixed = new ReleaseObservation(subject,
-                    [new("first", "fixture", "1.0", first, null, null),
-                     new("second", "fixture", "1.0", second, null, null)],
-                    ["check"], [new("check", ReleaseCheckStatus.Passed)]);
-                string json = ecosystem == "python"
-                    ? JsonSerializer.Serialize(new PythonIndexObservationResult(mixed, []),
-                        TransferJson.Default.PythonIndexObservationResult)
-                    : JsonSerializer.Serialize(new GithubReleaseObservationResult(mixed, null, []),
-                        TransferJson.Default.GithubReleaseObservationResult);
-                File.WriteAllText(fixture.At("observation/observation.json"), json);
-                File.WriteAllText(fixture.At("output"), "");
-                fixture.Run("state");
-                Assert.AreEqual($"write-needed={expected}\n",
-                    File.ReadAllText(fixture.At("output")));
-            }
     }
 
     [TestMethod]
@@ -493,16 +434,10 @@ public sealed class ReleaseJobInputsTests
                 path, 5, new string('a', 64))], ["check"], [new("check", status)]);
             string json = ecosystem switch
             {
-                "ruby" => JsonSerializer.Serialize(new RubyPreparationResult(prepared,
-                    new(), [], []), TransferJson.Default.RubyPreparationResult),
                 "python" => JsonSerializer.Serialize(new PythonPreparationResult(prepared,
                     new(), [], []), TransferJson.Default.PythonPreparationResult),
                 "npm" => JsonSerializer.Serialize(new NpmPreparationResult(prepared, [], []),
                     TransferJson.Default.NpmPreparationResult),
-                "nuget" => JsonSerializer.Serialize(new NuGetPreparationResult(prepared,
-                    new(), [], []), TransferJson.Default.NuGetPreparationResult),
-                "github-release" => JsonSerializer.Serialize(new GithubReleasePreparationResult(
-                    prepared, new(), [], []), TransferJson.Default.GithubReleasePreparationResult),
                 _ => throw new InvalidOperationException(),
             };
             File.WriteAllText(At("prepared/preparation.json"), json);

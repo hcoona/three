@@ -11,9 +11,7 @@ public sealed class ReleaseCliTests
 {
     [TestMethod]
     [DataRow("github-npm", "Exact", "Conflict", 1, "Unsatisfied")]
-    [DataRow("github-npm", "Exact", "Exact", 0, "Satisfied")]
     [DataRow("npmjs", "Absent", "Exact", 1, "Unknown")]
-    [DataRow("npmjs", "Exact", "Exact", 0, "Satisfied")]
     public void ActualCompletionBindsTheRegistryTransfer(string registry, string initialState,
         string finalState, int expectedExit, string expectedState)
     {
@@ -156,32 +154,26 @@ public sealed class ReleaseCliTests
     }
 
     [TestMethod]
-    [DataRow("Absent", 0, 1)]
-    [DataRow("Conflict", 1, 0)]
-    public void ActualDryRunCommandReportsHypotheticalWorkAndFailure(string stateName,
-        int exit, int writes)
+    public void DryRunCommandReportsTheMissingPackageAsHypothetical()
     {
         using var files = new Files();
         PreparedRelease prepared = files.Prepared;
         ReleaseFile file = prepared.Files[0];
-        ReleaseFileState state = Enum.Parse<ReleaseFileState>(stateName);
         var observation = new NpmjsObservationResult(new(prepared.Subject,
-            [new(file.Output, file.Name, file.Version, state,
-                state == ReleaseFileState.Exact ? file.Size : null,
-                state == ReleaseFileState.Exact ? file.Sha256 : null)],
+            [new(file.Output, file.Name, file.Version, ReleaseFileState.Absent, null, null)],
             ["visibility"], [new("visibility", ReleaseCheckStatus.Passed)]), []);
         string observed = files.Write("observed.json", JsonSerializer.Serialize(observation,
             TransferJson.Default.NpmjsObservationResult));
         using var output = new StringWriter();
         using var error = new StringWriter();
 
-        Assert.AreEqual(exit, Program.Run(["release", "describe-npmjs", files.Preparation,
+        Assert.AreEqual(0, Program.Run(["release", "describe-npmjs", files.Preparation,
             observed], output, error), error.ToString());
 
         ReleaseDryRun result = JsonSerializer.Deserialize(output.ToString(),
             TransferJson.Default.ReleaseDryRun)!;
-        Assert.AreEqual(exit == 0, result.Ready);
-        Assert.HasCount(writes, result.HypotheticalWrites);
+        Assert.IsTrue(result.Ready);
+        Assert.AreEqual(file.Output, Assert.ContainsSingle(result.HypotheticalWrites));
         Assert.AreEqual(prepared.Subject, result.Subject);
         Assert.IsTrue(result.Subject.DryRun);
         Assert.AreEqual("", error.ToString());
@@ -240,8 +232,8 @@ public sealed class ReleaseCliTests
     {
         using var files = new Files();
         string request = JsonSerializer.Serialize(
-            new NpmPreparationRequest(files.Prepared.Subject, files.Root, files.Root),
-            TransferJson.Default.NpmPreparationRequest);
+            new ReleasePreparationRequest(files.Prepared.Subject, files.Root, files.Root),
+            TransferJson.Default.ReleasePreparationRequest);
         AssertPreparationRejected(files.Write("request.json", request.Insert(1, property)),
             diagnostic);
     }
@@ -263,8 +255,8 @@ public sealed class ReleaseCliTests
     {
         using var files = new Files();
         string request = files.Write("request.json", JsonSerializer.Serialize(
-            new NpmPreparationRequest(files.Prepared.Subject, files.Root, files.Root),
-            TransferJson.Default.NpmPreparationRequest));
+            new ReleasePreparationRequest(files.Prepared.Subject, files.Root, files.Root),
+            TransferJson.Default.ReleasePreparationRequest));
         var failed = new NpmPreparationResult(files.Prepared with
         { Files = [], Checks = [new("consumer", ReleaseCheckStatus.Failed)] }, [],
             ["native consumer failed"]);

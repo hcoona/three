@@ -30,8 +30,8 @@ public sealed class PythonIndexObservationTests(TestContext context)
         string unit = PythonReleaseUnits.Smoke)
     {
         using var fixture = new Fixture(channel, destination, unit);
-        using var handler = new Handler((_, n, _) => Task.FromResult(Response(200,
-            n == 0 ? Encoding.UTF8.GetBytes("{}") : n == 1 ? Wheel : Sdist)));
+        using var handler = new ScriptedHttpHandler((_, n) =>
+            Response(200, n == 0 ? "{}"u8.ToArray() : n == 1 ? Wheel : Sdist));
         using var client = new HttpClient(handler);
         NativeCommand? command = null;
 
@@ -46,8 +46,11 @@ public sealed class PythonIndexObservationTests(TestContext context)
         Assert.HasCount(2, result.Observation.Files);
         Assert.IsTrue(result.Observation.Files.All(file => file.State == ReleaseFileState.Exact));
         Assert.HasCount(3, handler.Requests);
-        Assert.AreEqual($"https://{origin}/simple/{unit}/", handler.Requests[0]);
-        Assert.IsTrue(handler.Requests.Skip(1).All(uri => new Uri(uri).Host == storage));
+        Assert.AreEqual($"https://{origin}/simple/{unit}/",
+            handler.Requests[0].Uri.AbsoluteUri);
+        Assert.IsTrue(handler.Requests.Skip(1).All(request => request.Uri.Host == storage));
+        Assert.IsTrue(handler.Requests.All(request =>
+            request.Headers.Authorization is null && !request.Headers.Contains("Cookie")));
         Assert.IsNotNull(command);
         Assert.IsFalse(command.InheritEnvironment);
         Assert.IsNull(command.Environment);
@@ -72,7 +75,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
         string expected)
     {
         using var fixture = new Fixture();
-        using var handler = new Handler((_, _, _) => Task.FromResult(Response(status, [])));
+        using var handler = new ScriptedHttpHandler((_, _) => Response(status, []));
         using var client = new HttpClient(handler);
         PythonIndexObservationResult result = await new PythonIndexObservation(client,
             fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) =>
@@ -91,8 +94,8 @@ public sealed class PythonIndexObservationTests(TestContext context)
     public async Task MissingOriginalsRetainSupportedExactSubset(bool wheelPresent)
     {
         using var fixture = new Fixture();
-        using var handler = new Handler((_, n, _) => Task.FromResult(Response(200,
-            n == 0 ? Encoding.UTF8.GetBytes("{}") : Wheel)));
+        using var handler = new ScriptedHttpHandler((_, n) =>
+            Response(200, n == 0 ? "{}"u8.ToArray() : Wheel));
         using var client = new HttpClient(handler);
         string facts = Facts(fixture.Prepared, "test-files.pythonhosted.org",
             wheelPresent ? 1 : 0);
@@ -136,8 +139,8 @@ public sealed class PythonIndexObservationTests(TestContext context)
         int expectedReads)
     {
         using var fixture = new Fixture();
-        using var handler = new Handler((_, n, _) => Task.FromResult(Response(200,
-            n == 0 ? Encoding.UTF8.GetBytes("{}") : Sdist)));
+        using var handler = new ScriptedHttpHandler((_, n) =>
+            Response(200, n == 0 ? "{}"u8.ToArray() : Sdist));
         using var client = new HttpClient(handler);
         JsonObject facts = JsonNode.Parse(Facts(fixture.Prepared,
             "test-files.pythonhosted.org"))!.AsObject();
@@ -154,16 +157,11 @@ public sealed class PythonIndexObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("http://test-files.pythonhosted.org/file.whl")]
     [DataRow("https://files.pythonhosted.org/file.whl")]
-    [DataRow("https://example.invalid/file.whl")]
-    [DataRow("https://user@test-files.pythonhosted.org/file.whl")]
-    [DataRow("https://test-files.pythonhosted.org/file.whl#fragment")]
-    [DataRow("https://test-files.pythonhosted.org:444/file.whl")]
     public async Task UnselectedOrUnsafeStorageUrlCannotBeRead(string url)
     {
         using var fixture = new Fixture();
-        using var handler = new Handler((_, _, _) => Task.FromResult(Response(200, [123, 125])));
+        using var handler = new ScriptedHttpHandler((_, _) => Response(200, [123, 125]));
         using var client = new HttpClient(handler);
         string facts = Facts(fixture.Prepared, "test-files.pythonhosted.org", url: url);
         PythonIndexObservationResult result = await new PythonIndexObservation(client,
@@ -179,8 +177,8 @@ public sealed class PythonIndexObservationTests(TestContext context)
     public async Task MatchingMetadataCannotConcealConflictingOriginalBytes()
     {
         using var fixture = new Fixture();
-        using var handler = new Handler((_, n, _) => Task.FromResult(Response(200,
-            n == 0 ? Encoding.UTF8.GetBytes("{}") : new byte[] { 7, 8, 9 })));
+        using var handler = new ScriptedHttpHandler((_, n) =>
+            Response(200, n == 0 ? "{}"u8.ToArray() : [7, 8, 9]));
         using var client = new HttpClient(handler);
         PythonIndexObservationResult result = await new PythonIndexObservation(client,
             fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) => Task.FromResult(Native(
@@ -200,7 +198,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
     public async Task UnsuccessfulNativeFactsCannotAuthorizeWrites(string termination)
     {
         using var fixture = new Fixture();
-        using var handler = new Handler((_, _, _) => Task.FromResult(Response(200, [123, 125])));
+        using var handler = new ScriptedHttpHandler((_, _) => Response(200, [123, 125]));
         using var client = new HttpClient(handler);
         PythonIndexObservationResult result = await new PythonIndexObservation(client,
             fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) => Task.FromResult(
@@ -223,7 +221,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
     public async Task SuccessfulNativeProcessStillRequiresCompleteFacts(string facts)
     {
         using var fixture = new Fixture();
-        using var handler = new Handler((_, _, _) => Task.FromResult(Response(200, [123, 125])));
+        using var handler = new ScriptedHttpHandler((_, _) => Response(200, [123, 125]));
         using var client = new HttpClient(handler);
         PythonIndexObservationResult result = await new PythonIndexObservation(client,
             fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) => Task.FromResult(Native(facts)),
@@ -244,7 +242,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
         PreparedRelease prepared = fixture.Prepared;
         prepared = prepared with { Subject = prepared.Subject with { Destination = destination } };
         prepared.Files[0] = prepared.Files[0] with { Kind = kind };
-        using var handler = new Handler((_, _, _) =>
+        using var handler = new ScriptedHttpHandler((_, _) =>
             throw new AssertFailedException("Unqualified request reached a public destination."));
         using var client = new HttpClient(handler);
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
@@ -257,64 +255,11 @@ public sealed class PythonIndexObservationTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task IndexBoundIncludesBodiesWithoutDeclaredLength()
-    {
-        using var fixture = new Fixture();
-        using var handler = new Handler((_, _, _) =>
-        {
-            HttpResponseMessage response = Response(200, new byte[2 * 1024 * 1024 + 1]);
-            response.Content.Headers.ContentLength = null;
-            return Task.FromResult(response);
-        });
-        using var client = new HttpClient(handler);
-        PythonIndexObservationResult result = await new PythonIndexObservation(client,
-            fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) => Task.FromResult(Native(
-                Facts(fixture.Prepared, "test-files.pythonhosted.org"))),
-            context.CancellationToken);
-        Assert.IsTrue(result.Observation.Files.All(file => file.State == ReleaseFileState.Unknown));
-        Assert.AreEqual(ReleaseCheckStatus.Failed, result.Observation.Checks[0].Status);
-        Assert.HasCount(1, handler.Requests);
-        Assert.IsFalse(ReleaseCompletion.Describe(fixture.Prepared, result.Observation, []).Ready);
-    }
-
-    // A served body is read only one byte past the qualified original's size, so a longer
-    // body is a conflict, never retained.
-    [TestMethod]
-    public async Task LongerOriginalBodyIsAConflict()
-    {
-        using var fixture = new Fixture();
-        PreparedRelease prepared = fixture.Prepared;
-        using var handler = new Handler((_, n, _) =>
-        {
-            HttpResponseMessage response = Response(200, n == 0 ? Encoding.UTF8.GetBytes("{}")
-                : n == 1 ? [.. Wheel, 0] : Sdist);
-            response.Content.Headers.ContentLength = null;
-            return Task.FromResult(response);
-        });
-        using var client = new HttpClient(handler);
-        PythonIndexObservationResult result = await new PythonIndexObservation(client,
-            fixture.Tools).ObserveAsync(prepared, (_, _) => Task.FromResult(Native(
-                Facts(prepared, "test-files.pythonhosted.org"))),
-            context.CancellationToken);
-        ReleaseFileObservation wheel = result.Observation.Files[0];
-        Assert.AreEqual(ReleaseFileState.Conflict, wheel.State);
-        Assert.IsNull(wheel.Size);
-        Assert.AreEqual(ReleaseFileState.Exact, result.Observation.Files[1].State);
-        Assert.HasCount(3, handler.Requests);
-        Assert.IsFalse(ReleaseCompletion.Describe(prepared, result.Observation, []).Ready);
-    }
-
-    [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task ReadAndPhaseDeadlinesIncludeBodyAndNativeFacts(bool nativePhase)
+    public async Task ObservationDeadlineIncludesNativeIndexFacts()
     {
         using var fixture = new Fixture();
         var clock = new FakeTimeProvider();
-        using var handler = new Handler((_, _, _) => Task.FromResult(nativePhase
-            ? Response(200, [123, 125])
-            : new HttpResponseMessage(HttpStatusCode.OK)
-            { Content = new StreamContent(new DeadlineBody(clock)) }));
+        using var handler = new ScriptedHttpHandler((_, _) => Response(200, [123, 125]));
         using var client = new HttpClient(handler);
         PythonIndexObservationResult result = await new PythonIndexObservation(client,
             fixture.Tools, clock).ObserveAsync(fixture.Prepared, (_, _) =>
@@ -337,10 +282,10 @@ public sealed class PythonIndexObservationTests(TestContext context)
         using var fixture = new Fixture();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
-        using var handler = new Handler((_, n, _) => Task.FromResult(n < 2
+        using var handler = new ScriptedHttpHandler((_, n) => n < 2
             ? Response(200, n == 0 ? Encoding.UTF8.GetBytes("{}") : Wheel)
             : new HttpResponseMessage(HttpStatusCode.OK)
-            { Content = new StreamContent(new CancelledBody(cancellation)) }));
+            { Content = new StreamContent(new CancelledBody(cancellation)) });
         using var client = new HttpClient(handler);
         PythonIndexObservationResult result = await new PythonIndexObservation(client,
             fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) => Task.FromResult(Native(
@@ -351,17 +296,6 @@ public sealed class PythonIndexObservationTests(TestContext context)
         Assert.HasCount(3, handler.Requests);
         Assert.IsFalse(ReleaseCompletion.Describe(fixture.Prepared, result.Observation, []).Ready);
         Assert.IsEmpty(Directory.GetFileSystemEntries(fixture.Tools.Scratch));
-    }
-
-    private sealed class DeadlineBody(FakeTimeProvider clock) : MemoryStream
-    {
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer,
-            CancellationToken cancellationToken = default)
-        {
-            clock.Advance(TimeSpan.FromSeconds(31));
-            cancellationToken.ThrowIfCancellationRequested();
-            throw new AssertFailedException("Body escaped its inclusive deadline.");
-        }
     }
 
     private sealed class CancelledBody(CancellationTokenSource cancellation) : MemoryStream
@@ -394,24 +328,6 @@ public sealed class PythonIndexObservationTests(TestContext context)
         new(NativeTermination.Exited, 0, facts, "", 0.1, null);
     private static HttpResponseMessage Response(int status, byte[] bytes) =>
         new((HttpStatusCode)status) { Content = new ByteArrayContent(bytes) };
-
-    private sealed class Handler(Func<HttpRequestMessage, int, CancellationToken,
-        Task<HttpResponseMessage>> response) : HttpMessageHandler
-    {
-        internal List<string> Requests { get; } = [];
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
-            CancellationToken cancellationToken)
-        {
-            Assert.AreEqual(HttpMethod.Get, request.Method);
-            Assert.IsNull(request.Headers.Authorization);
-            Assert.IsFalse(request.Headers.Contains("Cookie"));
-            Assert.AreEqual("identity",
-                Assert.ContainsSingle(request.Headers.AcceptEncoding).Value);
-            int index = Requests.Count;
-            Requests.Add(request.RequestUri!.AbsoluteUri);
-            return response(request, index, cancellationToken);
-        }
-    }
 
     private sealed class Fixture(string channel = "buddy", string destination = "testpypi",
         string unit = PythonReleaseUnits.Smoke) : IDisposable

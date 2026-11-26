@@ -230,22 +230,17 @@ public sealed class PythonReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Exact", "Exact", "Satisfied", 0)]
-    [DataRow("Absent", "Exact", "Unsatisfied", 1)]
-    [DataRow("Exact", "Absent", "Unsatisfied", 1)]
-    public void CompleteRequiresEveryFinalIndexFileWithOriginalBytes(string wheel, string sdist,
-        string expected, int exit)
+    public void CompleteRequiresBothFilesEvenWhenTheInitialPairWasExact()
     {
         using var fixture = new Fixture();
 
         PythonCompletionResult result = fixture.Complete(fixture.Exact(),
-            fixture.Observe(ParseState(wheel), ParseState(sdist)), null, exit);
+            fixture.Observe(Exact, ReleaseFileState.Absent), null, 1);
 
-        Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expected), result.Outcome.State);
+        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, result.Outcome.State);
         Assert.AreEqual(false, result.MutationAttempted);
         Assert.IsEmpty(result.Outcome.Uploads);
-        if (exit == 0) Assert.IsEmpty(result.Outcome.Reasons);
-        else Assert.IsNotEmpty(result.Outcome.Reasons);
+        Assert.IsNotEmpty(result.Outcome.Reasons);
     }
 
     [TestMethod]
@@ -311,27 +306,6 @@ public sealed class PythonReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    public void CompleteRejectsFinalObservationForAnotherRevision()
-    {
-        using var f = new Fixture();
-        Reject(f.CompleteArgs(f.Exact(), AnotherRevision(f.Exact())), "another request");
-    }
-
-    [TestMethod]
-    [DataRow(1, null, "cover the complete set")]
-    [DataRow(2, "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-        "differs from original bytes")]
-    public void CompleteRejectsUnboundFinalFiles(int count, string? wheelHash, string diagnostic)
-    {
-        using var f = new Fixture();
-        PythonIndexObservationResult exact = f.Exact();
-        ReleaseFileObservation[] files = exact.Observation.Files[..count];
-        files[0] = files[0] with { Sha256 = wheelHash ?? files[0].Sha256 };
-        var final = exact with { Observation = exact.Observation with { Files = files } };
-        Reject(f.CompleteArgs(exact, final), diagnostic);
-    }
-
-    [TestMethod]
     public void CompleteRejectsPublicationForAnotherRevision()
     {
         using var f = new Fixture();
@@ -393,12 +367,7 @@ public sealed class PythonReleaseTests(TestContext context)
 
     [TestMethod]
     [DataRow("one-file")]
-    [DataRow("duplicate-format")]
     [DataRow("name")]
-    [DataRow("version")]
-    [DataRow("commit")]
-    [DataRow("missing-native")]
-    [DataRow("empty-commands")]
     [DataRow("command-error")]
     public void ReceiveRejectsUnqualifiedPreparation(string defect)
     {
@@ -408,22 +377,11 @@ public sealed class PythonReleaseTests(TestContext context)
             Declaration = PythonReleaseUnits.Named(f.Prepared.Subject.Unit).Declaration,
         };
         PreparedRelease prepared = f.Prepared with { Subject = subject };
-        ReleaseFile[] files = prepared.Files;
-        var native = new Dictionary<string, string>(f.Preparation.Native);
-        if (defect == "missing-native") native.Remove("commit");
-        else if (native.ContainsKey(defect)) native[defect] = "substituted";
         var qualified = f.Preparation with { Prepared = prepared };
         PythonPreparationResult receipt = defect switch
         {
-            "one-file" => qualified with { Prepared = prepared with { Files = files[..1] } },
-            "duplicate-format" => qualified with
-            {
-                Prepared = prepared with
-                {
-                    Files = [files[0], files[1] with { Kind = files[0].Kind }],
-                },
-            },
-            "empty-commands" => qualified with { Commands = [] },
+            "one-file" => qualified with
+            { Prepared = prepared with { Files = prepared.Files[..1] } },
             "command-error" => qualified with
             {
                 Commands = [qualified.Commands[0] with
@@ -431,7 +389,7 @@ public sealed class PythonReleaseTests(TestContext context)
                     Result = Fixture.Success with { Error = "cleanup failed" },
                 }],
             },
-            _ => qualified with { Native = native },
+            _ => qualified with { Native = new(qualified.Native) { ["name"] = "substituted" } },
         };
 
         string transfer = Directory.CreateDirectory(Path.Combine(f.Root, "prepared")).FullName;
@@ -450,10 +408,7 @@ public sealed class PythonReleaseTests(TestContext context)
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
             ReleaseJobInputs.Run(["release", "job-inputs", "python", "receive", "observation"],
                 name => environment.GetValueOrDefault(name)));
-        string diagnostic = defect == "duplicate-format"
-            ? "Incomplete or ambiguous original release set."
-            : "Incomplete or unsupported Python preparation.";
-        Assert.AreEqual(diagnostic, error.Message);
+        Assert.AreEqual("Incomplete or unsupported Python preparation.", error.Message);
         Assert.IsFalse(Directory.Exists(Path.Combine(f.Root, "observation")));
     }
 

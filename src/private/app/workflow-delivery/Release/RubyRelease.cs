@@ -64,15 +64,10 @@ internal static class RubyRelease
     internal static bool Missing(PreparedRelease prepared, RubyObservationResult result)
     {
         ValidateObservation(prepared, result);
-        if (!ReleasePolicy.Qualified(result.Observation.RequiredChecks,
-                result.Observation.Checks) ||
-            result.Observation.Files is not [
-                {
-                    State: ReleaseFileState.Exact or
-                ReleaseFileState.Absent
-                }])
+        if (result.Observation.Files.Length != 1)
             throw new InvalidDataException("Current Ruby state cannot permit creation.");
-        return result.Observation.Files[0].State == ReleaseFileState.Absent;
+        return ReleaseCompletion.Missing(result.Observation,
+            "Current Ruby state cannot permit creation.").Length != 0;
     }
 
     internal static async Task<RubyPublicationResult> PublishAsync(

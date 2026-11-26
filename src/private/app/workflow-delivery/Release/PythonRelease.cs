@@ -63,15 +63,9 @@ internal static class PythonRelease
         PythonIndexObservationResult observation)
     {
         ValidateObservation(prepared, observation);
-        if (!ReleasePolicy.Qualified(observation.Observation.RequiredChecks,
-                observation.Observation.Checks) ||
-            observation.Observation.Files.Any(file => file.State is not
-                (ReleaseFileState.Exact or ReleaseFileState.Absent)))
-            throw new InvalidDataException("Current Python state cannot permit creation.");
-        return Formats.Select(kind => prepared.Files.Single(file => file.Kind == kind))
-            .Where(file => observation.Observation.Files.Single(value =>
-                value.Output == file.Output).State == ReleaseFileState.Absent)
-            .Select(file => file.Output).ToArray();
+        return ReleaseCompletion.Missing(observation.Observation,
+            "Current Python state cannot permit creation.",
+            Formats.Select(kind => prepared.Files.Single(file => file.Kind == kind).Output));
     }
 
     internal static void ValidateObservation(PreparedRelease prepared,

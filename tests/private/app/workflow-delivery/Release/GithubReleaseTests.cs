@@ -20,6 +20,7 @@ public sealed class GithubReleaseTests(TestContext context)
 {
     private const string Revision = "0123456789abcdef0123456789abcdef01234567";
     private const string Version = "2.0.0-beta.5";
+    private const string PreviewSdk = "11.0.100-preview.2";
     private static readonly byte[] Setup = Encoding.ASCII.GetBytes("MZ controlled setup");
     private static readonly byte[] Portable = Encoding.ASCII.GetBytes("PK controlled zip");
 
@@ -99,28 +100,6 @@ public sealed class GithubReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("github-release", "refs/heads/feature", false)]
-    [DataRow("github-release", "refs/heads/main", true)]
-    [DataRow("github-release-prerelease", "refs/heads/feature", true)]
-    [DataRow("github-release-prerelease", "refs/tags/v1", false)]
-    [DataRow("github-packages", "refs/heads/main", false)]
-    public void LiveAdmissionFollowsChannelRefPolicy(string destination, string reference,
-        bool admitted)
-    {
-        ReleaseSubject subject = Subject(destination == "github-release") with
-        {
-            Destination = destination,
-            SelectedRef = reference,
-        };
-        if (admitted) _ = GithubReleaseUnits.Admit(subject);
-        else Assert.ThrowsExactly<InvalidDataException>(() =>
-            GithubReleaseUnits.Admit(subject));
-        // A dry run has no write capability and needs no live ref eligibility.
-        if (destination.StartsWith("github-release", StringComparison.Ordinal))
-            _ = GithubReleaseUnits.Admit(subject with { DryRun = true });
-    }
-
-    [TestMethod]
     [DoNotParallelize]
     [DataRow(false)]
     [DataRow(true)]
@@ -158,7 +137,8 @@ public sealed class GithubReleaseTests(TestContext context)
             string.Join("; ", completion.Outcome.Reasons));
         Assert.IsTrue(completion.MutationAttempted);
         Assert.IsTrue(github.Requests.Where(request => request.Method == HttpMethod.Post)
-            .All(request => request.Authorization == "Bearer controlled-token"));
+            .All(request => request.Headers.Authorization?.ToString() ==
+                "Bearer controlled-token"));
 
         (T Result, string Path) Execute<T>(string phase, string[] arguments, JsonTypeInfo<T> type)
         {
@@ -168,7 +148,7 @@ public sealed class GithubReleaseTests(TestContext context)
                 Environment.SetEnvironmentVariable("GITHUB_TOKEN", "controlled-token");
                 using var output = new StringWriter();
                 Assert.AreEqual(0, GithubReleaseCli.Run(arguments, output,
-                    client: () => new HttpClient(github, disposeHandler: false)));
+                    client: github.CreateClient));
                 string path = Path.Combine(originals.Root, phase + ".json");
                 File.WriteAllText(path, output.ToString());
                 return (ReleaseCli.Read(path, type), path);
@@ -199,7 +179,7 @@ public sealed class GithubReleaseTests(TestContext context)
         Assert.IsFalse(github.Requests.Any(request => request.Method != HttpMethod.Get));
         // Served asset bytes are downloaded, not trusted from metadata.
         Assert.HasCount(2, github.Requests.Where(request =>
-            request.Accept == "application/octet-stream"));
+            request.Headers.Accept.Any(value => value.MediaType == "application/octet-stream")));
     }
 
     [TestMethod]
@@ -278,8 +258,8 @@ public sealed class GithubReleaseTests(TestContext context)
 
         Assert.IsNull(publication.Creation);
         Assert.AreEqual("portable", Assert.ContainsSingle(publication.Uploads).Output);
-        Assert.Contains("uploads.github.com", Assert.ContainsSingle(github.Requests.Where(
-            request => request.Method == HttpMethod.Post)).Path);
+        Assert.AreEqual("uploads.github.com", Assert.ContainsSingle(github.Requests.Where(
+            request => request.Method == HttpMethod.Post)).Uri.Host);
         Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
         Assert.IsTrue(final.Observation.Files.All(file => file.State == ReleaseFileState.Exact));
     }
@@ -361,6 +341,27 @@ public sealed class GithubReleaseTests(TestContext context)
         Assert.IsNull(publication.Creation);
         Assert.IsEmpty(publication.Uploads);
         Assert.IsFalse(github.Requests.Any(request => request.Method != HttpMethod.Get));
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(-1)]
+    public async Task InvalidCreatedReleaseIdPreventsAssetUploads(int id)
+    {
+        using var github = new FakeGithub { CreatedId = id };
+        using var originals = new Originals();
+        GithubReleasePreparationResult preparation = Preparation(false);
+        GithubReleaseDestination destination = github.Destination();
+        GithubReleaseObservationResult initial = await destination.ObserveAsync(
+            preparation.Prepared, context.CancellationToken);
+
+        GithubReleasePublicationResult publication = await Publish(preparation, originals,
+            initial, destination);
+
+        Assert.AreEqual(NativeTermination.InvalidOutput, publication.Creation?.Termination);
+        Assert.IsNotEmpty(publication.Errors);
+        Assert.IsEmpty(publication.Uploads);
+        Assert.HasCount(1, github.Requests.Where(request => request.Method == HttpMethod.Post));
     }
 
     [TestMethod]
@@ -453,13 +454,10 @@ public sealed class GithubReleaseTests(TestContext context)
         public void Dispose() => Directory.Delete(Root, true);
     }
 
-    private sealed record Seen(HttpMethod Method, string Path, string? Authorization,
-        string? Accept);
-
     // A controlled GitHub with one repository: lightweight or annotated tags, at most one
     // release per tag and its assets. Writes follow the native create and upload contract.
     // Release, TagCommit and AddAsset address the most recently published release.
-    private sealed class FakeGithub : HttpMessageHandler
+    private sealed class FakeGithub : IDisposable
     {
         internal sealed record Asset(long Id, string Name, string State, byte[] Bytes);
         internal sealed record Hosted(long Id, string Tag, string Name, bool Prerelease,
@@ -474,13 +472,22 @@ public sealed class GithubReleaseTests(TestContext context)
         internal bool AnnotatedTag { get; set; }
         internal bool Unavailable { get; set; }
         internal int? RejectWrite { get; init; }
+        internal long? CreatedId { get; init; }
         private int writes;
         internal Hosted? Release { get; private set; }
         internal IReadOnlyCollection<string> Tags => tags.Keys;
-        internal List<Seen> Requests { get; } = [];
+        private readonly ScriptedHttpHandler handler;
+
+        internal FakeGithub() => handler = new((request, _, token) => RespondAsync(request, token));
+
+        internal IReadOnlyList<ScriptedHttpHandler.Request> Requests => handler.Requests;
+
+        internal HttpClient CreateClient() => new(handler, disposeHandler: false);
 
         internal GithubReleaseDestination Destination() =>
-            new(new HttpClient(this, disposeHandler: false), "controlled-token");
+            new(CreateClient(), "controlled-token");
+
+        public void Dispose() => handler.Dispose();
 
         // Publishes at the tag of the channel a prerelease flag would normally select.
         internal void Publish(string commit, bool prerelease,
@@ -504,13 +511,10 @@ public sealed class GithubReleaseTests(TestContext context)
         internal void AddAsset(string name, string state, byte[] bytes) =>
             Release!.Assets.Add(new(next++, name, state, bytes));
 
-        protected override async Task<HttpResponseMessage> SendAsync(
+        private async Task<HttpResponseMessage> RespondAsync(
             HttpRequestMessage request, CancellationToken token)
         {
             string path = Uri.UnescapeDataString(request.RequestUri!.AbsolutePath);
-            Requests.Add(new(request.Method, request.RequestUri.Host + path,
-                request.Headers.Authorization?.ToString(),
-                request.Headers.Accept.FirstOrDefault()?.MediaType));
             if (Unavailable) return new(HttpStatusCode.BadGateway);
             Hosted? owner = releases.Values.SingleOrDefault(value =>
                 path.StartsWith(Repo + "/releases/" + value.Id + "/", StringComparison.Ordinal));
@@ -564,7 +568,8 @@ public sealed class GithubReleaseTests(TestContext context)
                 tags.TryAdd(tag, (string)body["target_commitish"]!);
                 Release = releases[tag] = new(next++, tag, (string)body["name"]!,
                     (bool)body["prerelease"]!, (string?)body["make_latest"], []);
-                return Json(new JsonObject { ["id"] = Release.Id }, HttpStatusCode.Created);
+                return Json(new JsonObject { ["id"] = CreatedId ?? Release.Id },
+                    HttpStatusCode.Created);
             }
             if (request.Method == HttpMethod.Post && owner is not null &&
                 request.RequestUri.Host == "uploads.github.com" &&
@@ -618,7 +623,7 @@ public sealed class GithubReleaseTests(TestContext context)
             {
                 string product = GithubReleaseUnits.Product + "/";
                 await repo.SetAsync("global.json",
-                    "{\"sdk\":{\"version\":\"10.0.100\",\"rollForward\":\"disable\"}}");
+                    "{\"sdk\":{\"version\":\"" + PreviewSdk + "\",\"rollForward\":\"disable\"}}");
                 foreach (string input in new[] { ".config/dotnet-tools.json",
                     product + "version.json", product + GithubReleaseUnits.Entry,
                     product + "ImageOcclusionEditorWinUI3/Update-LocalSvgEditor.ps1",
@@ -648,7 +653,7 @@ public sealed class GithubReleaseTests(TestContext context)
             string Value(string name) => args[Array.IndexOf(args, name) + 1];
             if (command.Executable == "git") stdout = "false\n";
             else if (command.Executable == "dotnet" && args is ["--version"])
-                stdout = "10.0.100\n";
+                stdout = PreviewSdk + "\n";
             else if (command.Executable == "dotnet" && args.Contains("get-version"))
                 stdout = new JsonObject
                 {

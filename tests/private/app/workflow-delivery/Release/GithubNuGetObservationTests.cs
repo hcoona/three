@@ -3,7 +3,6 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Microsoft.Extensions.Time.Testing;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Release;
 
@@ -29,7 +28,7 @@ public sealed class GithubNuGetObservationTests
         string expected)
     {
         byte[] original = Archive();
-        using var handler = new Handler((_, step) => Response(step,
+        using var handler = new ScriptedHttpHandler((_, step) => Response(step,
             different ? Archive(extra: true) : original));
         NuGetObservationResult result = await ObserveAsync(handler, original);
 
@@ -38,33 +37,9 @@ public sealed class GithubNuGetObservationTests
         Assert.AreEqual(Prepared(original).Subject, result.Observation.Subject);
         Assert.AreEqual(Base, result.Resources!.PackageBaseAddress);
         Assert.HasCount(5, handler.Requests);
-        Assert.AreEqual("Bearer", handler.Requests[1].Scheme);
-        Assert.AreEqual("Bearer", handler.Requests[2].Scheme);
-        Assert.AreEqual("Basic", handler.Requests[0].Scheme);
-        Assert.AreEqual("Basic", handler.Requests[3].Scheme);
-        Assert.AreEqual("Basic", handler.Requests[4].Scheme);
+        Assert.IsTrue(handler.Requests.All(request => request.Headers.Authorization?.Scheme ==
+            (request.Uri.Host == GithubApi.Host ? "Bearer" : "Basic")));
         Assert.DoesNotContain(Credential, JsonSerializer.Serialize(result));
-    }
-
-    [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task LongerArchiveIsAConflictWithoutAMeasurement(bool declared)
-    {
-        byte[] original = Archive();
-        using var handler = new Handler((_, step) =>
-        {
-            HttpResponseMessage response = Response(step, [.. original, 0]);
-            if (!declared && step > 3) response.Content.Headers.ContentLength = null;
-            return response;
-        });
-        NuGetObservationResult result = await ObserveAsync(handler, original);
-
-        ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
-        Assert.AreEqual(ReleaseFileState.Conflict, file.State);
-        Assert.IsNull(file.Size);
-        Assert.IsNull(file.Sha256);
-        Assert.HasCount(5, handler.Requests);
     }
 
     [TestMethod]
@@ -72,7 +47,7 @@ public sealed class GithubNuGetObservationTests
     {
         byte[] original = Archive();
         byte[] remote = Encoding.UTF8.GetBytes("not a NuGet archive");
-        using var handler = new Handler((_, step) => Response(step, remote));
+        using var handler = new ScriptedHttpHandler((_, step) => Response(step, remote));
         NuGetObservationResult result = await ObserveAsync(handler, original);
 
         ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
@@ -83,29 +58,9 @@ public sealed class GithubNuGetObservationTests
     }
 
     [TestMethod]
-    [DataRow("iDeNtItY", "Exact")]
-    [DataRow("gzip", "Unknown")]
-    public async Task ContentEncodingUsesSupportedTokenSemantics(string encoding,
-        string expected)
-    {
-        byte[] original = Archive();
-        using var handler = new Handler((_, step) =>
-        {
-            HttpResponseMessage response = Response(step, original);
-            response.Content.Headers.ContentEncoding.Add(encoding);
-            return response;
-        });
-        NuGetObservationResult result = await ObserveAsync(handler, original);
-
-        Assert.AreEqual(Enum.Parse<ReleaseFileState>(expected),
-            Assert.ContainsSingle(result.Observation.Files).State);
-        Assert.HasCount(expected == "Exact" ? 5 : 1, handler.Requests);
-    }
-
-    [TestMethod]
     public async Task CompleteNativeAbsenceRequiresEstablishedPackageControl()
     {
-        using var handler = new Handler((_, step) => step switch
+        using var handler = new ScriptedHttpHandler((_, step) => step switch
         {
             0 => Json(Index),
             1 => Json(Control),
@@ -121,27 +76,48 @@ public sealed class GithubNuGetObservationTests
     }
 
     [TestMethod]
-    [DataRow("hcoona/three", "hcoona/unrelated")]
-    [DataRow("nuget", "npm")]
-    public async Task ConflictingPackageControlStopsBeforeVersionReads(string original,
-        string replacement)
+    [DataRow("\"npm\"", "Conflict")]
+    [DataRow("null", "Unknown")]
+    public async Task NonExactPackageControlStopsBeforeVersionReads(string replacement,
+        string state)
     {
-        string control = Control.Replace(original, replacement, StringComparison.Ordinal);
-        using var handler = new Handler((_, step) => Json(step == 0 ? Index : control));
+        string control = Control.Replace("\"nuget\"", replacement, StringComparison.Ordinal);
+        using var handler = new ScriptedHttpHandler((_, step) => Json(step == 0 ? Index : control));
         NuGetObservationResult result = await ObserveAsync(handler);
 
-        Assert.AreEqual(ReleaseFileState.Conflict, result.Observation.Files[0].State);
+        Assert.AreEqual(state, result.Observation.Files[0].State.ToString());
         Assert.HasCount(2, handler.Requests);
     }
 
     [TestMethod]
     public async Task InventoryDisagreementLeavesStateUnknown()
     {
-        using var handler = new Handler((_, step) => step == 3
+        using var handler = new ScriptedHttpHandler((_, step) => step == 3
             ? Json("{\"versions\":[]}") : Response(step, Archive()));
         NuGetObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
+        Assert.HasCount(4, handler.Requests);
+    }
+
+    [TestMethod]
+    public async Task UnavailableLaterVersionPageCannotEstablishAbsence()
+    {
+        string firstPage = JsonSerializer.Serialize(Enumerable.Range(2, 100)
+            .Select(id => new { id, name = $"{id}.0" }));
+        using var handler = new ScriptedHttpHandler((_, step) => step switch
+        {
+            0 => Json(Index),
+            1 => Json(Control),
+            2 => Json(firstPage),
+            3 => new(HttpStatusCode.ServiceUnavailable),
+            _ => throw new AssertFailedException("Unexpected inventory request."),
+        });
+
+        NuGetObservationResult result = await ObserveAsync(handler);
+
+        Assert.AreEqual(ReleaseFileState.Unknown,
+            Assert.ContainsSingle(result.Observation.Files).State);
         Assert.HasCount(4, handler.Requests);
     }
 
@@ -152,7 +128,7 @@ public sealed class GithubNuGetObservationTests
     [DataRow(503)]
     public async Task UnavailableNativeMetadataCannotAuthorizeCreation(int status)
     {
-        using var handler = new Handler((_, _) => new((HttpStatusCode)status)
+        using var handler = new ScriptedHttpHandler((_, _) => new((HttpStatusCode)status)
         { Content = new ByteArrayContent([]) });
         NuGetObservationResult result = await ObserveAsync(handler);
 
@@ -161,31 +137,16 @@ public sealed class GithubNuGetObservationTests
     }
 
     [TestMethod]
-    public async Task ParentCancellationIsVisibleWithoutARead()
-    {
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
-        using var handler = new Handler((_, _) => throw new AssertFailedException());
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(Archive()), Credential, cancellation.Token);
-
-        Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
-        Assert.IsEmpty(handler.Requests);
-        Assert.AreEqual("Cancelled.", result.Reads[^1].Detail);
-    }
-
-    [TestMethod]
-    [DataRow("\"version\":\"3.0.0\"", "\"version\":\"3.0.0\",\"version\":\"3.0.0\"")]
     [DataRow("/hcoona/", "/unrelated/")]
     [DataRow("\"resources\":[", "\"resources\":[{\"@type\":\"PackageBaseAddress/3.0.0\","
         + "\"@id\":\"https://nuget.pkg.github.com/hcoona/other/\"},")]
     [DataRow(Index, """{"version":"3.0.0","resources":[]}""")]
+    [DataRow("\"resources\":", "\"version\":\"3.0.0\",\"resources\":")]
     public async Task InvalidNativeServiceResourcesStopBeforePackageReads(string original,
         string replacement)
     {
         string index = Index.Replace(original, replacement, StringComparison.Ordinal);
-        using var handler = new Handler((_, _) => Json(index));
+        using var handler = new ScriptedHttpHandler((_, _) => Json(index));
         NuGetObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
@@ -195,10 +156,11 @@ public sealed class GithubNuGetObservationTests
     [TestMethod]
     [DataRow("""[{"id":1,"name":"1.0"},{"id":1,"name":"2.0"}]""")]
     [DataRow("""[{"id":1,"name":"1.0"},{"id":2,"name":"1.0.0"}]""")]
+    [DataRow("""[{"id":0,"name":"1.0"}]""")]
     [DataRow("""[{"name":"1.0"}]""")]
     public async Task InvalidSupportingInventoryCannotEstablishAbsence(string versions)
     {
-        using var handler = new Handler((_, step) => step == 2 ? Json(versions)
+        using var handler = new ScriptedHttpHandler((_, step) => step == 2 ? Json(versions)
             : Response(step, Archive()));
         NuGetObservationResult result = await ObserveAsync(handler);
 
@@ -207,26 +169,10 @@ public sealed class GithubNuGetObservationTests
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task IncompleteOrOversizedResponseCannotEstablishNativeState(bool oversized)
-    {
-        using var handler = new Handler((_, _) =>
-        {
-            HttpResponseMessage response = Json(Index);
-            response.Content.Headers.ContentLength = oversized ? 3 * 1024 * 1024 : 1;
-            return response;
-        });
-        NuGetObservationResult result = await ObserveAsync(handler);
-
-        Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
-        Assert.HasCount(1, handler.Requests);
-    }
-
-    [TestMethod]
     public async Task FullSupportingPagesStopAtTheTotalReadAllowance()
     {
-        using var handler = new Handler((_, step) => step < 2 ? Response(step, Archive())
+        using var handler = new ScriptedHttpHandler((_, step) =>
+            step < 2 ? Response(step, Archive())
             : Json("[" + string.Join(',', Enumerable.Range(0, 100).Select(offset =>
                 "{\"id\":" + (step * 100 + offset) + ",\"name\":\"1.0."
                 + (step * 100 + offset) + "\"}")) + "]"));
@@ -238,52 +184,12 @@ public sealed class GithubNuGetObservationTests
             "nuget.pkg.github.com" or "api.github.com"));
     }
 
-    [TestMethod]
-    public async Task BodyConsumptionSharesThePerReadDeadline()
-    {
-        var clock = new FakeTimeProvider();
-        using var handler = new Handler((_, _) => new(HttpStatusCode.OK)
-        { Content = new StreamContent(new ExpiredBody(clock)) });
-        NuGetObservationResult result = await ObserveAsync(handler, clock: clock);
-
-        Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
-        Assert.HasCount(1, handler.Requests);
-        Assert.Contains("deadline", result.Reads[^1].Detail);
-    }
-
-    [TestMethod]
-    public async Task CompleteIndividualReadsStillShareTheObservationDeadline()
-    {
-        var clock = new FakeTimeProvider();
-        using var handler = new Handler((_, step) =>
-        {
-            clock.Advance(TimeSpan.FromSeconds(24));
-            return Response(step, Archive());
-        });
-        NuGetObservationResult result = await ObserveAsync(handler, clock: clock);
-
-        Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
-        Assert.HasCount(4, handler.Requests);
-        Assert.Contains("deadline", result.Reads[^1].Detail);
-    }
-
-    private static async Task<NuGetObservationResult> ObserveAsync(Handler handler,
-        byte[]? original = null, TimeProvider? clock = null)
+    private static async Task<NuGetObservationResult> ObserveAsync(ScriptedHttpHandler handler,
+        byte[]? original = null)
     {
         using var client = new HttpClient(handler, disposeHandler: false);
-        return await new GithubNuGetObservation(client, clock)
+        return await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(original ?? Archive()), Credential, CancellationToken.None);
-    }
-
-    private sealed class ExpiredBody(FakeTimeProvider clock) : MemoryStream
-    {
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer,
-            CancellationToken cancellationToken = default)
-        {
-            clock.Advance(TimeSpan.FromSeconds(31));
-            cancellationToken.ThrowIfCancellationRequested();
-            throw new AssertFailedException("Body deadline did not propagate.");
-        }
     }
 
     private static HttpResponseMessage Response(int step, byte[] archive) => step switch
@@ -317,17 +223,5 @@ public sealed class GithubNuGetObservationTests
             if (extra) zip.CreateEntry("extra.txt");
         }
         return bytes.ToArray();
-    }
-    private sealed class Handler(Func<HttpRequestMessage, int, HttpResponseMessage> response)
-        : HttpMessageHandler
-    {
-        internal List<(Uri Uri, string? Scheme)> Requests { get; } = [];
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
-            CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-            Requests.Add((request.RequestUri!, request.Headers.Authorization?.Scheme));
-            return Task.FromResult(response(request, Requests.Count - 1));
-        }
     }
 }

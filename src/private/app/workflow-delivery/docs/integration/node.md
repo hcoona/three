@@ -543,24 +543,16 @@ obligation beyond the code it cites.
 - **Endpoints.** GitHub Packages Buddy observes package control at
   `https://api.github.com/users/hcoona/packages/npm/<unscoped name>` and
   metadata and tarballs for `@hcoona/<unscoped name>` at `https://npm.pkg.github.com`
-  ([GithubNpmObservation `Registry`/`Api`](../../Destinations/GithubNpmObservation.cs)).
+  ([GitHub npm observation](../../Destinations/GithubNpmObservation.cs)).
   It accepts only HTTPS port 443 on those hosts and the GitHub package storage
-  hosts ([`ValidateUri`](../../Destinations/GithubNpmObservation.cs)). npmjs
-  Official observation reads only `https://registry.npmjs.org`
-  ([NpmjsObservation `ObserveAsync`](../../Destinations/NpmjsObservation.cs),
-  [`ValidateUri`](../../Destinations/NpmjsObservation.cs)).
+  hosts. [npmjs Official observation](../../Destinations/NpmjsObservation.cs)
+  reads only `https://registry.npmjs.org`. Both enforce their chosen origins
+  through the [shared destination HTTP session](../../Destinations/DestinationHttp.cs).
 - **Observation bounds.** Each observation has a 60-second operation deadline
   and a 20-second deadline per request including its body, with metadata bodies
-  limited to 1,000,000 bytes
-  ([GithubNpmObservation `ObserveAsync`](../../Destinations/GithubNpmObservation.cs),
-  [`Metadata`](../../Destinations/GithubNpmObservation.cs),
-  [`ReadAsync`](../../Destinations/GithubNpmObservation.cs);
-  [NpmjsObservation `ObserveAsync`](../../Destinations/NpmjsObservation.cs),
-  [metadata read](../../Destinations/NpmjsObservation.cs),
-  [`ReadAsync`](../../Destinations/NpmjsObservation.cs)). The GitHub reader attaches
-  its Bearer credential only to `api.github.com` and `npm.pkg.github.com`
-  ([`ReadAsync`](../../Destinations/GithubNpmObservation.cs)); npmjs reads
-  are public. Both use the shared registry client and redirect contract in the
+  limited to 1,000,000 bytes. The GitHub reader attaches its Bearer credential
+  only to `api.github.com` and `npm.pkg.github.com`; npmjs reads are public.
+  Both use the shared registry client and redirect contract in the
   [MLD](../design/release.md#registry-observation-and-retention).
 - **Preparation tools.** Node and PNPM follow the root
   [locked tool selection](common.md#locked-tool-selection)

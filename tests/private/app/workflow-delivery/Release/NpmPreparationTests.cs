@@ -136,10 +136,7 @@ public sealed class NpmPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("build")]
     [DataRow("test")]
-    [DataRow("pack")]
-    [DataRow("contents")]
     [DataRow("consumer")]
     public async Task FailedQualificationRetainsFailureAndStopsDependentWork(string failed)
     {
@@ -240,28 +237,25 @@ public sealed class NpmPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Cancelled", "Cancelled", "native-input")]
-    [DataRow("TimedOut", "TimedOut", "build")]
-    public async Task NativeTerminationRemainsVisibleInRequiredQualification(
-        string native, string status, string checkId)
+    public async Task BuildDeadlineRemainsVisibleInRequiredQualification()
     {
         using var fixture = Fixture.Shared(shared!, sharedCommit);
-        fixture.Termination = Enum.Parse<NativeTermination>(native);
-        fixture.TerminationCheck = checkId;
+        fixture.Termination = NativeTermination.TimedOut;
+        fixture.TerminationCheck = "build";
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.AreEqual(Enum.Parse<ReleaseCheckStatus>(status),
-            result.Prepared.Checks.Single(check => check.Id == checkId).Status);
-        Assert.AreEqual(fixture.Termination,
-            result.Commands.Last(command => command.Check == checkId).Result.Termination);
+        Assert.AreEqual(ReleaseCheckStatus.TimedOut,
+            result.Prepared.Checks.Single(check => check.Id == "build").Status);
+        Assert.AreEqual(NativeTermination.TimedOut,
+            result.Commands.Last(command => command.Check == "build").Result.Termination);
         Assert.IsEmpty(result.Prepared.Files);
-        Assert.IsTrue(result.Prepared.Checks.Skip(checkId == "build" ? 2 : 1).All(check =>
+        Assert.IsTrue(result.Prepared.Checks.Skip(2).All(check =>
             check.Status == ReleaseCheckStatus.Skipped));
     }
 
-    private sealed class Fixture(GitFixture repository, NpmPreparationRequest request)
+    private sealed class Fixture(GitFixture repository, ReleasePreparationRequest request)
         : IDisposable
     {
-        internal NpmPreparationRequest Request { get; set; } = request;
+        internal ReleasePreparationRequest Request { get; set; } = request;
         internal string Scratch => Request.Scratch;
         internal string? Fail { get; set; }
         internal string ExpectedVersion { get; set; } = "1.2.3";

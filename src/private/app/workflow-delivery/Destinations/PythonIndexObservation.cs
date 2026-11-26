@@ -7,9 +7,8 @@ using WorkflowDelivery.Release;
 namespace WorkflowDelivery.Destinations;
 
 internal sealed record PythonIndexTools(string Interpreter, string Helper, string Scratch);
-internal sealed record PythonIndexRead(string Stage, int? Status, string Detail);
 internal sealed record PythonIndexObservationResult(ReleaseObservation Observation,
-    PythonIndexRead[] Reads);
+    DestinationRead[] Reads) : IReleaseObservation;
 
 // Packaging interprets native coordinates. This component reads the selected
 // public index and compares qualified originals; it has no publication capability.
@@ -46,29 +45,27 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
             Directory.EnumerateFileSystemEntries(tools.Scratch).Any())
             throw new InvalidDataException("Public index facts require owned empty tool scratch.");
 
-        var reads = new List<PythonIndexRead>();
         var files = prepared.Files.Select(file => FileState(file, ReleaseFileState.Unknown))
             .ToArray();
         ReleaseCheckStatus? phaseFailure = null;
         string input = Path.Combine(tools.Scratch, Guid.NewGuid().ToString("N") + ".json");
-        using var phase = new CancellationTokenSource(TimeSpan.FromSeconds(90),
-            clock ?? TimeProvider.System);
-        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token, phase.Token);
+        using var session = new DestinationHttpSession(client, clock, TimeSpan.FromSeconds(90),
+            TimeSpan.FromSeconds(30), token, noCache: true, skipUnexpectedStatus: true,
+            headerDetail: "Received public response headers.");
         try
         {
             var indexUri = new Uri($"https://{origin}/simple/{package}/");
-            (int status, byte[] body) = await ReadAsync("index", indexUri, origin,
-                (stream, length, read) => RegistryBody.LimitedAsync(stream, length,
-                    MetadataLimit, read), []);
+            (int status, byte[] body) = await session.MetadataAsync("index", indexUri, origin,
+                "application/vnd.pypi.simple.v1+json", MetadataLimit);
             if (status == 404) return All(ReleaseFileState.Absent);
             if (status != 200) return All(ReleaseFileState.Unknown);
-            await File.WriteAllBytesAsync(input, body, lifetime.Token);
+            await File.WriteAllBytesAsync(input, body, session.Token);
             NativeCommandResult native = await execute(new(tools.Interpreter, tools.Scratch,
                 ["-I", "-B", tools.Helper, "index-facts", input, package,
-                    prepared.Files[0].Version], 30, InheritEnvironment: false), lifetime.Token);
-            reads.Add(new("native-facts", null,
+                    prepared.Files[0].Version], 30, InheritEnvironment: false), session.Token);
+            session.Reads.Add(new("native-facts", null,
                 $"Native facts terminated as {native.Termination}, exit {native.ExitCode}."));
-            lifetime.Token.ThrowIfCancellationRequested();
+            session.Token.ThrowIfCancellationRequested();
             if (!native.Succeeded) return All(ReleaseFileState.Unknown);
             using JsonDocument facts = JsonDocument.Parse(native.Stdout);
             if (!facts.RootElement.GetProperty("matches_name").GetBoolean())
@@ -105,25 +102,22 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
                     continue;
                 }
                 var archive = new Uri(indexUri, metadata.GetProperty("url").GetString());
-                ValidateUri(archive, storage);
-                (status, RegistryOriginalBytes served) = await ReadAsync(original.Output,
-                    archive, storage, (stream, length, read) => RegistryBody.OriginalAsync(
-                        stream, length, original.Size, retain: false, read),
-                    new RegistryOriginalBytes(null, null, null));
+                (status, RegistryOriginalBytes served) = await session.OriginalAsync(
+                    original.Output, archive, storage, original.Size, retain: false);
                 if (status != 200) continue;
                 files[i] = new(original.Output, original.Name, original.Version,
                     served.Sha256 == original.Sha256 && served.Size == original.Size
                         ? ReleaseFileState.Exact : ReleaseFileState.Conflict,
                     served.Size, served.Sha256);
             }
-            lifetime.Token.ThrowIfCancellationRequested();
+            session.Token.ThrowIfCancellationRequested();
             return Result();
         }
         catch (OperationCanceledException)
         {
             phaseFailure = token.IsCancellationRequested ? ReleaseCheckStatus.Cancelled
                 : ReleaseCheckStatus.TimedOut;
-            reads.Add(new("operation", null, token.IsCancellationRequested
+            session.Reads.Add(new("operation", null, token.IsCancellationRequested
                 ? "Cancelled." : "Read or native-fact deadline exceeded."));
             return Result();
         }
@@ -133,7 +127,8 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
             FormatException or OverflowException)
         {
             phaseFailure = ReleaseCheckStatus.Failed;
-            reads.Add(new("operation", null, "Native facts or complete response unavailable."));
+            session.Reads.Add(new("operation", null,
+                "Native facts or complete response unavailable."));
             return Result();
         }
         finally
@@ -150,44 +145,10 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
             ["public-index-files"], [new("public-index-files",
                 phaseFailure ?? (files.All(file => file.State is
                     ReleaseFileState.Absent or ReleaseFileState.Exact)
-                    ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed))]), [.. reads]);
-
-        async Task<(int, T)> ReadAsync<T>(string stage, Uri uri, string host,
-            Func<Stream, long?, CancellationToken, Task<T>> read, T unread)
-        {
-            ValidateUri(uri, host);
-            using var readTimer = new CancellationTokenSource(TimeSpan.FromSeconds(30),
-                clock ?? TimeProvider.System);
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token,
-                readTimer.Token);
-            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.Accept.ParseAdd(stage == "index"
-                ? "application/vnd.pypi.simple.v1+json" : "application/octet-stream");
-            request.Headers.AcceptEncoding.ParseAdd("identity");
-            request.Headers.CacheControl = new() { NoCache = true };
-            using HttpResponseMessage response = await client.SendAsync(request,
-                HttpCompletionOption.ResponseHeadersRead, deadline.Token);
-            int code = (int)response.StatusCode;
-            reads.Add(new(stage, code, "Received public response headers."));
-            if (code != 200 && code != 404) return (code, unread);
-            if (response.Content.Headers.ContentEncoding.Any(value =>
-                !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
-                throw new InvalidDataException("Unsupported public response encoding.");
-            using Stream stream = await response.Content.ReadAsStreamAsync(deadline.Token);
-            T content = await read(stream, response.Content.Headers.ContentLength,
-                deadline.Token);
-            deadline.Token.ThrowIfCancellationRequested();
-            return (code, content);
-        }
+                    ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed))]),
+            [.. session.Reads]);
     }
 
     private static ReleaseFileObservation FileState(ReleaseFile file, ReleaseFileState state)
         => new(file.Output, file.Name, file.Version, state, null, null);
-
-    private static void ValidateUri(Uri uri, string host)
-    {
-        if (!uri.IsAbsoluteUri || uri.Scheme != "https" || uri.Host != host || uri.Port != 443 ||
-            uri.UserInfo.Length != 0 || uri.Fragment.Length != 0)
-            throw new InvalidDataException("URL differs from the selected public Python origin.");
-    }
 }

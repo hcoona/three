@@ -31,7 +31,7 @@ public sealed class NuGetOrgObservationTests(TestContext context)
     public async Task ObservationReadsOnlyTheFlatContainerVersionList(string served,
         string expected)
     {
-        var handler = new Handler(request => request.RequestUri!.AbsoluteUri switch
+        var handler = new ScriptedHttpHandler((request, _) => request.RequestUri!.AbsoluteUri switch
         {
             NuGetOrgObservation.ServiceIndex => Json(served switch
             {
@@ -63,7 +63,7 @@ public sealed class NuGetOrgObservationTests(TestContext context)
         Assert.IsNull(file.Size);
         Assert.IsNull(file.Sha256);
         Assert.IsTrue(handler.Requests.All(request => request.Headers.Authorization is null &&
-            !request.RequestUri!.AbsolutePath.EndsWith(".nupkg", StringComparison.Ordinal)));
+            !request.Uri.AbsolutePath.EndsWith(".nupkg", StringComparison.Ordinal)));
         if (expected == "Available")
             Assert.AreEqual(NuGetOrgObservation.PackageBaseAddress,
                 result.Resources!.PackageBaseAddress);
@@ -86,7 +86,8 @@ public sealed class NuGetOrgObservationTests(TestContext context)
             };
         if (change == "package")
             prepared = prepared with { Files = [prepared.Files[0] with { Name = "Other" }] };
-        var handler = new Handler(_ => throw new AssertFailedException("Unexpected read."));
+        var handler = new ScriptedHttpHandler((_, _) =>
+            throw new AssertFailedException("Unexpected read."));
         using var client = new HttpClient(handler);
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
@@ -106,15 +107,4 @@ public sealed class NuGetOrgObservationTests(TestContext context)
     private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK)
     { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
-    private sealed class Handler(Func<HttpRequestMessage, HttpResponseMessage> operation)
-        : HttpMessageHandler
-    {
-        internal List<HttpRequestMessage> Requests { get; } = [];
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
-            CancellationToken cancellation)
-        {
-            Requests.Add(request);
-            return Task.FromResult(operation(request));
-        }
-    }
 }

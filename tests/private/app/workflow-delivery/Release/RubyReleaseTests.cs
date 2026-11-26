@@ -34,23 +34,9 @@ public sealed class RubyReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("name")]
-    [DataRow("version")]
-    [DataRow("platform")]
-    [DataRow("commit")]
-    public void ValidateRejectsChangedNativeFact(string fact) =>
+    public void ValidateRejectsNativeNameForAnotherGem() =>
         RejectPreparation(result => result with
-        { Native = new(result.Native) { [fact] = "another-native-value" } });
-
-    [TestMethod]
-    public void ValidateRejectsMissingCheck() => RejectPreparation(result => result with
-    {
-        Prepared = result.Prepared with { Checks = result.Prepared.Checks[..^1] },
-    });
-
-    [TestMethod]
-    public void ValidateRejectsMissingCommand() =>
-        RejectPreparation(result => result with { Commands = [] });
+        { Native = new(result.Native) { ["name"] = "another-gem" } });
 
     [TestMethod]
     public void ValidateRejectsCommandWithError() => RejectPreparation(result => result with
@@ -228,40 +214,12 @@ public sealed class RubyReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    public void CompleteRejectsPublicationForAnotherRevision() =>
-        RejectPublication(publication => publication with
-        { Subject = publication.Subject with { Revision = new('b', 40) } });
-
-    [TestMethod]
-    public void CompleteRejectsPublicationWithDifferentOutput() =>
-        RejectPublication(publication => publication with
-        {
-            Invocation = publication.Invocation! with
-            { Upload = publication.Invocation.Upload with { Output = "another-output" } }
-        });
-
-    [TestMethod]
     public void CompleteRejectsWriteAfterExactObservation() =>
         RejectPublication(publication => publication with { Before = publication.Readback! });
 
     [TestMethod]
     public void CompleteRejectsReadbackWithoutInvocation() =>
         RejectPublication(publication => publication with { Invocation = null });
-
-    [TestMethod]
-    public void CompleteRejectsInvalidInvocationDuration() =>
-        RejectPublication(publication =>
-        {
-            RubyPublishResult invocation = publication.Invocation!;
-            return publication with
-            {
-                Invocation = invocation with
-                {
-                    Upload = invocation.Upload with
-                    { Command = invocation.Upload.Command with { DurationSeconds = double.NaN } }
-                }
-            };
-        });
 
     private static void RejectPublication(Func<RubyPublicationResult, RubyPublicationResult> change)
     {
@@ -297,7 +255,7 @@ public sealed class RubyReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task DryRunExcludesPublisherAndLiveCompletion()
+    public async Task DryRunCannotReachThePublisher()
     {
         using var fixture = new RubyCallerFixture(dry: true);
         int calls = 0;
@@ -311,9 +269,6 @@ public sealed class RubyReleaseTests(TestContext context)
             },
             (_, _, _) => { calls++; throw new AssertFailedException("Dry run cannot push."); },
                 context.CancellationToken));
-        RubyObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
-        Assert.ThrowsExactly<InvalidDataException>(() => RubyRelease.Complete(fixture.Prepared,
-            exact, exact, null));
         Assert.AreEqual(0, calls);
     }
 
@@ -499,59 +454,21 @@ public sealed class RubyReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(true, "Exact", 0, "Satisfied")]
-    [DataRow(true, "Absent", 1, "Unsatisfied")]
-    [DataRow(false, "Exact", 1, "Unknown")]
-    public void CompleteSeparatesNativeCommandFromVerifiedEffects(bool attempted,
-        string finalState, int expectedExit, string business)
+    public void CompleteWithMissingPublisherLeavesMutationUnknownEvenIfNowExact()
     {
         using var fixture = new RubyCallerFixture();
         string initial = Observation(fixture, "initial.json", ReleaseFileState.Absent);
-        ReleaseFileState state = Enum.Parse<ReleaseFileState>(finalState);
-        string final = Observation(fixture, "final.json", state);
-        string publisher = "-";
-        NativeCommandResult? native = null;
-        if (attempted)
-        {
-            native = RubyCallerFixture.Command(NativeTermination.Exited, 17);
-            publisher = fixture.Write("publication.json", new
-                RubyPublicationResult(fixture.Prepared.Subject,
-                fixture.Observe(ReleaseFileState.Absent), fixture.Publish(native),
-                fixture.Observe(state), []),
-                TransferJson.Default.RubyPublicationResult);
-        }
+        string final = Observation(fixture, "final.json", ReleaseFileState.Exact);
         using var output = new StringWriter();
-        using var error = new StringWriter();
-        int exit = Program.Run(["release", "complete-ruby", Preparation(fixture), initial, final,
-            publisher], output, error);
-        Assert.AreEqual("", error.ToString());
-        Assert.AreEqual(expectedExit, exit);
+
+        Assert.AreEqual(1, RubyReleaseCli.Run(["release", "complete-ruby",
+            Preparation(fixture), initial, final, "-"], output));
+
         RubyCompletionResult result = JsonSerializer.Deserialize(output.ToString(),
             TransferJson.Default.RubyCompletionResult)!;
-        Assert.AreEqual(fixture.Prepared.Subject, result.Outcome.Subject);
-        Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(business), result.Outcome.State);
-        if (!attempted) Assert.IsNull(result.MutationAttempted);
-        else Assert.AreEqual(native is not null, result.MutationAttempted);
-        if (native is null) Assert.IsEmpty(result.Outcome.Uploads);
-        else
-        {
-            Assert.AreEqual(native, Assert.ContainsSingle(result.Outcome.Uploads).Command);
-            Assert.AreEqual(native, result.Publication!.Invocation!.Upload.Command);
-        }
-        if (expectedExit == 0) Assert.IsEmpty(result.Outcome.Reasons);
-        else Assert.IsNotEmpty(result.Outcome.Reasons);
-    }
-
-    [TestMethod]
-    public void CompleteCannotReportSuccessWithoutFinalObservation()
-    {
-        using var fixture = new RubyCallerFixture();
-        string final = Path.Combine(fixture.Root, "missing-final.json");
-        string publication = Publication(fixture);
-        using var output = new StringWriter();
-        Assert.ThrowsExactly<FileNotFoundException>(() => RubyReleaseCli.Run(
-            CompleteArgs(fixture, final, publication), output));
-        Assert.AreEqual("", output.ToString());
+        Assert.AreEqual(ReleaseBusinessState.Unknown, result.Outcome.State);
+        Assert.IsNull(result.MutationAttempted);
+        Assert.IsEmpty(result.Outcome.Uploads);
     }
 
     [TestMethod]

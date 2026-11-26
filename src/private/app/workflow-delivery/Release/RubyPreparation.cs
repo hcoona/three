@@ -11,7 +11,11 @@ internal sealed record RubyPreparationRequest(ReleaseSubject Subject, string Che
     string Scratch, RubyPreparationTools Tools, string MiseDataDirectory);
 internal sealed record RubyReleaseRecipe(ReleaseBuild Build, string Entry, string Directory);
 internal sealed record RubyPreparationResult(PreparedRelease Prepared,
-    Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors);
+    Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors)
+    : IReleasePreparation
+{
+    public void Validate() => RubyRelease.Validate(this);
+}
 
 // The complete declared native gem is qualified independently of CI selection.
 internal static class RubyPreparation
@@ -64,25 +68,18 @@ internal static class RubyPreparation
             (build, entry, directory) = (recipe.Build, recipe.Entry, recipe.Directory);
             projectDirectory = Path.Combine(checkout, directory);
             // The runtime selection query reads the checkout; the revision must commit it.
-            foreach (string input in ToolConfiguration)
-                if (await bound.ReadOptionalTextAsync(input, token) is null)
-                    throw new InvalidDataException("Missing committed native input: " + input);
-            if ((await RunAsync(new("git", checkout,
-                ["rev-parse", "--is-shallow-repository"], 30))).Stdout.Trim() != "false")
-                throw new InvalidDataException("Native versioning requires complete Git history.");
+            await ReleasePreparationContext.RequireCommittedInputsAsync(bound, ToolConfiguration,
+                token);
+            await ReleasePreparationContext.RequireCompleteHistoryAsync(checkout,
+                command => RunAsync(command));
             string manifestText = await bound.ReadOptionalTextAsync(".config/dotnet-tools.json",
                 token) ?? throw new InvalidDataException("Missing committed NBGV tool manifest.");
             using JsonDocument manifest = JsonDocument.Parse(manifestText);
             string pin = manifest.RootElement.GetProperty("tools").GetProperty("nbgv")
                 .GetProperty("version").GetString() ??
                     throw new InvalidDataException("Missing committed NBGV pin.");
-            using JsonDocument global = JsonDocument.Parse(await bound.ReadOptionalTextAsync(
-                "global.json", token) ?? throw new InvalidDataException("Missing SDK selection."));
-            JsonElement sdk = global.RootElement.GetProperty("sdk");
-            if (sdk.GetProperty("rollForward").GetString() != "disable" ||
-                (await RunAsync(new(request.Tools.Dotnet, checkout, ["--version"], 30))).Stdout
-                    .Trim() != sdk.GetProperty("version").GetString())
-                throw new InvalidDataException("Actual SDK differs from committed selection.");
+            await ReleasePreparationContext.RequirePinnedSdkAsync(bound, checkout,
+                request.Tools.Dotnet, command => RunAsync(command), token);
             string toolsDirectory = Directory.CreateDirectory(Path.Combine(scratch,
                 "native-tools")).FullName;
             await RunAsync(new(request.Tools.Dotnet, checkout,
@@ -98,10 +95,10 @@ internal static class RubyPreparation
             string ruby = nativeTools.RootElement.GetProperty("ruby").GetString()!;
             string rubygems = nativeTools.RootElement.GetProperty("rubygems").GetString()!;
             // The prepared runtime is the committed locked selection; no adapter floor applies.
-            LockedToolSelection.RequireReadback("ruby", LockedToolSelection.Selected("ruby",
-                checkout, (await RunAsync(new("mise", checkout,
-                    LockedToolSelection.Query("ruby"), 30, MiseEnvironment(environment,
-                        checkout, request.MiseDataDirectory)))).Stdout), ruby);
+            string selectedRuby = await ReleasePreparationContext.SelectLockedMiseToolAsync(
+                checkout, "ruby", command => RunAsync(command),
+                MiseEnvironment(environment, checkout, request.MiseDataDirectory));
+            LockedToolSelection.RequireReadback("ruby", selectedRuby, ruby);
             if (string.IsNullOrWhiteSpace(rubygems))
                 throw new InvalidDataException("Native Ruby runtime omits its RubyGems version.");
             string helper = Path.Combine(checkout,
@@ -229,37 +226,28 @@ internal static class RubyPreparation
     private static Dictionary<string, string?> EnvironmentFor(string scratch,
         RubyPreparationRequest request)
     {
-        var values = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (string name in new[] { "SystemRoot", "WINDIR", "PATHEXT" })
-            values[name] = Environment.GetEnvironmentVariable(name);
-        string home = Directory.CreateDirectory(Path.Combine(scratch, "home")).FullName;
+        string home = Path.Combine(scratch, "home");
+        string gems = Path.Combine(scratch, "gems");
         // The selected mise Ruby's own RubyGems plugin runs `mise reshim` after installs.
-        values["PATH"] = string.Join(Path.PathSeparator, new[] { request.Tools.Ruby,
+        string path = string.Join(Path.PathSeparator, new[] { request.Tools.Ruby,
             request.Tools.Gem, request.Tools.Dotnet, request.Tools.Mise }
             .Select(Path.GetDirectoryName)
             .Append(OperatingSystem.IsWindows() ? Environment.GetFolderPath(
                 Environment.SpecialFolder.System) : "/usr/bin").Append("/bin")
             .Distinct(StringComparer.Ordinal));
-        foreach (string name in new[] { "HOME", "USERPROFILE", "DOTNET_CLI_HOME" })
-            values[name] = home;
-        foreach ((string name, string path) in new[] { ("XDG_CONFIG_HOME", "config"),
-            ("XDG_CACHE_HOME", "cache"), ("XDG_DATA_HOME", "data"),
-            ("APPDATA", "appdata"), ("LOCALAPPDATA", "localappdata"),
-            ("TMPDIR", "tmp"), ("TEMP", "tmp"), ("TMP", "tmp") })
-            values[name] = Directory.CreateDirectory(Path.Combine(home, path)).FullName;
-        values["DOTNET_ROOT"] = Path.GetDirectoryName(request.Tools.Dotnet);
-        values["GEM_HOME"] = Path.Combine(scratch, "gems");
-        values["GEM_PATH"] = values["GEM_HOME"];
-        values["GEM_SPEC_CACHE"] = Path.Combine(scratch, "spec-cache");
-        values["LANG"] = "C.UTF-8";
-        values["LC_ALL"] = "C.UTF-8";
-        values["GITHUB_ACTIONS"] = "true";
-        values["GITHUB_REF"] = request.Subject.SelectedRef;
-        values["GITHUB_SHA"] = request.Subject.Revision;
-        string output = Path.Combine(scratch, "nbgv-environment");
-        File.WriteAllText(output, "");
-        values["GITHUB_ENV"] = output;
-        return values;
+        (string Key, string? Value)[] overrides =
+        [
+            ("SystemRoot", Environment.GetEnvironmentVariable("SystemRoot")),
+            ("WINDIR", Environment.GetEnvironmentVariable("WINDIR")),
+            ("PATHEXT", Environment.GetEnvironmentVariable("PATHEXT")),
+            ("PATH", path), ("DOTNET_ROOT", Path.GetDirectoryName(request.Tools.Dotnet)),
+            ("GEM_HOME", gems), ("GEM_PATH", gems),
+            ("GEM_SPEC_CACHE", Path.Combine(scratch, "spec-cache")),
+            ("LANG", "C.UTF-8"), ("LC_ALL", "C.UTF-8"),
+        ];
+        return ReleasePreparationContext.CreateHomeEnvironment([], overrides.Concat(
+            ReleasePreparationContext.GithubVersioningEnvironment(scratch, request.Subject)),
+            home, Path.Combine(home, "tmp"), createProfileDirectories: true);
     }
 
     // Only the committed selection query sees the caller's tool installation and PATH.

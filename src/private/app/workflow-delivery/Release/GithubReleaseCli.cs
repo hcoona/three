@@ -6,7 +6,7 @@ namespace WorkflowDelivery.Release;
 internal static class GithubReleaseCli
 {
     internal static int? Run(string[] args, TextWriter output,
-        Func<GithubReleasePreparationRequest, CancellationToken,
+        Func<ReleasePreparationRequest, CancellationToken,
             Task<GithubReleasePreparationResult>>? prepare = null,
         Func<HttpClient>? client = null)
     {
@@ -14,11 +14,11 @@ internal static class GithubReleaseCli
         {
             GithubReleasePreparationResult result = (prepare ??
                 GithubReleasePreparation.PrepareAsync)(ReleaseCli.Read(requestPath,
-                    TransferJson.Default.GithubReleasePreparationRequest),
+                    TransferJson.Default.ReleasePreparationRequest),
                 CancellationToken.None).GetAwaiter().GetResult();
             ReleaseCli.Write(output, result, TransferJson.Default.GithubReleasePreparationResult);
             if (result.Errors.Length != 0 || result.Prepared.Files.Length == 0) return 1;
-            GithubRelease.Validate(result);
+            result.Validate();
             return 0;
         }
         if (args is ["release", "observe-github-release", var preparationPath, var originals])
@@ -29,9 +29,7 @@ internal static class GithubReleaseCli
                 destination.ObserveAsync(preparation.Prepared, CancellationToken.None));
             GithubRelease.ValidateObservation(preparation.Prepared, result);
             ReleaseCli.Write(output, result, TransferJson.Default.GithubReleaseObservationResult);
-            return result.Observation.Files.All(file => file.State is ReleaseFileState.Exact or
-                ReleaseFileState.Absent) && result.Observation.Checks.All(check =>
-                    check.Status == ReleaseCheckStatus.Passed) ? 0 : 1;
+            return ReleaseCompletion.ObservationProceeds(result.Observation) ? 0 : 1;
         }
         if (args is ["release", "describe-github-release", var describePreparation,
                 var describeObservation])

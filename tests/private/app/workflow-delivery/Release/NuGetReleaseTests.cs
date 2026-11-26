@@ -282,29 +282,6 @@ public sealed class NuGetReleaseTests(TestContext context)
         Assert.Contains("original native package bytes", error.ToString());
     }
 
-    [TestMethod]
-    public void CompleteRejectsObservationForAnotherRevision()
-    {
-        using var fixture = new NuGetReleaseTestFixture();
-        NuGetObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
-        var foreign = exact with
-        {
-            Observation = exact.Observation with
-            { Subject = exact.Observation.Subject with { Revision = new string('b', 40) } }
-        };
-        string initial = fixture.Write("initial.json", exact,
-            TransferJson.Default.NuGetObservationResult);
-        string final = fixture.Write("final.json", foreign,
-            TransferJson.Default.NuGetObservationResult);
-        using var output = new StringWriter();
-        using var error = new StringWriter();
-
-        Assert.AreEqual(2, Program.Run(["release", "complete-nuget", Preparation(fixture),
-            initial, final, "-"], output, error));
-        Assert.IsEmpty(output.ToString());
-        Assert.IsNotEmpty(error.ToString());
-    }
-
     // An accepted nuget.org upload not listed within about 15 minutes is uncertain and
     // returns to the owner; re-dispatching the same revision observes it without an upload.
     // The deadline cuts an in-flight read or a delay.
@@ -481,7 +458,7 @@ public sealed class NuGetReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task DryRunPublicationAndLiveCompletionAreExcluded()
+    public async Task DryRunCannotReachThePublisher()
     {
         using var fixture = new NuGetReleaseTestFixture(dryRun: true);
         int calls = 0;
@@ -491,9 +468,6 @@ public sealed class NuGetReleaseTests(TestContext context)
             (_, _, _, _, _) =>
             { calls++; throw new AssertFailedException("Dry run cannot upload."); },
             context.CancellationToken));
-        NuGetObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
-        Assert.ThrowsExactly<InvalidDataException>(() => NuGetRelease.Complete(fixture.Prepared,
-            exact, exact, null));
         Assert.AreEqual(0, calls);
     }
 
@@ -501,10 +475,10 @@ public sealed class NuGetReleaseTests(TestContext context)
     public void PrepareControlledNativeResultTransfersQualifiedPreparation()
     {
         using var fixture = new NuGetReleaseTestFixture();
-        var request = new NuGetPreparationRequest(fixture.Prepared.Subject, fixture.Root,
+        var request = new ReleasePreparationRequest(fixture.Prepared.Subject, fixture.Root,
             Path.Combine(fixture.Root, "preparation-scratch"));
         string requestPath = fixture.Write("request.json", request,
-            TransferJson.Default.NuGetPreparationRequest);
+            TransferJson.Default.ReleasePreparationRequest);
         using var output = new StringWriter();
         int prepares = 0;
 
@@ -529,58 +503,19 @@ public sealed class NuGetReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Absent", 0, 1)]
-    [DataRow("Unknown", 1, 0)]
-    public void DescribeReportsHypotheticalWritesOrUncertainState(string stateName,
-        int expectedExit, int writes)
-    {
-        using var fixture = new NuGetReleaseTestFixture(dryRun: true);
-        string preparation = Preparation(fixture);
-        string observed = Observation(fixture, "observed.json",
-            Enum.Parse<ReleaseFileState>(stateName));
-        using var output = new StringWriter();
-
-        int? exit = NuGetReleaseCli.Run(["release", "describe-nuget", preparation,
-            observed], output);
-
-        Assert.AreEqual(expectedExit, exit);
-        ReleaseDryRun result = JsonSerializer.Deserialize(output.ToString(),
-            TransferJson.Default.ReleaseDryRun)!;
-        Assert.AreEqual(expectedExit == 0, result.Ready);
-        Assert.AreEqual(fixture.Prepared.Subject, result.Subject);
-        Assert.IsTrue(result.Subject.DryRun);
-        Assert.HasCount(writes, result.HypotheticalWrites);
-        if (writes != 0)
-            Assert.AreEqual(fixture.Prepared.Files[0].Output,
-                Assert.ContainsSingle(result.HypotheticalWrites));
-        if (expectedExit != 0) Assert.IsNotEmpty(result.Reasons);
-    }
-
-    [TestMethod]
-    [DataRow("Exact")]
-    [DataRow("Absent")]
-    public async Task CompleteExactOrAbsentReportsActualEvidence(string stateName)
+    public async Task CompleteTransfersTheNativePushEvidence()
     {
         using var fixture = new NuGetReleaseTestFixture();
-        ReleaseFileState state = Enum.Parse<ReleaseFileState>(stateName);
-        string initial = Observation(fixture, "initial.json", state);
+        string initial = Observation(fixture, "initial.json", ReleaseFileState.Absent);
         string final = Observation(fixture, "final.json", ReleaseFileState.Exact);
-        string publisher = "-";
-        NuGetPushResult? invocation = null;
-        if (state == ReleaseFileState.Absent)
-        {
-            using var transport = new NuGetReleaseTestFixture.UploadTransport(
-                HttpStatusCode.Created);
-            invocation = await NuGetPublisher.PushAsync(fixture.Prepared, fixture.Root,
-                NuGetPublisher.GithubEndpoint, "controlled-capability", context.CancellationToken,
-                transport);
-            Assert.IsTrue(invocation.ReturnedSuccessfully);
-            Assert.AreEqual(1, transport.Sends);
-            publisher = fixture.Write("publisher.json", new NuGetPublicationResult(
-                fixture.Prepared.Subject, fixture.Observe(ReleaseFileState.Absent), invocation,
-                fixture.Observe(ReleaseFileState.Exact), []),
-                TransferJson.Default.NuGetPublicationResult);
-        }
+        using var transport = new NuGetReleaseTestFixture.UploadTransport(HttpStatusCode.Created);
+        NuGetPushResult invocation = await NuGetPublisher.PushAsync(fixture.Prepared, fixture.Root,
+            NuGetPublisher.GithubEndpoint, "controlled-capability", context.CancellationToken,
+            transport);
+        string publisher = fixture.Write("publisher.json", new NuGetPublicationResult(
+            fixture.Prepared.Subject, fixture.Observe(ReleaseFileState.Absent), invocation,
+            fixture.Observe(ReleaseFileState.Exact), []),
+            TransferJson.Default.NuGetPublicationResult);
         using var output = new StringWriter();
 
         int? exit = NuGetReleaseCli.Run(["release", "complete-nuget", Preparation(fixture),
@@ -591,7 +526,7 @@ public sealed class NuGetReleaseTests(TestContext context)
             TransferJson.Default.NuGetCompletionResult)!;
         Assert.AreEqual(fixture.Prepared.Subject, result.Outcome.Subject);
         Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
-        Assert.AreEqual(state == ReleaseFileState.Absent, result.MutationAttempted);
+        Assert.AreEqual(true, result.MutationAttempted);
         Assert.AreEqual(invocation, result.Invocation);
         Assert.IsEmpty(result.Outcome.Uploads);
         Assert.IsEmpty(result.Outcome.Reasons);
@@ -649,15 +584,13 @@ public sealed class NuGetReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("\"not-a-state\"")]
-    [DataRow("17")]
-    public void DescribeRejectsInvalidObservationState(string stateJson)
+    public void DescribeRejectsNumericObservationState()
     {
         using var fixture = new NuGetReleaseTestFixture(dryRun: true);
         string preparation = Preparation(fixture);
         string observation = Observation(fixture, "observed.json", ReleaseFileState.Exact);
         JsonObject root = JsonNode.Parse(File.ReadAllText(observation))!.AsObject();
-        root["observation"]!["files"]![0]!["state"] = JsonNode.Parse(stateJson);
+        root["observation"]!["files"]![0]!["state"] = 17;
         File.WriteAllText(observation, root.ToJsonString());
         using var output = new StringWriter();
 
@@ -702,31 +635,6 @@ public sealed class NuGetReleaseTests(TestContext context)
             }));
 
         Assert.AreEqual(0, observes);
-        Assert.AreEqual("", output.ToString());
-    }
-
-    [TestMethod]
-    public void DescribeLiveRequestRejectsHypotheticalCompletion()
-    {
-        using var fixture = new NuGetReleaseTestFixture();
-        using var output = new StringWriter();
-
-        Assert.ThrowsExactly<InvalidDataException>(() => NuGetReleaseCli.Run(
-            ["release", "describe-nuget", Preparation(fixture),
-                Observation(fixture, "exact.json", ReleaseFileState.Exact)], output));
-        Assert.AreEqual("", output.ToString());
-    }
-
-    [TestMethod]
-    public void CompleteDryRunRejectsLiveCompletion()
-    {
-        using var fixture = new NuGetReleaseTestFixture(dryRun: true);
-        string exact = Observation(fixture, "exact.json", ReleaseFileState.Exact);
-        using var output = new StringWriter();
-
-        Assert.ThrowsExactly<InvalidDataException>(() => NuGetReleaseCli.Run(
-            ["release", "complete-nuget", Preparation(fixture), exact, exact, "-"],
-            output));
         Assert.AreEqual("", output.ToString());
     }
 

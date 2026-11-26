@@ -6,10 +6,12 @@ using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Release;
 
-internal sealed record GithubReleasePreparationRequest(ReleaseSubject Subject, string Checkout,
-    string Scratch);
 internal sealed record GithubReleasePreparationResult(PreparedRelease Prepared,
-    Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors);
+    Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors)
+    : IReleasePreparation
+{
+    public void Validate() => GithubRelease.Validate(this);
+}
 
 // Static registration of the supported GitHub Release unit. Official tags follow the
 // product's committed NBGV publicReleaseRefSpec and the repository's release/<unit>/v<version>
@@ -72,11 +74,11 @@ internal static class GithubReleasePreparation
     private static readonly DateTimeOffset EntryTime = new(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     internal static Task<GithubReleasePreparationResult> PrepareAsync(
-        GithubReleasePreparationRequest request, CancellationToken token) =>
+        ReleasePreparationRequest request, CancellationToken token) =>
         PrepareAsync(request, NativeProcess.ExecuteAsync, OperatingSystem.IsWindows(), token);
 
     internal static async Task<GithubReleasePreparationResult> PrepareAsync(
-        GithubReleasePreparationRequest request,
+        ReleasePreparationRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         bool windows, CancellationToken token)
     {
@@ -107,17 +109,9 @@ internal static class GithubReleasePreparation
             GitMaterialization bound = await GitMaterialization.BindAsync(checkout,
                 subject.Revision, token);
             build = await ReadRecipeAsync(subject, bound.ReadOptionalTextAsync, token);
-            if ((await RunAsync(new("git", checkout,
-                ["rev-parse", "--is-shallow-repository"], 30))).Stdout.Trim() != "false")
-                throw new InvalidDataException("Native versioning requires complete Git history.");
-            using JsonDocument global = JsonDocument.Parse(await bound.ReadOptionalTextAsync(
-                "global.json", token) ?? throw new InvalidDataException("Missing SDK selection."));
-            JsonElement sdk = global.RootElement.GetProperty("sdk");
-            string selected = sdk.GetProperty("version").GetString() ?? "";
-            if (sdk.GetProperty("rollForward").GetString() != "disable" ||
-                (await RunAsync(new("dotnet", checkout, ["--version"], 30))).Stdout.Trim() !=
-                    selected)
-                throw new InvalidDataException("Actual SDK differs from committed selection.");
+            await ReleasePreparationContext.RequireCompleteHistoryAsync(checkout, RunAsync);
+            string selected = await ReleasePreparationContext.RequirePinnedSdkAsync(bound,
+                checkout, "dotnet", RunAsync, token);
             await RunAsync(new("dotnet", checkout, ["tool", "restore"], 300));
             using JsonDocument projection = JsonDocument.Parse((await RunAsync(new("dotnet",
                 product, ["nbgv", "get-version", "--format", "json"], 180))).Stdout);
@@ -239,9 +233,7 @@ internal static class GithubReleasePreparation
             build.Outputs.Count(output => output is
             { Role: "portable-package", Kind: "portable-zip" }) != 1)
             throw new InvalidDataException("Unsupported complete GitHub Release asset set.");
-        foreach (string input in Inputs)
-            if (await read(input, token) is null)
-                throw new InvalidDataException("Missing committed native input: " + input);
+        await ReleasePreparationContext.RequireCommittedInputsAsync(read, Inputs, token);
         return build;
     }
 
@@ -310,25 +302,11 @@ internal static class GithubReleasePreparation
     // The runner's build toolchain (SDK, Visual C++ for NativeAOT, ISCC, 7-Zip) is inherited;
     // NBGV reads the selected ref and commit, and no credential reaches native work.
     private static Dictionary<string, string?> EnvironmentFor(string scratch,
-        ReleaseSubject subject)
-    {
-        var values = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["GITHUB_ACTIONS"] = "true",
-            ["GITHUB_REF"] = subject.SelectedRef,
-            ["GITHUB_SHA"] = subject.Revision,
-            ["GITHUB_TOKEN"] = null,
-            ["GH_TOKEN"] = null,
-            ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"] = null,
-            ["ACTIONS_ID_TOKEN_REQUEST_URL"] = null,
-            ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1",
-        };
-        string temporary = Directory.CreateDirectory(Path.Combine(scratch, "tmp")).FullName;
-        values["TEMP"] = temporary;
-        values["TMP"] = temporary;
-        string output = Path.Combine(scratch, "nbgv-environment");
-        File.WriteAllText(output, "");
-        values["GITHUB_ENV"] = output;
-        return values;
-    }
+        ReleaseSubject subject) => ReleasePreparationContext.CreateHomeEnvironment(
+            [], ReleasePreparationContext.GithubVersioningEnvironment(scratch, subject).Concat(
+                [("GITHUB_TOKEN", null), ("GH_TOKEN", null),
+                    ("ACTIONS_ID_TOKEN_REQUEST_TOKEN", null),
+                    ("ACTIONS_ID_TOKEN_REQUEST_URL", null),
+                    ("DOTNET_CLI_TELEMETRY_OPTOUT", "1")]),
+            home: null, temp: Path.Combine(scratch, "tmp"));
 }
