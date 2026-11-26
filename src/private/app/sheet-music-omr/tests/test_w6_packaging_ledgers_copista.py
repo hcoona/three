@@ -3334,3 +3334,87 @@ def test_unconfirmed_exit_with_settings_oserror_retains_scratch(
         json.loads(ledgers._pending_native_worker_path().read_bytes())["token"]  # noqa: SLF001
     )
     ledgers.clear_w6_native_worker(tok2)
+
+
+def test_spacer_only_measure_excluded_from_musescore_supplement(tmp_path):
+    """Whole-measure spacers stay in base splits but skip MuseScore plans."""
+    from sheet_music_omr.comparison import annotate, install_coupling_fix  # noqa: PLC0415
+    from sheet_music_omr.musicxml_events import ProtocolDefectError  # noqa: PLC0415
+    from sheet_music_omr.musicxml_forward import to_musicxml  # noqa: PLC0415
+    from sheet_music_omr.parser import parse_document  # noqa: PLC0415
+
+    install_coupling_fix()
+    spacer_measure_v2 = (
+        "format: text-score/2\n"
+        "key: 0\n"
+        "time: 4/4\n"
+        "clefs: F4 F4\n"
+        "carry: octave\n"
+        "m 1\n"
+        "1.1: C4/1\n"
+        "2.1: C3/1\n"
+        "m 2\n"
+        "1.1: x/1\n"
+        "2.1: x/1\n"
+        "m 3\n"
+        "1.1: <clef G2> G4/1\n"
+        "2.1: G2/1\n"
+        "m 4\n"
+        "1.1: C4/1\n"
+        "2.1: C3/1\n"
+    )
+    spacer_doc = cast("AssembledScore", parse_document(spacer_measure_v2))
+    with pytest.raises(ProtocolDefectError):
+        annotate(to_musicxml(spacer_doc).decode("utf-8"))
+
+    one_staff_spacer_v2 = spacer_measure_v2.replace(
+        "m 2\n1.1: x/1\n2.1: x/1\n",
+        "m 2\n1.1: x/1\n2.1: C3/1\n",
+    )
+    ok_doc = cast("AssembledScore", parse_document(one_staff_spacer_v2))
+    annotate(to_musicxml(ok_doc).decode("utf-8"))
+
+    sources_dir = tmp_path / "synthetic" / "permissive" / "sources"
+    sources_dir.mkdir(parents=True)
+    (sources_dir / "bad.v2").write_text(spacer_measure_v2, encoding="utf-8")
+    (sources_dir / "ok.v2").write_text(one_staff_spacer_v2, encoding="utf-8")
+    surnames = (
+        "Albeniz",
+        "Brahms",
+        "Couperin",
+        "Debussy",
+        "Elgar",
+        "Faure",
+        "Grieg",
+        "Handle",
+        "Ibert",
+        "Janacek",
+        "Kodaly",
+        "Liszt",
+    )
+    rows = [
+        {
+            "source_id": f"pdmx-{idx:02d}",
+            "composer": name,
+            "title": f"Sonata No. {idx + 1}",
+            "canonical_root": str(sources_dir.parent),
+            "canonical_v2_path": (
+                "sources/bad.v2" if idx == 0 else "sources/ok.v2"
+            ),
+            "canonical_v2_sha256": _sha(
+                (spacer_measure_v2 if idx == 0 else one_staff_spacer_v2).encode(
+                    "utf-8"
+                )
+            ),
+            "measure_count": 4,
+            "category_densities": {"clef_changes": 0.25},
+        }
+        for idx, name in enumerate(surnames)
+    ]
+    train, val, _ = packaging.split_admitted_sources_by_composer(
+        rows, min_val_works=10
+    )
+    assert "pdmx-00" in {r["source_id"] for r in [*train, *val]}
+    plans, counts = packaging._interleave_supplement_plans([*train, *val])  # noqa: SLF001
+    assert counts["clef"] == len(surnames) - 1
+    assert "pdmx-00" not in {p.row["source_id"] for p in plans}

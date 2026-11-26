@@ -3084,10 +3084,22 @@ def _has_native_grace(score: model.AssembledScore) -> bool:
     return False
 
 
+def _has_spacer_only_measure(score: model.AssembledScore) -> bool:
+    tl = build_timeline(score)
+    populated = {
+        placed.frame.index
+        for placed in tl.events()
+        if isinstance(placed.event, model.Note | model.Rest | model.MeasureRest)
+    }
+    return len(populated) != len(tl.frames)
+
+
 def _supplement_rarity_bucket(row: Mapping[str, object]) -> int | None:
     raw_densities = row.get("category_densities")
     densities = raw_densities if isinstance(raw_densities, dict) else {}
     score = _source_score(row, Path(_field(row, "canonical_root")))
+    if _has_spacer_only_measure(score):
+        return None
     for idx, key in enumerate(("tremolos", "cross_staff", "ornaments")):
         val = densities.get(key, 0)
         if isinstance(val, int | float) and val > 0:
