@@ -43,6 +43,7 @@ jobs:
       control-id: ${{ steps.control.outputs.artifact-id }}
       preparation-id: ${{ steps.originals.outputs.artifact-id }}
       dotnet: ${{ steps.tools.outputs.dotnet }}
+      dotnet-frameworks: ${{ steps.tools.outputs.dotnet-frameworks }}
       node: ${{ steps.tools.outputs.node }}
     steps:
       - name: Check out selected source and control
@@ -53,13 +54,15 @@ jobs:
           persist-credentials: false
       - name: Read committed tool versions
         id: tools
-        run: python3 eng/scripts/locked_tool_versions.py dotnet node >> "$GITHUB_OUTPUT"
+        run: python3 eng/scripts/locked_tool_versions.py dotnet dotnet-frameworks node >> "$GITHUB_OUTPUT"
       - name: Prepare selected native tools
         uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: '2026.11.12'
           experimental: true
-          install_args: dotnet node pnpm
+          install_args: --jobs 1 dotnet node pnpm
+      - name: Prepare required frameworks in the native SDK root
+        run: mise install --monorepo --locked --jobs 1 dotnet
       - name: Build control before product execution
         run: |
           mise exec --locked dotnet -- dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj \
@@ -106,6 +109,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+      DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -127,7 +131,7 @@ jobs:
           working_directory: ${{ runner.temp }}
       - name: Install selected native runtime
         working-directory: ${{ runner.temp }}
-        run: mise install --yes "dotnet@$DOTNET_VERSION"
+        run: mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION"
       - name: Download complete preparation by immutable artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -189,6 +193,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+      DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
       NODE_VERSION: ${{ needs.prepare.outputs.node }}
     timeout-minutes: 15
     environment: workflow-delivery-v3-npm-github-packages
@@ -211,7 +216,7 @@ jobs:
           working_directory: ${{ runner.temp }}
       - name: Install selected native runtime
         working-directory: ${{ runner.temp }}
-        run: mise install --yes "dotnet@$DOTNET_VERSION"
+        run: mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION"
       - name: Download complete preparation by immutable artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -263,6 +268,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+      DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
       NODE_VERSION: ${{ needs.prepare.outputs.node }}
     timeout-minutes: 15
     environment: workflow-delivery-v3-npm-npmjs
@@ -285,7 +291,7 @@ jobs:
           working_directory: ${{ runner.temp }}
       - name: Install selected native runtime
         working-directory: ${{ runner.temp }}
-        run: mise install --yes "dotnet@$DOTNET_VERSION"
+        run: mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION"
       - name: Download complete preparation by immutable artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -340,6 +346,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+      DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -358,7 +365,7 @@ jobs:
           working_directory: ${{ runner.temp }}
       - name: Install selected native runtime
         working-directory: ${{ runner.temp }}
-        run: mise install --yes "dotnet@$DOTNET_VERSION"
+        run: mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION"
       - name: Download complete preparation by immutable artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:

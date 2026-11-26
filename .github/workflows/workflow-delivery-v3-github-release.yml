@@ -49,8 +49,9 @@ jobs:
       - name: Read committed tool versions
         id: tools
         run: |
-          python eng/scripts/locked_tool_versions.py dotnet | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+          $versions = python eng/scripts/locked_tool_versions.py dotnet dotnet-frameworks
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $versions | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
       - name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
@@ -60,8 +61,9 @@ jobs:
       - name: Install selected runtime
         env:
           DOTNET_VERSION: ${{ steps.tools.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ steps.tools.outputs.dotnet-frameworks }}
         run: |
-          mise install --yes "dotnet@$env:DOTNET_VERSION"
+          mise install --jobs 1 --yes "dotnet@$env:DOTNET_VERSION" "dotnet@$env:DOTNET_FRAMEWORKS_VERSION"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $dotnet = mise which --tool "dotnet@$env:DOTNET_VERSION" dotnet
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -103,6 +105,7 @@ jobs:
     outputs:
       control-id: ${{ steps.control.outputs.artifact-id }}
       dotnet: ${{ steps.tools.outputs.dotnet }}
+      dotnet-frameworks: ${{ steps.tools.outputs.dotnet-frameworks }}
       preparation-id: ${{ steps.retain.outputs.artifact-id }}
   observe:
     runs-on: ubuntu-24.04
@@ -135,9 +138,10 @@ jobs:
         name: Install selected runtime
         env:
           DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
         run: |
           set -Eeuo pipefail
-          mise install --yes "dotnet@$DOTNET_VERSION"
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION"
           {
             printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
             printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
