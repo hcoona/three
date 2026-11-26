@@ -19,6 +19,9 @@ Following the repository's [shared engineering principles](../../../../../docs/e
 4. **Reference Multi-Pass Compiler Suites (`Compilers/`)**:
     - `Compilers/CoreScheme/`: Full 4-pass CoreScheme-to-JavaScript compiler (`LCS`, `LACS`, `ParseCoreScheme`, `AlphaRenameCoreScheme`, `ANormalizeCoreScheme`, `GenerateJavaScript`) verified via independent in-process `LCS` and `LACS` evaluators (including Y-combinator `(Fact 5) == 120`) and emitted JavaScript invariants.
     - `Compilers/Scheme/`: Full 20-language (`LP` and `L0`–`L18`) canonical Nanopass Scheme compiler (`RenameVarsVerifyLegal` and the 19 lowering passes `RemoveImplicitBegin` through `ExplicitLabels` verified across all 194 upstream `alltests.rkt` programs—`164` `main-tests` and `30` `final-tests`—matching upstream `compiler-test.rkt`, plus dedicated compilation and diagnostic tests for `LP.Parse` + `VerifyScheme`, `L0`–`L18` `Parse(Unparse(ir))` round-trip checks, cyclic pair/vector equivalence, and trampolined tail recursion using independent in-process source and `L18` target-machine evaluators).
+5. **Algebraic Property Laws & Bounded Z3 Differential Verification**:
+    - `AlgebraicLawTests.cs`: Seeded, shrinking-enabled `CsCheck` property tests enforcing (a) **Identity & Composition Law** across recursive ASTs, nested sequences, dotted tails, equal/unequal subtype diamonds, and mutual nonterminal inclusion cycles; (b) **Round-Trip Law** across `SExpr.Parse(sexpr.Format())`, `L.Parse(L.Unparse(ast, raw: true))` under `NoShadowing` (paired with `VEC-D4-01..VEC-D4-04` boundary witnesses), and cross-assembly `[LanguageMetadata]` PE emission and execution inside a collectible `AssemblyLoadContext`; and (c) **Analyzer–Compiler Soundness Alignment Law** ($\text{0 } \mathrm{NPxxxx} \implies \text{0 } \mathrm{CSxxxx}$, zero `CSxxxx` error leaks on fallback stubs, Z3 differential language/pass vectors `VEC-D1-01..VEC-D3-07`, and a 16-layer diamond $O(V + E)$ scaling check; together with `VEC-D4-01..VEC-D4-04` under (b), all 22 `VEC-D1-01..VEC-D4-04` vectors are covered).
+    - `src/public/lib/Nanopass/scripts/verify_formal_spec.py`: Standalone PEP 723 relational SMT model (`z3-solver==5.4.1.0`) grounded in Keep & Dybvig (ICFP 2013, pp. 343–350, DOI `10.1145/2500365.2500618`), [`nanopass/nanopass-framework-scheme`](https://github.com/nanopass/nanopass-framework-scheme) (`c14d392487886df9275c1d4a3f0f61e1b6c4f2ef`), and [`nanopass/nanopass-framework-racket`](https://github.com/nanopass/nanopass-framework-racket) (`2af6a308fe6a294ad8d37b7865d07bedaf87ec15`). Checks 14 non-vacuous theorems (`sat` witness check + universal `unsat` negated-implication proof) and decodes 22 concrete differential vectors (`VEC-D1-01..VEC-D4-04`) directly from Z3 models within explicit finite bounds (4 grammar elements in Domain 1, 4 nonterminals in Domain 2, 3 productions and cyclic 3-nonterminal field hierarchies in Domain 3, and 3 atoms / depth-1 AST in Domain 4), documenting intentional C# 15 refinements ($\ge 2$-node `[Union]` mutual nonterminal cycles vs. 1-hop `NP0105`, compile-time `NP1003` on equal-length target subtype diamonds, and compile-time `NP1001` on unhandled removed productions, missing unguarded fallbacks, or unbound `no-xval?` tuple-return fallback synthesis). These bounded relational checks complement rather than constitute unbounded mechanized proof over arbitrary C# syntax trees.
 
 ## Upstream Test Matrix and Scope Boundary
 
@@ -43,9 +46,10 @@ Run targeted validation from the repository root (or owning worktree):
 ```bash
 mise exec -- dotnet build src/public/lib/Nanopass/Hcoona.Nanopass.csproj -c Release
 mise exec -- dotnet test --project tests/public/lib/Nanopass.Tests/Hcoona.Nanopass.Tests.csproj
+mise run nanopass:verify-formal-spec
 ```
 
-All tests execute strictly in-process on `.NET 11` without spawning external compilers, Node.js, or shell processes.
+`dotnet test` executes strictly in-process on `.NET 11` without spawning external compilers, Node.js, or shell processes; `mise run nanopass:verify-formal-spec` runs the standalone PEP 723 Z3 specification on demand via `uv run --script`.
 
 ## Upstream Differential Verification
 

@@ -5,6 +5,7 @@
     <PackageVersion Include="Azure.AI.Translation.Document" Version="3.0.0" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
+    <PackageVersion Include="CsCheck" Version="5.0.1" Condition="'$(MSBuildProjectName)' == 'Hcoona.Nanopass.Tests'" />
     <PackageVersion Include="FileSignatures" Version="7.3.0" />
     <PackageVersion Include="GitHub.Copilot.SDK" Version="1.0.34" Condition="'$(MSBuildProjectName)' == 'LiteAgensh' or '$(MSBuildProjectName)' == 'LiteAgensh.Tests' or '$(MSBuildProjectName)' == 'LiteAgensh.OfflineOwner'" />
     <PackageVersion Include="Hjg.Pngcs" Version="1.1.5" />

@@ -154,6 +154,10 @@ env = { CONTEXT7_API_KEY = { value = "{{ exec(command='gopass show -o copilot/co
 description = "Sync APM-managed MCP registrations for Copilot, VS Code, and Codex"
 run = "apm install --only mcp"
 
+[tasks."nanopass:verify-formal-spec"]
+description = "Run the clean-room Z3 formal specification checks for Hcoona.Nanopass"
+run = "uv run --script src/public/lib/Nanopass/scripts/verify_formal_spec.py"
+
 [tasks."records:check"]
 description = "Validate repository records against an explicit base and candidate"
 run = "uv run --script eng/scripts/check_repository_records.py"
