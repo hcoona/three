@@ -75,12 +75,12 @@ internal static class PythonPreparation
             LockedToolSelection.RequireReadback("uv", uvVersion, (await RunAsync(new(uv,
                 checkout, ["self", "version", "--short"], 30))).Stdout.Trim());
             await RunAsync(new("dotnet", checkout, ["tool", "restore"], 300));
-            operations = PythonReleaseUnits.Package(unit.Id, new(checkout, scratch, uv,
+            operations = ReleaseUnitCatalog.PythonPackage(unit.Id, new(checkout, scratch, uv,
                 interpreter, helper, 300, environment, false), Path.Combine(scratch, "package"));
             (name, version) = await operations.PrepareAsync(directory, ExecuteAsync, token);
             using JsonDocument facts = await operations.VersionFactsAsync(directory,
                 ExecuteAsync, token);
-            bool? publicRelease = QualifyNative(subject, official, name, version,
+            bool? publicRelease = QualifyNative(subject, unit, official, name, version,
                 pythonVersion, facts.RootElement);
             native.Add("name", name);
             native.Add("version", version);
@@ -150,7 +150,7 @@ internal static class PythonPreparation
         ReleasePolicy.RequireEligible(subject);
         if (!GitReader.IsCommitId(subject.Revision))
             throw new InvalidDataException("Python Release requires the exact selected revision.");
-        return (PythonReleaseUnits.Admit(subject), official);
+        return (ReleaseUnitCatalog.AdmitPython(subject), official);
     }
 
     // The complete committed recipe and native inputs, read through a revision-bound reader.
@@ -184,10 +184,9 @@ internal static class PythonPreparation
         return new(build, directory);
     }
 
-    // Pure check of the native version facts against the admitted subject. Only the NBGV
-    // projection of the smoke unit has a public-release fact.
-    internal static bool? QualifyNative(ReleaseSubject subject, bool official, string name,
-        string version, string pythonVersion, JsonElement value)
+    // Pure check of the native version facts against the admitted subject.
+    internal static bool? QualifyNative(ReleaseSubject subject, PythonReleaseUnit unit,
+        bool official, string name, string version, string pythonVersion, JsonElement value)
     {
         if (name != subject.Unit || value.GetProperty("name").GetString() != name ||
             value.GetProperty("version").GetString() != version ||
@@ -196,19 +195,19 @@ internal static class PythonPreparation
             !subject.DryRun && value.GetProperty("local_version").ValueKind !=
                 JsonValueKind.Null)
             throw new InvalidDataException("Unsupported native Python Release identity.");
-        if (name == PythonReleaseUnits.Nbgv)
+        string[] actualDeps = [.. value.GetProperty("dependencies").EnumerateArray()
+            .Select(d => d.GetString()!)];
+        if (!actualDeps.SequenceEqual(unit.Dependencies))
+            throw new InvalidDataException("Unsupported native Python Release identity.");
+        if (unit.StaticVersion)
         {
             // Hatchling's static [project].version; no NBGV projection (WD-REL-001).
-            if (value.EnumerateObject().Any(item => item.Name is "commit" or "public_release")
-                || value.GetProperty("dependencies").GetArrayLength() != 1 ||
-                value.GetProperty("dependencies")[0].GetString() != "packaging>=24.0")
+            if (value.EnumerateObject().Any(item => item.Name is "commit" or "public_release"))
                 throw new InvalidDataException("Unsupported native Python Release identity.");
             return null;
         }
         bool publicRelease = value.GetProperty("public_release").GetBoolean();
-        if (name != PythonReleaseUnits.Smoke ||
-            value.GetProperty("commit").GetString() != subject.Revision ||
-            value.GetProperty("dependencies").GetArrayLength() != 0 ||
+        if (value.GetProperty("commit").GetString() != subject.Revision ||
             !subject.DryRun && official && !publicRelease)
             throw new InvalidDataException("Unsupported native Python Release identity.");
         return publicRelease;

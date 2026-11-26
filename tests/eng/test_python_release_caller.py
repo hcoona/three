@@ -68,12 +68,9 @@ def test_workflow_publisher_owns_write_identity_and_environment(
 def test_workflow_binds_the_dispatched_registered_unit(workflow):
     """Every job receives the dispatched unit; its group binds it."""
     unit = workflow["on"]["workflow_dispatch"]["inputs"]["unit"]
-    assert unit["type"] == "choice"
+    assert unit["type"] == "string"
     assert unit["required"] is True
-    assert set(unit["options"]) == {
-        "hcoona-release-smoke-python",
-        "nbgv-python",
-    }
+    assert "options" not in unit
     assert workflow["env"]["UNIT"] == "${{ inputs.unit }}"
     assert "inputs.unit" in workflow["concurrency"]["group"]
 

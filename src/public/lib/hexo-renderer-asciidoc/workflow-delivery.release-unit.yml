@@ -8,3 +8,15 @@ builds:
       - id: npm-tarball
         role: primary-package
         kind: npm-tarball
+    qualification:
+      test-before-build: true
+      probe: >-
+        import { strict as assert } from 'node:assert';
+        import { createRequire } from 'node:module';
+        const plugin = await import('@@PACKAGE@@');
+        assert.equal(typeof plugin.default, 'function');
+        assert.equal(typeof plugin.registerRenderer, 'function');
+        const required = createRequire(import.meta.url)('@@PACKAGE@@');
+        assert.equal(typeof required.registerRenderer, 'function');
+        const html = await plugin.default({ text: '== Probe' });
+        assert.ok(html.includes('<h2 id="_probe">Probe</h2>'), html);

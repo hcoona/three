@@ -94,7 +94,7 @@ internal sealed class PythonRepositoryReader
                     member.Directory == directory) ??
                     throw new InvalidDataException("Python distribution has no native member.");
                 // Only the distribution of a registered concrete recipe is adopted.
-                if (!PythonReleaseUnits.Registered(member.Name))
+                if (!ReleaseUnitCatalog.IsPythonRegistered(member.Name))
                     throw new InvalidDataException("Unsupported Python Release unit.");
                 if (!quality.TryGetValue(directory, out QualitySelection? selection) ||
                     selection?.Preset != PythonPackageChecks.Preset)

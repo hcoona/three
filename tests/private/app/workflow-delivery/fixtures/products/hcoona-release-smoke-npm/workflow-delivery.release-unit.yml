@@ -1,5 +1,8 @@
 schema: workflow-delivery/v3/release-unit
 release-unit: hcoona-release-smoke-npm
+channels:
+  - buddy
+  - official-dry-run
 builds:
   - id: npm-package
     definition: node/npm-package-v1
@@ -8,3 +11,8 @@ builds:
       - id: npm-tarball
         role: primary-package
         kind: npm-tarball
+    qualification:
+      probe: >-
+        import { strict as assert } from 'node:assert';
+        import { smokeMessage } from '@@PACKAGE@@';
+        assert.equal(smokeMessage(), 'hcoona-release-smoke-npm');

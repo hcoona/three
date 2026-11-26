@@ -206,7 +206,8 @@ publication-only version override or injected commit witness. Live Official
 requires the native public-release projection; each unit's committed
 `publicReleaseRefSpec` includes `^refs/heads/main$`.
 
-`Ecosystems/RubyReleaseUnits` statically registers the two units.
+[`ReleaseUnitCatalog`](../../Ecosystems/ReleaseUnitCatalog.cs) discovers the
+committed `workflow-delivery.release-unit.yml` declarations.
 `Ecosystems/RubyPackageOperations` owns the concrete product recipes,
 build, native archive inspection and original local consumption inside the
 private application.

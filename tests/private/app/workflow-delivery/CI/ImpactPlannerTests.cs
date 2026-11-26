@@ -880,6 +880,86 @@ public sealed class ImpactPlannerTests
                 check.Work.Key.Target == "other").Reasons));
     }
 
+    [TestMethod]
+    public void ExhaustiveFourNodeDagsPreserveTransitiveClosureMonotonicityAndPartitions()
+    {
+        // All 2^6 = 64 labeled 4-vertex DAGs (edges j depends on i for 0 <= i < j < 4)
+        // crossed with all 2^4 = 16 changed-project masks = 1,024 configurations.
+        string[] ids = ["p0", "p1", "p2", "p3"];
+        (int Dep, int Consumer)[] pairs = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)];
+
+        for (int dagMask = 0; dagMask < 64; dagMask++)
+        {
+            var deps = ids.Select(_ => new List<string>()).ToArray();
+            for (int e = 0; e < pairs.Length; e++)
+                if ((dagMask & (1 << e)) != 0)
+                    deps[pairs[e].Consumer].Add(ids[pairs[e].Dep]);
+
+            ProjectFacts[] projects = Enumerable.Range(0, 4).Select(idx =>
+            {
+                string variant = idx % 2 == 0 ? "grp-a" : "grp-b";
+                CheckSpec build = Scenario.Check(ids[idx], operation: "build", variant: variant);
+                CheckSpec test = Scenario.Check(ids[idx], operation: "test", variant: variant,
+                    prerequisites: build.Key);
+                return Scenario.Project(ids[idx], dependencies: [.. deps[idx]],
+                    checks: [build, test]);
+            }).ToArray();
+
+            var selectedByMask = new HashSet<string>[16];
+            for (int changeMask = 0; changeMask < 16; changeMask++)
+            {
+                string[] changed = Enumerable.Range(0, 4)
+                    .Where(idx => (changeMask & (1 << idx)) != 0)
+                    .Select(idx => $"src/{ids[idx]}/code.cs")
+                    .ToArray();
+
+                CiPlan plan = ImpactPlanner.Plan(Scenario.Request(projects, changed));
+                var actual = plan.Checks.Select(c => c.Work.Key.Target)
+                    .ToHashSet(StringComparer.Ordinal);
+                selectedByMask[changeMask] = actual;
+
+                // 1. Exact reverse-dependency transitive reachability from changed owners.
+                var expected = new HashSet<string>(StringComparer.Ordinal);
+                for (int idx = 0; idx < 4; idx++)
+                    if ((changeMask & (1 << idx)) != 0)
+                        expected.Add(ids[idx]);
+                bool added;
+                do
+                {
+                    added = false;
+                    for (int idx = 0; idx < 4; idx++)
+                        if (deps[idx].Any(expected.Contains) && expected.Add(ids[idx]))
+                            added = true;
+                }
+                while (added);
+                Assert.IsTrue(actual.SetEquals(expected),
+                    $"Closure mismatch for dag={dagMask}, change={changeMask}");
+
+                // 2. Production CiPlan.Partition closure: valid group splits conserve all checks
+                // and self-validate; splitting test from its build prerequisite fails closed.
+                (CiPlan first, CiPlan second) = plan.Partition(c =>
+                    c.Work.Key.Variant == "grp-a");
+                first.Validate();
+                second.Validate();
+                CheckKey[] grpA = [.. first.Checks.Select(c => c.Work.Key)];
+                CheckKey[] grpB = [.. second.Checks.Select(c => c.Work.Key)];
+                Assert.IsEmpty(grpA.Intersect(grpB).ToArray());
+                CollectionAssert.AreEquivalent(plan.Checks.Select(c => c.Work.Key).ToArray(),
+                    grpA.Concat(grpB).ToArray());
+                if (plan.Checks.Length > 0)
+                    Assert.ThrowsExactly<InvalidDataException>(() =>
+                        plan.Partition(c => c.Work.Key.Check == "test"));
+            }
+
+            // 3. Monotonicity: C1 subseteq C2 => Impact(C1) subseteq Impact(C2).
+            for (int sub = 0; sub < 16; sub++)
+                for (int sup = 0; sup < 16; sup++)
+                    if ((sub & sup) == sub)
+                        Assert.IsTrue(selectedByMask[sub].IsSubsetOf(selectedByMask[sup]),
+                            $"Monotonicity violated for dag={dagMask}: {sub} vs {sup}");
+        }
+    }
+
     private static void AssertCandidateRejected(PlanRequest request, RepositoryFacts candidate,
         string diagnostic) => Assert.Contains(diagnostic,
             Assert.ThrowsExactly<InvalidDataException>(() =>

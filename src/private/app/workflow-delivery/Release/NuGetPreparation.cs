@@ -42,9 +42,9 @@ internal static class NuGetPreparation
         var files = new List<ReleaseFile>();
         var native = new Dictionary<string, string>(StringComparer.Ordinal);
         ReleaseUnitDeclaration? unit = null;
-        NuGetReleaseUnit registered = NuGetReleaseUnits.Admit(request.Subject);
-        // The outer multi-target build has no single framework.
-        string framework = registered.Library ? "" : registered.Frameworks[0];
+        NuGetReleaseUnit registered = ReleaseUnitCatalog.AdmitNuGet(request.Subject);
+        string framework = "";
+        string[]? frameworks = null;
         ReleaseBuild? build = null;
         string project = "";
         DotNetOriginalPackage? original = null;
@@ -98,10 +98,22 @@ internal static class NuGetPreparation
                     "RuntimeIdentifiers,IsTestProject,IsTestingPlatformApplication"],
                     60, environment, false))).Stdout);
             Dictionary<string, string> recipe = DotNetPackageResults.Properties(shape.RootElement);
-            if (recipe["TargetFramework"] != framework || (registered.Library
-                    ? !recipe["TargetFrameworks"].Split(';').SequenceEqual(registered.Frameworks)
-                    : recipe["TargetFrameworks"] != "") ||
-                recipe["RuntimeIdentifier"] != "" || recipe["RuntimeIdentifiers"] != "" ||
+            if (registered.Library)
+            {
+                frameworks = recipe["TargetFrameworks"]
+                    .Split(';', StringSplitOptions.RemoveEmptyEntries);
+                if (recipe["TargetFramework"] != "" || frameworks.Length == 0)
+                    throw new InvalidDataException(
+                        "Unsupported native variants or required tests.");
+            }
+            else
+            {
+                framework = recipe["TargetFramework"];
+                if (string.IsNullOrWhiteSpace(framework) || recipe["TargetFrameworks"] != "")
+                    throw new InvalidDataException(
+                        "Unsupported native variants or required tests.");
+            }
+            if (recipe["RuntimeIdentifier"] != "" || recipe["RuntimeIdentifiers"] != "" ||
                 TestProperties.Any(name =>
                     recipe[name] != "" && !recipe[name].Equals("false",
                         StringComparison.OrdinalIgnoreCase)))
@@ -134,8 +146,7 @@ internal static class NuGetPreparation
         await qualification.CheckAsync("contents", () =>
         {
             DotNetPackageArchive.RequireOriginal(original!);
-            DotNetPackageArchive.Contents(original!.Path, native,
-                registered.Library ? registered.Frameworks : null, registered.Analyzers);
+            DotNetPackageArchive.Contents(original!.Path, native, frameworks, registered.Analyzers);
             return Task.CompletedTask;
         });
         await qualification.CheckAsync("consumer", async () =>

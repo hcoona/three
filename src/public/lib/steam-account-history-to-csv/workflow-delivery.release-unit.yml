@@ -1,5 +1,8 @@
 schema: workflow-delivery/v3/release-unit
 release-unit: steam-account-history-to-csv
+channels:
+  - buddy-dry-run
+  - official
 builds:
   - id: browser-extensions
     definition: node/browser-extension-v1
@@ -17,3 +20,5 @@ builds:
       - id: edge-zip
         role: primary-package
         kind: edge-extension-zip
+    qualification:
+      manifest-name: Steam Account History to CSV

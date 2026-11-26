@@ -509,13 +509,14 @@ native producer source; they do not authorize replay.
 This section records the implemented npm Release behavior; it adds no
 obligation beyond the code it cites.
 
-- **Units and caller.** [`NpmReleaseUnits`](../../Ecosystems/NpmReleaseUnits.cs)
-  registers `hcoona-release-smoke-npm` and `hexo-renderer-asciidoc`. The
+- **Units and caller.** [`ReleaseUnitCatalog`](../../Ecosystems/ReleaseUnitCatalog.cs)
+  discovers `hcoona-release-smoke-npm` and `hexo-renderer-asciidoc` from their
+  committed `workflow-delivery.release-unit.yml` declarations. The
   product-neutral caller
   [`workflow-delivery-v3-npm-release.yml`](../../../../../../.github/workflows/workflow-delivery-v3-npm-release.yml)
   takes `registry` (`github-packages` or `npmjs`), `unit` and `dry-run` inputs
   and binds the unit through concurrency, preparation, observation, publication
-  and verification. `NpmReleaseUnits.Admit` accepts GitHub Packages only as
+  and verification. `ReleaseUnitCatalog.AdmitNpm` accepts GitHub Packages only as
   Buddy and npmjs only as Official, rejects live Official for the smoke unit and
   applies `ReleasePolicy.RequireEligible` before preparation, in the request job
   and in each publisher.

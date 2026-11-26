@@ -64,6 +64,6 @@ internal static class AdoptedNpmPackage
     }
 
     internal static NativeCommand Import(string directory) =>
-        NpmReleaseUnits.Named(NpmReleaseUnits.Smoke).Import(directory, PackageName,
-            deadlineSeconds: 30);
+        ReleaseUnitCatalog.NpmUnits.Single(u => u.OfficialName == PackageName)
+            .Import(directory, PackageName, deadlineSeconds: 30);
 }

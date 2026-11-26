@@ -28,7 +28,7 @@ internal static class NpmPreparation
             scratch.Contains("%v", StringComparison.Ordinal))
             throw new InvalidDataException("Scratch cannot contain native pack output markers.");
         // Admission precedes every scratch write.
-        NpmReleaseUnit recipe = NpmReleaseUnits.Admit(request.Subject);
+        NpmReleaseUnit recipe = ReleaseUnitCatalog.AdmitNpm(request.Subject);
         var qualification = new ReleaseQualification(execute, token);
         var files = new List<ReleaseFile>();
         var environment = ReleasePreparationContext.CreateHomeEnvironment(scratch,

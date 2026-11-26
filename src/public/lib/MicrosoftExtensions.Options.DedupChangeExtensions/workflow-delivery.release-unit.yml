@@ -8,3 +8,6 @@ builds:
       - id: nuget-package
         role: primary-package
         kind: nuget-package
+    qualification:
+      probe: >-
+        typeof(Microsoft.Extensions.Options.OptionsDedupChangeExtensions).Assembly.GetName().Name

@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
 using WorkflowDelivery.Destinations;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
@@ -421,11 +422,14 @@ public sealed class GithubReleaseTests(TestContext context)
 
     private static ReleaseSubject Subject(bool official) => new(Revision,
         official ? "refs/heads/main" : "refs/heads/development",
-        GithubReleaseUnits.ImageOcclusionEditor, GithubReleaseUnits.Declaration,
+        "image-occlusion-editor",
+        ReleaseUnitCatalog.GithubRelease("image-occlusion-editor").Declaration,
         official ? "official" : "buddy",
-        official ? GithubReleaseUnits.Official : GithubReleaseUnits.Buddy, false);
+        official ? GithubReleaseUnit.OfficialDestination : GithubReleaseUnit.BuddyDestination,
+        false);
 
-    private static string Name(string kind) => GithubReleaseUnits.Asset(kind, Version);
+    private static string Name(string kind) =>
+        ReleaseUnitCatalog.GithubRelease("image-occlusion-editor").Asset(kind, Version);
 
     private static ReleasePreparationResult Preparation(bool official)
     {
@@ -443,7 +447,7 @@ public sealed class GithubReleaseTests(TestContext context)
                 ["version"] = Version,
                 ["commit"] = Revision,
                 ["public-release"] = "true",
-                ["tag"] = GithubReleaseUnits.Tag(subject, Version),
+                ["tag"] = GithubReleaseUnit.Tag(subject, Version),
             },
             [new("build", new("pwsh", "/", [], 1), new(NativeTermination.Exited, 0, "", "", 1,
                 null))], []);
@@ -638,19 +642,20 @@ public sealed class GithubReleaseTests(TestContext context)
             GitFixture repo = await GitFixture.CreateAsync(token);
             try
             {
-                string product = GithubReleaseUnits.Product + "/";
+                GithubReleaseUnit unit = ReleaseUnitCatalog.GithubRelease("image-occlusion-editor");
+                string product = unit.ProductDirectory + "/";
                 await repo.SetAsync("global.json",
                     "{\"sdk\":{\"version\":\"" + PreviewSdk + "\",\"rollForward\":\"disable\"}}");
                 foreach (string input in new[] { ".config/dotnet-tools.json",
-                    product + "version.json", product + GithubReleaseUnits.Entry,
+                    product + "version.json", product + unit.EntryPoint,
                     product + "ImageOcclusionEditorWinUI3/Update-LocalSvgEditor.ps1",
                     product + "script/Helpers.ps1",
                     product + "script/Publish-ImageOcclusionEditor.ps1",
                     product + "script/Build-InnoInstaller.ps1", product + "script/Setup.iss" })
                     await repo.SetAsync(input);
-                await repo.SetAsync(GithubReleaseUnits.Declaration, File.ReadAllText(
+                await repo.SetAsync(unit.Declaration, File.ReadAllText(
                     Path.Combine(RepositoryToolSelection.SourceRoot,
-                        GithubReleaseUnits.Declaration)));
+                        unit.Declaration)));
                 string revision = await repo.CommitAsync();
                 await repo.GitAsync("reset", "--hard", revision);
                 return new(repo, revision);

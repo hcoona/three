@@ -30,6 +30,32 @@ WORKFLOWS = ROOT / ".github/workflows"
 PREFIX = "workflow-delivery-v3-"
 SUFFIX = "-release.yml"
 REPO = "repos/{owner}/{repo}"
+DESCRIPTOR = "workflow-delivery.release-unit.yml"
+CALLER_DEFINITIONS = {
+    "github": "dotnet/github-release-assets-v1",
+    "npm": "node/npm-package-v1",
+    "nuget": "dotnet/nuget-package-v1",
+    "python": "python/distribution-set-v1",
+    "ruby": "ruby/gem-v1",
+}
+
+
+def discovered_units(root: Path = ROOT) -> dict[str, set[str]]:
+    """Discover admitted release-unit IDs per caller from committed YAML."""
+    by_caller: dict[str, set[str]] = {key: set() for key in CALLER_DEFINITIONS}
+    inv = {v: k for k, v in CALLER_DEFINITIONS.items()}
+    for base in (
+        root / "src/public",
+        root / "tests/private/app/workflow-delivery/fixtures/products",
+    ):
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob(DESCRIPTOR)):
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            defn = data["builds"][0]["definition"]
+            if caller := inv.get(defn):
+                by_caller[caller].add(data["release-unit"])
+    return by_caller
 
 
 class EntryError(ValueError):
@@ -71,6 +97,25 @@ def callers() -> dict[str, dict]:
     return found
 
 
+def _validate_input_value(
+    text: str, caller: str, key: str, value: str, spec: dict
+) -> None:
+    if spec.get("type") == "choice" and value not in spec["options"]:
+        message = f"{text!r}: {key} must be one of {spec['options']}"
+        raise EntryError(message)
+    if spec.get("type") == "boolean" and value not in {"true", "false"}:
+        message = f"{text!r}: {key} must be true or false"
+        raise EntryError(message)
+    if (
+        key == "unit"
+        and caller in CALLER_DEFINITIONS
+        and value not in discovered_units()[caller]
+    ):
+        allowed = sorted(discovered_units()[caller])
+        message = f"{text!r}: unknown {caller} unit; expected {allowed}"
+        raise EntryError(message)
+
+
 def parse_entry(text: str, known: dict[str, dict]) -> Run:
     """Validate one entry against its caller's declared inputs."""
     caller, separator, rest = text.partition(":")
@@ -93,13 +138,7 @@ def parse_entry(text: str, known: dict[str, dict]) -> Run:
         if key not in declared:
             message = f"{text!r}: {caller} has no input {key!r}"
             raise EntryError(message)
-        spec = declared[key]
-        if spec.get("type") == "choice" and value not in spec["options"]:
-            message = f"{text!r}: {key} must be one of {spec['options']}"
-            raise EntryError(message)
-        if spec.get("type") == "boolean" and value not in {"true", "false"}:
-            message = f"{text!r}: {key} must be true or false"
-            raise EntryError(message)
+        _validate_input_value(text, caller, key, value, declared[key])
         inputs[key] = value
     # Defaults are not applied: every input, including dry-run, is explicit.
     missing = [key for key in declared if key not in inputs]

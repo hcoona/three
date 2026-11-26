@@ -581,7 +581,7 @@ separate qualification responsibilities of the complete group.
 
 ## Concrete NuGet Release Integration
 
-This contract selects one statically registered unit through the `unit` input of
+This contract selects one declared unit through the `unit` input of
 `.github/workflows/workflow-delivery-v3-nuget-release.yml`: the
 `hcoona-release-smoke-github-packages` fixture (`Hcoona.ReleaseSmoke.GithubPackages`,
 one `net10.0` `.nupkg`) or one of nine ordinary library products, each with a
@@ -602,19 +602,25 @@ one `net10.0` `.nupkg`) or one of nine ordinary library products, each with a
 The `registry` input selects GitHub Packages NuGet
 (`https://nuget.pkg.github.com/hcoona/index.json`) as
 [Buddy](../middle-level-design.md#domain-values) or nuget.org
-(`https://api.nuget.org/v3/index.json`) as Official. `NuGetReleaseUnits.Admit`
+(`https://api.nuget.org/v3/index.json`) as Official. `ReleaseUnitCatalog.AdmitNuGet`
 accepts only those two channel/destination pairs, a unit's own committed
-declaration and, for Official, a library unit; the smoke unit stays Buddy-only.
+declaration and, for Official, a unit whose `workflow-delivery.release-unit.yml`
+declares `official` channel scope; the smoke unit declares `channels: [buddy]`.
 Unit and ref eligibility follow the
 [Official channel scope](common.md#official-channel-scope). The Buddy Environment
 `workflow-delivery-v3-nuget-github-packages` allows every branch and keeps its
 required reviewer; the Official Environment `workflow-delivery-v3-nuget-nugetorg`
 remains limited to `main`. This adds no other product or destination.
 
-`Ecosystems/NuGetReleaseUnits` statically registers each unit's declaration,
-package ID, assembly name, exact native `TargetFrameworks` set, expected packed
-`analyzers/` payload and consumer probe (with optional trailing source
-declarations). The smoke unit keeps its single-framework recipe. The nine
+[`ReleaseUnitCatalog`](../../Ecosystems/ReleaseUnitCatalog.cs) discovers each
+unit's committed `workflow-delivery.release-unit.yml` declaration (expected
+packed `analyzers/` payload, consumer `probe` and optional trailing
+`declarations`) and derives `PackageId`, `AssemblyName` and `ProjectReference`
+companion roots from its native `.csproj` manifest via official MSBuild
+`ProjectRootElement` construction metadata, while native `dotnet msbuild`
+evaluation supplies the `TargetFrameworks` set and cross-verifies package and
+assembly identities during preparation. The smoke unit keeps its single-framework
+recipe. The nine
 products share one concrete multi-target library recipe because they have one
 native shape: an SDK-style packable library with the repository's common package
 metadata, a `lib/<framework>/<assembly>.dll` payload per declared framework,
@@ -624,7 +630,7 @@ runtime identifier, no `build/` or content files and no required test selection.
 Under the HLD's
 [extension-cost rule](../high-level-design.md#native-integrations), a project of another
 shape still needs its own concrete recipe; another library of this shape adds
-only a declaration and a registry row. `Memoization` references
+only a declaration. `Memoization` references
 `Memoization.Generators` as a build-time source generator whose output is compiled
 into `Memoization.dll` and ships no `analyzers/` asset; `Nanopass` packs its
 companion `Hcoona.Nanopass.Generators.dll` under

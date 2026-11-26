@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text.Json;
+using System.Xml.Linq;
 using WorkflowDelivery.CI.Callers;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
@@ -14,7 +15,7 @@ namespace WorkflowDelivery.Tests.Release;
 public sealed class NuGetLibraryPreparationNativeTests(TestContext context)
 {
     // Each row carries its unit category, so CI can select only the changed units' rows.
-    public static IEnumerable<TestDataRow<string>> Libraries => NuGetReleaseUnits.All
+    public static IEnumerable<TestDataRow<string>> Libraries => ReleaseUnitCatalog.NuGetUnits
         .Where(unit => unit.Library).Select(unit => new TestDataRow<string>(unit.Id)
         {
             TestCategories = [DotNetCiCaller.NuGetUnitCategory + unit.Id],
@@ -27,7 +28,7 @@ public sealed class NuGetLibraryPreparationNativeTests(TestContext context)
     public async Task NativeLibraryPreparationPacksEveryFrameworkForACleanConsumer(string id)
     {
         CancellationToken token = context.CancellationToken;
-        NuGetReleaseUnit unit = NuGetReleaseUnits.Named(id);
+        NuGetReleaseUnit unit = ReleaseUnitCatalog.NuGet(id);
         string source = RepositoryToolSelection.SourceRoot;
         string root = Directory.CreateTempSubdirectory("nuget-library-").FullName;
         try
@@ -67,7 +68,11 @@ public sealed class NuGetLibraryPreparationNativeTests(TestContext context)
             Assert.AreEqual(file.Sha256, DotNetPackageArchive.Digest(archive));
             using ZipArchive zip = ZipFile.OpenRead(archive);
             string[] entries = zip.Entries.Select(entry => entry.FullName).ToArray();
-            foreach (string framework in unit.Frameworks)
+            string project = Path.Combine(checkout, Path.GetDirectoryName(unit.Declaration)!,
+                unit.EntryPoint);
+            string frameworks = XDocument.Load(project).Descendants("TargetFrameworks")
+                .Single().Value;
+            foreach (string framework in frameworks.Split(';'))
                 Assert.Contains("lib/" + framework + "/" + unit.AssemblyName + ".dll", entries);
             CollectionAssert.AreEquivalent(unit.Analyzers, entries.Where(entry =>
                 entry.StartsWith("analyzers/", StringComparison.OrdinalIgnoreCase)).ToArray());

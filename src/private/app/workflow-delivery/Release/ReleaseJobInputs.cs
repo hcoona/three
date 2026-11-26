@@ -14,20 +14,24 @@ internal static class ReleaseJobInputs
 
     private static readonly Dictionary<string, Route> Routes = new(StringComparer.Ordinal)
     {
-        ["ruby"] = new(ReleaseAdapters.Ruby, unit => RubyReleaseUnits.Named(unit).Declaration,
-            subject => RubyReleaseUnits.Admit(subject)),
+        ["ruby"] = new(ReleaseAdapters.Ruby,
+            unit => ReleaseUnitCatalog.Ruby(unit).Declaration,
+            subject => ReleaseUnitCatalog.AdmitRuby(subject)),
         ["python"] = new(ReleaseAdapters.Python,
-            unit => PythonReleaseUnits.Named(unit).Declaration,
-            subject => PythonReleaseUnits.Admit(subject)),
-        ["npm"] = new(ReleaseAdapters.Npm, unit => NpmReleaseUnits.Named(unit).Declaration,
-            subject => NpmReleaseUnits.Admit(subject)),
-        ["nuget"] = new(ReleaseAdapters.NuGet, unit => NuGetReleaseUnits.Named(unit).Declaration,
-            subject => NuGetReleaseUnits.Admit(subject)),
+            unit => ReleaseUnitCatalog.Python(unit).Declaration,
+            subject => ReleaseUnitCatalog.AdmitPython(subject)),
+        ["npm"] = new(ReleaseAdapters.Npm,
+            unit => ReleaseUnitCatalog.Npm(unit).Declaration,
+            subject => ReleaseUnitCatalog.AdmitNpm(subject)),
+        ["nuget"] = new(ReleaseAdapters.NuGet,
+            unit => ReleaseUnitCatalog.NuGet(unit).Declaration,
+            subject => ReleaseUnitCatalog.AdmitNuGet(subject)),
         ["github-release"] = new(ReleaseAdapters.GithubRelease,
-            _ => GithubReleaseUnits.Declaration,
-            subject => GithubReleaseUnits.Admit(subject)),
+            unit => ReleaseUnitCatalog.GithubRelease(unit).Declaration,
+            subject => ReleaseUnitCatalog.AdmitGithubRelease(subject)),
         ["browser-store"] = new(ReleaseAdapters.BrowserStore,
-            _ => BrowserStorePreparation.Declaration),
+            unit => ReleaseUnitCatalog.BrowserStore(unit).Declaration,
+            subject => ReleaseUnitCatalog.AdmitBrowserStore(subject)),
     };
 
     internal static int? Run(string[] args, Func<string, string?>? environment = null)
@@ -47,10 +51,12 @@ internal static class ReleaseJobInputs
             ("ruby", "github-packages") => (true, "github-packages-ruby"),
             ("npm", "github-packages") => (true, "github-packages-npm"),
             ("nuget", "github-packages") => (true, "github-packages-nuget"),
-            ("python", "testpypi") or ("github-release", GithubReleaseUnits.Buddy) =>
+            ("python", "testpypi") or
+                ("github-release", GithubReleaseUnit.BuddyDestination) =>
                 (true, destination),
             ("ruby", "rubygems") or ("python", "pypi") or ("npm", "npmjs") or
-                ("nuget", "nugetorg") or ("github-release", GithubReleaseUnits.Official) =>
+                ("nuget", "nugetorg") or
+                ("github-release", GithubReleaseUnit.OfficialDestination) =>
                 (false, destination),
             // Browser stores are Official destinations; a Buddy request is a dry run.
             ("browser-store", BrowserStorePreparation.ChromeWebStore or
@@ -66,7 +72,10 @@ internal static class ReleaseJobInputs
         string dry = Env("DRY_RUN");
         if (dry is not ("true" or "false"))
             throw new InvalidDataException("Invalid dry-run input.");
-        string unit = ecosystem == "browser-store" ? BrowserStorePreparation.Unit : Env("UNIT");
+        string unit = ecosystem == "browser-store"
+            ? environment("UNIT") is { Length: > 0 } u ? u
+                : BrowserStorePreparation.DefaultUnit.Id
+            : Env("UNIT");
         var subject = new ReleaseSubject(Env("GITHUB_SHA"), Env("GITHUB_REF"), unit,
             route.Declaration(unit), buddy ? "buddy" : "official", selectedDestination,
             dry == "true");

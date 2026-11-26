@@ -11,3 +11,7 @@ builds:
       - id: portable
         role: portable-package
         kind: portable-zip
+    qualification:
+      asset-prefix: ImageOcclusionEditor
+      executable: ImageOcclusionEditor.exe
+      editor: svg-edit/index.html

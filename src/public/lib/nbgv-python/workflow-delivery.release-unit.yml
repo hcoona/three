@@ -11,3 +11,14 @@ builds:
       - id: sdist
         role: source-package
         kind: python-sdist
+    qualification:
+      static-version: true
+      runtime-closure: true
+      dependencies:
+        - packaging>=24.0
+      tests: src/public/lib/nbgv-python/tests
+      api:
+        - get_version
+        - forward
+        - NbgvRunner
+        - GitVersion

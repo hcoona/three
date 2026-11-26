@@ -3,7 +3,6 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
 using System.Text.Json;
 using WorkflowDelivery.Destinations;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -74,7 +73,7 @@ public sealed class RubyReleaseTests(TestContext context)
     [DataRow(true, true)]
     public void ValidateLatexmathRequiresAdoptedSuiteResult(bool requiresSuite, bool failed)
     {
-        using var fixture = new RubyCallerFixture(unit: RubyReleaseUnits.Latexmath);
+        using var fixture = new RubyCallerFixture(unit: "asciidoctor-latexmath");
         PreparedRelease prepared = fixture.Prepared;
         ReleaseCheck[] checks = failed
             ? [.. prepared.Checks.Select(check => check.Id == "tests"
@@ -97,12 +96,12 @@ public sealed class RubyReleaseTests(TestContext context)
     [DataRow("official", "rubygems", "refs/tags/preview", true, false, true)]
     [DataRow("buddy", "rubygems", "refs/heads/main", true, true, false)]
     [DataRow("buddy", "github-packages-ruby", "refs/heads/topic", false, false, true,
-        RubyReleaseUnits.Latexmath)]
+        "asciidoctor-latexmath")]
     [DataRow("official", "rubygems", "refs/heads/main", false, false, false,
-        RubyReleaseUnits.Latexmath)]
+        "asciidoctor-latexmath")]
     public void ValidateChannelRefAndDryEligibility(string channel, string destination,
         string selectedRef, bool dry, bool publicRelease, bool accepted,
-        string unit = RubyReleaseUnits.Smoke)
+        string unit = "hcoona-release-smoke-ruby")
     {
         using var fixture = new RubyCallerFixture(channel, dry, unit);
         var preparation = fixture.Preparation with
@@ -589,7 +588,7 @@ internal sealed class RubyCallerFixture : IDisposable
     internal PreparedRelease Prepared => Preparation.Prepared;
     internal ReleaseFile Original => Prepared.Files[0];
     internal RubyCallerFixture(string channel = "buddy", bool dry = false,
-        string unit = RubyReleaseUnits.Smoke)
+        string unit = "hcoona-release-smoke-ruby")
     {
         System.IO.Directory.CreateDirectory(Root);
         File.WriteAllText(Archive, "original");
@@ -599,7 +598,7 @@ internal sealed class RubyCallerFixture : IDisposable
         var file = new ReleaseFile("gem-build", "gem-output", "ruby-gem",
             unit, "1.2.3", "original.gem", 8,
             Convert.ToHexStringLower(SHA256.HashData("original"u8)));
-        string[] required = unit == RubyReleaseUnits.Latexmath
+        string[] required = unit == "asciidoctor-latexmath"
             ? ["native-input", "build", "contents", "consumer", "tests", "original-bytes"]
             : ["native-input", "build", "contents", "consumer", "original-bytes"];
         var prepared = new PreparedRelease(subject, [file], required, required.Select(id => new

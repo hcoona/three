@@ -34,7 +34,7 @@ internal static class RubyPackageChecks
                 !PathComparison.Equals(Path.GetFullPath(Path.Combine(root, entry)),
                     Path.GetFullPath(source.Gemspec)) ||
                 unit.Id != source.Gem.Name ||
-                !RubyReleaseUnits.Registered(source.Gem.Name) ||
+                !ReleaseUnitCatalog.IsRubyRegistered(source.Gem.Name) ||
                 string.IsNullOrWhiteSpace(source.Gem.Version) || source.Gem.Platform != "ruby")
                 throw new InvalidDataException("Unresolved adopted native Ruby gem subject.");
             if (build.Outputs is not [{ Role: "primary-package", Kind: "ruby-gem" }])

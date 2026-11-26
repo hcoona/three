@@ -567,7 +567,7 @@ public sealed class CiScopeTests
     [DataRow("src/public/lib/CircularList/CircularList.cs|src/public/lib/Hjg.Pngcs/PngReader.cs",
         "circular-list|hjg-pngcs")]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
-        "hcoona-release-smoke-github-packages/Program.cs", NuGetReleaseUnits.Smoke)]
+        "hcoona-release-smoke-github-packages/Program.cs", "hcoona-release-smoke-github-packages")]
     [DataRow("src/public/lib/CircularList/CircularList.cs|" +
         "src/private/app/workflow-delivery/Native/x.cs", "*")]
     [DataRow("src/public/lib/CircularList/CircularList.cs|" +
@@ -579,7 +579,7 @@ public sealed class CiScopeTests
         string units)
     {
         string[] paths = changed.Split('|');
-        string[] all = [.. NuGetReleaseUnits.All.Select(unit => unit.Id)];
+        string[] all = [.. ReleaseUnitCatalog.NuGetUnits.Select(unit => unit.Id)];
         string[] expected = units == "*" ? all : units.Split('|');
         string[] selected = CiScope.Select(paths, Comparison(paths), false, [])
             .NuGetPreparationUnits;
@@ -587,10 +587,37 @@ public sealed class CiScopeTests
         CollectionAssert.AreEquivalent(all, CiScope.Select([], Comparison(), true, [])
             .NuGetPreparationUnits);
         (string filter, int tests) = DotNetCiCaller.NuGetPreparationTests(selected);
-        Assert.AreEqual(expected.Sum(unit => unit == NuGetReleaseUnits.Smoke ? 2 : 1), tests);
+        Assert.AreEqual(expected.Sum(unit => unit == "hcoona-release-smoke-github-packages"
+            ? 2 : 1), tests);
         Assert.AreEqual("TestCategory=NuGetNativePreparation" + (units == "*" ? "" :
             "&(" + string.Join('|', expected.Select(unit => "TestCategory=NuGetUnit:" + unit)) +
             ")"), filter);
+    }
+
+    [TestMethod]
+    public void NuGetNativePreparationSelectsUnitsImpactedThroughEvaluatedTransitiveGraphs()
+    {
+        // Only a transitive MSBuild-evaluated dependency (LeafHelper -> MidCompanion ->
+        // CircularList.csproj) changed; CiScope selects circular-list from the evaluated plan.
+        const string leafPath = "src/private/lib/LeafHelper/Helper.cs";
+        const string leafProj = "src/private/lib/LeafHelper/LeafHelper.csproj";
+        const string midProj = "src/private/lib/MidCompanion/MidCompanion.csproj";
+        const string nugetProj = "src/public/lib/CircularList/CircularList.csproj";
+        ProjectFacts[] graph =
+        [
+            CI.Scenario.Project(leafProj, directory: "src/private/lib/LeafHelper"),
+            CI.Scenario.Project(midProj, dependencies: [leafProj],
+                directory: "src/private/lib/MidCompanion"),
+            CI.Scenario.Project(nugetProj, dependencies: [midProj],
+                directory: "src/public/lib/CircularList"),
+        ];
+        CiPlan evaluatedPlan = ImpactPlanner.Plan(CI.Scenario.Request(graph, leafPath));
+        string[] impactedProjects = [.. evaluatedPlan.Checks.Select(c => c.Work.Key.Target)
+            .Distinct(StringComparer.Ordinal)];
+
+        Assert.AreEqual("circular-list", Assert.ContainsSingle(
+            CiScope.Select([leafPath], Comparison(leafPath), false, [], impactedProjects)
+                .NuGetPreparationUnits));
     }
 
     [TestMethod]

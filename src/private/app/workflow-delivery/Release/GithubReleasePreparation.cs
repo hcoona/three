@@ -1,53 +1,11 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Release;
-
-// Static registration of the supported GitHub Release unit. Official tags follow the
-// product's committed NBGV publicReleaseRefSpec and the repository's release/<unit>/v<version>
-// tags; Buddy prereleases use the distinct buddy/<unit>/v<version> namespace (WD-CHN-001).
-internal static class GithubReleaseUnits
-{
-    internal const string ImageOcclusionEditor = "image-occlusion-editor";
-    internal const string Product = "src/public/app/ImageOcclusionEditor";
-    internal const string Declaration = Product + "/workflow-delivery.release-unit.yml";
-    internal const string Buddy = "github-release-prerelease";
-    internal const string Official = "github-release";
-    internal const string Definition = "dotnet/github-release-assets-v1";
-    internal const string Entry = "ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj";
-    internal const string Executable = "ImageOcclusionEditor.exe";
-    internal const string Editor = "svg-edit/index.html";
-
-    internal static string Tag(ReleaseSubject subject, string version) =>
-        (subject.Channel == "buddy" ? "buddy/" : "release/") + subject.Unit + "/v" + version;
-
-    internal static string Title(string unit, string version) => unit + " v" + version;
-
-    internal static string Asset(string kind, string version) => kind switch
-    {
-        "inno-installer" => "ImageOcclusionEditor-" + version + "-win-x64-setup.exe",
-        "portable-zip" => "ImageOcclusionEditor-" + version + "-win-x64-portable.zip",
-        _ => throw new InvalidDataException("Unsupported GitHub Release asset kind."),
-    };
-
-    // Pure subject admission, before any Git or native work.
-    internal static bool Admit(ReleaseSubject subject)
-    {
-        bool buddy = subject.Channel == "buddy" && subject.Destination == Buddy;
-        bool official = subject.Channel == "official" && subject.Destination == Official;
-        if (!(buddy || official) || string.IsNullOrWhiteSpace(subject.SelectedRef))
-            throw new InvalidDataException("Unsupported GitHub Release channel or ref.");
-        ReleasePolicy.RequireEligible(subject);
-        if (!GitReader.IsCommitId(subject.Revision))
-            throw new InvalidDataException("GitHub Release requires the exact selected revision.");
-        if (subject.Unit != ImageOcclusionEditor || subject.Declaration != Declaration)
-            throw new InvalidDataException("Unsupported GitHub Release unit.");
-        return official;
-    }
-}
 
 // Builds the installer and portable package once on Windows with the product's own
 // scripts, then qualifies both by clean local consumption before any write capability.
@@ -55,16 +13,20 @@ internal static class GithubReleasePreparation
 {
     internal static readonly string[] Required = ["native-input", "build", "contents",
         "installer-consumer", "portable-consumer", "original-bytes"];
-    private static readonly string[] Inputs = ["global.json", ".config/dotnet-tools.json",
-        GithubReleaseUnits.Product + "/version.json",
-        GithubReleaseUnits.Product + "/" + GithubReleaseUnits.Entry,
-        GithubReleaseUnits.Product + "/ImageOcclusionEditorWinUI3/Update-LocalSvgEditor.ps1",
-        GithubReleaseUnits.Product + "/script/Helpers.ps1",
-        GithubReleaseUnits.Product + "/script/Publish-ImageOcclusionEditor.ps1",
-        GithubReleaseUnits.Product + "/script/Build-InnoInstaller.ps1",
-        GithubReleaseUnits.Product + "/script/Setup.iss"];
     // ZIP entry times are fixed so the archive depends only on the published file set.
     private static readonly DateTimeOffset EntryTime = new(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    private static string[] InputsFor(GithubReleaseUnit unit) =>
+    [
+        "global.json", ".config/dotnet-tools.json",
+        unit.ProductDirectory + "/version.json",
+        unit.ProductDirectory + "/" + unit.EntryPoint,
+        unit.ProductDirectory + "/ImageOcclusionEditorWinUI3/Update-LocalSvgEditor.ps1",
+        unit.ProductDirectory + "/script/Helpers.ps1",
+        unit.ProductDirectory + "/script/Publish-ImageOcclusionEditor.ps1",
+        unit.ProductDirectory + "/script/Build-InnoInstaller.ps1",
+        unit.ProductDirectory + "/script/Setup.iss",
+    ];
 
     internal static Task<ReleasePreparationResult> PrepareAsync(
         ReleasePreparationRequest request, CancellationToken token) =>
@@ -84,24 +46,28 @@ internal static class GithubReleasePreparation
         var qualification = new ReleaseQualification(execute, token);
         var files = new List<ReleaseFile>();
         var native = new Dictionary<string, string>(StringComparer.Ordinal);
-        string product = Path.Combine(checkout, GithubReleaseUnits.Product);
         string publishRoot = Path.Combine(scratch, "publish");
         string installerRoot = Path.Combine(scratch, "installer");
         string originals = Path.Combine(scratch, "originals");
         string consumers = Path.Combine(scratch, "consumers");
         Dictionary<string, string?> environment = EnvironmentFor(scratch, request.Subject);
+        GithubReleaseUnit? registered = null;
+        string product = "";
         ReleaseBuild? build = null;
         string version = "", publish = "", installer = "", portable = "";
 
         await qualification.CheckAsync("native-input", async () =>
         {
             ReleaseSubject subject = request.Subject;
-            bool official = GithubReleaseUnits.Admit(subject);
+            (GithubReleaseUnit admitted, bool official) =
+                ReleaseUnitCatalog.AdmitGithubRelease(subject);
+            registered = admitted;
+            product = Path.Combine(checkout, admitted.ProductDirectory);
             if (!windows)
                 throw new InvalidDataException("GitHub Release preparation requires Windows.");
             GitMaterialization bound = await GitMaterialization.BindAsync(checkout,
                 subject.Revision, token);
-            build = await ReadRecipeAsync(subject, bound.ReadOptionalTextAsync, token);
+            build = await ReadRecipeAsync(subject, admitted, bound.ReadOptionalTextAsync, token);
             await ReleasePreparationContext.RequireCompleteHistoryAsync(checkout, RunAsync);
             string selected = await ReleasePreparationContext.RequirePinnedSdkAsync(bound,
                 checkout, "dotnet", RunAsync, token);
@@ -114,15 +80,16 @@ internal static class GithubReleasePreparation
             native.Add("version", version);
             native.Add("commit", subject.Revision);
             native.Add("public-release", publicRelease ? "true" : "false");
-            native.Add("tag", GithubReleaseUnits.Tag(subject, version));
+            native.Add("tag", GithubReleaseUnit.Tag(subject, version));
             native.Add("sdk", selected);
         });
         await qualification.CheckAsync("build", async () =>
         {
-            // The product's own scripts: the svg-edit payload, the NativeAOT publish and ISCC.
-            await RunAsync(new("pwsh", Path.Combine(product, "ImageOcclusionEditorWinUI3"),
-                [.. Pwsh, Path.Combine(product,
-                    "ImageOcclusionEditorWinUI3/Update-LocalSvgEditor.ps1"), "-Force"], 600));
+            string entryDir = Path.GetDirectoryName(registered!.EntryPoint)!
+                .Replace('/', Path.DirectorySeparatorChar);
+            await RunAsync(new("pwsh", Path.Combine(product, entryDir),
+                [.. Pwsh, Path.Combine(product, entryDir, "Update-LocalSvgEditor.ps1"), "-Force"],
+                600));
             await RunAsync(new("pwsh", product, [.. Pwsh, Path.Combine(product,
                 "script/Publish-ImageOcclusionEditor.ps1"), "-Configuration", "Release",
                 "-OutputRoot", publishRoot], 2700));
@@ -130,7 +97,7 @@ internal static class GithubReleasePreparation
                 "script/Build-InnoInstaller.ps1"), "-Configuration", "Release",
                 "-PublishOutputRoot", publishRoot, "-InstallerOutputPath", installerRoot], 900));
             string[] executables = Directory.Exists(publishRoot) ? Directory.GetFiles(
-                publishRoot, GithubReleaseUnits.Executable, SearchOption.AllDirectories) : [];
+                publishRoot, registered.Executable, SearchOption.AllDirectories) : [];
             if (executables is not [string executable])
                 throw new InvalidDataException("Native publish produced no unique application.");
             publish = Path.GetDirectoryName(executable)!;
@@ -139,10 +106,8 @@ internal static class GithubReleasePreparation
             if (setups is not [string setup])
                 throw new InvalidDataException("Native installer build produced no unique setup.");
             Directory.CreateDirectory(originals);
-            installer = Path.Combine(originals, GithubReleaseUnits.Asset("inno-installer",
-                version));
-            portable = Path.Combine(originals, GithubReleaseUnits.Asset("portable-zip",
-                version));
+            installer = Path.Combine(originals, registered.Asset("inno-installer", version));
+            portable = Path.Combine(originals, registered.Asset("portable-zip", version));
             File.Copy(setup, installer, overwrite: false);
             CreatePortable(publish, portable);
         });
@@ -160,8 +125,8 @@ internal static class GithubReleasePreparation
             }
             if (actual.Count != expected.Count || expected.Any(pair =>
                     !actual.TryGetValue(pair.Key, out long length) || length != pair.Value) ||
-                !actual.ContainsKey(GithubReleaseUnits.Executable) ||
-                !actual.ContainsKey(GithubReleaseUnits.Editor))
+                !actual.ContainsKey(registered!.Executable) ||
+                !actual.ContainsKey(registered.Editor))
                 throw new InvalidDataException("Portable package differs from the publish tree.");
             return Task.CompletedTask;
         });
@@ -172,13 +137,13 @@ internal static class GithubReleasePreparation
             await RunAsync(new(installer, consumers, ["/VERYSILENT", "/SUPPRESSMSGBOXES",
                 "/NORESTART", "/SP-", "/NOICONS", "/DIR=" + target,
                 "/LOG=" + Path.Combine(consumers, "install.log")], 600));
-            RequireConsumed(target, publish);
+            RequireConsumed(registered!, target, publish);
         });
         await qualification.CheckAsync("portable-consumer", () =>
         {
             string target = Path.Combine(consumers, "portable");
             ZipFile.ExtractToDirectory(portable, target);
-            RequireConsumed(target, publish);
+            RequireConsumed(registered!, target, publish);
             return Task.CompletedTask;
         });
         await qualification.CheckAsync("original-bytes", () =>
@@ -207,7 +172,8 @@ internal static class GithubReleasePreparation
 
     // The complete committed recipe, read through a revision-bound reader.
     internal static async Task<ReleaseBuild> ReadRecipeAsync(ReleaseSubject subject,
-        Func<string, CancellationToken, Task<string?>> read, CancellationToken token)
+        GithubReleaseUnit expectedUnit, Func<string, CancellationToken, Task<string?>> read,
+        CancellationToken token)
     {
         ReleaseUnitDeclaration unit = ReleaseUnitDeclarationReader.Read(
             await read(subject.Declaration, token) ??
@@ -215,18 +181,16 @@ internal static class GithubReleasePreparation
             subject.Declaration);
         if (unit.Id != subject.Unit || unit.Builds is not [
             {
-                Definition:
-                GithubReleaseUnits.Definition, EntryPoint: GithubReleaseUnits.Entry,
-                Outputs: { Length: 2 }
-            }])
+                Definition: GithubReleaseUnit.BuildDefinition, Outputs: { Length: 2 }
+            } build] || build.EntryPoint != expectedUnit.EntryPoint)
             throw new InvalidDataException("Unsupported complete GitHub Release recipe.");
-        ReleaseBuild build = unit.Builds[0];
         if (build.Outputs.Count(output => output is
             { Role: "primary-package", Kind: "inno-installer" }) != 1 ||
             build.Outputs.Count(output => output is
             { Role: "portable-package", Kind: "portable-zip" }) != 1)
             throw new InvalidDataException("Unsupported complete GitHub Release asset set.");
-        await ReleasePreparationContext.RequireCommittedInputsAsync(read, Inputs, token);
+        await ReleasePreparationContext.RequireCommittedInputsAsync(read,
+            InputsFor(expectedUnit), token);
         return build;
     }
 
@@ -268,12 +232,12 @@ internal static class GithubReleasePreparation
             file => new FileInfo(file).Length, StringComparer.Ordinal);
 
     // A consumer tree must carry the published application byte for byte and its editor.
-    private static void RequireConsumed(string target, string publish)
+    private static void RequireConsumed(GithubReleaseUnit unit, string target, string publish)
     {
-        string executable = Path.Combine(target, GithubReleaseUnits.Executable);
+        string executable = Path.Combine(target, unit.Executable);
         if (!File.Exists(executable) || !File.Exists(Path.Combine(target,
-                GithubReleaseUnits.Editor.Replace('/', Path.DirectorySeparatorChar))) ||
-            Original(executable) != Original(Path.Combine(publish, GithubReleaseUnits.Executable)))
+                unit.Editor.Replace('/', Path.DirectorySeparatorChar))) ||
+            Original(executable) != Original(Path.Combine(publish, unit.Executable)))
             throw new InvalidDataException("Consumed package lacks the published application.");
         RequirePortableExecutable(executable);
     }

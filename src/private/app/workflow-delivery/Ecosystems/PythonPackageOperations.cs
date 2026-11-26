@@ -13,6 +13,10 @@ internal sealed class PythonPackageOperations(PythonReleaseUnit unit, PythonPack
     string root)
 {
     internal const string Preset = "python/hcoona-release-smoke-python-v1";
+    private string ProjectPath => Path.Combine(tools.Checkout,
+        ReleaseUnitCatalog.ParentDirectory(unit.Declaration));
+
+    private string ApiJson => JsonSerializer.Serialize(unit.Api, TransferJson.Default.StringArray);
     private readonly string archives = Path.Combine(root, "archives");
     private readonly string python = Python(Path.Combine(root, "tools"));
     private readonly Dictionary<string, string?> environment = new(tools.Environment,
@@ -57,7 +61,7 @@ internal sealed class PythonPackageOperations(PythonReleaseUnit unit, PythonPack
             "--no-build-isolation", "--python", python, "--out-dir", archives,
             "--preview-features", "build-dependency-check"]), token);
         NativeCommandResult result = await execute(Helper(python, root,
-            ["outputs", archives, name, version, Preset]), token);
+            ["outputs", archives, name, version, Preset, ProjectPath]), token);
         using JsonDocument receipt = JsonDocument.Parse(result.Stdout);
         var originals = new List<PythonDistribution>();
         foreach (JsonElement value in receipt.RootElement.EnumerateArray())
@@ -104,8 +108,8 @@ internal sealed class PythonPackageOperations(PythonReleaseUnit unit, PythonPack
         foreach (PythonDistribution original in originals)
         {
             RequireOriginal(original);
-            await execute(Helper(python, root, ["archive", original.Path, name, version, Preset]),
-                token);
+            await execute(Helper(python, root,
+                ["archive", original.Path, name, version, Preset, ProjectPath]), token);
             RequireOriginal(original);
         }
     }
@@ -141,8 +145,8 @@ internal sealed class PythonPackageOperations(PythonReleaseUnit unit, PythonPack
             if (outputs.Length != 1 || !outputs[0].EndsWith(".whl", StringComparison.Ordinal))
                 throw new InvalidDataException("Incomplete Git-free native wheel output.");
             install = outputs[0];
-            await execute(Helper(python, consumer, ["archive", install, name, version, Preset]),
-                token);
+            await execute(Helper(python, consumer,
+                ["archive", install, name, version, Preset, ProjectPath]), token);
         }
         string venv = Path.Combine(consumer, "venv");
         await execute(Uv(consumer, ["venv", venv, "--python", tools.Interpreter, "--no-project"]),
@@ -151,7 +155,8 @@ internal sealed class PythonPackageOperations(PythonReleaseUnit unit, PythonPack
             await InstallRuntimeAsync(consumer, Python(venv), execute, token);
         await execute(Uv(consumer, ["pip", "install", "--python", Python(venv), "--no-deps",
             "--no-cache", "--offline", install]), token);
-        await execute(Helper(Python(venv), consumer, ["consume", name, version, Preset]), token);
+        await execute(Helper(Python(venv), consumer,
+            ["consume", name, version, Preset, ProjectPath, ApiJson]), token);
         RequireOriginal(original);
     }
 

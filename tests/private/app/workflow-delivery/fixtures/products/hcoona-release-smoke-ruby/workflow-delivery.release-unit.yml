@@ -8,3 +8,8 @@ builds:
       - id: gem
         role: primary-package
         kind: ruby-gem
+    qualification:
+      require: hcoona_release_smoke_ruby
+      probe: >-
+        HcoonaReleaseSmokeRuby.project_id == 'hcoona-release-smoke-ruby' &&
+        HcoonaReleaseSmokeRuby::VERSION == ARGV.fetch(0)

@@ -48,7 +48,7 @@ public sealed class PythonReleaseTests(TestContext context)
     [DataRow(true, true)]
     public void ValidateNbgvRequiresAdoptedSuiteResult(bool requiresSuite, bool failed)
     {
-        using var fixture = new Fixture(unit: PythonReleaseUnits.Nbgv);
+        using var fixture = new Fixture(unit: "nbgv-python");
         PreparedRelease prepared = fixture.Prepared;
         ReleaseCheck[] checks = failed
             ? [.. prepared.Checks.Select(check => check.Id == "tests"
@@ -378,7 +378,7 @@ public sealed class PythonReleaseTests(TestContext context)
         using var f = new Fixture();
         ReleaseSubject subject = f.Prepared.Subject with
         {
-            Declaration = PythonReleaseUnits.Named(f.Prepared.Subject.Unit).Declaration,
+            Declaration = ReleaseUnitCatalog.Python(f.Prepared.Subject.Unit).Declaration,
         };
         PreparedRelease prepared = f.Prepared with { Subject = subject };
         var qualified = f.Preparation with { Prepared = prepared };
@@ -501,8 +501,8 @@ public sealed class PythonReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(PythonReleaseUnits.Smoke, false)]
-    [DataRow(PythonReleaseUnits.Nbgv, true)]
+    [DataRow("hcoona-release-smoke-python", false)]
+    [DataRow("nbgv-python", true)]
     public void PublishUsesFreshPhaseScratchAndRetainsOriginalWrites(string unit, bool official)
     {
         // The static version needs no public-release fact in either channel (WD-REL-001).
@@ -692,7 +692,7 @@ public sealed class PythonReleaseTests(TestContext context)
         internal PythonIndexTools IndexTools { get; }
         internal PythonPublisherTools PublisherTools { get; }
 
-        internal Fixture(bool dryRun = false, string unit = PythonReleaseUnits.Smoke,
+        internal Fixture(bool dryRun = false, string unit = "hcoona-release-smoke-python",
             bool official = false)
         {
             Directory.CreateDirectory(Path.Combine(Root, "archives"));
@@ -702,7 +702,7 @@ public sealed class PythonReleaseTests(TestContext context)
             var subject = new ReleaseSubject(new('a', 40),
                 official ? "refs/heads/main" : "refs/heads/development", unit, "release.yml",
                 official ? "official" : "buddy", official ? "pypi" : "testpypi", dryRun);
-            string[] required = unit == PythonReleaseUnits.Nbgv
+            string[] required = unit == "nbgv-python"
                 ? ["native-input", "build", "contents", "wheel-consumer", "sdist-consumer",
                     "tests", "original-bytes"]
                 : ["native-input", "build", "contents", "wheel-consumer", "sdist-consumer",

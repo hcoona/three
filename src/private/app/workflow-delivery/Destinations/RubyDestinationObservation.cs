@@ -16,7 +16,7 @@ internal static class RubyDestinationObservation
         CancellationToken token)
     {
         if (prepared.Files is not [{ Kind: "ruby-gem", Name: var name }] ||
-            name != RubyReleaseUnits.Admit(prepared.Subject).Id)
+            name != ReleaseUnitCatalog.AdmitRuby(prepared.Subject).Id)
             throw new InvalidDataException("Native Ruby observation needs a supported original.");
         string host = (prepared.Subject.Channel, prepared.Subject.Destination) switch
         {

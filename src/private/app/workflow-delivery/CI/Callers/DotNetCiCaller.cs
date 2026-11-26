@@ -20,10 +20,12 @@ internal static class DotNetCiCaller
     internal static (string Filter, int Tests) NuGetPreparationTests(string[] units)
     {
         if (units.Length == 0) return ("", 0);
-        int tests = units.Sum(unit => unit == NuGetReleaseUnits.Smoke ? SmokePreparationRows
-            : 1);
+        NuGetReleaseUnit[] catalog = [.. ReleaseUnitCatalog.NuGetUnits];
+        var smokeIds = catalog.Where(u => u.SmokeFixture).Select(u => u.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        int tests = units.Sum(unit => smokeIds.Contains(unit) ? SmokePreparationRows : 1);
         string filter = "TestCategory=" + NuGetPreparationCategory;
-        if (!NuGetReleaseUnits.All.All(unit => units.Contains(unit.Id)))
+        if (!catalog.All(unit => units.Contains(unit.Id, StringComparer.Ordinal)))
             filter += "&(" + string.Join('|', units.Select(unit =>
                 "TestCategory=" + NuGetUnitCategory + unit)) + ")";
         return (filter, tests);
@@ -107,10 +109,11 @@ internal static class DotNetCiCaller
                 CiScope.MiseTasksAsync, CiScope.HkImportsAsync, token),
             await CiScope.OwnersAsync(candidate, changed, control.Candidate.Inputs,
                 CiScope.MiseTasksAsync, CiScope.HkImportsAsync, token));
-        CiScopeApplicability retained = CiScope.Select(changed, comparison, request.Full,
-            [.. control.Basis.Inputs, .. control.Candidate.Inputs]);
         DotNetGroupReadback readback = await DotNetGroupReader.ReadAsync(request, scope,
             comparison, basis, candidate, token);
+        CiScopeApplicability retained = CiScope.Select(changed, comparison, request.Full,
+            [.. control.Basis.Inputs, .. control.Candidate.Inputs],
+            readback.Plan.Checks.Select(c => c.Work.Key.Target).Distinct(StringComparer.Ordinal));
         CiCallerTransfer.Plan(readback.Plan, request.Basis.Reference,
             request.Candidate.Reference, Scope);
         CiCallerTransfer.Write(Path.Combine(transfer, "dotnet-plan.json"), readback.Plan,

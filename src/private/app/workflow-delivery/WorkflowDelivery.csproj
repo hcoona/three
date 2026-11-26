@@ -10,6 +10,15 @@
   <ItemGroup>
     <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
     <EmbeddedResource Include="Repository/resources/hk-scope-copies.json" LogicalName="HkScopeCopies" />
+    <EmbeddedResource Include="../../../../src/public/**/workflow-delivery.release-unit.yml"
+                      LogicalName="ReleaseUnit:src/public/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../../tests/private/app/workflow-delivery/fixtures/products/**/workflow-delivery.release-unit.yml"
+                      LogicalName="ReleaseUnit:tests/private/app/workflow-delivery/fixtures/products/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../../src/public/lib/*/*.csproj;../../../../src/public/lib/*/package.json"
+                      Exclude="../../../../src/public/lib/*.Generators/*.csproj;../../../../src/public/lib/steam-account-history-to-csv/package.json"
+                      LogicalName="ReleaseManifest:$([System.IO.Path]::GetRelativePath('$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../../..'))', '%(FullPath)').Replace('\', '/'))" />
+    <EmbeddedResource Include="../../../../tests/private/app/workflow-delivery/fixtures/products/*/*.csproj;../../../../tests/private/app/workflow-delivery/fixtures/products/*/package.json"
+                      LogicalName="ReleaseManifest:$([System.IO.Path]::GetRelativePath('$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../../..'))', '%(FullPath)').Replace('\', '/'))" />
     <PackageReference Include="YamlDotNet" />
     <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" />
     <PackageReference Include="NuGet.Protocol" />

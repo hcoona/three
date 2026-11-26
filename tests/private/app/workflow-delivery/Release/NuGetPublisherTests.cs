@@ -301,7 +301,7 @@ public sealed class NuGetPublisherTests(TestContext context)
             Original = bytes.ToArray();
             File.WriteAllBytes(Path, Original);
             Prepared = new(new(new string('a', 40), reference, unit,
-                WorkflowDelivery.Ecosystems.NuGetReleaseUnits.Named(unit).Declaration, channel,
+                WorkflowDelivery.Ecosystems.ReleaseUnitCatalog.NuGet(unit).Declaration, channel,
                 destination, false),
                 [new("build", "package", "nuget-package", package,
                     "1.0.0", "original.nupkg", Original.Length,

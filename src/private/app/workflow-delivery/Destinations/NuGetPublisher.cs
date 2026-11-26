@@ -51,7 +51,8 @@ internal static class NuGetPublisher
             !File.Exists(path) || !path.EndsWith(".nupkg", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Original NuGet package is missing or not a file.");
         ReleasePolicy.RequireEligible(prepared.Subject);
-        var identity = new PackageIdentity(NuGetReleaseUnits.Admit(prepared.Subject).PackageId,
+        var identity = new PackageIdentity(
+            ReleaseUnitCatalog.AdmitNuGet(prepared.Subject).PackageId,
             NuGetVersion.Parse(file.Version));
         if (!PackageIdentityComparer.Default.Equals(identity,
                 new PackageIdentity(file.Name, NuGetVersion.Parse(file.Version))) ||

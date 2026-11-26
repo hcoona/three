@@ -23,7 +23,7 @@ internal sealed class RubyPackageOperations(RubyReleaseUnit unit, RubyFactTools 
         if (source.Gem.Name != unit.Id || source.Gem.Version != version ||
             source.Gem.Platform != "ruby")
             throw new InvalidDataException("Native gem source identity differs.");
-        IReadOnlyDictionary<string, string?> environment = unit.Id == RubyReleaseUnits.Latexmath
+        IReadOnlyDictionary<string, string?> environment = unit.NbgvEnv
             ? new Dictionary<string, string?>(tools.Environment, StringComparer.Ordinal)
             { ["THREE_WORKFLOW_RELEASE_NBGV_PATH"] = nbgv }
             : tools.Environment;
@@ -35,7 +35,7 @@ internal sealed class RubyPackageOperations(RubyReleaseUnit unit, RubyFactTools 
         (long length, string sha256) = await OwnedFile.MeasureAsync(archive, token,
             "Native gem build omitted its output.");
         var original = new RubyGemArchive(archive, length, sha256);
-        if (unit.Id == RubyReleaseUnits.Smoke)
+        if (!unit.LockedBundle)
             await InspectAsync(checkout, directory, original, version, release: false, execute,
                 token);
         return original;
@@ -49,20 +49,19 @@ internal sealed class RubyPackageOperations(RubyReleaseUnit unit, RubyFactTools 
         RequireOriginal(original);
         RubyArchiveFacts facts = await new RubyNativeFactCollector(tools, execute)
             .ArchiveAsync(original.Path, token);
-        bool latexmath = unit.Id == RubyReleaseUnits.Latexmath;
         string prefix = directory + "/";
-        // The Latexmath gemspec declares lib/**, README.md and LICENSE from the revision.
-        string[] expected = latexmath
+        string[] expected = unit.LockedBundle
             ? [.. checkout.Revision.Entries
                 .Where(entry => entry.Path.StartsWith(prefix + "lib/", StringComparison.Ordinal))
                 .Select(entry => entry.Path[prefix.Length..]), "README.md", "LICENSE"]
-            : ["LICENSE", "README.md", "lib/hcoona_release_smoke_ruby.rb",
-                "lib/hcoona_release_smoke_ruby/version.rb"];
-        bool runtimeMatches = latexmath
-            ? facts.Gem.RuntimeDependencies is
-                [{ Name: "asciidoctor", Requirement: ">= 2.0, < 3.0" }]
-            : facts.Gem.RuntimeDependencies is [];
-        bool qualified = release || latexmath;
+            : ["LICENSE", "README.md", $"lib/{unit.Require}.rb", $"lib/{unit.Require}/version.rb"];
+        RubyDependency[] expectedDeps = [.. unit.Dependencies.Select(spec =>
+        {
+            string[] parts = spec.Split('@', 2);
+            return new RubyDependency(parts[0], parts.Length > 1 ? parts[1] : ">= 0");
+        })];
+        bool runtimeMatches = facts.Gem.RuntimeDependencies.SequenceEqual(expectedDeps);
+        bool qualified = release || unit.LockedBundle;
         if (facts.Gem.Name != unit.Id || facts.Gem.Version != version ||
             facts.Gem.Platform != "ruby" || !runtimeMatches ||
             !facts.Contents.Order(StringComparer.Ordinal).SequenceEqual(expected.Order(
@@ -84,9 +83,8 @@ internal sealed class RubyPackageOperations(RubyReleaseUnit unit, RubyFactTools 
         RequireOriginal(original);
         string consumer = Directory.CreateDirectory(Path.Combine(state, "consumer")).FullName;
         string gems = Path.Combine(consumer, "gems");
-        bool latexmath = unit.Id == RubyReleaseUnits.Latexmath;
         Dictionary<string, string?> environment;
-        if (latexmath)
+        if (unit.LockedBundle)
             (environment, _) = await InstallLockedAsync(projectDirectory, consumer, "development",
                 execute, token);
         else
@@ -101,34 +99,33 @@ internal sealed class RubyPackageOperations(RubyReleaseUnit unit, RubyFactTools 
             [gem, "install", "--norc", original.Path, "--local", "--no-document"],
             tools.DeadlineSeconds, environment, InheritEnvironment: false,
             CloseStandardInput: true), execute, token);
-        if (latexmath)
+        if (unit.LockedBundle)
         {
-            // RubyGems' native default path adds only the selected Ruby's own installed gems.
             var load = new Dictionary<string, string?>(environment, StringComparer.Ordinal)
             {
                 ["GEM_PATH"] = null,
                 ["BUNDLE_GEMFILE"] = null,
             };
             await RunAsync(new(tools.Ruby, consumer,
-                ["-e", "require 'asciidoctor-latexmath'; " +
-                    "spec = Gem.loaded_specs.fetch('asciidoctor-latexmath'); " +
+                ["-e", $"require '{unit.Require}'; " +
+                    $"spec = Gem.loaded_specs.fetch('{unit.Id}'); " +
                     "abort 'wrong installed specification' unless " +
-                    "spec.name == 'asciidoctor-latexmath' && " +
-                    "spec.version.to_s == ARGV.fetch(0) && spec.platform.to_s == 'ruby' && " +
-                    "Asciidoctor::Latexmath::VERSION == ARGV.fetch(0); " +
+                    $"spec.name == '{unit.Id}' && " +
+                    "spec.version.to_s == ARGV.fetch(0) && spec.platform.to_s == 'ruby'; " +
                     "root = File.realpath(ARGV.fetch(1)) + File::SEPARATOR; " +
                     "own = File.realpath(spec.full_gem_path) + File::SEPARATOR; " +
-                    "dependency = Gem.loaded_specs.fetch('asciidoctor'); " +
+                    "spec.runtime_dependencies.each { |dep| " +
+                    "d = Gem.loaded_specs.fetch(dep.name); " +
                     "abort 'installed specification leaves owned state' unless " +
-                    "own.start_with?(root) && " +
-                    "File.realpath(dependency.full_gem_path).start_with?(root); " +
+                    "File.realpath(d.full_gem_path).start_with?(root) }; " +
+                    "abort 'installed specification leaves owned state' unless " +
+                    "own.start_with?(root); " +
                     "loaded = $LOADED_FEATURES.select { |path| " +
-                    "path.end_with?('/asciidoctor-latexmath.rb') || " +
-                    "path.include?('/asciidoctor/latexmath/') }; " +
+                    $"path.end_with?('/{unit.Require}.rb') || " +
+                    $"path.include?('/{unit.Require.Replace('-', '/')}/') }}; " +
                     "abort 'wrong installed import origin' unless loaded.any? && " +
                     "loaded.all? { |path| File.realpath(path).start_with?(own) }; " +
-                    "abort 'missing installed API' unless " +
-                    "Asciidoctor::Latexmath.respond_to?(:register)",
+                    $"abort 'missing installed API' unless ({unit.Probe})",
                     version, gems],
                 tools.DeadlineSeconds, load, InheritEnvironment: false,
                 CloseStandardInput: true), execute, token);
@@ -136,20 +133,18 @@ internal sealed class RubyPackageOperations(RubyReleaseUnit unit, RubyFactTools 
         else
         {
             await RunAsync(new(tools.Ruby, consumer,
-                ["-e", "require 'hcoona_release_smoke_ruby'; " +
-                    "abort 'wrong installed identity' unless " +
-                    "HcoonaReleaseSmokeRuby.project_id == 'hcoona-release-smoke-ruby' " +
-                    "&& HcoonaReleaseSmokeRuby::VERSION == ARGV.fetch(0); " +
-                    (release ? "spec = Gem.loaded_specs.fetch('hcoona-release-smoke-ruby'); " +
+                ["-e", $"require '{unit.Require}'; " +
+                    $"abort 'wrong installed identity' unless ({unit.Probe}); " +
+                    (release ? $"spec = Gem.loaded_specs.fetch('{unit.Id}'); " +
                         "abort 'wrong installed specification' unless " +
-                        "spec.name == 'hcoona-release-smoke-ruby' && " +
+                        $"spec.name == '{unit.Id}' && " +
                         "spec.version.to_s == ARGV.fetch(0) && spec.platform.to_s == 'ruby'; " +
                         "root = File.realpath(ARGV.fetch(1)) + File::SEPARATOR; " +
                         "abort 'installed specification leaves owned state' unless " +
                         "File.realpath(spec.full_gem_path).start_with?(root); " +
                         "loaded = $LOADED_FEATURES.select { |path| " +
-                        "path.end_with?('/hcoona_release_smoke_ruby.rb') || " +
-                        "path.end_with?('/hcoona_release_smoke_ruby/version.rb') }; " +
+                        $"path.end_with?('/{unit.Require}.rb') || " +
+                        $"path.end_with?('/{unit.Require}/version.rb') }}; " +
                         "abort 'wrong installed import origin' unless loaded.length == 2 && " +
                         "loaded.all? { |path| File.realpath(path).start_with?(" +
                         "File.realpath(spec.full_gem_path) + File::SEPARATOR) }" : ""),

@@ -8,3 +8,5 @@ builds:
       - id: nuget-package
         role: primary-package
         kind: nuget-package
+    qualification:
+      probe: typeof(IO.Github.Hcoona.Collections.CircularList<int>).Assembly.GetName().Name

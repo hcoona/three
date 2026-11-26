@@ -31,7 +31,7 @@ internal static class RubyRepositoryReader
     {
         foreach (ProjectFacts owner in inputs.Facts.Owners.Where(owner =>
                      owner.ReleaseUnit is not null))
-            if (RubyReleaseUnits.Named(inputs.Facts.Native.Graph.Projects.Single(project =>
+            if (ReleaseUnitCatalog.Ruby(inputs.Facts.Native.Graph.Projects.Single(project =>
                     project.Directory == owner.Directory).Name).Preset != owner.QualityPreset)
                 throw new InvalidDataException("Unsupported adopted Ruby quality obligations.");
     }

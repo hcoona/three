@@ -52,13 +52,13 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
-    [DataRow(RubyReleaseUnits.Smoke, "github-packages",
+    [DataRow("hcoona-release-smoke-ruby", "github-packages",
         "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby/")]
-    [DataRow(RubyReleaseUnits.Smoke, "rubygems",
+    [DataRow("hcoona-release-smoke-ruby", "rubygems",
         "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby/")]
-    [DataRow(RubyReleaseUnits.Latexmath, "github-packages",
+    [DataRow("asciidoctor-latexmath", "github-packages",
         "src/public/lib/asciidoctor-latexmath/")]
-    [DataRow(RubyReleaseUnits.Latexmath, "rubygems", "src/public/lib/asciidoctor-latexmath/")]
+    [DataRow("asciidoctor-latexmath", "rubygems", "src/public/lib/asciidoctor-latexmath/")]
     public void RubyRequestSelectsTheDispatchedUnit(string unit, string destination,
         string directory)
     {
@@ -87,12 +87,12 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
-    [DataRow(PythonReleaseUnits.Smoke, "testpypi",
+    [DataRow("hcoona-release-smoke-python", "testpypi",
         "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/")]
-    [DataRow(PythonReleaseUnits.Smoke, "pypi",
+    [DataRow("hcoona-release-smoke-python", "pypi",
         "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/")]
-    [DataRow(PythonReleaseUnits.Nbgv, "testpypi", "src/public/lib/nbgv-python/")]
-    [DataRow(PythonReleaseUnits.Nbgv, "pypi", "src/public/lib/nbgv-python/")]
+    [DataRow("nbgv-python", "testpypi", "src/public/lib/nbgv-python/")]
+    [DataRow("nbgv-python", "pypi", "src/public/lib/nbgv-python/")]
     public void PythonRequestSelectsTheDispatchedUnit(string unit, string destination,
         string directory)
     {
@@ -107,7 +107,7 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
-    [DataRow(NuGetReleaseUnits.Smoke, "github-packages",
+    [DataRow("hcoona-release-smoke-github-packages", "github-packages",
         "tests/private/app/workflow-delivery/fixtures/products/" +
         "hcoona-release-smoke-github-packages/")]
     [DataRow("circular-list", "github-packages", "src/public/lib/CircularList/")]
@@ -140,7 +140,7 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
-    [DataRow(NuGetReleaseUnits.Smoke, "nugetorg")]
+    [DataRow("hcoona-release-smoke-github-packages", "nugetorg")]
     [DataRow("another-package", "github-packages")]
     [DataRow("circular-list", "github-packages-nuget")]
     [DataRow("", "github-packages")]
@@ -170,13 +170,13 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
-    [DataRow(NpmReleaseUnits.Smoke, "github-packages", "true",
+    [DataRow("hcoona-release-smoke-npm", "github-packages", "true",
         "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/")]
-    [DataRow(NpmReleaseUnits.Smoke, "npmjs", "true",
+    [DataRow("hcoona-release-smoke-npm", "npmjs", "true",
         "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/")]
-    [DataRow(NpmReleaseUnits.Hexo, "github-packages", "false",
+    [DataRow("hexo-renderer-asciidoc", "github-packages", "false",
         "src/public/lib/hexo-renderer-asciidoc/")]
-    [DataRow(NpmReleaseUnits.Hexo, "npmjs", "true", "src/public/lib/hexo-renderer-asciidoc/")]
+    [DataRow("hexo-renderer-asciidoc", "npmjs", "true", "src/public/lib/hexo-renderer-asciidoc/")]
     public void NpmRequestSelectsTheDispatchedUnit(string unit, string destination, string dry,
         string directory)
     {
@@ -193,9 +193,9 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
-    [DataRow(NpmReleaseUnits.Hexo, "npmjs", "refs/heads/main", true)]
-    [DataRow(NpmReleaseUnits.Hexo, "npmjs", "refs/heads/feature", false)]
-    [DataRow(NpmReleaseUnits.Smoke, "npmjs", "refs/heads/main", false)]
+    [DataRow("hexo-renderer-asciidoc", "npmjs", "refs/heads/main", true)]
+    [DataRow("hexo-renderer-asciidoc", "npmjs", "refs/heads/feature", false)]
+    [DataRow("hcoona-release-smoke-npm", "npmjs", "refs/heads/main", false)]
     [DataRow("another-package", "github-packages", "refs/heads/feature", false)]
     [DataRow("", "github-packages", "refs/heads/feature", false)]
     public void OfficialLiveNpmRequestAcceptsOnlyLiveUnitsFromMain(string unit,
@@ -377,7 +377,7 @@ public sealed class ReleaseJobInputsTests
                         "python" => "testpypi",
                         "npm" => "github-packages",
                         "nuget" => "github-packages",
-                        "github-release" => GithubReleaseUnits.Buddy,
+                        "github-release" => GithubReleaseUnit.BuddyDestination,
                         _ => throw new InvalidOperationException()
                     }),
                 ["GITHUB_SHA"] = new string('a', 40),
@@ -397,11 +397,11 @@ public sealed class ReleaseJobInputsTests
                 ["GITHUB_OUTPUT"] = At("output"),
                 ["UNIT"] = ecosystem switch
                 {
-                    "python" => PythonReleaseUnits.Smoke,
-                    "npm" => NpmReleaseUnits.Smoke,
-                    "github-release" => GithubReleaseUnits.ImageOcclusionEditor,
-                    "nuget" => NuGetReleaseUnits.Smoke,
-                    _ => RubyReleaseUnits.Smoke,
+                    "python" => "hcoona-release-smoke-python",
+                    "npm" => "hcoona-release-smoke-npm",
+                    "github-release" => "image-occlusion-editor",
+                    "nuget" => "hcoona-release-smoke-github-packages",
+                    _ => "hcoona-release-smoke-ruby",
                 },
             };
         }

@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Destinations;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -209,7 +208,7 @@ public sealed class NpmjsPublicationTests
             byte[] bytes = [1, 2, 3];
             File.WriteAllBytes(Path.Combine(Originals, "original/package.tgz"), bytes);
             Prepared = new(new(new('a', 40), "refs/heads/main",
-                NpmReleaseUnits.Hexo, "hexo/release.yml", "official", "npmjs", false),
+                "hexo-renderer-asciidoc", "hexo/release.yml", "official", "npmjs", false),
                 [new("build", "archive", "npm-tarball", "hexo-renderer-asciidoc",
                     "4.0.0-beta.12", "original/package.tgz", bytes.Length,
                     Convert.ToHexStringLower(SHA256.HashData(bytes)))],

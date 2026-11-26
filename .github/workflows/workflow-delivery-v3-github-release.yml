@@ -11,10 +11,8 @@ name: Workflow Delivery v3 GitHub Release
           - github-release
       unit:
         description: Selected GitHub Release unit
-        type: choice
+        type: string
         required: true
-        options:
-          - image-occlusion-editor
       dry-run:
         description: Qualify and describe without publication
         type: boolean

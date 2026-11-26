@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using WorkflowDelivery.Destinations;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -19,10 +18,10 @@ public sealed class PythonNativePublisherTests(TestContext context)
     [DataRow("buddy", "testpypi", "refs/heads/development", "wheel",
         "https://test.pypi.org/legacy/")]
     [DataRow("official", "pypi", "refs/heads/main", "sdist",
-        "https://upload.pypi.org/legacy/", PythonReleaseUnits.Nbgv)]
+        "https://upload.pypi.org/legacy/", "nbgv-python")]
     public async Task NativePublisherReceivesOnlyQualifiedOriginalAndSelectedContext(
         string channel, string destination, string selectedRef, string output, string endpoint,
-        string unit = PythonReleaseUnits.Smoke)
+        string unit = "hcoona-release-smoke-python")
     {
         using var fixture = new Fixture(unit);
         PreparedRelease prepared = fixture.Prepared with
@@ -262,7 +261,7 @@ public sealed class PythonNativePublisherTests(TestContext context)
             ["HTTP_PROXY"] = "http://ambient.invalid",
             ["PATH"] = "ambient-path",
         };
-        internal Fixture(string unit = PythonReleaseUnits.Smoke)
+        internal Fixture(string unit = "hcoona-release-smoke-python")
         {
             Originals = Directory.CreateDirectory(Path.Combine(Root, "originals")).FullName;
             Tools = new(Path.Combine(Root, "uv"), Directory.CreateDirectory(

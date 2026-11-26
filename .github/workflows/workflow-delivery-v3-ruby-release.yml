@@ -11,11 +11,8 @@ name: Workflow Delivery v3 Ruby Release
           - rubygems
       unit:
         description: Selected Ruby release unit
-        type: choice
+        type: string
         required: true
-        options:
-          - hcoona-release-smoke-ruby
-          - asciidoctor-latexmath
       dry-run:
         description: Qualify and describe without publication
         type: boolean

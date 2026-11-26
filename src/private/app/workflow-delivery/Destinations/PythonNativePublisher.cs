@@ -35,7 +35,7 @@ internal static class PythonNativePublisher
             ("official", "pypi") => "https://upload.pypi.org/legacy/",
             _ => throw new InvalidDataException("Unsupported native Python publication."),
         };
-        string package = PythonReleaseUnits.Admit(prepared.Subject).Id;
+        string package = ReleaseUnitCatalog.AdmitPython(prepared.Subject).Id;
         if (prepared.Subject.DryRun ||
             prepared.Files.Length != 2 ||
             prepared.Files.Count(file => file.Kind == "python-wheel") != 1 ||

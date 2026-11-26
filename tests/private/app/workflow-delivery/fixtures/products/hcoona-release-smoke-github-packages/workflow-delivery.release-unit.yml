@@ -1,5 +1,7 @@
 schema: workflow-delivery/v3/release-unit
 release-unit: hcoona-release-smoke-github-packages
+channels:
+  - buddy
 builds:
   - id: nuget-package
     definition: dotnet/nuget-package-v1

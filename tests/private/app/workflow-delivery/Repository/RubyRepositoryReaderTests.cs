@@ -1,6 +1,5 @@
 using System.Text.Json;
 using WorkflowDelivery.CI;
-using WorkflowDelivery.Ecosystems;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -469,7 +468,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
 
     [TestMethod]
     [DataRow(Smoke, "9.9.9", "ruby", "Native gemspec differs from its NBGV projection.")]
-    [DataRow(RubyReleaseUnits.Latexmath, "1.2.3", "ruby",
+    [DataRow("asciidoctor-latexmath", "1.2.3", "ruby",
         "Native gemspec differs from its NBGV projection.")]
     [DataRow(Smoke, "1.2.3", "x86_64-linux", "Unresolved adopted native Ruby gem subject.")]
     public async Task NativeGemMustMatchTheProjectedIdentityAndSupportedSubject(

@@ -22,7 +22,7 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        string package = PythonReleaseUnits.Admit(prepared.Subject).Id;
+        string package = ReleaseUnitCatalog.AdmitPython(prepared.Subject).Id;
         if (prepared.Files.Length != 2 ||
             prepared.Files.Count(file => file.Kind == "python-wheel") != 1 ||
             prepared.Files.Count(file => file.Kind == "python-sdist") != 1 ||

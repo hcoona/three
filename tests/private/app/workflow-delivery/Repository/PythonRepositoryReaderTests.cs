@@ -1,7 +1,6 @@
 using System.Text.Json.Nodes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
@@ -212,21 +211,21 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(PythonReleaseUnits.Nbgv)]
+    [DataRow("nbgv-python")]
     [DataRow("unregistered-product")]
     public async Task OnlyRegisteredDistributionKeepsItsAdoptedObligations(string package)
     {
         // The committed nbgv-python declaration and quality selection are read as adopted.
         using var fixture = await Fixture.CreateAsync(context.CancellationToken);
         string real = Path.Combine(RepositoryToolSelection.SourceRoot, "src", "public", "lib",
-            PythonReleaseUnits.Nbgv);
+            "nbgv-python");
         foreach (string file in new[] { "workflow-delivery.quality.yml",
                      "workflow-delivery.release-unit.yml" })
             await fixture.UpdateAsync("src/c/" + file, await File.ReadAllTextAsync(
                 Path.Combine(real, file), context.CancellationToken), context.CancellationToken);
         fixture.Answer(package);
         fixture.Identity = Success("{\"name\":\"" + package + "\",\"version\":\"2.1.0.dev1\"}");
-        if (package != PythonReleaseUnits.Nbgv)
+        if (package != "nbgv-python")
         {
             Assert.AreEqual("Unsupported Python Release unit.",
                 (await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
@@ -235,7 +234,7 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         }
         PythonRevisionInputs inputs = await fixture.ReadAsync(context.CancellationToken);
         ProjectFacts owner = Assert.ContainsSingle(inputs.Facts.Packages);
-        Assert.AreEqual(PythonReleaseUnits.Nbgv, owner.ReleaseUnit);
+        Assert.AreEqual("nbgv-python", owner.ReleaseUnit);
         Assert.AreEqual(PythonPackageChecks.Preset, owner.QualityPreset);
         CollectionAssert.AreEquivalent(PythonPackageChecks.Kinds, owner.Checks.Select(check =>
             check.Key.Check).ToArray());
@@ -464,7 +463,7 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         internal PythonGroupOperation[] Operations { get; private set; } = [];
         internal List<NativeCommand> Commands { get; } = [];
         internal NativeCommandResult Identity { get; set; } =
-            Success("{\"name\":\"" + PythonReleaseUnits.Smoke + "\",\"version\":\"1.2.3\"}");
+            Success("""{"name":"hcoona-release-smoke-python","version":"1.2.3"}""");
         internal int PytestExitCode { get; set; }
         internal string Target { get; set; } = "src/c/tests";
         internal Action? AfterGraph { get; set; }
@@ -507,7 +506,7 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         }
 
         // Answers native facts whose src/c member is the named distribution.
-        internal void Answer(string package = PythonReleaseUnits.Smoke)
+        internal void Answer(string package = "hcoona-release-smoke-python")
         {
             PythonProjectDependencies[] projects = [new(".", "root", [], []),
                 new("src/a", "a", [], []), new("src/b", "b", ["src/a"], []),

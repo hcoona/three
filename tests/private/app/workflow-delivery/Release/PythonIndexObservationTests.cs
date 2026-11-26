@@ -6,7 +6,6 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Destinations;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -22,12 +21,12 @@ public sealed class PythonIndexObservationTests(TestContext context)
     [DataRow("buddy", "testpypi", "test.pypi.org", "test-files.pythonhosted.org")]
     [DataRow("official", "pypi", "pypi.org", "files.pythonhosted.org")]
     [DataRow("buddy", "testpypi", "test.pypi.org", "test-files.pythonhosted.org",
-        PythonReleaseUnits.Nbgv)]
+        "nbgv-python")]
     [DataRow("official", "pypi", "pypi.org", "files.pythonhosted.org",
-        PythonReleaseUnits.Nbgv)]
+        "nbgv-python")]
     public async Task CompletePairUsesSelectedPublicIndexAndOriginalBytes(string channel,
         string destination, string origin, string storage,
-        string unit = PythonReleaseUnits.Smoke)
+        string unit = "hcoona-release-smoke-python")
     {
         using var fixture = new Fixture(channel, destination, unit);
         using var handler = new ScriptedHttpHandler((_, n) =>
@@ -330,7 +329,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
         new((HttpStatusCode)status) { Content = new ByteArrayContent(bytes) };
 
     private sealed class Fixture(string channel = "buddy", string destination = "testpypi",
-        string unit = PythonReleaseUnits.Smoke) : IDisposable
+        string unit = "hcoona-release-smoke-python") : IDisposable
     {
         private readonly string scratch =
             Directory.CreateTempSubdirectory("python-index-").FullName;

@@ -31,22 +31,21 @@ there requires a branch ref under `refs/heads/`. npm applies it in the request
 job, during preparation and in each publisher. NuGet applies it during
 preparation, in the publisher and whenever a job receives a preparation, with
 the same rule. Dry run needs no live ref eligibility. Native Environment branch
-policies may constrain a channel further; they do not replace this check. Ruby
-and Python Official accept every unit registered in `RubyReleaseUnits` and
-`PythonReleaseUnits`; their `Admit` rejects any other unit before preparation.
-npm Official accepts only `hexo-renderer-asciidoc` live; the
-`hcoona-release-smoke-npm` unit remains dry-run only, and `NpmReleaseUnits.Admit`
-rejects it live with Official before preparation. NuGet Official accepts only the
-nine library units
-[registered for the product recipe](dotnet.md#concrete-nuget-release-integration);
-`NuGetReleaseUnits.Admit` rejects the `hcoona-release-smoke-github-packages`
-smoke unit with Official before preparation. GitHub Releases accepts only the
-`image-occlusion-editor` unit, through `GithubReleaseUnits.Admit`
-([GitHub Release integration](github-release.md)). The browser stores accept
-Buddy only as a dry run. Adding another Official ref or Ruby, Python, npm, NuGet
-or GitHub Releases Official unit, another NuGet Official destination, or another
-browser-extension product or store is a caller change that updates this table
-and its tests together.
+policies may constrain a channel further; they do not replace this check.
+[`ReleaseUnitCatalog`](../../Ecosystems/ReleaseUnitCatalog.cs) discovers every
+committed `workflow-delivery.release-unit.yml` declaration and enforces its
+declared `channels` before preparation: Ruby and Python Official accept their
+declared units, npm Official accepts only `hexo-renderer-asciidoc` live (leaving
+`hcoona-release-smoke-npm` as `official-dry-run` only), NuGet Official accepts
+only the library units [registered for the product
+recipe](dotnet.md#concrete-nuget-release-integration) (rejecting Buddy-only
+`hcoona-release-smoke-github-packages`), GitHub Releases accepts
+`image-occlusion-editor` ([GitHub Release integration](github-release.md)), and
+browser stores accept Buddy only as `buddy-dry-run`. Adding another Official ref
+or Ruby, Python, npm, NuGet or GitHub Releases Official unit, another NuGet
+Official destination, or another browser-extension product or store updates the
+unit's `workflow-delivery.release-unit.yml` declaration, this table and its
+tests together without hardcoded C# or workflow dropdown lists.
 
 ## Locked Tool Selection
 

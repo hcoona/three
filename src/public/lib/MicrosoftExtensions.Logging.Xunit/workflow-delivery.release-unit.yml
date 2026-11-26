@@ -8,3 +8,5 @@ builds:
       - id: nuget-package
         role: primary-package
         kind: nuget-package
+    qualification:
+      probe: typeof(Microsoft.Extensions.Logging.Xunit.XunitLoggerProvider).Assembly.GetName().Name
