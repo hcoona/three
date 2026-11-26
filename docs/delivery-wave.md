@@ -404,34 +404,6 @@ and history.
   other projects' behavior; and no publication, release, credential or access
   change.
 
-### Admit repository security disclosure policy (#1271)
-
-- **Work carrier:** [Issue #1271](https://github.com/hcoona/three/issues/1271)
-  under [Issue #1868](https://github.com/hcoona/three/issues/1868), and its
-  linked pull requests.
-- **Accepted inputs and scope/outcome:** using
-  [governance](governance/governance-system.md),
-  [record policy](governance/record-system.md),
-  [engineering principles](engineering/engineering-principles.md),
-  [documentation portal](README.md),
-  [family catalog](governance/record-families.yaml),
-  [public release triage](engineering/public-release-triage.md), and root
-  `README.md`, admit root `SECURITY.md` establishing GitHub private
-  vulnerability reporting on `hcoona/three` as the canonical disclosure channel,
-  route supported-package and supported-version scope to accepted project and
-  Official release authorities without a duplicate inventory, register
-  `SECURITY.md` in [`record-families.yaml`](governance/record-families.yaml), and
-  link it from [`docs/README.md`](README.md) and root `README.md`.
-- **Permitted external/paid effects:** none beyond routine repository
-  development and governed CI validation; enabling GitHub private vulnerability
-  reporting in repository settings remains an explicit repository-owner
-  operation outside repository commits.
-- **Exclusions and closure:** no repository admin setting or ruleset mutation,
-  SLA or bug-bounty commitment beyond accepted project records, release/proving
-  dispatch, publication, credential, or access change. Retain applicable
-  independent `record-system-review` and `GOV-011` disposition; delete this
-  entry atomically in the delivery PR that closes #1271.
-
 ### Align three-day minimum release age and public library dependency floors (#1307)
 
 - **Work carrier:** [Issue #1307](https://github.com/hcoona/three/issues/1307)

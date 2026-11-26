@@ -5,6 +5,7 @@ schema_version: 4
 bindings:
   # Repository interfaces, governance, and shared engineering
   - { id: public-landing, namespace: repository, state: current, path: README.md }
+  - { id: security-disclosure-policy, namespace: repository, state: current, path: SECURITY.md }
   - { id: agent-interface, namespace: repository, state: current, path: AGENTS.md }
   - { id: contributor-interface, namespace: repository, state: current, path: CONTRIBUTING.md }
   - { id: pull-request-interface, namespace: repository, state: current, path: .github/pull_request_template.md }
