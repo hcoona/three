@@ -333,7 +333,7 @@ class Ledger:
 
     def sync_mirror(self, confinement: Confinement) -> None:
         """Write the current ledger state to ``mirror`` when configured."""
-        if self.mirror is not None:
+        if self.mirror is not None and not _W1_CAMPAIGN_RETIRED:
             _write_ledger(
                 self.mirror,
                 self.prior_total,
@@ -550,8 +550,7 @@ def fetch_file(
     with _shared_ledger_guard(ledger, confinement):
         target = confinement.check(confinement.downloads / file.name)
         if _is_published(target, file):
-            if not _W1_CAMPAIGN_RETIRED:
-                ledger.sync_mirror(confinement)
+            ledger.sync_mirror(confinement)
             return target
         _check_w1_ledger_writable(ledger.path)
         if ledger.total + file.size > LIMIT:
@@ -646,8 +645,7 @@ def fetch_hf_file(
     with _shared_ledger_guard(ledger, confinement):
         target = confinement.check(confinement.downloads / file.local_name)
         if _is_published_hf(target, file):
-            if not _W1_CAMPAIGN_RETIRED:
-                ledger.sync_mirror(confinement)
+            ledger.sync_mirror(confinement)
             return target
         _check_w1_ledger_writable(ledger.path)
         if ledger.total + file.size > LIMIT:

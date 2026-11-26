@@ -25,6 +25,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from sheet_music_omr.harness.confine import lock_file_path
 from sheet_music_omr.harness.privacy import (
     identity_strings_from_path,
     scrub_paths,
@@ -543,12 +544,12 @@ def wsl_translate_command(
 def _terminate_musescore_process(
     process: subprocess.Popen[bytes], *, is_wsl_exe: bool
 ) -> None:
-    with suppress(OSError):
-        process.kill()
     try:
+        with suppress(OSError):
+            process.kill()
         process.wait(timeout=5.0)
-    except (OSError, subprocess.TimeoutExpired) as reap_exc:
-        msg = "MuseScore process did not exit after SIGKILL"
+    except BaseException as reap_exc:
+        msg = "MuseScore process exit could not be confirmed after SIGKILL"
         raise MuseScoreUnreapedError(msg) from reap_exc
     if is_wsl_exe:
         msg = "WSL MuseScore interruption cannot confirm native Windows exit"
@@ -568,23 +569,31 @@ def run_command(
     is_wsl_exe = sys.platform != "win32" and translated[0].lower().endswith(
         ".exe"
     )
-    process = subprocess.Popen(  # noqa: S603 - a fixed executable and arguments
-        translated,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
-    )
+    process: subprocess.Popen[bytes] | None = None
     try:
+        process = subprocess.Popen(  # noqa: S603 - a fixed executable and arguments
+            translated,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+        )
         output, _ = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        assert process is not None  # noqa: S101
         _terminate_musescore_process(process, is_wsl_exe=is_wsl_exe)
         if process.stdout is not None:
             process.stdout.close()
         return None, ""
-    except BaseException:
-        _terminate_musescore_process(process, is_wsl_exe=is_wsl_exe)
-        if process.stdout is not None:
-            process.stdout.close()
+    except BaseException as exc:
+        if process is not None:
+            _terminate_musescore_process(process, is_wsl_exe=is_wsl_exe)
+            if process.stdout is not None:
+                process.stdout.close()
+        elif is_wsl_exe and not isinstance(exc, OSError):
+            msg = (
+                "WSL MuseScore interruption cannot confirm native Windows exit"
+            )
+            raise MuseScoreUnreapedError(msg) from exc
         raise
     if is_wsl_exe and process.returncode is not None and process.returncode < 0:
         msg = "WSL MuseScore signaled exit cannot confirm native Windows exit"
@@ -608,32 +617,25 @@ def _host_profile_lock(settings: Path | None) -> Iterator[Path | None]:
     if settings is None:
         yield None
         return
-    norm = str(settings.resolve(strict=False))
-    if sys.platform == "win32" or norm.startswith("/mnt/"):
-        norm = norm.lower()
-    key = hashlib.sha256(norm.encode()).hexdigest()[:16]
-    lock_root = (
-        Path("/tmp")  # noqa: S108
-        if sys.platform != "win32"
-        else Path(os.environ.get("PROGRAMDATA", tempfile.gettempdir()))
-    )
-    base = lock_root / f"omr-musescore-{key}"
-    lock_file = Path(f"{base}.lock")
-    marker = Path(f"{base}.unreaped")
-    fd = os.open(lock_file, os.O_CREAT | os.O_RDWR, 0o600)
-    try:
-        if sys.platform != "win32":
-            import fcntl  # noqa: PLC0415
-
-            fcntl.flock(fd, fcntl.LOCK_EX)
+    resolved = settings.resolve(strict=False)
+    norm = str(resolved)
+    if sys.platform != "win32" and resolved.is_relative_to("/tmp"):  # noqa: S108
+        lock_file = resolved.with_name(f".{resolved.name}.lock")
+        marker = resolved.with_name(f".{resolved.name}.unreaped")
+    else:
+        if sys.platform == "win32" or norm.startswith("/mnt/"):
+            norm = norm.lower()
+        key = hashlib.sha256(norm.encode()).hexdigest()[:16]
+        lock_root = (
+            Path("/tmp")  # noqa: S108
+            if sys.platform != "win32"
+            else Path(os.environ.get("PROGRAMDATA", tempfile.gettempdir()))
+        )
+        base = lock_root / f"omr-musescore-{key}"
+        lock_file = Path(f"{base}.lock")
+        marker = Path(f"{base}.unreaped")
+    with lock_file_path(lock_file):
         yield marker
-    finally:
-        with suppress(OSError):
-            if sys.platform != "win32":
-                import fcntl  # noqa: PLC0415
-
-                fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
 
 
 @contextmanager
@@ -658,7 +660,7 @@ def profile_invocation_fence(
             yield
         except MuseScoreUnreapedError:
             raise
-        except StopConditionError, OSError, ValueError:
+        except BaseException:
             unreaped.unlink(missing_ok=True)
             if host_marker is not None:
                 host_marker.unlink(missing_ok=True)

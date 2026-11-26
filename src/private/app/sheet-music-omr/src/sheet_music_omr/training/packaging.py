@@ -2362,30 +2362,40 @@ def _offline_musescore(
     is_wsl_exe = sys.platform != "win32" and translated[0].lower().endswith(
         ".exe"
     )
+    process: subprocess.Popen[bytes] | None = None
     try:
-        process = subprocess.Popen(  # noqa: S603
-            translated,
-            env=os.environ | W6_OFFLINE_ENV,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            close_fds=True,
-        )
-    except OSError as exc:
-        msg = "failed to launch MuseScore worker"
-        raise StopConditionError(msg) from exc
-    try:
+        try:
+            process = subprocess.Popen(  # noqa: S603
+                translated,
+                env=os.environ | W6_OFFLINE_ENV,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
+            )
+        except OSError as exc:
+            msg = "failed to launch MuseScore worker"
+            raise StopConditionError(msg) from exc
         out, _ = process.communicate(timeout=limit_sec)
+    except StopConditionError:
+        raise
     except (OSError, subprocess.TimeoutExpired) as exc:
+        assert process is not None  # noqa: S101
         _terminate_musescore_process(process, is_wsl_exe=is_wsl_exe)
         if process.stdout is not None:
             process.stdout.close()
         msg = "MuseScore batch worker timed out"
         raise StopConditionError(msg) from exc
-    except BaseException:
-        _terminate_musescore_process(process, is_wsl_exe=is_wsl_exe)
-        if process.stdout is not None:
-            process.stdout.close()
+    except BaseException as exc:
+        if process is not None:
+            _terminate_musescore_process(process, is_wsl_exe=is_wsl_exe)
+            if process.stdout is not None:
+                process.stdout.close()
+        elif is_wsl_exe:
+            msg = (
+                "WSL MuseScore interruption cannot confirm native Windows exit"
+            )
+            raise MuseScoreUnreapedError(msg) from exc
         raise
     if is_wsl_exe and process.returncode is not None and process.returncode < 0:
         msg = "WSL MuseScore signaled exit cannot confirm native Windows exit"

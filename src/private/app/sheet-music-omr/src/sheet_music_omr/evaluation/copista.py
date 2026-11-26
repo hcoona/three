@@ -48,6 +48,7 @@ from sheet_music_omr.evaluation.wheel_lock import (
     resolve_host_wheel_lock,
 )
 from sheet_music_omr.evaluation.xml_merge import concat_page_predictions
+from sheet_music_omr.harness.confine import lock_file_path
 from sheet_music_omr.harness.records import run_git, source_state
 from sheet_music_omr.harness.stops import StopConditionError
 
@@ -748,22 +749,8 @@ def _fetch_with_ledger(  # noqa: PLR0913, PLR0915
 
 @contextlib.contextmanager
 def _touch_log_lock(touch_log_path: Path) -> Iterator[None]:
-    touch_log_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_file = touch_log_path.with_name(".w2-touch-log.lock")
-    fd = os.open(lock_file, os.O_CREAT | os.O_RDWR, 0o600)
-    try:
-        if sys.platform != "win32":
-            import fcntl  # noqa: PLC0415
-
-            fcntl.flock(fd, fcntl.LOCK_EX)
+    with lock_file_path(touch_log_path.with_name(".w2-touch-log.lock")):
         yield
-    finally:
-        with contextlib.suppress(OSError):
-            if sys.platform != "win32":
-                import fcntl  # noqa: PLC0415
-
-                fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
 
 
 def _validate_w6_pilot_final_touch(
