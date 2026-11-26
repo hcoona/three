@@ -1,10 +1,13 @@
 # Windows Native Acceptance Protocol
 
-This protocol is consumed by the acceptance executor and independent
-research-evidence reviewer. It owns the exact native observation boundary that
-the broader [validation basis](validation.md) deliberately does not authorize.
-The owner maintains it when the subject or effects change. It is not a passed
-acceptance report.
+This record preserves the exact fixture-only native observation boundary for the
+**closed** [Issue #1526](https://github.com/hcoona/three/issues/1526) /
+[PR #1530](https://github.com/hcoona/three/pull/1530) development acceptance
+campaign. It remains in the tree solely so auditors can interpret `#1530`'s
+recorded Windows observations and initial SDK ledger baseline; it grants no new
+execution, and active real-repository user-audit runs follow
+[`user-audit-protocol.md`](user-audit-protocol.md) and
+[`docs/delivery-wave.md`](../../../../../docs/delivery-wave.md).
 
 ## Subject and prerequisites
 

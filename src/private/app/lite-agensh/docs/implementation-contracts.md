@@ -657,9 +657,11 @@ model-price estimates and account quota are not substitutes.
 
 A newly created, never-prompted session need not report completed-call billing.
 Non-model preflight establishes applied limits and identity, not measured free
-usage. The [native protocol](native-acceptance-protocol.md) separately bounds
-the initial tool-disabled billing calibration, which must obtain complete
-native usage before ordinary work. An outstanding unknown reservation still
+usage. The closed [native fixture protocol](native-acceptance-protocol.md)
+bounded the fixture campaign's initial tool-disabled billing calibration, while
+the [user-audit protocol](user-audit-protocol.md) bounds active `#1552`
+calibration; both require complete native usage before ordinary work. An
+outstanding unknown reservation still
 blocks all new paid work: this interface change neither releases it nor
 authorizes conservative carry-forward without repository-owner disposition.
 The owner's explicitly authorized one-time audit ledger transition follows

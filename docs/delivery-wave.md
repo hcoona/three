@@ -18,53 +18,6 @@ and history.
 
 ## Authorized Advancements
 
-### Contract repository governance surface and retire defensive campaign scars
-
-- **Work carrier:** [Issue #1896](https://github.com/hcoona/three/issues/1896)
-  and its linked stacked root-governance and subproject pull requests.
-- **Accepted inputs:** [governance policy](governance/governance-system.md),
-  [record policy](governance/record-system.md),
-  `docs/governance/checker-contract.md`,
-  [engineering principles](engineering/engineering-principles.md),
-  `docs/governance/*.yaml`, `schemas/governance/*.schema.json`, `AGENTS.md`,
-  `CONTRIBUTING.md`, `.github/skills/**`, `hk.pkl`, `mise.toml`,
-  `eng/scripts/check_repository_records.py`,
-  `src/private/app/workflow-delivery/Repository/CiScope.cs`, and the handoff and
-  entry records of `workflow-delivery`, `sheet-music-omr`, and `lite-agensh`.
-- **Advancement and outcome:** (1) retire `docs/governance/controls.yaml`,
-  `schemas/governance/controls.schema.json`,
-  `docs/governance/checker-contract.md`, `docs/AGENTS.md`, and
-  `.github/skills/{record-system,research-evidence}-review/evals/*.md`;
-  (2) replace per-project `record-families.yaml` enumeration and `families`
-  metadata with concise wildcard path/namespace bindings (`schema_version: 4`),
-  aligning `CiScope.cs` without hard-coding document lists in C#; (3) adopt
-  `lychee` (`mise.toml`, `mise.lock`, `.lychee.toml`, `hk.pkl`,
-  `hk-scope-copies.json`) for offline Markdown link and anchor checks and shrink
-  `check_repository_records.py` (with `tests/eng/test_repository_records.py`) to
-  an automated HK/CI record-binding and `REQ`/`FR`/`NFR`/`AC` identifier check;
-  (4) consolidate `record-system.md` (narrowing Wave triggers so contract-safe
-  internal refactoring, CI/tooling consolidation, dead-route retirement, and
-  owner-merged governance/doc cleanup use ordinary PRs, fixing a thin Wave entry
-  contract, and tightening grant closure), deduplicate `AGENTS.md`,
-  `CONTRIBUTING.md`, and the review `SKILL.md` files, move `Workflow Delivery
-v3` instructions to `src/private/app/workflow-delivery/AGENTS.md`, and trim
-  `docs/engineering/{hk-execution,agent-execution}.md`; and (5) in separate
-  per-subproject pull requests, retire closed-campaign defensive scar prose in
-  `workflow-delivery`, `sheet-music-omr`, and `lite-agensh` handoff/entry docs
-  while preserving change routing, active protocols, and historical links.
-- **Ordering and gates:** merge this authorization before the newly proposed
-  substantive work. Review the root governance amendment under `main`'s
-  currently accepted policies and `record-system-review` (plus applicable
-  `research-evidence-review` and code review), apply `GOV-011` finding
-  disposition, and keep each merged PR self-consistent with passing `hk` and
-  `Validate` CI.
-- **Exclusions and closure:** no product runtime behavior change, new
-  external/paid/credentialed execution, release/proving dispatch, publication,
-  ruleset/Environment/permission change, or deletion of active protocols,
-  human-source inputs, legal notices, or historical evidence links. Close this
-  entry atomically in the final subproject cleanup PR (or a Wave-only closure
-  PR).
-
 ### Run and repair the LiteAgensh 32-peer user audit
 
 - **Work carrier:** [Issue #1552](https://github.com/hcoona/three/issues/1552)
