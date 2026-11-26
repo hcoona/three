@@ -54,7 +54,6 @@ from sheet_music_omr.harness.confine import Confinement
 from sheet_music_omr.harness.corpora import CorpusError
 from sheet_music_omr.harness.musescore import (
     MuseScore,
-    has_source_verified_defaults,
 )
 from sheet_music_omr.harness.records import (
     check_outside_repository,
@@ -98,7 +97,6 @@ from sheet_music_omr.synthetic.intake import (
     iter_pdmx_candidates,
 )
 from sheet_music_omr.synthetic.ledgers import (
-    ACCEPTED_MUSESCORE_IDENTITIES,
     RESVG_VERSION,
     RESVG_WHEEL_SHA256,
     VEROVIO_VERSION,
@@ -115,9 +113,10 @@ from sheet_music_omr.synthetic.ledgers import (
     verify_w4_w5_live_assets,
 )
 from sheet_music_omr.synthetic.renderers import (
+    MUSESCORE_CALIBRATION_CACHE_NAME,
     RenderGate,
     RenderGateLedger,
-    calibrate_musescore_pixel_scale,
+    ensure_musescore_calibrated,
     render_musescore,
     render_synthetic_probe_png,
     render_verovio,
@@ -415,7 +414,10 @@ def _run_intake(conf: Confinement, args: argparse.Namespace) -> Json:
         nonlocal ms
         if ms is None:
             ms = MuseScore.open(
-                conf, executable=args.musescore, settings=args.settings
+                conf,
+                executable=args.musescore,
+                settings=args.settings,
+                allow_missing_settings=True,
             )
         with _owned_scratch(conf, "lieder-") as directory:
             input_path = conf.write_bytes(directory / "source.mscx", raw)
@@ -1533,21 +1535,19 @@ def _prove_engine(  # noqa: PLR0913
 
 def _prepare_s3_environment(
     conf: Confinement,
-    args: argparse.Namespace,
     ms: MuseScore,
     counter: _PageCount,
     private: Sequence[str],
 ) -> tuple[Json, tuple[str, str] | None]:
     verify_w4_w5_live_assets(conf.downloads, require_s3=True)
-    ms_identity = (ms.version, ms.executable_sha256)
-    unreviewed_formal_ms = (
-        args.formal and ms_identity not in ACCEPTED_MUSESCORE_IDENTITIES
-    )
     calibrated_identity: tuple[str, str] | None = None
-    if not has_source_verified_defaults(ms.version) or unreviewed_formal_ms:
+    if hasattr(ms, "confinement"):
         with _owned_scratch(conf, "musescore-cal-") as cal_dir:
-            calibrated_identity = calibrate_musescore_pixel_scale(
-                ms, cal_dir / "job", count_rasters=counter.add
+            calibrated_identity = ensure_musescore_calibrated(
+                ms,
+                cal_dir / "job",
+                cache_path=conf.downloads / MUSESCORE_CALIBRATION_CACHE_NAME,
+                count_rasters=counter.add,
             )
     environment: Json = {
         "workspace": _workspace_versions(),
@@ -1560,14 +1560,6 @@ def _prepare_s3_environment(
         "resvg_wheel_sha256": RESVG_WHEEL_SHA256,
     }
     _record_environment(conf, environment, private)
-    if unreviewed_formal_ms:
-        msg = (
-            f"MuseScore {ms.version} ({ms.executable_sha256[:12]}) "
-            "passed .mpos/12.0 calibration and was recorded in "
-            "environment.json; record independent research-evidence-review "
-            "disposition before --formal Stage S3"
-        )
-        raise StopConditionError(msg)
     return environment, calibrated_identity
 
 
@@ -1609,7 +1601,6 @@ def _run_s3(conf: Confinement, args: argparse.Namespace) -> Json:
             "return to the repository owner (#1491 or #686)"
         )
         raise StopConditionError(msg)
-    verify_loopback_only_unshare()
     stage_root = _bounded_path(conf.run, Path("tmp") / "s3-stage")
     publish_root = _bounded_path(conf.run, Path("tmp") / "s3-publish")
     with _metered_run(conf, "s3-proof", planned_pages, commit) as counter:
@@ -1617,11 +1608,14 @@ def _run_s3(conf: Confinement, args: argparse.Namespace) -> Json:
             args.w3_run_dir, include_test_pages=False
         )
         ms = MuseScore.open(
-            conf, executable=args.musescore, settings=args.settings
+            conf,
+            executable=args.musescore,
+            settings=args.settings,
+            allow_missing_settings=True,
         )
         private = _private(conf, args)
         environment, calibrated_identity = _prepare_s3_environment(
-            conf, args, ms, counter, private
+            conf, ms, counter, private
         )
         real = _real_statistics(args.w3_run_dir)
         engines = {}

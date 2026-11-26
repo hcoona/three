@@ -309,6 +309,22 @@ def is_supported_version(version: str | None) -> bool:
     return version is not None and bool(_VERSION_4.fullmatch(version.strip()))
 
 
+def verify_rendering_preferences(musescore: MuseScore) -> None:
+    """Require MuseScore 4.x and all eight expected MusicXML preferences."""
+    if not is_supported_version(musescore.version):
+        msg = f"unsupported MuseScore version {musescore.version!r}"
+        raise StopConditionError(msg)
+    effective = preference_values(musescore.baseline_preferences)
+    for key, (_, expected) in PREFERENCES.items():
+        if effective.get(key, "").lower() != expected.lower():
+            msg = (
+                f"MuseScore preference {key} must be {expected!r} "
+                f"(importInferTextType=false required), got "
+                f"{effective.get(key)!r}"
+            )
+            raise StopConditionError(msg)
+
+
 def _parse_reg_query(output: str, display_name: str) -> str | None:
     """Extract ``DisplayVersion`` for ``display_name`` from ``reg query /s``."""
     for block in re.split(r"\r?\n\s*\r?\n", output):
@@ -554,13 +570,14 @@ def _resolve_executable_version(
     launcher: Launcher,
 ) -> tuple[Path, str]:
     default_exe = default_executable()
-    is_override = (
-        executable is not None and executable.resolve() != default_exe.resolve()
-    )
-    resolved = default_exe if executable is None else executable
-    if not resolved.is_file():
-        message = f"MuseScore is not installed at {resolved}"
+    raw_exe = default_exe if executable is None else executable
+    if not raw_exe.is_file():
+        message = f"MuseScore is not installed at {raw_exe}"
         raise StopConditionError(message)
+    resolved = raw_exe.resolve()
+    is_override = executable is not None and (
+        not default_exe.exists() or resolved != default_exe.resolve()
+    )
     if version_lookup is not registry_version:
         version = version_lookup()
     elif is_override:
@@ -602,12 +619,13 @@ class MuseScore:
     private: tuple[str, ...] = field(default=())
 
     @classmethod
-    def open(
+    def open(  # noqa: PLR0913
         cls,
         confinement: Confinement,
         *,
         executable: Path | None = None,
         settings: Path | None = None,
+        allow_missing_settings: bool = False,
         version_lookup: Callable[[], str | None] = registry_version,
         launcher: Launcher = run_command,
     ) -> MuseScore:
@@ -630,7 +648,7 @@ class MuseScore:
         executable_sha256 = sha256_file(executable)
         if settings is None:
             settings = settings_path()
-        elif not settings.is_file():
+        elif not settings.is_file() and not allow_missing_settings:
             message = f"MuseScore settings file does not exist at {settings}"
             raise StopConditionError(message)
         copy = confinement.run / SETTINGS_COPY

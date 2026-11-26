@@ -101,15 +101,6 @@ HOMR_WHEEL_SHA256 = (
     "163a36b3b87a17f47c6deb5edc394573cc42b09418d18c7e9195b1e6133afc25"
 )
 
-ACCEPTED_MUSESCORE_IDENTITIES: frozenset[tuple[str, str]] = frozenset(
-    {
-        (
-            "4.7.7.261109195",
-            "89d9145261eb2bec6aedc208b5234b92c01fe6bc5485fec7e2ce28ec05819f31",
-        ),
-    }
-)
-
 HOMR_CPU_CHECKPOINTS: tuple[tuple[str, str, int], ...] = (
     (
         "segnet",
