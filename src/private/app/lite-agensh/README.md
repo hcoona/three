@@ -1,176 +1,75 @@
 # LiteAgensh
 
 LiteAgensh is a C# single-machine adaptation of
-[microsoft/Agensh](https://github.com/microsoft/Agensh). It keeps the upstream
-peer-cooperation approach while replacing hosted collaboration infrastructure
-with SQLite, local Git worktrees and existing native agents.
+[microsoft/Agensh](https://github.com/microsoft/Agensh), retaining upstream's
+equal-peer collaboration model while replacing hosted infrastructure with
+SQLite, local Git worktrees, and worker-bound stdio MCP over the official
+Copilot .NET SDK.
 
-**Current state:** the C# application uses the official Copilot .NET SDK with
-SQLite, local Git worktrees and worker-bound stdio MCP. Controlled scenarios
-and Windows native observations cover cooperation, checked delivery, active
-cancellation, fresh-summary resume and exact-session crash reconnect.
-[PR #1530](https://github.com/hcoona/three/pull/1530) retains exact builds,
-commands, reported credits, independent reviews and repository acceptance gates.
-These results do not establish another operating system or native backend.
-The [configured-check evidence allocation](docs/validation.md#configured-check-and-process-evidence)
-separates controlled Git/check business scenarios from focused actual-process
-coverage. The application retains `ProcessRunner` in production and provides
-one internal typed configured-check invocation. Held-candidate mutation,
-reported timeout and cancellation/failure scenarios use controlled invocation
-with real Git and SQLite; logs automatically identify that evidence. Focused
-actual-process and actual-check integration remain separate. Controlled success
-does not close historical READY failures or establish native timing.
-The accepted shared-credit design is specified in the
-[credit contract](docs/implementation-contracts.md#shared-spending-windows).
-The application implements opt-in shared allocation with controlled accounting
-and lifecycle scenarios; installed-native limit mutation and renewal remain
-unobserved until a separately recorded user-audit run. Per-session allocation
-remains the default for existing inputs. Do not treat the implementation
-or the owner's one-time ledger transition as a successful autonomous audit.
-The [settlement contract](docs/implementation-contracts.md#usage-evidence-and-settlement)
-also distinguishes user-turn completion from background compaction and bounds
-complete final recovery of an uncertain closed window. The application implements
-session-local usage fencing and evidence-bound recovery with controlled compaction,
-stale-reading and accounting scenarios. Interrupted sends without a delivered
-terminal boundary retain uncertainty and backing. Installed-native
-ordering and a repaired autonomous journey remain unverified; the retained failed
-audit and independent finding classifications are carried by
-[#1552](https://github.com/hcoona/three/issues/1552).
-The [SDK-native recovery contract](docs/implementation-contracts.md#sdk-native-recovery-boundary)
-adds original typed termination provenance and fresh supported accounting checks
-for a separate financial boundary, not successful original task delivery or
-provider-final invoices. The application implements this guard with controlled
-original-history, receipt-frontier, current-local work and rejection/preservation
-scenarios. Installed-native effectiveness remains unverified; existing
-uncertainty does not release automatically.
-The MCP 2.3.0 upgrade is covered by controlled stdio contracts, not a new
-native acceptance run; PR #1530 retains the earlier dependency baseline.
-The [dependency contract](docs/implementation-contracts.md#application-and-dependencies)
-now selects MCP 2.4.0. The
-[interface recheck](docs/upstream-migration.md#mcp-240-interface-recheck)
-records its released package and relied-on source surface, not native
-interoperability. That selection does not extend the earlier native observations;
-dependent user-audit work requires matching current build, interface and
-operational evidence under its existing protocol.
-The [dependency policy](docs/implementation-contracts.md#application-and-dependencies)
-permits normal reviewed CPM/Renovate SDK upgrades without a historical version
-allowlist, and the installed Copilot CLI without a version restriction or a new
-approval solely for a version change. Original-session SDK identity checks
-remain required; an SDK upgrade is not session migration. The application
-records the actual typed runtime version without a version or ordered-pair
-allowlist, retaining required interface, identity, cap and settlement checks.
-It preserves the original runtime provenance under the
-[retained-session recovery boundary](docs/implementation-contracts.md#retained-cli-10105-to-selected-cli-10107)
-with controlled startup-lineage, rejection and preservation scenarios.
-Installed-native session loadability and accounting-window preservation still
-require a separately reviewed observation. Do not reuse a consumed recovery
-invocation.
+## Current status and evidence boundaries
 
-The [deadline-drain contract](docs/implementation-contracts.md#bounded-deadline-drain)
-separates normal work-admission expiry from bounded completion of existing
-requests, without weakening terminal/usage evidence or immediate safety stops.
-The application implements separate admission cancellation and fixed bounded
-drain with controlled completion, timeout, interruption, credit-wait and cap
-renewal scenarios. These scenarios do not establish installed-native deadline
-behavior or a successful Luna journey; fresh native observations remain a
-separate gate.
-
-The [native-host design](docs/architecture.md#native-sdk-mcp-and-instruction-boundary)
-specifies one owned runtime/client with independent peer sessions and a
-cohort-settlement barrier. The application shares the operation's runtime and
-client, stages peer usage until common-host settlement, and checks session
-independence in its non-model preflight. Controlled scenarios are not evidence
-of lower native memory use or a completed 32-peer audit; those claims still
-require separately recorded observations of the accepted implementation.
-
-The earlier failed ACP startup remains retained evidence, not measured zero
-cost. The owner-approved [SDK baseline](docs/native-acceptance-protocol.md#sdk-campaign-baseline)
-uses one new persistent ledger. Unknown usage in that active ledger blocks
-further paid work; repeated runs do not reset it.
-
-The [SQLite contention contract](docs/implementation-contracts.md#sqlite-contention-evidence)
-specifies automatic bounded local failure evidence. The application records owned
-connection, transaction and statement observations under
-`<database-path>.diagnostics`; contention errors expose the incident location or
-persistence warning without replacing the original SQLite error. Controlled
-storage scenarios cover acquisition failures, completion and missing evidence.
-Prior incident captures are not overwritten; exhausted capacity is explicit.
-This does not identify the original failed audit's competing lock holder or
-establish complete attribution of external/uninstrumented connections.
-The same bounded diagnostics also capture SQLite I/O failures. A compact failure
-summary retains codes, phase and owned activity identity in captured stderr even
-when local incident persistence fails or a test fixture is later removed.
-I/O summaries exclude exception messages and local incident paths; raw incident
-files remain local. Controlled injected failures verify retention, not the cause
-of a historical filesystem error.
-
-The [credit contract](docs/implementation-contracts.md#verified-pre-dispatch-cancellation)
-specifies a distinct verified cancellation before first dispatch, not measured
-zero billing. The application implements it with an accounting-only `reconcile`
-command and controlled rejection, preservation and idempotence scenarios.
-Earlier unknown reservations are not automatically released: each retained case
-requires the owning protocol's authorization and fresh live proof checks.
+- **Implemented capabilities (covered by controlled SQLite, Git, MCP, and SDK-seam scenarios):**
+  one shared owned SDK runtime/client per operation with independent peer
+  sessions and cohort-settlement staging
+  ([native host](docs/architecture.md#native-sdk-mcp-and-instruction-boundary));
+  editable YAML configuration (`examples/run.yaml` + `schemas/run.schema.json`)
+  with separate Markdown goals (`examples/goal.md`) alongside legacy JSON
+  ([input contract](docs/implementation-contracts.md#configuration-input));
+  configurable cold-worker ramp-up (`workerStartIntervalSeconds`); opt-in
+  `creditAllocation: shared` renewable windows (`per-session` default) with
+  compaction-fenced settlement
+  ([shared windows](docs/implementation-contracts.md#shared-spending-windows),
+  [settlement](docs/implementation-contracts.md#usage-evidence-and-settlement));
+  separate work-admission expiry and [bounded deadline drain](docs/implementation-contracts.md#bounded-deadline-drain);
+  bounded `<database-path>.diagnostics` [SQLite contention and I/O capture](docs/implementation-contracts.md#sqlite-contention-evidence);
+  non-dispatch [SDK-native recovery](docs/implementation-contracts.md#sdk-native-recovery-boundary)
+  (`reconnect` on closed failed runs using the
+  [zero-origin cap profile](docs/implementation-contracts.md#exact-recovery-limit-coordinates))
+  and accounting-only `reconcile` for
+  [verified pre-dispatch cancellation](docs/implementation-contracts.md#verified-pre-dispatch-cancellation);
+  and normal reviewed CPM/Renovate SDK upgrades (currently MCP `2.4.0`;
+  [recheck](docs/upstream-migration.md#mcp-240-interface-recheck)) plus use of
+  the installed Copilot CLI without version allowlists while preserving exact
+  original-session SDK identity checks
+  ([dependencies](docs/implementation-contracts.md#application-and-dependencies),
+  [CLI lineage](docs/implementation-contracts.md#retained-cli-10105-to-selected-cli-10107)).
+- **Evidence limits:** [PR #1530](https://github.com/hcoona/three/pull/1530)
+  ([Issue #1526](https://github.com/hcoona/three/issues/1526), under the closed
+  [fixture protocol](docs/native-acceptance-protocol.md#sdk-campaign-baseline))
+  retains initial two-worker Windows fixture observations. Controlled scenarios
+  and configured-check substitutes
+  ([evidence allocation](docs/validation.md#configured-check-and-process-evidence))
+  establish application logic only—they do not establish other operating systems
+  or backends, native timing or memory claims, installed-native recovery
+  effectiveness, zero provider billing on unmeasured sessions, or a completed
+  32-peer user audit (tracked on
+  [Issue #1552](https://github.com/hcoona/three/issues/1552) under
+  [`user-audit-protocol.md`](docs/user-audit-protocol.md)). Unknown reservations
+  in an active persistent ledger block further paid admission without automatic
+  release or reset.
 
 ## User and primary journey
 
-The user is a developer who wants several coding agents to cooperate on one
-local repository without deploying a Git server, chat server, database server
-or container stack. The developer supplies a goal, a base revision, workers,
-checks and a finite run budget; agents select work, communicate findings and
-submit changes; the developer inspects a checked local delivery branch and can
-intervene, pause or resume without losing partial work.
-
-This context motivates the [requirements](docs/requirements.md). Their
-acceptance evidence belongs in the [validation basis](docs/validation.md), not
-in this overview.
+A developer supplies a goal, base revision, worker count, checks, and finite run
+budget to coordinate multiple coding agents on one local repository without a
+Git, chat, database, or container server. Peers claim tasks, exchange findings,
+and submit checked candidates to a local delivery branch while supporting
+`status`, `pause`, `resume`, and crash `reconnect` without losing partial work
+(motivating [`requirements.md`](docs/requirements.md); acceptance criteria live
+in [`validation.md`](docs/validation.md)).
 
 ## Running and checking the application
 
-Use the repository-selected .NET SDK and the existing installed Copilot CLI
-under the [implementation contracts](docs/implementation-contracts.md).
-SDK CLI acquisition and native automatic updates are disabled. Keep the
-existing native authentication and default model unless an explicitly selected
-supported model is required by the owning operational protocol; no provider
-proxy is needed.
+Use the repository-selected .NET SDK and existing installed Copilot CLI under
+[`implementation-contracts.md`](docs/implementation-contracts.md) (SDK runtime
+acquisition and native auto-updates are disabled). Edit [`examples/run.yaml`](examples/run.yaml)
+and [`examples/goal.md`](examples/goal.md): relative repository, state, ledger,
+and `goalFile` paths resolve from the YAML file's directory; keep state and
+ledger outside the target checkout (`init` snapshots configuration and goal into
+SQLite). Worktrees isolate edits rather than host permissions.
 
-Edit [the YAML example](examples/run.yaml) and its separate
-[Markdown goal](examples/goal.md). Set the target checkout, owned run state,
-checks, explicit native permission policy, finite allowances and one persistent
-campaign ledger. Relative repository, state, ledger and goal paths resolve from
-the YAML file's directory, not the terminal directory. Keep state and ledger
-outside the target checkout. The complete goal is shared by all peers; the
-example starts ten workers with no privileged initial planner or fixed roles.
-
-Set `workerStartIntervalSeconds` to control ramp-up. The example uses 30 seconds;
-omitting it or setting zero retains immediate eligibility. With a positive
-interval, the first peer starts immediately and later native workers start
-gradually while earlier peers cooperate. Waiting workers do not hold started
-native sessions. Startup and ramp-up count against the finite run deadline;
-a stop may occur before every configured worker is admitted. This constant
-interval is not the upstream experiment's two-stage deployment schedule.
-
-Set `creditAllocation: shared` to let active peers draw renewable windows of
-up to 100 credits from the same run/campaign pool. Cold peers do not reserve
-fixed shares. Complete, idle turns return unused backing; peers wait cancellably
-when other in-flight work holds the pool. Native caps remain soft, and an
-unsupported limit change or unknown usage stops further paid admission.
-The YAML example opts in; omitted values retain `per-session` behavior.
-
-The YAML example's modeline associates [the JSON Schema](schemas/run.schema.json)
-with the standard Red Hat YAML extension in VS Code for completion, hover and
-validation. No editor extension is required at runtime. If copying the example
-elsewhere, adjust its schema pointer and paths, or configure a YAML schema
-association in the editor. Runtime validation also checks paths and cross-field
-conditions that editor validation cannot establish.
-
-YAML uses `goalFile`, not inline `goal`; JSON configuration remains supported
-with its existing inline `goal` and absolute paths. Initialization snapshots the
-resolved configuration and entire Markdown goal in SQLite. Editing the input
-files later does not change resume/reconnect; initialize a new run to use new
-inputs. See the [input contract](docs/implementation-contracts.md#configuration-input).
-
-Worktrees separate edits, not host permissions. Build once and keep that exact
-binary for preflight, calibration and subsequent lifecycle commands:
+Build once and reuse the exact binary across preflight, paid calibration (30-credit
+tool-disabled soft cap), and execution:
 
 ```powershell
 dotnet build src\private\app\lite-agensh\LiteAgensh.csproj
@@ -181,49 +80,19 @@ dotnet $app calibrate --state C:\Work\LiteAgensh\run
 dotnet $app run --state C:\Work\LiteAgensh\run
 ```
 
-Preflight sends no model prompt. Calibration is a paid, tool-disabled turn
-with a 30-credit native soft cap; successful complete usage is required before
-ordinary dispatch. A changed binary or relied-on configuration needs matching
-receipts. Soft caps can overshoot by an in-flight response.
-
-Use `status` or request `pause` from another terminal with the same `--state`.
-`run` stays in the current terminal and owns native worker subprocesses; it does
-not open ten interactive terminals. Closing that terminal is not a controlled
-pause.
-Wait for actual coordinator/child settlement before `resume`, which creates
-fresh sessions with durable summaries. After a coordinator crash, `reconnect`
-resolves owned children and attempts the exact saved sessions; it does not
-silently replace unknown usage. `finalize` retains local delivery/evidence;
-`cleanup` is a separate explicit operation.
-
-The [closed failed-run reconnect contract](docs/implementation-contracts.md#closed-failed-run-reconnect)
-also specifies settlement-only recovery through this existing command without
-restarting workers or rewriting an ended failed audit. This branch is
-implemented with controlled coverage; installed-native recovery effectiveness
-remains unverified. Exact non-dispatch recovery requires the
-[retained zero-origin cap profile](docs/implementation-contracts.md#exact-recovery-limit-coordinates),
-not a raw remaining-credit limit or an inferred new allowance.
-It returns a distinct `usage-settlement` result before
-paid admission, while later paid operations still require matching receipts.
-Native use remains subject to the owning operational protocol and exact
-invocation/effects review.
-
-For an authorized retained reservation, use the targeted offline accounting path:
+`run` stays in the foreground terminal and owns worker subprocesses; invoke
+`status` or `pause` from another terminal with `--state`, wait for process
+settlement before `resume` (fresh summarized sessions), use `reconnect` after a
+crash or for authorized [closed failed-run settlement](docs/implementation-contracts.md#closed-failed-run-reconnect),
+and use `finalize` / `cleanup` to inspect or remove owned state. For an
+authorized pre-dispatch reservation (`--evidence` required on legacy state
+without a dispatch-contract marker):
 
 ```powershell
 dotnet $app reconcile --state C:\Work\LiteAgensh\run --reservation RESERVATION_ID
 ```
 
-Legacy state without a dispatch-contract marker additionally requires
-`--evidence C:\Work\LiteAgensh\owned-proof.json`. Only the supported source lineage
-and matching referenced observations qualify. The command holds run ownership,
-checks the exact old process identities and atomically rechecks the live ledger.
-It never starts a native session, queries accounts, runs checks, resumes work or
-exports a report. A successful cancellation preserves absent billing completeness
-and unestablished measured actual usage; status lists it separately from measured
-reconciliation. Missing or contradictory proof leaves uncertainty in place.
-
-Run the controlled suite without native model calls:
+Run the credential-free controlled test suite:
 
 ```powershell
 dotnet test --project tests\private\app\lite-agensh\LiteAgensh.Tests.csproj
@@ -231,47 +100,15 @@ dotnet test --project tests\private\app\lite-agensh\LiteAgensh.Tests.csproj
 
 ## Records and authority
 
-| Reader question                                                     | Authority                                                                                                                                                      |
-| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| What must the local product do, and what is unsupported?            | [Requirements](docs/requirements.md)                                                                                                                           |
-| How do C#, SQLite, native processes, MCP and Git fit together?      | [Architecture and integration boundaries](docs/architecture.md)                                                                                                |
-| What replaces each upstream responsibility and collaboration tool?  | [Complete migration map and source evidence](docs/upstream-migration.md)                                                                                       |
-| What evidence permits implementation and an eventual support claim? | [Validation basis](docs/validation.md)                                                                                                                         |
-| Where is upstream attribution retained?                             | [Third-party notice](THIRD-PARTY-NOTICES.txt)                                                                                                                  |
-| What concrete boundaries do independent implementation units share? | [Implementation contracts](docs/implementation-contracts.md)                                                                                                   |
-| What exact native observation and credit effects may be executed?   | [Native acceptance protocol](docs/native-acceptance-protocol.md)                                                                                               |
-| What governs the owner's actual 32-peer user-audit execution loop?  | [Real user audit protocol](docs/user-audit-protocol.md); separate from the closed development acceptance campaign                                              |
-| What work is currently authorized?                                  | Repository [Delivery Wave](../../../../docs/delivery-wave.md)                                                                                                  |
-| Where are progress, reviews and delivery dependencies?              | [Refinement #1542](https://github.com/hcoona/three/issues/1542), [original acceptance #1526](https://github.com/hcoona/three/issues/1526) and their linked PRs |
-
-The README owns purpose, user context, current implementation status and routing.
-Requirements own behavior; architecture owns realization; the migration map owns
-source findings and treatment rationale; validation owns evidence obligations.
-None of these grants work or replaces the accepted repository policies.
-
-## Record admission and maintenance
-
-The repository owner maintains these records with project authors. Implementers
-and independent reviewers consume requirements before selecting behavior,
-architecture before changing dependency/recovery boundaries, the migration map
-before translating upstream mechanisms, and validation before claiming a journey
-works. Missing any of those would respectively permit scope drift, an
-incompatible platform substitution, an untracked semantic omission or an
-unsupported acceptance claim. They need distinct carriers because their
-questions and change/review points differ; this portal cannot serve as all four
-authorities.
-
-Independent implementation units also consume the implementation contracts;
-without them their separately produced components could disagree at integration.
-The native executor/reviewer consumes the applicable exact acceptance or
-user-audit protocol because a
-general validation basis cannot approve concrete provider effects or credit
-accounting. The user-audit protocol separates current real-repository operation
-from the closed fixture-only campaign. These contracts and protocols have
-distinct implementation and observation review points, and are maintained by
-the owner with their authors.
-
-The source baseline and license stay with the map and notice. Review execution,
-checker reports, mutable-source retrievals, findings and progress stay in Issues
-and PRs. When implementation changes status, update this README rather than
-creating a second progress ledger.
+| Reader question                                                     | Authority                                                                                                                                                                                                           |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| What must the local product do, and what is unsupported?            | [Requirements](docs/requirements.md)                                                                                                                                                                                |
+| How do C#, SQLite, native processes, MCP and Git fit together?      | [Architecture and integration boundaries](docs/architecture.md)                                                                                                                                                     |
+| What replaces each upstream responsibility and collaboration tool?  | [Complete migration map and source evidence](docs/upstream-migration.md)                                                                                                                                            |
+| What evidence permits implementation and an eventual support claim? | [Validation basis](docs/validation.md)                                                                                                                                                                              |
+| Where is upstream attribution retained?                             | [Third-party notice](THIRD-PARTY-NOTICES.txt)                                                                                                                                                                       |
+| What concrete boundaries do independent implementation units share? | [Implementation contracts](docs/implementation-contracts.md)                                                                                                                                                        |
+| What governed the closed fixture-only acceptance campaign?          | [Windows native acceptance protocol](docs/native-acceptance-protocol.md)                                                                                                                                            |
+| What governs the owner's actual 32-peer user-audit execution loop?  | [Real user audit protocol](docs/user-audit-protocol.md)                                                                                                                                                             |
+| What work is currently authorized?                                  | Repository [Delivery Wave](../../../../docs/delivery-wave.md) and [record policy](../../../../docs/governance/record-system.md)                                                                                     |
+| Where are audit progress, closed refinement, and original runs?     | [User audit #1552](https://github.com/hcoona/three/issues/1552), closed [refinement #1542](https://github.com/hcoona/three/issues/1542), and closed [acceptance #1526](https://github.com/hcoona/three/issues/1526) |
