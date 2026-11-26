@@ -148,7 +148,7 @@ A normal policy or control change uses a reviewable pull request and the review 
 applicable to the affected scope.
 
 The accepted target-branch versions of `AGENTS.md`, this policy, the record-system
-policy, the control catalog, and the applicable review Skill govern review of a proposed
+policy, and the applicable review Skill govern review of a proposed
 governance amendment. Proposed versions are review subjects before merge. They may impose
 additional validation on the proposal, but they cannot waive or weaken an accepted
 obligation during their own review. If an accepted authority needed for review is

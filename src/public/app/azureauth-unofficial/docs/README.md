@@ -52,16 +52,16 @@ is navigation, not an independent authority.
 
 ## Project Identity and Repository Governance
 
-| Audience                                         | Authoritative subject                                                         | Canonical record                                                              |
-| ------------------------------------------------ | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Rule authors, control maintainers, and reviewers | Creation, amendment, enforcement, and retirement of governance rules          | [`governance-system.md`](../../../../../docs/governance/governance-system.md) |
-| Record authors, maintainers, and reviewers       | Repository record authority, lifecycle, format, and enforcement               | [`record-system.md`](../../../../../docs/governance/record-system.md)         |
-| Record-system automation and reviewers           | Current and scheduled record-family routing                                   | [`record-families.yaml`](../../../../../docs/governance/record-families.yaml) |
-| Contributors, automation, and reviewers          | Controls that implement governing policies                                    | [`controls.yaml`](../../../../../docs/governance/controls.yaml)               |
-| Contributors and public readers                  | Project identity, unofficial status, and public-record boundary               | [`project.md`](project.md)                                                    |
-| Packaging and runtime maintainers                | Independent executable, package, cache, configuration, and release identities | [`operational-identities.yaml`](operational-identities.yaml)                  |
-| Human contributors                               | Contribution and review workflow                                              | [`CONTRIBUTING.md`](../../../../../CONTRIBUTING.md)                           |
-| Security reporters                               | Vulnerability reporting process                                               | [`project.md#security-reporting`](project.md#security-reporting)              |
+| Audience                                         | Authoritative subject                                                         | Canonical record                                                                              |
+| ------------------------------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Rule authors, control maintainers, and reviewers | Creation, amendment, enforcement, and retirement of governance rules          | [`governance-system.md`](../../../../../docs/governance/governance-system.md)                 |
+| Record authors, maintainers, and reviewers       | Repository record authority, lifecycle, format, and enforcement               | [`record-system.md`](../../../../../docs/governance/record-system.md)                         |
+| Record-system automation and reviewers           | Current and scheduled record-family routing                                   | [`record-families.yaml`](../../../../../docs/governance/record-families.yaml)                 |
+| Contributors, automation, and reviewers          | Controls that implement governing policies                                    | [`record-system.md#enforcement`](../../../../../docs/governance/record-system.md#enforcement) |
+| Contributors and public readers                  | Project identity, unofficial status, and public-record boundary               | [`project.md`](project.md)                                                                    |
+| Packaging and runtime maintainers                | Independent executable, package, cache, configuration, and release identities | [`operational-identities.yaml`](operational-identities.yaml)                                  |
+| Human contributors                               | Contribution and review workflow                                              | [`CONTRIBUTING.md`](../../../../../CONTRIBUTING.md)                                           |
+| Security reporters                               | Vulnerability reporting process                                               | [`project.md#security-reporting`](project.md#security-reporting)                              |
 
 ## Workflow and Machine Contracts
 
@@ -72,7 +72,6 @@ is navigation, not an independent authority.
 | CLI implementers and contract validators  | Protocol 1 parsed command-line request shape                         | [`request.schema.json`](../contracts/v1/request.schema.json)                                   |
 | Adapter authors and result validators     | Protocol 1 terminal result shape                                     | [`result.schema.json`](../contracts/v1/result.schema.json)                                     |
 | Profile authors and configuration readers | Client Profile version 1 schema and concrete compatibility candidate | [`client-profile.schema.json`](../contracts/v1/client-profile.schema.json)                     |
-| Control automation                        | Control catalog schema                                               | [`controls.schema.json`](../../../../../schemas/governance/controls.schema.json)               |
 | Packaging and runtime automation          | Operational-identity registry schema                                 | [`operational-identities.schema.json`](../schemas/operational-identities.schema.json)          |
 | Research automation                       | Mutable-source recheck schema                                        | [`rechecks.schema.json`](../schemas/rechecks.schema.json)                                      |
 

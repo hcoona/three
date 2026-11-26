@@ -1,15 +1,15 @@
 # Quality, Build, and Validation Requirements
 
-## V2-REQ-050: Retired - current authority: src/public/app/azureauth-unofficial/docs/project.md#public-record-boundary
+## V2-REQ-050: Retired - current authority: [public record boundary](../../project.md#public-record-boundary)
 
 Public-source evidence policy is governed by the project record. Evidence required for a
 support claim is governed by the validation strategy.
 
-## V2-REQ-051: Retired - current authority: src/public/app/azureauth-unofficial/docs/validation/strategy.md#real-environment-tests
+## V2-REQ-051: Retired - current authority: [real-environment tests](../../validation/strategy.md#real-environment-tests)
 
 Real-platform support evidence is a validation obligation rather than product behavior.
 
-## V2-REQ-052: Retired - current authority: src/public/app/azureauth-unofficial/docs/validation/strategy.md#dependency-upgrade-matrix
+## V2-REQ-052: Retired - current authority: [dependency-upgrade matrix](../../validation/strategy.md#dependency-upgrade-matrix)
 
 Dependency-upgrade isolation is an engineering and validation practice rather than
 product behavior.
@@ -20,7 +20,7 @@ V2 implementation and release builds must restore, build, test, and package from
 retrievable dependencies and fork-owned infrastructure. They must not require Microsoft
 private feeds, private service connections, or upstream signing systems.
 
-## V2-REQ-054: Retired - current authority: src/public/app/azureauth-unofficial/docs/research/experiment-safety.md#experiment-authorization
+## V2-REQ-054: Retired - current authority: [experiment authorization](../../research/experiment-safety.md#experiment-authorization)
 
 Experiment authorization and isolation are governed by the experiment-safety policy.
 The validation strategy governs the evidence needed for support claims.

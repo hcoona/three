@@ -1,51 +1,22 @@
 # Agent Execution and Recovery
 
-The repository owner maintains this execution guidance. Orchestrators and
-replacement sessions use it to recover work without relying on one conversation
-or a repository progress ledger. The [record policy](../governance/record-system.md)
-and accepted [Delivery Wave](../delivery-wave.md) determine authorization.
+Orchestrators and replacement sessions use this guidance to coordinate parallel
+agent worktrees and recover cleanly from Git and GitHub carriers under
+[`record-system.md`](../governance/record-system.md) and
+[`docs/delivery-wave.md`](../delivery-wave.md).
 
-An existing Codex session may coordinate bounded persisted `codex exec --json`
-workers in separate worktrees when the accepted grant permits delegation.
-Independent workers may proceed concurrently; dependent work and conflicting
-writes to shared authorities remain ordered. Independent review and finding
-triage retain separate roles. No standalone coordination service is required.
-
-Associate each session with its Issue/PR, worktree, exact thread ID, owned scope
-and role. Keep machine-specific process handles and any disposable lookup local.
-Before resuming or replacing a worker, inspect its actual runtime ownership,
-worktree/index/untracked state, target branch, checks and unresolved findings.
-A missing local process or unloaded app-server thread does not prove inactivity
-on another process or machine. Resolve ambiguous ownership before another writer
-starts, and preserve partial work before recovery.
-
-Use the exact known session ID when resuming. Do not select a global latest
-session by convenience. Persist actual events, outputs and validated patches;
-replacement sessions recover from Git and work carriers. A failed, timed-out,
-or stopped operation neither establishes completion nor permits an uncertain
-external write or effect to be repeated before checking destination state. Never
-put session IDs, retries or results into the Wave.
-
-Keep agent worktrees and large local state on persistent storage outside tmpfs.
-Remove finished worktrees with `git worktree remove` and delete their retained
-local state.
-
-## Mutable Interface Recheck
-
-Before an implementation or execution grant relies on Codex CLI, app-server or
-SDK interfaces, its author rechecks the applicable official page and installed
-version; an independent reviewer evaluates that evidence. Review of the next PR
-or Wave entry selecting dependent Codex work is the fallback applicability
-review. If an interface changed, update the affected invocation and validation
-before relying on it; uncertainty pauses only dependent work. Record the
-retrieval, exact version and conclusion in the governing PR.
-
-- [Non-interactive CLI](https://learn.chatgpt.com/docs/non-interactive-mode):
-  JSONL events, persistence and explicit session resume.
-- [App server](https://learn.chatgpt.com/docs/app-server): thread enumeration,
-  source filters, pagination, read/resume and loaded runtime state.
-- [SDK](https://learn.chatgpt.com/docs/codex-sdk): explicit thread continuation.
-
-Documentation establishes an interface contract, not tested local integration
-or comprehensive process discovery. Use the existing CLI unless an accepted
-need justifies another integration.
+- **Worktree isolation and ordering:** Run concurrent implementation workers in
+  separate persistent `git worktree` checkouts (outside `tmpfs`), keeping
+  conflicting edits to shared authorities ordered and keeping independent review
+  and finding triage in separate roles. Remove finished worktrees with
+  `git worktree remove`.
+- **Explicit ownership and recovery:** Bind each worker to its Issue/PR,
+  worktree, exact session ID, and scope. Before resuming or replacing an
+  interrupted worker, inspect live process ownership, `git status` / branch
+  state, CI checks, and open review findings rather than picking a global
+  "latest" session or assuming a missing local process means an external effect
+  did not occur.
+- **Idempotent external safety:** A timed-out or failed command neither proves
+  completion nor permits blindly repeating an external or paid effect without
+  first checking destination/ledger state. Record outcomes in Issues/PRs, never
+  in `docs/delivery-wave.md`.

@@ -256,7 +256,7 @@ flowchart LR
        a changed identity, attaches the recorded preflight check output and
        exact version/digest provenance to the governing W4/W5 protocol or
        results PR/Issue carrier for **independent `research-evidence-review`
-       disposition** (`docs/governance/controls.yaml`), keeping the changed
+       disposition** ([`GOV-011`](../../../../../docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)), keeping the changed
        asset out of formal Stage S3 and W5 runs until accepted (host upgrades
        are never blocked during ordinary development).
 

@@ -73,15 +73,15 @@ also consumes the input. A missing native responsibility or unresolved Python
 claim remains a planning failure.
 
 Record responsibility reads only `bindings[].{id,state,path}` from the endpoint's
-[record-family catalog](../../../../../../docs/governance/record-families.yaml) with
+[record-binding catalog](../../../../../../docs/governance/record-families.yaml) with
 the application's YAML parser. It performs no schema validation; the record
-checker remains the catalog authority, and a binding-format change must update
-both readers. Current binding paths use the checker's component-aware star
-grammar from `eng/scripts/repository_path_patterns.py`; the application matches
-them with `Microsoft.Extensions.FileSystemGlobbing`, whose `*` and `**/`
-semantics agree for every current binding and are pinned by tests. Catalog reads
-do not run the contextual record checker. Unconditional source conformance is
-not a positive owner for an arbitrary path.
+checker validates the catalog schema and wildcard namespace coverage, and a
+binding-pattern grammar change must update both readers. Current binding paths
+use the component-aware star grammar from
+`eng/scripts/repository_path_patterns.py`; the application matches them with
+`Microsoft.Extensions.FileSystemGlobbing`, whose `*` and `**/` semantics agree
+for every current binding and are pinned by tests. Unconditional source
+conformance is not a positive owner for an arbitrary path.
 
 The endpoint's native `mise tasks ls --json` metadata names the `records:check`
 and `records:test` scripts, which, with the checker's shared matcher, receive
