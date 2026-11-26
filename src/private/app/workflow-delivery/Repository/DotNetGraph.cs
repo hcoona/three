@@ -8,6 +8,7 @@ using Microsoft.Build.Framework;
 using Microsoft.Build.Globbing;
 using Microsoft.Build.Graph;
 using NuGet.Versioning;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Repository;
 
@@ -282,12 +283,8 @@ internal static class DotNetGraph
         }
     }
 
-    private static string Absolute(string path)
-    {
-        if (!Path.IsPathFullyQualified(path))
-            throw new InvalidDataException("Native graph coordinates must be absolute.");
-        return Path.GetFullPath(path);
-    }
+    private static string Absolute(string path) =>
+        OwnedPath.FullPath(path, "Native graph coordinates must be absolute.");
 
     // These concrete repository operations are adapted; SDK/package targets remain native.
     private static class DotNetRepositoryTargets

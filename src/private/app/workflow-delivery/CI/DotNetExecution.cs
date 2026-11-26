@@ -32,14 +32,12 @@ internal static class DotNetExecution
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token, GitMaterialization? bound = null)
     {
-        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
-        string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
-        if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            OwnedPath.Overlap(scratch, checkout) ||
-            Directory.EnumerateFileSystemEntries(scratch).Any() || request.DeadlineSeconds <= 0)
-            throw new InvalidDataException(
-                "Native .NET execution requires fresh external scratch.");
-        ResultCollector.Collect(plan, []);
+        if (bound is null) plan.Validate();
+        if (request.DeadlineSeconds <= 0)
+            throw new InvalidDataException("Native .NET execution requires a positive deadline.");
+        (string checkout, string scratch) = OwnedPath.RequireFreshExternalScratch(
+            request.Checkout, request.Scratch,
+            "Native .NET execution requires fresh external scratch.", PathMessage);
         if (plan.Scope != DotNetFactsAssembler.Scope)
             throw new InvalidDataException("Unsupported native .NET execution scope.");
         Dictionary<CheckKey, DotNetGraphNode> nodes = ReadChecks(plan, checkout);

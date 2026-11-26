@@ -16,9 +16,9 @@ from unittest.mock import Mock
 import pytest
 
 ROOT = Path(__file__).resolve().parents[6]
+HELPER = ROOT / "src/private/app/workflow-delivery/Native/Python/packages.py"
 SPEC = importlib.util.spec_from_file_location(
-    "workflow_delivery_python_packages",
-    ROOT / "src/private/app/workflow-delivery/Native/Python/packages.py",
+    "workflow_delivery_python_packages", HELPER
 )
 assert SPEC is not None
 assert SPEC.loader is not None
@@ -78,12 +78,14 @@ def test_public_index_cli_uses_isolated_native_packaging_and_complete_json(
     path = public_index(
         tmp_path, [index_entry("hcoona_release_smoke_python-1.2.3.tar.gz")]
     )
+    executable = sys.executable
+    assert executable is not None
     result = subprocess.run(  # noqa: S603 - Controlled maintained Python helper.
         [
-            sys.executable,
+            executable,
             "-I",
             "-B",
-            SPEC.origin,
+            str(HELPER),
             "index-facts",
             str(path),
             NAME,
@@ -131,31 +133,30 @@ def test_public_index_reports_contradictory_native_names(tmp_path, foreign):
 
 
 @pytest.mark.parametrize(
-    "defect", ["api", "filename", "requires-python", "yanked", "inventory"]
+    ("api", "entry", "count", "diagnostic"),
+    [
+        ("2.0", index_entry(STEM + ".tar.gz"), 1, "metadata"),
+        ("1.0", index_entry("uninterpretable"), 1, "filename"),
+        (
+            "1.0",
+            index_entry(
+                STEM + ".tar.gz",
+                **{"requires-python": "unsupported constraint"},
+            ),
+            1,
+            "specifier",
+        ),
+        ("1.0", index_entry(STEM + ".tar.gz", yanked=None), 1, "visibility"),
+        ("1.0", index_entry(STEM + ".tar.gz"), 4097, "bound"),
+    ],
 )
 def test_public_index_rejects_unavailable_or_unsupported_native_facts(
-    tmp_path, defect
+    tmp_path, api, entry, count, diagnostic
 ):
     """Native interpretation failures supply no partial successful facts."""
-    entry = index_entry(STEM + ".tar.gz")
-    if defect == "filename":
-        entry["filename"] = "uninterpretable"
-    elif defect == "requires-python":
-        entry["requires-python"] = "unsupported constraint"
-    elif defect == "yanked":
-        entry["yanked"] = None
-    entries = [entry] * (4097 if defect == "inventory" else 1)
-    with pytest.raises(
-        (ValueError, TypeError),
-        match=r"metadata|filename|specifier|visibility|bound",
-    ):
-        packages.index_facts(
-            public_index(
-                tmp_path, entries, api="2.0" if defect == "api" else "1.0"
-            ),
-            NAME,
-            VERSION,
-        )
+    index = public_index(tmp_path, [entry] * count, api=api)
+    with pytest.raises((ValueError, TypeError), match=diagnostic):
+        packages.index_facts(index, NAME, VERSION)
 
 
 def wheel(directory, *, metadata=METADATA, payload=True, extra=None):
@@ -172,9 +173,21 @@ def wheel(directory, *, metadata=METADATA, payload=True, extra=None):
     return path
 
 
+def write_sdist(directory, stem, files, extra=None):
+    """Write a source distribution and optional malformed member."""
+    path = directory / (stem + ".tar.gz")
+    with tarfile.open(path, "w:gz") as archive:
+        for name, data in files.items():
+            info = tarfile.TarInfo(stem + "/" + name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+        if extra:
+            archive.addfile(extra)
+    return path
+
+
 def sdist(directory, *, metadata=METADATA, payload=True, extra=None):
     """Sdist."""
-    path = directory / (STEM + ".tar.gz")
     files = {"PKG-INFO": metadata}
     if payload:
         files.update(
@@ -185,14 +198,7 @@ def sdist(directory, *, metadata=METADATA, payload=True, extra=None):
                 "LICENSE": b"license",
             }
         )
-    with tarfile.open(path, "w:gz") as archive:
-        for name, data in files.items():
-            info = tarfile.TarInfo(STEM + "/" + name)
-            info.size = len(data)
-            archive.addfile(info, io.BytesIO(data))
-        if extra:
-            archive.addfile(extra)
-    return path
+    return write_sdist(directory, STEM, files, extra)
 
 
 def test_complete_original_set_retains_native_identity_and_bytes(tmp_path):
@@ -326,10 +332,10 @@ NBGV = "nbgv-python"
 NBGV_VERSION = "2.1.0.dev1"
 NBGV_STEM = "nbgv_python-" + NBGV_VERSION
 NBGV_MODULES = ["__init__.py", "cli.py", "hatch_plugin.py"]
-NBGV_METADATA = (
+NBGV_IDENTITY = (
     f"Metadata-Version: 2.4\nName: {NBGV}\nVersion: {NBGV_VERSION}\n"
-    "Requires-Dist: packaging>=24.0\n"
 ).encode()
+NBGV_METADATA = NBGV_IDENTITY + b"Requires-Dist: packaging>=24.0\n"
 
 
 def nbgv_wheel(directory, metadata=NBGV_METADATA):
@@ -344,15 +350,9 @@ def nbgv_wheel(directory, metadata=NBGV_METADATA):
 
 def nbgv_sdist(directory, metadata=NBGV_METADATA):
     """Sdist carrying the registered nbgv-python payload."""
-    path = directory / (NBGV_STEM + ".tar.gz")
     files = {"PKG-INFO": metadata, "pyproject.toml": b"p", "README.md": b"r"}
     files.update({"src/nbgv_python/" + module: b"m" for module in NBGV_MODULES})
-    with tarfile.open(path, "w:gz") as archive:
-        for name, data in files.items():
-            info = tarfile.TarInfo(NBGV_STEM + "/" + name)
-            info.size = len(data)
-            archive.addfile(info, io.BytesIO(data))
-    return path
+    return write_sdist(directory, NBGV_STEM, files)
 
 
 @pytest.mark.parametrize("requires", [None, "", "packaging>=99\n"])
@@ -360,12 +360,9 @@ def test_nbgv_originals_require_their_payload_and_declared_dependency(
     tmp_path, requires
 ):
     """Nbgv originals require their payload and declared dependency."""
-    metadata = NBGV_METADATA
-    if requires is not None:
-        metadata = metadata.replace(b"packaging>=24.0\n", b"")
-        metadata = metadata.replace(b"Requires-Dist: ", b"")
-        if requires:
-            metadata += b"Requires-Dist: " + requires.encode()
+    metadata = NBGV_METADATA if requires is None else NBGV_IDENTITY
+    if requires:
+        metadata += b"Requires-Dist: " + requires.encode()
     nbgv_wheel(tmp_path, metadata)
     nbgv_sdist(tmp_path, metadata)
     if requires is None:
@@ -423,6 +420,18 @@ def test_static_version_facts_come_from_the_maintained_backend(
     factory.assert_called_once_with(str(tmp_path.resolve()))
 
 
+def installed_consumer(monkeypatch, root, base, distributions, module):
+    """Bind installed metadata and module doubles to one interpreter."""
+    monkeypatch.setattr(
+        packages.importlib.metadata, "distribution", distributions.__getitem__
+    )
+    monkeypatch.setattr(
+        packages.importlib, "import_module", lambda _name: module
+    )
+    monkeypatch.setattr(sys, "prefix", str(root))
+    monkeypatch.setattr(sys, "base_prefix", str(base))
+
+
 @pytest.mark.parametrize("defect", [None, "base-dependency", "api"])
 def test_nbgv_consumer_requires_api_and_dependency_from_its_venv(
     tmp_path, monkeypatch, defect
@@ -446,14 +455,9 @@ def test_nbgv_consumer_requires_api_and_dependency_from_its_venv(
     if defect == "api":
         del api["forward"]
     module = SimpleNamespace(__file__=str(origin), **api)
-    monkeypatch.setattr(
-        packages.importlib.metadata, "distribution", distributions.__getitem__
+    installed_consumer(
+        monkeypatch, root, tmp_path / "base", distributions, module
     )
-    monkeypatch.setattr(
-        packages.importlib, "import_module", lambda _name: module
-    )
-    monkeypatch.setattr(sys, "prefix", str(root))
-    monkeypatch.setattr(sys, "base_prefix", str(tmp_path / "base"))
     if defect is None:
         assert packages.consume(NBGV, NBGV_VERSION, packages.QUALITY) == {
             "name": NBGV,
@@ -487,15 +491,12 @@ def test_installed_consumer_requires_native_metadata_origin_and_registered_api(
         __file__=str(origin),
         project_id=lambda: "other" if defect == "api" else NAME,
     )
-    monkeypatch.setattr(
-        packages.importlib.metadata, "distribution", lambda _name: distribution
-    )
-    monkeypatch.setattr(
-        packages.importlib, "import_module", lambda _name: module
-    )
-    monkeypatch.setattr(sys, "prefix", str(root))
-    monkeypatch.setattr(
-        sys, "base_prefix", str(root if defect == "no-venv" else tmp_path)
+    installed_consumer(
+        monkeypatch,
+        root,
+        root if defect == "no-venv" else tmp_path,
+        {NAME: distribution},
+        module,
     )
     if defect is None:
         assert packages.consume(NAME, VERSION, packages.QUALITY) == {

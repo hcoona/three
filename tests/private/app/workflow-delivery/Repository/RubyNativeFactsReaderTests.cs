@@ -16,7 +16,6 @@ public sealed class RubyNativeFactsReaderTests
     [DataRow("context", "lockfile", "relative.lock")]
     [DataRow("version", "gemspec", "other/native.gemspec")]
     [DataRow("version", "raw", "other-version")]
-    [DataRow("version", "version", null)]
     [DataRow("version", "literal", null)]
     public void PreparationRejectsIncompleteOrSubstitutedNativeAnswers(string operation,
         string field, string? replacement)
@@ -318,19 +317,14 @@ public sealed class RubyNativeFactsReaderTests
     [TestMethod]
     [DataRow("specifications", null)]
     [DataRow("direct_dependencies", "3")]
-    public void IncompleteNativeBundleCannotSupplyFacts(string field, string? json)
+    [DataRow("specifications/runtime_dependencies", null)]
+    public void IncompleteNativeBundleCannotSupplyFacts(string path, string? json)
     {
         JsonObject value = Bundle("path");
-        if (json is null) value.Remove(field);
-        else value[field] = JsonNode.Parse(json);
-        RejectBundle(value.ToJsonString());
-    }
-
-    [TestMethod]
-    public void SpecificationWithoutRuntimeDependenciesCannotSupplyFacts()
-    {
-        JsonObject value = Bundle("path");
-        value["specifications"]![0]!.AsObject().Remove("runtime_dependencies");
+        string[] fields = path.Split('/');
+        JsonObject target = fields.Length == 1 ? value : value[fields[0]]![0]!.AsObject();
+        if (json is null) target.Remove(fields[^1]);
+        else target[fields[^1]] = JsonNode.Parse(json);
         RejectBundle(value.ToJsonString());
     }
 

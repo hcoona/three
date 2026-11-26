@@ -170,20 +170,95 @@ public sealed class ResultCollectorTests
     }
 
     [TestMethod]
-    public void CollectMalformedPlanRejectsInvalidPrerequisiteContracts()
+    public void ValidateRejectsMissingPlanIdentity()
+    {
+        CiPlan plan = Scenario.Plan();
+        AssertRejected(plan with { Comparison = "" }, "comparison");
+        AssertRejected(plan with { Candidate = " " }, "candidate");
+        AssertRejected(plan with { Scope = "" }, "coverage scope");
+    }
+
+    [TestMethod]
+    public void ValidateRejectsInvalidPrerequisiteContracts()
     {
         CheckSpec build = Scenario.Check("library", "build");
         CheckSpec test = Scenario.Check("library", prerequisites: [build.Key]);
-        AssertRejected("Missing prerequisite", test);
-        AssertRejected("advisory prerequisite", test, build with { Required = false });
-        AssertRejected("Cyclic check prerequisites", test,
-            build with { Prerequisites = [test.Key] });
-        AssertRejected("Duplicate planned check", test, test, build);
-
-        static void AssertRejected(string diagnostic, params CheckSpec[] checks) =>
-            Assert.Contains(diagnostic, Assert.ThrowsExactly<InvalidDataException>(() =>
-                ResultCollector.Collect(Scenario.Plan(checks), [])).Message);
+        AssertRejected(Scenario.Plan(test), "Missing prerequisite");
+        AssertRejected(Scenario.Plan(test, build with { Required = false }),
+            "advisory prerequisite");
+        AssertRejected(Scenario.Plan(test, build with { Prerequisites = [test.Key] }),
+            "Cyclic check prerequisites");
+        AssertRejected(Scenario.Plan(test, test, build), "Duplicate planned check");
     }
+
+    [TestMethod]
+    public void PartitionRequiresBothSidesToKeepTheirPrerequisites()
+    {
+        CheckSpec build = Scenario.Check("library", "build");
+        CheckSpec test = Scenario.Check("library", prerequisites: [build.Key]);
+        CheckSpec unrelated = Scenario.Check("app");
+        CiPlan plan = Scenario.Plan(test, unrelated, build);
+        plan.Validate();
+
+        var (library, app) = plan.Partition(item => item.Work.Key.Target == "library");
+        CollectionAssert.AreEqual(new[] { test.Key, build.Key },
+            library.Checks.Select(item => item.Work.Key).ToArray());
+        Assert.AreEqual(unrelated.Key, Assert.ContainsSingle(app.Checks).Work.Key);
+        Assert.Contains("prerequisite crosses CI execution partitions",
+            Assert.ThrowsExactly<InvalidDataException>(() =>
+                plan.Partition(item => item.Work.Key == build.Key)).Message);
+    }
+
+    [TestMethod]
+    public async Task RunnerGatesDependentsWithoutSuppressingIndependentWork()
+    {
+        CheckSpec build = Scenario.Check("app", "build");
+        CheckSpec contents = Scenario.Check("app", "contents", prerequisites: [build.Key]);
+        CheckSpec consumer = Scenario.Check("app", "consumer", prerequisites: [contents.Key]);
+        CheckSpec test = Scenario.Check("app");
+        CiPlan plan = Scenario.Plan(consumer, test, contents, build);
+        var runner = new CheckExecutionRunner(plan, CancellationToken.None);
+
+        await runner.RunAsync(build, () => Task.FromResult(CheckStatus.Passed));
+        await runner.RunAsync(contents, () => Task.FromResult(CheckStatus.Failed));
+        await runner.RunAsync(consumer, UnexpectedStep);
+        await runner.RunAsync(test, () => Task.FromResult(CheckStatus.Passed));
+
+        CollectionAssert.AreEqual(new CheckResult[]
+        {
+            new(plan.Candidate, consumer.Key, CheckStatus.Skipped),
+            new(plan.Candidate, test.Key, CheckStatus.Passed),
+            new(plan.Candidate, contents.Key, CheckStatus.Failed),
+            new(plan.Candidate, build.Key, CheckStatus.Passed),
+        }, runner.InPlanOrder());
+    }
+
+    [TestMethod]
+    public async Task RunnerCancellationTakesPrecedenceOverFailedPrerequisite()
+    {
+        CheckSpec build = Scenario.Check("app", "build");
+        CheckSpec test = Scenario.Check("app", prerequisites: [build.Key]);
+        CiPlan plan = Scenario.Plan(build, test);
+        using var cancellation = new CancellationTokenSource();
+        var runner = new CheckExecutionRunner(plan, cancellation.Token);
+
+        await runner.RunAsync(build, () => Task.FromResult(CheckStatus.TimedOut));
+        await cancellation.CancelAsync();
+        await runner.RunAsync(test, UnexpectedStep);
+
+        CollectionAssert.AreEqual(new CheckResult[]
+        {
+            new(plan.Candidate, build.Key, CheckStatus.TimedOut),
+            new(plan.Candidate, test.Key, CheckStatus.Cancelled),
+        }, runner.InPlanOrder());
+    }
+
+    private static Task<CheckStatus> UnexpectedStep() =>
+        throw new AssertFailedException("An ineligible check must not execute.");
+
+    private static void AssertRejected(CiPlan plan, string diagnostic) =>
+        Assert.Contains(diagnostic, Assert.ThrowsExactly<InvalidDataException>(
+            plan.Validate).Message);
 
     [TestMethod]
     public void CollectEmptyPlanIsSatisfiedWithoutInventingWork()

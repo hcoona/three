@@ -26,19 +26,6 @@ internal sealed class PythonPackageOperations(PythonReleaseUnit unit, PythonPack
         ["VIRTUAL_ENV"] = null,
     };
 
-    internal static void Validate(PythonPackageTools tools)
-    {
-        string checkout = Absolute(tools.Checkout), scratch = Absolute(tools.Scratch);
-        _ = Absolute(tools.Interpreter);
-        _ = Absolute(tools.Helper);
-        if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            OwnedPath.Overlap(scratch, checkout) ||
-            Directory.EnumerateFileSystemEntries(scratch).Any() || tools.DeadlineSeconds <= 0)
-            throw new InvalidDataException(
-                "Python package execution requires fresh external scratch.");
-        RequireGitFreeScratch(scratch);
-    }
-
     internal static void RequireGitFreeScratch(string scratch,
         string message = "Python consumers require Git-free scratch.")
     {

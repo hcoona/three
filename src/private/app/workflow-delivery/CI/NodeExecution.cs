@@ -42,16 +42,13 @@ internal static class NodeExecution
     {
         ArgumentNullException.ThrowIfNull(request);
         CiPlan selected = SelectRuntime(plan, request.Runtime);
-        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
         string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
-        if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            OwnedPath.Overlap(scratch, checkout) ||
-            Directory.EnumerateFileSystemEntries(scratch).Any())
-            throw new InvalidDataException("Node execution requires fresh external scratch.");
         if (scratch.Contains("%s", StringComparison.Ordinal) ||
             scratch.Contains("%v", StringComparison.Ordinal))
             throw new InvalidDataException(
                 "Node scratch cannot contain native pack output markers.");
+        (string checkout, _) = OwnedPath.RequireFreshExternalScratch(request.Checkout, scratch,
+            "Node execution requires fresh external scratch.", PathMessage);
         if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException(
                 "Node execution requires the exact native commit identity.");
@@ -61,7 +58,7 @@ internal static class NodeExecution
         NativeCommandResult node = await execute(new("node", checkout, ["--version"], 30), token);
         NativeCommandResult pnpm = await execute(new("pnpm", checkout, ["--version"], 30), token);
         NodeRuntimeReadback runtimeVersions = ReadRuntime(selected, node, pnpm);
-        var results = new Dictionary<CheckKey, CheckResult>();
+        var runner = new CheckExecutionRunner(selected, token);
         var commands = new List<NodeCommandObservation>();
         var outputs = new List<NodeOriginalOutput>();
         var failures = new List<NodeCheckFailure>();
@@ -123,36 +120,28 @@ internal static class NodeExecution
                 return await CommandAsync(check, AdoptedNpmPackage.Import(directory));
             });
         }
-        return new(plan.Candidate, selected.Checks.Select(item => results[item.Work.Key]).ToArray(),
+        return new(plan.Candidate, runner.InPlanOrder(),
             [.. commands], [.. outputs], [.. failures], request.Runtime, runtimeVersions);
 
-        async Task CompleteAsync(CheckSpec check, Func<Task<CheckStatus>> action)
-        {
-            CheckStatus status;
-            if (token.IsCancellationRequested)
-                status = CheckStatus.Cancelled;
-            else if (check.Prerequisites.Any(key => results[key].Status != CheckStatus.Passed))
-                status = CheckStatus.Skipped;
-            else
+        Task CompleteAsync(CheckSpec check, Func<Task<CheckStatus>> action) =>
+            runner.RunAsync(check, async () =>
             {
                 try
                 {
-                    status = await action();
+                    return await action();
                 }
                 catch (OperationCanceledException)
                 {
-                    status = CheckStatus.Cancelled;
+                    return CheckStatus.Cancelled;
                 }
                 catch (Exception exception) when (exception is IOException or
                     InvalidDataException or JsonException or UnauthorizedAccessException or
                     DecoderFallbackException)
                 {
                     failures.Add(new(check.Key, exception.Message));
-                    status = CheckStatus.Failed;
+                    return CheckStatus.Failed;
                 }
-            }
-            results.Add(check.Key, new(plan.Candidate, check.Key, status));
-        }
+            });
 
         async Task<NativeCommandResult> ObserveAsync(CheckSpec check, NativeCommand command)
         {
@@ -195,7 +184,7 @@ internal static class NodeExecution
 
     internal static CiPlan SelectRuntime(CiPlan plan, string runtime)
     {
-        ResultCollector.Collect(plan, []);
+        plan.Validate();
         if (plan.Scope != NodeFactsAssembler.Scope || !IsRuntime(runtime))
             throw new InvalidDataException("Unsupported Node execution scope.");
         var work = plan.Checks.ToDictionary(item => item.Work.Key, item => item.Work);

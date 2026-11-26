@@ -14,7 +14,7 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
     [TestMethod]
     public async Task ReadPreservesNativeVariantsAndOriginalGitCoordinates()
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+        var fixture = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
         NativeCommand? observed = null;
         var files = new DotNetReadFiles(typeof(DotNetGraphTask).Assembly.Location,
             Path.Combine(fixture.Scratch, "read.proj"),
@@ -23,8 +23,8 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
         var reader = new DotNetRepositoryReader(fixture.Checkout, files, async (command, token) =>
         {
             observed = command;
-            await File.WriteAllTextAsync(files.Response, JsonSerializer.Serialize(fixture.Graph,
-                TransferJson.Default.DotNetGraphResponse), token);
+            await File.WriteAllTextAsync(files.Response, JsonSerializer.Serialize(
+                fixture.Response(), TransferJson.Default.DotNetGraphResponse), token);
             return new(NativeTermination.Exited, 0, "", "", 0, null);
         });
         DotNetRevisionInputs result = await reader.ReadAsync(context.CancellationToken);
@@ -54,8 +54,8 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
     [TestMethod]
     public async Task ReadRejectsAGraphForAnotherCheckout()
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        DotNetGraphResponse graph = fixture.Graph with { Root = fixture.Scratch };
+        var fixture = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
+        DotNetGraphResponse graph = fixture.Response() with { Root = fixture.Scratch };
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.Reader().BindAsync(graph, context.CancellationToken));
@@ -64,8 +64,8 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
     [TestMethod]
     public async Task BindRejectsDuplicateEffectiveNativeIdentities()
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        DotNetGraphResponse graph = fixture.Graph;
+        var fixture = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
+        DotNetGraphResponse graph = fixture.Response();
         DotNetGraphNode node = graph.Nodes[1];
         DotNetNodeIdentity identity = node.Identity with
         {
@@ -83,8 +83,8 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
     [DataRow("configuration")]
     public async Task BindRejectsMissingOrAmbiguousNativeGlobals(string? extraKey)
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        DotNetGraphResponse graph = fixture.Graph;
+        var fixture = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
+        DotNetGraphResponse graph = fixture.Response();
         DotNetGraphNode node = graph.Nodes[0];
         DotNetNodeIdentity identity = node.Identity with
         {
@@ -103,8 +103,8 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
     public async Task BindRequiresAnExactInputConsumerAndSupportedStage(
         string? framework, string stage, string diagnostic)
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        DotNetGraphResponse graph = fixture.Graph;
+        var fixture = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
+        DotNetGraphResponse graph = fixture.Response();
         DotNetGraphInput input = new(fixture.PathOf("linked/data.txt"), "Content", stage,
             framework is null ? graph.Nodes[1].Identity :
                 fixture.Identity("product/A.csproj", framework));
@@ -116,8 +116,8 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
     [TestMethod]
     public async Task BindRejectsOwnershipAssignedToTheTraversal()
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        DotNetGraphResponse graph = fixture.Graph;
+        var fixture = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
+        DotNetGraphResponse graph = fixture.Response();
         DotNetGraphNode traversal = graph.Nodes[0] with
         { OwnedPaths = [fixture.PathOf("product/code.cs")] };
 
@@ -128,8 +128,8 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
     [TestMethod]
     public async Task BindRequiresTheProjectInputForEveryNativeIdentity()
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        DotNetGraphResponse graph = fixture.Graph;
+        var fixture = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
+        DotNetGraphResponse graph = fixture.Response();
         DotNetNodeIdentity consumer = graph.Nodes[1].Identity;
         DotNetGraphInput project = Assert.ContainsSingle(graph.Inputs.Where(input =>
             input.Role == "Project" && input.Consumer == consumer));
@@ -139,11 +139,11 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
             "Native project input is absent.");
     }
 
-    private async Task RejectBindingAsync(DotNetEndpointFixture fixture, DotNetGraphResponse graph,
-        string diagnostic)
+    private async Task RejectBindingAsync(DotNetEndpointFixture.ReadOnlyEndpoint fixture,
+        DotNetGraphResponse graph, string diagnostic)
     {
         InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.Reader().BindAsync(graph, context.CancellationToken));
+            fixture.BindAsync(graph, context.CancellationToken));
         Assert.Contains(diagnostic, failure.Message);
     }
 
@@ -153,17 +153,15 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
     public async Task ReadRejectsEdgesWithoutAnExactNativeProjectVariant(
         string dependency, string? framework)
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
-        DotNetGraphResponse graph = fixture.Graph;
+        var fixture = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
+        DotNetGraphResponse graph = fixture.Response();
         DotNetNodeIdentity consumer = graph.Nodes[1].Identity;
         graph = graph with
         {
             Edges = [.. graph.Edges, new(consumer, fixture.Identity(dependency, framework))],
         };
 
-        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.Reader().BindAsync(graph, context.CancellationToken));
-        Assert.Contains("Dangling/substituted complete native identity", failure.Message);
+        await RejectBindingAsync(fixture, graph, "Dangling/substituted complete native identity");
     }
 
     [TestMethod]
@@ -249,12 +247,12 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
     [TestMethod]
     public async Task ReadCancellationAndNativeFailureReturnNoFacts()
     {
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+        var fixture = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         await cancellation.CancelAsync();
-        await Assert.ThrowsAsync<OperationCanceledException>(() => fixture.Reader().BindAsync(
-            fixture.Graph, cancellation.Token));
+        await Assert.ThrowsAsync<OperationCanceledException>(() => fixture.BindAsync(
+            fixture.Response(), cancellation.Token));
         var files = new DotNetReadFiles(typeof(DotNetGraphTask).Assembly.Location,
             Path.Combine(fixture.Scratch, "failed.proj"),
             Path.Combine(fixture.Scratch, "failed.request.json"),
@@ -296,7 +294,7 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
             await ReadPreservesNativeVariantsAndOriginalGitCoordinates();
             await ReadRejectsNativeInputsWithoutCommittedOrSupportedProvenance(
                 "UnknownRole", "Evaluation", false, null);
-            using var native = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+            var native = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
             DotNetNodeIdentity original = native.Identity("product/A.csproj", "net10.0");
             DotNetNodeIdentity reordered = original with
             {
@@ -311,7 +309,7 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
             return;
         }
 
-        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+        var fixture = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
         string assembly = typeof(DotNetRepositoryReaderTests).Assembly.Location;
         JsonNode configuration = JsonNode.Parse(await File.ReadAllTextAsync(
             Path.ChangeExtension(assembly, ".runtimeconfig.json"), context.CancellationToken))!;

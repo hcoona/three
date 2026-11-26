@@ -22,15 +22,6 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     private const string Declaration = "product/workflow-delivery.release-unit.yml";
     private const string LinkedInput = "linked/data.txt";
     private const string WorkloadLocator = "Microsoft.NET.SDK.WorkloadAutoImportPropsLocator";
-    private static DotNetEndpointFixture? shared;
-
-    [ClassInitialize]
-    public static async Task InitializeAsync(TestContext classContext) =>
-        shared = await DotNetEndpointFixture.CreateAsync(classContext.CancellationToken);
-
-    [ClassCleanup]
-    public static void Cleanup() => shared?.Dispose();
-
     private CiPlan Plan(DotNetRevisionInputs basis, DotNetRevisionInputs candidate,
         params string[] changed) => DotNetFactsAssembler.Complete(
             DotNetFactsAssembler.Select(basis, candidate, changed, false, [], []),
@@ -39,7 +30,7 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     [TestMethod]
     public async Task ImportedInputSelectsOnlyItsConsumersAndTransfersNativeVariants()
     {
-        DotNetEndpointFixture fixture = shared!;
+        var fixture = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
         DotNetGraphResponse graph = fixture.Response();
         const string nativeValue = "space %3B percent%25 equals=tail";
         DotNetGraphNode[] nodes = graph.Nodes.Select(node =>
@@ -94,7 +85,7 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     [TestMethod]
     public async Task OuterBuildAloneCannotSupplyAnExecutablePlan()
     {
-        DotNetEndpointFixture fixture = shared!;
+        var fixture = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
         DotNetGraphResponse graph = fixture.Response();
         string project = fixture.PathOf("product/A.csproj");
         bool Keep(DotNetNodeIdentity identity) =>
@@ -129,7 +120,7 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     public async Task ObservedWorkloadImportAdmitsSiblingPackInputsButNotOtherSdkInputs(
         string sdk, string importName, bool additionalRoot, bool supported)
     {
-        DotNetEndpointFixture checkout = shared!;
+        var checkout = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
         using var scratch = new WorkloadFiles();
         string sdkPath = Path.Combine(scratch.Root, "Sdk");
         string importPath = Path.Combine(sdkPath, importName);
@@ -594,9 +585,7 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     [TestMethod]
     public async Task SelectionUsesExactOwnershipAndExplicitConsumers()
     {
-        DotNetEndpointFixture fixture = shared!;
-        DotNetRevisionInputs inputs = await fixture.BindAsync(fixture.Response(),
-            context.CancellationToken);
+        DotNetRevisionInputs inputs = await BindBaselineAsync();
         DotNetSelection linked = DotNetFactsAssembler.Select(inputs, inputs,
             ["linked/data.txt"], false, [], []);
         Assert.AreEqual("product/A.csproj", Assert.ContainsSingle(linked.Reasons.Keys));
@@ -617,9 +606,7 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     [TestMethod]
     public async Task SelectionPreservesTraversalConsumersAndSameDirectoryProjects()
     {
-        DotNetEndpointFixture fixture = shared!;
-        DotNetRevisionInputs inputs = await fixture.BindAsync(fixture.Response(),
-            context.CancellationToken);
+        DotNetRevisionInputs inputs = await BindBaselineAsync();
         DotNetSelection selection = DotNetFactsAssembler.Select(inputs, inputs,
             ["dirs.proj"], false, [], []);
         CollectionAssert.AreEquivalent(Projects,
@@ -710,9 +697,7 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     [DataRow(true)]
     public async Task SelectionRejectsUnknownRequiredFactsEvenInFullMode(bool full)
     {
-        DotNetEndpointFixture fixture = shared!;
-        DotNetRevisionInputs inputs = await fixture.BindAsync(fixture.Response(),
-            context.CancellationToken);
+        DotNetRevisionInputs inputs = await BindBaselineAsync();
         InvalidDataException failure = Assert.ThrowsExactly<InvalidDataException>(() =>
             DotNetFactsAssembler.Select(inputs, inputs, ["unowned/unknown.txt"], full, [], []));
         Assert.Contains("Unresolved changed path", failure.Message);
@@ -721,6 +706,12 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
         Assert.HasCount(2, complete.Reasons);
         Assert.IsTrue(complete.Request.Candidate.Projects
             .All(project => project.Checks.Length == 0));
+    }
+
+    private async Task<DotNetRevisionInputs> BindBaselineAsync()
+    {
+        var fixture = await DotNetEndpointFixture.SharedAsync(context.CancellationToken);
+        return await fixture.BindAsync(fixture.Response(), context.CancellationToken);
     }
 
     [TestMethod]

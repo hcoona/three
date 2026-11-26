@@ -173,8 +173,10 @@ internal sealed class DotNetGraphTaskFixture : IDisposable
 
     private async Task RestoreAsync(string[] arguments, CancellationToken token)
     {
+        // MSTest already runs independent fixture restores in parallel.
         NativeCommandResult result = await NativeProcess.ExecuteAsync(
-            new("dotnet", Root, arguments, 30), token);
+            new("dotnet", Root, [.. arguments, DotNetCli.DisableBuildServers, "-maxcpucount:1"],
+                30), token);
         token.ThrowIfCancellationRequested();
         if (!result.Succeeded)
             throw new InvalidDataException(
@@ -202,8 +204,9 @@ internal sealed class DotNetGraphTaskFixture : IDisposable
             </Project>
             """);
         NativeCommandResult query = await NativeProcess.ExecuteAsync(new("dotnet", Root,
-            ["msbuild", PathOf("read.proj"), "-nologo", "-noAutoResponse", "-target:Read",
-                "-property:WrapperSentinel=wrapper-only"], 30), token);
+            ["msbuild", DotNetCli.DisableBuildServers, PathOf("read.proj"), "-nologo",
+                "-noAutoResponse", "-target:Read", "-property:WrapperSentinel=wrapper-only"],
+            30), token);
         token.ThrowIfCancellationRequested();
         if (query.Termination == NativeTermination.TimedOut)
             throw new TimeoutException(query.Error);

@@ -5,6 +5,20 @@ namespace WorkflowDelivery.Tests.Repository;
 
 internal sealed class DotNetEndpointFixture : IDisposable
 {
+    // The test assembly owns cleanup. A canceled waiter does not cancel the shared setup.
+    private static readonly Lazy<Task<DotNetEndpointFixture>> baseline = new(() =>
+        CreateAsync(CancellationToken.None));
+
+    internal static async Task<ReadOnlyEndpoint> SharedAsync(CancellationToken token) =>
+        new(await baseline.Value.WaitAsync(token));
+
+    internal static async Task CleanupSharedAsync()
+    {
+        if (!baseline.IsValueCreated) return;
+        try { (await baseline.Value).Dispose(); }
+        catch { /* Setup failures are reported by the tests; assembly cleanup is best effort. */ }
+    }
+
     internal GitFixture Repo { get; }
     internal string Root => Repo.Directory;
     internal string Scratch { get; } = Path.Combine(Path.GetTempPath(),
@@ -21,13 +35,16 @@ internal sealed class DotNetEndpointFixture : IDisposable
         Directory.CreateDirectory(Scratch);
     }
 
-    internal static async Task<DotNetEndpointFixture> CreateAsync(CancellationToken token)
+    internal static async Task<DotNetEndpointFixture> CreateAsync(CancellationToken token,
+        string[]? additionalPaths = null)
     {
         var fixture = new DotNetEndpointFixture(await GitFixture.CreateAsync(token), token);
         try
         {
-            foreach (string path in new[] { "dirs.proj", "product/A.csproj", "product/B.csproj",
-                         "product/code.cs", "linked/data.txt", "product/fixtures/example.txt" })
+            string[] paths = ["dirs.proj", "product/A.csproj", "product/B.csproj",
+                "product/code.cs", "linked/data.txt", "product/fixtures/example.txt",
+                .. (additionalPaths ?? [])];
+            foreach (string path in paths)
                 await fixture.Repo.SetAsync(path);
             await fixture.Repo.SetAsync("version.json", """
                 {"version":"1.0","pathFilters":["./product/A.csproj","./product/B.csproj",
@@ -121,6 +138,22 @@ internal sealed class DotNetEndpointFixture : IDisposable
         CancellationToken cancellationToken = default) =>
         Reader().BindAsync(graph, cancellationToken.CanBeCanceled ?
             cancellationToken : token);
+
+    internal sealed class ReadOnlyEndpoint(DotNetEndpointFixture fixture)
+    {
+        internal GitMaterialization Checkout => fixture.Checkout;
+        internal GitRevision Revision => fixture.Revision;
+        internal string Root => fixture.Root;
+        internal string Scratch => fixture.Scratch;
+        internal string PathOf(string path) => fixture.PathOf(path);
+        internal DotNetNodeIdentity Identity(string path, string? framework = null) =>
+            fixture.Identity(path, framework);
+        internal DotNetGraphResponse Response(string? testProject = null) =>
+            fixture.Response(testProject: testProject);
+        internal DotNetRepositoryReader Reader() => fixture.Reader();
+        internal Task<DotNetRevisionInputs> BindAsync(DotNetGraphResponse graph,
+            CancellationToken token) => fixture.BindAsync(graph, token);
+    }
 
     public void Dispose()
     {

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Repository;
 
@@ -74,7 +75,7 @@ internal static class RubyNativeFactsReader
             value.LockedBundlerVersion != expectedBundlerVersion)
             throw new InvalidDataException("Native Bundler version differs from the request.");
         string[] gemfiles = Strings(value.Gemfiles).Select(Absolute).ToArray();
-        if (!gemfiles.Contains(gemfile, PathComparison))
+        if (!gemfiles.Any(path => path.Equals(gemfile, OwnedPath.Comparison)))
             throw new InvalidDataException("Native Bundler inputs omit the requested Gemfile.");
         return new(gemfile, Absolute(Text(value.Lockfile)), Text(value.BundlerVersion),
             gemfiles, Strings(value.DirectDependencies), value.Specifications.Select(
@@ -117,7 +118,7 @@ internal static class RubyNativeFactsReader
     private static string Bind(string actual, string expected)
     {
         actual = Absolute(Text(actual));
-        if (!PathComparison.Equals(actual, Absolute(expected)))
+        if (!actual.Equals(Absolute(expected), OwnedPath.Comparison))
             throw new InvalidDataException("Native Ruby response differs from the request.");
         return actual;
     }
@@ -126,12 +127,8 @@ internal static class RubyNativeFactsReader
     private static string[] Strings(string[] values) => values.Select(value => Text(
         value)).ToArray();
 
-    private static string Absolute(string path) => Path.IsPathFullyQualified(path)
-        ? Path.GetFullPath(path)
-        : throw new InvalidDataException("Native Ruby path is not absolute.");
-
-    private static StringComparer PathComparison => OperatingSystem.IsWindows()
-        ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+    private static string Absolute(string path) =>
+        OwnedPath.FullPath(path, "Native Ruby path is not absolute.");
 }
 
 // Application-owned wire projections of RubyGems/Bundler answers, not upstream format models.

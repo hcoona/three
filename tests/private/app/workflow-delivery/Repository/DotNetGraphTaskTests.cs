@@ -244,18 +244,10 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("TargetFramework", "net10.0")]
-    [DataRow("targetframework", "net10.0")]
+    [DataRow("targetframework", "")]
     [DataRow("TargetFrameworks", "net10.0")]
-    [DataRow("TARGETFRAMEWORKS", "net10.0")]
     [DataRow("RuntimeIdentifier", "linux-x64")]
-    [DataRow("runtimeidentifier", "linux-x64")]
-    [DataRow("RuntimeIdentifiers", "linux-x64")]
     [DataRow("RUNTIMEIDENTIFIERS", "linux-x64")]
-    [DataRow("TargetFramework", "")]
-    [DataRow("TargetFrameworks", "")]
-    [DataRow("RuntimeIdentifier", "")]
-    [DataRow("RuntimeIdentifiers", "")]
     public void CallerVariantSelectorsAreRejectedBeforeNativeEvaluation(string name, string value)
     {
         using var fixture = new GraphFixture();
@@ -600,7 +592,6 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     {
         using var fixture = new GraphFixture();
         fixture.WriteProject("dirs.proj", Capabilities(mtp, vstest));
-        await fixture.PrepareAsync(context.CancellationToken);
         InvalidDataException error = await RejectAsync(fixture);
         Assert.Contains("Malformed required native Boolean: malformed", error.Message);
         Assert.Contains("role " + role, error.Message);

@@ -1,5 +1,4 @@
-using YamlDotNet.Core;
-using YamlDotNet.Serialization;
+using static WorkflowDelivery.Repository.StrictYaml;
 
 namespace WorkflowDelivery.Repository;
 
@@ -39,11 +38,7 @@ internal sealed class QualitySelectionReader
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(manifestDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(ecosystem);
-        if (Path.IsPathRooted(manifestDirectory) || manifestDirectory.Contains('\\') ||
-            manifestDirectory.Contains(':') || (manifestDirectory != "." &&
-                manifestDirectory.Split('/').Any(part => part is "" or "." or "..")))
-            throw new InvalidDataException(
-                "Expected a canonical repository-relative manifest directory.");
+        RelativePath(manifestDirectory, allowDirectoryRoot: true);
 
         string directory = manifestDirectory == "." ? root : Path.Combine(root, manifestDirectory);
         if (!Directory.Exists(directory))
@@ -52,17 +47,16 @@ internal sealed class QualitySelectionReader
         while (true)
         {
             token.ThrowIfCancellationRequested();
-            string path = Path.Combine(directory, FileName);
+            string path = Path.GetRelativePath(root, Path.Combine(directory, FileName))
+                .Replace('\\', '/');
             // A bound committed reader distinguishes true absence from untracked files.
-            string? content = await read(Path.GetRelativePath(root, path).Replace('\\', '/'),
-                token);
+            string? content = await read(path, token);
 
             if (content is not null)
             {
-                Dictionary<string, string> selections = ReadSelections(content,
-                    Path.GetRelativePath(root, path).Replace('\\', '/'));
+                Dictionary<string, string> selections = ReadSelections(content, path);
                 if (selections.TryGetValue(ecosystem, out string? preset))
-                    return new(preset, Path.GetRelativePath(root, path).Replace('\\', '/'));
+                    return new(preset, path);
             }
 
             if (directory == root)
@@ -73,47 +67,19 @@ internal sealed class QualitySelectionReader
 
     private static Dictionary<string, string> ReadSelections(string content, string sourcePath)
     {
-        object? declaration;
-        try
-        {
-            declaration = new DeserializerBuilder().WithDuplicateKeyChecking().Build()
-                .Deserialize<object?>(content);
-        }
-        catch (YamlException exception)
-        {
-            throw new InvalidDataException(
-                $"Invalid quality-selection YAML at {sourcePath}.", exception);
-        }
-        Dictionary<string, object?> fields = Mapping(declaration);
-        if (fields.Count != 2 || !fields.TryGetValue("schema", out object? schema) ||
-            Scalar(schema) != "workflow-delivery/v3/quality-selection" ||
-            !fields.TryGetValue("ecosystems", out object? ecosystems))
-            throw new InvalidDataException(
-                "Invalid quality-selection declaration fields or schema.");
-        Dictionary<string, object?> entries = Mapping(ecosystems);
+        const string declaration = "quality-selection";
+        Dictionary<string, object?> fields = Mapping(Parse(content, declaration, sourcePath),
+            declaration, "schema", "ecosystems");
+        if (Text(fields["schema"]) != "workflow-delivery/v3/quality-selection")
+            throw new InvalidDataException("Invalid quality-selection schema.");
+        Dictionary<string, object?> entries = Mapping(fields["ecosystems"], declaration);
         if (entries.Count == 0)
             throw new InvalidDataException("Quality selection requires ecosystem entries.");
         var selections = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach ((string ecosystem, object? selection) in entries)
         {
-            Dictionary<string, object?> entry = Mapping(selection);
-            if (entry.Count != 1 || !entry.TryGetValue("preset", out object? preset))
-                throw new InvalidDataException("An ecosystem selection requires only a preset.");
-            selections.Add(ecosystem, Scalar(preset));
+            selections.Add(ecosystem, Text(Mapping(selection, declaration, "preset")["preset"]));
         }
         return selections;
     }
-
-    private static Dictionary<string, object?> Mapping(object? node)
-    {
-        if (node is not IDictionary<object, object?> mapping)
-            throw new InvalidDataException("Expected a quality-selection mapping.");
-        return mapping.ToDictionary(pair => Scalar(pair.Key), pair => pair.Value,
-            StringComparer.Ordinal);
-    }
-
-    private static string Scalar(object? node) =>
-        node is string scalar && !string.IsNullOrWhiteSpace(scalar)
-            ? scalar
-            : throw new InvalidDataException("Expected a nonempty quality-selection identifier.");
 }

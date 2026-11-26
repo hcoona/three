@@ -142,11 +142,8 @@ internal static class NodeCiCaller
                     TransferJson.Default.NodeRunResult));
             }
         (CheckResult[] results, CiOutcome outcome) = Join(group, sets.ToArray());
-        CiCallerTransfer.Write(Path.Combine(directory, "results.json"), results,
-            TransferJson.Default.CheckResultArray);
-        CiCallerTransfer.Write(Path.Combine(directory, "outcome.json"), outcome,
-            TransferJson.Default.CiOutcome);
-        return outcome;
+        return CiCallerTransfer.WriteOutcome(directory, group.Adopted, outcome, results,
+            [], [], diagnostics: null);
     }
 
     internal static (CheckResult[] Results, CiOutcome Outcome) Join(NodeGroupReadback group,

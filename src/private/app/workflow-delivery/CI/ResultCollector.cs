@@ -6,35 +6,20 @@ internal static class ResultCollector
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(results);
-        ImpactPlanner.RequireText(plan.Comparison, "comparison");
-        ImpactPlanner.RequireText(plan.Candidate, "candidate");
-        ImpactPlanner.RequireText(plan.Scope, "coverage scope");
-        ArgumentNullException.ThrowIfNull(plan.Checks);
-        var expected = new Dictionary<CheckKey, CheckSpec>();
-        foreach (PlannedCheck check in plan.Checks)
-        {
-            ArgumentNullException.ThrowIfNull(check);
-            ImpactPlanner.ValidateCheck(check.Work);
-            ArgumentNullException.ThrowIfNull(check.Origins);
-            ArgumentNullException.ThrowIfNull(check.QualityPresets);
-            if (check.Origins.Length == 0 || check.Origins.Any(origin => !Enum.IsDefined(origin)) ||
-                check.Origins.Contains(CheckOrigin.Preset) != (check.QualityPresets.Length != 0) ||
-                check.QualityPresets.Any(string.IsNullOrWhiteSpace))
-                throw new InvalidDataException("Invalid planned check origin/preset relationship.");
-            if (!expected.TryAdd(check.Work.Key, check.Work))
-                throw new InvalidDataException($"Duplicate planned check: {check.Work.Key}");
-        }
-        ImpactPlanner.ValidatePrerequisites(expected);
-        if (expected.Values.Any(c => c.Required && c.Prerequisites.Any(p => !expected[p].Required)))
-            throw new InvalidDataException("A required check has an advisory prerequisite.");
+        plan.Validate();
+        return CollectValidated(plan, results);
+    }
 
+    internal static CiOutcome CollectValidated(CiPlan plan, CheckResult[] results)
+    {
+        var expected = plan.Checks.Select(item => item.Work.Key).ToHashSet();
         var observed = new Dictionary<CheckKey, HashSet<CheckStatus>>();
         var errors = new List<string>();
         foreach (CheckResult result in results)
         {
             ArgumentNullException.ThrowIfNull(result);
             ImpactPlanner.ValidateKey(result.Key);
-            if (result.Candidate != plan.Candidate || !expected.ContainsKey(result.Key))
+            if (result.Candidate != plan.Candidate || !expected.Contains(result.Key))
             {
                 errors.Add($"Unexpected result subject: {result.Candidate} / {result.Key}");
                 continue;

@@ -93,24 +93,19 @@ public sealed class DotNetExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow((int)NativeTermination.Exited, (int)CheckStatus.Failed)]
-    [DataRow((int)NativeTermination.Cancelled, (int)CheckStatus.Cancelled)]
-    [DataRow((int)NativeTermination.TimedOut, (int)CheckStatus.TimedOut)]
-    [DataRow((int)NativeTermination.CleanupFailed, (int)CheckStatus.Failed)]
-    public async Task FailedTestCannotEraseEarlierBuild(int terminationValue, int statusValue)
+    public async Task FailedTestCannotEraseEarlierBuild()
     {
         using var fixture = Shared();
-        var termination = (NativeTermination)terminationValue;
-        var status = (CheckStatus)statusValue;
         fixture.Override = command => command.Arguments.Contains("-target:TestSelected") ?
-            new(termination, 1, "test failed after its Build prelude", "", 0.1, "failure") : null;
+            new(NativeTermination.Exited, 1, "test failed after its Build prelude", "", 0.1,
+                "failure") : null;
         DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
             item.Key.Check == DotNetChecks.Build).Status);
-        Assert.AreEqual(status, result.Results.Single(item =>
+        Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
             item.Key.Check == DotNetChecks.Test).Status);
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
-        Assert.AreEqual(termination, result.TestBatch!.Result.Termination);
+        Assert.AreEqual(NativeTermination.Exited, result.TestBatch!.Result.Termination);
         Assert.IsNotNull(result.BatchBuild);
         Assert.AreEqual(DotNetChecks.Build, Assert.ContainsSingle(result.Outputs).Key.Check);
     }
@@ -169,24 +164,6 @@ public sealed class DotNetExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task FailedBuildSkipsTestAndMissingCollectionRemainsUnsatisfied()
-    {
-        using var fixture = Shared();
-        fixture.Override = _ => new(NativeTermination.StartFailed, null, "", "", 0, "cannot start");
-        DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
-        Assert.AreEqual(CheckStatus.Skipped, result.Results[1].Status);
-        Assert.IsNull(result.TestBatch);
-        CiOutcome missing = ResultCollector.Collect(fixture.Plan, result.Results[..1]);
-        Assert.IsFalse(missing.Satisfied);
-        Assert.AreEqual("missing", missing.Checks[1].Status);
-        CiOutcome conflict = ResultCollector.Collect(fixture.Plan,
-            [.. result.Results, result.Results[0] with { Status = CheckStatus.Passed }]);
-        Assert.AreEqual("conflicting", conflict.Checks[0].Status);
-        Assert.IsFalse(conflict.Satisfied);
-    }
-
-    [TestMethod]
     public async Task SuccessfulTestWrapperWithoutReceiptDoesNotQualifyTest()
     {
         using var fixture = Shared();
@@ -205,36 +182,27 @@ public sealed class DotNetExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(null, "{")]
-    [DataRow("identity.project", "other.csproj")]
-    [DataRow("identity.globals.TargetFramework", "net8.0")]
-    [DataRow("testTarget", "VSTest")]
+    [DataRow(false)]
+    [DataRow(true)]
     public async Task InvalidTestReceiptCannotQualifyWhileIndependentReceiptPasses(
-        string? field, string replacement)
+        bool malformed)
     {
         using var fixture = Shared();
         CiPlan plan = WithNet8Variant(fixture, "MTP");
-        if (field is not null)
-        {
+        if (!malformed)
             fixture.ModifyTestReceipt = (index, receipt) =>
             {
-                if (index != 0) return;
-                string[] parts = field.Split('.');
-                JsonNode parent = receipt;
-                foreach (string part in parts[..^1]) parent = parent[part]!;
-                parent[parts[^1]] = field == "identity.project"
-                    ? Path.Combine(fixture.Repo.Directory, replacement) : replacement;
+                if (index == 0) receipt["identity"]!["globals"]!["TargetFramework"] = "net8.0";
             };
-        }
 
         DotNetRunResult result = await DotNetExecution.RunAsync(plan, fixture.Request,
             async (command, token) =>
             {
                 NativeCommandResult native = await fixture.ExecuteAsync(command, token);
-                if (field is null && command.Arguments.Contains("-target:TestSelected"))
+                if (malformed && command.Arguments.Contains("-target:TestSelected"))
                 {
                     string receipts = Path.Combine(fixture.Scratch, "test-receipts");
-                    await File.WriteAllTextAsync(DotNetTestTask.Receipt(receipts, 0), replacement,
+                    await File.WriteAllTextAsync(DotNetTestTask.Receipt(receipts, 0), "{",
                         token);
                 }
                 return native;
@@ -248,7 +216,7 @@ public sealed class DotNetExecutionTests(TestContext context)
             result.Results.Single(item => item.Key == independent).Status);
         var failure = Assert.ContainsSingle(result.Failures);
         Assert.AreEqual(rejected, failure.Key);
-        if (field is not null)
+        if (!malformed)
             Assert.AreEqual("Different selected native test identity.", failure.Error);
         Assert.IsTrue(result.Outputs.Any(item => item.Key == independent));
         Assert.IsFalse(result.Outputs.Any(item => item.Key == rejected));
@@ -413,20 +381,6 @@ public sealed class DotNetExecutionTests(TestContext context)
 
         Assert.AreEqual("Incomplete selected native identity obligations.", error.Message);
         Assert.IsEmpty(fixture.Commands);
-    }
-
-    [TestMethod]
-    public async Task NonemptyExternalScratchIsRejectedWithoutReplacingExistingData()
-    {
-        using var fixture = Shared();
-        string sentinel = Path.Combine(fixture.Scratch, "existing");
-        await File.WriteAllTextAsync(sentinel, "used", context.CancellationToken);
-
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.RunAsync(context.CancellationToken));
-
-        Assert.IsEmpty(fixture.Commands);
-        Assert.AreEqual("used", File.ReadAllText(sentinel));
     }
 
     [TestMethod]

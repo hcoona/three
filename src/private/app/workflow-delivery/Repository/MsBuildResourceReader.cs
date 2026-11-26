@@ -1,5 +1,6 @@
 using System.Text.Json;
 using WorkflowDelivery.Platform;
+using static WorkflowDelivery.Platform.StrictJson;
 
 namespace WorkflowDelivery.Repository;
 
@@ -80,7 +81,7 @@ internal sealed class MsBuildResourceReader
         string configuration, MsBuildDimension? requested, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        using JsonDocument result = JsonDocument.Parse(output);
+        using JsonDocument result = StrictJson.Parse(output);
         JsonElement properties = Property(result.RootElement, "Properties");
         string nativeProject = SourcePath(Text(Property(properties, "MSBuildProjectFullPath")));
         var effective = new MsBuildDimension(Text(Property(properties, "Configuration")),
@@ -146,19 +147,4 @@ internal sealed class MsBuildResourceReader
             value.Any(c => char.IsControl(c) || c is ';' or ',' or '%' or '"'))
             throw new InvalidDataException("MSBuild dimensions require single literal values.");
     }
-
-    private static JsonElement Property(JsonElement value, string name)
-    {
-        if (value.ValueKind != JsonValueKind.Object)
-            throw new InvalidDataException("MSBuild returned an invalid native result object.");
-        JsonProperty[] matches = value.EnumerateObject().Where(p => p.Name == name).ToArray();
-        return matches.Length == 1 ? matches[0].Value
-            : throw new InvalidDataException("MSBuild omitted or duplicated a required field.");
-    }
-
-    private static string Text(JsonElement value, bool allowEmpty = false) =>
-        value.ValueKind == JsonValueKind.String &&
-        (allowEmpty || !string.IsNullOrWhiteSpace(value.GetString()))
-            ? value.GetString()!
-            : throw new InvalidDataException("MSBuild returned an invalid native value.");
 }

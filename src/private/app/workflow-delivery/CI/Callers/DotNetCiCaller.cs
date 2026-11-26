@@ -151,7 +151,7 @@ internal static class DotNetCiCaller
         };
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
         File.WriteAllText(output, result.ToJsonString(new JsonSerializerOptions
-        { WriteIndented = true }) + "\n", new System.Text.UTF8Encoding(false, true));
+        { WriteIndented = true }) + "\n", StrictJson.Utf8);
         foreach ((string key, bool value) in new[] { ("validation", true),
                      ("mise", retained.Mise), ("azureauth", retained.AzureAuth),
                      ("scholarly", retained.Scholarly), ("renovate", retained.Renovate),
@@ -204,24 +204,18 @@ internal static class DotNetCiCaller
             request, token);
         CiCallerTransfer.Write(Path.Combine(directory, "result.json"), result,
             TransferJson.Default.DotNetGroupRunResult);
-        CiCallerTransfer.Write(Path.Combine(directory, "results.json"), result.Results,
-            TransferJson.Default.CheckResultArray);
         if (result.Candidate != candidate)
             throw new InvalidDataException(".NET result has a different original candidate.");
         CiCallerTransfer.Write(Path.Combine(directory, GroupResults),
             new DotNetGroupResultSet(group, candidate, result.Results),
             TransferJson.Default.DotNetGroupResultSet);
-        CiOutcome outcome = CiCallerTransfer.Outcome(plan, result.Outcome);
-        CiCallerTransfer.Write(Path.Combine(directory, "outcome.json"), outcome,
-            TransferJson.Default.CiOutcome);
-        CiCallerTransfer.Report(outcome, [
+        return CiCallerTransfer.WriteOutcome(directory, plan, result.Outcome, result.Results, [
             .. result.Retained.Failures.Select(failure => new CiCallerFailure(failure.Key,
                 failure.Error)),
             .. result.Packages.Failures.Select(failure => new CiCallerFailure(failure.Key,
                 failure.Error))],
             result.Packages.Commands.Select(command => (command.Key, command.Command,
                 command.Result)), diagnostics);
-        return outcome;
     }
 
     internal const string GroupResults = "group-results.json";
@@ -253,11 +247,8 @@ internal static class DotNetCiCaller
             throw new InvalidDataException("Unplanned .NET group result: " + results);
         (CheckResult[] union, CiOutcome outcome) = Join(plan, sets);
         CiCallerTransfer.Fresh(directory);
-        CiCallerTransfer.Write(Path.Combine(directory, "results.json"), union,
-            TransferJson.Default.CheckResultArray);
-        CiCallerTransfer.Write(Path.Combine(directory, "outcome.json"), outcome,
-            TransferJson.Default.CiOutcome);
-        return outcome;
+        return CiCallerTransfer.WriteOutcome(directory, plan, outcome, union,
+            [], [], diagnostics: null);
     }
 
     internal static (CheckResult[] Results, CiOutcome Outcome) Join(CiPlan plan,

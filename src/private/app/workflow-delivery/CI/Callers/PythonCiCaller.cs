@@ -72,10 +72,7 @@ internal static class PythonCiCaller
             new PythonCiCallerReadback(readback.Members, readback.Interpreter,
                 readback.Configuration,
                 readback.Targets, readback.Operation), TransferJson.Default.PythonCiCallerReadback);
-        CiCallerTransfer.Write(Path.Combine(directory, "plan.json"), readback.Plan,
-            TransferJson.Default.CiPlan);
-        CiCallerTransfer.Output("selected", (readback.Plan.Checks.Length !=
-            0).ToString().ToLowerInvariant());
+        CiCallerTransfer.WritePlan(directory, readback.Plan);
         return readback;
     }
 
@@ -127,14 +124,9 @@ internal static class PythonCiCaller
             request, token);
         CiCallerTransfer.Write(Path.Combine(directory, "result.json"), result,
             TransferJson.Default.PythonGroupRunResult);
-        CiCallerTransfer.Write(Path.Combine(directory, "results.json"), result.Results,
-            TransferJson.Default.CheckResultArray);
         if (result.Candidate != plan.Candidate)
             throw new InvalidDataException("Python execution returned a different candidate.");
-        CiOutcome outcome = CiCallerTransfer.Outcome(plan, result.Outcome);
-        CiCallerTransfer.Write(Path.Combine(directory, "outcome.json"), outcome,
-            TransferJson.Default.CiOutcome);
-        CiCallerTransfer.Report(outcome, [
+        return CiCallerTransfer.WriteOutcome(directory, plan, result.Outcome, result.Results, [
             .. result.Pytest.Failures.Select(failure => new CiCallerFailure(failure.Check,
                 failure.Error)),
             .. result.Packages.Failures.Select(failure => new CiCallerFailure(failure.Check,
@@ -143,7 +135,6 @@ internal static class PythonCiCaller
                 (key, command.Command, command.Result))),
             .. result.Packages.Commands.Select(command => (command.Check, command.Command,
                 command.Result))], diagnostics);
-        return outcome;
     }
 
     private static void Prepend(Dictionary<string, string?> environment, string? executable)

@@ -10,9 +10,37 @@ internal static class OwnedPath
         ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     internal static string Absolute(string path, string message) =>
+        Path.TrimEndingDirectorySeparator(FullPath(path, message));
+
+    internal static string FullPath(string path, string message) =>
         !string.IsNullOrWhiteSpace(path) && Path.IsPathFullyQualified(path)
-            ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path))
-            : throw new InvalidDataException(message);
+            ? Path.GetFullPath(path) : throw new InvalidDataException(message);
+
+    internal static void RequireCanonical(string path, string message)
+    {
+        if (Absolute(path, message) != path) throw new InvalidDataException(message);
+    }
+
+    internal static string RelativeWithin(string root, string path, string message)
+    {
+        string relative = Path.GetRelativePath(root, path)
+            .Replace(Path.DirectorySeparatorChar, '/');
+        if (Path.IsPathRooted(relative) || relative == ".." ||
+            relative.StartsWith("../", StringComparison.Ordinal))
+            throw new InvalidDataException(message);
+        return relative;
+    }
+
+    internal static (string Checkout, string Scratch) RequireFreshExternalScratch(
+        string checkout, string scratch, string message, string? pathMessage = null)
+    {
+        checkout = Absolute(checkout, pathMessage ?? message);
+        scratch = Absolute(scratch, pathMessage ?? message);
+        if (!Directory.Exists(checkout) || Overlap(scratch, checkout) ||
+            !Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any())
+            throw new InvalidDataException(message);
+        return (checkout, scratch);
+    }
 
     internal static string ResolveWithin(string rootDirectory, string relativePath,
         string rootMessage, string escapeMessage)

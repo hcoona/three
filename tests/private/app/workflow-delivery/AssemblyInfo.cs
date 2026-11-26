@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using WorkflowDelivery.Tests.Repository;
 
 [assembly: Parallelize(Scope = ExecutionScope.MethodLevel)]
 
@@ -39,6 +40,7 @@ public static class RunnerCommandFiles
     [AssemblyCleanup]
     public static void Cleanup()
     {
+        DotNetEndpointFixture.CleanupSharedAsync().GetAwaiter().GetResult();
         if (scratch is not null) ScratchRoots.TryDelete(scratch);
     }
 

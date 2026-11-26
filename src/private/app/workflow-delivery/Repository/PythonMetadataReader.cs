@@ -1,5 +1,6 @@
 using System.Text.Json;
 using WorkflowDelivery.Platform;
+using static WorkflowDelivery.Platform.StrictJson;
 
 namespace WorkflowDelivery.Repository;
 
@@ -43,28 +44,27 @@ internal sealed class PythonMetadataReader
         Absolute(root);
         try
         {
-            using JsonDocument document = JsonDocument.Parse(text);
+            using JsonDocument document = StrictJson.Parse(text);
             JsonElement value = document.RootElement;
-            UniqueFields(value);
-            if (Text(Field(Field(value, "schema"), "version")) != "preview" ||
-                NativePath(Text(Field(value, "workspace_root"))) != root ||
+            if (Text(value.GetProperty("schema").GetProperty("version")) != "preview" ||
+                NativePath(Text(value.GetProperty("workspace_root"))) != root ||
                 value.TryGetProperty("environment", out _) ||
                 value.TryGetProperty("script", out _) ||
-                Array(Field(Field(value, "conflicts"), "sets")).Any())
+                value.GetProperty("conflicts").GetProperty("sets").EnumerateArray().Any())
                 throw new InvalidDataException("Unsupported Python metadata request context.");
-            JsonElement workspace = Field(value, "workspace");
-            if (NativePath(Text(Field(workspace, "path"))) != root)
+            JsonElement workspace = value.GetProperty("workspace");
+            if (NativePath(Text(workspace.GetProperty("path"))) != root)
                 throw new InvalidDataException("Python metadata workspace identity differs.");
-            string workspaceId = Text(Field(workspace, "id"));
-            string requiresPython = Text(Field(value, "requires_python"));
+            string workspaceId = Text(workspace.GetProperty("id"));
+            string requiresPython = Text(value.GetProperty("requires_python"));
             var nodes = new Dictionary<string, PythonMetadataNode>(StringComparer.Ordinal);
-            foreach (JsonProperty property in Field(value, "resolution").EnumerateObject())
+            foreach (JsonProperty property in value.GetProperty("resolution").EnumerateObject())
             {
                 string id = property.Name;
                 if (string.IsNullOrWhiteSpace(id))
                     throw new InvalidDataException("Empty Python metadata node identity.");
                 JsonElement node = property.Value;
-                JsonElement kind = Field(node, "kind");
+                JsonElement kind = node.GetProperty("kind");
                 string label;
                 string? dimension = null;
                 if (kind.ValueKind == JsonValueKind.String)
@@ -85,7 +85,7 @@ internal sealed class PythonMetadataReader
                 PythonMetadataSource? source = null;
                 if (label == "workspace")
                 {
-                    if (id != workspaceId || NativePath(Text(Field(node, "path"))) != root)
+                    if (id != workspaceId || NativePath(Text(node.GetProperty("path"))) != root)
                         throw new InvalidDataException("Python metadata workspace node differs.");
                 }
                 else if (label == "group" && node.TryGetProperty("path", out JsonElement path))
@@ -95,11 +95,11 @@ internal sealed class PythonMetadataReader
                 }
                 else
                 {
-                    name = Text(Field(node, "name"));
-                    source = Source(Field(node, "source"));
+                    name = Text(node.GetProperty("name"));
+                    source = Source(node.GetProperty("source"));
                 }
-                PythonMetadataEdge[] edges = Array(Field(node, "dependencies"))
-                    .Select(edge => new PythonMetadataEdge(Text(Field(edge, "id")),
+                PythonMetadataEdge[] edges = node.GetProperty("dependencies").EnumerateArray()
+                    .Select(edge => new PythonMetadataEdge(Text(edge.GetProperty("id")),
                         edge.TryGetProperty("marker", out JsonElement marker)
                             ? Text(marker) : null)).ToArray();
                 nodes.Add(id, new(id, label, dimension, name, source, edges,
@@ -119,21 +119,22 @@ internal sealed class PythonMetadataReader
             var directories = new HashSet<string>(StringComparer.Ordinal);
             var names = new HashSet<string>(StringComparer.Ordinal);
             var ids = new HashSet<string>(StringComparer.Ordinal);
-            PythonMetadataMember[] members = Array(Field(value, "members")).Select(member =>
+            var members = new List<PythonMetadataMember>();
+            foreach (JsonElement member in value.GetProperty("members").EnumerateArray())
             {
-                string name = Text(Field(member, "name"));
-                string path = NativePath(Text(Field(member, "path")));
+                string name = Text(member.GetProperty("name"));
+                string path = NativePath(Text(member.GetProperty("path")));
                 string directory = Relative(root, path);
-                string id = Text(Field(member, "id"));
+                string id = Text(member.GetProperty("id"));
                 if (!directories.Add(directory) || !names.Add(name) || !ids.Add(id) ||
                     !nodes.TryGetValue(id, out PythonMetadataNode? node) ||
                     node.Kind != "package" || node.Name != name ||
                     node.Source?.Kind is not ("directory" or "editable" or "virtual") ||
                     node.Source.LocalPath != path)
                     throw new InvalidDataException("Ambiguous Python metadata member identity.");
-                return new PythonMetadataMember(name, directory, id);
-            }).ToArray();
-            return new(root, workspaceId, requiresPython, members, nodes);
+                members.Add(new(name, directory, id));
+            }
+            return new(root, workspaceId, requiresPython, [.. members], nodes);
 
             void ValidateEntries(PythonMetadataEntry[] entries, string kind,
                 PythonMetadataNode parent)
@@ -188,8 +189,8 @@ internal sealed class PythonMetadataReader
     private static PythonMetadataEntry[] Entries(JsonElement node, string field)
     {
         if (!node.TryGetProperty(field, out JsonElement value)) return [];
-        PythonMetadataEntry[] entries = Array(value).Select(entry =>
-            new PythonMetadataEntry(Text(Field(entry, "name")), Text(Field(entry, "id"))))
+        PythonMetadataEntry[] entries = value.EnumerateArray().Select(entry =>
+            new PythonMetadataEntry(Text(entry.GetProperty("name")), Text(entry.GetProperty("id"))))
             .ToArray();
         if (entries.Select(entry => entry.Name).Distinct(StringComparer.Ordinal).Count() !=
             entries.Length || entries.Select(entry => entry.Id).Distinct(StringComparer.Ordinal)
@@ -198,16 +199,9 @@ internal sealed class PythonMetadataReader
         return entries;
     }
 
-    internal static string Relative(string root, string path)
-    {
-        path = NativePath(path);
-        string relative = Path.GetRelativePath(root, path)
-            .Replace(Path.DirectorySeparatorChar, '/');
-        if (Path.IsPathRooted(relative) || relative == ".." ||
-            relative.StartsWith("../", StringComparison.Ordinal))
-            throw new InvalidDataException("Python coordinate is outside its endpoint.");
-        return relative;
-    }
+    internal static string Relative(string root, string path) =>
+        OwnedPath.RelativeWithin(root, NativePath(path),
+            "Python coordinate is outside its endpoint.");
 
     // UV's PortablePathBuf serializes forward slashes on Windows. Adapt that
     // supported path format without touching the opaque graph IDs.
@@ -218,32 +212,6 @@ internal sealed class PythonMetadataReader
         return native;
     }
 
-    private static void Absolute(string path)
-    {
-        if (!Path.IsPathFullyQualified(path) ||
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)) != path)
-            throw new InvalidDataException("Python coordinates require canonical absolute paths.");
-    }
-
-    private static void UniqueFields(JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.Object)
-        {
-            var names = new HashSet<string>(StringComparer.Ordinal);
-            foreach (JsonProperty field in value.EnumerateObject())
-            {
-                if (!names.Add(field.Name))
-                    throw new InvalidDataException("Duplicate Python metadata field.");
-                UniqueFields(field.Value);
-            }
-        }
-        else if (value.ValueKind == JsonValueKind.Array)
-            foreach (JsonElement item in value.EnumerateArray()) UniqueFields(item);
-    }
-
-    private static JsonElement Field(JsonElement value, string name) => value.GetProperty(name);
-    private static JsonElement.ArrayEnumerator Array(JsonElement value) => value.EnumerateArray();
-    private static string Text(JsonElement value) =>
-        value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(value.GetString())
-            ? value.GetString()! : throw new InvalidDataException("Invalid Python metadata text.");
+    private static void Absolute(string path) => OwnedPath.RequireCanonical(path,
+        "Python coordinates require canonical absolute paths.");
 }

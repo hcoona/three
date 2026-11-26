@@ -16,16 +16,16 @@ internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] V
 {
     internal CiPlan Expand(CiPlan plan)
     {
+        plan.Validate();
         if (plan.Candidate != Revision || plan.Scope != NodeFactsAssembler.Scope ||
-            Variants.Length == 0 || Variants.Select(v => v.Key).Distinct().Count(
-                ) != Variants.Length ||
+            Variants.Length == 0 || Variants.Select(v => v.Key).Distinct().Count() !=
+                Variants.Length ||
             Variants.Count(v => v.Key == PackagingVariant && v.ExactVersion is not null) != 1)
             throw new InvalidDataException("Unresolved Node runtime plan subject.");
-        // Validate the complete original plan before projecting its concrete variants.
-        ResultCollector.Collect(plan, []);
         var membersByDirectory = Members.ToDictionary(member => member.Directory,
             StringComparer.Ordinal);
-        var checks = new List<PlannedCheck>();
+        NodeRuntimeVariant packaging = Variants.Single(variant => variant.Key == PackagingVariant);
+        var variantsByCheck = new Dictionary<CheckKey, NodeRuntimeVariant[]>();
         foreach (PlannedCheck item in plan.Checks)
         {
             CheckSpec work = item.Work;
@@ -49,10 +49,22 @@ internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] V
             if (!Variants.Any(variant => AdmitsMajor(member, variant)))
                 throw new InvalidDataException(
                     "No planned Node runtime satisfies a selected member's engines range.");
-            foreach (NodeRuntimeVariant variant in Variants.Where(v =>
-                AdmitsMajor(member, v) &&
-                (!package || v.Key == PackagingVariant)))
+            if (package && !SatisfiesExactVersion(member, packaging))
+                throw new InvalidDataException(
+                    "Configured packaging runtime is outside the adopted Node engines range.");
+            variantsByCheck.Add(work.Key, package ? [packaging] :
+                Variants.Where(variant => AdmitsMajor(member, variant)).ToArray());
+        }
+
+        var checks = new List<PlannedCheck>();
+        foreach (PlannedCheck item in plan.Checks)
+        {
+            CheckSpec work = item.Work;
+            foreach (NodeRuntimeVariant variant in variantsByCheck[work.Key])
             {
+                if (work.Prerequisites.Any(key => !variantsByCheck[key].Contains(variant)))
+                    throw new InvalidDataException(
+                        $"A Node runtime does not admit a prerequisite for {work.Key}.");
                 var dimensions = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     ["node"] = variant.Selector,
@@ -72,19 +84,8 @@ internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] V
                 });
             }
         }
-        NodeRuntimeVariant packaging = Variants.Single(variant =>
-            variant.Key == PackagingVariant);
-        foreach (PlannedCheck item in plan.Checks.Where(check =>
-            check.Work.Key.Check is "node/npm-artifact-v1" or
-                "node/npm-artifact-contents-v1" or "node/npm-install-import-v1"))
-        {
-            NodeRuntimeMember member = membersByDirectory[item.Work.Package!.Directory];
-            if (!SatisfiesExactVersion(member, packaging))
-                throw new InvalidDataException(
-                    "Configured packaging runtime is outside the adopted Node engines range.");
-        }
         CiPlan expanded = plan with { Checks = [.. checks] };
-        ResultCollector.Collect(expanded, []);
+        expanded.Validate();
         return expanded;
     }
 
