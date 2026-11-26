@@ -1368,10 +1368,7 @@ def _verify_domain_3_nested_subtype() -> tuple[
                     Implies(src_a_inc_b, Or(b_proc_for_r, inc_a_to_r)),
                     Implies(
                         src_a_wrap,
-                        Or(
-                            And(w_b_exist, Not(w_r_exist), b_f),
-                            And(Not(w_b_exist), w_r_exist, x_b_to_r),
-                        ),
+                        If(w_b_exist, b_f, And(w_r_exist, x_b_to_r)),
                     ),
                 ),
                 And(
@@ -1459,6 +1456,28 @@ def _verify_domain_3_nested_subtype() -> tuple[
         Not(valid_outer),
         Not(b_proc_exists),
     )
+    both_wrappers_scenario = And(
+        src_a_inc_b,
+        src_a_wrap,
+        src_b_keep,
+        Not(src_b_gone),
+        Not(src_b_loop),
+        Not(dst_a_inc_b),
+        Not(dst_a_direct_keep),
+        dst_a_wrap,
+        dst_alt_wrap,
+        dst_b_keep,
+        Not(dst_b_keep_ambig),
+        Not(dst_b_gone),
+        Not(dst_root_inc_b),
+        dst_root_inc_alt,
+        dst_root_direct_keep,
+        Not(dst_root_gone),
+        Not(dst_root_loop),
+        Not(outer_exists),
+        Not(b_proc_exists),
+        Not(anon_rw_b_gone),
+    )
 
     theorem = _prove_non_vacuous(
         "D3-T4",
@@ -1480,6 +1499,18 @@ def _verify_domain_3_nested_subtype() -> tuple[
                     s_a_to_a,
                     choose_sub_a,
                     Not(buggy_exist_inc_a_to_a),
+                ),
+            ),
+            Implies(
+                both_wrappers_scenario,
+                And(
+                    w_b_exist,
+                    w_r_exist,
+                    Not(v_a_to_a),
+                    v_a_to_r,
+                    s_a_to_r,
+                    Not(choose_sub_a),
+                    synth_p_root,
                 ),
             ),
             Implies(
@@ -1571,7 +1602,34 @@ def _verify_domain_3_nested_subtype() -> tuple[
             },
         )
     )
-    return theorem, [vec_06, vec_07]
+    vec_08 = _decode_vector(
+        VectorSpec(
+            "VEC-D3-08",
+            "D3",
+            "Both wrapper candidates feasible prefers lower-cost A.Wrap(b)",
+            "D3-T4",
+            [*gfp_axioms, both_wrappers_scenario],
+            lambda m: {
+                "decoded_witness": {
+                    "w_b_exist": _eval_bool(m, w_b_exist),
+                    "w_r_exist": _eval_bool(m, w_r_exist),
+                    "v_a_to_a": _eval_bool(m, v_a_to_a),
+                    "v_a_to_r": _eval_bool(m, v_a_to_r),
+                    "choose_sub_a": _eval_bool(m, choose_sub_a),
+                    "synth_p_root": _eval_bool(m, synth_p_root),
+                },
+                "upstream_expected": {
+                    "compile_valid": _eval_bool(m, ideal_p_root)
+                },
+                "csharp_expected": {
+                    "diagnostics": []
+                    if _eval_bool(m, synth_p_root)
+                    else ["NP1001"]
+                },
+            },
+        )
+    )
+    return theorem, [vec_06, vec_07, vec_08]
 
 
 def _build_domain_4_sorts() -> tuple[

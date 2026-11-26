@@ -52,11 +52,12 @@ internal sealed partial class PassResolver
         queue.Enqueue(root);
         while (queue.Count > 0)
         {
-            foreach (var candidate in grammar.Inclusions(queue.Dequeue()))
+            foreach (var candidate in PassGrammar.Rules(queue.Dequeue()))
             {
-                if (candidate.Alternative is { IsNonTerminal: true } inclusion
+                if (candidate.Alternative is { } inclusion
                     && grammar.Find(inclusion) is { } nested
-                    && kinds.Add(nested))
+                    && kinds.Add(nested)
+                    && nested.NonTerminal is not null)
                 {
                     queue.Enqueue(nested);
                 }

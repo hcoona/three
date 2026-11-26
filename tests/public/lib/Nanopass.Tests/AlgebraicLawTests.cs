@@ -848,6 +848,85 @@ public sealed class AlgebraicLawTests(TestContext testContext)
             private static long WidenRoot(int x) => x + 1000L;
         }
         """)]
+    [DataRow(
+        "VEC-D3-08",
+        "",
+        """
+        [Language, Entry("Root")]
+        [Terminal(typeof(int), "n", Name = "int")]
+        [NonTerminalDef("Root", ["r"], "a")]
+        [NonTerminalDef("A", ["a"], "b", "(wrap b)")]
+        [NonTerminalDef("B", ["b"], "(keep n)")]
+        public static partial class BothWrapSrc;
+
+        [Language, Entry("Root")]
+        [Terminal(typeof(int), "n", Name = "int")]
+        [Terminal(typeof(long), "k", Name = "long")]
+        [NonTerminalDef("Root", ["r"], "a", "m", "(keep k)")]
+        [NonTerminalDef("A", ["a"], "(wrap b)")]
+        [NonTerminalDef("Alt", ["m"], "(wrap r)")]
+        [NonTerminalDef("B", ["b"], "(keep n)")]
+        public static partial class BothWrapDst;
+
+        [Pass(typeof(BothWrapSrc), typeof(BothWrapDst))]
+        public partial class BothWrapPass
+        {
+            [Processor("int", "long")]
+            private static long WidenRoot(int x) => x + 1000L;
+        }
+        """)]
+    [DataRow(
+        "REG-OUTER-TERMINAL-PROCESSOR",
+        "",
+        """
+        [Language, Entry("Root")]
+        [Terminal(typeof(Symbol), "x")]
+        [NonTerminalDef("Root", ["r"], "a")]
+        [NonTerminalDef("A", ["a"], "b")]
+        [NonTerminalDef("B", ["b"], "x")]
+        public static partial class OuterTermSrc;
+
+        [Language, Extends(typeof(OuterTermSrc))]
+        [Terminal(typeof(long), "n", Name = "long")]
+        [ExtendNonTerminal("Root", Add = ["n"])]
+        public static partial class OuterTermDst;
+
+        [Pass(typeof(OuterTermSrc), typeof(OuterTermDst))]
+        public partial class OuterTermPass
+        {
+            [Processor("B", "long")]
+            private static long LowerB(OuterTermSrc.B b) => 42L;
+        }
+        """)]
+    [DataRow(
+        "REG-REBIND-SELF-INCLUSION",
+        "NP0105",
+        """
+        [Language, Entry("Expr")]
+        [NonTerminalDef("Expr", ["e"], "b", "(unit)")]
+        [NonTerminalDef("Body", ["b"], "(body)")]
+        public static partial class RebindSelfBase;
+
+        [Language, Extends(typeof(RebindSelfBase))]
+        [Remove(typeof(RebindSelfBase.Body))]
+        [ExtendNonTerminal("Expr", MetaVars = ["b"])]
+        public static partial class RebindSelfDerived;
+        """)]
+    [DataRow(
+        "REG-REBIND-DUPLICATE-INCLUSION",
+        "NP0104",
+        """
+        [Language, Entry("Expr")]
+        [NonTerminalDef("Expr", ["e"], "a", "b")]
+        [NonTerminalDef("Alt", ["a"], "(alt)")]
+        [NonTerminalDef("Body", ["b"], "(body)")]
+        public static partial class RebindDupBase;
+
+        [Language, Extends(typeof(RebindDupBase))]
+        [Remove(typeof(RebindDupBase.Body))]
+        [ExtendNonTerminal("Alt", MetaVars = ["b"])]
+        public static partial class RebindDupDerived;
+        """)]
     public void Z3DifferentialVectors_MatchFormalSpecDiagnosticsWithoutCSharpLeaks(
         string caseId, string expectedDiagnosticId, string source)
     {
@@ -1594,6 +1673,25 @@ public sealed class AlgebraicLawTests(TestContext testContext)
                         ("(keep 7)", "(keep 7)"));
                     break;
 
+                case "VEC-D3-08":
+                    AssertPassBehavior(
+                        asm,
+                        "BothWrapSrc",
+                        "BothWrapDst",
+                        "BothWrapPass",
+                        ("(keep 7)", "(keep 1007)"),
+                        ("(wrap (keep 7))", "(wrap (keep 7))"));
+                    break;
+
+                case "REG-OUTER-TERMINAL-PROCESSOR":
+                    AssertPassBehavior(
+                        asm,
+                        "OuterTermSrc",
+                        "OuterTermDst",
+                        "OuterTermPass",
+                        ("foo", "42"));
+                    break;
+
                 case "REG-UNBINDABLE-OUTER":
                     AssertPassBehavior(
                         asm,
@@ -1758,8 +1856,17 @@ public sealed class AlgebraicLawTests(TestContext testContext)
             .GetAwaiter()
             .GetResult();
 
-        var nanopassErrors = generatorDiagnostics
-            .AddRange(analyzerDiagnostics)
+        var allDriverDiagnostics = generatorDiagnostics.AddRange(analyzerDiagnostics);
+        var executionFailures = allDriverDiagnostics
+            .Where(static d =>
+                d.Id is "CS8784" or "CS8785" ||
+                d.Id.StartsWith("AD", StringComparison.Ordinal))
+            .ToImmutableArray();
+        Assert.IsEmpty(
+            executionFailures,
+            $"Generator or analyzer execution failed in {name}:\n{Describe(executionFailures)}");
+
+        var nanopassErrors = allDriverDiagnostics
             .Where(static d =>
                 d.Severity == DiagnosticSeverity.Error &&
                 d.Id.StartsWith("NP", StringComparison.Ordinal))
