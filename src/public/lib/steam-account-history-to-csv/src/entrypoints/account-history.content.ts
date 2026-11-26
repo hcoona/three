@@ -56,19 +56,19 @@ function parseWalletHistoryTableBody(table: HTMLTableElement): string[][] {
 }
 
 function parseWalletHistoryTableRow(row: HTMLTableRowElement): string[] {
-  const cells = Array.from(row.cells);
-  if (cells.length < 6) {
+  const [dateCell, itemsCell, typeCell, totalCell, changeCell, balanceCell] = Array.from(row.cells);
+  if (!dateCell || !itemsCell || !typeCell || !totalCell || !changeCell || !balanceCell) {
     throw new Error('Wallet history row has insufficient cells.');
   }
 
   try {
     const values = [
-      parseDateCell(cells[0]),
-      parseMultiValueCell(cells[1]).join('|'),
-      parseMultiValueCell(cells[2]).join('|'),
-      parseMultiValueCell(cells[3]).join('|'),
-      parseSimpleCell(cells[4]),
-      parseSimpleCell(cells[5]),
+      parseDateCell(dateCell),
+      parseMultiValueCell(itemsCell).join('|'),
+      parseMultiValueCell(typeCell).join('|'),
+      parseMultiValueCell(totalCell).join('|'),
+      parseSimpleCell(changeCell),
+      parseSimpleCell(balanceCell),
     ];
     return values.map(quoteCsvValue);
   } catch (error) {

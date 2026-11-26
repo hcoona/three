@@ -72,6 +72,8 @@ If you have questions about this policy, contact:
 
 - **Developer:** Shuai Zhang
 - **Email:** zhangshuai.ustc@gmail.com
+- **Project homepage:** <https://github.com/hcoona/three/tree/main/src/public/lib/steam-account-history-to-csv>
+- **Issue tracker:** <https://github.com/hcoona/three/issues>
 
 ## Compliance statement (Chrome Web Store User Data Policy)
 

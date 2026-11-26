@@ -21,6 +21,16 @@ This is a lightweight browser extension that converts the Steam account history 
 
 All three storefronts require thorough local testing before submission and generally expect a clear privacy disclosure plus demo credentials when applicable.
 
+### Store dashboard metadata
+
+Chrome Web Store, Firefox Add-ons (AMO), and Microsoft Edge Add-ons render dashboard-configured listing fields rather than the Markdown files bundled inside the extension ZIPs:
+
+- **Summary and description:** Keep localized dashboard summaries and descriptions aligned with the extension's single purpose (exporting the visible `https://store.steampowered.com/account/history/` table to CSV locally in the browser).
+- **Homepage / website URL:** Point to the subproject directory (`https://github.com/hcoona/three/tree/main/src/public/lib/steam-account-history-to-csv`) rather than the monorepo root.
+- **Support / issue tracker URL:** Point to `https://github.com/hcoona/three/issues`.
+- **Privacy policy URL:** Point to the publicly hosted URL serving [`PRIVACY.md`](PRIVACY.md).
+- **Certification notes vs. release changelog:** Microsoft Edge Partner Center submission `notes` (`POST /submissions` `{"notes": ...}`) are strictly **Notes for certification testers**, not user-facing release notes. Maintain user-visible release history in [`CHANGELOG.md`](CHANGELOG.md) (and AMO's dedicated release-notes field when applicable).
+
 ### Automated release
 
 The [Workflow Delivery browser-store caller](../../../../.github/workflows/workflow-delivery-v3-browser-store-release.yml) updates the existing listings from `main`. Dispatch it with one `store` (`chrome-web-store`, `firefox-amo` or `edge-addons`), the `official` channel and `dry-run` unset; a dry run or a `buddy` request only qualifies the zips and describes the store operations without credentials, reporting the store as not observed. The release unit is [`workflow-delivery.release-unit.yml`](workflow-delivery.release-unit.yml). The [browser-store integration](../../../private/app/workflow-delivery/docs/integration/browser-store.md#owner-setup) lists the required variables, Environment secrets and Google Cloud setup.

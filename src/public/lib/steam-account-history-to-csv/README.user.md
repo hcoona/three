@@ -63,12 +63,18 @@ Some Steam cells contain multiple lines (for example, multiple items). The exten
 - The export happens **locally in your browser**.
 - The extension does **not** send your account history anywhere.
 
-Read the full policy in `PRIVACY.md`.
+Read the full policy in `PRIVACY.md` ([online copy on GitHub](https://github.com/hcoona/three/blob/main/src/public/lib/steam-account-history-to-csv/PRIVACY.md)).
 
 ## Permissions
 
 The extension is designed to run only on the Steam Account History page to read the visible table and trigger a download.
 
+## Support and Release History
+
+- **Project homepage:** <https://github.com/hcoona/three/tree/main/src/public/lib/steam-account-history-to-csv>
+- **Issue tracker / support:** <https://github.com/hcoona/three/issues>
+- **Changelog:** `CHANGELOG.md` ([online copy on GitHub](https://github.com/hcoona/three/blob/main/src/public/lib/steam-account-history-to-csv/CHANGELOG.md))
+
 ## License
 
-See `LICENSE` and the bundled `COPYING` / `COPYING.LESSER` files for licensing details.
+See `LICENSE` ([online copy on GitHub](https://github.com/hcoona/three/blob/main/src/public/lib/steam-account-history-to-csv/LICENSE)) and the bundled `COPYING` / `COPYING.LESSER` files for licensing details.
