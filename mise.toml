@@ -35,6 +35,7 @@ uv = "0.13.9"
 #
 
 # General
+"aqua:lycheeverse/lychee" = "latest"
 "go:github.com/B1NARY-GR0UP/nwa" = "latest"
 "go:github.com/editorconfig-checker/editorconfig-checker/v3/cmd/editorconfig-checker" = "latest"
 taplo = "latest"

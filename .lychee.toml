@@ -1,0 +1,10 @@
+offline = true
+include_fragments = "anchor-only"
+hidden = true
+index_files = ["README.md", "index.html", "."]
+extensions = ["md"]
+exclude_path = [
+  '(^|[/\\])\.agents([/\\]|$)',
+  '\.agent\.md$',
+  '(^|[/\\])\.testagent([/\\]|$)',
+]

@@ -6,25 +6,21 @@ project, and a README is sufficient when it serves the actual reader.
 
 ## Repository Governance
 
-| Reader need                                                    | Record                                                                                                                                                   |
-| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Creation, amendment and retirement of rules                    | [Governance system](governance/governance-system.md)                                                                                                     |
-| Authority, admission, lifecycle and project namespaces         | [Repository record system](governance/record-system.md)                                                                                                  |
-| User goals, story admission and requirement/validation routing | [User Stories](governance/record-system.md#user-stories)                                                                                                 |
-| Current bounded work authorization                             | [Delivery Wave](delivery-wave.md)                                                                                                                        |
-| Retired projects, rationale and historical Git trees           | [Retired projects](retired-projects.md)                                                                                                                  |
-| Canonical record routing                                       | [Family catalog](governance/record-families.yaml)                                                                                                        |
-| Policy-backed checks and reviews                               | [Control catalog](governance/controls.yaml)                                                                                                              |
-| Validation inputs, reference checks and coverage               | [Checker contract](governance/checker-contract.md)                                                                                                       |
-| Catalog machine contracts                                      | [Family schema](../schemas/governance/record-families.schema.json), [control schema](../schemas/governance/controls.schema.json)                         |
-| Human contribution and review                                  | [Contributing](../CONTRIBUTING.md), [PR template](../.github/pull_request_template.md)                                                                   |
-| Agent routing                                                  | [Repository instructions](../AGENTS.md), [documentation instructions](AGENTS.md)                                                                         |
-| Independent review procedures                                  | [Record-system review](../.github/skills/record-system-review/SKILL.md), [research-evidence review](../.github/skills/research-evidence-review/SKILL.md) |
-| Source attribution                                             | [Retained copyright and license](governance/reference-license.txt), [repository provenance](../README.md)                                                |
+| Reader need                                                       | Record                                                                                                                                                   |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Creation, amendment and retirement of rules                       | [Governance system](governance/governance-system.md)                                                                                                     |
+| Authority, admission, Wave rules, controls and project namespaces | [Repository record system](governance/record-system.md)                                                                                                  |
+| Current bounded work authorization                                | [Delivery Wave](delivery-wave.md)                                                                                                                        |
+| Retired projects, rationale and historical Git trees              | [Retired projects](retired-projects.md)                                                                                                                  |
+| Canonical record bindings and schema                              | [Record bindings](governance/record-families.yaml), [binding schema](../schemas/governance/record-families.schema.json)                                  |
+| Human contribution and review                                     | [Contributing](../CONTRIBUTING.md), [PR template](../.github/pull_request_template.md)                                                                   |
+| Agent routing                                                     | [Repository instructions](../AGENTS.md)                                                                                                                  |
+| Independent review procedures                                     | [Record-system review](../.github/skills/record-system-review/SKILL.md), [research-evidence review](../.github/skills/research-evidence-review/SKILL.md) |
+| Source attribution                                                | [Retained copyright and license](governance/reference-license.txt), [repository provenance](../README.md)                                                |
 
-The review procedures link to their evaluation cases. Git retains former
-policies and deleted records; Issues and PRs retain work discussion and results.
-Neither this portal nor an old plan adds work to the accepted Wave.
+Git retains former policies and deleted records; Issues and PRs retain work
+discussion and results. Neither this portal nor an old plan adds work to the
+accepted Wave.
 
 ## Shared Engineering
 
@@ -36,8 +32,8 @@ Neither this portal nor an old plan adds work to the accepted Wave.
   generator/analyzer and retained legacy-format exceptions.
 - [HK execution](engineering/hk-execution.md), including the limits of retained
   Windows evidence.
-- [Bounded agent execution](engineering/agent-execution.md), including recovery
-  and mutable-interface rechecks.
+- [Bounded agent execution](engineering/agent-execution.md), covering worktree
+  isolation and recovery.
 - [Public release triage and inventory gate](engineering/public-release-triage.md),
   covering tiered release-diff inspection and `src/public/{app,lib}/*`
   exhaustiveness.
@@ -48,10 +44,6 @@ Neither this portal nor an old plan adds work to the accepted Wave.
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | NBGV Python wrapper and Hatch integration | [Library](../src/public/lib/nbgv-python/README.md), [architecture](../src/public/lib/nbgv-python/docs/architecture/overview.md), [separate sample](../src/sample/nbgv-hatch-demo/README.md)                                                                                                                                                                                                      |
 | Workflow Delivery v3                      | [Application interface](../src/private/app/workflow-delivery/README.md), [domain records](../src/private/app/workflow-delivery/docs/README.md), [historical evidence readers](../src/private/app/workflow-delivery/docs/validation/historical-readers.md)                                                                                                                                        |
-| Internal npm CI/release fixture           | [Frozen package interface](../tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/README.md)                                                                                                                                                                                                                                                                          |
-| Internal NuGet CI/release fixture         | [Marker library](../tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/README.md); [NuGet Release](../src/private/app/workflow-delivery/README.md#nuget-release)                                                                                                                                                                                         |
-| Internal Python CI/release fixture        | [Installed marker API](../tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/README.md); [ordinary Python integration](../src/private/app/workflow-delivery/README.md#ordinary-python-release)                                                                                                                                                                    |
-| Internal Ruby CI/release fixture          | [Installed marker API](../tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby/README.md); [ordinary Ruby integration](../src/private/app/workflow-delivery/README.md#ordinary-ruby-release)                                                                                                                                                                          |
 | Asciidoctor LaTeX rendering               | [Package](../src/public/lib/asciidoctor-latexmath/README.md), [contracts, research and evidence](../src/public/lib/asciidoctor-latexmath/docs/README.md)                                                                                                                                                                                                                                         |
 | Hexo AsciiDoc rendering                   | [Contributor interface](../src/public/lib/hexo-renderer-asciidoc/README.md), [package interface](../src/public/lib/hexo-renderer-asciidoc/README.npm.md), [change history](../src/public/lib/hexo-renderer-asciidoc/CHANGELOG.md), [example](../src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md)                                                                              |
 | Steam account history export              | [Developer interface](../src/public/lib/steam-account-history-to-csv/README.md), [user interface](../src/public/lib/steam-account-history-to-csv/README.user.md), [privacy](../src/public/lib/steam-account-history-to-csv/PRIVACY.md), [change history](../src/public/lib/steam-account-history-to-csv/CHANGELOG.md)                                                                            |

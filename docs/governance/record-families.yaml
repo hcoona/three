@@ -1,953 +1,124 @@
-# Repository record responsibilities and their explicit project/path bindings.
+# Repository record bindings mapping canonical paths to their owning namespaces.
 # Derived from hcoona/microsoft-authentication-cli at 1a02498589769c38bc16eefc2efc5f9eca6e6994.
 # Source copyright and MIT notice: docs/governance/reference-license.txt.
-schema_version: 3
-families:
-  - id: public-landing
-    concern: Repository identity, provenance and public navigation
-    producer: Repository owner
-    maintainer: Repository owner
-    consumers:
-      - Readers locating repository layout, project interfaces, existing setup guidance, and imported-source provenance
-    creation_trigger: The repository is presented as a distinct public project.
-    failure_mode: Readers cannot locate current identity, purpose, scope, or release authorities.
-    review_point: Pull requests that change public navigation or required notices
-  - id: human-record-portal
-    concern: Human navigation to canonical project records
-    producer: Record-system maintainer
-    maintainer: Repository owner
-    consumers:
-      - Contributors locating the authority for a concern
-    creation_trigger: Canonical concerns span more than the public landing page.
-    failure_mode: Contributors rely on stale or duplicate records.
-    review_point: Pull requests that add, move, or remove canonical records
-  - id: agent-interface
-    concern: AI-agent repository behavior and stop conditions
-    producer: Repository owner
-    maintainer: Repository owner
-    consumers:
-      - AI agents before repository work
-    creation_trigger: AI agents are permitted to act on the repository.
-    failure_mode: Agents infer authority, expose sensitive data, or expand scope.
-    review_point: Pull requests that change agent-relevant policy or workflow
-  - id: contributor-interface
-    concern: Human contribution workflow
-    producer: Repository owner
-    maintainer: Repository owner
-    consumers:
-      - Human contributors preparing changes
-    creation_trigger: The repository accepts reviewable contributions.
-    failure_mode: Contributions bypass required records, checks, or review.
-    review_point: Pull requests that change contribution workflow
-  - id: pull-request-interface
-    concern: Non-authoritative pull-request prompts for scope, evidence, and record impact
-    producer: Record-system maintainer
-    maintainer: Repository owner
-    consumers:
-      - Contributors preparing a pull request
-    creation_trigger: Pull requests need consistent prompts for existing governance obligations.
-    failure_mode: Review begins without the scope, evidence, or record impact needed by current policies.
-    review_point: Pull requests that change contribution or review workflow
-  - id: delivery-wave
-    concern: Current bounded positive work authorization across the repository
-    producer: Repository owner
-    maintainer: Repository owner
-    consumers:
-      - Contributors and agents before executing work or accepting a prerequisite-dependent change
-      - Repository owner and reviewers when adding, changing, deleting, or replacing authorized advancements
-    creation_trigger: Current work must be explicitly selected without allowing an Issue, Milestone, branch, or pull request to authorize itself.
-    failure_mode: Work begins without a current bounded grant, or progress and historical status become a second authorization ledger.
-    review_point: Every pull request that adds, changes, deletes, or replaces a Delivery Wave entry
-  - id: retired-projects-index
-    concern: Retired project, lab, and prototype provenance, retirement rationale, alternatives, and last-intact Git tree links
-    producer: Repository owner and project authors
-    maintainer: Repository owner
-    consumers:
-      - Repository owner and contributors locating retired projects, historical source trees, and replacement guidance
-    creation_trigger: Projects, labs, or prototypes are retired from the repository tree.
-    failure_mode: Maintainers cannot locate deleted project trees, understand why a capability was retired, or identify its intended replacement without manual Git history archaeology.
-    review_point: Pull requests that retire a project or change retired-project provenance
-  - id: record-family-catalog
-    concern: Active and scheduled record-family routing
-    producer: Record-system maintainer
-    maintainer: Repository owner
-    consumers:
-      - Record authors and reviewers locating record namespaces and coverage gaps
-    creation_trigger: Record families require consistent paths and review procedures.
-    failure_mode: Records become orphaned or receive the wrong checks and reviews.
-    review_point: Pull requests that add, retire, or change a record family
-  - id: control-catalog
-    concern: Controls that implement declared policies and invariants
-    producer: Control maintainer
-    maintainer: Repository owner
-    consumers:
-      - Control authors and reviewers comparing policy with actual execution
-    creation_trigger: More than one control class must be routed consistently.
-    failure_mode: Controls drift from policy or execute at the wrong gate.
-    review_point: Pull requests that add, retire, or change a control
-  - id: structured-record-schemas
-    concern: Machine contracts for structured repository records
-    producer: Structured-record maintainer
-    maintainer: Repository owner
-    consumers:
-      - Catalog authors and reviewers validating the two catalogs locally
-    creation_trigger: A structured record needs deterministic validation.
-    failure_mode: Structured records become ambiguous or silently incompatible with consumers.
-    review_point: Pull requests that add or change a structured record
-  - id: governance-policy
-    concern: Repository rules for maintaining rules
-    producer: Repository owner and record authors
-    maintainer: Repository owner
-    consumers:
-      - Rule authors and reviewers evaluating the replacement
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: Controls or interfaces silently redefine policy.
-    review_point: Changes to this concern, its policy, or its consumers
-  - id: record-policy
-    concern: Authority, admission, lifecycle, namespaces, and record gate
-    producer: Repository owner and record authors
-    maintainer: Repository owner
-    consumers:
-      - Record authors and reviewers evaluating the replacement
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: Project records become duplicate repository authorities.
-    review_point: Changes to this concern, its policy, or its consumers
-  - id: checker-contract
-    concern: Record validation inputs, coverage, references and execution boundaries
-    producer: Repository owner and record authors
-    maintainer: Repository owner
-    consumers:
-      - Control maintainers and reviewers checking completeness and activation claims
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: Source checker assumptions are installed without Three validation.
-    review_point: Changes to this concern, its policy, or its consumers
-  - id: docs-agent-interface
-    concern: Agent routing for repository documentation
-    producer: Repository owner and record authors
-    maintainer: Repository owner
-    consumers:
-      - Agents working in repository docs
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: Agents follow retired documentation instructions or cannot locate current record authorities.
-    review_point: Changes to this concern, its policy, or its consumers
-  - id: reference-license
-    concern: Required source copyright and license notice
-    producer: Repository owner and record authors
-    maintainer: Repository owner
-    consumers:
-      - Readers and maintainers of source-derived governance material
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: Source-derived material loses required attribution.
-    review_point: Changes to this concern, its policy, or its consumers
-  - id: engineering-guidance-source
-    concern: Agent routing from engineering decisions to shared principles and project authorities
-    producer: Repository owner and engineering authors
-    maintainer: Repository owner
-    consumers:
-      - Agents making or reviewing design, security and test/evidence strategy decisions
-    creation_trigger: Shared principles need an agent entry point at the relevant project decision.
-    failure_mode: Agents miss shared principles or apply them without the owning project's accepted context.
-    review_point: Changes to shared principles, this interface, or its project routing
-  - id: test-migration-guidance-source
-    concern: Canonical guidance preserving test semantics during framework migration
-    producer: Repository engineering authors
-    maintainer: Repository owner
-    consumers:
-      - Agents migrating existing xUnit tests to MSTest
-    creation_trigger: Installed migration guidance requires corrections unavailable in the pinned upstream source.
-    failure_mode: Migration changes collection scheduling or turns diagnostics into failing timeouts.
-    review_point: Changes to migration semantics, upstream source, or generated deployment
-  - id: review-procedures
-    concern: Canonical independent review procedures
-    producer: Repository owner and record authors
-    maintainer: Repository owner
-    consumers:
-      - Independent evaluators reading the procedure by path
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: A generated or unavailable interface is mistaken for the review authority.
-    review_point: Changes to this concern, its policy, or its consumers
-  - id: review-evaluations
-    concern: Bounded evaluation cases for independent review procedures
-    producer: Repository owner and record authors
-    maintainer: Repository owner
-    consumers:
-      - Maintainers and independent reviewers evaluating procedure behavior
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: A procedure change silently weakens authority, finding triage, or evidence limits.
-    review_point: Changes to this concern, its policy, or its consumers
-  - id: project-record-portals
-    concern: Project-local concern records and portal routing
-    producer: Repository owner and record authors
-    maintainer: Repository owner
-    consumers:
-      - Project authors, implementers, and domain reviewers following each record and its consumers
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: Relocation loses project authority, stable identifiers, or current evidence.
-    review_point: Changes to this concern, its policy, or its consumers
-  - id: nbgv-python-package-interface
-    concern: Library usage and package-reader interface
-    producer: Project maintainers
-    maintainer: Repository owner
-    consumers:
-      - Package readers using the existing packaged README
-      - Contributors locating project architecture and the separate sample
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: Package readers lose the existing usage interface or follow stale internal record paths.
-    review_point: Changes to this interface or its owning project records
-  - id: nbgv-python-changelog
-    concern: Published library change history
-    producer: Project maintainers
-    maintainer: Repository owner
-    consumers:
-      - Package users comparing released versions
-      - Package metadata and README changelog links
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: Package users lose version identifiers, anchors, or the linked source path.
-    review_point: Changes to this interface or its owning project records
-  - id: nbgv-hatch-demo-interface
-    concern: Separate sample usage and its library dependency
-    producer: Project maintainers
-    maintainer: Repository owner
-    consumers:
-      - Sample users running the documented recipe and consulting the library authority
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: Sample limitations or usage are confused with library product promises.
-    review_point: Changes to this interface or its owning project records
-  - id: three-workflow-delivery-v3-interface
-    concern: Entry point for the v3 engineering concern
-    producer: Project maintainers
-    maintainer: Repository owner
-    consumers:
-      - V3 contributors locating normative records and the independent smoke-package purpose
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: Readers infer scope from package topology or cannot locate domain authority.
-    review_point: Changes to this interface or its owning project records
-  - id: hcoona-release-smoke-github-packages-interface
-    concern: Independent NuGet smoke-library purpose and marker API
-    producer: Project maintainers
-    maintainer: Repository owner
-    consumers:
-      - Smoke-library users and v3 reviewers confirming the marker behavior and absence of production compatibility obligations
-    creation_trigger: The selected smoke library needs its own minimal product interface.
-    failure_mode: Package topology substitutes for a stated product purpose or creates an implied production support commitment.
-    review_point: Changes to the smoke-library purpose or API
-  - id: hcoona-release-smoke-npm-package-interface
-    concern: Independent smoke-package purpose and frozen package-reader interface
-    producer: Project maintainers
-    maintainer: Repository owner
-    consumers:
-      - Package readers and v3 reviewers confirming the separate smoke-product purpose
-      - Existing frozen npm artifact qualification consuming the packaged README bytes
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: Documentation routing changes alter the frozen package artifact or mix proving authority into its product purpose.
-    review_point: Changes to this interface or its owning project records
-  - id: python-smoke-interface
-    concern: Python smoke-package purpose and installed marker API
-    producer: Project maintainers
-    maintainer: Repository owner
-    consumers:
-      - Package users and V3 reviewers confirming the installed Python API and smoke-only scope
-    creation_trigger: The selected Python smoke package needs a minimal product interface.
-    failure_mode: Readers infer production support or confuse the marker API with publication authority.
-    review_point: Changes to the Python smoke purpose or installed API
-  - id: shared-engineering
-    concern: Shared engineering principles, workspace, compatibility, HK and bounded agent execution guidance
-    producer: Repository contributors
-    maintainer: Repository owner
-    consumers:
-      - Contributors setting up tools and preserving shared build exceptions
-      - Authors and reviewers applying shared design, security and test/evidence principles with project authorities
-      - Agents coordinating recoverable work and rechecking mutable execution interfaces
-    creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: Shared setup and execution assumptions drift or project details become repository policy.
-    review_point: Changes to the retained concern or its consumers
-  - id: project-interfaces
-    concern: Project-local usage, package-reader interfaces, provenance and release history
-    producer: Project authors
-    maintainer: Repository owner
-    consumers:
-      - Project readers using the existing README and any separate user/package interface
-      - Maintainers and existing package/release consumers of change history where present
-    creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
-    review_point: Changes to the retained concern or its consumers
-  - id: project-concern-records
-    concern: Project-local requirements, architecture, research and validation routed by their owning portals
-    producer: Project authors
-    maintainer: Repository owner
-    consumers:
-      - Project implementers and independent domain reviewers following the local portal and retained authorities
-    creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: Current product constraints, evidence, stable identifiers or source limitations become orphaned or mixed with another project.
-    review_point: Changes to the retained concern or its consumers
-  - id: azureauth-python-interface
-    concern: Python package-reader interface within the shared AzureAuth product
-    producer: Project authors
-    maintainer: Repository owner
-    consumers:
-      - Python package users and adapter maintainers
-    creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: The adapter acquires a conflicting product boundary or loses its usage interface.
-    review_point: Changes to the retained concern or its consumers
-  - id: supermemo-knowledge
-    concern: Retained Windows observations and captured source context
-    producer: Project authors
-    maintainer: Repository owner
-    consumers:
-      - SuperMemo automation investigators interpreting window and menu evidence
-    creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: Unverified advice or captured data is lost or recast as an implemented guarantee.
-    review_point: Changes to the retained concern or its consumers
-  - id: supermemo-script-records
-    concern: Diagnostic script usage and attributed investigation discussion
-    producer: Project authors
-    maintainer: Repository owner
-    consumers:
-      - Maintainers interpreting menu diagnostics and source advice
-    creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: Diagnostic use loses provenance or suggestions become verified behavior.
-    review_point: Changes to the retained concern or its consumers
-  - id: latexmath-contracts-and-evidence
-    concern: Retained requirements, contracts, rationale, historical validation and audit inputs
-    producer: Project authors
-    maintainer: Repository owner
-    consumers:
-      - Renderer implementers and reviewers
-      - Existing governance audit and coverage tests reading spec.md and tasks.md
-    creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: Stable FR/task references or consumed audit inputs disappear, or historical evidence grants new work.
-    review_point: Changes to the retained concern or its consumers
-  - id: hexo-example-interface
-    concern: Runnable renderer example instructions
-    producer: Project authors
-    maintainer: Repository owner
-    consumers:
-      - Users running the bundled Hexo example
-    creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: Readers cannot reproduce the package example or confuse it with a separate supported product.
-    review_point: Changes to the retained concern or its consumers
-  - id: latexmath-processor-selection-input
-    concern: Original human questions and assistant discussion consumed by processor and attribute research
-    producer: Original user and ChatGPT exchange, retained by project authors
-    maintainer: Repository owner
-    consumers:
-      - Project researchers and reviewers tracing processor selection and attribute-snapshot rationale to supplied input
-    creation_trigger: The retained upstream-rendering notes consume this supplied exchange as source input.
-    failure_mode: Direct human input is lost or unverified assistant advice becomes a competing product authority.
-    review_point: Changes to research relying on this input or its retention route; preserve source bytes and attribution
-  - id: project-structured-registries
-    concern: Project-scoped structured operational-identity and mutable-source recheck registries
-    producer: Project authors
-    maintainer: Repository owner
-    consumers:
-      - Project maintainers, implementers, and reviewers verifying distribution identities and recheck triggers
-      - Record validation enforcing each registry's declared JSON Schema
-    creation_trigger: An admitted project concern maintains structured YAML state with a real consumer and schema.
-    failure_mode: Operational identities or recheck triggers become malformed or drift silently from their machine contracts.
-    review_point: Pull requests that change a bound structured project registry or its schema
+schema_version: 4
 bindings:
-  - id: public-landing
-    family: public-landing
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: README.md
-    format: markdown
-  - id: human-record-portal
-    family: human-record-portal
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: docs/README.md
-    format: markdown
-  - id: agent-interface
-    family: agent-interface
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: AGENTS.md
-    format: markdown
-  - id: contributor-interface
-    family: contributor-interface
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: CONTRIBUTING.md
-    format: markdown
-  - id: pull-request-interface
-    family: pull-request-interface
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: .github/pull_request_template.md
-    format: markdown
-  - id: delivery-wave
-    family: delivery-wave
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: docs/delivery-wave.md
-    format: markdown
-  - id: retired-projects-index
-    family: retired-projects-index
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: docs/retired-projects.md
-    format: markdown
-  - id: record-family-catalog
-    family: record-family-catalog
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: docs/governance/record-families.yaml
-    format: yaml
-    schema: schemas/governance/record-families.schema.json
-  - id: control-catalog
-    family: control-catalog
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: docs/governance/controls.yaml
-    format: yaml
-    schema: schemas/governance/controls.schema.json
-  - id: structured-record-schemas
-    family: structured-record-schemas
-    namespace: repository
-    state: current
-    carrier: repository-files
-    path: schemas/governance/*.schema.json
-    format: json-schema
-  - id: governance-policy
-    family: governance-policy
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: docs/governance/governance-system.md
-    format: markdown
-  - id: record-policy
-    family: record-policy
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: docs/governance/record-system.md
-    format: markdown
-  - id: checker-contract
-    family: checker-contract
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: docs/governance/checker-contract.md
-    format: markdown
-  - id: docs-agent-interface
-    family: docs-agent-interface
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: docs/AGENTS.md
-    format: markdown
-  - id: reference-license
-    family: reference-license
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: docs/governance/reference-license.txt
-    format: text
-  - id: engineering-guidance-source
-    family: engineering-guidance-source
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: .github/skills/engineering-guidance/SKILL.md
-    format: markdown
-  - id: xunit-to-mstest-guidance-source
-    family: test-migration-guidance-source
-    namespace: .apm/skills/migrate-xunit-to-mstest
-    state: current
-    carrier: repository-files
-    path: .apm/skills/migrate-xunit-to-mstest/**/*.md
-    format: markdown
-  - id: record-system-review-source
-    family: review-procedures
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: .github/skills/record-system-review/SKILL.md
-    format: markdown
-    purpose: Canonical procedure for record-system-review
-  - id: record-system-review-evaluations
-    family: review-evaluations
-    namespace: repository
-    state: current
-    carrier: repository-files
-    path: .github/skills/record-system-review/evals/*.md
-    format: markdown
-    purpose: Bounded evaluation cases for record-system-review
-  - id: research-evidence-review-source
-    family: review-procedures
-    namespace: repository
-    state: current
-    carrier: repository-file
-    path: .github/skills/research-evidence-review/SKILL.md
-    format: markdown
-    purpose: Canonical procedure for research-evidence-review
-  - id: research-evidence-review-evaluations
-    family: review-evaluations
-    namespace: repository
-    state: current
-    carrier: repository-files
-    path: .github/skills/research-evidence-review/evals/*.md
-    format: markdown
-    purpose: Bounded evaluation cases for research-evidence-review
-  - id: nbgv-python-records
-    family: project-record-portals
-    namespace: src/public/lib/nbgv-python
-    state: current
-    carrier: repository-files
-    path: src/public/lib/nbgv-python/docs/**/*.md
-    format: markdown
-    purpose: Project-local concern records and portal for nbgv-python
-  - id: three-workflow-delivery-v3-records
-    family: project-record-portals
-    namespace: src/private/app/workflow-delivery
-    state: current
-    carrier: repository-files
-    path: src/private/app/workflow-delivery/docs/**/*.md
-    format: markdown
-    purpose: Project-local Workflow Delivery requirements, design and retained evidence
-  - id: nbgv-python-package-interface
-    family: nbgv-python-package-interface
-    namespace: src/public/lib/nbgv-python
-    state: current
-    carrier: repository-file
-    path: src/public/lib/nbgv-python/README.md
-    format: markdown
-  - id: nbgv-python-changelog
-    family: nbgv-python-changelog
-    namespace: src/public/lib/nbgv-python
-    state: current
-    carrier: repository-file
-    path: src/public/lib/nbgv-python/CHANGELOG.md
-    format: markdown
-  - id: nbgv-hatch-demo-interface
-    family: nbgv-hatch-demo-interface
-    namespace: src/sample/nbgv-hatch-demo
-    state: current
-    carrier: repository-file
-    path: src/sample/nbgv-hatch-demo/README.md
-    format: markdown
-  - id: workflow-delivery-private-interface
-    family: three-workflow-delivery-v3-interface
-    namespace: src/private/app/workflow-delivery
-    state: current
-    carrier: repository-file
-    path: src/private/app/workflow-delivery/README.md
-    format: markdown
-    purpose: Internal Workflow Delivery application interface and canonical project routing
-  - id: hcoona-release-smoke-github-packages-interface
-    family: hcoona-release-smoke-github-packages-interface
-    namespace: src/private/app/workflow-delivery
-    state: current
-    carrier: repository-file
-    path: tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/README.md
-    format: markdown
-  - id: hcoona-release-smoke-npm-package-interface
-    family: hcoona-release-smoke-npm-package-interface
-    namespace: src/private/app/workflow-delivery
-    state: current
-    carrier: repository-file
-    path: tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/README.md
-    format: markdown
-  - id: python-smoke-interface
-    family: python-smoke-interface
-    namespace: src/private/app/workflow-delivery
-    state: current
-    carrier: repository-file
-    path: tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/README.md
-    format: markdown
-  - id: ruby-smoke-interface
-    family: project-interfaces
-    namespace: src/private/app/workflow-delivery
-    state: current
-    carrier: repository-file
-    path: tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby/README.md
-    format: markdown
-  - id: workflow-delivery-native-ruby-suite-interface
-    family: project-interfaces
-    namespace: src/private/app/workflow-delivery
-    state: current
-    carrier: repository-file
-    path: tests/private/app/workflow-delivery/Native/Ruby/README.md
-    format: markdown
-    purpose: Native Ruby helper RSpec carrier usage and evidence limits
-  - id: shared-engineering
-    family: shared-engineering
-    namespace: repository
-    state: current
-    carrier: repository-files
-    path: docs/engineering/*.md
-    format: markdown
-  - id: src-private-app-lite-agensh-interfaces
-    family: project-interfaces
-    namespace: src/private/app/lite-agensh
-    state: current
-    carrier: repository-files
-    path: src/private/app/lite-agensh/*.md
-    format: markdown
-    purpose: LiteAgensh purpose, user context, implementation-status boundary and project-record routing
-  - id: src-private-app-lite-agensh-notice
-    family: project-interfaces
-    namespace: src/private/app/lite-agensh
-    state: current
-    carrier: repository-file
-    path: src/private/app/lite-agensh/THIRD-PARTY-NOTICES.txt
-    format: text
-    purpose: Microsoft Agensh copyright and MIT attribution retained for derived material
-  - id: src-private-app-html-sm-processor-interfaces
-    family: project-interfaces
-    namespace: src/private/app/html-sm-processor
-    state: current
-    carrier: repository-files
-    path: src/private/app/html-sm-processor/*.md
-    format: markdown
-    purpose: HTML processing for SuperMemo usage
-  - id: src-private-app-qidian-novel-downloader-interfaces
-    family: project-interfaces
-    namespace: src/private/app/qidian-novel-downloader
-    state: current
-    carrier: repository-files
-    path: src/private/app/qidian-novel-downloader/*.md
-    format: markdown
-    purpose: Qidian application usage
-  - id: src-private-app-sheet-music-omr-interfaces
-    family: project-interfaces
-    namespace: src/private/app/sheet-music-omr
-    state: current
-    carrier: repository-files
-    path: src/private/app/sheet-music-omr/*.md
-    format: markdown
-    purpose: Sheet-music recognition purpose, status boundary and project-record routing
-  - id: src-private-app-supermemo-mcp-interfaces
-    family: project-interfaces
-    namespace: src/private/app/supermemo-mcp
-    state: current
-    carrier: repository-files
-    path: src/private/app/supermemo-mcp/*.md
-    format: markdown
-    purpose: SuperMemo automation observations and usage
-  - id: src-private-app-vscode-copilot-telegram-hook-interfaces
-    family: project-interfaces
-    namespace: src/private/app/vscode-copilot-telegram-hook
-    state: current
-    carrier: repository-files
-    path: src/private/app/vscode-copilot-telegram-hook/*.md
-    format: markdown
-    purpose: Copilot Telegram installation and operations
-  - id: src-public-app-azureauth-unofficial-interfaces
-    family: project-interfaces
-    namespace: src/public/app/azureauth-unofficial
-    state: current
-    carrier: repository-files
-    path: src/public/app/azureauth-unofficial/*.md
-    format: markdown
-    purpose: AzureAuth Unofficial V2 landing page and upstream provenance
-  - id: src-public-app-azureauth-unofficial-packaging-interface
-    family: project-interfaces
-    namespace: src/public/app/azureauth-unofficial
-    state: current
-    carrier: repository-file
-    path: src/public/app/azureauth-unofficial/packaging/windows/README.md
-    format: markdown
-    purpose: Windows portable package usage, bundled compatibility profile limits and removal
-  - id: src-public-app-imageocclusioneditor-interfaces
-    family: project-interfaces
-    namespace: src/public/app/ImageOcclusionEditor
-    state: current
-    carrier: repository-files
-    path: src/public/app/ImageOcclusionEditor/*.md
-    format: markdown
-    purpose: Image occlusion usage, attribution and packaging navigation
-  - id: src-public-lib-circularlist-interfaces
-    family: project-interfaces
-    namespace: src/public/lib/CircularList
-    state: current
-    carrier: repository-files
-    path: src/public/lib/CircularList/*.md
-    format: markdown
-    purpose: Circular-list package usage and release notes
-  - id: src-public-lib-hjg-pngcs-interfaces
-    family: project-interfaces
-    namespace: src/public/lib/Hjg.Pngcs
-    state: current
-    carrier: repository-files
-    path: src/public/lib/Hjg.Pngcs/*.md
-    format: markdown
-    purpose: PNGCS package usage and change history
-  - id: src-public-lib-memoization-interfaces
-    family: project-interfaces
-    namespace: src/public/lib/Memoization
-    state: current
-    carrier: repository-files
-    path: src/public/lib/Memoization/*.md
-    format: markdown
-    purpose: Memoization package usage and release notes; generator is a build component
-  - id: src-public-lib-nanopass-interfaces
-    family: project-interfaces
-    namespace: src/public/lib/Nanopass
-    state: current
-    carrier: repository-files
-    path: src/public/lib/Nanopass/*.md
-    format: markdown
-    purpose: Nanopass package usage, scope boundary, release notes and project-record routing; generator is a build component
-  - id: src-public-lib-nanopass-notice
-    family: project-interfaces
-    namespace: src/public/lib/Nanopass
-    state: current
-    carrier: repository-file
-    path: src/public/lib/Nanopass/THIRD-PARTY-NOTICES.txt
-    format: text
-    purpose: Nanopass Compiler Framework copyright and MIT attribution retained for derived material
-  - id: src-public-lib-microsoftextensions-logging-mstest-interfaces
-    family: project-interfaces
-    namespace: src/public/lib/MicrosoftExtensions.Logging.MSTest
-    state: current
-    carrier: repository-files
-    path: src/public/lib/MicrosoftExtensions.Logging.MSTest/*.md
-    format: markdown
-    purpose: MSTest logging package usage and release notes
-  - id: src-public-lib-microsoftextensions-logging-xunit-interfaces
-    family: project-interfaces
-    namespace: src/public/lib/MicrosoftExtensions.Logging.Xunit
-    state: current
-    carrier: repository-files
-    path: src/public/lib/MicrosoftExtensions.Logging.Xunit/*.md
-    format: markdown
-    purpose: xUnit logging package usage and release notes
-  - id: src-public-lib-microsoftextensions-options-dedupchangeextensions-interfaces
-    family: project-interfaces
-    namespace: src/public/lib/MicrosoftExtensions.Options.DedupChangeExtensions
-    state: current
-    carrier: repository-files
-    path: src/public/lib/MicrosoftExtensions.Options.DedupChangeExtensions/*.md
-    format: markdown
-    purpose: Options-change package usage and release notes
-  - id: src-public-lib-phifailuredetector-interfaces
-    family: project-interfaces
-    namespace: src/public/lib/PhiFailureDetector
-    state: current
-    carrier: repository-files
-    path: src/public/lib/PhiFailureDetector/*.md
-    format: markdown
-    purpose: Phi library package usage and release notes
-  - id: src-public-lib-webhdfs-extensions-fileproviders-interfaces
-    family: project-interfaces
-    namespace: src/public/lib/WebHdfs.Extensions.FileProviders
-    state: current
-    carrier: repository-files
-    path: src/public/lib/WebHdfs.Extensions.FileProviders/*.md
-    format: markdown
-    purpose: WebHDFS provider package usage and release notes
-  - id: src-public-lib-asciidoctor-latexmath-interfaces
-    family: project-interfaces
-    namespace: src/public/lib/asciidoctor-latexmath
-    state: current
-    carrier: repository-files
-    path: src/public/lib/asciidoctor-latexmath/*.md
-    format: markdown
-    purpose: LaTeX renderer package usage and release notes
-  - id: src-public-lib-hexo-renderer-asciidoc-interfaces
-    family: project-interfaces
-    namespace: src/public/lib/hexo-renderer-asciidoc
-    state: current
-    carrier: repository-files
-    path: src/public/lib/hexo-renderer-asciidoc/*.md
-    format: markdown
-    purpose: Hexo renderer contributor/package interfaces and release notes
-  - id: src-public-lib-steam-account-history-to-csv-interfaces
-    family: project-interfaces
-    namespace: src/public/lib/steam-account-history-to-csv
-    state: current
-    carrier: repository-files
-    path: src/public/lib/steam-account-history-to-csv/*.md
-    format: markdown
-    purpose: Steam export user/developer interfaces, privacy and change history
-  - id: src-private-lib-enterprise-translation-team-interfaces
-    family: project-interfaces
-    namespace: src/private/lib/enterprise-translation-team
-    state: current
-    carrier: repository-files
-    path: src/private/lib/enterprise-translation-team/*.md
-    format: markdown
-    purpose: Translation plugin installation, evaluation and source routing
-  - id: src-private-lib-scan-restoration-interfaces
-    family: project-interfaces
-    namespace: src/private/lib/scan-restoration
-    state: current
-    carrier: repository-files
-    path: src/private/lib/scan-restoration/*.md
-    format: markdown
-    purpose: Scan restoration plugin installation, source ownership and validation
-  - id: src-private-lib-scholarly-publication-interfaces
-    family: project-interfaces
-    namespace: src/private/lib/scholarly-publication
-    state: current
-    carrier: repository-files
-    path: src/private/lib/scholarly-publication/*.md
-    format: markdown
-    purpose: Scholarly publication plugin installation, source ownership and validation
-  - id: src-private-app-azureauth-credprovider-records
-    family: project-concern-records
-    namespace: src/private/app/azureauth-credprovider
-    state: current
-    carrier: repository-files
-    path: src/private/app/azureauth-credprovider/docs/**/*.md
-    format: markdown
-    purpose: One product requirement, design, contract, decision and evidence namespace across C# and Python
-  - id: src-private-app-cf-ddns-updater-records
-    family: project-concern-records
-    namespace: src/private/app/cf-ddns-updater
-    state: current
-    carrier: repository-files
-    path: src/private/app/cf-ddns-updater/docs/**/*.md
-    format: markdown
-    purpose: Dynamic DNS requirements and high/low-level designs
-  - id: src-private-app-document-translator-cli-records
-    family: project-concern-records
-    namespace: src/private/app/document-translator-cli
-    state: current
-    carrier: repository-files
-    path: src/private/app/document-translator-cli/docs/**/*.md
-    format: markdown
-    purpose: Translation capability requirements, architecture and implementation rationale
-  - id: src-private-app-im-acp-gateway-records
-    family: project-concern-records
-    namespace: src/private/app/im-acp-gateway
-    state: current
-    carrier: repository-files
-    path: src/private/app/im-acp-gateway/docs/**/*.md
-    format: markdown
-    purpose: Gateway source inputs, research and verification evidence
-  - id: src-private-app-lite-agensh-records
-    family: project-concern-records
-    namespace: src/private/app/lite-agensh
-    state: current
-    carrier: repository-files
-    path: src/private/app/lite-agensh/docs/**/*.md
-    format: markdown
-    purpose: LiteAgensh requirements, C# architecture, upstream semantic migration evidence and validation basis
-  - id: src-private-app-qidian-novel-downloader-records
-    family: project-concern-records
-    namespace: src/private/app/qidian-novel-downloader
-    state: current
-    carrier: repository-files
-    path: src/private/app/qidian-novel-downloader/docs/**/*.md
-    format: markdown
-    purpose: Normative application requirements and informative technical notes
-  - id: src-private-app-sheet-music-omr-records
-    family: project-concern-records
-    namespace: src/private/app/sheet-music-omr
-    state: current
-    carrier: repository-files
-    path: src/private/app/sheet-music-omr/docs/**/*.md
-    format: markdown
-    purpose: Sheet-music recognition requirements, validation basis, normative text-format specification, round-trip comparison protocol, real-data alignment and recognizer evaluation protocol, and agent handoff
-  - id: src-private-app-vscode-copilot-telegram-hook-records
-    family: project-concern-records
-    namespace: src/private/app/vscode-copilot-telegram-hook
-    state: current
-    carrier: repository-files
-    path: src/private/app/vscode-copilot-telegram-hook/docs/**/*.md
-    format: markdown
-    purpose: Human-source requirement lineage, behavior requirements and research
-  - id: src-public-app-azureauth-unofficial-records
-    family: project-concern-records
-    namespace: src/public/app/azureauth-unofficial
-    state: current
-    carrier: repository-files
-    path: src/public/app/azureauth-unofficial/docs/**/*.md
-    format: markdown
-    purpose: AzureAuth Unofficial V2 requirements, architecture, decisions, security, research and validation strategy
-  - id: src-public-app-azureauth-unofficial-operational-identities
-    family: project-structured-registries
-    namespace: src/public/app/azureauth-unofficial
-    state: current
-    carrier: repository-file
-    path: src/public/app/azureauth-unofficial/docs/operational-identities.yaml
-    format: yaml
-    schema: src/public/app/azureauth-unofficial/schemas/operational-identities.schema.json
-    purpose: Independent executable, package, cache, configuration, diagnostic and release identities
-  - id: src-public-app-azureauth-unofficial-rechecks
-    family: project-structured-registries
-    namespace: src/public/app/azureauth-unofficial
-    state: current
-    carrier: repository-file
-    path: src/public/app/azureauth-unofficial/docs/research/rechecks.yaml
-    format: yaml
-    schema: src/public/app/azureauth-unofficial/schemas/rechecks.schema.json
-    purpose: Mutable external facts and project-scoped recheck triggers
-  - id: src-public-app-imageocclusioneditor-records
-    family: project-concern-records
-    namespace: src/public/app/ImageOcclusionEditor
-    state: current
-    carrier: repository-files
-    path: src/public/app/ImageOcclusionEditor/docs/**/*.md
-    format: markdown
-    purpose: Existing publish and installer responsibilities for local maintainers
-  - id: src-public-lib-asciidoctor-latexmath-records
-    family: project-concern-records
-    namespace: src/public/lib/asciidoctor-latexmath
-    state: current
-    carrier: repository-files
-    path: src/public/lib/asciidoctor-latexmath/docs/**/*.md
-    format: markdown
-    purpose: Renderer architecture, quality constraints and source research
-  - id: src-public-lib-nanopass-records
-    family: project-concern-records
-    namespace: src/public/lib/Nanopass
-    state: current
-    carrier: repository-files
-    path: src/public/lib/Nanopass/docs/**/*.md
-    format: markdown
-    purpose: Nanopass C# 15 architecture invariants, diagnostic contracts and validation strategy
-  - id: azureauth-python-interface
-    family: azureauth-python-interface
-    namespace: src/private/app/azureauth-credprovider
-    state: current
-    carrier: repository-file
-    path: src/private/app/azureauth-credprovider/python/README.md
-    format: markdown
-  - id: supermemo-knowledge
-    family: supermemo-knowledge
-    namespace: src/private/app/supermemo-mcp
-    state: current
-    carrier: repository-files
-    path: src/private/app/supermemo-mcp/knowledge_base/*.md
-    format: markdown
-  - id: supermemo-script-records
-    family: supermemo-script-records
-    namespace: src/private/app/supermemo-mcp
-    state: current
-    carrier: repository-files
-    path: src/private/app/supermemo-mcp/scripts/*.md
-    format: markdown
-  - id: latexmath-contracts-and-evidence
-    family: latexmath-contracts-and-evidence
-    namespace: src/public/lib/asciidoctor-latexmath
-    state: current
-    carrier: repository-files
-    path: src/public/lib/asciidoctor-latexmath/specs/**/*.md
-    format: markdown
-  - id: hexo-example-interface
-    family: hexo-example-interface
-    namespace: src/public/lib/hexo-renderer-asciidoc
-    state: current
-    carrier: repository-file
-    path: src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md
-    format: markdown
-  - id: latexmath-processor-selection-input
-    family: latexmath-processor-selection-input
-    namespace: src/public/lib/asciidoctor-latexmath
-    state: current
-    carrier: repository-file
-    path: src/public/lib/asciidoctor-latexmath/docs/research/processor-selection-input.txt
-    format: text
+  # Repository interfaces, governance, and shared engineering
+  - { id: public-landing, namespace: repository, state: current, path: README.md }
+  - { id: agent-interface, namespace: repository, state: current, path: AGENTS.md }
+  - { id: contributor-interface, namespace: repository, state: current, path: CONTRIBUTING.md }
+  - { id: pull-request-interface, namespace: repository, state: current, path: .github/pull_request_template.md }
+  - { id: human-record-portal, namespace: repository, state: current, path: docs/README.md }
+  - { id: delivery-wave, namespace: repository, state: current, path: docs/delivery-wave.md }
+  - { id: retired-projects-index, namespace: repository, state: current, path: docs/retired-projects.md }
+  - { id: governance-records, namespace: repository, state: current, path: 'docs/governance/*.md' }
+  - { id: record-family-catalog, namespace: repository, state: current, path: docs/governance/record-families.yaml }
+  - { id: reference-license, namespace: repository, state: current, path: docs/governance/reference-license.txt }
+  - { id: structured-record-schemas, namespace: repository, state: current, path: 'schemas/governance/*.schema.json' }
+  - { id: shared-engineering, namespace: repository, state: current, path: 'docs/engineering/*.md' }
+  - { id: governance-skills, namespace: repository, state: current, path: '.github/skills/**/*.md' }
+  - { id: apm-local-skills, namespace: '.apm/skills/*', state: current, path: '.apm/skills/*/**/*.md' }
+
+  # Standard monorepo project, lab, and sample namespaces
+  - { id: public-project-interfaces, namespace: 'src/public/*/*', state: current, path: 'src/public/*/*/*.md' }
+  - {
+      id: public-project-notices,
+      namespace: 'src/public/*/*',
+      state: current,
+      path: 'src/public/*/*/THIRD-PARTY-NOTICES.txt',
+    }
+  - { id: public-project-records, namespace: 'src/public/*/*', state: current, path: 'src/public/*/*/docs/**/*.md' }
+  - {
+      id: public-project-schemas,
+      namespace: 'src/public/*/*',
+      state: current,
+      path: 'src/public/*/*/schemas/*.schema.json',
+    }
+  - { id: private-project-interfaces, namespace: 'src/private/*/*', state: current, path: 'src/private/*/*/*.md' }
+  - {
+      id: private-project-notices,
+      namespace: 'src/private/*/*',
+      state: current,
+      path: 'src/private/*/*/THIRD-PARTY-NOTICES.txt',
+    }
+  - { id: private-project-records, namespace: 'src/private/*/*', state: current, path: 'src/private/*/*/docs/**/*.md' }
+  - {
+      id: private-project-schemas,
+      namespace: 'src/private/*/*',
+      state: current,
+      path: 'src/private/*/*/schemas/*.schema.json',
+    }
+  - { id: lab-interfaces, namespace: 'src/lab/*', state: current, path: 'src/lab/*/*.md' }
+  - { id: lab-records, namespace: 'src/lab/*', state: current, path: 'src/lab/*/docs/**/*.md' }
+  - { id: sample-interfaces, namespace: 'src/sample/*', state: current, path: 'src/sample/*/*.md' }
+  - { id: sample-records, namespace: 'src/sample/*', state: current, path: 'src/sample/*/docs/**/*.md' }
+
+  # Project-specific companion record paths outside standard docs/ roots
+  - {
+      id: azureauth-unofficial-packaging-interface,
+      namespace: src/public/app/azureauth-unofficial,
+      state: current,
+      path: src/public/app/azureauth-unofficial/packaging/windows/README.md,
+    }
+  - {
+      id: azureauth-unofficial-operational-identities,
+      namespace: src/public/app/azureauth-unofficial,
+      state: current,
+      path: src/public/app/azureauth-unofficial/docs/operational-identities.yaml,
+      schema: src/public/app/azureauth-unofficial/schemas/operational-identities.schema.json,
+    }
+  - {
+      id: azureauth-unofficial-rechecks,
+      namespace: src/public/app/azureauth-unofficial,
+      state: current,
+      path: src/public/app/azureauth-unofficial/docs/research/rechecks.yaml,
+      schema: src/public/app/azureauth-unofficial/schemas/rechecks.schema.json,
+    }
+  - {
+      id: azureauth-python-interface,
+      namespace: src/private/app/azureauth-credprovider,
+      state: current,
+      path: src/private/app/azureauth-credprovider/python/README.md,
+    }
+  - {
+      id: supermemo-knowledge,
+      namespace: src/private/app/supermemo-mcp,
+      state: current,
+      path: 'src/private/app/supermemo-mcp/knowledge_base/*.md',
+    }
+  - {
+      id: supermemo-script-records,
+      namespace: src/private/app/supermemo-mcp,
+      state: current,
+      path: 'src/private/app/supermemo-mcp/scripts/*.md',
+    }
+  - {
+      id: latexmath-contracts,
+      namespace: src/public/lib/asciidoctor-latexmath,
+      state: current,
+      path: 'src/public/lib/asciidoctor-latexmath/specs/**/*.md',
+    }
+  - {
+      id: latexmath-processor-selection-input,
+      namespace: src/public/lib/asciidoctor-latexmath,
+      state: current,
+      path: src/public/lib/asciidoctor-latexmath/docs/research/processor-selection-input.txt,
+    }
+  - {
+      id: hexo-example-interface,
+      namespace: src/public/lib/hexo-renderer-asciidoc,
+      state: current,
+      path: src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md,
+    }
+  - {
+      id: workflow-delivery-smoke-interfaces,
+      namespace: src/private/app/workflow-delivery,
+      state: current,
+      path: 'tests/private/app/workflow-delivery/fixtures/products/*/README.md',
+    }
+  - {
+      id: workflow-delivery-native-ruby-interface,
+      namespace: src/private/app/workflow-delivery,
+      state: current,
+      path: tests/private/app/workflow-delivery/Native/Ruby/README.md,
+    }

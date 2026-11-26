@@ -24,7 +24,7 @@ and history.
   and its linked stacked root-governance and subproject pull requests.
 - **Accepted inputs:** [governance policy](governance/governance-system.md),
   [record policy](governance/record-system.md),
-  [checker contract](governance/checker-contract.md),
+  `docs/governance/checker-contract.md`,
   [engineering principles](engineering/engineering-principles.md),
   `docs/governance/*.yaml`, `schemas/governance/*.schema.json`, `AGENTS.md`,
   `CONTRIBUTING.md`, `.github/skills/**`, `hk.pkl`, `mise.toml`,

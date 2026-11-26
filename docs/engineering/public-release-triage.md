@@ -24,8 +24,8 @@ separate list of triaged units is maintained.
 
 To prevent newly added public projects from silently omitting release and triage
 coverage, the mechanical HK step `public-release-inventory`
-(`eng/scripts/release_triage.py --check-inventory`, registered as control
-`public-release-inventory` in [`controls.yaml`](../governance/controls.yaml))
+(`eng/scripts/release_triage.py --check-inventory`, governed under
+[`record-system.md`](../governance/record-system.md#enforcement))
 enforces two deterministic invariants:
 
 1. **First-level directory exhaustiveness:** every immediate child directory of

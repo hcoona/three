@@ -1,228 +1,68 @@
 # HK Execution and Platform Boundaries
 
-Repository tooling maintainers maintain this guide from [hk.pkl](../../hk.pkl),
-[the shared HK component](../../src/private/lib/hk/), and
-[the Git helper](../../eng/scripts/workflow_delivery_v3_hk.py).
-Contributors use it when a check hangs, receives incorrectly quoted paths,
-or appears to pass without inspecting its inputs. The root
-[toolchain guide](../../README.md#repository-toolchain) owns installation;
-[repository record policy](../governance/record-system.md) owns generic
-contribution and control lifecycle. This guide explains execution behavior,
-not an additional release gate or a second catalog of checks.
+Repository tooling maintainers maintain this guide from [`hk.pkl`](../../hk.pkl),
+[`src/private/lib/hk/`](../../src/private/lib/hk/), and
+[`eng/scripts/workflow_delivery_v3_hk.py`](../../eng/scripts/workflow_delivery_v3_hk.py).
+[`docs/engineering/workspaces.md`](workspaces.md) owns installation;
+[`record-system.md`](../governance/record-system.md) owns control governance.
 
-## Profiles and Input Scope
+## Profiles and Scope
 
-[mise.toml](../../mise.toml) selects `HK_PROFILE=small,medium`. These are
-validation profiles, not Buddy or Official release channels. The actual HK
-configuration owns step selection, exclusions, and execution points.
-
-Root HK excludes generated APM interfaces and several specialized surfaces
-from general linters. Workflow YAML has its own actionlint step; general
-Markdown checks exclude `.github` paths. A skipped check is not a validation
-result for the excluded files. Source conformance and
-CI-selected product checks have distinct responsibilities; a successful
-lint run does not establish publication authority or destination acceptance.
-
-The pre-commit hook uses Git stash and index checking. Preserve its existing
-source-tree semantics when diagnosing hooks; do not infer the checked tree
-from the editor buffer. Repository-wide checks and any manual file selection
-must report which files and execution mode they actually covered.
+`mise.toml` sets local `HK_PROFILE=small,medium`; CI runs `small,medium,large`.
+`pre-commit` uses Git stashing (`stash = "git"`), while explicit manual checks
+report their selected path/snapshot mode. `hk.pkl` requires HK `2.13.0+`,
+configures hook-level `timeout = "12m"` across `pre-commit`, `check`, and `fix`,
+and excludes generated `.agents/` outputs and specialized trees from general
+linters; workflow YAML uses `actionlint`.
 
 ## CI Execution Contract
 
-[Issue #817](https://github.com/hcoona/three/issues/817) separates source
-checks from project tests. Workflow Delivery's current
-[integration contract](../../src/private/app/workflow-delivery/docs/integration/python.md#python-planning-integration)
-and [native Python group design](../../src/private/app/workflow-delivery/docs/integration/python.md#native-python-ci-group)
-own its execution boundaries.
+HK owns fast source, configuration, link, and record conformance; project unit,
+scenario, and integration suites run in CI jobs selected by Workflow Delivery
+([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) and
+[`src/private/app/workflow-delivery/docs/design/ci.md`](../../src/private/app/workflow-delivery/docs/design/ci.md))
+or through explicit local test commands—not HK's `large` profile.
 
-HK checks source/configuration conformance, including file checks, lock and
-generated-file consistency and deployed-source parity. Project unit, scenario
-and integration tests run in
-CI or through explicit local test commands. Moving a suite to HK's `large`
-profile does not establish this separation.
+- **Single `Validate` merge gate:** The `main` ruleset requires `Validate`,
+  which depends on every other job in `ci.yml` and fails on failed, skipped,
+  missing, or canceled upstream outcomes (`!cancelled()` on worker jobs so
+  superseded runs stay cancelable while failed scope selection still fails
+  closed).
+- **Affected selection and fail-closed tools:** General CI selects affected
+  language/platform work from the actual Git comparison (or all work in explicit
+  full mode). Tests that CI must run fail closed when `CI=true` and a required
+  tool is missing; OS/capability skips are summarized from TRX outputs without
+  masking missing-tool failures.
+- **Validation reporting:** Record the tested commit, executed commands, and
+  outcomes in the Issue or PR; collect JUnit/CI timing and inode/temp metrics
+  only when diagnosing performance or resource issues.
 
-The source-conformance job excludes Gopass through mise's existing job-local
-disabled-tools setting. Gopass serves the separate MCP tasks, not HK or bootstrap;
-its repository declaration and native verification remain intact.
+## Direct Command Execution, File Operands, and Lock Widening
 
-General CI selects its test/build work from the actual comparison range and
-the checked-out candidate. Selection uses workspace/build manifests and known
-consumed helpers, configuration and test fixtures. It retains deleted paths
-and both sides of renames. A missing comparison cannot become an empty change.
-An explicitly requested full mode selects all applicable existing work.
-Ordinary unconsumed documentation selects source checks; package READMEs,
-licenses and other consumed metadata are not globally excluded by extension.
+- **Shell-free `Config.Command`:** `hk.pkl` and `src/private/lib/hk/` execute
+  both guard steps and file-reading linters directly via structured
+  `Config.Command` `argv` (passing `--` before `{{files}}` on positional-file
+  linters so leading-dash filenames stay literal, and `--force-exclude` on
+  `typos` so `.typos.toml` exclusions apply). HK `2.13.0+` natively filters out
+  deleted and absent file operands before expanding `{{files}}` and skips
+  filtered steps when no existing operands remain while still running
+  unconditional checks.
+- **`eng/scripts/workflow_delivery_v3_hk.py`:** Passes NUL-delimited impact
+  paths (`--files0`, retaining deletions and rename endpoints) from `--staged`
+  or `--from-ref` / `--to-ref`, omits operands replaced on disk by regular
+  directories so HK does not recursively walk them, and fails closed on symlinks
+  to directories. When `mise.lock`, `uv.lock`, or `pnpm-lock.yaml` changes,
+  steps whose structured `Config.Command` linter version changed (or cannot be
+  resolved to an unchanged lock entry) automatically widen to
+  `--all --step=<step>`.
 
-Python selects the affected existing test roots and their workspace/build
-dependency consumers. Its job syncs the owning current workspace packages and
-root development tools using uv's frozen package selection, including each
-selected member's default development groups. Tests then use that prepared
-environment without another sync. Engineering tests declare their own root
-dependencies. The native Python caller prepares only the adapters required by
-its selected targets: PowerShell with the .NET runtime for the Azure
-credential-provider tests.
-Selected NBGV consumers also use .NET tools.
-Keep native preparation and execution bound to the original selected plan and
-its prepared environment. New test consumers must declare any additional native needs
-in the C# scope and caller (`CiScope`, `PythonCiCaller`) and the workflow.
-
-.NET runs the selected native per-project/variant plan. Node runs the adopted
-group's plan plus the selected retained workspace members. AzureAuth platform
-artifacts and Ruby or scholarly-publication suites have their own affected
-inputs. A changed .NET product does not by itself require AzureAuth artifacts or
-unrelated Python tests.
-
-The scope job builds the candidate control application, then installs locked
-tools and performs a locked `dotnet restore dirs.proj`
-at each endpoint before selection; it runs no tests or full validation.
-The `main` ruleset requires only the `Validate` context. Every job's GitHub
-context fails if selection
-fails, is canceled, or omits required output. Successful explicit
-non-applicability may omit work; selected work must complete successfully.
-The stable `Validate` context consumes the results of the jobs listed
-in its `needs` in [ci.yml](../../.github/workflows/ci.yml). Its short result
-guard rejects failed, skipped, missing or canceled
-results, including workflow cancellation. These workers
-retain explicit successful non-applicability and run independently; this
-summary does not move project tests back into HK or precede language jobs.
-Worker jobs use `!cancelled()` so failed selection still reaches the scope
-guard and superseded runs remain cancelable. Job-level `always()` would keep
-running workers alive during cancellation; it is reserved for the short
-`Validate` summary. See GitHub's [workflow cancellation][cancellation] and
-[status-check expressions][status-checks] references. Cancellation relies on
-GitHub's job outcome, not on a final shell step completing.
-When job status conditions or the cited GitHub semantics change, or a hosted
-run contradicts this cancellation behavior, tooling maintainers recheck the
-references and relevant ordinary-run evidence with independent evidence review;
-review of the next PR changing CI job-status or cancellation wiring is the
-fallback applicability review. If the contract is uncertain, pause dependent
-changes and claims while preserving required checks; do not assume cancellation
-completed.
-Required work does not use `continue-on-error`. Jobs wait only for inputs
-they consume, so source checks, selected language tests and independently
-built platform artifacts can run concurrently. Existing supported runner and
-Node matrices remain applicable to selected work.
-
-The `Select affected validation` job retains `ci-scope.json` with the actual
-candidate, comparison and other jobs' selected work and responsibility reasons.
-The Linux Python job performs its own native paired selection and retains
-`python-group-results`: preparation and planning context, original plan and
-command/failure captures, plus required execution results, outcomes and JUnit
-durations when those phases run. These use ordinary CI artifact retention;
-copy decision-relevant observations into the Issue or PR.
-
-Normal validation records the tested snapshot, executed commands, and
-pass/fail/skip outcomes in the Issue or implementation PR; collect command/CI
-timing, JUnit durations, and temporary-file/inode observations when
-investigating performance, timeouts, or resource exhaustion rather than on
-routine changes. Use ordinary runs to collect JUnit durations; do not repeat
-complete suites solely for timing. Compare equivalent work, identify the
-critical path, and separate test execution from setup, cache handling and
-dependency/queue waits. Parallel job durations are not added as wall time.
-Integration optimization preserves required real-tool proof, immutable
-preparation reuse, isolated writable fixtures, bounded concurrency and owned
-temporary-file cleanup.
-
-A real-tool test that CI must run fails when `CI=true` and its tool is
-missing; local runs may still skip it with the reason. Platform-capability
-gates (operating system, symlink support) remain skips.
-[Issue #1503](https://github.com/hcoona/three/issues/1503) records which tests
-CI must run and in which job. Each .NET test step writes TRX results, and a
-following `Name skipped tests` step lists every skipped test and its reason in
-the job summary; that report step never fails the job.
-
-## Complete Git Paths and File Operands
-
-[The Git helper](../../eng/scripts/workflow_delivery_v3_hk.py) retains deleted
-paths and both sides of renames from an explicit commit range or `--staged`.
-Its `--files0` option passes a temporary NUL-delimited list to HK, preserving
-path boundaries and option-like names without command-line length limits.
-The temporary file is removed after the child finishes, including failure;
-the helper propagates the child's exit status. PR/push source checks use this
-transport. Explicit full/manual CI uses `--all` because it has no event baseline.
-
-These are impact paths used for HK selection. `workflow_delivery_v3_hk.py`
-omits paths replaced on disk by a regular directory before invoking HK so HK
-does not walk replacement directories, and fails closed on symlinks to
-directories. HK `2.13.0+` omits
-deleted and directory-to-file absent paths before expanding `{{files}}` and
-skips filtered steps when no existing operands remain, while still running
-unconditional checks; permission errors and other filesystem failures remain
-errors. HK still owns source conformance; product tests remain in their
-explicit local commands and selected CI jobs.
-
-The explicit staged helper does not stash unstaged changes. Normal pre-commit
-retains HK's native selection and configured stashing; it does not call this
-helper to augment its path list. Distinguish path selection from the content
-snapshot when reporting validation. See the [local check command](../../CONTRIBUTING.md#local-checks).
-
-### Lint Tool Lock Changes
-
-When the compared paths include `mise.lock`, `uv.lock` or `pnpm-lock.yaml`,
-the helper evaluates the checked-out `hk.pkl` with the locked Pkl and maps
-each `check` hook file step (a command with `{{files}}` or
-`{{workspace_files}}`) to its linter: the executable resolved from structured
-`Config.Command` `argv` (with optional list `prefix` or `CommandSpec` wrapper),
-unwrapping `uv run` and `pnpm exec [--]`. It reads that
-linter's locked versions at both endpoints from the provider's committed lock.
-`mise which --plugin` names the mise tool whose `mise.lock` entries are read;
-`uv.lock` packages match the executable's normalized name; `pnpm list
---lockfile-only` over each endpoint's root `package.json` and `pnpm-lock.yaml`
-selects the root dependency named after the executable, with or without its
-npm scope. Launchers and runtimes such as uv, uvx, pnpm, pnpx, Node.js, npx and
-Python are not linters, so commands resolving to them fail closed to unresolved
-rather than binding to runtime locks.
-
-A step whose linter version differs runs on all its covered files. The helper
-skips it in the changed-path HK run, runs it in a second
-`<command> --all --step=<step>` run, reports each widened step and reason on
-stderr, and fails when either run fails. When a tool lock changes, a step whose
-command has another form (for example a shell string or a script invoked via a
-runtime binary) or whose linter has no entry in its provider lock at either
-endpoint (for example `taplo`, which `pnpm exec` finds on the mise `PATH`) also
-runs on all its files. Resolution never narrows a run, and a failed Pkl
-evaluation fails the helper. Other steps, including lock and configuration
-checks, keep the changed-path input. The SDK's `dotnet format` resolves to the
-mise `dotnet` entry; `.config/dotnet-tools.json` joins these locks once a step
-runs a local .NET tool.
-With `--staged`, the endpoints are `HEAD` and the index.
-
-## Direct Command Execution and Hook Timeouts
-
-[hk.pkl](../../hk.pkl) and [the shared HK steps](../../src/private/lib/hk/)
-require HK `2.13.0+`, configure a hook-level `timeout = "12m"` across
-`pre-commit`, `check`, and `fix`, and execute both guard steps and file-reading
-linters directly through shell-free `Config.Command` definitions (passing `--`
-before `{{files}}` on positional-file linters so option-like filenames stay
-literal). Direct `actionlint` execution uses actionlint's default
-shellcheck/pyflakes behavior; this configuration does not prove that either
-optional executable is installed or that a complete Windows workflow check
-passes.
-
-The shared [Typos step](../../src/private/lib/hk/steps/Typos.pkl) uses
-`--force-exclude` so explicit HK file lists respect [.typos.toml](../../.typos.toml).
-That configuration retains targeted imported Hjg.Pngcs exclusions. If an
-independently authorized cleanup changes them, recheck the affected files and
-the existing Typos step; an exclusion is not evidence of clean source.
-
-## Retained Windows Evidence and Limit
+## Retained Windows Evidence
 
 The [2026-04-11 Windows snapshot](https://github.com/hcoona/three/blob/b673ee27aab8553a4ee259bcaca87a197178463c/HK_WINDOWS_STEP_STATUS.md)
-reported that quoted-path and invocation failures had been resolved, while
-`mise exec -- hk check --no-progress --no-fail-fast --all` still exited `1`
-for repository lint/format findings. The source explicitly distinguished
-execution compatibility from content quality. It did not establish that all
-repository checks were green. Its per-step counts and completion chronology
-remain in Git rather than becoming current compatibility promises.
-
-The snapshot also said actionlint's shellcheck/pyflakes integrations were
-disabled by default, which differed from the former actionlint wrapper at
-`b673ee27aab8553a4ee259bcaca87a197178463c`. Subsequent migration to direct
-`Config.Command` execution ran on Linux and did not revalidate Windows parity
-or settle that historical observation. Before relying on that old snapshot for
-release hardening, the tooling maintainer must verify the actual command,
-installed tools, and result in the intended Windows environment.
-
-[cancellation]: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation
-[status-checks]: https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions
+verified quoted-path and invocation compatibility while `hk check --all` still
+exited `1` on repository lint/format findings, and noted that `actionlint`'s
+`shellcheck`/`pyflakes` integrations were disabled by default—differing from the
+former `actionlint` wrapper at `b673ee27aab8553a4ee259bcaca87a197178463c`.
+Subsequent migration to direct `Config.Command` execution ran on Linux and did
+not revalidate Windows parity or settle that observation; recheck actual Windows
+behavior before relying on that snapshot for release hardening.

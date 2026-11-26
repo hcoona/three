@@ -1,105 +1,59 @@
 # Instructions for Current Repository
 
-This repository is designed to manage polyglot projects in a monorepo structure. Currently it supports the following languages:
+This polyglot monorepo manages active projects under `src/`, `src/lab/`,
+`src/sample/`, and `tests/`:
 
-1. C#: Managed via `global.json`, `dirs.proj` and CPM (Central Package Manager).
-2. Python: Managed by UV workspaces.
-3. JavaScript/TypeScript: Managed by PNPM workspaces.
+1. **C#:** `global.json`, `dirs.proj`, Central Package Management, `dotnet build`,
+   and `dotnet format` (versioned via Nerdbank.GitVersioning; general C# CI runs
+   on Windows unless a release variant targets another OS).
+2. **Python:** `uv` workspaces (`pyproject.toml`), `nbgv-python` Hatchling
+   plugin, `ruff` lint/format, and `pyrefly` type checking.
+3. **JavaScript/TypeScript:** `pnpm` workspaces, `biome` lint/format, and `tsgo`
+   type checking.
 
-The current status of the repository is that active projects now follow the canonical root monorepo layout under `src/`, `src/lab/`, and `tests/`. The former `OneDotNet/` subtree has been migrated into those canonical roots. Project release scope and readiness follow the accepted project authorities.
+Toolchain versions are managed with [MISE](https://mise.jdx.dev/) (`mise.toml`),
+and Git hooks plus CI source conformance use [HK](https://hk.jdx.dev/)
+(`hk.pkl`). Disable CLI pagers (`--no-pager`), and use **English** for all code,
+comments, commit messages, and repository documentation.
 
-The versioning of the projects is managed by NBGV (Nerdbank.GitVersioning). We write a hatching plugin (`nbgv-python`) to adapt NBGV for our Python projects.
-
-The code linting and formatting tools are set up as follows:
-
-1. C#: `dotnet build` and `dotnet format`.
-2. Python: `ruff` for linting and formatting, `pyrefly` for type checking.
-3. JavaScript/TypeScript: `biome` for linting and formatting, `tsgo` for type checking.
-
-We use [MISE](https://mise.jdx.dev/) to manage tools across different projects in the monorepo. Check `mise.toml` for further details.
-
-We use [HK](https://hk.jdx.dev/) for both git hooks manager and CI validation gate. Check `hk.pkl` for further details.
-
-Note that in GitHub workflows, general C# builds run on Windows runners unless a release descriptor variant explicitly targets another platform; Python and JavaScript/TypeScript projects can be built on Ubuntu runners.
-
-Do not get stuck in a pager when executing CLI commands.
-
-You must use ENGLISH rather than CHINESE for all code, comments, commit messages, documentation in this repository.
+Read any directory-local `AGENTS.md` (such as
+[`src/private/app/workflow-delivery/AGENTS.md`](src/private/app/workflow-delivery/AGENTS.md))
+when working in that subtree, and read root or local `AGENTS.local.md` after
+tracked instructions when present (private, gitignored, never committed). Do not
+hand-edit generated `.agents/skills/` or `.github/agents/` outputs.
 
 ## Repository Governance
 
-Before work, read the accepted target-branch
-[governance policy](docs/governance/governance-system.md),
-[record policy](docs/governance/record-system.md), and
-[Delivery Wave](docs/delivery-wave.md). Proposed changes cannot authorize
-themselves or weaken their accepted review obligations. For an ordinary change,
-sections that decide authorization and review include
+Before starting work, read target-branch
+[`governance-system.md`](docs/governance/governance-system.md),
+[`record-system.md`](docs/governance/record-system.md) (especially
 [work authorization](docs/governance/record-system.md#work-authorization-and-concurrency),
-[enforcement](docs/governance/record-system.md#enforcement),
-[GOV-011](docs/governance/governance-system.md#gov-011-separate-findings-from-disposition),
-[GOV-010](docs/governance/governance-system.md#gov-010-gates-require-evidence),
-[conflict resolution](docs/governance/governance-system.md#conflict-resolution),
-the [record-system gate](docs/governance/record-system.md#record-system-gate) and
-the review skills named below; these are examples, and the full documents remain the
-authorities.
+[project namespaces](docs/governance/record-system.md#project-namespaces), and
+[enforcement](docs/governance/record-system.md#enforcement)), and
+[`docs/delivery-wave.md`](docs/delivery-wave.md), then locate owning project
+records through [`docs/README.md`](docs/README.md). Proposed changes cannot
+authorize themselves or waive accepted review obligations.
 
-Use the [documentation portal](docs/README.md) and
-[family catalog](docs/governance/record-families.yaml) to find project authorities.
-Keep project records separate and use path-qualified cross-project references;
-development workflow, Wave semantics, local iteration freedom, and review
-triggers remain repository-wide
-([project namespaces](docs/governance/record-system.md#project-namespaces)).
-A README is sufficient when no distinct record has a current consumer.
-
-Before making or reviewing architecture, abstraction, dependency-boundary,
-security/recovery or test/evidence strategy decisions, invoke
-[shared engineering guidance](.github/skills/engineering-guidance/SKILL.md)
-and follow its project routing.
-
-For structural record changes; edits to governance, work-authorization,
-shared-principle, or root instruction/workflow/template authorities;
-portal-routing, generated-interface ownership or `apm.lock.yaml`
-source/deployment mappings, `hk`, control-governed workflow, or
-control-governed Agent Skill changes; record edits altering authority
-ownership, established requirement identifiers, or
-consumer/immutability/license contracts; or claims to the Record-System Gate,
-invoke [record-system review](.github/skills/record-system-review/SKILL.md)
-directly.
-For `research` records, platform/support claims, fired mutable-source rechecks,
-formal or empirical evidence reports, or Wave grants/operations with external,
-paid, or credentialed empirical effects, invoke
-[research-evidence review](.github/skills/research-evidence-review/SKILL.md)
-directly, retaining applicable domain reviews; routine in-scope local
-development/debugging and governed CI validation are out of scope
-([work authorization](docs/governance/record-system.md#work-authorization-and-concurrency),
-[enforcement](docs/governance/record-system.md#enforcement)). Authors and
+Invoke canonical skills directly when their triggers apply (authors and
 implementers cannot satisfy their own independent review or solely dismiss
-material findings.
-These canonical paths are the invocation interface; no implicit skill discovery
-is assumed. Do not edit generated `.agents/skills/` or `.github/agents/` outputs
-by hand. For delegated execution, follow
-[agent execution and recovery](docs/engineering/agent-execution.md).
+material findings under
+[`GOV-011`](docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)):
 
-Read root or current-directory `AGENTS.local.md` after tracked instructions when
-present. It is private, machine-specific, gitignored, and must not be committed.
+- [Engineering guidance](.github/skills/engineering-guidance/SKILL.md): before
+  making or reviewing architecture, abstraction, dependency-boundary,
+  security/recovery, or test/evidence strategy decisions.
+- [Record-system review](.github/skills/record-system-review/SKILL.md): for
+  edits to `docs/governance/**`, `docs/delivery-wave.md`,
+  `schemas/governance/**`, `docs/engineering/engineering-principles.md`, root
+  `AGENTS.md` / `CONTRIBUTING.md` / PR template, `record-families.yaml` or
+  `apm.lock.yaml` provenance, `hk` conformance controls, governance review
+  Skills, authority/requirement-ID/immutability/license contracts in any
+  record, or [Record-System Gate](docs/governance/record-system.md#record-system-gate)
+  claims.
+- [Research-evidence review](.github/skills/research-evidence-review/SKILL.md):
+  for `research` records, empirical platform/support claims, fired
+  mutable-source rechecks, formal/empirical evidence reports, or Wave
+  grants/operations with external, credentialed, or paid empirical effects.
 
-## Workflow Delivery v3
-
-Before acting on any Workflow Delivery v3 request, read
-`src/private/app/workflow-delivery/docs/agent-handoff.md`. Its change routing table
-decides which project sections to read; the governance documents above still
-apply for their authorization and review rules.
-
-Workflow Delivery v3 is the only normative source for new workflow delivery
-work. Do not use v1 or v2 to fill a v3 decision gap unless the v3 documents
-explicitly require mechanism extraction and revalidation.
-
-The handoff's [authority and purpose](src/private/app/workflow-delivery/docs/agent-handoff.md#authority-and-purpose)
-section routes current work. All Workflow Delivery proving campaigns are closed,
-and the handoff's [closed-campaign limits](src/private/app/workflow-delivery/docs/agent-handoff.md#authorization-and-closed-campaigns)
-remain in force. The former separate NuGet implementation authorization ended
-with its campaign and is not renewed. Repository governance does not reopen
-closed proving campaigns or permit autonomous agent release dispatch,
-Environment approval, publication, authentication, or access changes; routine
-controlled release operations follow
-[work authorization](docs/governance/record-system.md#work-authorization-and-concurrency).
+For multi-worktree delegated execution, follow
+[`docs/engineering/agent-execution.md`](docs/engineering/agent-execution.md).

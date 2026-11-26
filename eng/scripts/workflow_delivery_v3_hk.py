@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import stat
 import subprocess
@@ -465,6 +466,9 @@ def main(arguments: Sequence[str] | None = None) -> int:
         json.dump(paths, sys.stdout)
         sys.stdout.write("\n")
         return 0
+    env = {**os.environ, "HK_CANDIDATE": endpoints[1] or ":index"}
+    if not options.staged:
+        env["HK_BASE"] = endpoints[0]
     widened = widened_steps(repository, endpoints, paths)
     for step, reason in widened.items():
         print(f"HK runs {step} on all its files: {reason}", file=sys.stderr)
@@ -472,13 +476,16 @@ def main(arguments: Sequence[str] | None = None) -> int:
     operands = tuple(
         path for path in paths if not _is_directory_operand(repository, path)
     )
-    changed = _run_changed(repository, [*command, *skipped], operands, options)
+    changed = _run_changed(
+        repository, [*command, *skipped], operands, options, env
+    )
     if not widened:
         return changed
     selected = [f"--step={step}" for step in widened]
     complete = subprocess.run(
         (*command, "--all", *selected),
         cwd=repository,
+        env=env,
         check=False,
     ).returncode
     return changed or complete
@@ -489,6 +496,7 @@ def _run_changed(
     command: Sequence[str],
     paths: tuple[str, ...],
     options: argparse.Namespace,
+    env: dict[str, str],
 ) -> int:
     if options.files0 or not paths:
         with tempfile.TemporaryDirectory(prefix="hk-changes-") as temporary:
@@ -496,11 +504,13 @@ def _run_changed(
             return subprocess.run(
                 (*command, "--files0-from", str(files)),
                 cwd=repository,
+                env=env,
                 check=False,
             ).returncode
     result = subprocess.run(
         (*command, "--", *paths),
         cwd=repository,
+        env=env,
         check=False,
     )
     return result.returncode
