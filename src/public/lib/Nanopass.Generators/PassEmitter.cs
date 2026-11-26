@@ -179,8 +179,15 @@ internal sealed class PassEmitter(PassModel model)
             this.Open(header);
             if (valid && model.EntryCall is { } call)
             {
-                this.Trace(null, "Enter", inputName);
-                this.EmitReturn(call, null, output);
+                var parameters = run?.Parameters ?? default;
+                string trace = Local(parameters, "__np_trace");
+                if (model.Declaration.Trace)
+                {
+                    this.Line($"bool {trace} = {Runtime}PassTrace.BeginStage(this);");
+                }
+
+                this.Trace(null, "Enter", inputName, trace);
+                this.EmitReturn(call, null, output, Local(parameters, "__np_result"), trace);
             }
             else
             {
@@ -219,6 +226,8 @@ internal sealed class PassEmitter(PassModel model)
                 + $"({Type(processor.From.Type)} {ir}{parameters})";
         this.Open(signature);
         this.Trace(processor.Name, "Enter", ir);
+        var allParameters = method?.Parameters ?? new(processor.Parameters);
+        string result = Local(allParameters, "__np_result");
         bool returned = false;
         foreach (var alternative in processor.Alternatives)
         {
@@ -233,13 +242,13 @@ internal sealed class PassEmitter(PassModel model)
             {
                 if (guard is null)
                 {
-                    this.EmitReturn(call, processor.Name, resultType);
+                    this.EmitReturn(call, processor.Name, resultType, result);
                     handled = true;
                     break;
                 }
 
                 this.Open($"if ({guard})");
-                this.EmitReturn(call, processor.Name, resultType);
+                this.EmitReturn(call, processor.Name, resultType, result);
                 this.Close();
             }
 
@@ -250,7 +259,7 @@ internal sealed class PassEmitter(PassModel model)
                     this.Line($"var {subprocessor.Variable} = {subprocessor.Call};");
                 }
 
-                this.EmitReturn(fallback.Expression, processor.Name, resultType);
+                this.EmitReturn(fallback.Expression, processor.Name, resultType, result);
                 handled = true;
             }
 
@@ -273,14 +282,19 @@ internal sealed class PassEmitter(PassModel model)
         this.Close();
     }
 
-    private void EmitReturn(string expression, string? processor, string resultType)
+    private void EmitReturn(
+        string expression,
+        string? processor,
+        string resultType,
+        string result,
+        string? trace = null)
     {
         if (model.Declaration.Trace)
         {
             this.Open(string.Empty);
-            this.Line($"{resultType} __np_result = {expression};");
-            this.Trace(processor, "Exit", "__np_result");
-            this.Line("return __np_result;");
+            this.Line($"{resultType} {result} = {expression};");
+            this.Trace(processor, "Exit", result, trace);
+            this.Line($"return {result};");
             this.Close();
         }
         else
@@ -289,11 +303,12 @@ internal sealed class PassEmitter(PassModel model)
         }
     }
 
-    private void Trace(string? processor, string phase, string value)
+    private void Trace(string? processor, string phase, string value, string? trace = null)
     {
         if (model.Declaration.Trace)
         {
-            this.Line($"if ({Runtime}PassTrace.IsEnabled) {Runtime}PassTrace.Emit(new("
+            this.Line($"if ({trace ?? Runtime + "PassTrace.IsEnabled"}) "
+                + $"{Runtime}PassTrace.Emit(new("
                 + $"{this.title}, {(processor is null ? "null" : Literal(processor))}, "
                 + $"{Runtime}PassTracePhase.{phase}, {value}, PassDescriptor));");
         }

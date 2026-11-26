@@ -87,6 +87,22 @@ public sealed class CatamorphismTests
     }
 
     /// <summary>
+    /// Verifies a rewrite receives two independently recursed optional children.
+    /// </summary>
+    /// <param name="input">The source term.</param>
+    /// <param name="expected">The term with incremented children in reverse order.</param>
+    [TestMethod]
+    [DataRow("(pair (lit 2) (lit 5))", "(pair (lit 6) (lit 3))")]
+    [DataRow("(pair #f (lit 5))", "(pair (lit 6) #f)")]
+    [DataRow("(pair (lit 2) #f)", "(pair #f (lit 3))")]
+    public void Recur_BindsTwoScalarOptionalArguments(string input, string expected)
+    {
+        var output = new SwapOptionalPairPass().Run(OptionalPairLanguage.Parse(input));
+
+        Assert.AreEqual(expected, OptionalPairLanguage.UnparseToString(output));
+    }
+
+    /// <summary>
     /// Verifies helper rewrites are shared by automatic recursion and explicit catamorphisms.
     /// </summary>
     [TestMethod]
@@ -125,6 +141,19 @@ public sealed class CatamorphismTests
 
         Assert.AreEqual("(value 10)", DefaultsLanguage.UnparseToString(pass.Run(input)));
     }
+}
+
+[Pass(typeof(OptionalPairLanguage), typeof(OptionalPairLanguage))]
+internal sealed partial class SwapOptionalPairPass
+{
+    [Rewrite]
+    private static OptionalPairLanguage.Expr Increment(OptionalPairLanguage.Lit node) =>
+        new OptionalPairLanguage.Lit(node.N + 1);
+
+    [Rewrite(typeof(OptionalPairLanguage.Pair))]
+    private static OptionalPairLanguage.Expr Swap(
+        [Recur] OptionalPairLanguage.Expr? e0, [Recur] OptionalPairLanguage.Expr? e1) =>
+        new OptionalPairLanguage.Pair(e1, e0);
 }
 
 [Language]

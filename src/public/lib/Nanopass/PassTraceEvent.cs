@@ -16,6 +16,9 @@
 // You should have received a copy of the GNU General Public License along with
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
+using System.Linq;
+using System.Runtime.CompilerServices;
+
 namespace Hcoona.Nanopass;
 
 /// <summary>
@@ -40,7 +43,26 @@ public sealed record PassTraceEvent(
     /// <returns>
     /// The output datum, or null for entry events or events without a descriptor.
     /// </returns>
-    /// <remarks>Any exception from the output unparser propagates to the caller.</remarks>
-    public SExpr? TryUnparse(bool raw = false) =>
-        this.Phase == PassTracePhase.Exit ? this.Descriptor?.UnparseOutput(this.Value, raw) : null;
+    /// <remarks>
+    /// For processor results with extra returns, only the primary term is unparsed;
+    /// <see cref="Value"/> retains the complete tuple.
+    /// Any exception from the output unparser propagates to the caller.
+    /// </remarks>
+    public SExpr? TryUnparse(bool raw = false)
+    {
+        if (this.Phase != PassTracePhase.Exit || this.Descriptor is not { } descriptor)
+        {
+            return null;
+        }
+
+        object? value = this.Value;
+        if (this.ProcessorName is { } name && value is ITuple { Length: > 0 } tuple
+            && descriptor.Processors.Any(processor =>
+                processor.ExtraReturnCount > 0 && processor.Name.Name == name))
+        {
+            value = tuple[0];
+        }
+
+        return descriptor.UnparseOutput(value, raw);
+    }
 }

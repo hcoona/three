@@ -84,7 +84,8 @@ internal sealed partial class PassResolver
             }
 
             return field.IsMaybe
-                ? $"({expression} is {{ }} {item} ? {transform(item)} : ({returnType}?)null)"
+                ? $"({expression}) switch {{ {{ }} {item} => {transform(item)}, "
+                    + $"null => ({returnType}?)null }}"
                 : transform(expression);
         }
     }
@@ -336,15 +337,15 @@ internal sealed partial class PassResolver
             && (requested is null
                 || string.Equals(candidate.Name, requested, StringComparison.Ordinal))
             && candidate.From == from && Same(candidate.Result, result))
-            .Select(candidate => (Processor: candidate, Args: BindArguments(candidate),
+            .Select(candidate => (Processor: candidate, Binding: BindArguments(candidate),
                 Named: this.target.MatchesTerminal(candidate.To.Name, parameter.Name)))
-            .Where(static candidate => candidate.Args is not null)
-            .OrderByDescending(static candidate => candidate.Args!.Value.Length)
+            .Where(static candidate => candidate.Binding is not null)
+            .OrderByDescending(static candidate => candidate.Binding!.Value.Matched)
             .ThenByDescending(static candidate => candidate.Named)
             .Take(2).ToArray();
         PassModel.Processor? chosen = candidates.FirstOrDefault().Processor;
         if (candidates.Length == 2
-            && candidates[0].Args!.Value.Length == candidates[1].Args!.Value.Length
+            && candidates[0].Binding!.Value.Matched == candidates[1].Binding!.Value.Matched
             && candidates[0].Named == candidates[1].Named)
         {
             this.Invalid(method, $"has ambiguous recur processor for '{fieldName}'.");
@@ -376,14 +377,15 @@ internal sealed partial class PassResolver
             return null;
         }
 
-        var bound = BindArguments(chosen)!.Value;
+        var bound = BindArguments(chosen)!.Value.Arguments;
         return Map(
             field,
             FieldExpression(rule, field),
             Type(result),
             value => this.InvokeFrom(processor, chosen, value, bound));
 
-        ImmutableArray<string>? BindArguments(PassModel.Processor candidate) =>
+        (ImmutableArray<string> Arguments, int Matched)? BindArguments(
+            PassModel.Processor candidate) =>
             Bind(
                 candidate,
                 processor.Parameters,
@@ -471,7 +473,7 @@ internal sealed partial class PassResolver
         PassModel.SynthesizedReturn InvokeInclusion(
             PassModel.Processor selected, ImmutableArray<PassModel.Kind> path)
         {
-            var args = Bind(selected, processor.Parameters)!.Value;
+            var args = Bind(selected, processor.Parameters)!.Value.Arguments;
             string call = this.InvokeFrom(processor, selected, NodeVariable, args);
             if (selected.Result.IsTuple)
             {
@@ -672,7 +674,7 @@ internal sealed partial class PassResolver
             return canCopy ? expression : null;
         }
 
-        var bound = Bind(chosen, processor.Parameters)!.Value;
+        var bound = Bind(chosen, processor.Parameters)!.Value.Arguments;
         return Map(
             sourceField,
             expression,

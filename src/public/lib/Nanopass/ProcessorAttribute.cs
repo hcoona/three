@@ -23,6 +23,9 @@ namespace Hcoona.Nanopass;
 /// <summary>
 /// Marks a synthesized or custom processor method on a pass.
 /// </summary>
+/// <remarks>
+/// Unbound optional parameters use their defaults, and unbound params parameters are empty.
+/// </remarks>
 /// <param name="from">The input grammar kind, or null to infer it from the signature.</param>
 /// <param name="to">The output grammar kind, or null to infer it from the signature.</param>
 [AttributeUsage(AttributeTargets.Method, Inherited = false)]

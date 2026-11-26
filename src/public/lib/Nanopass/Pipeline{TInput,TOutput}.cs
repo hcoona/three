@@ -77,9 +77,28 @@ public sealed class Pipeline<TInput, TOutput> : IPass<TInput, TOutput>
             return pass.Run(input);
         }
 
-        PassTrace.Emit(new(stage.Name, null, PassTracePhase.Enter, input, stage.Descriptor));
-        TNext output = pass.Run(input);
-        PassTrace.Emit(new(stage.Name, null, PassTracePhase.Exit, output, stage.Descriptor));
-        return output;
+        object? outerPending = PassTrace.GetPendingStage();
+        try
+        {
+            PassTrace.SetPendingStage(null);
+            PassTrace.Emit(new(stage.Name, null, PassTracePhase.Enter, input, stage.Descriptor));
+            TNext output;
+            PassTrace.SetPendingStage(pass);
+            try
+            {
+                output = pass.Run(input);
+            }
+            finally
+            {
+                PassTrace.SetPendingStage(null);
+            }
+
+            PassTrace.Emit(new(stage.Name, null, PassTracePhase.Exit, output, stage.Descriptor));
+            return output;
+        }
+        finally
+        {
+            PassTrace.SetPendingStage(outerPending);
+        }
     }
 }

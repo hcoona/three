@@ -91,6 +91,22 @@ public sealed class PassSynthesisTests
     }
 
     /// <summary>
+    /// Verifies synthesis maps each optional child independently.
+    /// </summary>
+    /// <param name="input">The source term.</param>
+    /// <param name="expected">The term with present children incremented.</param>
+    [TestMethod]
+    [DataRow("(pair (lit 2) (lit 5))", "(pair (lit 3) (lit 6))")]
+    [DataRow("(pair #f (lit 5))", "(pair #f (lit 6))")]
+    [DataRow("(pair (lit 2) #f)", "(pair (lit 3) #f)")]
+    public void Synthesis_MapsTwoScalarOptionalFields(string input, string expected)
+    {
+        var output = new MapOptionalPairPass().Run(OptionalPairLanguage.Parse(input));
+
+        Assert.AreEqual(expected, OptionalPairLanguage.UnparseToString(output));
+    }
+
+    /// <summary>
     /// Verifies synthesis can flatten input inclusions and wrap a chain of output inclusions.
     /// </summary>
     [TestMethod]
@@ -261,6 +277,18 @@ public sealed class PassSynthesisTests
     }
 
     /// <summary>
+    /// Verifies a typed Run can omit params and select a processor with unbound params.
+    /// </summary>
+    [TestMethod]
+    public void Run_SelectsParamsProcessorWithoutContext()
+    {
+        IPass<LoweringOutput.Expr, LoweringOutput.Expr> pass = new ParamsEntryProcessorPass();
+        var input = LoweringOutput.Parse("(lit 9)");
+
+        Assert.AreEqual("(lit 0)", LoweringOutput.UnparseToString(pass.Run(input)));
+    }
+
+    /// <summary>
     /// Verifies a custom Run wraps the child result without a synthesized entry processor.
     /// </summary>
     [TestMethod]
@@ -330,6 +358,28 @@ internal sealed partial class LowerNegationRecur
 
 [Pass(typeof(LoweringOutput), typeof(LoweringOutput))]
 internal sealed partial class IdentityPass;
+
+[Language, Terminal(typeof(long), "n")]
+[NonTerminalDef("Expr", ["e"], "(lit n)", "(pair (maybe e0) (maybe e1))")]
+internal static partial class OptionalPairLanguage;
+
+[Pass(typeof(OptionalPairLanguage), typeof(OptionalPairLanguage))]
+internal sealed partial class MapOptionalPairPass
+{
+    [Rewrite]
+    private static OptionalPairLanguage.Expr Increment(OptionalPairLanguage.Lit node) =>
+        new OptionalPairLanguage.Lit(node.N + 1);
+}
+
+[Pass(typeof(LoweringOutput), typeof(LoweringOutput))]
+internal sealed partial class ParamsEntryProcessorPass
+{
+    public partial LoweringOutput.Expr Run(LoweringOutput.Expr ir, params int[] arguments);
+
+    [Processor]
+    private static LoweringOutput.Expr Map(LoweringOutput.Expr ir, params int[] context) =>
+        context.Length == 0 ? new LoweringOutput.Lit(0) : ir;
+}
 
 [Language, Terminal(typeof(Symbol), "x")]
 [NonTerminalDef("Expr", ["e"], "a")]

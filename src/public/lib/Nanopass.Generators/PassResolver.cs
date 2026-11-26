@@ -40,6 +40,16 @@ internal sealed partial class PassResolver(
     private readonly HashSet<string> names = new(
         input.MemberNames, StringComparer.Ordinal);
 
+    internal static string Local(EquatableArray<PassInput.Parameter> parameters, string name)
+    {
+        while (parameters.Any(parameter => parameter.Name == name))
+        {
+            name += "_";
+        }
+
+        return name;
+    }
+
     internal PassModel Resolve()
     {
         var sourceEntry = this.Entry(this.source);
@@ -92,13 +102,17 @@ internal sealed partial class PassResolver(
             if (entry is not null)
             {
                 var ir = run is null ? InputVariable : Id(run.Parameters[0].Name);
-                entryCall = Result(entry, Invoke(entry, ir, Bind(entry, parameters)!.Value));
+                var bound = Bind(entry, parameters)!.Value.Arguments;
+                entryCall = Result(entry, Invoke(entry, ir, bound));
                 interfaceCall = run is null ? entryCall : null;
             }
 
-            if (run is not null && parameters.All(static parameter => parameter.IsOptional))
+            if (run is not null && parameters.All(static parameter => parameter.CanOmit))
             {
-                interfaceCall = Call(run, [InputVariable]);
+                var omitted = parameters
+                    .Select(static parameter => OmittedArgument(parameter))
+                    .OfType<string>();
+                interfaceCall = Call(run, [InputVariable, .. omitted]);
             }
 
             foreach (var method in input.Methods)
@@ -163,7 +177,7 @@ internal sealed partial class PassResolver(
             ? Call(method, [ir, .. arguments])
             : $"this.{Id(processor.Name)}({string.Join(", ", new[] { ir }.Concat(arguments))})";
 
-    private static ImmutableArray<string>? Bind(
+    private static (ImmutableArray<string> Arguments, int Matched)? Bind(
         PassModel.Processor processor,
         ImmutableArray<PassInput.Parameter> ambient,
         EquatableArray<string> explicitArguments = default,
@@ -175,6 +189,7 @@ internal sealed partial class PassResolver(
         }
 
         var result = ImmutableArray.CreateBuilder<string>();
+        int matched = 0;
         for (int i = 0; i < processor.Parameters.Length; i++)
         {
             var parameter = processor.Parameters[i];
@@ -189,14 +204,35 @@ internal sealed partial class PassResolver(
             if (expression is not null)
             {
                 result.Add($"{Id(parameter.Name)}: {expression}");
+                matched++;
             }
-            else if (!parameter.IsOptional || explicitName)
+            else if (!parameter.CanOmit || explicitName)
             {
                 return null;
             }
+            else if (OmittedArgument(parameter) is { } omitted)
+            {
+                result.Add(omitted);
+            }
         }
 
-        return result.ToImmutable();
+        return (result.ToImmutable(), matched);
+    }
+
+    private static string? OmittedArgument(PassInput.Parameter parameter)
+    {
+        string type = Type(parameter.Type);
+        if (parameter.Modifier == "params ")
+        {
+            return $"{Id(parameter.Name)}: ({type})[]";
+        }
+
+        return parameter.DefaultExpression switch
+        {
+            null => null,
+            "default" => $"{Id(parameter.Name)}: default({type})",
+            var expr => $"{Id(parameter.Name)}: ({type}){expr}",
+        };
     }
 
     private string InvokeFrom(
@@ -334,14 +370,14 @@ internal sealed partial class PassResolver(
             (processor.Method is not null || (!synthesize && processor.Clauses.Count > 0))
             && processor.From == from && processor.To == to
             && (compatible is null || compatible(processor)))
-            .Select(processor => (Processor: processor, Arguments: Bind(processor, ambient)))
-            .Where(static item => item.Arguments is not null)
-            .OrderByDescending(static item => item.Arguments!.Value.Length)
+            .Select(processor => (Processor: processor, Binding: Bind(processor, ambient)))
+            .Where(static item => item.Binding is not null)
+            .OrderByDescending(static item => item.Binding!.Value.Matched)
             .Take(2).ToArray();
         if (candidates.Length > 0)
         {
             if (candidates.Length == 2
-                && candidates[0].Arguments!.Value.Length == candidates[1].Arguments!.Value.Length)
+                && candidates[0].Binding!.Value.Matched == candidates[1].Binding!.Value.Matched)
             {
                 if (report)
                 {

@@ -17,6 +17,7 @@
 // OneDotNet. If not, see <https://www.gnu.org/licenses/>.
 
 using System;
+using System.ComponentModel;
 using System.IO;
 using System.Threading;
 
@@ -28,6 +29,7 @@ namespace Hcoona.Nanopass;
 public static class PassTrace
 {
     private static readonly AsyncLocal<Action<PassTraceEvent>?> CurrentSink = new();
+    private static readonly AsyncLocal<object?> PendingStage = new();
 
     /// <summary>
     /// Gets a value indicating whether the current context is capturing trace events.
@@ -75,6 +77,33 @@ public static class PassTrace
         ArgumentNullException.ThrowIfNull(traceEvent);
         CurrentSink.Value?.Invoke(traceEvent);
     }
+
+    /// <summary>
+    /// Determines whether a generated pass instance should emit its own stage events.
+    /// </summary>
+    /// <param name="pass">The generated pass instance entering <c>Run</c>.</param>
+    /// <returns>Whether tracing is enabled and no pipeline stage owns these events.</returns>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public static bool BeginStage(object pass)
+    {
+        if (!IsEnabled)
+        {
+            return false;
+        }
+
+        if (ReferenceEquals(PendingStage.Value, pass))
+        {
+            PendingStage.Value = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    internal static object? GetPendingStage() => PendingStage.Value;
+
+    internal static void SetPendingStage(object? pass) =>
+        PendingStage.Value = pass;
 
     private sealed class CaptureScope : IDisposable
     {

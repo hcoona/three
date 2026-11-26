@@ -153,6 +153,58 @@ public sealed class PassRuntimeTests
     }
 
     /// <summary>
+    /// Verifies a traced stage reports one pass boundary without suppressing processor events.
+    /// </summary>
+    [TestMethod]
+    public void Pipeline_RunWithCapture_ReportsOnePassBoundaryForTracedStage()
+    {
+        var pipeline = Pipeline.Start<LoweringInput.Expr>().Then(new LowerNegationRecur());
+        var input = LoweringInput.Parse("(neg (lit 5))");
+        var expected = LoweringOutput.Parse("(sub (lit 0) (lit 5))");
+        var events = new List<PassTraceEvent>();
+
+        using (PassTrace.Capture(events.Add))
+        {
+            Assert.AreEqual(expected, pipeline.Run(input));
+        }
+
+        var passEvents = events.Where(static item => item.ProcessorName is null);
+        Assert.AreSequenceEqual<PassTracePhase>(
+            [PassTracePhase.Enter, PassTracePhase.Exit],
+            passEvents.Select(static item => item.Phase));
+        Assert.IsNull(events[0].ProcessorName);
+        Assert.AreEqual(input, events[0].Value);
+        Assert.IsNull(events[^1].ProcessorName);
+        Assert.AreEqual(expected, events[^1].Value);
+
+        var processorPhases = events.Where(static item => item.ProcessorName is not null)
+            .Select(static item => item.Phase).ToArray();
+        Assert.Contains(PassTracePhase.Enter, processorPhases);
+        Assert.Contains(PassTracePhase.Exit, processorPhases);
+    }
+
+    /// <summary>
+    /// Verifies a processor exit preserves extras while unparsing only the primary term.
+    /// </summary>
+    [TestMethod]
+    public void TraceEvent_TryUnparse_RetainsTupleWhileUnparsingPrimaryTerm()
+    {
+        var input = LoweringOutput.Parse("(lit 5)");
+        var events = new List<PassTraceEvent>();
+
+        using (PassTrace.Capture(events.Add))
+        {
+            _ = new TracedTupleProcessorPass().Run(input);
+        }
+
+        var exit = Assert.ContainsSingle(events.Where(static item =>
+            item.ProcessorName == nameof(TracedTupleProcessorPass.Map)
+            && item.Phase == PassTracePhase.Exit));
+        Assert.AreEqual(SExpr.Parse("(lit 5)"), exit.TryUnparse());
+        Assert.AreEqual((input, 17L), exit.Value);
+    }
+
+    /// <summary>
     /// Verifies that concurrent asynchronous captures do not receive each other's trace events.
     /// </summary>
     /// <returns>A task that completes after both captures have finished.</returns>
@@ -227,4 +279,11 @@ public sealed class PassRuntimeTests
         /// <inheritdoc/>
         public int Run(int input) => input + 1;
     }
+}
+
+[Pass(typeof(LoweringOutput), typeof(LoweringOutput), Trace = true)]
+internal sealed partial class TracedTupleProcessorPass
+{
+    [Processor(DefaultExtraReturns = new object[] { 17L })]
+    internal partial (LoweringOutput.Expr Term, long Extra) Map(LoweringOutput.Expr ir);
 }

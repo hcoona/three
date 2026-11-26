@@ -54,7 +54,11 @@ internal sealed record PassInput(
         bool IsOptional,
         string Modifier = "",
         Recur? Recursion = null,
-        LocationInfo Location = default);
+        LocationInfo Location = default,
+        string? DefaultExpression = null)
+    {
+        internal bool CanOmit => this.IsOptional || this.Modifier == "params ";
+    }
 
     internal sealed record Processor(
         string? From, string? To, EquatableArray<string> Defaults, bool ValidDefaults);

@@ -326,6 +326,64 @@ internal sealed class PassInputReader(
             double.IsNaN(number) ? "NaN" : number > 0 ? "PositiveInfinity" : "NegativeInfinity";
     }
 
+    private static string? DefaultExpression(IParameterSymbol parameter)
+    {
+        if (!parameter.IsOptional)
+        {
+            return null;
+        }
+
+        bool callerInfo = parameter.GetAttributes().Any(static attribute =>
+            attribute.AttributeClass?.ContainingNamespace?.ToDisplayString()
+            == "System.Runtime.CompilerServices"
+            && attribute.AttributeClass.Name is "CallerMemberNameAttribute"
+                or "CallerFilePathAttribute"
+                or "CallerLineNumberAttribute"
+                or "CallerArgumentExpressionAttribute");
+        if (callerInfo)
+        {
+            return null;
+        }
+
+        if (!parameter.HasExplicitDefaultValue
+            || (parameter.ExplicitDefaultValue is null && parameter.Type.IsValueType))
+        {
+            return "default";
+        }
+
+        if (parameter.ExplicitDefaultValue is null)
+        {
+            return "null!";
+        }
+
+        if (parameter.Type.TypeKind == TypeKind.Enum)
+        {
+            return SymbolDisplay.FormatPrimitive(
+                parameter.ExplicitDefaultValue, quoteStrings: true, useHexadecimalNumbers: false);
+        }
+
+        return parameter.ExplicitDefaultValue switch
+        {
+            float number when !float.IsNaN(number) && !float.IsInfinity(number) =>
+                number.ToString("R", CultureInfo.InvariantCulture) + "f",
+            float number =>
+                "float." + (float.IsNaN(number)
+                    ? "NaN"
+                    : number > 0 ? "PositiveInfinity" : "NegativeInfinity"),
+            double number when double.IsNaN(number) || double.IsInfinity(number) =>
+                "double." + (double.IsNaN(number)
+                    ? "NaN"
+                    : number > 0 ? "PositiveInfinity" : "NegativeInfinity"),
+            double number => number.ToString("R", CultureInfo.InvariantCulture) + "d",
+            decimal number => number.ToString(CultureInfo.InvariantCulture) + "m",
+            long number => number.ToString(CultureInfo.InvariantCulture) + "L",
+            ulong number => number.ToString(CultureInfo.InvariantCulture) + "UL",
+            uint number => number.ToString(CultureInfo.InvariantCulture) + "U",
+            _ => SymbolDisplay.FormatPrimitive(
+                parameter.ExplicitDefaultValue, quoteStrings: true, useHexadecimalNumbers: false),
+        };
+    }
+
     private static string ParameterModifier(IParameterSymbol parameter) => parameter.RefKind switch
     {
         RefKind.Ref => "ref ",
@@ -386,7 +444,8 @@ internal sealed class PassInputReader(
                 parameter.IsOptional,
                 ParameterModifier(parameter),
                 ReadRecur(parameter),
-                this.Location(syntax.ParameterList.Parameters[index].Identifier.GetLocation())))),
+                this.Location(syntax.ParameterList.Parameters[index].Identifier.GetLocation()),
+                DefaultExpression(parameter)))),
             this.Location(syntax.Identifier.GetLocation()),
             this.ReadProcessor(method),
             new(Attributes(method, "RewriteAttribute").Select(this.ReadRewrite)));
