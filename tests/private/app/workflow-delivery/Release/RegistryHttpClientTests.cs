@@ -92,11 +92,11 @@ public sealed class RegistryHttpClientTests(TestContext context)
         Assert.IsEmpty(plain.Requests);
     }
 
-    private static string Redirect(string location, string status = "302 Found") =>
+    internal static string Redirect(string location, string status = "302 Found") =>
         $"HTTP/1.1 {status}\r\nLocation: " + location + "\r\nContent-Length: 0\r\n" +
         "Connection: close\r\n\r\n";
 
-    private static string Ok(string body) => "HTTP/1.1 200 OK\r\nContent-Length: " +
+    internal static string Ok(string body) => "HTTP/1.1 200 OK\r\nContent-Length: " +
         Encoding.ASCII.GetByteCount(body) + "\r\nConnection: close\r\n\r\n" + body;
 
     private static X509Certificate2 Certificate()
@@ -116,7 +116,7 @@ public sealed class RegistryHttpClientTests(TestContext context)
     internal sealed record Request(string Method, string Path, string Host, string? Authorization,
         int Port);
 
-    private sealed class LoopbackServer : IAsyncDisposable
+    internal sealed class LoopbackServer : IAsyncDisposable
     {
         private readonly TcpListener listener = new(IPAddress.Loopback, 0);
         private readonly CancellationTokenSource stop = new();

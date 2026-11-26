@@ -10,9 +10,9 @@ internal static class BrowserStoreReleaseCli
         Func<BrowserStorePreparationRequest, CancellationToken,
             Task<BrowserStorePreparationResult>>? prepare = null,
         Func<BrowserStorePreparationResult, bool, HttpClient, IBrowserStore>? store = null,
-        Func<string, string?>? environment = null,
-        Func<HttpClient>? readHttp = null, Func<HttpClient>? writeHttp = null)
+        Func<string, string?>? environment = null)
     {
+        store ??= Store;
         if (args is ["release", "prepare-browser-store", var requestPath])
         {
             BrowserStorePreparationResult result = (prepare ??
@@ -34,10 +34,9 @@ internal static class BrowserStoreReleaseCli
             if (preparation.Target.Store == BrowserStorePreparation.ChromeWebStore &&
                 !preparation.Prepared.Subject.DryRun)
             {
-                using HttpClient client = readHttp?.Invoke() ?? RegistryHttpClient.Create();
-                IBrowserStore adapter = store?.Invoke(preparation, false, client)
-                    ?? Store(preparation, false, client, null);
-                result = adapter.ObserveAsync(CancellationToken.None).GetAwaiter().GetResult();
+                using HttpClient client = RegistryHttpClient.CreateNoRedirect();
+                result = store(preparation, false, client).ObserveAsync(CancellationToken.None)
+                    .GetAwaiter().GetResult();
             }
             else result = BrowserStoreRelease.Unobserved(preparation);
             BrowserStoreRelease.ValidateObservation(preparation, result);
@@ -58,13 +57,9 @@ internal static class BrowserStoreReleaseCli
             BrowserStorePreparationResult preparation = Preparation(publishPreparation);
             StoreFile[] files = BrowserStoreRelease.OriginalsAsync(preparation,
                 publishOriginals, CancellationToken.None).GetAwaiter().GetResult();
-            using HttpClient client = readHttp?.Invoke() ?? RegistryHttpClient.Create();
-            using HttpClient writeClient = writeHttp?.Invoke()
-                ?? RegistryHttpClient.CreateNoRedirect();
-            IBrowserStore adapter = store?.Invoke(preparation, true, client)
-                ?? Store(preparation, true, client, writeClient);
+            using HttpClient client = RegistryHttpClient.CreateNoRedirect();
             BrowserStorePublicationResult result = BrowserStoreRelease.PublishAsync(
-                preparation, files, Observation(initialPath), adapter,
+                preparation, files, Observation(initialPath), store(preparation, true, client),
                 CancellationToken.None).GetAwaiter().GetResult();
             ReleaseCli.Write(output, result, TransferJson.Default.BrowserStorePublicationResult);
             // The required separate verification retains abnormal submissions.
@@ -84,7 +79,7 @@ internal static class BrowserStoreReleaseCli
         return null;
 
         IBrowserStore Store(BrowserStorePreparationResult preparation, bool write,
-            HttpClient client, HttpClient? writeClient)
+            HttpClient client)
         {
             ReleaseSubject subject = preparation.Prepared.Subject;
             string version = preparation.Prepared.Files[0].Version;
@@ -92,20 +87,17 @@ internal static class BrowserStoreReleaseCli
             {
                 BrowserStorePreparation.ChromeWebStore => new ChromeWebStore(client, subject,
                     preparation.Target, version, ReleaseCli.RequiredEnv("CWS_ACCESS_TOKEN",
-                        "Missing store credential: CWS_ACCESS_TOKEN", environment),
-                    writeClient: writeClient),
+                        "Missing store credential: CWS_ACCESS_TOKEN", environment)),
                 BrowserStorePreparation.FirefoxAmo when write => new FirefoxAmo(client,
                     subject, preparation.Target, version, ReleaseCli.RequiredEnv("AMO_JWT_ISSUER",
                         "Missing store credential: AMO_JWT_ISSUER", environment),
                     ReleaseCli.RequiredEnv("AMO_JWT_SECRET",
-                        "Missing store credential: AMO_JWT_SECRET", environment),
-                    writeClient: writeClient),
+                        "Missing store credential: AMO_JWT_SECRET", environment)),
                 BrowserStorePreparation.EdgeAddons when write => new EdgeAddons(client,
                     subject, preparation.Target, version, ReleaseCli.RequiredEnv("EDGE_API_KEY",
                         "Missing store credential: EDGE_API_KEY", environment),
                     ReleaseCli.RequiredEnv("EDGE_CLIENT_ID",
-                        "Missing store credential: EDGE_CLIENT_ID", environment),
-                    writeClient: writeClient),
+                        "Missing store credential: EDGE_CLIENT_ID", environment)),
                 _ => throw new InvalidDataException("Store has no read outside its publisher."),
             };
         }

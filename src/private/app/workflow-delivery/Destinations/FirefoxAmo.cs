@@ -12,10 +12,10 @@ namespace WorkflowDelivery.Destinations;
 internal sealed class FirefoxAmo(HttpClient client, ReleaseSubject subject,
     BrowserStoreTarget target, string version, string issuer, string secret,
     Func<TimeSpan, CancellationToken, Task>? delay = null, TimeProvider? time = null,
-    int attempts = 60, HttpClient? writeClient = null) : IBrowserStore
+    int attempts = 60) : IBrowserStore
 {
     internal static readonly Uri Origin = new("https://addons.mozilla.org/api/v5/");
-    private readonly StoreHttp http = new(client, [], delay, time, writeClient);
+    private readonly StoreHttp http = new(client, [], delay, time);
     private readonly TimeProvider clock = time ?? TimeProvider.System;
 
     private string Addon => $"addons/addon/{Uri.EscapeDataString(target.Item)}/";

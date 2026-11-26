@@ -11,10 +11,10 @@ namespace WorkflowDelivery.Destinations;
 internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
     BrowserStoreTarget target, string version, string token,
     Func<TimeSpan, CancellationToken, Task>? delay = null, TimeProvider? time = null,
-    int attempts = 30, HttpClient? writeClient = null) : IBrowserStore
+    int attempts = 30) : IBrowserStore
 {
     internal static readonly Uri Origin = new("https://chromewebstore.googleapis.com/");
-    private readonly StoreHttp http = new(client, [], delay, time, writeClient);
+    private readonly StoreHttp http = new(client, [], delay, time);
 
     private string Item => $"publishers/{Uri.EscapeDataString(target.Publisher!)}/items/" +
         Uri.EscapeDataString(target.Item);
@@ -123,9 +123,15 @@ internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
                     "REJECTED" or "CANCELLED" => StoreState.Conflict,
                     _ => StoreState.Unknown,
                 };
-            else if (field == "submittedItemRevisionStatus" &&
-                     state is "PENDING_REVIEW" or "STAGED")
-                conflict ??= "Chrome Web Store holds another submitted revision.";
+            else if (field == "submittedItemRevisionStatus")
+            {
+                if (state is "PENDING_REVIEW" or "STAGED")
+                    conflict ??= "Chrome Web Store holds another submitted revision.";
+                else if (state is not ("PUBLISHED" or "PUBLISHED_TO_TESTERS" or "REJECTED"
+                             or "CANCELLED"))
+                    return (StoreState.Unknown,
+                        "Unsupported Chrome Web Store revision state.");
+            }
         }
         if (conflict is not null) return (StoreState.Conflict, conflict);
         return exact switch
