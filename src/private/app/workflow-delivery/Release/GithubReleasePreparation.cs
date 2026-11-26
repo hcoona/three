@@ -6,13 +6,6 @@ using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Release;
 
-internal sealed record GithubReleasePreparationResult(PreparedRelease Prepared,
-    Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors)
-    : IReleasePreparation
-{
-    public void Validate() => GithubRelease.Validate(this);
-}
-
 // Static registration of the supported GitHub Release unit. Official tags follow the
 // product's committed NBGV publicReleaseRefSpec and the repository's release/<unit>/v<version>
 // tags; Buddy prereleases use the distinct buddy/<unit>/v<version> namespace (WD-CHN-001).
@@ -73,11 +66,11 @@ internal static class GithubReleasePreparation
     // ZIP entry times are fixed so the archive depends only on the published file set.
     private static readonly DateTimeOffset EntryTime = new(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    internal static Task<GithubReleasePreparationResult> PrepareAsync(
+    internal static Task<ReleasePreparationResult> PrepareAsync(
         ReleasePreparationRequest request, CancellationToken token) =>
         PrepareAsync(request, NativeProcess.ExecuteAsync, OperatingSystem.IsWindows(), token);
 
-    internal static async Task<GithubReleasePreparationResult> PrepareAsync(
+    internal static async Task<ReleasePreparationResult> PrepareAsync(
         ReleasePreparationRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         bool windows, CancellationToken token)

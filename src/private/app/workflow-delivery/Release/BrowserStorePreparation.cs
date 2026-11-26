@@ -5,16 +5,6 @@ using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Release;
 
-// The store coordinate is bound into the reviewed request; the publisher never re-reads it.
-internal sealed record BrowserStoreTarget(string Store, string Item, string? Publisher);
-internal sealed record BrowserStorePreparationRequest(ReleaseSubject Subject,
-    BrowserStoreTarget Target, string Checkout, string Scratch);
-internal sealed record BrowserStorePreparationResult(PreparedRelease Prepared,
-    BrowserStoreTarget Target, ReleaseCommand[] Commands, string[] Errors) : IReleasePreparation
-{
-    public void Validate() => BrowserStoreRelease.Validate(this);
-}
-
 internal static class BrowserStorePreparation
 {
     internal const string Unit = "steam-account-history-to-csv";
@@ -58,15 +48,15 @@ internal static class BrowserStorePreparation
         ReleasePolicy.RequireEligible(subject);
     }
 
-    internal static Task<BrowserStorePreparationResult> PrepareAsync(
-        BrowserStorePreparationRequest request, CancellationToken token) =>
+    internal static Task<ReleasePreparationResult> PrepareAsync(
+        ReleasePreparationRequest request, CancellationToken token) =>
         PrepareAsync(request, NativeProcess.ExecuteAsync,
             (checkout, revision, product, cancellation) =>
                 new NbgvInputReader(checkout).BrowserVersion(revision, product, cancellation),
             token);
 
-    internal static async Task<BrowserStorePreparationResult> PrepareAsync(
-        BrowserStorePreparationRequest request,
+    internal static async Task<ReleasePreparationResult> PrepareAsync(
+        ReleasePreparationRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         Func<string, GitRevision, string, CancellationToken, BrowserExtensionVersion> version,
         CancellationToken token)
@@ -74,7 +64,9 @@ internal static class BrowserStorePreparation
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
         lifetime.CancelAfter(TimeSpan.FromMinutes(15));
         token = lifetime.Token;
-        RequireRequest(request.Subject, request.Target);
+        BrowserStoreTarget storeTarget = request.Target
+            ?? throw new InvalidDataException("Unsupported browser-store release request.");
+        RequireRequest(request.Subject, storeTarget);
         (string checkout, string scratch) = ReleaseQualification.RequireFreshScratch(
             request.Checkout, request.Scratch, PathMessage,
             "Release requires fresh external scratch.");
@@ -178,7 +170,7 @@ internal static class BrowserStorePreparation
             }
         });
         return new(new(request.Subject, [.. files], Required.ToArray(), qualification.Checks),
-            request.Target, qualification.Commands, qualification.Errors);
+            new(StringComparer.Ordinal), qualification.Commands, qualification.Errors, storeTarget);
 
         Task<NativeCommandResult> RunAsync(string check, NativeCommand command) =>
             qualification.RunAsync(command with

@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text.Json;
+using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -35,11 +36,11 @@ public sealed class GithubReleasePreparationNativeTests(TestContext context)
             var subject = new ReleaseSubject(revision, "refs/heads/development",
                 GithubReleaseUnits.ImageOcclusionEditor, GithubReleaseUnits.Declaration, "buddy",
                 GithubReleaseUnits.Buddy, false);
-            GithubReleasePreparationResult result = await GithubReleasePreparation.PrepareAsync(
+            ReleasePreparationResult result = await GithubReleasePreparation.PrepareAsync(
                 new(subject, checkout, scratch), token);
             await File.WriteAllTextAsync(Path.Combine(evidence, "preparation.json"),
                 JsonSerializer.Serialize(result,
-                    TransferJson.Default.GithubReleasePreparationResult), token);
+                    TransferJson.Default.ReleasePreparationResult), token);
             foreach (ReleaseFile file in result.Prepared.Files)
                 File.Copy(Path.Combine(scratch, file.Path), Path.Combine(evidence, file.Name));
 
@@ -55,8 +56,8 @@ public sealed class GithubReleasePreparationNativeTests(TestContext context)
                     command.Result.Stdout,
                     command.Result.Stderr,
                 })));
-            GithubRelease.Validate(result);
-            GithubRelease.Originals(result, scratch);
+            ReleaseAdapters.GithubRelease.ValidatePreparation(result);
+            ReleaseEngine.VerifyOriginals(result.Prepared, scratch);
             string version = result.Native["version"];
             Assert.AreEqual("buddy/image-occlusion-editor/v" + version, result.Native["tag"]);
             CollectionAssert.AreEquivalent(new[]

@@ -12,12 +12,13 @@ internal sealed record RubyPublishResult(ReleaseSubject Subject, ReleaseUpload U
 // reset); the application never resends.
 internal static class RubyNativePublisher
 {
-    internal static Task<RubyPublishResult> PublishAsync(RubyPreparationResult preparation,
+    internal static Task<RubyPublishResult> PublishAsync(ReleasePreparationResult preparation,
         string originals, RubyPublisherTools tools,
         IReadOnlyDictionary<string, string?> platform, CancellationToken token) =>
         PublishAsync(preparation, originals, tools, platform, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<RubyPublishResult> PublishAsync(RubyPreparationResult preparation,
+    internal static async Task<RubyPublishResult> PublishAsync(
+        ReleasePreparationResult preparation,
         string originals, RubyPublisherTools tools,
         IReadOnlyDictionary<string, string?> platform,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,

@@ -1,11 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.CI.Callers;
-using WorkflowDelivery.Platform;
-using WorkflowDelivery.Repository;
-using WorkflowDelivery.Release;
 using WorkflowDelivery.Destinations;
+using WorkflowDelivery.Platform;
+using WorkflowDelivery.Release;
+using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery;
 
@@ -33,42 +34,18 @@ namespace WorkflowDelivery;
 [JsonSerializable(typeof(RubyCiCallerReadback))]
 [JsonSerializable(typeof(GithubNpmToolSelection))]
 [JsonSerializable(typeof(ReleasePreparationRequest))]
-[JsonSerializable(typeof(NpmPreparationResult))]
-[JsonSerializable(typeof(NuGetPreparationResult))]
-[JsonSerializable(typeof(PythonPreparationRequest))]
-[JsonSerializable(typeof(PythonPreparationResult))]
+[JsonSerializable(typeof(ReleasePreparationResult))]
+[JsonSerializable(typeof(ReleaseObservationResult))]
+[JsonSerializable(typeof(ReleasePublicationResult))]
+[JsonSerializable(typeof(ReleaseCompletionResult))]
+[JsonSerializable(typeof(ReleaseDryRun))]
+[JsonSerializable(typeof(ReleaseOutcome))]
 [JsonSerializable(typeof(PythonIndexTools))]
 [JsonSerializable(typeof(PythonIndexToolRequest))]
 [JsonSerializable(typeof(PythonIndexToolResult))]
 [JsonSerializable(typeof(PythonPublisherTools))]
-[JsonSerializable(typeof(PythonIndexObservationResult))]
-[JsonSerializable(typeof(PythonPublicationResult))]
-[JsonSerializable(typeof(PythonCompletionResult))]
-[JsonSerializable(typeof(GithubReleasePreparationResult))]
-[JsonSerializable(typeof(GithubReleaseObservationResult))]
-[JsonSerializable(typeof(GithubReleasePublicationResult))]
-[JsonSerializable(typeof(GithubReleaseCompletionResult))]
-[JsonSerializable(typeof(RubyPreparationRequest))]
-[JsonSerializable(typeof(RubyPreparationResult))]
 [JsonSerializable(typeof(RubySourceTools))]
-[JsonSerializable(typeof(RubyObservationResult))]
 [JsonSerializable(typeof(RubyPublisherTools))]
-[JsonSerializable(typeof(RubyPublicationResult))]
-[JsonSerializable(typeof(RubyCompletionResult))]
-[JsonSerializable(typeof(NuGetObservationResult))]
-[JsonSerializable(typeof(NuGetPublicationResult))]
-[JsonSerializable(typeof(NuGetCompletionResult))]
-[JsonSerializable(typeof(NpmjsObservationResult))]
-[JsonSerializable(typeof(ReleaseDryRun))]
-[JsonSerializable(typeof(BrowserStorePreparationRequest))]
-[JsonSerializable(typeof(BrowserStorePreparationResult))]
-[JsonSerializable(typeof(StoreObservation))]
-[JsonSerializable(typeof(BrowserStorePublicationResult))]
-[JsonSerializable(typeof(BrowserStoreCompletionResult))]
-[JsonSerializable(typeof(ReleaseOutcome))]
-[JsonSerializable(typeof(GithubNpmObservationResult))]
-[JsonSerializable(typeof(GithubNpmPublicationResult))]
-[JsonSerializable(typeof(NpmjsPublicationResult))]
 [JsonSerializable(typeof(ControlTestInputRequest))]
 [JsonSerializable(typeof(DotNetGraphRequest))]
 [JsonSerializable(typeof(DotNetGraphResponse))]
@@ -107,7 +84,15 @@ namespace WorkflowDelivery;
 [JsonSerializable(typeof(DotNetToolGroup[]))]
 [JsonSerializable(typeof(DotNetGroupResultSet))]
 [JsonSerializable(typeof(CiOutcome))]
-internal partial class TransferJson : JsonSerializerContext;
+internal partial class TransferJson : JsonSerializerContext
+{
+    internal JsonTypeInfo<ReleasePreparationResult> NuGetPreparationResult =>
+        ReleasePreparationResult;
+    internal JsonTypeInfo<ReleaseObservationResult> NuGetObservationResult =>
+        ReleaseObservationResult;
+    internal JsonTypeInfo<ReleaseCompletionResult> NuGetCompletionResult =>
+        ReleaseCompletionResult;
+}
 
 internal sealed class CheckStatusJsonConverter()
     : JsonStringEnumConverter<CheckStatus>(allowIntegerValues: false);

@@ -324,21 +324,10 @@ public sealed class ReleaseJobInputsTests
             var observation = new ReleaseObservation(subject, states.Select((state, index) =>
                 new ReleaseFileObservation("output-" + index, "fixture", "1.0", state,
                     null, null)).ToArray(), ["check"], [new("check", ReleaseCheckStatus.Passed)]);
-            string json = ecosystem switch
-            {
-                "ruby" => JsonSerializer.Serialize(new RubyObservationResult(observation,
-                    new(RubySourceState.Absent, null, null, [])),
-                    TransferJson.Default.RubyObservationResult),
-                "python" => JsonSerializer.Serialize(new PythonIndexObservationResult(
-                    observation, []), TransferJson.Default.PythonIndexObservationResult),
-                "npm" => JsonSerializer.Serialize(new GithubNpmObservationResult(observation,
-                    []), TransferJson.Default.GithubNpmObservationResult),
-                "nuget" => JsonSerializer.Serialize(new NuGetObservationResult(observation,
-                    null, []), TransferJson.Default.NuGetObservationResult),
-                "github-release" => JsonSerializer.Serialize(new GithubReleaseObservationResult(
-                    observation, null, []), TransferJson.Default.GithubReleaseObservationResult),
-                _ => throw new InvalidOperationException(),
-            };
+            string json = JsonSerializer.Serialize(new ReleaseObservationResult(observation, [],
+                RubySource: ecosystem == "ruby"
+                    ? new(RubySourceState.Absent, null, null, []) : null),
+                TransferJson.Default.ReleaseObservationResult);
             File.WriteAllText(fixture.At("observation/observation.json"), json);
             File.WriteAllText(fixture.At("output"), "");
             fixture.Run("state");
@@ -429,17 +418,12 @@ public sealed class ReleaseJobInputsTests
         internal void Preparation(ReleaseSubject subject, string path = "build/original",
             ReleaseCheckStatus status = ReleaseCheckStatus.Passed)
         {
-            var prepared = new PreparedRelease(subject, [new("build", "output", "package",
-                "fixture", "1.0",
+            var prepared = new PreparedRelease(subject, [new("build", "output",
+                ecosystem == "npm" ? "npm-tarball" : "package", "fixture", "1.0",
                 path, 5, new string('a', 64))], ["check"], [new("check", status)]);
-            string json = ecosystem switch
-            {
-                "python" => JsonSerializer.Serialize(new PythonPreparationResult(prepared,
-                    new(), [], []), TransferJson.Default.PythonPreparationResult),
-                "npm" => JsonSerializer.Serialize(new NpmPreparationResult(prepared, [], []),
-                    TransferJson.Default.NpmPreparationResult),
-                _ => throw new InvalidOperationException(),
-            };
+            string json = JsonSerializer.Serialize(new ReleasePreparationResult(prepared,
+                new(StringComparer.Ordinal), [], []),
+                    TransferJson.Default.ReleasePreparationResult);
             File.WriteAllText(At("prepared/preparation.json"), json);
         }
         public void Dispose() => Directory.Delete(root, true);

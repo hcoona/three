@@ -7,8 +7,6 @@ using WorkflowDelivery.Release;
 namespace WorkflowDelivery.Destinations;
 
 internal sealed record PythonIndexTools(string Interpreter, string Helper, string Scratch);
-internal sealed record PythonIndexObservationResult(ReleaseObservation Observation,
-    DestinationRead[] Reads) : IReleaseObservation;
 
 // Packaging interprets native coordinates. This component reads the selected
 // public index and compares qualified originals; it has no publication capability.
@@ -17,10 +15,10 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
 {
     private const int MetadataLimit = 2 * 1024 * 1024;
 
-    internal Task<PythonIndexObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
         CancellationToken token) => ObserveAsync(prepared, NativeProcess.ExecuteAsync, token);
 
-    internal async Task<PythonIndexObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
@@ -136,12 +134,12 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
             if (File.Exists(input)) File.Delete(input);
         }
 
-        PythonIndexObservationResult All(ReleaseFileState state)
+        ReleaseObservationResult All(ReleaseFileState state)
         {
             files = prepared.Files.Select(file => FileState(file, state)).ToArray();
             return Result();
         }
-        PythonIndexObservationResult Result() => new(new(prepared.Subject, files,
+        ReleaseObservationResult Result() => new(new(prepared.Subject, files,
             ["public-index-files"], [new("public-index-files",
                 phaseFailure ?? (files.All(file => file.State is
                     ReleaseFileState.Absent or ReleaseFileState.Exact)

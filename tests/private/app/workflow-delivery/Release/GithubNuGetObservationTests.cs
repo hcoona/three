@@ -30,7 +30,7 @@ public sealed class GithubNuGetObservationTests
         byte[] original = Archive();
         using var handler = new ScriptedHttpHandler((_, step) => Response(step,
             different ? Archive(extra: true) : original));
-        NuGetObservationResult result = await ObserveAsync(handler, original);
+        ReleaseObservationResult result = await ObserveAsync(handler, original);
 
         Assert.AreEqual(Enum.Parse<ReleaseFileState>(expected),
             Assert.ContainsSingle(result.Observation.Files).State);
@@ -48,7 +48,7 @@ public sealed class GithubNuGetObservationTests
         byte[] original = Archive();
         byte[] remote = Encoding.UTF8.GetBytes("not a NuGet archive");
         using var handler = new ScriptedHttpHandler((_, step) => Response(step, remote));
-        NuGetObservationResult result = await ObserveAsync(handler, original);
+        ReleaseObservationResult result = await ObserveAsync(handler, original);
 
         ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
         Assert.AreEqual(ReleaseFileState.Conflict, file.State);
@@ -67,7 +67,7 @@ public sealed class GithubNuGetObservationTests
             2 => Json("[]"),
             _ => Json("{\"versions\":[]}"),
         });
-        NuGetObservationResult result = await ObserveAsync(handler);
+        ReleaseObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Absent, result.Observation.Files[0].State);
         Assert.IsTrue(result.Observation.Checks.All(check =>
@@ -83,7 +83,7 @@ public sealed class GithubNuGetObservationTests
     {
         string control = Control.Replace("\"nuget\"", replacement, StringComparison.Ordinal);
         using var handler = new ScriptedHttpHandler((_, step) => Json(step == 0 ? Index : control));
-        NuGetObservationResult result = await ObserveAsync(handler);
+        ReleaseObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(state, result.Observation.Files[0].State.ToString());
         Assert.HasCount(2, handler.Requests);
@@ -94,7 +94,7 @@ public sealed class GithubNuGetObservationTests
     {
         using var handler = new ScriptedHttpHandler((_, step) => step == 3
             ? Json("{\"versions\":[]}") : Response(step, Archive()));
-        NuGetObservationResult result = await ObserveAsync(handler);
+        ReleaseObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(4, handler.Requests);
@@ -114,7 +114,7 @@ public sealed class GithubNuGetObservationTests
             _ => throw new AssertFailedException("Unexpected inventory request."),
         });
 
-        NuGetObservationResult result = await ObserveAsync(handler);
+        ReleaseObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown,
             Assert.ContainsSingle(result.Observation.Files).State);
@@ -130,7 +130,7 @@ public sealed class GithubNuGetObservationTests
     {
         using var handler = new ScriptedHttpHandler((_, _) => new((HttpStatusCode)status)
         { Content = new ByteArrayContent([]) });
-        NuGetObservationResult result = await ObserveAsync(handler);
+        ReleaseObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(1, handler.Requests);
@@ -147,7 +147,7 @@ public sealed class GithubNuGetObservationTests
     {
         string index = Index.Replace(original, replacement, StringComparison.Ordinal);
         using var handler = new ScriptedHttpHandler((_, _) => Json(index));
-        NuGetObservationResult result = await ObserveAsync(handler);
+        ReleaseObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(1, handler.Requests);
@@ -162,7 +162,7 @@ public sealed class GithubNuGetObservationTests
     {
         using var handler = new ScriptedHttpHandler((_, step) => step == 2 ? Json(versions)
             : Response(step, Archive()));
-        NuGetObservationResult result = await ObserveAsync(handler);
+        ReleaseObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(3, handler.Requests);
@@ -176,7 +176,7 @@ public sealed class GithubNuGetObservationTests
             : Json("[" + string.Join(',', Enumerable.Range(0, 100).Select(offset =>
                 "{\"id\":" + (step * 100 + offset) + ",\"name\":\"1.0."
                 + (step * 100 + offset) + "\"}")) + "]"));
-        NuGetObservationResult result = await ObserveAsync(handler);
+        ReleaseObservationResult result = await ObserveAsync(handler);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(80, handler.Requests);
@@ -184,7 +184,7 @@ public sealed class GithubNuGetObservationTests
             "nuget.pkg.github.com" or "api.github.com"));
     }
 
-    private static async Task<NuGetObservationResult> ObserveAsync(ScriptedHttpHandler handler,
+    private static async Task<ReleaseObservationResult> ObserveAsync(ScriptedHttpHandler handler,
         byte[]? original = null)
     {
         using var client = new HttpClient(handler, disposeHandler: false);

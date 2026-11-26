@@ -34,13 +34,14 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     {
         using var fixture = new Fixture(channel, destination, unit);
         byte[] bytes = matches ? Fixture.Original : Fixture.DifferentOriginal;
-        RubyObservationResult result = await fixture.ObserveAsync(command =>
+        ReleaseObservationResult result = await fixture.ObserveAsync(command =>
             Success(fixture.Present(command, bytes)), context.CancellationToken);
         AssertObservation(fixture.Prepared, result, Enum.Parse<ReleaseFileState>(state),
             matches ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed);
-        Assert.AreEqual(RubySourceState.Present, result.Read.State);
-        Assert.IsNotNull(result.Read.Original);
-        Assert.AreEqual((long)bytes.Length, result.Read.Original.Size);
+        RubySourceReadResult read = result.RubySource!;
+        Assert.AreEqual(RubySourceState.Present, read.State);
+        Assert.IsNotNull(read.Original);
+        Assert.AreEqual((long)bytes.Length, read.Original.Size);
         Assert.AreEqual(Hash(bytes), result.Observation.Files[0].Sha256);
         AssertSanitized(result, Success(""));
     }
@@ -51,12 +52,12 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     public async Task SupportedDestinationCanEstablishAbsence(string channel, string destination)
     {
         using var fixture = new Fixture(channel, destination);
-        RubyObservationResult result = await fixture.ObserveAsync(_ =>
+        ReleaseObservationResult result = await fixture.ObserveAsync(_ =>
             Success("""{"state":"absent"}"""), context.CancellationToken);
         AssertObservation(fixture.Prepared, result, ReleaseFileState.Absent,
             ReleaseCheckStatus.Passed);
-        Assert.AreEqual(RubySourceState.Absent, result.Read.State);
-        Assert.IsNull(result.Read.Original);
+        Assert.AreEqual(RubySourceState.Absent, result.RubySource!.State);
+        Assert.IsNull(result.RubySource!.Original);
         Assert.IsNull(result.Observation.Files[0].Sha256);
     }
 
@@ -71,7 +72,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         {
             using var fixture = new Fixture(channel, destination);
             int calls = 0;
-            RubyObservationResult result = await fixture.ObserveAsync(command =>
+            ReleaseObservationResult result = await fixture.ObserveAsync(command =>
             {
                 calls++;
                 Assert.AreEqual(fixture.Tools.Ruby, command.Executable);
@@ -157,7 +158,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     {
         using var fixture = new Fixture();
         NativeCommandResult reached = Success(answer);
-        RubyObservationResult result = await fixture.ObserveAsync(_ => reached,
+        ReleaseObservationResult result = await fixture.ObserveAsync(_ => reached,
             context.CancellationToken);
         AssertUnknown(fixture, result, ReleaseCheckStatus.Failed);
         AssertSanitized(result, reached);
@@ -169,11 +170,11 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         using var fixture = new Fixture();
         const string answer = "{\"state\":\"absent\"}";
         string bounded = answer + new string(' ', 256 * 1024 - Encoding.UTF8.GetByteCount(answer));
-        RubyObservationResult result = await fixture.ObserveAsync(_ => Success(bounded),
+        ReleaseObservationResult result = await fixture.ObserveAsync(_ => Success(bounded),
             context.CancellationToken);
         AssertObservation(fixture.Prepared, result, ReleaseFileState.Absent,
             ReleaseCheckStatus.Passed);
-        Assert.IsEmpty(result.Read.Errors);
+        Assert.IsEmpty(result.RubySource!.Errors);
         AssertSanitized(result, Success(bounded));
     }
 
@@ -224,7 +225,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     private async Task AssertOriginalRejectedAsync(Action<Fixture, JsonObject> change)
     {
         using var fixture = new Fixture();
-        RubyObservationResult result = await fixture.ObserveAsync(command =>
+        ReleaseObservationResult result = await fixture.ObserveAsync(command =>
         {
             JsonObject answer = JsonNode.Parse(fixture.Present(command,
                 Fixture.Original))!.AsObject();
@@ -251,7 +252,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         var reached = new NativeCommandResult(Enum.Parse<NativeTermination>(termination),
             code < 0 ? null : code, "{\"state\":\"absent\"}", Unsafe + User + Secret,
             73.125, hasError ? Unsafe + User + Secret : null);
-        RubyObservationResult result = await fixture.ObserveAsync(_ => reached,
+        ReleaseObservationResult result = await fixture.ObserveAsync(_ => reached,
             context.CancellationToken);
         AssertUnknown(fixture, result, termination switch
         {
@@ -269,7 +270,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         NativeCommandResult reached = Success("{\"state\":\"absent\"}");
-        RubyObservationResult result = await fixture.ObserveAsync(_ =>
+        ReleaseObservationResult result = await fixture.ObserveAsync(_ =>
         {
             cancellation.Cancel();
             return reached;
@@ -288,7 +289,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         RubyReadCredential? credential = user is not null && token is not null
             ? new(user, token) : null;
         int calls = 0;
-        RubyObservationResult result = await RubyDestinationObservation.ObserveAsync(
+        ReleaseObservationResult result = await RubyDestinationObservation.ObserveAsync(
             fixture.Prepared,
             fixture.Tools, credential, (_, _) =>
             {
@@ -297,7 +298,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
             }, context.CancellationToken);
         Assert.AreEqual(0, calls);
         AssertUnknown(fixture, result, ReleaseCheckStatus.Failed);
-        Assert.IsNull(result.Read.Command);
+        Assert.IsNull(result.RubySource!.Command);
         Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Tools.Scratch));
         AssertNoSecrets(JsonSerializer.Serialize(result));
     }
@@ -373,7 +374,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     public async Task ExactObservationCannotCompleteWithMissingRequiredCheck()
     {
         using var fixture = new Fixture();
-        RubyObservationResult result = await fixture.ObserveAsync(command =>
+        ReleaseObservationResult result = await fixture.ObserveAsync(command =>
             Success(fixture.Present(command, Fixture.Original)), context.CancellationToken);
         AssertObservation(fixture.Prepared, result, ReleaseFileState.Exact,
             ReleaseCheckStatus.Passed);
@@ -387,7 +388,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         Assert.AreEqual(fixture.Prepared.Subject, outcome.Subject);
     }
 
-    private static void AssertObservation(PreparedRelease prepared, RubyObservationResult result,
+    private static void AssertObservation(PreparedRelease prepared, ReleaseObservationResult result,
         ReleaseFileState state, ReleaseCheckStatus status)
     {
         Assert.AreEqual(prepared.Subject, result.Observation.Subject);
@@ -402,27 +403,29 @@ public sealed class RubyDestinationObservationTests(TestContext context)
             Assert.ContainsSingle(result.Observation.Checks));
     }
 
-    private static void AssertUnknown(Fixture fixture, RubyObservationResult result,
+    private static void AssertUnknown(Fixture fixture, ReleaseObservationResult result,
         ReleaseCheckStatus status)
     {
         AssertObservation(fixture.Prepared, result, ReleaseFileState.Unknown, status);
-        Assert.AreEqual(RubySourceState.Unknown, result.Read.State);
-        Assert.IsNull(result.Read.Original);
+        Assert.AreEqual(RubySourceState.Unknown, result.RubySource!.State);
+        Assert.IsNull(result.RubySource!.Original);
         Assert.IsNull(result.Observation.Files[0].Size);
         Assert.IsNull(result.Observation.Files[0].Sha256);
-        Assert.IsNotEmpty(result.Read.Errors);
+        Assert.IsNotEmpty(result.RubySource!.Errors);
     }
 
-    private static void AssertSanitized(RubyObservationResult result, NativeCommandResult reached)
+    private static void AssertSanitized(ReleaseObservationResult result,
+        NativeCommandResult reached)
     {
-        Assert.IsNotNull(result.Read.Command);
-        Assert.AreEqual(reached.Termination, result.Read.Command.Termination);
-        Assert.AreEqual(reached.ExitCode, result.Read.Command.ExitCode);
-        Assert.AreEqual(reached.DurationSeconds, result.Read.Command.DurationSeconds);
-        Assert.AreEqual("", result.Read.Command.Stdout);
-        Assert.AreEqual("", result.Read.Command.Stderr);
+        NativeCommandResult? command = result.RubySource!.Command;
+        Assert.IsNotNull(command);
+        Assert.AreEqual(reached.Termination, command.Termination);
+        Assert.AreEqual(reached.ExitCode, command.ExitCode);
+        Assert.AreEqual(reached.DurationSeconds, command.DurationSeconds);
+        Assert.AreEqual("", command.Stdout);
+        Assert.AreEqual("", command.Stderr);
         Assert.AreEqual(reached.Error is null ? null : "Native Ruby source process failed.",
-            result.Read.Command.Error);
+            command.Error);
         string persisted = JsonSerializer.Serialize(result);
         Assert.DoesNotContain(Unsafe, persisted);
         AssertNoSecrets(persisted);
@@ -464,7 +467,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
                 ["qualified-original"], [new("qualified-original", ReleaseCheckStatus.Passed)]);
         }
 
-        internal Task<RubyObservationResult> ObserveAsync(Func<NativeCommand,
+        internal Task<ReleaseObservationResult> ObserveAsync(Func<NativeCommand,
             NativeCommandResult> execute,
             CancellationToken token) => RubyDestinationObservation.ObserveAsync(Prepared, Tools,
                 Credential,

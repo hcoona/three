@@ -138,7 +138,7 @@ public sealed class RubyNativePublisherContractTests(TestContext context)
                     "1.2.3", "original.gem", Original.Length,
                     Convert.ToHexStringLower(SHA256.HashData(Original)))],
                 ["qualified"], [new("qualified", ReleaseCheckStatus.Passed)]);
-            var preparation = new RubyPreparationResult(prepared, new(StringComparer.Ordinal),
+            var preparation = new ReleasePreparationResult(prepared, new(StringComparer.Ordinal),
                 [], []);
             string scratch = Directory.CreateDirectory(Path.Combine(root, "publisher"))
                 .FullName;

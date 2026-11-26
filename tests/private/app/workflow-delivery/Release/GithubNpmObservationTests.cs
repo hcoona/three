@@ -37,7 +37,7 @@ public sealed class GithubNpmObservationTests
         });
         using var client = new HttpClient(handler);
 
-        GithubNpmObservationResult result = await new GithubNpmObservation(client)
+        ReleaseObservationResult result = await new GithubNpmObservation(client)
             .ObserveAsync(Prepared(), Credential, CancellationToken.None);
 
         Assert.AreEqual(Enum.Parse<ReleaseFileState>(expected),
@@ -62,7 +62,7 @@ public sealed class GithubNpmObservationTests
         });
         using var client = new HttpClient(handler);
 
-        GithubNpmObservationResult result = await new GithubNpmObservation(client)
+        ReleaseObservationResult result = await new GithubNpmObservation(client)
             .ObserveAsync(Prepared(), Credential, CancellationToken.None);
 
         Assert.AreEqual(allowed ? ReleaseFileState.Exact : ReleaseFileState.Unknown,
@@ -82,7 +82,7 @@ public sealed class GithubNpmObservationTests
             : "{\"name\":\"@hcoona/hcoona-release-smoke-npm\",\"versions\":{}}"));
         using var client = new HttpClient(handler);
 
-        GithubNpmObservationResult result = await new GithubNpmObservation(client)
+        ReleaseObservationResult result = await new GithubNpmObservation(client)
             .ObserveAsync(Prepared(), Credential, CancellationToken.None);
 
         Assert.AreEqual(ReleaseFileState.Absent,
@@ -102,7 +102,7 @@ public sealed class GithubNpmObservationTests
         { Content = new ByteArrayContent([]) });
         using var client = new HttpClient(handler);
 
-        GithubNpmObservationResult result = await new GithubNpmObservation(client)
+        ReleaseObservationResult result = await new GithubNpmObservation(client)
             .ObserveAsync(Prepared(), Credential, CancellationToken.None);
 
         Assert.AreEqual(ReleaseFileState.Unknown,
@@ -123,7 +123,7 @@ public sealed class GithubNpmObservationTests
         using var handler = new ScriptedHttpHandler((_, _) => Json(control));
         using var client = new HttpClient(handler);
 
-        GithubNpmObservationResult result = await new GithubNpmObservation(client)
+        ReleaseObservationResult result = await new GithubNpmObservation(client)
             .ObserveAsync(Prepared(), Credential, CancellationToken.None);
 
         Assert.AreEqual(expected, Assert.ContainsSingle(result.Observation.Files).State.ToString());
@@ -140,7 +140,7 @@ public sealed class GithubNpmObservationTests
             : new((HttpStatusCode)status) { Content = new ByteArrayContent([]) });
         using var client = new HttpClient(handler);
 
-        GithubNpmObservationResult result = await new GithubNpmObservation(client)
+        ReleaseObservationResult result = await new GithubNpmObservation(client)
             .ObserveAsync(Prepared(), Credential, CancellationToken.None);
 
         Assert.AreEqual(ReleaseFileState.Unknown,

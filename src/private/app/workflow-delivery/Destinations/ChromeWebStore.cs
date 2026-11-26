@@ -19,7 +19,7 @@ internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
     private string Item => $"publishers/{Uri.EscapeDataString(target.Publisher!)}/items/" +
         Uri.EscapeDataString(target.Item);
 
-    public Task<StoreObservation> ObserveAsync(CancellationToken cancel) =>
+    public Task<ReleaseObservationResult> ObserveAsync(CancellationToken cancel) =>
         StoreHttp.ObserveAsync(subject, target, version, http.Reads, async () =>
         {
             StoreResponse response = await http.SendAsync("fetch-status",
@@ -32,8 +32,8 @@ internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
             return Classify(document.RootElement, version);
         });
 
-    public async Task<StoreObservation?> PublishAsync(StoreFile[] files,
-        List<StoreOperation> operations, CancellationToken cancel)
+    public async Task<ReleaseObservationResult?> PublishAsync(StoreFile[] files,
+        List<ReleaseWriteStep> operations, CancellationToken cancel)
     {
         StoreFile file = files.Single();
         var upload = Request(HttpMethod.Post, $"upload/v2/{Item}:upload");
@@ -60,7 +60,7 @@ internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
         }
         if (state != "SUCCEEDED")
             return Record("upload", false, $"Upload state: {state ?? "unavailable"}.");
-        operations.Add(new("upload", true, "Package upload succeeded."));
+        operations.Add(ReleaseWriteStep.FromStore("upload", true, "Package upload succeeded."));
         var publish = Request(HttpMethod.Post, $"v2/{Item}:publish");
         publish.Content = new StringContent("{}", Encoding.UTF8, "application/json");
         StoreResponse published = await http.SendAsync("publish", publish, cancel);
@@ -75,9 +75,9 @@ internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
             $"Publish status {published.Status}, item state {itemState ?? "unavailable"}.");
 
         // A separate read-only verification observes the final store state.
-        StoreObservation? Record(string operation, bool succeeded, string detail)
+        ReleaseObservationResult? Record(string operation, bool succeeded, string detail)
         {
-            operations.Add(new(operation, succeeded, detail));
+            operations.Add(ReleaseWriteStep.FromStore(operation, succeeded, detail));
             return null;
         }
     }
@@ -105,7 +105,7 @@ internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
             foreach (JsonElement channel in channels.EnumerateArray())
             {
                 string? value = StoreHttp.Text(channel, "crxVersion");
-                if (value is null || !BrowserStoreRelease.ManifestVersion(value))
+                if (value is null || !StoreHttp.ManifestVersion(value))
                     return (StoreState.Unknown, unreadable);
                 later |= Compare(value, version) > 0;
                 matches |= value == version;

@@ -128,14 +128,14 @@ public sealed class RubyPreparationNativeTests(TestContext context)
             string miseData = Environment.GetEnvironmentVariable("MISE_DATA_DIR") ??
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                     ".local", "share", "mise");
-            var request = new RubyPreparationRequest(
+            var request = new ReleasePreparationRequest(
                 subject,
                 checkout,
                 scratch,
-                new(ruby, gem, dotnet, Provider()),
-                miseData
+                Tools: new(ruby, gem, dotnet, Provider()),
+                MiseDataDirectory: miseData
             );
-            RubyPreparationResult result = await RubyPreparation.PrepareAsync(
+            ReleasePreparationResult result = await RubyPreparation.PrepareAsync(
                 request,
                 (command, token) =>
                 {
@@ -149,7 +149,7 @@ public sealed class RubyPreparationNativeTests(TestContext context)
             );
             await RetainAsync(
                 "preparation.json",
-                JsonSerializer.Serialize(result, TransferJson.Default.RubyPreparationResult)
+                JsonSerializer.Serialize(result, TransferJson.Default.ReleasePreparationResult)
             );
             string built = Path.Combine(scratch, "package", "original.gem");
             if (File.Exists(built))

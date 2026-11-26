@@ -38,7 +38,7 @@ public sealed class NpmPreparationTests(TestContext context)
     {
         using var fixture = Fixture.Shared(shared!, sharedCommit);
 
-        NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
 
         Assert.IsEmpty(result.Errors);
         Assert.HasCount(7, result.Prepared.Checks);
@@ -83,7 +83,7 @@ public sealed class NpmPreparationTests(TestContext context)
         using var fixture = Fixture.Product(shared!, sharedCommit, channel, destination,
             dryRun: false, selectedRef);
 
-        NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
 
         Assert.IsEmpty(result.Errors);
         CollectionAssert.AreEqual(ProductChecks, result.Prepared.RequiredChecks);
@@ -143,7 +143,7 @@ public sealed class NpmPreparationTests(TestContext context)
         using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.Fail = failed;
 
-        NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
 
         Assert.IsEmpty(result.Prepared.Files);
         Assert.AreEqual(ReleaseCheckStatus.Failed,
@@ -162,7 +162,7 @@ public sealed class NpmPreparationTests(TestContext context)
         using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.ExpectedVersion = "9.9.9";
 
-        NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
 
         Assert.IsEmpty(result.Prepared.Files);
         Assert.AreEqual(ReleaseCheckStatus.Failed,
@@ -178,7 +178,7 @@ public sealed class NpmPreparationTests(TestContext context)
         using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.MutateOriginal = true;
 
-        NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
 
         Assert.IsEmpty(result.Prepared.Files);
         Assert.AreEqual(ReleaseCheckStatus.Failed,
@@ -191,7 +191,7 @@ public sealed class NpmPreparationTests(TestContext context)
     {
         using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.OmitArchive = true;
-        NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.AreEqual(ReleaseCheckStatus.Failed,
             result.Prepared.Checks.Single(check => check.Id == "pack").Status);
@@ -205,7 +205,7 @@ public sealed class NpmPreparationTests(TestContext context)
     {
         using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.CancelCheck = "build";
-        NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.AreEqual(ReleaseCheckStatus.Cancelled,
             result.Prepared.Checks.Single(check => check.Id == "build").Status);
@@ -225,7 +225,7 @@ public sealed class NpmPreparationTests(TestContext context)
         using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.IsActive = candidate => candidate != tool || readback is not null;
         fixture.ReadVersion = candidate => candidate == tool ? readback : null;
-        NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
         Assert.IsTrue(result.Prepared.Checks.Skip(1).All(check =>
@@ -242,7 +242,7 @@ public sealed class NpmPreparationTests(TestContext context)
         using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.Termination = NativeTermination.TimedOut;
         fixture.TerminationCheck = "build";
-        NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        ReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.TimedOut,
             result.Prepared.Checks.Single(check => check.Id == "build").Status);
         Assert.AreEqual(NativeTermination.TimedOut,
@@ -335,7 +335,7 @@ public sealed class NpmPreparationTests(TestContext context)
             return commit;
         }
 
-        internal Task<NpmPreparationResult> RunAsync(CancellationToken token) =>
+        internal Task<ReleasePreparationResult> RunAsync(CancellationToken token) =>
             NpmPreparation.PrepareAsync(Request, ExecuteAsync,
                 (_, _, _, _) => ExpectedVersion, token);
 

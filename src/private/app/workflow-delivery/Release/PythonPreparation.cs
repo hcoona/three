@@ -5,15 +5,7 @@ using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Release;
 
-internal sealed record PythonPreparationRequest(ReleaseSubject Subject, string Checkout,
-    string Scratch, string MiseDataDirectory);
 internal sealed record PythonReleaseRecipe(ReleaseBuild Build, string Directory);
-internal sealed record PythonPreparationResult(PreparedRelease Prepared,
-    Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors)
-    : IReleasePreparation
-{
-    public void Validate() => PythonRelease.Validate(this);
-}
 
 // Release qualifies its complete declaration independently of CI impact selection.
 internal static class PythonPreparation
@@ -30,11 +22,11 @@ internal static class PythonPreparation
         "mise.lock", "global.json", ".config/dotnet-tools.json",
         "src/private/app/workflow-delivery/Native/Python/packages.py"];
 
-    internal static Task<PythonPreparationResult> PrepareAsync(PythonPreparationRequest request,
+    internal static Task<ReleasePreparationResult> PrepareAsync(ReleasePreparationRequest request,
         CancellationToken token) => PrepareAsync(request, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<PythonPreparationResult> PrepareAsync(
-        PythonPreparationRequest request,
+    internal static async Task<ReleasePreparationResult> PrepareAsync(
+        ReleasePreparationRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
@@ -54,7 +46,7 @@ internal static class PythonPreparation
         Dictionary<string, string?> environment = EnvironmentFor(scratch, checkout,
             request.Subject);
         // The caller supplies the platform's existing tool installation resource.
-        environment["MISE_DATA_DIR"] = Absolute(request.MiseDataDirectory);
+        environment["MISE_DATA_DIR"] = Absolute(request.MiseDataDirectory ?? "");
         PythonPackageOperations? operations = null;
         string[] required = Required;
         ReleaseBuild? build = null;

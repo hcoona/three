@@ -14,8 +14,6 @@ using WorkflowDelivery.Platform;
 namespace WorkflowDelivery.Destinations;
 
 internal sealed record NuGetResources(string PackageBaseAddress, string PackagePublish);
-internal sealed record NuGetObservationResult(ReleaseObservation Observation,
-    NuGetResources? Resources, DestinationRead[] Reads) : IReleaseObservation;
 
 // NuGet owns service-index, version and archive interpretation. The application
 // constrains its request and compares qualified originals with selected native state.
@@ -26,7 +24,7 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
         ["native-package-control", "native-metadata-visibility"];
     private const string Host = "nuget.pkg.github.com";
 
-    internal async Task<NuGetObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
         string credential, CancellationToken token)
     {
         if (prepared.Subject.Channel != "buddy" ||
@@ -122,14 +120,14 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
             return Result(ReleaseFileState.Unknown);
         }
 
-        NuGetObservationResult Result(ReleaseFileState state, long? size = null,
+        ReleaseObservationResult Result(ReleaseFileState state, long? size = null,
             string? digest = null) => new(new(prepared.Subject,
                 [new(file.Output, file.Name, file.Version, state, size, digest)],
                 RequiredChecks,
                 [new("native-package-control", control), new("native-metadata-visibility",
                     state is ReleaseFileState.Exact or ReleaseFileState.Absent
-                        ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed)]), resources,
-                [.. session.Reads]);
+                        ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed)]),
+                [.. session.Reads], Resources: resources);
 
         Task<(int, byte[])> ReadAsync(string stage, Uri uri) => session.MetadataAsync(stage, uri,
             Host, "application/json", NuGetMetadata.Limit, authorization);

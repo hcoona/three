@@ -16,7 +16,7 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
     internal string Root { get; } = Directory.CreateTempSubdirectory("nuget-caller-tests-")
         .FullName;
     internal string Archive => Path.Combine(Root, "original.nupkg");
-    internal NuGetPreparationResult Preparation { get; }
+    internal ReleasePreparationResult Preparation { get; }
     internal PreparedRelease Prepared => Preparation.Prepared;
 
     internal NuGetReleaseTestFixture(bool dryRun = false)
@@ -55,10 +55,10 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
             [new("pack", new("dotnet", Root, ["pack"], 60),
                 new(NativeTermination.Exited, 0, "controlled native pack", "", 0.1, null))], []);
         // Do not bypass preparation or original archive validation in caller tests.
-        _ = NuGetRelease.Original(Preparation, Root);
+        _ = NuGetDestinationAdapter.Original(Preparation, Root);
     }
 
-    internal NuGetObservationResult Observe(ReleaseFileState state,
+    internal ReleaseObservationResult Observe(ReleaseFileState state,
         ReleaseCheckStatus qualification = ReleaseCheckStatus.Passed)
     {
         ReleaseFile file = Prepared.Files[0];
@@ -69,7 +69,8 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
             ["native-package-control", "native-metadata-visibility"],
             [new("native-package-control", qualification),
                 new("native-metadata-visibility", ReleaseCheckStatus.Passed)]),
-            new("https://nuget.pkg.github.com/hcoona/flat/", NuGetPublisher.GithubEndpoint), []);
+            [], Resources: new("https://nuget.pkg.github.com/hcoona/flat/",
+                NuGetPublisher.GithubEndpoint));
     }
 
     internal string Write<T>(string name, T value, JsonTypeInfo<T> type) =>

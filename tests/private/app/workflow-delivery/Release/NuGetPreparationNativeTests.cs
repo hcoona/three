@@ -30,7 +30,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
     {
         using var fixture = new NativeFixture(context);
         Preparation preparation = await fixture.PrepareAsync(0, selectedRef: selectedRef);
-        NuGetPreparationResult result = preparation.Result;
+        ReleasePreparationResult result = preparation.Result;
         string revision = result.Prepared.Subject.Revision;
         string checkout = preparation.Checkout;
         ReleaseFile file = Assert.ContainsSingle(result.Prepared.Files);
@@ -153,10 +153,11 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
         byte[] firstBytes = File.ReadAllBytes(first.Archive);
         using var absentFeed = Feed(first.Result.Prepared.Files[0].Version, null);
         using var absentClient = new HttpClient(absentFeed);
-        NuGetObservationResult absent = await new GithubNuGetObservation(absentClient)
+        ReleaseObservationResult absent = await new GithubNuGetObservation(absentClient)
             .ObserveAsync(first.Result.Prepared, "controlled-read", context.CancellationToken);
         Assert.AreEqual(ReleaseFileState.Absent, absent.Observation.Files[0].State);
-        NuGetCompletionResult missing = NuGetRelease.Complete(first.Result.Prepared,
+        ReleaseCompletionResult missing = ReleaseEngine.Complete(ReleaseAdapters.NuGet,
+            first.Result,
             absent, absent, null);
         Assert.AreEqual(ReleaseBusinessState.Unknown, missing.Outcome.State);
         Assert.IsNull(missing.MutationAttempted);
@@ -194,7 +195,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             int writes = 0;
             try
             {
-                NuGetPublicationResult publication = await NuGetRelease.PublishAsync(
+                ReleasePublicationResult publication = await ReleaseAdapters.NuGet.PublishAsync(
                     fresh.Result, fresh.Scratch, "controlled-read", observer.ObserveAsync,
                     (_, _, _, _, _) =>
                     {
@@ -207,10 +208,10 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                 Assert.AreEqual(conflict ? ReleaseFileState.Conflict : ReleaseFileState.Exact,
                     publication.Before.Observation.Files[0].State);
                 // Completion is the independent registry readback of the served original bytes.
-                NuGetObservationResult final = await observer.ObserveAsync(
+                ReleaseObservationResult final = await observer.ObserveAsync(
                     fresh.Result.Prepared, "controlled-read", context.CancellationToken);
-                NuGetCompletionResult complete = NuGetRelease.Complete(
-                    fresh.Result.Prepared, absent, final, publication);
+                ReleaseCompletionResult complete = ReleaseEngine.Complete(ReleaseAdapters.NuGet,
+                    fresh.Result, absent, final, publication);
                 fixture.Attach(label + "-fresh-completion.json", complete);
                 Assert.AreEqual(conflict ? ReleaseBusinessState.Unsatisfied :
                     ReleaseBusinessState.Satisfied, complete.Outcome.State);
@@ -306,7 +307,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
 
     private sealed record DebugPaths(string[] Documents, string[] CodeView);
     private sealed record Preparation(string Checkout, string Scratch, string Cache,
-        DateTime SourceMtime, string SourceSha256, NuGetPreparationResult Result, string Archive,
+        DateTime SourceMtime, string SourceSha256, ReleasePreparationResult Result, string Archive,
         string Pdb, DebugPaths Paths, ReleaseCommand[] ActualCommands);
 
     // Owned native state and evidence retention for this bounded scenario only.
@@ -378,7 +379,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                 Product + "/workflow-delivery.release-unit.yml",
                 "buddy", "github-packages-nuget", false);
             int firstCommand = commands.Count;
-            NuGetPreparationResult result = await NuGetPreparation.PrepareAsync(new(subject,
+            ReleasePreparationResult result = await NuGetPreparation.PrepareAsync(new(subject,
                 checkout, scratch), async (command, cancellation) =>
                 {
                     var environment = new Dictionary<string, string?>(command.Environment!,
@@ -430,7 +431,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                 { package.Name, package.Version }),
             });
             Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(result));
-            NuGetRelease.Validate(result);
+            ReleaseAdapters.NuGet.ValidatePreparation(result);
             string archive = Path.Combine(scratch, result.Prepared.Files[0].Path);
             string pdb = Assert.ContainsSingle(Directory.EnumerateFiles(Path.Combine(checkout,
                 Product, "bin", "Release"), "Hcoona.ReleaseSmoke.GithubPackages.pdb",

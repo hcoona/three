@@ -5,17 +5,7 @@ using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Release;
 
-internal sealed record RubyPreparationTools(string Ruby, string Gem, string Dotnet,
-    string Mise);
-internal sealed record RubyPreparationRequest(ReleaseSubject Subject, string Checkout,
-    string Scratch, RubyPreparationTools Tools, string MiseDataDirectory);
 internal sealed record RubyReleaseRecipe(ReleaseBuild Build, string Entry, string Directory);
-internal sealed record RubyPreparationResult(PreparedRelease Prepared,
-    Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors)
-    : IReleasePreparation
-{
-    public void Validate() => RubyRelease.Validate(this);
-}
 
 // The complete declared native gem is qualified independently of CI selection.
 internal static class RubyPreparation
@@ -30,10 +20,11 @@ internal static class RubyPreparation
         unit.Preset == RubyPackageChecks.RSpecPreset ? Tested : Required;
     private static readonly string[] ToolConfiguration = ["mise.toml", "mise.lock"];
 
-    internal static Task<RubyPreparationResult> PrepareAsync(RubyPreparationRequest request,
+    internal static Task<ReleasePreparationResult> PrepareAsync(ReleasePreparationRequest request,
         CancellationToken token) => PrepareAsync(request, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<RubyPreparationResult> PrepareAsync(RubyPreparationRequest request,
+    internal static async Task<ReleasePreparationResult> PrepareAsync(
+        ReleasePreparationRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
@@ -43,13 +34,15 @@ internal static class RubyPreparation
         (string checkout, string scratch) = ReleaseQualification.RequireFreshScratch(
             request.Checkout, request.Scratch, "Ruby Release requires absolute prepared paths.",
             "Ruby Release requires fresh external state.");
-        foreach (string path in new[] { request.Tools.Ruby, request.Tools.Gem,
-                     request.Tools.Dotnet, request.Tools.Mise, request.MiseDataDirectory })
+        RubyPreparationTools tools = request.Tools
+            ?? throw new InvalidDataException("Ruby Release requires prepared tools.");
+        string miseData = request.MiseDataDirectory ?? "";
+        foreach (string path in new[] { tools.Ruby, tools.Gem, tools.Dotnet, tools.Mise, miseData })
             _ = Absolute(path);
         var qualification = new ReleaseQualification(execute, token);
         var files = new List<ReleaseFile>();
         var native = new Dictionary<string, string>(StringComparer.Ordinal);
-        Dictionary<string, string?> environment = EnvironmentFor(scratch, request);
+        Dictionary<string, string?> environment = EnvironmentFor(scratch, request, tools);
         GitMaterialization? bound = null;
         RubyPackageOperations? operations = null;
         RubyGemArchive? original = null;
@@ -79,17 +72,17 @@ internal static class RubyPreparation
                 .GetProperty("version").GetString() ??
                     throw new InvalidDataException("Missing committed NBGV pin.");
             await ReleasePreparationContext.RequirePinnedSdkAsync(bound, checkout,
-                request.Tools.Dotnet, command => RunAsync(command), token);
+                tools.Dotnet, command => RunAsync(command), token);
             string toolsDirectory = Directory.CreateDirectory(Path.Combine(scratch,
                 "native-tools")).FullName;
-            await RunAsync(new(request.Tools.Dotnet, checkout,
+            await RunAsync(new(tools.Dotnet, checkout,
                 ["tool", "install", "nbgv", "--version", pin, "--tool-path", toolsDirectory], 300));
             string nbgv = Path.Combine(toolsDirectory, OperatingSystem.IsWindows() ?
                 "nbgv.exe" : "nbgv");
             if (!File.Exists(nbgv))
                 throw new InvalidDataException("Native NBGV preparation omitted its executable.");
             using JsonDocument nativeTools = JsonDocument.Parse((await RunAsync(new(
-                request.Tools.Ruby, checkout, ["-r", "json", "-r", "rubygems", "-e",
+                tools.Ruby, checkout, ["-r", "json", "-r", "rubygems", "-e",
                     "puts JSON.generate({ruby: RUBY_VERSION, rubygems: Gem::VERSION})"], 30)))
                 .Stdout);
             string ruby = nativeTools.RootElement.GetProperty("ruby").GetString()!;
@@ -97,7 +90,7 @@ internal static class RubyPreparation
             // The prepared runtime is the committed locked selection; no adapter floor applies.
             string selectedRuby = await ReleasePreparationContext.SelectLockedMiseToolAsync(
                 checkout, "ruby", command => RunAsync(command),
-                MiseEnvironment(environment, checkout, request.MiseDataDirectory));
+                MiseEnvironment(environment, checkout, miseData));
             LockedToolSelection.RequireReadback("ruby", selectedRuby, ruby);
             if (string.IsNullOrWhiteSpace(rubygems))
                 throw new InvalidDataException("Native Ruby runtime omits its RubyGems version.");
@@ -106,7 +99,7 @@ internal static class RubyPreparation
             if (await bound.ReadOptionalTextAsync(
                 "src/private/app/workflow-delivery/Native/Ruby/facts.rb", token) is null)
                 throw new InvalidDataException("Missing committed native Ruby helper.");
-            var facts = new RubyFactTools(request.Tools.Ruby, helper,
+            var facts = new RubyFactTools(tools.Ruby, helper,
                 Directory.CreateDirectory(Path.Combine(scratch, "queries")).FullName,
                 environment, 180);
             using JsonDocument projection = JsonDocument.Parse((await RunAsync(new(nbgv,
@@ -129,7 +122,7 @@ internal static class RubyPreparation
             native.Add("ruby", ruby);
             native.Add("rubygems", rubygems);
             native.Add("nbgv", pin);
-            operations = RubyReleaseUnits.Package(unit, facts, request.Tools.Gem, nbgv,
+            operations = RubyReleaseUnits.Package(unit, facts, tools.Gem, nbgv,
                 Directory.CreateDirectory(Path.Combine(scratch, "package")).FullName);
         });
         await qualification.CheckAsync("build", async () => original =
@@ -224,13 +217,13 @@ internal static class RubyPreparation
     }
 
     private static Dictionary<string, string?> EnvironmentFor(string scratch,
-        RubyPreparationRequest request)
+        ReleasePreparationRequest request, RubyPreparationTools tools)
     {
         string home = Path.Combine(scratch, "home");
         string gems = Path.Combine(scratch, "gems");
         // The selected mise Ruby's own RubyGems plugin runs `mise reshim` after installs.
-        string path = string.Join(Path.PathSeparator, new[] { request.Tools.Ruby,
-            request.Tools.Gem, request.Tools.Dotnet, request.Tools.Mise }
+        string path = string.Join(Path.PathSeparator, new[] { tools.Ruby,
+            tools.Gem, tools.Dotnet, tools.Mise }
             .Select(Path.GetDirectoryName)
             .Append(OperatingSystem.IsWindows() ? Environment.GetFolderPath(
                 Environment.SpecialFolder.System) : "/usr/bin").Append("/bin")
@@ -240,7 +233,7 @@ internal static class RubyPreparation
             ("SystemRoot", Environment.GetEnvironmentVariable("SystemRoot")),
             ("WINDIR", Environment.GetEnvironmentVariable("WINDIR")),
             ("PATHEXT", Environment.GetEnvironmentVariable("PATHEXT")),
-            ("PATH", path), ("DOTNET_ROOT", Path.GetDirectoryName(request.Tools.Dotnet)),
+            ("PATH", path), ("DOTNET_ROOT", Path.GetDirectoryName(tools.Dotnet)),
             ("GEM_HOME", gems), ("GEM_PATH", gems),
             ("GEM_SPEC_CACHE", Path.Combine(scratch, "spec-cache")),
             ("LANG", "C.UTF-8"), ("LC_ALL", "C.UTF-8"),

@@ -21,7 +21,7 @@ public sealed class GithubNpmPublicationTests
         var commands = new List<NativeCommand>();
         int reads = 0;
 
-        GithubNpmPublicationResult result = await GithubNpmPublication.PublishAsync(files.Prepared,
+        ReleasePublicationResult result = await GithubNpmPublication.PublishAsync(files.Prepared,
             files.Originals, files.Runtime, files.Tools, Files.Credential,
             (command, _) =>
             {
@@ -68,7 +68,7 @@ public sealed class GithubNpmPublicationTests
         int reads = 0;
         int writes = 0;
 
-        GithubNpmPublicationResult result = await GithubNpmPublication.PublishAsync(files.Prepared,
+        ReleasePublicationResult result = await GithubNpmPublication.PublishAsync(files.Prepared,
             files.Originals, files.Runtime, files.Tools, Files.Credential,
             (command, _) =>
             {
@@ -93,7 +93,7 @@ public sealed class GithubNpmPublicationTests
         Assert.AreEqual(1, writes);
         Assert.AreEqual(2, reads);
         Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(business),
-            ReleaseCompletion.Evaluate(files.Prepared, result.After.Observation,
+            ReleaseCompletion.Evaluate(files.Prepared, result.After!.Observation,
                 result.Uploads).State);
     }
 
@@ -119,7 +119,7 @@ public sealed class GithubNpmPublicationTests
     private static NativeCommandResult Success(string output) => new(NativeTermination.Exited,
         0, output, "", 0, null);
 
-    private static GithubNpmObservationResult Observe(PreparedRelease prepared,
+    private static ReleaseObservationResult Observe(PreparedRelease prepared,
         ReleaseFileState state)
     {
         ReleaseFile file = prepared.Files[0];

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using WorkflowDelivery.Release;
@@ -7,21 +8,17 @@ namespace WorkflowDelivery.Destinations;
 // Store-reported state of one exact submitted version (the WD-REL-009 store exception).
 // Received, InReview and Published complete a request; Unobserved means no read was possible.
 internal enum StoreState { Absent, Received, InReview, Published, Conflict, Unknown, Unobserved }
-internal sealed record StoreRead(string Stage, string Url, int? Status, string Detail);
-internal sealed record StoreObservation(ReleaseSubject Subject, BrowserStoreTarget Target,
-    string Version, StoreState State, string[] Reasons, StoreRead[] Reads);
-internal sealed record StoreOperation(string Operation, bool Succeeded, string Detail);
 internal sealed record StoreFile(string Output, string Path);
 
 // One store adapter. The publisher context supplies its credential; observation reads are
 // credential-free records.
 internal interface IBrowserStore
 {
-    Task<StoreObservation> ObserveAsync(CancellationToken token);
+    Task<ReleaseObservationResult> ObserveAsync(CancellationToken token);
 
     // Performs the store's native submission and returns the store's post-submission
     // observation when the publisher is the only reader, or null when another job reads.
-    Task<StoreObservation?> PublishAsync(StoreFile[] files, List<StoreOperation> operations,
+    Task<ReleaseObservationResult?> PublishAsync(StoreFile[] files, List<ReleaseWriteStep> steps,
         CancellationToken token);
 }
 
@@ -29,12 +26,13 @@ internal sealed record StoreResponse(int Status, byte[] Body, string? Location);
 
 // Bounded store HTTP. Credentials stay in request headers; reads record only stage, URL
 // and status. Store responses are small JSON documents.
-internal sealed class StoreHttp(HttpClient client, List<StoreRead> reads,
+internal sealed class StoreHttp(HttpClient client, List<DestinationRead> reads,
     Func<TimeSpan, CancellationToken, Task>? delay = null, TimeProvider? time = null)
 {
     private const int BodyLimit = 4 * 1024 * 1024;
+    internal const string Check = "store-status";
 
-    internal List<StoreRead> Reads => reads;
+    internal List<DestinationRead> Reads => reads;
 
     internal Task DelayAsync(TimeSpan interval, CancellationToken token) =>
         (delay ?? ((span, cancel) => Task.Delay(span, time ?? TimeProvider.System, cancel)))(
@@ -55,7 +53,7 @@ internal sealed class StoreHttp(HttpClient client, List<StoreRead> reads,
         using Stream stream = await response.Content.ReadAsStreamAsync(deadline.Token);
         byte[] body = await RegistryBody.LimitedAsync(stream,
             response.Content.Headers.ContentLength, BodyLimit, deadline.Token);
-        reads.Add(new(stage, url, status, "Received response."));
+        reads.Add(new(stage, status, "Received response.", url));
         return new(status, body, response.Headers.Location?.OriginalString);
     }
 
@@ -74,9 +72,40 @@ internal sealed class StoreHttp(HttpClient client, List<StoreRead> reads,
         value.ValueKind == JsonValueKind.Object && value.TryGetProperty(name, out JsonElement
             text) && text.ValueKind == JsonValueKind.String ? text.GetString() : null;
 
+    internal static bool ManifestVersion(string version)
+    {
+        string[] parts = version.Split('.');
+        return parts.Length is >= 1 and <= 4 && parts.All(part => part.Length is >= 1 and
+            <= 5 && part.All(char.IsAsciiDigit) && (part == "0" || part[0] != '0') &&
+            int.Parse(part, CultureInfo.InvariantCulture) <= 65535);
+    }
+
+    internal static ReleaseObservationResult Observation(ReleaseSubject subject,
+        BrowserStoreTarget target, string version, StoreState state, string[] reasons,
+        DestinationRead[] reads)
+    {
+        ReleaseFileState fileState = state switch
+        {
+            StoreState.Absent => ReleaseFileState.Absent,
+            StoreState.Received or StoreState.InReview or StoreState.Published =>
+                ReleaseFileState.Accepted,
+            StoreState.Unobserved => ReleaseFileState.Unobserved,
+            StoreState.Conflict => ReleaseFileState.Conflict,
+            _ => ReleaseFileState.Unknown,
+        };
+        ReleaseCheckStatus checkStatus = state is StoreState.Conflict or StoreState.Unknown
+            ? ReleaseCheckStatus.Failed : ReleaseCheckStatus.Passed;
+        ReleaseFileObservation[] files = [.. BrowserStorePreparation.StoreOutputs(target.Store)
+            .Select(output => new ReleaseFileObservation(output, subject.Unit, version,
+                fileState, null, null))];
+        return new(new(subject, files, [Check], [new(Check, checkStatus)],
+                reasons.Length == 0 ? null : reasons), reads,
+            StoreState: state, StoreTarget: target);
+    }
+
     // Unavailable or unsupported responses establish no store state.
-    internal static async Task<StoreObservation> ObserveAsync(ReleaseSubject subject,
-        BrowserStoreTarget target, string version, List<StoreRead> reads,
+    internal static async Task<ReleaseObservationResult> ObserveAsync(ReleaseSubject subject,
+        BrowserStoreTarget target, string version, List<DestinationRead> reads,
         Func<Task<(StoreState State, string Reason)>> read)
     {
         StoreState state;
@@ -88,7 +117,7 @@ internal sealed class StoreHttp(HttpClient client, List<StoreRead> reads,
             JsonException or InvalidDataException or InvalidOperationException or
             KeyNotFoundException or FormatException)
         { (state, reason) = (StoreState.Unknown, "Store response unavailable or unsupported."); }
-        return new(subject, target, version, state, reason.Length == 0 ? [] : [reason],
+        return Observation(subject, target, version, state, reason.Length == 0 ? [] : [reason],
             [.. reads]);
     }
 }

@@ -61,8 +61,8 @@ public sealed class PythonPreparationNativeTests(TestContext context)
             var subject = new ReleaseSubject(revision, "refs/heads/preparation-development",
                 "hcoona-release-smoke-python", Product + "/workflow-delivery.release-unit.yml",
                 "buddy", "testpypi", false);
-            PythonPreparationResult result = await PythonPreparation.PrepareAsync(new(subject,
-                checkout, scratch, miseData), context.CancellationToken);
+            ReleasePreparationResult result = await PythonPreparation.PrepareAsync(new(subject,
+                checkout, scratch, MiseDataDirectory: miseData), context.CancellationToken);
             string retained = Directory.CreateDirectory(Path.Combine(context.TestResultsDirectory!,
                 "python-release-native", Guid.NewGuid().ToString("N"))).FullName;
             string binding = Path.Combine(retained, "preparation.json");

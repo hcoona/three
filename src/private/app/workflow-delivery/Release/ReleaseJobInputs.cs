@@ -9,52 +9,25 @@ namespace WorkflowDelivery.Release;
 // Inputs for the existing concrete Actions callers. Actions owns job orchestration.
 internal static class ReleaseJobInputs
 {
-    private sealed record Route(Func<string, string> Declaration,
-        Func<string, IReleasePreparation> Preparation,
-        Action<ReleaseSubject>? Admit = null,
-        Func<string, IReleaseObservation>? Observation = null,
-        Func<string, IReleaseObservation>? BuddyObservation = null,
-        Action<RequestInputs>? WriteRequest = null);
-
-    private sealed record RequestInputs(string Path, ReleaseSubject Subject, string Checkout,
-        string Scratch, Func<string, string> Env, BrowserStoreTarget? Store);
+    private sealed record Route(IDestinationAdapter Adapter, Func<string, string> Declaration,
+        Action<ReleaseSubject>? Admit = null);
 
     private static readonly Dictionary<string, Route> Routes = new(StringComparer.Ordinal)
     {
-        ["ruby"] = new(unit => RubyReleaseUnits.Named(unit).Declaration,
-            Reader(TransferJson.Default.RubyPreparationResult),
-            subject => RubyReleaseUnits.Admit(subject),
-            Reader(TransferJson.Default.RubyObservationResult),
-            WriteRequest: input => Write(input.Path, new RubyPreparationRequest(input.Subject,
-                input.Checkout, input.Scratch, new(input.Env("RUBY_EXECUTABLE"),
-                    input.Env("GEM_EXECUTABLE"), input.Env("DOTNET_EXECUTABLE"),
-                    input.Env("MISE_EXECUTABLE")), input.Env("MISE_DATA_DIR")),
-                TransferJson.Default.RubyPreparationRequest)),
-        ["python"] = new(unit => PythonReleaseUnits.Named(unit).Declaration,
-            Reader(TransferJson.Default.PythonPreparationResult),
-            subject => PythonReleaseUnits.Admit(subject),
-            Reader(TransferJson.Default.PythonIndexObservationResult),
-            WriteRequest: input => Write(input.Path, new PythonPreparationRequest(input.Subject,
-                input.Checkout, input.Scratch, input.Env("MISE_DATA_DIR")),
-                TransferJson.Default.PythonPreparationRequest)),
-        ["npm"] = new(unit => NpmReleaseUnits.Named(unit).Declaration,
-            Reader(TransferJson.Default.NpmPreparationResult),
-            subject => NpmReleaseUnits.Admit(subject),
-            Reader(TransferJson.Default.NpmjsObservationResult),
-            Reader(TransferJson.Default.GithubNpmObservationResult)),
-        ["nuget"] = new(unit => NuGetReleaseUnits.Named(unit).Declaration,
-            Reader(TransferJson.Default.NuGetPreparationResult),
-            subject => NuGetReleaseUnits.Admit(subject),
-            Reader(TransferJson.Default.NuGetObservationResult)),
-        ["github-release"] = new(_ => GithubReleaseUnits.Declaration,
-            Reader(TransferJson.Default.GithubReleasePreparationResult),
-            subject => GithubReleaseUnits.Admit(subject),
-            Reader(TransferJson.Default.GithubReleaseObservationResult)),
-        ["browser-store"] = new(_ => BrowserStorePreparation.Declaration,
-            Reader(TransferJson.Default.BrowserStorePreparationResult),
-            WriteRequest: input => Write(input.Path, new BrowserStorePreparationRequest(
-                input.Subject, input.Store!, input.Checkout, input.Scratch),
-                TransferJson.Default.BrowserStorePreparationRequest)),
+        ["ruby"] = new(ReleaseAdapters.Ruby, unit => RubyReleaseUnits.Named(unit).Declaration,
+            subject => RubyReleaseUnits.Admit(subject)),
+        ["python"] = new(ReleaseAdapters.Python,
+            unit => PythonReleaseUnits.Named(unit).Declaration,
+            subject => PythonReleaseUnits.Admit(subject)),
+        ["npm"] = new(ReleaseAdapters.Npm, unit => NpmReleaseUnits.Named(unit).Declaration,
+            subject => NpmReleaseUnits.Admit(subject)),
+        ["nuget"] = new(ReleaseAdapters.NuGet, unit => NuGetReleaseUnits.Named(unit).Declaration,
+            subject => NuGetReleaseUnits.Admit(subject)),
+        ["github-release"] = new(ReleaseAdapters.GithubRelease,
+            _ => GithubReleaseUnits.Declaration,
+            subject => GithubReleaseUnits.Admit(subject)),
+        ["browser-store"] = new(ReleaseAdapters.BrowserStore,
+            _ => BrowserStorePreparation.Declaration),
     };
 
     internal static int? Run(string[] args, Func<string, string?>? environment = null)
@@ -91,26 +64,20 @@ internal static class ReleaseJobInputs
             _ => throw new InvalidDataException("Unsupported Release caller destination."),
         };
         string dry = Env("DRY_RUN");
-        if (dry is not ("true" or "false")) throw new InvalidDataException(
-            "Invalid dry-run input.");
-        string unit = ecosystem == "browser-store" ? BrowserStorePreparation.Unit :
-            Env("UNIT");
+        if (dry is not ("true" or "false"))
+            throw new InvalidDataException("Invalid dry-run input.");
+        string unit = ecosystem == "browser-store" ? BrowserStorePreparation.Unit : Env("UNIT");
         var subject = new ReleaseSubject(Env("GITHUB_SHA"), Env("GITHUB_REF"), unit,
             route.Declaration(unit), buddy ? "buddy" : "official", selectedDestination,
             dry == "true");
-        // Every job admits the selected registered unit before preparation; npm also
-        // rejects its smoke unit for live Official, and NuGet rejects it for Official.
         route.Admit?.Invoke(subject);
-        // The reviewed store coordinate is bound into the request from repository
-        // variables; later jobs compare it with the transferred preparation.
         BrowserStoreTarget? store = ecosystem == "browser-store" ? new(destination,
             Env("STORE_ITEM"), destination == BrowserStorePreparation.ChromeWebStore
                 ? Env("STORE_PUBLISHER") : null) : null;
         if (store is not null) BrowserStorePreparation.RequireRequest(subject, store);
-        // Live reruns are unsupported (WD-OPS-003). A partial rerun skips the preparation
-        // job, so every job entry below applies this one guard rather than workflow YAML.
         if (!subject.DryRun && Env("GITHUB_RUN_ATTEMPT") != "1")
             throw new InvalidDataException("Live Release reruns are unsupported.");
+
         string control = Path.Combine(root, "control"), prepared = Path.Combine(root, "prepared");
         string At(string name)
         {
@@ -127,18 +94,20 @@ internal static class ReleaseJobInputs
             Directory.CreateDirectory(path);
             return path;
         }
-        IReleasePreparation Preparation()
+        void Same(ReleaseSubject actual)
         {
-            IReleasePreparation preparation = route.Preparation(
-                Path.Combine(prepared, "preparation.json"));
+            if (actual != subject)
+                throw new InvalidDataException("Transferred Release subject mismatch.");
+        }
+        ReleasePreparationResult Preparation()
+        {
+            ReleasePreparationResult preparation = Read(
+                Path.Combine(prepared, "preparation.json"),
+                TransferJson.Default.ReleasePreparationResult);
             Same(preparation.Prepared.Subject);
             return preparation;
         }
-        void Same(ReleaseSubject actual)
-        {
-            if (actual != subject) throw new InvalidDataException(
-                "Transferred Release subject mismatch.");
-        }
+
         switch (operation)
         {
             case ["request"]:
@@ -146,12 +115,15 @@ internal static class ReleaseJobInputs
                     throw new InvalidDataException("Unsupported Release repository.");
                 string scratch = Fresh("preparation-scratch");
                 Fresh("prepared");
-                var input = new RequestInputs(Path.Combine(prepared, "request.json"), subject,
-                    Env("GITHUB_WORKSPACE"), scratch, Env, store);
-                if (route.WriteRequest is { } writeRequest) writeRequest(input);
-                else
-                    Write(input.Path, new ReleasePreparationRequest(subject, input.Checkout,
-                        scratch), TransferJson.Default.ReleasePreparationRequest);
+                RubyPreparationTools? tools = ecosystem == "ruby"
+                    ? new(Env("RUBY_EXECUTABLE"), Env("GEM_EXECUTABLE"),
+                        Env("DOTNET_EXECUTABLE"), Env("MISE_EXECUTABLE"))
+                    : null;
+                string? miseData = ecosystem is "ruby" or "python"
+                    ? Env("MISE_DATA_DIR") : null;
+                Write(Path.Combine(prepared, "request.json"), new ReleasePreparationRequest(
+                    subject, Env("GITHUB_WORKSPACE"), scratch, store, tools, miseData),
+                    TransferJson.Default.ReleasePreparationRequest);
                 break;
             case ["originals"]:
                 PreparedRelease release = Preparation().Prepared;
@@ -160,65 +132,51 @@ internal static class ReleaseJobInputs
                 {
                     string source = At("preparation-scratch/" + file.Path);
                     string target = At("prepared/" + file.Path);
-                    // Only the original files selected by the typed preparation cross the job
-                    // boundary.
                     if (!File.Exists(source) || !OwnedPath.Within(source, sourceRoot))
                         throw new InvalidDataException("Missing original transfer.");
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                     File.Copy(source, target, overwrite: false);
                 }
                 break;
-            // The one check of a downloaded preparation in each later job. Actions binds the
-            // immutable same-run artifact; this binds its subject and qualified content to the
-            // request before the job's own phase output directory exists.
             case ["receive",
                 var phase] when phase is "observation" or "publication" or "verification":
-                IReleasePreparation transferred = Preparation();
-                transferred.Validate();
-                if (transferred is BrowserStorePreparationResult browser && browser.Target != store)
+                ReleasePreparationResult transferred = Preparation();
+                route.Adapter.ValidatePreparation(transferred);
+                if (store is not null && transferred.Target != store)
                     throw new InvalidDataException("Transferred store target mismatch.");
                 Fresh(phase);
                 break;
             case ["state"]:
-                string observationPath = At("observation/observation.json");
-                bool needed;
-                if (store is not null)
-                    needed = BrowserStoreRelease.WriteNeeded(
-                        (BrowserStorePreparationResult)Preparation(),
-                        Read(observationPath, TransferJson.Default.StoreObservation));
-                else
-                {
-                    var read = (buddy ? route.BuddyObservation : null) ?? route.Observation ??
-                        throw new InvalidDataException("Unsupported Release observation.");
-                    ReleaseObservation observation = read(observationPath).Observation;
-                    Same(observation.Subject);
-                    needed = observation.Files.Any(file => file.State == ReleaseFileState.Absent);
-                }
+                ReleaseObservationResult observed = Read(At("observation/observation.json"),
+                    TransferJson.Default.ReleaseObservationResult);
+                Same(observed.Observation.Subject);
+                if (store is not null) route.Adapter.ValidateObservation(Preparation(), observed);
+                bool needed = ReleaseEngine.WriteNeeded(observed.Observation);
                 File.AppendAllText(Env("GITHUB_OUTPUT"), "write-needed=" + (
                     needed ? "true" : "false") + "\n");
                 break;
             case ["source-config", var directory] when ecosystem == "ruby":
                 Write(At("source-tools.json"), new RubySourceTools(Env("RUBY_EXECUTABLE"),
                     Path.Combine(control, "source.rb"), Fresh(directory)),
-                        TransferJson.Default.RubySourceTools);
+                    TransferJson.Default.RubySourceTools);
                 break;
             case ["publisher-config", var directory] when ecosystem == "ruby":
                 Write(At("publisher-tools.json"), new RubyPublisherTools(Env("RUBY_EXECUTABLE"),
                     Env("GEM_EXECUTABLE"), Fresh(directory)),
-                        TransferJson.Default.RubyPublisherTools);
+                    TransferJson.Default.RubyPublisherTools);
                 break;
             case ["tool-request"] when ecosystem == "python":
-                Write(At("index-tool-request.json"), new PythonIndexToolRequest(Env(
-                    "UV_EXECUTABLE"),
-                    Env("PYTHON_EXECUTABLE"), Path.Combine(control, "index-requirements.txt"),
+                Write(At("index-tool-request.json"), new PythonIndexToolRequest(
+                    Env("UV_EXECUTABLE"), Env("PYTHON_EXECUTABLE"),
+                    Path.Combine(control, "index-requirements.txt"),
                     Fresh("index-tool-scratch")), TransferJson.Default.PythonIndexToolRequest);
                 break;
             case ["index-config", var directory] when ecosystem == "python":
-                Write(At("index-tools.json"), new PythonIndexTools(Read(At(
-                    "index-tool-result.json"),
-                    TransferJson.Default.PythonIndexToolResult).Interpreter, Path.Combine(
-                        control, "packages.py"),
-                    Fresh(directory)), TransferJson.Default.PythonIndexTools);
+                Write(At("index-tools.json"), new PythonIndexTools(Read(
+                    At("index-tool-result.json"),
+                    TransferJson.Default.PythonIndexToolResult).Interpreter,
+                    Path.Combine(control, "packages.py"), Fresh(directory)),
+                    TransferJson.Default.PythonIndexTools);
                 break;
             case ["publisher-config"] when ecosystem == "python":
                 Write(At("publisher-tools.json"), new PythonPublisherTools(Env("UV_EXECUTABLE"),
@@ -232,8 +190,6 @@ internal static class ReleaseJobInputs
 
     private static T Read<T>(string path, JsonTypeInfo<T> type) =>
         ReleaseCli.Read(path, type);
-    private static Func<string, T> Reader<T>(JsonTypeInfo<T> type) =>
-        path => Read(path, type);
     private static void Write<T>(string path, T value, JsonTypeInfo<T> type) =>
         File.WriteAllText(path, JsonSerializer.Serialize(value, type) + "\n");
 }

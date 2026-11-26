@@ -270,18 +270,9 @@ public sealed class BashWorkflowCallerTests(TestContext context)
             foreach (string phase in new[] { "prepared", "observation" })
                 Directory.CreateDirectory(Path.Combine(Root, phase));
             string preparation = Path.Combine(Root, "prepared/preparation.json");
-            if (ecosystem == "npm")
-                Write(preparation, new NpmPreparationResult(Prepared, commands, []),
-                    TransferJson.Default.NpmPreparationResult);
-            else if (ecosystem == "python")
-                Write(preparation, new PythonPreparationResult(Prepared, native, commands, []),
-                    TransferJson.Default.PythonPreparationResult);
-            else if (github)
-                Write(preparation, new GithubReleasePreparationResult(Prepared, native, commands,
-                    []), TransferJson.Default.GithubReleasePreparationResult);
-            else
-                Write(preparation, new RubyPreparationResult(Prepared, native, commands, []),
-                    TransferJson.Default.RubyPreparationResult);
+            Write(preparation, new ReleasePreparationResult(Prepared,
+                ecosystem == "npm" ? new(StringComparer.Ordinal) : native, commands, []),
+                TransferJson.Default.ReleasePreparationResult);
             // The initial observation is exact, so completion requires no publication result.
             WriteObservation("observation/observation.json", ReleaseFileState.Exact);
             if (ecosystem == "python")
@@ -319,20 +310,9 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         internal void WriteFinal(ReleaseFileState state) =>
             WriteObservation("controlled-final.json", state);
 
-        internal ReleaseOutcome Outcome()
-        {
-            string json = File.ReadAllText(Path.Combine(Root, "verification/outcome.json"));
-            return ecosystem switch
-            {
-                "npm" => JsonSerializer.Deserialize(json, TransferJson.Default.ReleaseOutcome)!,
-                "python" => JsonSerializer.Deserialize(json,
-                    TransferJson.Default.PythonCompletionResult)!.Outcome,
-                "github-release" => JsonSerializer.Deserialize(json,
-                    TransferJson.Default.GithubReleaseCompletionResult)!.Outcome,
-                _ => JsonSerializer.Deserialize(json,
-                    TransferJson.Default.RubyCompletionResult)!.Outcome,
-            };
-        }
+        internal ReleaseOutcome Outcome() => ReleaseCli.Read(
+            Path.Combine(Root, "verification/outcome.json"),
+            TransferJson.Default.ReleaseCompletionResult).Outcome;
 
         private void WriteObservation(string name, ReleaseFileState state)
         {
@@ -342,24 +322,20 @@ public sealed class BashWorkflowCallerTests(TestContext context)
                     file.Version, state, state == ReleaseFileState.Exact ? file.Size : null,
                     state == ReleaseFileState.Exact ? file.Sha256 : null)).ToArray(), [check],
                 [new(check, ReleaseCheckStatus.Passed)]);
-            if (ecosystem == "npm")
-                Write(path, new GithubNpmObservationResult(Observation("native-package-control"),
-                    []), TransferJson.Default.GithubNpmObservationResult);
-            else if (ecosystem == "python")
-                Write(path, new PythonIndexObservationResult(Observation("public-index-files"),
-                    []), TransferJson.Default.PythonIndexObservationResult);
-            else if (ecosystem == "github-release")
-                Write(path, new GithubReleaseObservationResult(Observation(
-                    GithubReleaseDestination.Check), 7, []),
-                    TransferJson.Default.GithubReleaseObservationResult);
-            else
-                Write(path, new RubyObservationResult(Observation("native-source-original"),
-                    new(state switch
-                    {
-                        ReleaseFileState.Absent => RubySourceState.Absent,
-                        ReleaseFileState.Exact => RubySourceState.Present,
-                        _ => RubySourceState.Unknown,
-                    }, null, null, [])), TransferJson.Default.RubyObservationResult);
+            ReleaseObservationResult observed = ecosystem switch
+            {
+                "npm" => new(Observation("native-package-control"), []),
+                "python" => new(Observation("public-index-files"), []),
+                "github-release" => new(Observation(GithubReleaseDestination.Check), [],
+                    ReleaseId: 7),
+                _ => new(Observation("native-source-original"), [], RubySource: new(state switch
+                {
+                    ReleaseFileState.Absent => RubySourceState.Absent,
+                    ReleaseFileState.Exact => RubySourceState.Present,
+                    _ => RubySourceState.Unknown,
+                }, null, null, [])),
+            };
+            Write(path, observed, TransferJson.Default.ReleaseObservationResult);
         }
 
         private static ReleaseFile Original(string build, string output, string kind, string name,

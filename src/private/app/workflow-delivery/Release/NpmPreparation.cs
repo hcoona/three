@@ -5,27 +5,15 @@ using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Release;
 
-internal sealed record NpmPreparationResult(PreparedRelease Prepared,
-    ReleaseCommand[] Commands, string[] Errors) : IReleasePreparation
-{
-    public void Validate()
-    {
-        ReleaseCompletion.Validate(Prepared);
-        _ = NpmReleaseUnits.Admit(Prepared.Subject);
-        ReleasePolicy.RequireQualified(Prepared);
-        if (Errors.Length != 0)
-            throw new InvalidDataException("Unqualified npm preparation.");
-    }
-}
-
 internal static class NpmPreparation
 {
-    internal static Task<NpmPreparationResult> PrepareAsync(ReleasePreparationRequest request,
+    internal static Task<ReleasePreparationResult> PrepareAsync(ReleasePreparationRequest request,
         CancellationToken token) => PrepareAsync(request, NativeProcess.ExecuteAsync,
             (checkout, revision, product, cancellation) =>
                 new NbgvInputReader(checkout).NpmVersion(revision, product, cancellation), token);
 
-    internal static async Task<NpmPreparationResult> PrepareAsync(ReleasePreparationRequest request,
+    internal static async Task<ReleasePreparationResult> PrepareAsync(
+        ReleasePreparationRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         Func<string, GitRevision, string, CancellationToken, string> version,
         CancellationToken token)
@@ -164,7 +152,7 @@ internal static class NpmPreparation
         foreach (string id in recipe.Required.Skip(1))
             await qualification.CheckAsync(id, actions[id]);
         return new(new(request.Subject, [.. files], [.. recipe.Required], qualification.Checks),
-            qualification.Commands, qualification.Errors);
+            new(StringComparer.Ordinal), qualification.Commands, qualification.Errors);
 
         Task<NativeCommandResult> RunAsync(string check, NativeCommand command) =>
             qualification.RunAsync(command with

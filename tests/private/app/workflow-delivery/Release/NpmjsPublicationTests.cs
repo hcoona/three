@@ -24,7 +24,7 @@ public sealed class NpmjsPublicationTests
         var commands = new List<NativeCommand>();
         int reads = 0;
 
-        NpmjsPublicationResult result = await NpmjsPublication.PublishAsync(files.Prepared,
+        ReleasePublicationResult result = await NpmjsPublication.PublishAsync(files.Prepared,
             files.Originals, files.Runtime, files.Tools, Platform(),
             (command, _) =>
             {
@@ -180,7 +180,7 @@ public sealed class NpmjsPublicationTests
     private static NativeCommandResult Success(string output) => new(NativeTermination.Exited,
         0, output, "", 0, null);
 
-    private static NpmjsObservationResult Observe(PreparedRelease prepared,
+    private static ReleaseObservationResult Observe(PreparedRelease prepared,
         ReleaseFileState state)
     {
         ReleaseFile file = prepared.Files[0];
