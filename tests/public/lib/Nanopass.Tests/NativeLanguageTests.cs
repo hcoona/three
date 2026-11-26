@@ -81,6 +81,32 @@ public sealed class NativeLanguageTests
     }
 
     [TestMethod]
+    public void TypeFirstExtension_PrefersExplicitTerminalToInheritedNonterminal()
+    {
+        var value = NativeBaseLanguage.Parse("(int 7)");
+        var datum = SExpr.List(SExpr.Parse("hold"), SExpr.FromValue(value));
+        OpaqueBaseExpressionLanguage.Expr expected = new OpaqueBaseExpressionLanguage.Hold(value);
+
+        Assert.AreEqual(expected, OpaqueBaseExpressionLanguage.Parse(datum));
+        Assert.AreEqual(datum, OpaqueBaseExpressionLanguage.Unparse(expected, raw: true));
+    }
+
+    [TestMethod]
+    public void TypeFirstSyntax_UsesTheSelectedTerminalWithTheSameClrType()
+    {
+        SharedTerminalTypeLanguage.Expr expected = new SharedTerminalTypeLanguage.Prim(
+            new Symbol("add"));
+        var parsed = SharedTerminalTypeLanguage.Parse("(prim add)");
+
+        Assert.AreEqual(expected, parsed);
+        Assert.AreEqual(
+            "(prim add)", SharedTerminalTypeLanguage.UnparseToString(parsed, raw: true));
+        Assert.AreEqual("(prim add!)", SharedTerminalTypeLanguage.UnparseToString(parsed));
+        Assert.ThrowsExactly<NanopassParseException>(
+            () => SharedTerminalTypeLanguage.Parse("(prim other)"));
+    }
+
+    [TestMethod]
     public void Prune_UsesResolvedDependenciesInsteadOfInferringFromSyntaxAliases()
     {
         var result = NativeBaseLanguage.Prune().Format();
@@ -89,4 +115,27 @@ public sealed class NativeLanguageTests
         var term = NativeBaseLanguage.Parse("(endpoint (unit))");
         Assert.AreEqual("(endpoint (unit))", NativeBaseLanguage.UnparseToString(term));
     }
+}
+
+[Language, Extends(typeof(NativeBaseLanguage))]
+[Terminal(typeof(NativeBaseLanguage.Expr), "old")]
+internal static partial class OpaqueBaseExpressionLanguage
+{
+    public sealed record Hold(NativeBaseLanguage.Expr Value);
+}
+
+[Language]
+[Terminal(typeof(Symbol), "x", Name = "variable")]
+[Terminal(typeof(Symbol), "p", Name = "primitive", Predicate = nameof(IsPrimitive),
+    Prettifier = nameof(PrintPrimitive))]
+internal static partial class SharedTerminalTypeLanguage
+{
+    public partial union Expr(Prim);
+
+    [Syntax("(prim p)")]
+    public sealed record Prim(Symbol Name);
+
+    private static bool IsPrimitive(Symbol value) => value == new Symbol("add");
+
+    private static Symbol PrintPrimitive(Symbol value) => new(value.Name + "!");
 }

@@ -27,20 +27,30 @@ namespace Hcoona.Nanopass.Generators;
 
 internal sealed class LanguageEmitter(LanguageModel model)
 {
+    internal const string RuntimeMemberName = "__NanopassRuntime";
+
     private const string Runtime = "global::Hcoona.Nanopass.";
     private const string SystemNamespace = "global::System.";
-    private static readonly string[] FixedStaticMemberNames =
+    private static readonly string[] FixedPublicStaticMemberNames =
     [
-        "Grammar", "Descriptor", "ToSExpression", "DiffTo", "Prune", "Parse", "Unparse",
-        "UnparseObject", "UnparseToString", "CountNodes", "IsLanguageTerm", "Equals",
-        "ReferenceEquals", "GetHashCode", "GetType", "ToString", "MemberwiseClone",
+        "Descriptor", "ToSExpression", "DiffTo", "Prune", "Parse", "Unparse",
+        "UnparseObject", "UnparseToString", "CountNodes", "IsLanguageTerm",
+    ];
+
+    private static readonly string[] OtherReservedMemberNames =
+    [
+        RuntimeMemberName, "Equals", "ReferenceEquals", "GetHashCode",
+        "GetType", "ToString", "MemberwiseClone",
     ];
 
     private readonly StringBuilder source = new();
     private int indentation;
 
     internal static IEnumerable<string> StaticMemberNames(IEnumerable<string> nonTerminals) =>
-        FixedStaticMemberNames.Concat(
+        PublicStaticMemberNames(nonTerminals).Concat(OtherReservedMemberNames);
+
+    internal static IEnumerable<string> PublicStaticMemberNames(IEnumerable<string> nonTerminals) =>
+        FixedPublicStaticMemberNames.Concat(
             nonTerminals.SelectMany(static name => new[] { "Parse" + name, "Is" + name }));
 
     internal static IEnumerable<string> CaseTypes(
@@ -214,7 +224,7 @@ internal sealed class LanguageEmitter(LanguageModel model)
 
     private void EmitRuntime()
     {
-        this.Line($"private static {Runtime}LanguageRuntime Grammar {{ get; }} = "
+        this.Line($"private static {Runtime}LanguageRuntime {RuntimeMemberName} {{ get; }} = "
             + $"new({Literal(model.Name)},");
         this.indentation++;
         this.Open("[", null);
@@ -319,9 +329,11 @@ internal sealed class LanguageEmitter(LanguageModel model)
             + $"=> Parse{model.Entry}(datum);");
         this.Line($"public static {entry} Parse(string text) => Parse{model.Entry}(text);");
         this.Line($"public static {Runtime}SExpr UnparseObject(object? ir, bool raw = false) "
-            + "=> Grammar.Unparse(ir, raw);");
-        this.Line("public static int CountNodes(object? ir) => Grammar.CountNodes(ir);");
-        this.Line("public static bool IsLanguageTerm(object? ir) => Grammar.IsTerm(ir);");
+            + $"=> {RuntimeMemberName}.Unparse(ir, raw);");
+        this.Line($"public static int CountNodes(object? ir) => "
+            + $"{RuntimeMemberName}.CountNodes(ir);");
+        this.Line($"public static bool IsLanguageTerm(object? ir) => "
+            + $"{RuntimeMemberName}.IsTerm(ir);");
         this.Line($"public static {Runtime}SExpr ToSExpression(bool includePrettifiers = false) "
             + $"=> {Runtime}LanguageServices.ToSExpression(Descriptor, includePrettifiers);");
         this.Line($"public static {Runtime}SExpr DiffTo({Runtime}LanguageDescriptor target) "
@@ -334,16 +346,17 @@ internal sealed class LanguageEmitter(LanguageModel model)
             string name = model.NonTerminals[index].Name;
             string type = Id(name);
             this.Line($"public static {type} Parse{name}({Runtime}SExpr datum) "
-                + $"=> ({type})Grammar.Parse({Number(index)}, datum);");
+                + $"=> ({type}){RuntimeMemberName}.Parse({Number(index)}, datum);");
             this.Line($"public static {type} Parse{name}(string text) "
                 + $"=> Parse{name}({Runtime}SExpr.Parse(text));");
             this.Line($"public static {Runtime}SExpr Unparse({type} ir, bool raw = false) "
-                + "=> Grammar.Unparse(ir, raw);");
+                + $"=> {RuntimeMemberName}.Unparse(ir, raw);");
             this.Line($"public static string UnparseToString({type} ir, bool raw = false) "
                 + "=> Unparse(ir, raw).Format();");
-            this.Line($"public static int CountNodes({type} ir) => Grammar.CountNodes(ir);");
+            this.Line($"public static int CountNodes({type} ir) => "
+                + $"{RuntimeMemberName}.CountNodes(ir);");
             this.Line($"public static bool Is{name}(object? ir) "
-                + $"=> Grammar.IsTerm({Number(index)}, ir);");
+                + $"=> {RuntimeMemberName}.IsTerm({Number(index)}, ir);");
         }
     }
 

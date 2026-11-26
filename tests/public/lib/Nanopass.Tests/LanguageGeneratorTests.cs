@@ -797,6 +797,63 @@ public sealed class LanguageGeneratorTests(TestContext testContext)
         _ = this.Emit(this.Generate(this.Compile("ShadowedTerminal", input)));
     }
 
+    [TestMethod]
+    [DataRow("", "e")]
+    [DataRow("", "tVector2Term")]
+    [DataRow("""[Terminal(typeof(int), "tVector2Term")]""", "tSystemNumericsVector2Term")]
+    [DataRow("""
+        [Terminal(typeof(bool), "b", Name = "vector2")]
+        [Terminal(typeof(int), "n", Name = "System.Numerics.Vector2")]
+        """, "e")]
+    public void NativeFields_InferSuffixSafeUniqueTerminalNamesAndMetavariables(
+        string terminals, string nonTerminalMetaVar)
+    {
+        var input = $$"""
+            [Language]
+            {{terminals}}
+            public static partial class Shapes
+            {
+                [NonTerminal("{{nonTerminalMetaVar}}")]
+                public partial union Expr(Point);
+                public sealed record Point(System.Numerics.Vector2 Position);
+            }
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("InferredTerminal", input)));
+    }
+
+    [TestMethod]
+    public void LanguageName_GrammarDoesNotConflictWithRuntime()
+    {
+        const string input = """
+            [Language, NonTerminalDef("Expr", ["e"], "(unit)")]
+            public static partial class Grammar;
+            """;
+
+        _ = this.Emit(this.Generate(this.Compile("GrammarName", input)));
+    }
+
+    [TestMethod]
+    [DataRow("Parse")]
+    [DataRow("ParseExpr")]
+    [DataRow("IsExpr")]
+    public void LanguageName_ConflictingGeneratedApiReportsNP0105(string name)
+    {
+        var input = $$"""
+            [Language, NonTerminalDef("Expr", ["e"], "(unit)")]
+            public static partial class {{name}};
+            """;
+
+        var result = Driver()
+            .RunGenerators(this.Compile("ConflictingLanguageName", input),
+                testContext.CancellationToken)
+            .GetRunResult();
+        var diagnostic = Assert.ContainsSingle(result.Diagnostics);
+        Assert.AreEqual("NP0105", diagnostic.Id);
+        Assert.Contains($"Language name '{name}'", diagnostic.GetMessage());
+        Assert.IsEmpty(result.GeneratedTrees);
+    }
+
     private CSharpCompilation Compile(
         string name, string declaration, params MetadataReference[] additional) =>
         CSharpCompilation.Create(

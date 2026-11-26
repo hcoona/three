@@ -384,37 +384,73 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
                 ? nonTerminals.FirstOrDefault(item => Equal(bare, item.Name))
                 : null;
             nonTerminal ??= nonTerminals.FirstOrDefault(item =>
-                Equal(type, input.QualifiedName + "." + LanguageEmitter.Id(item.Name))
-                || (inherited is not null
-                    && Equal(type, inherited.QualifiedName + "." + LanguageEmitter.Id(item.Name))));
+                Equal(type, input.QualifiedName + "." + LanguageEmitter.Id(item.Name)));
+            if (nonTerminal is null)
+            {
+                var existing = terminals.FirstOrDefault(item => Equal(item.Type, type));
+                if (existing is not null)
+                {
+                    return new(existing.MetaVars[0], string.Empty, existing.Name, false, 0, false);
+                }
+
+                if (inherited is not null)
+                {
+                    nonTerminal = nonTerminals.FirstOrDefault(item =>
+                        Equal(type, inherited.QualifiedName + "." + LanguageEmitter.Id(item.Name)));
+                }
+            }
+
             if (nonTerminal is not null)
             {
                 return new(nonTerminal.MetaVars[0], string.Empty, nonTerminal.Name, true, 0, false);
             }
 
-            var terminal = terminals.FirstOrDefault(item => Equal(item.Type, type));
-            if (terminal is null)
+            if (type.Length == 0)
             {
-                if (type.Length == 0)
-                {
-                    throw new Failure(5, "A native production contains an unresolved field type.");
-                }
-
-                var shortType = type.Substring(type.LastIndexOf('.') + 1);
-                var meta = "t" + ProductionReader.Identifier(shortType, "Terminal");
-                var name = shortType.ToLowerInvariant();
-                if (terminals.Any(item => Equal(item.Name, name)))
-                {
-                    name = type.Replace("global::", string.Empty);
-                    meta = "t" + ProductionReader.Identifier(name, "Terminal");
-                }
-
-                terminal = new(name, type, new([meta]), null, null, input.QualifiedName);
-                terminals.Add(terminal);
+                throw new Failure(5, "A native production contains an unresolved field type.");
             }
 
-            return new(terminal.MetaVars[0], string.Empty, terminal.Name, false, 0, false);
+            var shortType = type.Substring(type.LastIndexOf('.') + 1);
+            var name = shortType.ToLowerInvariant();
+            var meta = InferredMetaVar(shortType);
+            if (!IsAvailable(name, meta))
+            {
+                var qualifiedName = type.Replace("global::", string.Empty);
+                var qualifiedMeta = InferredMetaVar(qualifiedName);
+                name = qualifiedName;
+                meta = qualifiedMeta;
+                for (int suffix = 2; !IsAvailable(name, meta); suffix++)
+                {
+                    var index = suffix.ToString(CultureInfo.InvariantCulture);
+                    name = qualifiedName + index;
+                    meta = qualifiedMeta + index + "Term";
+                }
+            }
+
+            terminals.Add(new(name, type, new([meta]), null, null, input.QualifiedName));
+            return new(meta, string.Empty, name, false, 0, false);
         }
+
+        static string InferredMetaVar(string typeName)
+        {
+            // Keep the terminal metavariable intact when parsing strips the field index.
+            var meta = "t" + ProductionReader.Identifier(typeName, "Terminal");
+            return char.IsLetter(meta[meta.Length - 1]) ? meta : meta + "Term";
+        }
+
+        bool IsAvailable(string name, string meta) =>
+            !terminals.Any(item => Equal(item.Name, name)
+                || item.MetaVars.Contains(meta, StringComparer.Ordinal))
+            && !nonTerminals.Any(item => item.MetaVars.Contains(meta, StringComparer.Ordinal));
+
+        string TerminalType(string name) => terminals.First(item => Equal(item.Name, name)).Type;
+
+        bool SameShape(LanguageModel.Field left, LanguageModel.Field right) =>
+            left.IsNonTerminal == right.IsNonTerminal
+            && left.SequenceDepth == right.SequenceDepth && left.IsMaybe == right.IsMaybe
+            && (left.IsNonTerminal
+                ? Equal(left.Target, right.Target)
+                : Equal(TerminalType(left.Target), TerminalType(right.Target)));
 
         LanguageModel.Production ReadNativeRecord(LanguageInput.NativeRecord record)
         {
@@ -505,10 +541,6 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
         return syntax;
     }
 
-    private static bool SameShape(LanguageModel.Field left, LanguageModel.Field right) =>
-        Equal(left.Target, right.Target) && left.IsNonTerminal == right.IsNonTerminal
-        && left.SequenceDepth == right.SequenceDepth && left.IsMaybe == right.IsMaybe;
-
     private static string LowerInitial(string name) =>
         name.Substring(0, 1).ToLowerInvariant() + name.Substring(1);
 
@@ -565,6 +597,14 @@ internal sealed class LanguageResolver(ImmutableArray<LanguageInput> inputs)
             StringComparer.Ordinal);
         var nonTerminalNames = new HashSet<string>(
             nonTerminals.Select(static item => item.Name), StringComparer.Ordinal);
+        if (Equal(input.Name, LanguageEmitter.RuntimeMemberName)
+            || LanguageEmitter.PublicStaticMemberNames(nonTerminalNames)
+                .Contains(input.Name, StringComparer.Ordinal))
+        {
+            throw new Failure(
+                5, $"Language name '{input.Name}' conflicts with a generated language member.");
+        }
+
         var reserved = new HashSet<string>(
             LanguageEmitter.StaticMemberNames(nonTerminalNames), StringComparer.Ordinal)
         {
