@@ -86,4 +86,41 @@ public sealed class NuGetReleaseUnitsTests
             """, "src/public/lib/other-python-lib/workflow-delivery.release-unit.yml");
         Assert.ThrowsExactly<InvalidDataException>(() => ReleaseUnitCatalog.ToPython(invalid));
     }
+
+    [TestMethod]
+    public void BrowserStoreRejectsLiveBuddyAndPythonResolvesNestedEntryPoints()
+    {
+        ReleaseUnitDeclaration omittedChannels = ReleaseUnitDeclarationReader.Read("""
+            schema: workflow-delivery/v3/release-unit
+            release-unit: sample-extension
+            builds:
+              - id: extension
+                definition: node/browser-extension-v1
+                entry-point: package.json
+                qualification:
+                  manifest-name: Sample
+                outputs:
+                  - {id: chrome-zip, role: primary-package, kind: chrome-extension-zip}
+            """, "src/public/lib/sample-extension/workflow-delivery.release-unit.yml");
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ReleaseUnitCatalog.ToBrowserStore(omittedChannels));
+
+        BrowserStoreUnit browser = ReleaseUnitCatalog.BrowserStore("steam-account-history-to-csv");
+        Assert.ThrowsExactly<InvalidDataException>(() => ReleaseUnitCatalog.AdmitBrowserStore(
+            new(new('a', 40), "refs/heads/feature", browser.Id, browser.Declaration,
+                "buddy", "chrome-web-store", DryRun: false)));
+
+        ReleaseUnitDeclaration nestedPython = ReleaseUnitDeclarationReader.Read("""
+            schema: workflow-delivery/v3/release-unit
+            release-unit: nested-pkg
+            builds:
+              - id: python-distributions
+                definition: python/distribution-set-v1
+                entry-point: nested/pyproject.toml
+                outputs:
+                  - {id: wheel, role: primary-package, kind: python-wheel}
+            """, "src/public/lib/nested-pkg/workflow-delivery.release-unit.yml");
+        Assert.AreEqual("src/public/lib/nested-pkg/nested",
+            ReleaseUnitCatalog.ToPython(nestedPython).ProjectDirectory);
+    }
 }

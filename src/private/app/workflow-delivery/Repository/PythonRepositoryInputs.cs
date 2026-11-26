@@ -142,7 +142,10 @@ internal static class PythonRepositoryInputs
             "global.json" || IsWorkflow(path))) ||
         (target == "tests/private/app/workflow-delivery/Native/Python" &&
             (Under(path, "src/private/app/workflow-delivery/Native/Python") ||
-             Under(path, "src/public/lib/nbgv-python"))) ||
+             Under(path, "src/public/lib/nbgv-python") ||
+             Under(path,
+                 "tests/private/app/workflow-delivery/fixtures/products/" +
+                 "hcoona-release-smoke-python"))) ||
         (target.StartsWith(AzureRoots[0] + "/", StringComparison.Ordinal) && Azure(path)) ||
         (target == "tests/eng/test_general_ci_workflow.py" &&
             (path == ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml" ||
@@ -158,7 +161,8 @@ internal static class PythonRepositoryInputs
             path is ".github/workflows/workflow-delivery-v3-browser-store-release.yml" or
                 "global.json") ||
         (target == "tests/eng/test_release_batch_dispatch.py" &&
-            (path == "eng/scripts/release_batch_dispatch.py" || IsReleaseCallerWorkflow(path))) ||
+            (path == "eng/scripts/release_batch_dispatch.py" || IsReleaseCallerWorkflow(path) ||
+             IsReleaseUnitDeclaration(path))) ||
         (target == "tests/eng/test_svgedit_renovate.py" &&
             path is "renovate.json" or ".github/renovate/global.cjs" or
                 "src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/" +
@@ -187,6 +191,11 @@ internal static class PythonRepositoryInputs
         IsWorkflow(path) &&
         path.StartsWith(".github/workflows/workflow-delivery-v3-", StringComparison.Ordinal) &&
         path.EndsWith("-release.yml", StringComparison.Ordinal);
+
+    private static bool IsReleaseUnitDeclaration(string path) =>
+        (Under(path, "src/public") ||
+         Under(path, "tests/private/app/workflow-delivery/fixtures/products")) &&
+        path.EndsWith("/workflow-delivery.release-unit.yml", StringComparison.Ordinal);
 
     private static bool IsPublicInventoryInput(string path) =>
         Under(path, "src/public") &&

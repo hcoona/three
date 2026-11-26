@@ -35,7 +35,9 @@ QUALITY = "python/hcoona-release-smoke-python-v1"
 DESCRIPTOR = "workflow-delivery.release-unit.yml"
 
 
-def _discover_project_dir(name: str, repo_root: Path) -> Path | None:
+def _discover_unit(name: str, repo_root: Path) -> tuple[Path, list[str]] | None:
+    import yaml  # noqa: PLC0415
+
     roots = (
         repo_root / "src/public",
         repo_root / "tests/private/app/workflow-delivery/fixtures/products",
@@ -43,13 +45,41 @@ def _discover_project_dir(name: str, repo_root: Path) -> Path | None:
     for base in roots:
         if not base.is_dir():
             continue
-        for manifest in sorted(base.rglob("pyproject.toml")):
-            if not (manifest.parent / DESCRIPTOR).is_file():
+        for decl_path in sorted(base.rglob(DESCRIPTOR)):
+            unit = yaml.safe_load(decl_path.read_text(encoding="utf-8"))
+            builds = (unit or {}).get("builds") or []
+            if len(builds) != 1:
+                continue
+            build = builds[0]
+            if build.get("definition") != "python/distribution-set-v1":
+                continue
+            manifest = (decl_path.parent / build["entry-point"]).resolve()
+            if not manifest.is_file():
                 continue
             data = tomllib.loads(manifest.read_text(encoding="utf-8"))
             if (data.get("project") or {}).get("name") == name:
-                return manifest.parent
+                qual = build.get("qualification") or {}
+                return manifest.parent, list(qual.get("api") or [])
     return None
+
+
+def _find_declared_api(project_dir: Path) -> list[str]:
+    import yaml  # noqa: PLC0415
+
+    manifest = (project_dir / "pyproject.toml").resolve()
+    for candidate in (project_dir.resolve(), *project_dir.resolve().parents):
+        decl_path = candidate / DESCRIPTOR
+        if decl_path.is_file():
+            unit = yaml.safe_load(decl_path.read_text(encoding="utf-8"))
+            for build in (unit or {}).get("builds") or []:
+                entry = build.get("entry-point")
+                if entry and (decl_path.parent / entry).resolve() == manifest:
+                    qual = build.get("qualification") or {}
+                    return list(qual.get("api") or [])
+        if (candidate / "dirs.proj").is_file():
+            break
+    message = f"Missing release-unit declaration for {project_dir}"
+    raise ValueError(message)
 
 
 def _project_spec(
@@ -81,16 +111,11 @@ def _project_spec(
     }
     if (project_dir / "LICENSE").is_file():
         sdist_files.add("LICENSE")
-    if api_override is not None:
-        api = api_override
-    else:
-        import yaml  # noqa: PLC0415
-
-        unit = yaml.safe_load(
-            (project_dir / DESCRIPTOR).read_text(encoding="utf-8")
-        )
-        qual = unit["builds"][0].get("qualification") or {}
-        api = list(qual.get("api") or [])
+    api = (
+        api_override
+        if api_override is not None
+        else _find_declared_api(project_dir)
+    )
     return {
         "module": module,
         "wheel": wheel_files,
@@ -118,11 +143,20 @@ def product(
     if quality != QUALITY:
         message = "Unsupported registered Python package quality"
         raise ValueError(message)
-    resolved = project_dir or _discover_project_dir(name, _repo_root())
-    if resolved is None or not resolved.is_dir():
+    if project_dir is not None:
+        if not project_dir.is_dir():
+            message = "Unsupported registered Python package quality"
+            raise ValueError(message)
+        return _project_spec(project_dir, api_override)
+    discovered = _discover_unit(name, _repo_root())
+    if discovered is None or not discovered[0].is_dir():
         message = "Unsupported registered Python package quality"
         raise ValueError(message)
-    return _project_spec(resolved, api_override)
+    resolved_dir, discovered_api = discovered
+    return _project_spec(
+        resolved_dir,
+        api_override if api_override is not None else discovered_api,
+    )
 
 
 def _project_metadata(project: Path) -> ProjectMetadata:
@@ -339,7 +373,7 @@ def inspect_archive(  # noqa: PLR0913 - optional project_dir override for transf
     )
     from packaging.version import Version  # noqa: PLC0415
 
-    selected = product(name, quality, project_dir=project_dir)
+    selected = product(name, quality, project_dir=project_dir, api_override=[])
     if not path.is_file():
         message = "Invalid original distribution"
         raise ValueError(message)

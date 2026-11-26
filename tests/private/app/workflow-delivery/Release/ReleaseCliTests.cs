@@ -266,9 +266,9 @@ public sealed class ReleaseCliTests
 
     [TestMethod]
     [DataRow("unknown-unit", "official", "npmjs", "Unsupported npm Release unit.")]
-    [DataRow(NpmReleaseUnits.Hexo, "buddy", "npmjs",
+    [DataRow("hexo-renderer-asciidoc", "buddy", "npmjs",
         "Unsupported selected npm destination and mode.")]
-    [DataRow(NpmReleaseUnits.Hexo, "official", "github-packages-npm",
+    [DataRow("hexo-renderer-asciidoc", "official", "github-packages-npm",
         "Unsupported selected npm destination and mode.")]
     public void StandaloneNpmCommandsRejectUnadmittedUnitsAndMismatchedChannelPairs(string unit,
         string channel, string destination, string expectedDiagnostic)
@@ -329,7 +329,7 @@ public sealed class ReleaseCliTests
             byte[] bytes = [1, 2, 3];
             Directory.CreateDirectory(Path.Combine(Root, "original"));
             File.WriteAllBytes(Path.Combine(Root, "original/package.tgz"), bytes);
-            Prepared = new(new(new('a', 40), "refs/heads/main", NpmReleaseUnits.Hexo,
+            Prepared = new(new(new('a', 40), "refs/heads/main", "hexo-renderer-asciidoc",
                 "src/public/lib/hexo-renderer-asciidoc/workflow-delivery.release-unit.yml",
                 github ? "buddy" : "official",
                 github ? "github-packages-npm" : "npmjs", true),

@@ -32,8 +32,8 @@ internal sealed record NpmReleaseUnit(string Id, string Declaration, string Sour
             deadlineSeconds);
 }
 
-internal sealed record PythonReleaseUnit(string Id, string Declaration, bool StaticVersion,
-    bool RuntimeClosure, string[] Dependencies, string? Tests, string[] Api,
+internal sealed record PythonReleaseUnit(string Id, string Declaration, string ProjectDirectory,
+    bool StaticVersion, bool RuntimeClosure, string[] Dependencies, string? Tests, string[] Api,
     ReleaseUnitDeclaration Source);
 
 internal sealed record RubyReleaseUnit(string Id, string Declaration, string Preset,
@@ -187,7 +187,9 @@ internal static class ReleaseUnitCatalog
     internal static BrowserStoreUnit AdmitBrowserStore(ReleaseSubject subject)
     {
         BrowserStoreUnit unit = BrowserStore(subject.Unit);
-        if (subject.Declaration != unit.Declaration ||
+        bool allowedStoreChannel = subject.Channel == "official" ||
+            (subject.Channel == "buddy" && subject.DryRun);
+        if (subject.Declaration != unit.Declaration || !allowedStoreChannel ||
             !unit.Source.AllowsChannel(subject.Channel, subject.DryRun))
             throw new InvalidDataException("Unsupported browser-store release request.");
         return unit;
@@ -322,7 +324,9 @@ internal static class ReleaseUnitCatalog
         if (staticVersion && decl.Id != "nbgv-python")
             throw new InvalidDataException(
                 "Static Python versioning is reserved for nbgv-python.");
-        return new(decl.Id, decl.SourcePath, staticVersion,
+        string entryPath = NormalizeRelativePath(
+            ParentDirectory(decl.SourcePath) + "/" + build.EntryPoint);
+        return new(decl.Id, decl.SourcePath, ParentDirectory(entryPath), staticVersion,
             qual?.RuntimeClosure ?? false, qual?.Dependencies ?? [],
             qual?.Tests, qual?.Api ?? [], decl);
     }
@@ -350,8 +354,11 @@ internal static class ReleaseUnitCatalog
             qual.Editor ?? throw new InvalidDataException("Missing editor."), decl);
     }
 
-    private static BrowserStoreUnit ToBrowserStore(ReleaseUnitDeclaration decl)
+    internal static BrowserStoreUnit ToBrowserStore(ReleaseUnitDeclaration decl)
     {
+        if (decl.EffectiveChannels.Contains("buddy", StringComparer.Ordinal))
+            throw new InvalidDataException(
+                "Browser stores must remain Official-only for live releases.");
         ReleaseBuild build = decl.Builds.Single();
         ReleaseQualificationSpec qual = build.Qualification
             ?? throw new InvalidDataException($"Missing browser-store qualification on {decl.Id}.");

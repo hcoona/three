@@ -388,6 +388,46 @@ def test_unregistered_product_is_unsupported(tmp_path):
         )
 
 
+def test_nested_entry_point_resolves_native_project_and_ancestor_declaration(
+    tmp_path, monkeypatch
+):
+    """Nested pyproject entry-points resolve independently of declaration."""
+    (tmp_path / "dirs.proj").write_text("<Project />\n", encoding="utf-8")
+    unit_dir = tmp_path / "src/public/lib/nested-demo"
+    proj_dir = unit_dir / "nested"
+    pkg_dir = proj_dir / "src/nested_demo"
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "__init__.py").write_text(
+        "def run_probe():\n    return True\n", encoding="utf-8"
+    )
+    (proj_dir / "README.md").write_text("# Demo\n", encoding="utf-8")
+    (proj_dir / "pyproject.toml").write_text(
+        '[project]\nname = "nested-demo"\nversion = "1.0.0"\n',
+        encoding="utf-8",
+    )
+    (unit_dir / "workflow-delivery.release-unit.yml").write_text(
+        "schema: workflow-delivery/v3/release-unit\n"
+        "release-unit: nested-demo\n"
+        "builds:\n"
+        "  - id: python-distributions\n"
+        "    definition: python/distribution-set-v1\n"
+        "    entry-point: nested/pyproject.toml\n"
+        "    qualification:\n"
+        "      api: [run_probe]\n"
+        "    outputs:\n"
+        "      - {id: wheel, role: primary-package, kind: python-wheel}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(packages, "_repo_root", lambda: tmp_path)
+    resolved = packages.product("nested-demo", packages.QUALITY)
+    assert resolved["module"] == "nested_demo"
+    assert resolved["api"] == ["run_probe"]
+    by_dir = packages.product(
+        "nested-demo", packages.QUALITY, project_dir=proj_dir
+    )
+    assert by_dir["api"] == ["run_probe"]
+
+
 @pytest.mark.parametrize("dynamic", [False, True])
 def test_static_version_facts_come_from_the_maintained_backend(
     tmp_path, monkeypatch, dynamic

@@ -113,6 +113,14 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("renovate.json", RuntimePytest, true)]
     [DataRow("src/public/lib/nbgv-python/src/removed.py",
         "tests/private/app/workflow-delivery/Native/Python", true)]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
+        "hcoona-release-smoke-python/src/hcoona_release_smoke_python/__init__.py",
+        "tests/private/app/workflow-delivery/Native/Python", true)]
+    [DataRow("src/public/lib/CircularList/workflow-delivery.release-unit.yml",
+        "tests/eng/test_release_batch_dispatch.py", true)]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
+        "hcoona-release-smoke-npm/workflow-delivery.release-unit.yml",
+        "tests/eng/test_release_batch_dispatch.py", false)]
     public void OneSidedInputSelectsIntroducedCheckWithItsOriginalRevision(string path,
         string target, bool inputAtBasis)
     {

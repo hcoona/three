@@ -122,7 +122,7 @@ internal sealed class NpmDestinationAdapter : IDestinationAdapter
     {
         PreparedRelease prepared = preparation.Prepared;
         ReleaseCompletion.Validate(prepared);
-        _ = NpmReleaseUnits.Admit(prepared.Subject);
+        _ = ReleaseUnitCatalog.AdmitNpm(prepared.Subject);
         ReleasePolicy.RequireQualified(prepared);
         if (preparation.Errors.Length != 0 ||
             prepared.Subject.Destination is not ("npmjs" or "github-packages-npm") ||

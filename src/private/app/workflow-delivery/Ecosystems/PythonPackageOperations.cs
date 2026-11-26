@@ -13,8 +13,7 @@ internal sealed class PythonPackageOperations(PythonReleaseUnit unit, PythonPack
     string root)
 {
     internal const string Preset = "python/hcoona-release-smoke-python-v1";
-    private string ProjectPath => Path.Combine(tools.Checkout,
-        ReleaseUnitCatalog.ParentDirectory(unit.Declaration));
+    private string ProjectPath => Path.Combine(tools.Checkout, unit.ProjectDirectory);
 
     private string ApiJson => JsonSerializer.Serialize(unit.Api, TransferJson.Default.StringArray);
     private readonly string archives = Path.Combine(root, "archives");
