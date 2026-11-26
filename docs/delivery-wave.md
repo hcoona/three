@@ -964,13 +964,20 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
   [engineering principles](engineering/engineering-principles.md),
   [documentation portal](README.md),
   [family catalog](governance/record-families.yaml),
-  [.NET compatibility rationale](engineering/dotnet-compatibility.md), root
-  `global.json`, `dirs.proj`, `Directory.Build.props`,
-  `Directory.Packages.props`, `src/public/lib/Directory.Build.props`, and the
-  MIT-licensed upstream
+  [.NET compatibility rationale](engineering/dotnet-compatibility.md),
+  [public release triage](engineering/public-release-triage.md), Workflow
+  Delivery's [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md),
+  [common integration tables](../src/private/app/workflow-delivery/docs/integration/common.md#official-channel-scope),
+  and [.NET/NuGet integration](../src/private/app/workflow-delivery/docs/integration/dotnet.md#concrete-nuget-release-integration),
+  root `global.json`, `dirs.proj`, `Directory.Build.props`,
+  `Directory.Packages.props`, `src/public/lib/Directory.Build.props`,
+  `.github/workflows/workflow-delivery-v3-nuget-release.yml`,
+  `eng/scripts/release_triage.py`, and the MIT-licensed upstream
   [`nanopass/nanopass-framework-racket`](https://github.com/nanopass/nanopass-framework-racket)
-  specification and test suite (retaining upstream copyright and MIT license
-  notices for ported test and reference-compiler material).
+  and
+  [`nanopass/nanopass-framework-scheme`](https://github.com/nanopass/nanopass-framework-scheme)
+  specifications and test suites (retaining verbatim upstream copyright and MIT
+  license notices for ported test and reference-compiler material).
 - **Owner decisions and boundaries:**
     - Create the public library under `src/public/lib/Nanopass/`
       (`Hcoona.Nanopass.csproj`, targeting `net11.0` / C# 15, with `PackageId`,
@@ -981,6 +988,15 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
       packed as an analyzer in `Hcoona.Nanopass`), and test project under
       `tests/public/lib/Nanopass.Tests/` (`Hcoona.Nanopass.Tests.csproj`,
       targeting `net11.0`).
+    - Following merge of [#1851](https://github.com/hcoona/three/pull/1851)'s
+      `public-release-inventory` gate, register `nanopass` (`Hcoona.Nanopass`)
+      as an Official NuGet release unit (`src/public/lib/Nanopass/workflow-delivery.release-unit.yml`,
+      `NuGetReleaseUnits`, analyzer-payload archive/consumer verification,
+      `.github/workflows/workflow-delivery-v3-nuget-release.yml`, and owning
+      integration records) and list `src/public/lib/Nanopass.Generators` in
+      `NON_RELEASE_PUBLIC_DIRS` (`eng/scripts/release_triage.py` and
+      `docs/engineering/public-release-triage.md`) as its packed Roslyn
+      generator/analyzer companion.
     - Upgrade `Microsoft.CodeAnalysis.CSharp` and any directly required
       `Microsoft.CodeAnalysis.*` compiler/workspace packages in
       `Directory.Packages.props` to `5.12.0` (matching the `.NET 11.0.100` SDK
@@ -999,8 +1015,11 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
 - **Advancement and outcome:**
     - Admit concise project records (`src/public/lib/Nanopass/README.md`,
       `ReleaseNotes.md`, and admitted `docs/` architecture/validation records
-      where distinct consumers exist) and reconcile `docs/README.md` and
-      `docs/governance/record-families.yaml`.
+      where distinct consumers exist), register the `nanopass` NuGet release
+      unit and `Nanopass.Generators` companion inventory exemption, and
+      reconcile `docs/README.md`, `docs/governance/record-families.yaml`,
+      `docs/engineering/public-release-triage.md`, and Workflow Delivery NuGet
+      integration records.
     - Implement language definition and incremental grammar algebra (`Extends`,
       terminal/nonterminal/production additions and removals, `maybe` optional
       fields, variadic and nested sequence fields, improper/dotted tails,
@@ -1014,26 +1033,31 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
       generation.
     - Port and pass the applicable upstream `nanopass-framework-racket` test
       suites (`unit-tests.rkt`, `coresheme-to-javascript-compiler.rkt`, and the
-      20-language / 20-pass `compiler.rkt` + `alltests.rkt` suite), iterating
-      independent review and contraction until clean convergence.
+      20-language / 20-pass `compiler.rkt` + `alltests.rkt` suite) together with
+      the owner-requested `nanopass-framework-scheme` supplementary cases
+      (`argument-name-matching`, `pass-parser-unparser`, `Leach-any`, and base
+      duplicate-production diagnostics, excluding unimplemented upstream TODOs),
+      iterating independent review and contraction until clean convergence.
 - **Ordering and gates:** merge this authorization before substantive
-  implementation. Keep implementation, lockfiles, and owning records/routing
-  self-consistent at each merge into `main` across stacked pull requests.
-  Retain applicable independent `engineering-guidance`, `record-system-review`,
-  code review, `GOV-011` finding disposition, explicit-base `records:check`, HK
-  conformance, and `Validate` CI. Material scope or feasibility tradeoffs
-  return to the repository owner.
+  implementation. Keep implementation, lockfiles, release-unit/inventory
+  metadata, and owning records/routing self-consistent at each merge into `main`
+  across stacked pull requests. Retain applicable independent
+  `engineering-guidance`, `open-code-review-delegate` (OCR, for Workflow
+  Delivery changes), `record-system-review`, code review, `GOV-011` finding
+  disposition, explicit-base `records:check`, HK conformance, and `Validate` CI.
+  Material scope or feasibility tradeoffs return to the repository owner.
 - **Acceptance and closure:** all declared capabilities, compile-time
-  diagnostics, code fixes, and ported test suites pass local validation and
-  `Validate` CI with no unresolved material findings after final review and
-  contraction. Close this entry by deleting it in the final implementation pull
-  request (or an explicit Wave-only closure pull request).
+  diagnostics, code fixes, NuGet release-unit preparation/inventory checks, and
+  ported test suites pass local validation and `Validate` CI with no unresolved
+  material findings after final review and contraction. Close this entry by
+  deleting it in the final implementation pull request (or an explicit Wave-only
+  closure pull request).
 - **Exclusions:** no Lisp/Racket hygienic macro, `quasiquote`/`unquote`, or
   custom host-syntax DSL emulation (`with-output-language` / `in-context` /
-  `with-output-language-tests.rkt`); no Workflow Delivery NuGet release-unit
-  registration, live package/release publication, release/proving dispatch,
-  ruleset, credential, authentication, or access change; no change to
-  `CurrentTargetFramework` (`net10.0`) for unrelated projects.
+  `with-output-language-tests.rkt`); no live or dry-run package/release
+  publication, release/proving dispatch, ruleset, Environment, credential,
+  authentication, or access change; no change to `CurrentTargetFramework`
+  (`net10.0`) for unrelated projects.
 
 ### Decouple routine controlled release operations from Delivery Wave
 
