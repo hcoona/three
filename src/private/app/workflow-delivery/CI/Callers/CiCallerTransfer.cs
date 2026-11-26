@@ -123,7 +123,7 @@ internal static class CiCallerTransfer
         return full.GetBoolean();
     }
 
-    private static string ScopeCommit(JsonElement scope, string name)
+    internal static string ScopeCommit(JsonElement scope, string name)
     {
         if (scope.ValueKind != JsonValueKind.Object ||
             !scope.TryGetProperty(name, out JsonElement value) ||

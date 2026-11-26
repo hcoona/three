@@ -16,18 +16,20 @@ Use the repository-pinned SDK from the repository root:
 ```powershell
 dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll `
-  ci comparison pull_request native-event.json <tested-commit>
+  ci caller-control prepare "<root>" "<fresh-state-directory>" workflow_dispatch `
+  native-event.json "<tested-commit>"
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll `
-  ci plan request.json
+  native-message-schemas "<schema-directory>"
 ```
 
 Commands returning structured results emit JSON on stdout; diagnostics use
 stderr. `ci caller-dotnet prepare` instead writes the request JSON to a file
-and prints its path. CI returns `0` for a valid plan or satisfied result, `1`
-for an unsatisfied result, and `2` for invalid input, failed planning or
-unsupported usage. Release preserves actual command outcomes independently of
-business satisfaction. Redirect stdout when a receiving process needs that
-command's output in a file.
+and prints its path. CI commands that emit a `CiOutcome` return `0` when
+satisfied and `1` when unsatisfied; commands without a `CiOutcome` (including
+preparation, planning and `ci caller-node retained`) return `0` on success, and
+any invalid input, failed command or unsupported usage returns `2`. Release
+preserves actual command outcomes independently of business satisfaction.
+Redirect stdout when a receiving process needs that command's output in a file.
 
 Use the checked-in ordinary workflows and the finite typed
 [CI callers](CI/Callers/CiCallerCli.cs) to compose native preparation and requests. The
@@ -37,20 +39,19 @@ and types; internal formats have no compatibility promise. A request must supply
 its required frozen native facts and owned directories, rather than a latest
 artifact, ambient fallback or second dependency declaration.
 
-| Interface                                                                           | Purpose                                                                                           |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `ci comparison`, `ci control-inputs`                                                | Resolve the event comparison and actual control-test resource consumers                           |
-| `ci caller-control prepare`, `ci caller-dotnet/python/ruby/node`                    | Compose existing CI requests, original plans and exact transfers                                  |
-| `ci native-preparation-plan`                                                        | Select the original Linux managed preparation scenarios                                           |
-| `ci plan`, `ci plan-node`, `ci plan-node-group`                                     | Select declared work from native paired facts and reasons                                         |
-| `ci prepare-python-group`, `ci plan-python-group`, `ci run-python-group`            | Prepare, select and execute the original Python plan                                              |
-| `ci prepare-ruby-group`, `ci plan-ruby-group`, `ci run-ruby-group`                  | Prepare, select and execute Ruby checks                                                           |
-| `ci run-dotnet`                                                                     | Execute native managed work                                                                       |
-| `ci run-node`, `ci run-python-package`, `ci result`                                 | Execute selected work or collect its candidate-bound results                                      |
-| `release prepare-*`, destination observation/description                            | Independently qualify originals and describe exact, absent, partial, conflicting or unknown state |
-| `release job-inputs ruby/python/npm/nuget/github-release/browser-store <operation>` | Prepare existing ordinary Release caller inputs and transfers                                     |
-| `native-message-schemas <directory>`                                                | Regenerate static descriptions of maintained native helper messages                               |
-| Destination publication and completion commands                                     | Invoke the native publisher, require separate registry readback and report truthful results       |
+| Interface                                      | Purpose                                                                                           |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `ci caller-control prepare`                    | Resolve the event comparison and prepare checkouts for the control-test resource query            |
+| `ci caller-dotnet`                             | Prepare control, select CI scope, and execute and join native managed groups                      |
+| `ci caller-node`                               | Prepare, plan, execute and join selected Node work                                                |
+| `ci caller-python`, `ci caller-local-python`   | Prepare, plan and execute Python checks in CI or locally                                          |
+| `ci caller-ruby`                               | Prepare, plan and execute Ruby checks                                                             |
+| `ci native-preparation-plan`                   | Select the original Linux managed preparation scenarios                                           |
+| `release job-inputs <ecosystem> <operation>`   | Prepare existing ordinary Release caller inputs and transfers                                     |
+| `release prepare-python-index-tools`           | Prepare Python Index tooling                                                                      |
+| `release prepare-*`, `observe-*`, `describe-*` | Independently qualify originals and describe exact, absent, partial, conflicting or unknown state |
+| `release publish-*`, `complete-*`              | Invoke the native publisher, require separate registry readback and report truthful results       |
+| `native-message-schemas <directory>`           | Regenerate static descriptions of maintained native helper messages                               |
 
 The [static native helper contracts](Native/contracts) come from actual serializer
 metadata. Managed tests check regeneration; native helper tests use the static
