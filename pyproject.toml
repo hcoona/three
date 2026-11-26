@@ -193,6 +193,7 @@ testpaths = [
   "tests/eng/test_node_release_schedule.py",
   "tests/eng/test_python_runtime.py",
   "tests/eng/test_release_batch_dispatch.py",
+  "tests/eng/test_release_triage.py",
   "tests/eng/test_svgedit_renovate.py",
   "tests/eng/test_typos_config.py",
   "tests/eng/test_workflow_delivery_v3_hk.py",

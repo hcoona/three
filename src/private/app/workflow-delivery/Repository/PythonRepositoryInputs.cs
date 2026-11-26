@@ -159,6 +159,13 @@ internal static class PythonRepositoryInputs
                 "global.json") ||
         (target == "tests/eng/test_release_batch_dispatch.py" &&
             (path == "eng/scripts/release_batch_dispatch.py" || IsReleaseCallerWorkflow(path))) ||
+        (target == "tests/eng/test_svgedit_renovate.py" &&
+            path is "renovate.json" or ".github/renovate/global.cjs" or
+                "src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/" +
+                "Update-LocalSvgEditor.ps1") ||
+        (target == "tests/eng/test_release_triage.py" &&
+            (path is "eng/scripts/release_triage.py" or ".github/workflows/release-triage.yml" or
+                "version.json" || IsPublicInventoryInput(path))) ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
             path is "eng/scripts/sync_python_version.py" or
                 "eng/scripts/workflow_delivery_v3_hk.py" or
@@ -177,6 +184,15 @@ internal static class PythonRepositoryInputs
         IsWorkflow(path) &&
         path.StartsWith(".github/workflows/workflow-delivery-v3-", StringComparison.Ordinal) &&
         path.EndsWith("-release.yml", StringComparison.Ordinal);
+
+    private static bool IsPublicInventoryInput(string path) =>
+        Under(path, "src/public") &&
+        (path.EndsWith("/workflow-delivery.release-unit.yml", StringComparison.Ordinal) ||
+         path.EndsWith("/version.json", StringComparison.Ordinal) ||
+         path.EndsWith("/package.json", StringComparison.Ordinal) ||
+         path.EndsWith("/pyproject.toml", StringComparison.Ordinal) ||
+         path.EndsWith(".csproj", StringComparison.Ordinal) ||
+         path.EndsWith(".gemspec", StringComparison.Ordinal));
 
     private static bool Azure(string path) =>
         DotNetInheritedInputs.Consumes(path, AzureRoots) ||

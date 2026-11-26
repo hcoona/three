@@ -184,3 +184,31 @@ controls:
     execution_points:
       - local-validation
     failure_mode: Catalog omissions, broken consumers or unexecuted checks are mistaken for complete validated coverage.
+  - id: public-release-inventory
+    state: current
+    class: mechanical
+    enforcement: blocking
+    producer: HK executing eng/scripts/release_triage.py --check-inventory
+    maintainer: Repository owner
+    consumers:
+      - Contributors and agents adding or changing projects under src/public/
+      - CI validation verifying release-unit discovery and triage-tier coverage
+    governing_rules:
+      - docs/engineering/public-release-triage.md#single-source-discovery-and-public-directory-exhaustiveness
+      - docs/governance/governance-system.md#gov-002-one-canonical-authority
+      - docs/governance/governance-system.md#gov-005-controls-implement-policy
+    invariant: Every first-level directory under src/public/app/ and src/public/lib/ either commits
+      workflow-delivery.release-unit.yml or appears in the non-release allowlist without stale entries, and every
+      discovered public release unit resolves cleanly to a supported triage tier and baseline reader.
+    runner: hk
+    implementation:
+      kind: hk-steps
+      steps:
+        local-fast:
+          - public-release-inventory
+        ci:
+          - public-release-inventory
+    execution_points:
+      - local-fast
+      - ci
+    failure_mode: A new public project or release-unit definition silently escapes release-triage discovery.

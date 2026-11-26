@@ -239,6 +239,14 @@ public sealed class PythonRepositoryInputsTests
         ".github/workflows/workflow-delivery-v3-ruby-release.yml")]
     [DataRow("tests/eng/test_release_batch_dispatch.py",
         ".github/workflows/workflow-delivery-v3-nuget-release.yml")]
+    [DataRow("tests/eng/test_svgedit_renovate.py", "renovate.json")]
+    [DataRow("tests/eng/test_svgedit_renovate.py", ".github/renovate/global.cjs")]
+    [DataRow("tests/eng/test_svgedit_renovate.py",
+        "src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/Update-LocalSvgEditor.ps1")]
+    [DataRow("tests/eng/test_release_triage.py", "eng/scripts/release_triage.py")]
+    [DataRow("tests/eng/test_release_triage.py", ".github/workflows/release-triage.yml")]
+    [DataRow("tests/eng/test_release_triage.py",
+        "src/public/lib/Memoization/workflow-delivery.release-unit.yml")]
     public void SpecialInputsReachTheirActualTargets(string target, string path)
     {
         var endpoint = Endpoint([target, "tests/unrelated.py"], [path, "docs/unrelated.md"]);

@@ -1,0 +1,78 @@
+# Copyright 2026 Shuai Zhang
+# SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+
+name: Public Release Triage
+
+on:
+  schedule:
+    - cron: '23 7 1 * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Generate the triage report in the job summary without creating or updating Issues.'
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: public-release-triage-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    name: Evaluate public release diffs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      deployments: read
+      issues: write
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Reject live triage from non-default branch
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          DRY_RUN: ${{ inputs.dry_run || false }}
+          REF: ${{ github.ref }}
+          DEFAULT_REF: refs/heads/${{ github.event.repository.default_branch }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "$DRY_RUN" != "true" && "$REF" != "$DEFAULT_REF" ]]; then
+            printf 'Live triage Issue updates must run from %s (got %s); pass dry_run=true to preview.\n' "$DEFAULT_REF" "$REF" >&2
+            exit 1
+          fi
+
+      - name: Checkout default branch with history
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version-file: .config/uv/uv.toml
+          enable-cache: false
+
+      - name: Run public release triage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+        run: |
+          set -Eeuo pipefail
+          args=(--repo "$GITHUB_REPOSITORY" --assignee hcoona --summary-file "$GITHUB_STEP_SUMMARY")
+          if [[ "$DRY_RUN" == "true" ]]; then
+            args+=(--dry-run)
+          fi
+          uv run --script eng/scripts/release_triage.py "${args[@]}"
