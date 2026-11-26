@@ -46,3 +46,20 @@ mise exec -- dotnet test --project tests/public/lib/Nanopass.Tests/Hcoona.Nanopa
 ```
 
 All tests execute strictly in-process on `.NET 11` without spawning external compilers, Node.js, or shell processes.
+
+## Upstream Differential Verification
+
+Local out-of-repository differential check (not a CI gate or broader platform-support claim; archived in [Issue #1779](https://github.com/hcoona/three/issues/1779#issuecomment-7186123792)) recorded on Ubuntu x86_64 comparing `Hcoona.Nanopass` (`61cc6457e1a2592267c6bebab5fd424737370db7`) against [`nanopass/nanopass-framework-scheme`](https://github.com/nanopass/nanopass-framework-scheme) (`c14d392487886df9275c1d4a3f0f61e1b6c4f2ef`) with Chez Scheme `10.0.0+dfsg-5build1`, Node.js `26.13.1`, and `.NET SDK 11.0.100`:
+
+| Check                                                                               |                   Result                    | Summary                                                                                                                                                                      |
+| :---------------------------------------------------------------------------------- | :-----------------------------------------: | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. `alltests.ss` three-way evaluation** (`Chez interpret` ↔ C# Source ↔ C# `L18`) |     **194 / 194** (+ **3 / 3** extras)      | Pairs, vectors, characters, booleans, integers, and 8 `#<void>` results matched across `main-tests`, `final-tests`, mergesort, sieve, and metacircular interpreter fixtures. |
+| **2. `CoreScheme` → JS execution** (`mise exec -- node`)                            |                 **18 / 18**                 | Y-combinator factorial/Fibonacci, Church numerals, left-associative `-`/`/`, lexical shadowing, `#f`/`0`/`""` truthiness, and JS keyword collisions matched `LCS`/`LACS`.    |
+| **3. Language algebra & metaservices** (`L0`–`L18` + `LUNPARSE`)                    | **20 / 20** languages, **18 / 18** `DiffTo` | Normalized production sets, `Prune`, and consecutive deltas matched (`LP` intentionally splits `Constant` and adds `(quote d)`). `LUNPARSE` output and node counts matched.  |
+| **4. 20-stage IR replay** (25 programs, 475 single-pass checks)                     |              **0 C# defects**               | Matched-input replay isolated deterministic ordering differences and three upstream `tests/compiler.ss` issues corrected in the C# reference compiler (listed below).        |
+
+Known upstream `tests/compiler.ss` differences observed during Stage 4:
+
+- **Missing effect-temporary declarations**: Upstream `L18` assigns effect-context temporaries (such as `tmp_2` in `(let ((p (cons 0 0))) (set-car! p (+ 1 2)) (car p))`) without listing them in `(declare (...))`. The C# compiler declares them explicitly.
+- **Closure free-variable leaks**: Upstream `uncover-free` retains sibling or self bindings in closure `(free (...))` lists. The C# compiler emits minimal deduplicated sets.
+- **Tail `closure-ref` tag**: Upstream tags tail-position `closure-ref` calls as `primapp` rather than `sys-primapp`. The C# compiler emits `sys-primapp` in all positions.
