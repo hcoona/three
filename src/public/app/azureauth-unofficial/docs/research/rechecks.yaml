@@ -5,7 +5,10 @@ governance:
   trigger_action: >-
     Complete the entry's required outcome and update or explicitly disposition every
     current record whose conclusion is materially affected.
-  fallback_review: Evaluate every entry when a merged change modifies docs/delivery-wave.md.
+  fallback_review: >-
+    Evaluate applicable entries when a merged Delivery Wave entry selects or modifies
+    work under src/public/app/azureauth-unofficial/ or
+    tests/public/app/azureauth-unofficial/.
   # The observable event for each trigger kind and value used below.
   trigger_events:
     decision:

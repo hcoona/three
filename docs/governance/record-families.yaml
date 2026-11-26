@@ -335,6 +335,16 @@ families:
     creation_trigger: The retained upstream-rendering notes consume this supplied exchange as source input.
     failure_mode: Direct human input is lost or unverified assistant advice becomes a competing product authority.
     review_point: Changes to research relying on this input or its retention route; preserve source bytes and attribution
+  - id: project-structured-registries
+    concern: Project-scoped structured operational-identity and mutable-source recheck registries
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project maintainers, implementers, and reviewers verifying distribution identities and recheck triggers
+      - Record validation enforcing each registry's declared JSON Schema
+    creation_trigger: An admitted project concern maintains structured YAML state with a real consumer and schema.
+    failure_mode: Operational identities or recheck triggers become malformed or drift silently from their machine contracts.
+    review_point: Pull requests that change a bound structured project registry or its schema
 bindings:
   - id: public-landing
     family: public-landing
@@ -633,6 +643,22 @@ bindings:
     path: src/private/app/vscode-copilot-telegram-hook/*.md
     format: markdown
     purpose: Copilot Telegram installation and operations
+  - id: src-public-app-azureauth-unofficial-interfaces
+    family: project-interfaces
+    namespace: src/public/app/azureauth-unofficial
+    state: current
+    carrier: repository-files
+    path: src/public/app/azureauth-unofficial/*.md
+    format: markdown
+    purpose: AzureAuth Unofficial V2 landing page and upstream provenance
+  - id: src-public-app-azureauth-unofficial-packaging-interface
+    family: project-interfaces
+    namespace: src/public/app/azureauth-unofficial
+    state: current
+    carrier: repository-file
+    path: src/public/app/azureauth-unofficial/packaging/windows/README.md
+    format: markdown
+    purpose: Windows portable package usage, bundled compatibility profile limits and removal
   - id: src-public-app-imageocclusioneditor-interfaces
     family: project-interfaces
     namespace: src/public/app/ImageOcclusionEditor
@@ -833,6 +859,32 @@ bindings:
     path: src/private/app/vscode-copilot-telegram-hook/docs/**/*.md
     format: markdown
     purpose: Human-source requirement lineage, behavior requirements and research
+  - id: src-public-app-azureauth-unofficial-records
+    family: project-concern-records
+    namespace: src/public/app/azureauth-unofficial
+    state: current
+    carrier: repository-files
+    path: src/public/app/azureauth-unofficial/docs/**/*.md
+    format: markdown
+    purpose: AzureAuth Unofficial V2 requirements, architecture, decisions, security, research and validation strategy
+  - id: src-public-app-azureauth-unofficial-operational-identities
+    family: project-structured-registries
+    namespace: src/public/app/azureauth-unofficial
+    state: current
+    carrier: repository-file
+    path: src/public/app/azureauth-unofficial/docs/operational-identities.yaml
+    format: yaml
+    schema: src/public/app/azureauth-unofficial/schemas/operational-identities.schema.json
+    purpose: Independent executable, package, cache, configuration, diagnostic and release identities
+  - id: src-public-app-azureauth-unofficial-rechecks
+    family: project-structured-registries
+    namespace: src/public/app/azureauth-unofficial
+    state: current
+    carrier: repository-file
+    path: src/public/app/azureauth-unofficial/docs/research/rechecks.yaml
+    format: yaml
+    schema: src/public/app/azureauth-unofficial/schemas/rechecks.schema.json
+    purpose: Mutable external facts and project-scoped recheck triggers
   - id: src-public-app-imageocclusioneditor-records
     family: project-concern-records
     namespace: src/public/app/ImageOcclusionEditor

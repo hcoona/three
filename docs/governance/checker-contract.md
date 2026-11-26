@@ -95,7 +95,9 @@ must be a direct file contained in the repository.
 ## Catalog and Reference Checks
 
 The two catalogs validate against the schemas in `schemas/governance/` using
-JSON Schema draft 2020-12. Reject duplicate mapping keys when loading YAML or
+JSON Schema draft 2020-12, and any `current` binding declaring `schema`
+validates its matched YAML or JSON instances against that schema. Reject
+duplicate mapping keys when loading YAML or
 JSON and validate schema documents against their metaschema before instances.
 Fixed catalog/schema bindings must not depend on catalog entries describing
 themselves. Family IDs and binding IDs are unique within their respective lists;

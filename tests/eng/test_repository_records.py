@@ -1513,6 +1513,38 @@ def test_native_root_skill_requires_exact_local_source(
             assert "generated-source-map-invalid" in codes(report)
 
 
+def test_bound_structured_record_schema_validation(repo: Repository) -> None:
+    """Validate current structured bindings against their declared schema."""
+    owner = "src/public/app/demo"
+    schema = f"{owner}/schemas/registry.schema.json"
+    record = f"{owner}/docs/registry.yaml"
+    repo.write(f"{owner}/README.md", "# Demo\n\nSee [docs](docs/README.md).\n")
+    repo.write(f"{owner}/docs/README.md", "# Docs\n")
+    repo.write(
+        schema,
+        json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "required": ["schema_version"],
+                "properties": {"schema_version": {"const": 1}},
+            }
+        )
+        + "\n",
+    )
+    repo.write(record, "schema_version: 1\n")
+    repo.bind(f"{owner}/README.md", namespace=owner)
+    repo.bind(f"{owner}/docs/README.md", namespace=owner)
+    repo.bind(record, "yaml", namespace=owner, schema=schema)
+    repo.save()
+    repo.route_all()
+    assert repo.check()["diagnostics"] == []
+    repo.write(record, "schema_version: 2\n")
+    assert [(d["code"], d["path"]) for d in repo.check()["diagnostics"]] == [
+        ("record-schema-invalid", record)
+    ]
+
+
 if __name__ == "__main__":
     raise SystemExit(
         pytest.main(

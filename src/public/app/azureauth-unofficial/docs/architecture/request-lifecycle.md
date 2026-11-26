@@ -25,13 +25,13 @@ postconditions have been checked. Dependency contracts supply identity and scope
 the engine compares that metadata with the normalized request. It does not reconstruct
 identity from access-token claims or infer service eligibility from an OS login.
 
-| Boundary | Relied-on responsibility | Engine responsibility |
-| --- | --- | --- |
-| Caller to protocol | Caller chooses the intended service and requested identity. | Validate explicit inputs, profile constraints, and protocol shape; reject conflicting intent. |
-| Policy to MSAL/provider adapters | Maintained provider abstractions implement their documented authentication and result contracts. | Use eligible operations, classify outcomes, and check every required success postcondition. |
-| CLI to host interaction | The selected host supplies its declared UI and completion capabilities. | Establish the engine's interaction context only with permission; stop owned work and invalidate late completion. |
-| CLI to secure state | Platform storage and broker protect state within their declared trust model. | Respect ownership, select only compatible state, preserve integrity, and report persistence status accurately. |
-| Validated result to caller | The caller protects and applies the returned bearer token to its intended resource. | Emit only the validated access token and allowed metadata through the terminal result. |
+| Boundary                         | Relied-on responsibility                                                                         | Engine responsibility                                                                                            |
+| -------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Caller to protocol               | Caller chooses the intended service and requested identity.                                      | Validate explicit inputs, profile constraints, and protocol shape; reject conflicting intent.                    |
+| Policy to MSAL/provider adapters | Maintained provider abstractions implement their documented authentication and result contracts. | Use eligible operations, classify outcomes, and check every required success postcondition.                      |
+| CLI to host interaction          | The selected host supplies its declared UI and completion capabilities.                          | Establish the engine's interaction context only with permission; stop owned work and invalidate late completion. |
+| CLI to secure state              | Platform storage and broker protect state within their declared trust model.                     | Respect ownership, select only compatible state, preserve integrity, and report persistence status accurately.   |
+| Validated result to caller       | The caller protects and applies the returned bearer token to its intended resource.              | Emit only the validated access token and allowed metadata through the terminal result.                           |
 
 The [threat model](../security/threat-model.md) owns security assumptions and cost/risk
 tradeoffs. These boundaries do not promise protection against a compromised current OS
@@ -236,11 +236,11 @@ acquisition operation completes.
 Once that operation has returned and success validation has completed within the deadline,
 the result boundary classifies only the persistence evidence already available:
 
-| Available evidence under the selected integration's contract | Delivery after successful validation |
-| --- | --- |
-| Safe persistence is confirmed complete. | Success without a persistence warning. |
-| Safe persistence failed. | Success with the required persistence warning. |
-| Safe persistence is pending or cannot be confirmed. | Success with the required persistence warning, without waiting for confirmation. |
+| Available evidence under the selected integration's contract | Delivery after successful validation                                             |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| Safe persistence is confirmed complete.                      | Success without a persistence warning.                                           |
+| Safe persistence failed.                                     | Success with the required persistence warning.                                   |
+| Safe persistence is pending or cannot be confirmed.          | Success with the required persistence warning, without waiting for confirmation. |
 
 Confirmation relies on the selected dependency or platform contract and its exposed
 outcome; it does not require independently proving the storage implementation. A missing

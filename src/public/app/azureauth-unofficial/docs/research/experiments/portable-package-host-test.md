@@ -64,12 +64,12 @@ evidence limit. This is not a public-restore claim.
 These steps are development validation and are not counted against the Wave limits.
 They run sequentially with `DOTNET_CLI_TELEMETRY_OPTOUT=1` and `DOTNET_NOLOGO=1`.
 
-| Step | Action | Bound |
-| --- | --- | --- |
-| B1 package | From `<root>\src`: `pwsh packaging\windows\package.ps1 -DisableNuGetAudit -OutputDirectory <root>\out`, without `-AllowNonPublicRelease` | 1,800 s |
-| B2 validator | `dotnet build tools\result-validation\cli -c Release -o <root>\validator` | 300 s |
-| B3 extract | Verify both `.sha256` files; record both hashes and the archive's file list; `Expand-Archive` the package zip into the new empty `<root>\app` | 60 s |
-| B4 artifact checks | See below | 60 s |
+| Step               | Action                                                                                                                                        | Bound   |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| B1 package         | From `<root>\src`: `pwsh packaging\windows\package.ps1 -DisableNuGetAudit -OutputDirectory <root>\out`, without `-AllowNonPublicRelease`      | 1,800 s |
+| B2 validator       | `dotnet build tools\result-validation\cli -c Release -o <root>\validator`                                                                     | 300 s   |
+| B3 extract         | Verify both `.sha256` files; record both hashes and the archive's file list; `Expand-Archive` the package zip into the new empty `<root>\app` | 60 s    |
+| B4 artifact checks | See below                                                                                                                                     | 60 s    |
 
 B1 runs every packaging check, including the public-release check; a failure stops the
 experiment. B1's `--version` check is the first run of the executable's bytes: record
@@ -120,12 +120,12 @@ bound the native launcher ends its own product process, and the WSL launcher clo
 lifetime writer. After every call the launcher confirms from Windows that no process with
 image `<root>\app\azureauth-unofficial.exe` remains; calls never overlap.
 
-| Case | Interaction and action | Expected (outcome/route, exit) | Unit |
-| --- | --- | --- | --- |
-| A | `non-interactive-only`, the first call for the role and caller | `Success/Silent`, 0 (silent success); or `InteractionRequired/None`, 1 (interaction required) | N |
-| B | Only if A required interaction: `interactive-if-needed`; the owner completes any account choice, credential or MFA prompt | `Success`, Silent or Interactive, 0 | I |
-| C | Fresh process: `non-interactive-only` | `Success/Silent`, 0 (fresh-process silent reuse) | N |
-| D | `force-interactive`; the owner chooses the designated account | `Success/Interactive`, 0 | I |
+| Case | Interaction and action                                                                                                    | Expected (outcome/route, exit)                                                                | Unit |
+| ---- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---- |
+| A    | `non-interactive-only`, the first call for the role and caller                                                            | `Success/Silent`, 0 (silent success); or `InteractionRequired/None`, 1 (interaction required) | N    |
+| B    | Only if A required interaction: `interactive-if-needed`; the owner completes any account choice, credential or MFA prompt | `Success`, Silent or Interactive, 0                                                           | I    |
+| C    | Fresh process: `non-interactive-only`                                                                                     | `Success/Silent`, 0 (fresh-process silent reuse)                                              | N    |
+| D    | `force-interactive`; the owner chooses the designated account                                                             | `Success/Interactive`, 0                                                                      | I    |
 
 **Order.** Personal native, personal WSL, work native, work WSL, each running A, B when
 needed, C and D. A result of `Success/Silent` in A records the interaction-required case as
@@ -257,15 +257,16 @@ labeled otherwise. "Personal" and "work" name roles; "native" and "WSL" name cal
   stopped and no process remained under the root.
 - **B3.** Both `.sha256` files verified.
 
-| Artifact | Bytes | SHA-256 |
-| --- | --- | --- |
-| `azureauth-unofficial-0.1.0-alpha.18-win-x64.zip` | 5,168,952 | `68c2dc524c576d0b442d06cc7f13d8ee423f28ae32509d678538cb329c2d6f95` |
+| Artifact                                                  | Bytes     | SHA-256                                                            |
+| --------------------------------------------------------- | --------- | ------------------------------------------------------------------ |
+| `azureauth-unofficial-0.1.0-alpha.18-win-x64.zip`         | 5,168,952 | `68c2dc524c576d0b442d06cc7f13d8ee423f28ae32509d678538cb329c2d6f95` |
 | `azureauth-unofficial-0.1.0-alpha.18-win-x64-symbols.zip` | 7,973,908 | `2b0674224fec000d71e2d9f4fefd5225eaa62d8ee1d280eddf34c11e4f14e7b9` |
-| `azureauth-unofficial.exe` (extracted) | 8,933,888 | `fc791de5bec10e0db2d1dfa1b879673cd9009b2b3f37920f78380d87e4a46d30` |
-| `msalruntime.dll` (extracted) | 2,949,656 | `9df30b54b7af974a072b1d55fee3590a5562c77ebc46f47016f0dd5199cd0c79` |
+| `azureauth-unofficial.exe` (extracted)                    | 8,933,888 | `fc791de5bec10e0db2d1dfa1b879673cd9009b2b3f37920f78380d87e4a46d30` |
+| `msalruntime.dll` (extracted)                             | 2,949,656 | `9df30b54b7af974a072b1d55fee3590a5562c77ebc46f47016f0dd5199cd0c79` |
 
-  The archive held exactly the six allowlisted files; `msalruntime.dll` is the same
-  file the earlier [real-host results](real-host-validation.md#method) recorded.
+The archive held exactly the six allowlisted files; `msalruntime.dll` is the same
+file the earlier [real-host results](real-host-validation.md#method) recorded.
+
 - **B4.** From an empty directory with `PATH` limited to System32, the extracted
   `--version` printed `azureauth-unofficial 0.1.0-alpha.18+6f7fadbafa` and `--help` printed
   the unofficial first lines, both exit 0. This first run from the extracted directory was
@@ -285,25 +286,25 @@ appeared in every interactive call and in no other, and no `Mechanism unavailabl
 indication appeared. Before each interactive call the owner gave a fresh readiness
 answer in chat.
 
-| # | Case | Role | Caller | Unit | Start (UTC) | Outcome and exits | I left | N left |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | A | personal | native | N | 2026-10-29T19:32:59Z | Not captured: launcher defect after the call (see Deviations) | 40 | 59 |
-| 2 | A | personal | native | N | 2026-10-29T19:33:56Z | InteractionRequired/None, exit 1, pass | 40 | 58 |
-| 3 | B | personal | native | I | 2026-10-29T19:39:04Z | Success/Interactive, exit 0, pass; interactive stage 21.2 s | 39 | 58 |
-| 4 | C | personal | native | N | 2026-10-29T19:39:32Z | Success/Silent, exit 0, pass | 39 | 57 |
-| 5 | D | personal | native | I | 2026-10-29T19:40:57Z | Timeout/None, exit 1, FAIL (see Deviations) | 38 | 57 |
-| 6 | D | personal | native | I | 2026-10-29T19:44:40Z | Success/Interactive, exit 0, pass; interactive stage 24.2 s | 37 | 57 |
-| 7 | A | personal | WSL | N | 2026-10-29T19:45:39Z | Not captured: launcher defect after the call | 37 | 56 |
-| 8 | C | personal | WSL | N | 2026-10-29T19:45:41Z | Not captured: launcher defect after the call | 37 | 55 |
-| 9 | A | personal | WSL | N | 2026-10-29T19:46:46Z | Success/Silent, exit 0, pass | 37 | 54 |
-| 10 | C | personal | WSL | N | 2026-10-29T19:46:49Z | Success/Silent, exit 0, pass | 37 | 53 |
-| 11 | D | personal | WSL | I | 2026-10-29T20:01:05Z | Success/Interactive, exit 0, pass; interactive stage 25.4 s | 36 | 53 |
-| 12 | A | work | native | N | 2026-10-29T20:01:42Z | Success/Silent, exit 0, pass | 36 | 52 |
-| 13 | C | work | native | N | 2026-10-29T20:01:53Z | Success/Silent, exit 0, pass | 36 | 51 |
-| 14 | A | work | WSL | N | 2026-10-29T20:01:54Z | Success/Silent, exit 0, pass | 36 | 50 |
-| 15 | C | work | WSL | N | 2026-10-29T20:01:56Z | Success/Silent, exit 0, pass | 36 | 49 |
-| 16 | D | work | native | I | 2026-10-29T20:02:54Z | Success/Interactive, exit 0, pass; interactive stage 5.3 s | 35 | 49 |
-| 17 | D | work | WSL | I | 2026-10-29T20:03:19Z | Success/Interactive, exit 0, pass; interactive stage 4.5 s | 34 | 49 |
+| #   | Case | Role     | Caller | Unit | Start (UTC)          | Outcome and exits                                             | I left | N left |
+| --- | ---- | -------- | ------ | ---- | -------------------- | ------------------------------------------------------------- | ------ | ------ |
+| 1   | A    | personal | native | N    | 2026-10-29T19:32:59Z | Not captured: launcher defect after the call (see Deviations) | 40     | 59     |
+| 2   | A    | personal | native | N    | 2026-10-29T19:33:56Z | InteractionRequired/None, exit 1, pass                        | 40     | 58     |
+| 3   | B    | personal | native | I    | 2026-10-29T19:39:04Z | Success/Interactive, exit 0, pass; interactive stage 21.2 s   | 39     | 58     |
+| 4   | C    | personal | native | N    | 2026-10-29T19:39:32Z | Success/Silent, exit 0, pass                                  | 39     | 57     |
+| 5   | D    | personal | native | I    | 2026-10-29T19:40:57Z | Timeout/None, exit 1, FAIL (see Deviations)                   | 38     | 57     |
+| 6   | D    | personal | native | I    | 2026-10-29T19:44:40Z | Success/Interactive, exit 0, pass; interactive stage 24.2 s   | 37     | 57     |
+| 7   | A    | personal | WSL    | N    | 2026-10-29T19:45:39Z | Not captured: launcher defect after the call                  | 37     | 56     |
+| 8   | C    | personal | WSL    | N    | 2026-10-29T19:45:41Z | Not captured: launcher defect after the call                  | 37     | 55     |
+| 9   | A    | personal | WSL    | N    | 2026-10-29T19:46:46Z | Success/Silent, exit 0, pass                                  | 37     | 54     |
+| 10  | C    | personal | WSL    | N    | 2026-10-29T19:46:49Z | Success/Silent, exit 0, pass                                  | 37     | 53     |
+| 11  | D    | personal | WSL    | I    | 2026-10-29T20:01:05Z | Success/Interactive, exit 0, pass; interactive stage 25.4 s   | 36     | 53     |
+| 12  | A    | work     | native | N    | 2026-10-29T20:01:42Z | Success/Silent, exit 0, pass                                  | 36     | 52     |
+| 13  | C    | work     | native | N    | 2026-10-29T20:01:53Z | Success/Silent, exit 0, pass                                  | 36     | 51     |
+| 14  | A    | work     | WSL    | N    | 2026-10-29T20:01:54Z | Success/Silent, exit 0, pass                                  | 36     | 50     |
+| 15  | C    | work     | WSL    | N    | 2026-10-29T20:01:56Z | Success/Silent, exit 0, pass                                  | 36     | 49     |
+| 16  | D    | work     | native | I    | 2026-10-29T20:02:54Z | Success/Interactive, exit 0, pass; interactive stage 5.3 s    | 35     | 49     |
+| 17  | D    | work     | WSL    | I    | 2026-10-29T20:03:19Z | Success/Interactive, exit 0, pass; interactive stage 4.5 s    | 34     | 49     |
 
 **Operator observations.** #6, #11, #16, #17: WAM shown, requested account chosen, no
 unexpected window. #3: no WAM account picker; a Windows Hello PIN prompt appeared with

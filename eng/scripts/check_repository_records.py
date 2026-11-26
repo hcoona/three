@@ -450,7 +450,11 @@ def classify(path: str) -> str:  # noqa: C901, PLR0911, PLR0912 - Ordered indepe
     if (
         "fixtures" in parts
         or "examples" in parts
-        or path == "src/public/lib/asciidoctor-latexmath/sample.adoc"
+        or path
+        in {
+            "src/public/app/azureauth-unofficial/packaging/windows/profiles/visual-studio-legacy-wam.json",
+            "src/public/lib/asciidoctor-latexmath/sample.adoc",
+        }
     ):
         return "fixture-product-asset"
     if path.startswith("src/") and any(
@@ -845,10 +849,28 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
         for selected_path in selected:
             owners[selected_path].append(binding)
         schema_path = binding.get("schema")
-        if schema_path and (
-            not safe_path(schema_path) or schema_path not in current.entries
-        ):
-            error("schema-reference-missing", path, schema_path)
+        if schema_path:
+            if not safe_path(schema_path) or schema_path not in current.entries:
+                error("schema-reference-missing", path, schema_path)
+            else:
+                try:
+                    validator = schema_validator(current, schema_path)
+                    for selected_path in selected:
+                        validator.validate(
+                            parse_document(
+                                current.read(selected_path), selected_path
+                            )
+                        )
+                except (
+                    RecordError,
+                    ValueError,
+                    TypeError,
+                    yaml.YAMLError,
+                    SchemaError,
+                    ValidationError,
+                    Unresolvable,
+                ) as exc:
+                    error("record-schema-invalid", path, str(exc))
     canonical = {
         p
         for p, c in classes.items()

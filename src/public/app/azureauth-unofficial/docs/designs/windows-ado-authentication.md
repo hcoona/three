@@ -17,14 +17,14 @@ organization, feed, and package operations stay with the caller. The engine retu
 original delegated access token. The [PAT prohibition](../product/requirements/product-boundary.md#v2-req-005-no-personal-access-tokens)
 applies to every operation, configuration, and failure path.
 
-| Choice | Concrete design and reason |
-| --- | --- |
-| Runtime and UI | C# on .NET 10 LTS, `net10.0-windows`, `win-x64`; SDK 10.0.403 and the runtime it bundles, 10.0.14, with roll-forward disabled. A small in-process Win32 window replaces the Windows Forms host in the design below. It requires no Windows Desktop managed framework. |
-| Authentication dependencies | `Microsoft.Identity.Client` and `Microsoft.Identity.Client.Broker` 4.83.1, with `Microsoft.Identity.Client.NativeInterop` 0.20.3. Preserve this authentication dependency baseline. |
-| Provider | Windows WAM only. One real-account discovery, at most one selected-account silent call for the two existing modes, and at most one permitted or explicitly required interactive call. Forced interaction skips silent acquisition. No application-level network retry or second provider. |
-| State | Broker-owned reusable state; a fresh in-memory MSAL application per invocation. No MSAL Extensions cache helper, serialized MSAL cache, shadow refresh-token store, engine account binding, or cross-process lock. |
-| Host | Windows 11 x64 in an active interactive user session, with WAM available. WSL 2 callers use normal Windows executable interoperability. Service, impersonated, disconnected desktop, and native Linux hosts are outside this Slice. |
-| Distribution | An unsigned portable `win-x64` zip, `azureauth-unofficial-<version>-win-x64.zip`, that the user extracts into a directory of their choice; see [Portable Package and Version](#portable-package-and-version). The [registry](../governance/operational-identities.yaml) owns the selected identities. `<windows-cli>` below denotes the caller-selected path of `azureauth-unofficial.exe`; nothing is placed on `PATH`. |
+| Choice                      | Concrete design and reason                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime and UI              | C# on .NET 10 LTS, `net10.0-windows`, `win-x64`; SDK 10.0.403 and the runtime it bundles, 10.0.14, with roll-forward disabled. A small in-process Win32 window replaces the Windows Forms host in the design below. It requires no Windows Desktop managed framework.                                                                                                                                         |
+| Authentication dependencies | `Microsoft.Identity.Client` and `Microsoft.Identity.Client.Broker` 4.83.1, with `Microsoft.Identity.Client.NativeInterop` 0.20.3. Preserve this authentication dependency baseline.                                                                                                                                                                                                                           |
+| Provider                    | Windows WAM only. One real-account discovery, at most one selected-account silent call for the two existing modes, and at most one permitted or explicitly required interactive call. Forced interaction skips silent acquisition. No application-level network retry or second provider.                                                                                                                     |
+| State                       | Broker-owned reusable state; a fresh in-memory MSAL application per invocation. No MSAL Extensions cache helper, serialized MSAL cache, shadow refresh-token store, engine account binding, or cross-process lock.                                                                                                                                                                                            |
+| Host                        | Windows 11 x64 in an active interactive user session, with WAM available. WSL 2 callers use normal Windows executable interoperability. Service, impersonated, disconnected desktop, and native Linux hosts are outside this Slice.                                                                                                                                                                           |
+| Distribution                | An unsigned portable `win-x64` zip, `azureauth-unofficial-<version>-win-x64.zip`, that the user extracts into a directory of their choice; see [Portable Package and Version](#portable-package-and-version). The [registry](../operational-identities.yaml) owns the selected identities. `<windows-cli>` below denotes the caller-selected path of `azureauth-unofficial.exe`; nothing is placed on `PATH`. |
 
 The [dependency assessment](../research/experiments/windows-slice-validation.md#windows-slice-dependency-and-host-contracts)
 binds these choices to public source. Future upgrades must use the existing dependency
@@ -52,13 +52,13 @@ performance, release and support obligations.
 The [public AOT assessment](../research/experiments/windows-native-aot.md#windows-native-aot-assessment)
 distinguishes the following alternatives:
 
-| Alternative | Disposition and reason |
-| --- | --- |
-| Existing Windows Forms host | Cannot be selected as a supported Native AOT route: Native AOT requires trimming, and Microsoft disables supported Windows Forms trimming because of built-in COM dependencies. Keeping this host would require a justified non-AOT exception; it is not necessary merely to own an HWND. |
-| WPF replacement | Its documented trimming limitation does not resolve the blocker. |
-| Small Win32 host with static interop | Selected Native AOT path: the required parent HWND, completion and cancellation handling need only Win32 window APIs, an owned message loop, and statically known callbacks. This removes the managed desktop-framework blocker without another process or provider. The [parent selection decision](#parent-selection-decision) separately fixes that parent as hidden, without controls. |
-| Larger UI framework or direct broker rewrite | No present UI requirement justifies another framework's dependency surface or replacing the supported MSAL integration with direct broker internals. Neither is needed for the selected smaller host. |
-| Same Win32 host with ordinary self-contained JIT publishing | Future comparison baseline, not an accepted fallback or exception. Consider an exception only if later application validation identifies an AOT blocker that cannot reasonably be remediated, with the requirement's evidence and reassessment obligations. |
+| Alternative                                                 | Disposition and reason                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Existing Windows Forms host                                 | Cannot be selected as a supported Native AOT route: Native AOT requires trimming, and Microsoft disables supported Windows Forms trimming because of built-in COM dependencies. Keeping this host would require a justified non-AOT exception; it is not necessary merely to own an HWND.                                                                                                  |
+| WPF replacement                                             | Its documented trimming limitation does not resolve the blocker.                                                                                                                                                                                                                                                                                                                           |
+| Small Win32 host with static interop                        | Selected Native AOT path: the required parent HWND, completion and cancellation handling need only Win32 window APIs, an owned message loop, and statically known callbacks. This removes the managed desktop-framework blocker without another process or provider. The [parent selection decision](#parent-selection-decision) separately fixes that parent as hidden, without controls. |
+| Larger UI framework or direct broker rewrite                | No present UI requirement justifies another framework's dependency surface or replacing the supported MSAL integration with direct broker internals. Neither is needed for the selected smaller host.                                                                                                                                                                                      |
+| Same Win32 host with ordinary self-contained JIT publishing | Future comparison baseline, not an accepted fallback or exception. Consider an exception only if later application validation identifies an AOT blocker that cannot reasonably be remediated, with the requirement's evidence and reassessment obligations.                                                                                                                                |
 
 Enable `PublishAot` in the executable project, retaining AOT/trim
 analysis during development. Owned libraries participate in compatibility analysis
@@ -115,6 +115,8 @@ validation finds a blocker, before proposing a scoped exception.
 This view answers which process owns authentication, configuration, and cancellation.
 Blue nodes are engine-owned; gray nodes are caller or platform dependencies.
 
+<!-- markdownlint-disable MD013 -->
+
 ```mermaid
 flowchart LR
     subgraph workstation["Developer workstation [Deployment node]"]
@@ -141,6 +143,8 @@ flowchart LR
     class caller,profile,wam,identity,resource external
 ```
 
+<!-- markdownlint-enable MD013 -->
+
 ### Portable Package and Version
 
 The CLI project's assembly name makes the published executable
@@ -149,14 +153,14 @@ Windows x64 from a clean full Git clone: it refuses a dirty or shallow worktree,
 restores in locked mode from the repository's nuget.org-only configuration, publishes
 Native AOT, and admits exactly this content:
 
-| Archive path | Source |
-| --- | --- |
-| `azureauth-unofficial.exe` | Native AOT publish output. |
-| `msalruntime.dll` | NativeInterop's `win-x64` asset from the same publish; it must stay beside the executable because loading is restricted to the application directory and System32. |
-| `profiles/visual-studio-legacy-wam.json` | `packaging/windows/profiles/`, JSON-equal to the schema's [Visual Studio legacy candidate](#visual-studio-legacy-candidate) (same members and values); a test asserts that equality and that the product reader accepts the file. |
-| `README.md` | `packaging/windows/README.md`: unofficial notice, extraction, Windows and WSL use, the bundled Profile's ownership and limits, unsigned and SmartScreen notes, and removal. |
-| `LICENSE.txt` | The repository license. |
-| `THIRD-PARTY-NOTICES.txt` | A fixed header for the MSAL components and the .NET runtime notices from the locked ILCompiler runtime package. |
+| Archive path                                                  | Source                                                                                                                                                                                                                            |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `azureauth-unofficial.exe`                                    | Native AOT publish output.                                                                                                                                                                                                        |
+| `msalruntime.dll`                                             | NativeInterop's `win-x64` asset from the same publish; it must stay beside the executable because loading is restricted to the application directory and System32.                                                                |
+| `profiles/visual-studio-legacy-wam.json`                      | `packaging/windows/profiles/`, JSON-equal to the schema's [Visual Studio legacy candidate](#visual-studio-legacy-candidate) (same members and values); a test asserts that equality and that the product reader accepts the file. |
+| `README.md`                                                   | `packaging/windows/README.md`: unofficial notice, extraction, Windows and WSL use, the bundled Profile's ownership and limits, unsigned and SmartScreen notes, and removal.                                                       |
+| `COPYING`, `COPYING.LESSER`, `LGPL-3.0-linking-exception.txt` | Repository license texts (`LGPL-3.0-or-later WITH LGPL-3.0-linking-exception`).                                                                                                                                                   |
+| `THIRD-PARTY-NOTICES.txt`                                     | A fixed header for the MSAL components and the .NET runtime notices from the locked ILCompiler runtime package.                                                                                                                   |
 
 Symbol files (the native `azureauth-unofficial.pdb`, which native debugging and
 profiling of the build require, and those of the project's own managed assemblies) stay
@@ -167,16 +171,17 @@ they are not part of Windows even when a development host has them in System32. 
 script then checks the version resource
 described below and runs the staged executable's `--version` from its own directory
 with `PATH` limited to System32, and finally writes the zip and a SHA-256 file. The
-four text files are written with LF line endings whatever the checkout's Git
+six text files are written with LF line endings whatever the checkout's Git
 configuration, and the script fails if any contains a carriage return. Beside them it
 writes `azureauth-unofficial-<version>-win-x64-symbols.zip`, holding the symbol files and
-the same `LICENSE.txt` and `THIRD-PARTY-NOTICES.txt`, with its own SHA-256 file; the
+the same license files and `THIRD-PARTY-NOTICES.txt`, with its own SHA-256 file; the
 script refuses to overwrite any of these outputs.
 These checks are packaging checks on the build host, not evidence of deployment without
 development-machine dependencies.
 
 Nerdbank.GitVersioning, a build-only package, computes the version from
-`version.json` and Git history: `0.1.0-alpha.{height}` in SemVer 2.0, with `main-v2`
+`version.json` and Git history: `0.1.0-alpha.{height}` in SemVer 2.0 (with
+`versionHeightOffset: 37` continuing monotonically after `0.1.0-alpha.37`), with `main`
 as the only public-release ref; a build from another ref appends a `g<commit>`
 prerelease identifier. The product uses two forms:
 
@@ -190,36 +195,44 @@ product version; the packaging script checks both on the published executable. T
 informational version omits the `g<commit>` prerelease identifier, so it equals the
 `--version` output only on a public-release build. The script therefore refuses a
 build that is not a public release unless `-AllowNonPublicRelease` is passed for
-development validation. A public-release build needs `main-v2` checked out, with
-`HEAD` on `refs/heads/main-v2`; a detached `HEAD` at the same commit is not a
+development validation. A public-release build needs `main` checked out, with
+`HEAD` on `refs/heads/main`; a detached `HEAD` at the same commit is not a
 public release, and the `PublicRelease` property override is not used.
 Version computation needs a full Git clone: a shallow clone fails the build, and a tree
 without `.git`, such as a `git archive` copy, does not build. CI therefore checks out
 with `fetch-depth: 0`.
 
-
 ### Release Workflow
 
-`.github/workflows/release.yml` builds `0.1.0-alpha` prereleases. It starts only by hand
-and, in its `main-v2` copy, refuses any ref other than `refs/heads/main-v2`, so the build
-is a public release. A copy of the workflow on another ref is not bound by that guard;
-the release review checks that the run and its attestation come from
+> [!NOTE]
+> Monorepo release onboarding under Workflow Delivery v3 is not yet established:
+> `src/public/app/azureauth-unofficial` is currently listed in `NON_RELEASE_PUBLIC_DIRS`
+> (`eng/scripts/release_triage.py`). The standalone workflow below is historical context
+> for the pre-consolidation `0.1.0-alpha` prereleases (through `v0.1.0-alpha.37`) built
+> in `hcoona/microsoft-authentication-cli` (`main-v2`) and was not imported.
+
+In the former standalone repository (`hcoona/microsoft-authentication-cli` at
+[`f509276c`](https://github.com/hcoona/microsoft-authentication-cli/blob/f509276cad32c49b5764af906e8374f3f9b182ae/.github/workflows/release.yml)),
+`.github/workflows/release.yml` built `0.1.0-alpha` prereleases. It started only by hand
+and, in its `main-v2` copy, refused any ref other than `refs/heads/main-v2`, so the build
+was a public release. A copy of the workflow on another ref was not bound by that guard;
+the release review checked that the run and its attestation came from
 `.github/workflows/release.yml` at `refs/heads/main-v2` and the built commit.
 
-Its jobs have least privilege. The build job reads contents only. It restores in locked
-mode with the checksum-pinned SDK, runs the Windows scenarios excluding
-`WindowsHostTiming`, runs `package.ps1` without its development switches, and records in
+Its jobs had least privilege. The build job read contents only. It restored in locked
+mode with the checksum-pinned SDK, ran the Windows scenarios excluding
+`WindowsHostTiming`, ran `package.ps1` without its development switches, and recorded in
 `build-info.json` and the run summary the runner image, the .NET SDK, and the installed
-chain that the Native AOT linker resolves: the Visual Studio that `vswhere -latest
--prerelease` finds, as ILCompiler does, its default MSVC toolset and `link.exe`, and the
-installed Windows SDKs. That this is the chain the linker used is an inference. A second
-job holds only `id-token: write` and `attestations: write` and creates a GitHub
-build-provenance attestation for both zips. A third holds only `contents: write`: it
-verifies the checksums and the recorded commit, refuses a version whose tag, release or
-draft exists (failing on any lookup error other than not found), and creates a draft
+chain that the Native AOT linker resolved: the Visual Studio that `vswhere -latest
+-prerelease` found, as ILCompiler did, its default MSVC toolset and `link.exe`, and the
+installed Windows SDKs. That this was the chain the linker used was an inference. A second
+job held only `id-token: write` and `attestations: write` and created a GitHub
+build-provenance attestation for both zips. A third held only `contents: write`: it
+verified the checksums and the recorded commit, refused a version whose tag, release or
+draft existed (failing on any lookup error other than not found), and created a draft
 prerelease `v<version>` targeting the built commit, with the package zip, the symbols zip
-and their `.sha256` files. The jobs pass files as workflow artifacts kept for one day.
-The repository owner publishes each draft after the release review.
+and their `.sha256` files. The jobs passed files as workflow artifacts kept for one day.
+The repository owner published each draft after the release review.
 
 ## Protocol 1 Command-Line Contract
 
@@ -229,17 +242,17 @@ values are case-sensitive. Use separate option and value arguments; short aliase
 invalid. Windows argument quoting is the caller's responsibility; the engine consumes
 the resulting argument vector without invoking another shell.
 
-| Argument | Meaning |
-| --- | --- |
-| `--protocol 1` | Required protocol major. No implicit version. |
-| `--profile <absolute-Windows-file-path>` | Required selection of one Profile document, not inline client configuration. |
-| `--account-email <full-email>` | Required strict account constraint. |
-| `--scope <qualified-scope>` | Required, repeatable for permissions on exactly one resource. |
-| `--interaction non-interactive-only\|interactive-if-needed\|force-interactive` | Required interaction intent for the entire request. The first two modes retain silent-first behavior; the third requests interactive account selection without engine silent token acquisition. |
-| `--tenant common\|<tenant-GUID>` | Optional; normalize under the selected Profile's tenant policy. |
-| `--timeout-seconds <integer>` | Optional, 1 through 600 inclusive; default 120. The value is an unsigned ASCII decimal without sign, leading zeros, whitespace or separators. One monotonic deadline measured from managed entry, including Profile reading and validation. |
-| `--cancel-on-stdin-close` | Optional valueless lifetime flag. Use a dedicated caller-owned pipe whose writer remains open until completion or cancellation. EOF or pipe failure cancels the request. Stdin is never an authentication request or credential channel. |
-| `--telemetry off\|stderr` | Optional, default `off`. Enables only the bounded local event stream described below; it does not configure network export. |
+| Argument                                                                       | Meaning                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--protocol 1`                                                                 | Required protocol major. No implicit version.                                                                                                                                                                                               |
+| `--profile <absolute-Windows-file-path>`                                       | Required selection of one Profile document, not inline client configuration.                                                                                                                                                                |
+| `--account-email <full-email>`                                                 | Required strict account constraint.                                                                                                                                                                                                         |
+| `--scope <qualified-scope>`                                                    | Required, repeatable for permissions on exactly one resource.                                                                                                                                                                               |
+| `--interaction non-interactive-only\|interactive-if-needed\|force-interactive` | Required interaction intent for the entire request. The first two modes retain silent-first behavior; the third requests interactive account selection without engine silent token acquisition.                                             |
+| `--tenant common\|<tenant-GUID>`                                               | Optional; normalize under the selected Profile's tenant policy.                                                                                                                                                                             |
+| `--timeout-seconds <integer>`                                                  | Optional, 1 through 600 inclusive; default 120. The value is an unsigned ASCII decimal without sign, leading zeros, whitespace or separators. One monotonic deadline measured from managed entry, including Profile reading and validation. |
+| `--cancel-on-stdin-close`                                                      | Optional valueless lifetime flag. Use a dedicated caller-owned pipe whose writer remains open until completion or cancellation. EOF or pipe failure cancels the request. Stdin is never an authentication request or credential channel.    |
+| `--telemetry off\|stderr`                                                      | Optional, default `off`. Enables only the bounded local event stream described below; it does not configure network export.                                                                                                                 |
 
 The [request schema](../../contracts/v1/request.schema.json) describes the parsed argument
 projection for validators and synthetic cases; it is not a stdin-JSON API. Defaults are
@@ -420,14 +433,14 @@ does not establish WAM health or broaden platform support. Perform them before c
 the real MSAL application or checking broker availability. A synthetic provider does not
 need to inspect real logon state merely to exercise the owned window.
 
-| Required local condition | Selected observation and rejection boundary |
-| --- | --- |
-| Windows 11 client on native x64 | Check Windows before any Windows import. Require both process and OS architecture to be x64, excluding x64 emulation on ARM64. Use `Environment.OSVersion` for NT 10.0, build at least 22000, and a positive workstation-product comparison with `VerifyVersionInfoW` / `VerSetConditionMask`, selecting only `VER_PRODUCT_TYPE`, `VER_EQUAL`, and `VER_NT_WORKSTATION`. A failed comparison rejects admission. |
-| Calling thread is not impersonating | `OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, ...)` must fail specifically with `ERROR_NO_TOKEN`. A returned token, anonymous impersonation, or any other failure rejects admission. Capture the native error immediately and close any returned token. |
-| Own process has an interactive local logon | Open only the current process token with `TOKEN_QUERY`. Use `GetTokenInformation(TokenStatistics).AuthenticationId` to query that one logon through `LsaGetLogonSessionData`. Require sufficient returned structure size, the matching LUID and a valid nonnull SID; reject LocalSystem, LocalService and NetworkService. Accept only `Interactive`, `RemoteInteractive`, `CachedInteractive` or `CachedRemoteInteractive`. Other types, including `NewCredentials`, reject admission. |
-| Current session is actively connected | Obtain the current process's nonzero session ID with `ProcessIdToSessionId`. Query only that local session with `WTSQuerySessionInformationW(WTSConnectState)` and require a correctly sized `WTSActive` value. Unknown, disconnected, malformed or unavailable state rejects admission. |
-| Visible station belongs to the local logon user | On the borrowed `GetProcessWindowStation` handle, require successful `GetUserObjectInformationW(UOI_FLAGS)` with `WSF_VISIBLE`. Require a bounded valid nonempty `UOI_USER_SID`. Accept exact equality to the own-logon account SID, or, only for an associated SID classified as `WinLogonIdsSid`, exact equality to the logon SID returned by `GetTokenInformation(TokenLogonSid)` on that same current process token. Missing associated user, mismatch or failed observation rejects admission. |
-| Calling desktop is the current input desktop | Obtain the borrowed `GetThreadDesktop(GetCurrentThreadId())` handle and a non-inheritable `OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS)` handle in the current process station. Require complete bounded `UOI_NAME` observations with identical nonempty names. Require an active current session both before and after this comparison. Unavailable or malformed observations, a different desktop, or inactive session reject admission. An input-desktop handle alone does not satisfy this condition. |
+| Required local condition                        | Selected observation and rejection boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Windows 11 client on native x64                 | Check Windows before any Windows import. Require both process and OS architecture to be x64, excluding x64 emulation on ARM64. Use `Environment.OSVersion` for NT 10.0, build at least 22000, and a positive workstation-product comparison with `VerifyVersionInfoW` / `VerSetConditionMask`, selecting only `VER_PRODUCT_TYPE`, `VER_EQUAL`, and `VER_NT_WORKSTATION`. A failed comparison rejects admission.                                                                                              |
+| Calling thread is not impersonating             | `OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, ...)` must fail specifically with `ERROR_NO_TOKEN`. A returned token, anonymous impersonation, or any other failure rejects admission. Capture the native error immediately and close any returned token.                                                                                                                                                                                                                                            |
+| Own process has an interactive local logon      | Open only the current process token with `TOKEN_QUERY`. Use `GetTokenInformation(TokenStatistics).AuthenticationId` to query that one logon through `LsaGetLogonSessionData`. Require sufficient returned structure size, the matching LUID and a valid nonnull SID; reject LocalSystem, LocalService and NetworkService. Accept only `Interactive`, `RemoteInteractive`, `CachedInteractive` or `CachedRemoteInteractive`. Other types, including `NewCredentials`, reject admission.                       |
+| Current session is actively connected           | Obtain the current process's nonzero session ID with `ProcessIdToSessionId`. Query only that local session with `WTSQuerySessionInformationW(WTSConnectState)` and require a correctly sized `WTSActive` value. Unknown, disconnected, malformed or unavailable state rejects admission.                                                                                                                                                                                                                     |
+| Visible station belongs to the local logon user | On the borrowed `GetProcessWindowStation` handle, require successful `GetUserObjectInformationW(UOI_FLAGS)` with `WSF_VISIBLE`. Require a bounded valid nonempty `UOI_USER_SID`. Accept exact equality to the own-logon account SID, or, only for an associated SID classified as `WinLogonIdsSid`, exact equality to the logon SID returned by `GetTokenInformation(TokenLogonSid)` on that same current process token. Missing associated user, mismatch or failed observation rejects admission.          |
+| Calling desktop is the current input desktop    | Obtain the borrowed `GetThreadDesktop(GetCurrentThreadId())` handle and a non-inheritable `OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS)` handle in the current process station. Require complete bounded `UOI_NAME` observations with identical nonempty names. Require an active current session both before and after this comparison. Unavailable or malformed observations, a different desktop, or inactive session reject admission. An input-desktop handle alone does not satisfy this condition. |
 
 The [.NET OS architecture contract](https://learn.microsoft.com/dotnet/core/compatibility/interop/7.0/osarchitecture-emulation)
 distinguishes the host from emulation. [.NET's OS version property](https://learn.microsoft.com/dotnet/api/system.environment.osversion?view=net-10.0)
@@ -544,7 +557,7 @@ Real-host observation of these predicates follows the experiment policy.
 
 ### Managed HTTP Identity
 
-The [operational identity registry](../governance/operational-identities.yaml) owns the
+The [operational identity registry](../operational-identities.yaml) owns the
 fork's HTTP product token and development-version behavior. The Windows adapter supplies
 one thread-safe, process-owned HTTP client through MSAL's supported
 `WithHttpClientFactory(IMsalHttpClientFactory)` seam. A small managed handler adds the
@@ -612,20 +625,20 @@ cross-process continuation, automatic interactive retry, or browser/device-code 
 provided. MSAL/WAM may perform their own documented protocol steps within the original
 cancellation/deadline boundary.
 
-| Observation | Coordinator outcome/action |
-| --- | --- |
-| Admission or Profile semantic error | `invalid_request`; no provider call. |
-| No visible match or silent-call interaction requirement | `interaction_required`, or the one compatible interactive call when permitted. |
-| Provider interaction requirement during account discovery | `interaction_required` with its safe reason; terminal, no owned UI or interactive call in any mode. |
-| Explicit `force-interactive` with zero or one exact match | One provider interactive call through the sign-in/account-selection route with neither account nor login hint; no engine silent acquisition or fallback. |
-| Multiple exact visible matches | `account_ambiguous`; no silent call or picker. |
-| Broker unavailable, unsupported session, or rejected web fallback | `mechanism_unavailable`; no alternate mechanism. |
-| Caller cancellation, lifetime-pipe EOF, `WM_CLOSE` delivered to the hidden parent, or provider user cancellation | `cancelled`; no retry. The local cancellation/deadline latch determines its own origin before interpreting a provider cancellation code. |
-| Recognized provider denial, including OAuth `access_denied` or AADSTS65004 | `denied`; no retry. Do not classify all service exceptions as denial. |
-| Recognized network/service transient or provider `IsRetryable` hint | `temporarily_unavailable`; no application retry in this Slice. |
-| Required result postcondition absent or mismatched | `identity_validation_failed`; discard the candidate token and stop. |
-| Original deadline reached before complete validation | `timeout`; invalidate late completion. |
-| Unrecognized provider/native failure or application defect | `internal_failure`; no fallback or raw exception export. |
+| Observation                                                                                                      | Coordinator outcome/action                                                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Admission or Profile semantic error                                                                              | `invalid_request`; no provider call.                                                                                                                     |
+| No visible match or silent-call interaction requirement                                                          | `interaction_required`, or the one compatible interactive call when permitted.                                                                           |
+| Provider interaction requirement during account discovery                                                        | `interaction_required` with its safe reason; terminal, no owned UI or interactive call in any mode.                                                      |
+| Explicit `force-interactive` with zero or one exact match                                                        | One provider interactive call through the sign-in/account-selection route with neither account nor login hint; no engine silent acquisition or fallback. |
+| Multiple exact visible matches                                                                                   | `account_ambiguous`; no silent call or picker.                                                                                                           |
+| Broker unavailable, unsupported session, or rejected web fallback                                                | `mechanism_unavailable`; no alternate mechanism.                                                                                                         |
+| Caller cancellation, lifetime-pipe EOF, `WM_CLOSE` delivered to the hidden parent, or provider user cancellation | `cancelled`; no retry. The local cancellation/deadline latch determines its own origin before interpreting a provider cancellation code.                 |
+| Recognized provider denial, including OAuth `access_denied` or AADSTS65004                                       | `denied`; no retry. Do not classify all service exceptions as denial.                                                                                    |
+| Recognized network/service transient or provider `IsRetryable` hint                                              | `temporarily_unavailable`; no application retry in this Slice.                                                                                           |
+| Required result postcondition absent or mismatched                                                               | `identity_validation_failed`; discard the candidate token and stop.                                                                                      |
+| Original deadline reached before complete validation                                                             | `timeout`; invalidate late completion.                                                                                                                   |
+| Unrecognized provider/native failure or application defect                                                       | `internal_failure`; no fallback or raw exception export.                                                                                                 |
 
 Map codes through an explicit bounded table using structured provider codes/statuses,
 never message substring parsing. Safe reason strings identify categories such as
@@ -764,19 +777,19 @@ the existing request lifetime determines cancellation versus the original
 deadline. Use ordinal provider-code comparison. Known cancellation, denial, and
 identity mismatch precede the broader UI-required and retryable branches.
 
-| Public observation | Existing outcome and reason |
-| --- | --- |
-| Original operation token is canceled | Propagate cancellation carrying that token. |
-| `authentication_canceled` | `cancelled`. |
-| `access_denied` or positively recognized structured Entra code 65004 | `denied`. |
-| `user_mismatch` | `identity_validation_failed`. |
-| `MsalUiRequiredException` | `interaction_required`; `ConsentRequired` classification uses `consent_required`. |
-| Explicit availability/host failure, rejecting custom UI, `platform_not_supported`, or `wam_runtime_init_failed` | `mechanism_unavailable`. |
-| Remaining `MsalException.IsRetryable` | `temporarily_unavailable` / `provider_transient`. |
-| `service_not_available` or `temporarily_unavailable` | `temporarily_unavailable` / `service_transient`. |
-| `network_not_available`, or `HttpRequestException` with NameResolutionError/ConnectionError | `temporarily_unavailable` / `network_transient`. |
-| HTTP cancellation with an inner `TimeoutException` while the original token remains active | `temporarily_unavailable` / `network_transient`. |
-| Other observations, including unexplained cancellation and unknown configuration/native errors | `internal_failure`. |
+| Public observation                                                                                              | Existing outcome and reason                                                       |
+| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Original operation token is canceled                                                                            | Propagate cancellation carrying that token.                                       |
+| `authentication_canceled`                                                                                       | `cancelled`.                                                                      |
+| `access_denied` or positively recognized structured Entra code 65004                                            | `denied`.                                                                         |
+| `user_mismatch`                                                                                                 | `identity_validation_failed`.                                                     |
+| `MsalUiRequiredException`                                                                                       | `interaction_required`; `ConsentRequired` classification uses `consent_required`. |
+| Explicit availability/host failure, rejecting custom UI, `platform_not_supported`, or `wam_runtime_init_failed` | `mechanism_unavailable`.                                                          |
+| Remaining `MsalException.IsRetryable`                                                                           | `temporarily_unavailable` / `provider_transient`.                                 |
+| `service_not_available` or `temporarily_unavailable`                                                            | `temporarily_unavailable` / `service_transient`.                                  |
+| `network_not_available`, or `HttpRequestException` with NameResolutionError/ConnectionError                     | `temporarily_unavailable` / `network_transient`.                                  |
+| HTTP cancellation with an inner `TimeoutException` while the original token remains active                      | `temporarily_unavailable` / `network_transient`.                                  |
+| Other observations, including unexplained cancellation and unknown configuration/native errors                  | `internal_failure`.                                                               |
 
 The MSAL exception type and its public retry hint already normalize the relevant
 broker statuses. Do not duplicate a private native enum or interpret
@@ -837,6 +850,8 @@ UI, account discovery or network behavior.
 
 ### UML Request Sequence
 
+<!-- markdownlint-disable MD013 -->
+
 ```mermaid
 sequenceDiagram
     participant Caller as WSL caller
@@ -875,6 +890,8 @@ sequenceDiagram
     end
     Note over Caller,WAM: Cancellation/deadline can terminate any pending path#59; external session changes are not rolled back
 ```
+
+<!-- markdownlint-enable MD013 -->
 
 The diagram's success tail applies only to a candidate that passed validation. Ambiguity,
 denial, cancellation, timeout, and invalid candidates do not continue to it.
@@ -1124,6 +1141,8 @@ records this known limitation.
 
 ### UML Terminal State View
 
+<!-- markdownlint-disable MD013 -->
+
 ```mermaid
 stateDiagram-v2
     [*] --> Admission
@@ -1137,6 +1156,8 @@ stateDiagram-v2
     Ending --> Exited: Shutdown watchdog or process termination
     Exited --> [*]
 ```
+
+<!-- markdownlint-enable MD013 -->
 
 ## Result, Diagnostics, and Compatibility
 

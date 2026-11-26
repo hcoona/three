@@ -31,17 +31,17 @@ and typed machine failures.
 
 Assessment for that target use case: **2.3/5**.
 
-| Area | Score | Publicly observable reason |
-| --- | ---: | --- |
-| Responsibility boundaries | 3/5 | Projects and test seams exist, but command, policy, storage, and presentation remain coupled. |
-| Caller-intent preservation | 2/5 | Client, tenant, and scopes pass through; order, interaction, deadline, and host intent do not. |
-| Account correctness | 1/5 | Domain suffix filtering, lossy ambiguity, OS-account widening, and no result postcondition. |
-| Flow architecture | 2/5 | Deterministic fixed sequence, but broker combines silent and interactive policy stages. |
-| Platform and host model | 2/5 | Broad platform support, but no explicit WSL model and weak UI-parent discovery. |
-| Cache and security | 3/5 | Secure-first integration with an implicit headless plaintext fallback. |
-| Failure and output contract | 2/5 | Token output is separate from logs, but failures and result metadata are collapsed. |
-| Testability | 3/5 | Useful interfaces and unit tests, without release-gating real broker and WSL matrices. |
-| Release and maintenance | 2/5 | Self-contained pinned artifacts, but stale release records and weak dependency canaries. |
+| Area                        | Score | Publicly observable reason                                                                     |
+| --------------------------- | ----: | ---------------------------------------------------------------------------------------------- |
+| Responsibility boundaries   |   3/5 | Projects and test seams exist, but command, policy, storage, and presentation remain coupled.  |
+| Caller-intent preservation  |   2/5 | Client, tenant, and scopes pass through; order, interaction, deadline, and host intent do not. |
+| Account correctness         |   1/5 | Domain suffix filtering, lossy ambiguity, OS-account widening, and no result postcondition.    |
+| Flow architecture           |   2/5 | Deterministic fixed sequence, but broker combines silent and interactive policy stages.        |
+| Platform and host model     |   2/5 | Broad platform support, but no explicit WSL model and weak UI-parent discovery.                |
+| Cache and security          |   3/5 | Secure-first integration with an implicit headless plaintext fallback.                         |
+| Failure and output contract |   2/5 | Token output is separate from logs, but failures and result metadata are collapsed.            |
+| Testability                 |   3/5 | Useful interfaces and unit tests, without release-gating real broker and WSL matrices.         |
+| Release and maintenance     |   2/5 | Self-contained pinned artifacts, but stale release records and weak dependency canaries.       |
 
 ## Finding 1: Flow Order and Interaction Policy Are Conflated
 
@@ -234,15 +234,15 @@ Lasso namespace. This routing describes the public-source inventory, not Lasso's
 unpublished API contract. Test entries use the same mapping as corroboration rather than
 as a separate runtime responsibility.
 
-| Apparent responsibility | References | Manifest symbol family | Source-established surface | Bounded candidate, not a decision |
-| --- | ---: | --- | --- | --- |
-| CLI hosting and execution | 3 | `LassoMcMaster*` | [`LassoMcMaster`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/Program.cs#L117-L137) wraps an already-created McMaster application and standard service collection. | Retain the McMaster command model behind direct public or fork-owned host glue; validate activation, binding, exit, disposal, and output behavior before claiming equivalence. |
-| Environment access | 18 | `IEnv*` | `IEnv.Get` supplies nullable strings; callers own pipeline detection, interaction policy, parsing, and precedence in [`IEnvExtensions`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/IEnvExtensions.cs#L19-L70) and [`PublicClientAuth`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/PublicClientAuth.cs#L22-L52). | Use a minimal fork-owned lookup seam, or direct process-environment access where no test seam is needed; remove ADO-specific reads if that downstream concern remains outside the authentication engine. |
-| Telemetry event model | 33 | `EventData*`; `CommandExecuteEventData*` | `EventData` and `CommandExecuteEventData` carry mutable properties, measures, and exceptions across command and authentication paths; [`AuthFlowResultExtensions`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/AuthFlowResultExtensions.cs#L23-L64) performs the visible conversion. | Replace the Lasso event chain with a bounded fork-owned telemetry boundary that remains separate from authentication results and satisfies `V2-REQ-035` and `V2-REQ-046`. |
-| Telemetry delivery | 8 | `ITelemetryService*` | `ITelemetryService.SendEvent` is the visible delivery operation in [`AuthFlowResultExtensions`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/AuthFlowResultExtensions.cs#L67-L86); some injected service references are unused by their command. | Delete unused injections and define an optional fork-owned export boundary with explicit configuration, bounded failure, and finite lifecycle behavior. |
-| Telemetry and host configuration | 17 | `TelemetryOutput*`; `TelemetryConfig*`; `LassoOptions*` | [`Program`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/Program.cs#L62-L121) selects the backend, ingestion token, privacy flags, command events, asynchronous behavior, collected environment names, and stderr threshold. Upstream documents telemetry as [off by default](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/README.md#L96-L109). | Drop the upstream ingestion configuration and identity. Retain the optional telemetry behavior required by `V2-REQ-046`; select its implementation in later architecture work. The existing [`OpenTelemetry.Api` declaration](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/AzureAuth.csproj#L28-L31) does not establish backend or behavioral equivalence. |
-| Telemetry device identity | 2 | `TelemetryDeviceID*` | `TelemetryDeviceID.GetAsync` and `Delete` expose an identifier and reset command in [`CommandInfo`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/Commands/CommandInfo.cs#L17-L41) and [`CommandInfoResetDeviceID`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/Commands/Info/CommandInfoResetDeviceID.cs#L15-L30). | Remove both with telemetry, or define a fork-owned lifecycle and storage policy if an identifier is later justified. |
-| Logging extension | 2 | `ILogger.LogSuccess` | `ILogger.LogSuccess` reports token and device-reset success in [`CommandAad`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/Commands/CommandAad.cs#L402-L415) and [`CommandInfoResetDeviceID`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/Commands/Info/CommandInfoResetDeviceID.cs#L25-L30). | Use ordinary `ILogger` behavior or a one-line fork-owned extension if distinct success formatting remains necessary. |
+| Apparent responsibility          | References | Manifest symbol family                                  | Source-established surface                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Bounded candidate, not a decision                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------- | ---------: | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI hosting and execution        |          3 | `LassoMcMaster*`                                        | [`LassoMcMaster`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/Program.cs#L117-L137) wraps an already-created McMaster application and standard service collection.                                                                                                                                                                                                                                      | Retain the McMaster command model behind direct public or fork-owned host glue; validate activation, binding, exit, disposal, and output behavior before claiming equivalence.                                                                                                                                                                                                                                                    |
+| Environment access               |         18 | `IEnv*`                                                 | `IEnv.Get` supplies nullable strings; callers own pipeline detection, interaction policy, parsing, and precedence in [`IEnvExtensions`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/IEnvExtensions.cs#L19-L70) and [`PublicClientAuth`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/PublicClientAuth.cs#L22-L52).               | Use a minimal fork-owned lookup seam, or direct process-environment access where no test seam is needed; remove ADO-specific reads if that downstream concern remains outside the authentication engine.                                                                                                                                                                                                                          |
+| Telemetry event model            |         33 | `EventData*`; `CommandExecuteEventData*`                | `EventData` and `CommandExecuteEventData` carry mutable properties, measures, and exceptions across command and authentication paths; [`AuthFlowResultExtensions`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/AuthFlowResultExtensions.cs#L23-L64) performs the visible conversion.                                                                                                                    | Replace the Lasso event chain with a bounded fork-owned telemetry boundary that remains separate from authentication results and satisfies `V2-REQ-035` and `V2-REQ-046`.                                                                                                                                                                                                                                                         |
+| Telemetry delivery               |          8 | `ITelemetryService*`                                    | `ITelemetryService.SendEvent` is the visible delivery operation in [`AuthFlowResultExtensions`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/AuthFlowResultExtensions.cs#L67-L86); some injected service references are unused by their command.                                                                                                                                                         | Delete unused injections and define an optional fork-owned export boundary with explicit configuration, bounded failure, and finite lifecycle behavior.                                                                                                                                                                                                                                                                           |
+| Telemetry and host configuration |         17 | `TelemetryOutput*`; `TelemetryConfig*`; `LassoOptions*` | [`Program`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/Program.cs#L62-L121) selects the backend, ingestion token, privacy flags, command events, asynchronous behavior, collected environment names, and stderr threshold. Upstream documents telemetry as [off by default](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/README.md#L96-L109). | Drop the upstream ingestion configuration and identity. Retain the optional telemetry behavior required by `V2-REQ-046`; select its implementation in later architecture work. The existing [`OpenTelemetry.Api` declaration](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/AzureAuth.csproj#L28-L31) does not establish backend or behavioral equivalence. |
+| Telemetry device identity        |          2 | `TelemetryDeviceID*`                                    | `TelemetryDeviceID.GetAsync` and `Delete` expose an identifier and reset command in [`CommandInfo`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/Commands/CommandInfo.cs#L17-L41) and [`CommandInfoResetDeviceID`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/Commands/Info/CommandInfoResetDeviceID.cs#L15-L30).               | Remove both with telemetry, or define a fork-owned lifecycle and storage policy if an identifier is later justified.                                                                                                                                                                                                                                                                                                              |
+| Logging extension                |          2 | `ILogger.LogSuccess`                                    | `ILogger.LogSuccess` reports token and device-reset success in [`CommandAad`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/Commands/CommandAad.cs#L402-L415) and [`CommandInfoResetDeviceID`](https://github.com/AzureAD/microsoft-authentication-cli/blob/de20930c34b3b86c8a0ed7bbdeeca3f662dae918/src/AzureAuth/Commands/Info/CommandInfoResetDeviceID.cs#L25-L30).                                    | Use ordinary `ILogger` behavior or a one-line fork-owned extension if distinct success formatting remains necessary.                                                                                                                                                                                                                                                                                                              |
 
 Three namespace imports have no associated behavioral symbol and are direct removal
 candidates: both Lasso imports in
@@ -271,35 +271,35 @@ replace, or isolate the Lasso dependency behind an entirely public build path.
 
 ## Structural Debt Versus Isolated Defects
 
-| Area | Classification |
-| --- | --- |
-| Ordered strategy and interaction policy | Structural: mechanism flags substitute for a policy model. |
-| Strict account selection | Structural, with additional suffix-match and claims-retry defects. |
-| Typed result and failure semantics | Structural public-contract gap. |
-| Parent-window and WSL behavior | Missing host-context abstraction plus implementation defects. |
-| Deadline and cancellation | Structural execution-contract gap. |
-| Linux cache fallback | Embedded policy decision requiring explicit product ownership. |
-| Individual duplicate cache attempts or environment checks | Repairable implementation defects. |
+| Area                                                      | Classification                                                     |
+| --------------------------------------------------------- | ------------------------------------------------------------------ |
+| Ordered strategy and interaction policy                   | Structural: mechanism flags substitute for a policy model.         |
+| Strict account selection                                  | Structural, with additional suffix-match and claims-retry defects. |
+| Typed result and failure semantics                        | Structural public-contract gap.                                    |
+| Parent-window and WSL behavior                            | Missing host-context abstraction plus implementation defects.      |
+| Deadline and cancellation                                 | Structural execution-contract gap.                                 |
+| Linux cache fallback                                      | Embedded policy decision requiring explicit product ownership.     |
+| Individual duplicate cache attempts or environment checks | Repairable implementation defects.                                 |
 
 ## V1 Component Disposition
 
-| V1 component | V2 disposition |
-| --- | --- |
-| `AuthMode` and `Combine()` | Replace. |
-| `AuthParameters` | Replace with a complete request contract. |
-| `PublicClientAuth.Token` | Replace with asynchronous typed orchestration. |
-| `AuthFlowFactory` and `AuthFlowExecutor` | Replace. |
-| Composite `Broker` | Split; selectively reuse mechanism code. |
-| `CachedAuth`, `Web`, and `DeviceCode` | Reuse concepts behind v2 mechanism contracts. |
-| IWA | Open decision requiring a supported-scenario justification. |
-| `IPCAWrapper` and `PCAWrapper` | Reuse the seam; replace the result shape and claims behavior. |
-| `PCACache` | Reuse platform knowledge; replace policy, namespace, and fallback semantics. |
-| `TaskExecutor` | Replace. |
-| Named lock | Reuse only the shared-state coordination concept with asynchronous deadline-aware behavior. |
-| `TokenResult` and manual JSON | Replace with a versioned protocol. |
-| Attempt diagnostics | Reuse the local observability concept with fork-owned identity and redaction. |
-| ADO PAT components | Defer to a separate product-specific decision. |
-| Upstream build and release plumbing | Replace with publicly operable, fork-owned infrastructure. |
+| V1 component                             | V2 disposition                                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `AuthMode` and `Combine()`               | Replace.                                                                                    |
+| `AuthParameters`                         | Replace with a complete request contract.                                                   |
+| `PublicClientAuth.Token`                 | Replace with asynchronous typed orchestration.                                              |
+| `AuthFlowFactory` and `AuthFlowExecutor` | Replace.                                                                                    |
+| Composite `Broker`                       | Split; selectively reuse mechanism code.                                                    |
+| `CachedAuth`, `Web`, and `DeviceCode`    | Reuse concepts behind v2 mechanism contracts.                                               |
+| IWA                                      | Open decision requiring a supported-scenario justification.                                 |
+| `IPCAWrapper` and `PCAWrapper`           | Reuse the seam; replace the result shape and claims behavior.                               |
+| `PCACache`                               | Reuse platform knowledge; replace policy, namespace, and fallback semantics.                |
+| `TaskExecutor`                           | Replace.                                                                                    |
+| Named lock                               | Reuse only the shared-state coordination concept with asynchronous deadline-aware behavior. |
+| `TokenResult` and manual JSON            | Replace with a versioned protocol.                                                          |
+| Attempt diagnostics                      | Reuse the local observability concept with fork-owned identity and redaction.               |
+| ADO PAT components                       | Defer to a separate product-specific decision.                                              |
+| Upstream build and release plumbing      | Replace with publicly operable, fork-owned infrastructure.                                  |
 
 ## Reusable Assets
 
