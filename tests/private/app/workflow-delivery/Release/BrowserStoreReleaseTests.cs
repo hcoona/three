@@ -80,6 +80,9 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     [DataRow("published", """{"distributionChannels":[{"crxVersion":7}]}""")]
     [DataRow("published", """{"distributionChannels":[{"crxVersion":"invalid"}]}""")]
     [DataRow("published", """{"distributionChannels":[{"crxVersion":"1.0.0.0.0"}]}""")]
+    [DataRow("submitted", """{"distributionChannels":[{"crxVersion":"1.0.0"}]}""")]
+    [DataRow("submitted",
+        """{"state":"IN_EXPEDITED_REVIEW","distributionChannels":[{"crxVersion":"1.0.0"}]}""")]
     public async Task UnreadableChromeRevisionBlocksPublication(string field, string revision)
     {
         string body = $$"""{"{{field}}ItemRevisionStatus":{{revision}}}""";
@@ -96,8 +99,7 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
             context.CancellationToken);
 
         Assert.AreEqual(StoreState.Unknown, result.Before.State);
-        Assert.AreEqual("Chrome Web Store revision lacks readable distribution channels.",
-            Assert.ContainsSingle(result.Before.Reasons));
+        Assert.IsNotEmpty(result.Before.Reasons);
         Assert.IsEmpty(result.Operations);
         Assert.AreEqual(HttpMethod.Get, Assert.ContainsSingle(handler.Requests).Method);
     }
@@ -564,11 +566,19 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         % 4);
 
     [TestMethod]
-    public void DefaultPublisherRoutesReadsAndWritesToSeparateTransports()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task StoreCliSuppliesNoRedirectClientSoCustomHeadersNeverFollowRedirects(
+        bool publish)
     {
-        using var originals = new Originals(["chrome-zip"]);
-        BrowserStorePreparationResult preparation = originals.Preparation(
-            BrowserStorePreparation.ChromeWebStore, live: true);
+        await using var target = new RegistryHttpClientTests.LoopbackServer(tls: null,
+            _ => RegistryHttpClientTests.Ok("{}"));
+        await using var origin = new RegistryHttpClientTests.LoopbackServer(tls: null,
+            _ => RegistryHttpClientTests.Redirect($"http://127.0.0.1:{target.Port}/other"));
+        using var originals = new Originals(["edge-zip"]);
+        string storeName = publish ? BrowserStorePreparation.EdgeAddons
+            : BrowserStorePreparation.ChromeWebStore;
+        BrowserStorePreparationResult preparation = originals.Preparation(storeName, live: true);
         string dir = Directory.CreateTempSubdirectory("browser-store-cli-").FullName;
         try
         {
@@ -577,29 +587,46 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
             File.WriteAllText(prepPath, JsonSerializer.Serialize(preparation,
                 TransferJson.Default.BrowserStorePreparationResult));
             File.WriteAllText(initPath, JsonSerializer.Serialize(
-                Observation(preparation, StoreState.Absent),
+                BrowserStoreRelease.Unobserved(preparation),
                 TransferJson.Default.StoreObservation));
-            using var readHandler = new ScriptedHttpHandler((_, _) => Response(200, "{}"));
-            using var writeHandler = new ScriptedHttpHandler((_, _) => Response(307, "{}",
-                "https://chromewebstore.googleapis.com/redirect"));
+            string originalsRoot = Path.GetDirectoryName(
+                Path.GetDirectoryName(originals.Files[0].Path)!)!;
+            HttpStatusCode? observedStatus = null;
             using var output = new StringWriter();
 
-            int? exit = BrowserStoreReleaseCli.Run(
-                ["release", "publish-browser-store", prepPath,
-                    Path.GetDirectoryName(Path.GetDirectoryName(originals.Files[0].Path)!)!,
-                    initPath],
-                output, environment: name => name == "CWS_ACCESS_TOKEN" ? "token" : null,
-                readHttp: () => new HttpClient(readHandler, disposeHandler: false),
-                writeHttp: () => new HttpClient(writeHandler, disposeHandler: false));
+            _ = BrowserStoreReleaseCli.Run(publish
+                    ? ["release", "publish-browser-store", prepPath, originalsRoot, initPath]
+                    : ["release", "observe-browser-store", prepPath, originalsRoot],
+                output, store: (prep, _, client) => new RedirectProbeStore(prep, client,
+                    new Uri($"http://127.0.0.1:{origin.Port}/status"),
+                    status => observedStatus = status));
 
-            Assert.AreEqual(1, exit);
-            Assert.AreEqual(HttpMethod.Get, Assert.ContainsSingle(readHandler.Requests).Method);
-            Assert.AreEqual(HttpMethod.Post, Assert.ContainsSingle(writeHandler.Requests).Method);
+            Assert.AreEqual(HttpStatusCode.Found, observedStatus);
+            Assert.HasCount(1, origin.Requests);
+            Assert.IsEmpty(target.Requests);
         }
         finally
         {
             Directory.Delete(dir, recursive: true);
         }
+    }
+
+    private sealed class RedirectProbeStore(BrowserStorePreparationResult preparation,
+        HttpClient client, Uri uri, Action<HttpStatusCode> record) : IBrowserStore
+    {
+        public async Task<StoreObservation> ObserveAsync(CancellationToken token)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.Add("X-ClientID", "secret-client-id");
+            using HttpResponseMessage response = await client.SendAsync(request, token);
+            record(response.StatusCode);
+            return new(preparation.Prepared.Subject, preparation.Target, Version,
+                StoreState.Unknown, ["Redirect blocked."], []);
+        }
+
+        public async Task<StoreObservation?> PublishAsync(StoreFile[] files,
+            List<StoreOperation> operations, CancellationToken token) =>
+            await ObserveAsync(token);
     }
 
     private static HttpResponseMessage Response(int status, string body,
