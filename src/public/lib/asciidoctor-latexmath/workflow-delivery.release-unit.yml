@@ -8,3 +8,13 @@ builds:
       - id: gem
         role: primary-package
         kind: ruby-gem
+    qualification:
+      require: asciidoctor-latexmath
+      nbgv-env: true
+      locked-bundle: true
+      rspec: true
+      dependencies:
+        - asciidoctor@>= 2.0, < 3.0
+      probe: >-
+        Asciidoctor::Latexmath::VERSION == ARGV.fetch(0) &&
+        Asciidoctor::Latexmath.respond_to?(:register)

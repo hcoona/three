@@ -1,6 +1,5 @@
 using System.Text.Json;
 using WorkflowDelivery.CI;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Repository;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
@@ -434,7 +433,7 @@ public sealed class RubyGroupReaderTests(TestContext context)
                     [], "ubuntu-latest", true, []);
                 string? preset = UnitPresets.GetValueOrDefault(checkout.Revision.Commit);
                 var owner = new ProjectFacts("ruby:src/input", "src/input", [], [],
-                    preset is null ? null : RubyReleaseUnits.Latexmath,
+                    preset is null ? null : "asciidoctor-latexmath",
                     preset ?? RubyProjectChecks.Preset, [check]);
                 SharedInput[] inputs = CrossInput ? [new("src/other/code.cs", ["src/input"])] : [];
                 var graph = new RubyDependencyGraph(

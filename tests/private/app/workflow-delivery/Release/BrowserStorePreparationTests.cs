@@ -53,7 +53,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
         Assert.AreEqual(outputs, string.Join(",", result.Prepared.Files.Select(file =>
             file.Output).Order(StringComparer.Ordinal)));
         Assert.IsTrue(result.Prepared.Files.All(file => file.Version == "1.2.0.7" &&
-            file.Name == BrowserStorePreparation.Unit &&
+            file.Name == BrowserStorePreparation.DefaultUnit.Id &&
             File.Exists(Path.Combine(fixture.Scratch, file.Path))));
         // Every store target is built once regardless of the selected store.
         Assert.AreEqual("zip,zip:firefox,zip:edge", string.Join(",", result.Commands
@@ -95,7 +95,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
             if (target != "chrome") return;
             entries["content-scripts/dir/"] = "";
             entries["manifest.json"] = $$"""
-                {"manifest_version":3,"name":"{{BrowserStorePreparation.ManifestName}}",
+                {"manifest_version":3,"name":"{{BrowserStorePreparation.DefaultUnit.ManifestName}}",
                  "version":"1.2.0.7","content_scripts":[{"js":["content-scripts/dir/"]}]}
                 """;
         };
@@ -105,7 +105,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     [TestMethod]
     [DataRow("firefox", "../escape", "x")]
     [DataRow("firefox", "content-scripts", "x")]
-    [DataRow("sources", BrowserStorePreparation.Product + "/.output/old.zip", "x")]
+    [DataRow("sources", "src/public/lib/steam-account-history-to-csv/.output/old.zip", "x")]
     [DataRow("sources", "pnpm-lock.yaml", null)]
     public async Task UnacceptableArchiveEntriesCannotQualify(string archive, string entry,
         string? contents)
@@ -190,7 +190,8 @@ public sealed class BrowserStorePreparationTests(TestContext context)
                 checkout = writable ? PreparationCheckout.Copy(shared!.Directory, root)
                     : shared!.Directory;
                 Request = new(new(sharedRevision, "refs/heads/feature",
-                        BrowserStorePreparation.Unit, BrowserStorePreparation.Declaration,
+                        BrowserStorePreparation.DefaultUnit.Id,
+                        BrowserStorePreparation.DefaultUnit.Declaration,
                         "official", store, true),
                     checkout, Directory.CreateDirectory(Path.Combine(root, "prepared")).FullName,
                     Target: new(store, "item", store == "chrome-web-store" ? "publisher" : null));
@@ -204,12 +205,12 @@ public sealed class BrowserStorePreparationTests(TestContext context)
 
         internal static async Task<string> CommitAsync(GitFixture repository)
         {
-            string product = BrowserStorePreparation.Product + "/";
+            string product = BrowserStorePreparation.DefaultUnit.ProductDirectory + "/";
             await repository.SetAsync(product + "package.json",
                 """{"name":"steam-account-history-to-csv","version":"0.0.0-placeholder"}""");
             await repository.SetAsync(product + "version.json",
                 """{"version":"1.2.0-dev.{height}"}""");
-            await repository.SetAsync(BrowserStorePreparation.Declaration, """
+            await repository.SetAsync(BrowserStorePreparation.DefaultUnit.Declaration, """
                 schema: workflow-delivery/v3/release-unit
                 release-unit: steam-account-history-to-csv
                 builds:
@@ -273,7 +274,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
         private void Build(string script)
         {
             string directory = Path.Combine(checkout,
-                BrowserStorePreparation.Product, ".output");
+                BrowserStorePreparation.DefaultUnit.ProductDirectory, ".output");
             Directory.CreateDirectory(directory);
             string browser = script switch
             {
@@ -287,7 +288,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
             var manifest = new Dictionary<string, object>
             {
                 ["manifest_version"] = browser == "firefox" ? 2 : 3,
-                ["name"] = BrowserStorePreparation.ManifestName,
+                ["name"] = BrowserStorePreparation.DefaultUnit.ManifestName,
                 ["version"] = "1.2.0.7",
                 ["icons"] = new Dictionary<string, string> { ["16"] = "icons/16.png" },
                 ["content_scripts"] = new[] { new Dictionary<string, string[]>
@@ -304,7 +305,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
             Write(Name(browser), entries);
             if (browser == "firefox")
             {
-                string product = BrowserStorePreparation.Product;
+                string product = BrowserStorePreparation.DefaultUnit.ProductDirectory;
                 var sources = new Dictionary<string, string>
                 {
                     ["pnpm-lock.yaml"] = "lock",

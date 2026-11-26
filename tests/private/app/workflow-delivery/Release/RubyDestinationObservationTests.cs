@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using WorkflowDelivery.Destinations;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -26,9 +25,9 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         "GEM_SPEC_CACHE", "TMPDIR", "TMP", "TEMP"];
 
     [TestMethod]
-    [DataRow("buddy", "github-packages-ruby", RubyReleaseUnits.Smoke, true, "Exact")]
-    [DataRow("buddy", "github-packages-ruby", RubyReleaseUnits.Smoke, false, "Conflict")]
-    [DataRow("official", "rubygems", RubyReleaseUnits.Latexmath, true, "Exact")]
+    [DataRow("buddy", "github-packages-ruby", "hcoona-release-smoke-ruby", true, "Exact")]
+    [DataRow("buddy", "github-packages-ruby", "hcoona-release-smoke-ruby", false, "Conflict")]
+    [DataRow("official", "rubygems", "asciidoctor-latexmath", true, "Exact")]
     public async Task PresentNativeOriginalIsComparedByteForByte(string channel,
         string destination, string unit, bool matches, string state)
     {
@@ -315,7 +314,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         using var fixture = new Fixture(channel, destination);
         PreparedRelease prepared = fixture.Prepared with
         {
-            Files = [fixture.Prepared.Files[0] with { Name = name ?? RubyReleaseUnits.Smoke,
+            Files = [fixture.Prepared.Files[0] with { Name = name ?? "hcoona-release-smoke-ruby",
             Kind = kind }]
         };
         int calls = 0;
@@ -330,9 +329,9 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("https://unselected.invalid", RubyReleaseUnits.Smoke, "1.2.3")]
+    [DataRow("https://unselected.invalid", "hcoona-release-smoke-ruby", "1.2.3")]
     [DataRow("https://rubygems.org", "another-package", "1.2.3")]
-    [DataRow("https://rubygems.org", RubyReleaseUnits.Smoke, " ")]
+    [DataRow("https://rubygems.org", "hcoona-release-smoke-ruby", " ")]
     public async Task UnsupportedSourceCoordinateCannotRead(string host, string name,
         string version)
     {
@@ -364,7 +363,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     }
 
     private async Task AssertNoSourceReadAsync(RubySourceTools tools,
-        string host = "https://rubygems.org", string name = RubyReleaseUnits.Smoke,
+        string host = "https://rubygems.org", string name = "hcoona-release-smoke-ruby",
         string version = "1.2.3") =>
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => RubySourceReader.ReadAsync(
             host, name, version, tools, null, (_, _) => throw new AssertFailedException(
@@ -454,7 +453,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         internal PreparedRelease Prepared { get; }
 
         internal Fixture(string channel = "buddy", string destination = "github-packages-ruby",
-            string unit = RubyReleaseUnits.Smoke)
+            string unit = "hcoona-release-smoke-ruby")
         {
             Directory.CreateDirectory(Root);
             Tools = new(Path.Combine(Root, "tools", "ruby"), Path.Combine(Root, "tools",

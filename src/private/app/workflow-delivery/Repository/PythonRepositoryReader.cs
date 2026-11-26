@@ -93,9 +93,6 @@ internal sealed class PythonRepositoryReader
                 PythonMetadataMember member = native.Metadata.Members.SingleOrDefault(member =>
                     member.Directory == directory) ??
                     throw new InvalidDataException("Python distribution has no native member.");
-                // Only the distribution of a registered concrete recipe is adopted.
-                if (!PythonReleaseUnits.Registered(member.Name))
-                    throw new InvalidDataException("Unsupported Python Release unit.");
                 if (!quality.TryGetValue(directory, out QualitySelection? selection) ||
                     selection?.Preset != PythonPackageChecks.Preset)
                     throw new InvalidDataException("Python distribution lacks adopted quality.");
@@ -125,6 +122,19 @@ internal sealed class PythonRepositoryReader
         token.ThrowIfCancellationRequested();
         return new(new(checkout.Revision, native.Projects, configuration, request.Operation,
             packages.ToArray(), inputs), native, targets);
+    }
+
+    // Only the candidate is held to the current catalog; a basis keeps its own adoption.
+    internal static void RequireRegisteredUnits(PythonRevisionInputs inputs)
+    {
+        foreach (ProjectFacts owner in inputs.Facts.Packages)
+        {
+            PythonMetadataMember? member = inputs.Graph.Metadata.Members.SingleOrDefault(m =>
+                m.Directory == owner.Directory);
+            if (owner.ReleaseUnit is null || member is null ||
+                !ReleaseUnitCatalog.IsPythonRegistered(member.Name))
+                throw new InvalidDataException("Unsupported Python Release unit.");
+        }
     }
 
     private async Task<string> VersionAsync(PythonMetadataMember member,

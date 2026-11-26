@@ -11,3 +11,6 @@ builds:
       - id: sdist
         role: source-package
         kind: python-sdist
+    qualification:
+      api:
+        - project_id

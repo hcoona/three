@@ -41,7 +41,7 @@ public sealed class BrowserStorePreparationNativeTests(TestContext context)
             // scripts before the unprivileged build.
             NativeCommandResult installed = await NativeProcess.ExecuteAsync(new("pnpm",
                 checkout, ["install", "--frozen-lockfile", "--ignore-scripts",
-                    "--filter", BrowserStorePreparation.Unit + "..."], 900),
+                    "--filter", BrowserStorePreparation.DefaultUnit.Id + "..."], 900),
                 context.CancellationToken);
             Assert.IsTrue(installed.Succeeded, installed.Stdout + installed.Stderr);
             string scratch = Directory.CreateDirectory(Path.Combine(root, "preparation")).FullName;
@@ -54,7 +54,8 @@ public sealed class BrowserStorePreparationNativeTests(TestContext context)
                             Environment.SpecialFolder.UserProfile), ".local", "share"),
                     "mise"));
             var subject = new ReleaseSubject(revision, "refs/heads/preparation-development",
-                BrowserStorePreparation.Unit, BrowserStorePreparation.Declaration, "official",
+                BrowserStorePreparation.DefaultUnit.Id,
+                BrowserStorePreparation.DefaultUnit.Declaration, "official",
                 BrowserStorePreparation.FirefoxAmo, true);
             ReleasePreparationResult result = await BrowserStorePreparation.PrepareAsync(
                 new(subject, checkout, scratch, Target: new(BrowserStorePreparation.FirefoxAmo,
@@ -91,7 +92,8 @@ public sealed class BrowserStorePreparationNativeTests(TestContext context)
                 if (path.EndsWith("-sources.zip", StringComparison.Ordinal))
                 {
                     Assert.IsNotNull(zip.GetEntry("pnpm-lock.yaml"));
-                    Assert.IsNotNull(zip.GetEntry(BrowserStorePreparation.Product +
+                    Assert.IsNotNull(zip.GetEntry(
+                        BrowserStorePreparation.DefaultUnit.ProductDirectory +
                         "/package.json"));
                     continue;
                 }

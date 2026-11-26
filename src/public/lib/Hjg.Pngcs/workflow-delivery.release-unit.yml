@@ -8,3 +8,5 @@ builds:
       - id: nuget-package
         role: primary-package
         kind: nuget-package
+    qualification:
+      probe: typeof(Hjg.Pngcs.PngReader).Assembly.GetName().Name

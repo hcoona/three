@@ -8,3 +8,12 @@ builds:
       - id: nuget-package
         role: primary-package
         kind: nuget-package
+    qualification:
+      probe: |
+        ProbeLang.Descriptor.Name.Name == "ProbeLang"
+            ? typeof(Hcoona.Nanopass.SExpr).Assembly.GetName().Name : ""
+      declarations: |
+        [Hcoona.Nanopass.Language, Hcoona.Nanopass.NonTerminalDef("Expr", ["e"], "(unit)")]
+        internal static partial class ProbeLang;
+      analyzers:
+        - analyzers/dotnet/cs/Hcoona.Nanopass.Generators.dll

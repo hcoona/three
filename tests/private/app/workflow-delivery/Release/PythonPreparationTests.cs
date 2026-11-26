@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Destinations;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Release;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
@@ -135,7 +136,7 @@ public sealed class PythonPreparationTests(TestContext context)
         Change(facts, field, value);
         using JsonDocument document = JsonDocument.Parse(facts.ToJsonString());
         Assert.AreEqual(Identity, Assert.ThrowsExactly<InvalidDataException>(() =>
-            PythonPreparation.QualifyNative(subject, official: true,
+            PythonPreparation.QualifyNative(subject, ReleaseUnitCatalog.Python(subject.Unit), true,
                 "hcoona-release-smoke-python", "1.0.0", Interpreter, document.RootElement))
             .Message);
     }
@@ -157,8 +158,8 @@ public sealed class PythonPreparationTests(TestContext context)
         if (field == "local_version") facts["public_release"] = false;
         using JsonDocument document = JsonDocument.Parse(facts.ToJsonString());
         Assert.AreEqual((bool?)publicRelease, PythonPreparation.QualifyNative(subject,
-            channel == "official", "hcoona-release-smoke-python", "1.0.0", Interpreter,
-            document.RootElement));
+            ReleaseUnitCatalog.Python(subject.Unit), channel == "official",
+            "hcoona-release-smoke-python", "1.0.0", Interpreter, document.RootElement));
     }
 
     [TestMethod]
@@ -169,8 +170,8 @@ public sealed class PythonPreparationTests(TestContext context)
         facts["name"] = "other";
         using JsonDocument document = JsonDocument.Parse(facts.ToJsonString());
         Assert.AreEqual(Identity, Assert.ThrowsExactly<InvalidDataException>(() =>
-            PythonPreparation.QualifyNative(subject, official: false, "other", "1.0.0",
-                Interpreter, document.RootElement)).Message);
+            PythonPreparation.QualifyNative(subject, ReleaseUnitCatalog.Python(subject.Unit),
+                false, "other", "1.0.0", Interpreter, document.RootElement)).Message);
     }
 
     private static void Change(JsonObject facts, string field, string value) =>
@@ -419,12 +420,13 @@ public sealed class PythonPreparationTests(TestContext context)
         JsonObject facts = Fixture.StaticFacts("2.1.0.dev1");
         if (field.Length > 0) Change(facts, field, value);
         using JsonDocument document = JsonDocument.Parse(facts.ToJsonString());
+        PythonReleaseUnit unit = ReleaseUnitCatalog.Python(subject.Unit);
         if (field.Length == 0)
-            Assert.IsNull(PythonPreparation.QualifyNative(subject, false, Fixture.Nbgv,
+            Assert.IsNull(PythonPreparation.QualifyNative(subject, unit, false, Fixture.Nbgv,
                 "2.1.0.dev1", Interpreter, document.RootElement));
         else
             Assert.AreEqual(Identity, Assert.ThrowsExactly<InvalidDataException>(() =>
-                PythonPreparation.QualifyNative(subject, false, Fixture.Nbgv, "2.1.0.dev1",
+                PythonPreparation.QualifyNative(subject, unit, false, Fixture.Nbgv, "2.1.0.dev1",
                     Interpreter, document.RootElement)).Message);
     }
 

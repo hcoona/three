@@ -61,10 +61,12 @@ public sealed class ReleaseUnitDeclarationReaderTests
         const string content = """
             schema: workflow-delivery/v3/release-unit
             release-unit: combined-product
+            channels: [buddy, official-dry-run]
             builds:
               - id: z-build
                 definition: custom/not-registered-here
                 entry-point: nested/package.json
+                qualification: {probe: 'runProbe()', test-before-build: true}
                 outputs:
                   - {id: z-output, role: primary-package, kind: custom-binary}
                   - {id: a-output, role: source-package, kind: source-archive}
@@ -80,11 +82,15 @@ public sealed class ReleaseUnitDeclarationReaderTests
 
         Assert.AreEqual("workflow-delivery.release-unit.yml", result.SourcePath);
         Assert.AreEqual("combined-product", result.Id);
+        string[] channels = ["buddy", "official-dry-run"];
+        CollectionAssert.AreEqual(channels, result.Channels);
         Assert.HasCount(2, result.Builds);
         AssertBuild(result.Builds[0], "z-build", "custom/not-registered-here",
             "nested/package.json",
             [new("z-output", "primary-package", "custom-binary"),
              new("a-output", "source-package", "source-archive")]);
+        Assert.AreEqual(new ReleaseQualificationSpec(Probe: "runProbe()",
+            TestBeforeBuild: true), result.Builds[0].Qualification);
         AssertBuild(result.Builds[1], "a-build", "another/native-definition", ".",
             [new("second-output", "primary-package", "other-package")]);
     }

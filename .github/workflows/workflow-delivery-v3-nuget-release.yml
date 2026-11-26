@@ -11,19 +11,8 @@ name: Workflow Delivery v3 NuGet Release
           - nugetorg
       unit:
         description: Selected NuGet release unit
-        type: choice
+        type: string
         required: true
-        options:
-          - hcoona-release-smoke-github-packages
-          - circular-list
-          - hjg-pngcs
-          - memoization
-          - microsoft-extensions-logging-mstest
-          - microsoft-extensions-logging-xunit
-          - microsoft-extensions-options-dedup-change-extensions
-          - nanopass
-          - phi-failure-detector
-          - webhdfs-extensions-file-providers
       dry-run:
         description: Qualify and describe without publication
         type: boolean

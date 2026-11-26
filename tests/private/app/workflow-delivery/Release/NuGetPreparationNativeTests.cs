@@ -20,7 +20,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
 {
     [TestMethod]
     [TestCategory(DotNetCiCaller.NuGetPreparationCategory)]
-    [TestCategory(DotNetCiCaller.NuGetUnitCategory + NuGetReleaseUnits.Smoke)]
+    [TestCategory(DotNetCiCaller.NuGetUnitCategory + "hcoona-release-smoke-github-packages")]
     [Timeout(600000, CooperativeCancellation = true)]
     // Preparation does not read DryRun; NuGetPreparationTests asserts its subject round-trip.
     [DataRow("refs/heads/development")]

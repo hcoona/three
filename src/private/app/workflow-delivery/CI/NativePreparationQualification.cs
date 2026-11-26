@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using WorkflowDelivery.CI.Callers;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
-using WorkflowDelivery.Release;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.CI;
@@ -14,15 +14,24 @@ internal sealed record NativePreparationSelection(CiComparison Comparison,
 // filter, per-module minimum count and exit code qualify the selected rows.
 internal static class NativePreparationQualification
 {
-    private const string Products = "tests/private/app/workflow-delivery/fixtures/products/";
     private static readonly string[] Shared = [".github/workflows/ci.yml", "mise.toml",
-        "mise.lock", "workflow-delivery.quality.yml", Repository.CiScope.SkippedTestSummary];
-    private static readonly string[] Managed = ["src/private/app/workflow-delivery",
-        "tests/private/app/workflow-delivery"];
-    // The root PNPM workspace files the Node contract tests' tools read: the locked PNPM
-    // resolves its settings and hooks from them, beside the fixtures under Managed.
+        "mise.lock", "workflow-delivery.quality.yml", CiScope.SkippedTestSummary];
     private static readonly string[] NodeInputs = ["package.json", "pnpm-workspace.yaml",
         "pnpm-lock.yaml", ".npmrc", .. NodeRepositoryReader.HookFiles];
+    private static readonly string[] PythonProductRoots =
+    [.. ReleaseUnitCatalog.PythonUnits
+        .Where(u => !u.Declaration.StartsWith("tests/", StringComparison.Ordinal))
+        .Select(u => ReleaseUnitCatalog.ParentDirectory(u.Declaration))];
+    private static readonly string[] PythonSmokeRoots =
+    [.. ReleaseUnitCatalog.PythonUnits
+        .Where(u => u.Declaration.StartsWith("tests/", StringComparison.Ordinal))
+        .Select(u => ReleaseUnitCatalog.ParentDirectory(u.Declaration))];
+    private static readonly string[] RubySmokeRoots =
+    [.. ReleaseUnitCatalog.RubyUnits
+        .Where(u => u.Declaration.StartsWith("tests/", StringComparison.Ordinal))
+        .Select(u => ReleaseUnitCatalog.ParentDirectory(u.Declaration))];
+    private static readonly string[] BrowserProductRoots =
+        [.. ReleaseUnitCatalog.BrowserStoreUnits.Select(u => u.ProductDirectory)];
 
     internal static NativePreparationSelection Select(CiComparison comparison,
         string[] changedPaths)
@@ -75,16 +84,15 @@ internal static class NativePreparationQualification
         if (Shared.Contains(path, StringComparer.Ordinal)) return true;
         if (python && path is "pyproject.toml" or "uv.lock" or "uv.toml" or
                 ".config/uv/uv.toml" or ".python-version") return true;
-        string[] roots = python ? [.. Managed, "src/public/lib/nbgv-python"] : Managed;
-        int separator = path.LastIndexOf('/');
-        string name = path[(separator + 1)..];
-        string directory = separator < 0 ? "" : path[..separator];
-        if (name == "workflow-delivery.quality.yml")
-            return Under(Products + (python ? "hcoona-release-smoke-python" :
-                "hcoona-release-smoke-ruby"), directory);
+        string[] roots = python
+            ? [.. CiScope.ManagedControlRoots, .. PythonProductRoots]
+            : CiScope.ManagedControlRoots;
+        string[] smokeRoots = python ? PythonSmokeRoots : RubySmokeRoots;
+        string directory = CiScope.Parent(path);
+        if (path[(path.LastIndexOf('/') + 1)..] == "workflow-delivery.quality.yml")
+            return smokeRoots.Any(smoke => CiScope.Under(smoke, directory));
         return DotNetInheritedInputs.Consumes(path, roots) ||
-            Under(path, Products + (python ? "hcoona-release-smoke-python" :
-                "hcoona-release-smoke-ruby"));
+            smokeRoots.Any(smoke => CiScope.Under(path, smoke));
     }
 
     // The PNPM/Node contract tests run the locked Node and PNPM through the managed readers and
@@ -97,16 +105,13 @@ internal static class NativePreparationQualification
         if (path.EndsWith("/workflow-delivery.quality.yml", StringComparison.Ordinal))
             return false;
         return NodeInputs.Contains(path, StringComparer.Ordinal) ||
-            DotNetInheritedInputs.Consumes(path, Managed);
+            DotNetInheritedInputs.Consumes(path, CiScope.ManagedControlRoots);
     }
 
     // The browser-store scenario also builds the committed product, and the AMO source archive
     // carries every product file.
     private static bool BrowserInput(string path) => NodeInput(path) ||
-        Under(path, BrowserStorePreparation.Product);
-
-    private static bool Under(string path, string directory) => path == directory ||
-        path.StartsWith(directory + "/", StringComparison.Ordinal);
+        BrowserProductRoots.Any(root => CiScope.Under(path, root));
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

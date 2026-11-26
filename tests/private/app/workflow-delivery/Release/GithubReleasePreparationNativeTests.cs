@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using WorkflowDelivery.Destinations;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -17,9 +18,10 @@ public sealed class GithubReleasePreparationNativeTests(TestContext context)
     public async Task NativePreparationBuildsAndConsumesBothAssets()
     {
         CancellationToken token = context.CancellationToken;
+        GithubReleaseUnit unit = ReleaseUnitCatalog.GithubRelease("image-occlusion-editor");
         string source = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(source, "global.json")) ||
-            !Directory.Exists(Path.Combine(source, GithubReleaseUnits.Product)))
+            !Directory.Exists(Path.Combine(source, unit.ProductDirectory)))
             source = Path.GetDirectoryName(source) ??
                 throw new InvalidDataException("Missing source root.");
         string root = Directory.CreateTempSubdirectory("github-release-native-").FullName;
@@ -34,8 +36,8 @@ public sealed class GithubReleasePreparationNativeTests(TestContext context)
                 "--", source, checkout);
             await Git(checkout, "checkout", "--detach", revision);
             var subject = new ReleaseSubject(revision, "refs/heads/development",
-                GithubReleaseUnits.ImageOcclusionEditor, GithubReleaseUnits.Declaration, "buddy",
-                GithubReleaseUnits.Buddy, false);
+                unit.Id, unit.Declaration, "buddy",
+                GithubReleaseUnit.BuddyDestination, false);
             ReleasePreparationResult result = await GithubReleasePreparation.PrepareAsync(
                 new(subject, checkout, scratch), token);
             await File.WriteAllTextAsync(Path.Combine(evidence, "preparation.json"),
@@ -62,13 +64,13 @@ public sealed class GithubReleasePreparationNativeTests(TestContext context)
             Assert.AreEqual("buddy/image-occlusion-editor/v" + version, result.Native["tag"]);
             CollectionAssert.AreEquivalent(new[]
             {
-                GithubReleaseUnits.Asset("inno-installer", version),
-                GithubReleaseUnits.Asset("portable-zip", version),
+                unit.Asset("inno-installer", version),
+                unit.Asset("portable-zip", version),
             }, result.Prepared.Files.Select(file => file.Name).ToArray());
             using ZipArchive portable = ZipFile.OpenRead(Path.Combine(evidence,
-                GithubReleaseUnits.Asset("portable-zip", version)));
-            Assert.IsNotNull(portable.GetEntry(GithubReleaseUnits.Executable));
-            Assert.IsNotNull(portable.GetEntry(GithubReleaseUnits.Editor));
+                unit.Asset("portable-zip", version)));
+            Assert.IsNotNull(portable.GetEntry(unit.Executable));
+            Assert.IsNotNull(portable.GetEntry(unit.Editor));
             Assert.IsTrue(result.Commands.Any(command => command.Check == "installer-consumer"));
         }
         finally

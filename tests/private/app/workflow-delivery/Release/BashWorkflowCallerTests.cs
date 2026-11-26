@@ -223,16 +223,16 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         {
             this.ecosystem = ecosystem;
             bool github = ecosystem == "github-release";
-            string unit = github ? GithubReleaseUnits.ImageOcclusionEditor
+            string unit = github ? "image-occlusion-editor"
                 : "hcoona-release-smoke-" + ecosystem;
             var subject = new ReleaseSubject(new string('a', 40), "refs/heads/development", unit,
-                github ? GithubReleaseUnits.Declaration
+                github ? ReleaseUnitCatalog.GithubRelease(unit).Declaration
                     : Products + unit + "/workflow-delivery.release-unit.yml", "buddy",
                 ecosystem switch
                 {
                     "npm" => "github-packages-npm",
                     "python" => "testpypi",
-                    "github-release" => GithubReleaseUnits.Buddy,
+                    "github-release" => GithubReleaseUnit.BuddyDestination,
                     _ => "github-packages-ruby",
                 }, false);
             ReleaseFile[] files = ecosystem switch
@@ -243,9 +243,11 @@ public sealed class BashWorkflowCallerTests(TestContext context)
                     "archives/package.whl"), Original("distributions", "sdist", "python-sdist",
                     unit, "archives/package.tar.gz")],
                 "github-release" => [Original("windows-app", "installer", "inno-installer",
-                    GithubReleaseUnits.Asset("inno-installer", "1.0.0"), "originals/setup.exe"),
+                    ReleaseUnitCatalog.GithubRelease(unit).Asset("inno-installer", "1.0.0"),
+                    "originals/setup.exe"),
                     Original("windows-app", "portable", "portable-zip",
-                    GithubReleaseUnits.Asset("portable-zip", "1.0.0"), "originals/portable.zip")],
+                    ReleaseUnitCatalog.GithubRelease(unit).Asset("portable-zip", "1.0.0"),
+                    "originals/portable.zip")],
                 _ => [Original("gem-build", "gem-output", "ruby-gem", unit, "original.gem")],
             };
             string[] required = ecosystem switch
@@ -264,7 +266,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
                 ["commit"] = subject.Revision,
             };
             if (ecosystem == "ruby") native["platform"] = "ruby";
-            if (github) native["tag"] = GithubReleaseUnits.Tag(subject, "1.0.0");
+            if (github) native["tag"] = GithubReleaseUnit.Tag(subject, "1.0.0");
             ReleaseCommand[] commands = [new("build", new("native", Root, ["build"], 60),
                 new(NativeTermination.Exited, 0, "controlled native build", "", 0.1, null))];
             foreach (string phase in new[] { "prepared", "observation" })
@@ -286,7 +288,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
             ["DESTINATION"] = ecosystem switch
             {
                 "python" => "testpypi",
-                "github-release" => GithubReleaseUnits.Buddy,
+                "github-release" => GithubReleaseUnit.BuddyDestination,
                 _ => "github-packages",
             },
             ["DRY_RUN"] = "false",

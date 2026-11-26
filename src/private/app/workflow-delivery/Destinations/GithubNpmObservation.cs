@@ -20,7 +20,7 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
     // The registered unit's Buddy package is the only coordinate this destination reads.
     internal static string Package(PreparedRelease prepared)
     {
-        string package = NpmReleaseUnits.Admit(prepared.Subject).BuddyName;
+        string package = ReleaseUnitCatalog.AdmitNpm(prepared.Subject).BuddyName;
         if (prepared.Subject.Channel != "buddy" ||
             !package.StartsWith(Scope, StringComparison.Ordinal) || prepared.Files is not
                 [{ Kind: "npm-tarball" } file] || file.Name != package)

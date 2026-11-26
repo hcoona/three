@@ -543,8 +543,8 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     }
 
     private static ReleaseSubject Subject(string store, bool live = false) =>
-        new(new string('a', 40), "refs/heads/main", BrowserStorePreparation.Unit,
-            BrowserStorePreparation.Declaration, "official", store, !live);
+        new(new string('a', 40), "refs/heads/main", BrowserStorePreparation.DefaultUnit.Id,
+            BrowserStorePreparation.DefaultUnit.Declaration, "official", store, !live);
 
     private static BrowserStoreTarget Target(string store) => new(store, "item",
         store == "chrome-web-store" ? "publisher" : null);
@@ -695,7 +695,7 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
                 byte[] bytes = File.ReadAllBytes(Path.Combine(root, "original", output +
                     ".zip"));
                 return new ReleaseFile("browser-extensions", output, output + "-kind",
-                    BrowserStorePreparation.Unit, Version, "original/" + output + ".zip",
+                    BrowserStorePreparation.DefaultUnit.Id, Version, "original/" + output + ".zip",
                     bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)));
             }).ToArray();
             string[] required = ["native-input", "build", "contents", "consumer",

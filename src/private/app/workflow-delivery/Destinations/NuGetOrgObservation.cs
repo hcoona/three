@@ -23,7 +23,7 @@ internal sealed class NuGetOrgObservation(HttpClient client, TimeProvider? clock
     {
         if (prepared.Subject.Channel != "official" || prepared.Subject.Destination != "nugetorg" ||
             prepared.Files is not [{ Kind: "nuget-package" }] ||
-            prepared.Files[0].Name != NuGetReleaseUnits.Admit(prepared.Subject).PackageId ||
+            prepared.Files[0].Name != ReleaseUnitCatalog.AdmitNuGet(prepared.Subject).PackageId ||
             credential.Length != 0)
             throw new InvalidDataException("Unsupported nuget.org NuGet request.");
         ReleaseFile file = prepared.Files[0];

@@ -122,7 +122,7 @@ internal static class RubyPreparation
             native.Add("ruby", ruby);
             native.Add("rubygems", rubygems);
             native.Add("nbgv", pin);
-            operations = RubyReleaseUnits.Package(unit, facts, tools.Gem, nbgv,
+            operations = ReleaseUnitCatalog.RubyPackage(unit, facts, tools.Gem, nbgv,
                 Directory.CreateDirectory(Path.Combine(scratch, "package")).FullName);
         });
         await qualification.CheckAsync("build", async () => original =
@@ -171,7 +171,7 @@ internal static class RubyPreparation
         ReleasePolicy.RequireEligible(subject);
         if (!GitReader.IsCommitId(subject.Revision))
             throw new InvalidDataException("Ruby Release requires the exact source revision.");
-        return (RubyReleaseUnits.Admit(subject), official);
+        return (ReleaseUnitCatalog.AdmitRuby(subject), official);
     }
 
     // The complete committed recipe, read through a revision-bound reader.
@@ -199,7 +199,7 @@ internal static class RubyPreparation
             throw new InvalidDataException("Missing committed adopted Ruby entry.");
         QualitySelection? quality = await new QualitySelectionReader(root, read)
             .ReadAsync(directory, "ruby", token);
-        if (quality?.Preset != RubyReleaseUnits.Named(unit.Id).Preset)
+        if (quality?.Preset != ReleaseUnitCatalog.Ruby(unit.Id).Preset)
             throw new InvalidDataException("Unsupported complete Ruby quality selection.");
         return new(build, entry, directory);
     }

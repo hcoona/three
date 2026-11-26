@@ -220,8 +220,8 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
         var realStoreTarget = new BrowserStoreTarget("chrome-web-store", "item", "pub");
         var realStoreSubject = storePrep.Prepared.Subject with
         {
-            Unit = BrowserStorePreparation.Unit,
-            Declaration = BrowserStorePreparation.Declaration,
+            Unit = BrowserStorePreparation.DefaultUnit.Id,
+            Declaration = BrowserStorePreparation.DefaultUnit.Declaration,
         };
         ReleaseObservationResult validStoreObs = StoreHttp.Observation(realStoreSubject,
             realStoreTarget, "1.0.0", StoreState.Published, [], []);
@@ -235,7 +235,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
                     Files = [storePrep.Prepared.Files[0] with
                     {
                         Output = "chrome-zip",
-                        Name = BrowserStorePreparation.Unit,
+                        Name = BrowserStorePreparation.DefaultUnit.Id,
                     }],
                 },
             }, validStoreObs with { StoreState = StoreState.Conflict }));

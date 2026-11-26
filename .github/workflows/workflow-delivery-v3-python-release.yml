@@ -11,11 +11,8 @@ name: Workflow Delivery v3 Python Release
           - pypi
       unit:
         description: Selected Python release unit
-        type: choice
+        type: string
         required: true
-        options:
-          - hcoona-release-smoke-python
-          - nbgv-python
       dry-run:
         description: Qualify and describe without publication
         type: boolean

@@ -10,6 +10,16 @@
   <ItemGroup>
     <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
     <EmbeddedResource Include="Repository/resources/hk-scope-copies.json" LogicalName="HkScopeCopies" />
+    <EmbeddedResource Include="../../../../src/public/**/workflow-delivery.release-unit.yml"
+                      LogicalName="ReleaseUnit:src/public/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../../tests/private/app/workflow-delivery/fixtures/products/**/workflow-delivery.release-unit.yml"
+                      LogicalName="ReleaseUnit:tests/private/app/workflow-delivery/fixtures/products/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../../src/public/**/*.csproj;../../../../src/public/**/package.json"
+                      Exclude="../../../../src/public/**/*.Generators/**;../../../../src/public/app/ImageOcclusionEditor/**;../../../../src/public/lib/steam-account-history-to-csv/package.json;../../../../src/public/**/examples/**;../../../../src/public/**/test*/**;../../../../src/public/**/node_modules/**;../../../../src/public/**/bin/**;../../../../src/public/**/obj/**"
+                      LogicalName="ReleaseManifest:src/public/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../../tests/private/app/workflow-delivery/fixtures/products/**/*.csproj;../../../../tests/private/app/workflow-delivery/fixtures/products/**/package.json"
+                      Exclude="../../../../tests/private/app/workflow-delivery/fixtures/products/**/examples/**;../../../../tests/private/app/workflow-delivery/fixtures/products/**/test*/**;../../../../tests/private/app/workflow-delivery/fixtures/products/**/node_modules/**;../../../../tests/private/app/workflow-delivery/fixtures/products/**/bin/**;../../../../tests/private/app/workflow-delivery/fixtures/products/**/obj/**"
+                      LogicalName="ReleaseManifest:tests/private/app/workflow-delivery/fixtures/products/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
     <PackageReference Include="YamlDotNet" />
     <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" />
     <PackageReference Include="NuGet.Protocol" />

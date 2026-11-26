@@ -37,9 +37,10 @@ internal static partial class CiScope
     private const string RenovateWorkflow = ".github/workflows/renovate.yml";
     private const string Azure = "src/private/app/azureauth-credprovider";
     private const string Scholarly = "src/private/lib/scholarly-publication";
-    private const string Products = "tests/private/app/workflow-delivery/fixtures/products";
-    private const string NuGetProduct = Products + "/hcoona-release-smoke-github-packages";
-    private const string GithubReleaseProduct = "src/public/app/ImageOcclusionEditor";
+    internal const string FixtureProductsRoot =
+        "tests/private/app/workflow-delivery/fixtures/products";
+    internal static readonly string[] ManagedControlRoots =
+        ["src/private/app/workflow-delivery", "tests/private/app/workflow-delivery"];
     // Inputs of every retained job: the workflow itself and its locked tools.
     private static readonly string[] AllInputs = [".github/workflows/ci.yml",
         "eng/scripts/Bootstrap-CiControl.ps1", "eng/scripts/locked_tool_versions.py",
@@ -48,18 +49,20 @@ internal static partial class CiScope
     private static readonly string[] PythonInputs = ["pyproject.toml", "uv.lock", "uv.toml",
         ".python-version", ".config/uv/uv.toml", "conftest.py", "pytest.ini",
         "eng/scripts/sync_python_version.py", "eng/scripts/test-python.sh"];
-    private static readonly string[] NuGetUnits = [.. NuGetReleaseUnits.All.Select(unit =>
-        unit.Id)];
-    private static readonly string[] NuGetPreparationRoots = ["src/private/app/workflow-delivery",
-        "tests/private/app/workflow-delivery",
-        .. NuGetReleaseUnits.All.SelectMany(NuGetReleaseUnits.PreparationRoots)];
-    private static readonly string[] GithubReleasePreparationRoots = [
-        "src/private/app/workflow-delivery", "tests/private/app/workflow-delivery",
-        GithubReleaseProduct];
+    private static readonly string[] NuGetUnits =
+        [.. ReleaseUnitCatalog.NuGetUnits.Select(unit => unit.Id)];
+    private static readonly (string Id, bool Smoke, string[] Roots)[] NuGetUnitRoots =
+    [.. ReleaseUnitCatalog.NuGetUnits.Select(unit =>
+        (unit.Id, unit.SmokeFixture, ReleaseUnitCatalog.NuGetPreparationRoots(unit)))];
+    private static readonly string[] NuGetPreparationRoots =
+        [.. ManagedControlRoots, .. NuGetUnitRoots.SelectMany(unit => unit.Roots)];
+    private static readonly string[] GithubReleasePreparationRoots =
+        [.. ManagedControlRoots,
+            .. ReleaseUnitCatalog.GithubReleaseUnits.Select(unit => unit.ProductDirectory)];
     private static readonly string[] RubyInputs = ["Gemfile", "Gemfile.lock", ".ruby-version"];
 
     internal static CiScopeApplicability Select(string[] changed, GitComparison comparison,
-        bool full, string[] resourceInputs)
+        bool full, string[] resourceInputs, IEnumerable<string>? impactedDotNetProjects = null)
     {
         string[] gems = GemRoots(comparison.Basis).Union(GemRoots(comparison.Candidate),
             StringComparer.Ordinal).ToArray();
@@ -72,6 +75,13 @@ internal static partial class CiScope
             ["renovate"] = new(StringComparer.Ordinal),
         };
         var nuget = new SortedSet<string>(full ? NuGetUnits : [], StringComparer.Ordinal);
+        if (impactedDotNetProjects is not null)
+        {
+            var impacted = impactedDotNetProjects.ToHashSet(StringComparer.Ordinal);
+            foreach (NuGetReleaseUnit unit in ReleaseUnitCatalog.NuGetUnits
+                         .Where(unit => impacted.Contains(unit.ProjectPath)))
+                nuget.Add(unit.Id);
+        }
         bool githubRelease = full;
         foreach (string path in changed)
         {
@@ -442,21 +452,26 @@ internal static partial class CiScope
     private static string[] NuGetPreparationUnits(string path)
     {
         if (ControlInputs.InertDocument(path)) return [];
-        if (Under(path, Products) && !Under(path, NuGetProduct))
-            return DotNetInheritedInputs.Consumes(path, [NuGetProduct])
-                ? [NuGetReleaseUnits.Smoke]
-                : [];
+        if (Under(path, FixtureProductsRoot))
+        {
+            var smokeUnits = NuGetUnitRoots.Where(unit => unit.Smoke).ToArray();
+            string[] smokeRoots = [.. smokeUnits.SelectMany(unit => unit.Roots)];
+            if (!smokeRoots.Any(root => Under(path, root)))
+                return DotNetInheritedInputs.Consumes(path, smokeRoots)
+                    ? [.. smokeUnits.Select(unit => unit.Id)]
+                    : [];
+        }
         if (!DotNetInheritedInputs.Consumes(path, NuGetPreparationRoots)) return [];
-        string[] owners = [.. NuGetReleaseUnits.All.Where(unit =>
-            NuGetReleaseUnits.PreparationRoots(unit).Any(root => Under(path, root)))
+        string[] owners = [.. NuGetUnitRoots
+            .Where(unit => unit.Roots.Any(root => Under(path, root)))
             .Select(unit => unit.Id)];
         return owners.Length == 1 ? owners : NuGetUnits;
     }
 
-    // The real ImageOcclusionEditor recipe consumes its product and the preparation code; the
+    // The real GitHub Release recipe consumes its product and the preparation code; the
     // test fixture products are not its inputs.
     private static bool GithubReleasePreparationInput(string path) =>
-        !ControlInputs.InertDocument(path) && !Under(path, Products) &&
+        !ControlInputs.InertDocument(path) && !Under(path, FixtureProductsRoot) &&
         DotNetInheritedInputs.Consumes(path, GithubReleasePreparationRoots);
 
     internal const string WorkflowLint = "native-hk-workflow-lint";
@@ -517,7 +532,7 @@ internal static partial class CiScope
         .Select(entry => entry.Path).Where(path => path.EndsWith(".gemspec",
             StringComparison.Ordinal)).Select(Parent).Distinct(StringComparer.Ordinal).ToArray();
 
-    private static string Parent(string path)
+    internal static string Parent(string path)
     {
         int separator = path.LastIndexOf('/');
         return separator < 0 ? "" : path[..separator];
@@ -526,7 +541,7 @@ internal static partial class CiScope
     private static string Name(string path) => path[(path.LastIndexOf('/') + 1)..];
 
     // A root manifest (empty directory) does not own every repository path.
-    private static bool Under(string path, string directory) => directory.Length != 0 &&
+    internal static bool Under(string path, string directory) => directory.Length != 0 &&
         (path == directory || path.StartsWith(directory + "/", StringComparison.Ordinal));
 
     [GeneratedRegex(@"^uv run --script ([A-Za-z0-9_./-]+\.py)$")]

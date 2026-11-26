@@ -228,6 +228,7 @@ def test_runs_without_a_known_success_fail_the_batch(
         "pypi:unit=nbgv-python,registry=pypi,dry-run=true",
         "python:unit=nbgv-python,registry=testpypi",
         "python:unit=nbgv-python,registry=npmjs,dry-run=true",
+        "python:unit=undeclared-pkg,registry=testpypi,dry-run=true",
         "python:unit=nbgv-python,registry=testpypi,dry-run=yes",
         "python:unit=nbgv-python,registry=testpypi,dry-run=true,channel=buddy",
         (
@@ -241,6 +242,7 @@ def test_runs_without_a_known_success_fail_the_batch(
         "unknown-caller",
         "implicit-dry-run",
         "unknown-choice",
+        "unknown-unit",
         "non-boolean",
         "undeclared-input",
         "duplicate-input",

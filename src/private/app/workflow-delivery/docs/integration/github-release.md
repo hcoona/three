@@ -23,9 +23,9 @@ destination and dry-run mode as dispatch inputs. Its destinations are:
 | `github-release-prerelease` | Buddy    | Prerelease, never marked latest            | `workflow-delivery-v3-github-release-prerelease` |
 | `github-release`            | Official | Release; GitHub's default latest selection | `workflow-delivery-v3-github-release`            |
 
-`GithubReleaseUnits.Admit` accepts only these unit, channel and destination
-pairs and applies the shared ref check: live Buddy requires a branch ref under
-`refs/heads/`, and live Official only `refs/heads/main`
+`ReleaseUnitCatalog.AdmitGithubRelease` accepts only declared unit, channel and
+destination pairs and applies the shared ref check: live Buddy requires a branch
+ref under `refs/heads/`, and live Official only `refs/heads/main`
 ([Official channel scope](common.md#official-channel-scope)). The Official
 Environment's native branch policy should also be limited to `main`; it does
 not replace this check.

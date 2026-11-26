@@ -12,11 +12,8 @@ on:
           - npmjs
       unit:
         description: Selected npm release unit
-        type: choice
+        type: string
         required: true
-        options:
-          - hcoona-release-smoke-npm
-          - hexo-renderer-asciidoc
       dry-run:
         description: Qualify and describe without publication
         type: boolean

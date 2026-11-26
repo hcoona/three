@@ -14,6 +14,7 @@ import json
 import stat
 import sys
 import tarfile
+import tomllib
 import zipfile
 from email.parser import BytesParser
 from pathlib import Path, PurePosixPath
@@ -31,47 +32,131 @@ MAX_SDIST_MEMBERS = 20000
 MAX_METADATA = 1024 * 1024
 MAX_INDEX_FILES = 4096
 QUALITY = "python/hcoona-release-smoke-python-v1"
-# Registered products: import package, wheel and sdist payload, declared
-# Requires-Dist and the exported API checked from a clean install.
-PRODUCTS = {
-    "hcoona-release-smoke-python": {
-        "module": "hcoona_release_smoke_python",
-        "wheel": {"hcoona_release_smoke_python/__init__.py"},
-        "sdist": {
-            "src/hcoona_release_smoke_python/__init__.py",
-            "pyproject.toml",
-            "README.md",
-            "LICENSE",
-        },
-        "requires": [],
-        "api": ["project_id"],
-    },
-    "nbgv-python": {
-        "module": "nbgv_python",
-        "wheel": {
-            "nbgv_python/__init__.py",
-            "nbgv_python/cli.py",
-            "nbgv_python/hatch_plugin.py",
-        },
-        "sdist": {
-            "src/nbgv_python/__init__.py",
-            "src/nbgv_python/cli.py",
-            "src/nbgv_python/hatch_plugin.py",
-            "pyproject.toml",
-            "README.md",
-        },
-        "requires": ["packaging>=24.0"],
-        "api": ["get_version", "forward", "NbgvRunner", "GitVersion"],
-    },
-}
+DESCRIPTOR = "workflow-delivery.release-unit.yml"
 
 
-def product(name: str, quality: str) -> dict:
-    """Select a registered product; other names or qualities are unsupported."""
-    if quality != QUALITY or name not in PRODUCTS:
+def _discover_unit(name: str, repo_root: Path) -> tuple[Path, list[str]] | None:
+    import yaml  # noqa: PLC0415
+
+    roots = (
+        repo_root / "src/public",
+        repo_root / "tests/private/app/workflow-delivery/fixtures/products",
+    )
+    for base in roots:
+        if not base.is_dir():
+            continue
+        for decl_path in sorted(base.rglob(DESCRIPTOR)):
+            unit = yaml.safe_load(decl_path.read_text(encoding="utf-8"))
+            builds = (unit or {}).get("builds") or []
+            if len(builds) != 1:
+                continue
+            build = builds[0]
+            if build.get("definition") != "python/distribution-set-v1":
+                continue
+            manifest = (decl_path.parent / build["entry-point"]).resolve()
+            if not manifest.is_file():
+                continue
+            data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+            if (data.get("project") or {}).get("name") == name:
+                qual = build.get("qualification") or {}
+                return manifest.parent, list(qual.get("api") or [])
+    return None
+
+
+def _find_declared_api(project_dir: Path) -> list[str]:
+    import yaml  # noqa: PLC0415
+
+    manifest = (project_dir / "pyproject.toml").resolve()
+    for candidate in (project_dir.resolve(), *project_dir.resolve().parents):
+        decl_path = candidate / DESCRIPTOR
+        if decl_path.is_file():
+            unit = yaml.safe_load(decl_path.read_text(encoding="utf-8"))
+            for build in (unit or {}).get("builds") or []:
+                entry = build.get("entry-point")
+                if entry and (decl_path.parent / entry).resolve() == manifest:
+                    qual = build.get("qualification") or {}
+                    return list(qual.get("api") or [])
+        if (candidate / "dirs.proj").is_file():
+            break
+    message = f"Missing release-unit declaration for {project_dir}"
+    raise ValueError(message)
+
+
+def _project_spec(
+    project_dir: Path, api_override: list[str] | None = None
+) -> dict:
+    pyproject = tomllib.loads(
+        (project_dir / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    proj = pyproject["project"]
+    requires = list(proj.get("dependencies", []))
+    src_root = project_dir / "src"
+    pkg_dirs = [
+        p
+        for p in sorted(src_root.iterdir())
+        if p.is_dir() and (p / "__init__.py").is_file()
+    ]
+    if len(pkg_dirs) != 1:
+        message = f"Expected one src package in {project_dir}"
+        raise ValueError(message)
+    module = pkg_dirs[0].name
+    wheel_files = {
+        p.relative_to(src_root).as_posix()
+        for p in pkg_dirs[0].rglob("*.py")
+        if p.is_file()
+    }
+    sdist_files = {f"src/{rel}" for rel in wheel_files} | {
+        "pyproject.toml",
+        "README.md",
+    }
+    if (project_dir / "LICENSE").is_file():
+        sdist_files.add("LICENSE")
+    api = (
+        api_override
+        if api_override is not None
+        else _find_declared_api(project_dir)
+    )
+    return {
+        "module": module,
+        "wheel": wheel_files,
+        "sdist": sdist_files,
+        "requires": requires,
+        "api": api,
+    }
+
+
+def _repo_root() -> Path:
+    here = Path(__file__).resolve()
+    return next(
+        (p for p in here.parents if (p / "dirs.proj").is_file()), here.parent
+    )
+
+
+def product(
+    name: str,
+    quality: str,
+    *,
+    project_dir: Path | None = None,
+    api_override: list[str] | None = None,
+) -> dict:
+    """Resolve a declared Python release unit from native project metadata."""
+    if quality != QUALITY:
         message = "Unsupported registered Python package quality"
         raise ValueError(message)
-    return PRODUCTS[name]
+    if project_dir is not None:
+        if not project_dir.is_dir():
+            message = "Unsupported registered Python package quality"
+            raise ValueError(message)
+        return _project_spec(project_dir, api_override)
+    discovered = _discover_unit(name, _repo_root())
+    if discovered is None or not discovered[0].is_dir():
+        message = "Unsupported registered Python package quality"
+        raise ValueError(message)
+    resolved_dir, discovered_api = discovered
+    return _project_spec(
+        resolved_dir,
+        api_override if api_override is not None else discovered_api,
+    )
 
 
 def _project_metadata(project: Path) -> ProjectMetadata:
@@ -270,13 +355,14 @@ def _sdist(path: Path, payload: set[str]) -> tuple[set[str], bytes, set[str]]:
     return inventory.files, data, {root + "/" + item for item in payload}
 
 
-def inspect_archive(
+def inspect_archive(  # noqa: PLR0913 - optional project_dir override for transferred control.
     path: Path,
     name: str,
     version: str,
     quality: str,
     *,
     check_contents: bool = True,
+    project_dir: Path | None = None,
 ) -> dict:
     """Inspect supported native archives without extracting source payload."""
     # Consumers use the standard library; inspection uses prepared tools.
@@ -287,7 +373,7 @@ def inspect_archive(
     )
     from packaging.version import Version  # noqa: PLC0415
 
-    selected = product(name, quality)
+    selected = product(name, quality, project_dir=project_dir, api_override=[])
     if not path.is_file():
         message = "Invalid original distribution"
         raise ValueError(message)
@@ -321,11 +407,23 @@ def inspect_archive(
 
 
 def inspect_outputs(
-    directory: Path, name: str, version: str, quality: str
+    directory: Path,
+    name: str,
+    version: str,
+    quality: str,
+    *,
+    project_dir: Path | None = None,
 ) -> list:
     """Retain the complete output set without product payload checks."""
     outputs = [
-        inspect_archive(path, name, version, quality, check_contents=False)
+        inspect_archive(
+            path,
+            name,
+            version,
+            quality,
+            check_contents=False,
+            project_dir=project_dir,
+        )
         for path in directory.iterdir()
     ]
     if sorted(output["kind"] for output in outputs) != [
@@ -337,9 +435,18 @@ def inspect_outputs(
     return sorted(outputs, key=lambda output: output["kind"])
 
 
-def consume(name: str, version: str, quality: str) -> dict:
+def consume(
+    name: str,
+    version: str,
+    quality: str,
+    *,
+    project_dir: Path | None = None,
+    api_override: list[str] | None = None,
+) -> dict:
     """Check native installed metadata and the registered API from this venv."""
-    selected = product(name, quality)
+    selected = product(
+        name, quality, project_dir=project_dir, api_override=api_override
+    )
     distribution = importlib.metadata.distribution(name)
     if distribution.metadata["Name"] != name or distribution.version != version:
         message = "Installed native metadata identity differs"
@@ -359,10 +466,7 @@ def consume(name: str, version: str, quality: str) -> dict:
         or not all(
             callable(getattr(module, api, None)) for api in selected["api"]
         )
-        or (
-            name == "hcoona-release-smoke-python"
-            and module.project_id() != "hcoona-release-smoke-python"
-        )
+        or ("project_id" in selected["api"] and module.project_id() != name)
         or not _installed_requirements(selected["requires"], root)
     ):
         message = "Installed origin or registered API differs"
@@ -459,12 +563,22 @@ def _dispatch() -> dict | list:
     match sys.argv[1:]:
         case [command, project] if command in PROJECT_FACTS:
             return globals()[PROJECT_FACTS[command]](Path(project))
-        case ["outputs", directory, name, version, quality]:
-            return inspect_outputs(Path(directory), name, version, quality)
-        case ["archive", path, name, version, quality]:
-            return inspect_archive(Path(path), name, version, quality)
-        case ["consume", name, version, quality]:
-            return consume(name, version, quality)
+        case ["outputs", directory, name, version, quality, *extra]:
+            proj = Path(extra[0]) if extra else None
+            return inspect_outputs(
+                Path(directory), name, version, quality, project_dir=proj
+            )
+        case ["archive", path, name, version, quality, *extra]:
+            proj = Path(extra[0]) if extra else None
+            return inspect_archive(
+                Path(path), name, version, quality, project_dir=proj
+            )
+        case ["consume", name, version, quality, *extra]:
+            proj = Path(extra[0]) if extra else None
+            apis = json.loads(extra[1]) if len(extra) > 1 else None
+            return consume(
+                name, version, quality, project_dir=proj, api_override=apis
+            )
         case ["index-facts", path, name, version]:
             return index_facts(Path(path), name, version)
         case _:

@@ -68,8 +68,8 @@ internal static class RubyPackageExecution
             PackageTarget subject = build.Package!;
             string state = Directory.CreateDirectory(Path.Combine(scratchRoot,
                 "gem-" + ordinal++)).FullName;
-            RubyReleaseUnit unit = RubyReleaseUnits.Named(subject.Unit);
-            RubyPackageOperations operations = RubyReleaseUnits.Package(unit, request.Facts,
+            RubyReleaseUnit unit = ReleaseUnitCatalog.Ruby(subject.Unit);
+            RubyPackageOperations operations = ReleaseUnitCatalog.RubyPackage(unit, request.Facts,
                 request.Gem, request.Nbgv, state);
             RubyGemArchive? original = null;
             foreach (string kind in RubyPackageChecks.Kinds)

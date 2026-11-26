@@ -30,7 +30,7 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
         if (prepared.Subject.Channel != "buddy" ||
             prepared.Subject.Destination != "github-packages-nuget" || prepared.Files is not
                 [{ Kind: "nuget-package" }] ||
-            prepared.Files[0].Name != NuGetReleaseUnits.Admit(prepared.Subject).PackageId ||
+            prepared.Files[0].Name != ReleaseUnitCatalog.AdmitNuGet(prepared.Subject).PackageId ||
             string.IsNullOrEmpty(credential) || credential.Any(c => c is '\r' or '\n' or '\0'))
             throw new InvalidDataException("Unsupported GitHub NuGet request.");
         ReleaseFile file = prepared.Files[0];

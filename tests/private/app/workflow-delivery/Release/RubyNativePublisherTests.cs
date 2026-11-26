@@ -2,7 +2,6 @@ using System.Collections;
 using System.Security.Cryptography;
 using System.Text.Json;
 using WorkflowDelivery.Destinations;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -30,14 +29,14 @@ public sealed class RubyNativePublisherTests(TestContext context)
 
     [TestMethod]
     [DoNotParallelize]
-    [DataRow("buddy", "github-packages-ruby", "refs/heads/development", RubyReleaseUnits.Smoke,
+    [DataRow("buddy", "github-packages-ruby", "refs/heads/development", "hcoona-release-smoke-ruby",
         "https://rubygems.pkg.github.com/hcoona", "Bearer " + RepositoryKey)]
-    [DataRow("official", "rubygems", "refs/heads/main", RubyReleaseUnits.Smoke,
+    [DataRow("official", "rubygems", "refs/heads/main", "hcoona-release-smoke-ruby",
         "https://rubygems.org", TrustedKey)]
     [DataRow("buddy", "github-packages-ruby", "refs/heads/development",
-        RubyReleaseUnits.Latexmath, "https://rubygems.pkg.github.com/hcoona",
+        "asciidoctor-latexmath", "https://rubygems.pkg.github.com/hcoona",
         "Bearer " + RepositoryKey)]
-    [DataRow("official", "rubygems", "refs/heads/main", RubyReleaseUnits.Latexmath,
+    [DataRow("official", "rubygems", "refs/heads/main", "asciidoctor-latexmath",
         "https://rubygems.org", TrustedKey)]
     public async Task PushUsesSelectedKeyAndIsolatedState(string channel, string destination,
         string reference, string unit, string host, string key)
@@ -124,8 +123,8 @@ public sealed class RubyNativePublisherTests(TestContext context)
 
     [TestMethod]
     [DataRow("another-unit", "ruby-gem", "another-unit")]
-    [DataRow(RubyReleaseUnits.Smoke, "other-kind", RubyReleaseUnits.Smoke)]
-    [DataRow(RubyReleaseUnits.Smoke, "ruby-gem", "unrelated-gem")]
+    [DataRow("hcoona-release-smoke-ruby", "other-kind", "hcoona-release-smoke-ruby")]
+    [DataRow("hcoona-release-smoke-ruby", "ruby-gem", "unrelated-gem")]
     public async Task UnsupportedCoordinateCannotPush(string unit, string kind, string name)
     {
         using var fixture = new Fixture(unit: unit);
@@ -310,7 +309,7 @@ public sealed class RubyNativePublisherTests(TestContext context)
         };
 
         internal Fixture(string channel = "buddy", string destination = "github-packages-ruby",
-            string reference = "refs/heads/development", string unit = RubyReleaseUnits.Smoke,
+            string reference = "refs/heads/development", string unit = "hcoona-release-smoke-ruby",
             bool dryRun = false)
         {
             Originals = Directory.CreateDirectory(Path.Combine(Root, "originals")).FullName;

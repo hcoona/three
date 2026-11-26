@@ -7,10 +7,8 @@ namespace WorkflowDelivery.Release;
 
 internal static class BrowserStorePreparation
 {
-    internal const string Unit = "steam-account-history-to-csv";
-    internal const string Product = "src/public/lib/steam-account-history-to-csv";
-    internal const string Declaration = Product + "/workflow-delivery.release-unit.yml";
-    internal const string ManifestName = "Steam Account History to CSV";
+    internal static BrowserStoreUnit DefaultUnit =>
+        ReleaseUnitCatalog.BrowserStoreUnits.Single();
     internal const string ChromeWebStore = "chrome-web-store";
     internal const string FirefoxAmo = "firefox-amo";
     internal const string EdgeAddons = "edge-addons";
@@ -35,17 +33,17 @@ internal static class BrowserStorePreparation
         _ => throw new InvalidDataException("Unsupported browser store."),
     };
 
-    internal static void RequireRequest(ReleaseSubject subject, BrowserStoreTarget target)
+    internal static BrowserStoreUnit RequireRequest(ReleaseSubject subject,
+        BrowserStoreTarget target)
     {
         _ = StoreOutputs(subject.Destination);
-        // The stores are Official destinations only; a Buddy request is a dry run.
-        if (subject.Unit != Unit || subject.Declaration != Declaration ||
-            target.Store != subject.Destination || string.IsNullOrWhiteSpace(target.Item) ||
+        BrowserStoreUnit registered = ReleaseUnitCatalog.AdmitBrowserStore(subject);
+        if (target.Store != subject.Destination || string.IsNullOrWhiteSpace(target.Item) ||
             (subject.Destination == ChromeWebStore) == string.IsNullOrWhiteSpace(
-                target.Publisher) ||
-            !(subject.Channel == "official" || (subject.Channel == "buddy" && subject.DryRun)))
+                target.Publisher))
             throw new InvalidDataException("Unsupported browser-store release request.");
         ReleasePolicy.RequireEligible(subject);
+        return registered;
     }
 
     internal static Task<ReleasePreparationResult> PrepareAsync(
@@ -66,7 +64,7 @@ internal static class BrowserStorePreparation
         token = lifetime.Token;
         BrowserStoreTarget storeTarget = request.Target
             ?? throw new InvalidDataException("Unsupported browser-store release request.");
-        RequireRequest(request.Subject, storeTarget);
+        BrowserStoreUnit registered = RequireRequest(request.Subject, storeTarget);
         (string checkout, string scratch) = ReleaseQualification.RequireFreshScratch(
             request.Checkout, request.Scratch, PathMessage,
             "Release requires fresh external scratch.");
@@ -88,7 +86,7 @@ internal static class BrowserStorePreparation
             await bound.ReadOptionalTextAsync(request.Subject.Declaration, token)
                 ?? throw new InvalidDataException("Missing selected release declaration."),
             request.Subject.Declaration);
-        if (unit.Id != Unit || unit.Builds is not
+        if (unit.Id != registered.Id || unit.Builds is not
             [{ Definition: "node/browser-extension-v1", EntryPoint: "package.json" } build] ||
             !build.Outputs.Select(output => (output.Id, output.Role, output.Kind)).Order()
                 .SequenceEqual(Outputs.Select(output => (output.Output, output.Manifest == 0
@@ -96,13 +94,14 @@ internal static class BrowserStorePreparation
             throw new InvalidDataException("Unsupported complete browser-extension definition.");
         await ReleasePreparationContext.RequireCommittedInputsAsync(bound,
             ["mise.toml", "mise.lock", "pnpm-lock.yaml", "pnpm-workspace.yaml",
-                Product + "/package.json", Product + "/version.json"], token);
-        string product = Path.Combine(checkout, Product);
+                registered.ProductDirectory + "/package.json",
+                registered.ProductDirectory + "/version.json"], token);
+        string product = Path.Combine(checkout, registered.ProductDirectory);
         string output = Path.Combine(product, ".output");
         BrowserExtensionVersion projected = new("", "");
         await qualification.CheckAsync("native-input", async () =>
         {
-            projected = version(checkout, bound.Revision, Product, token);
+            projected = version(checkout, bound.Revision, registered.ProductDirectory, token);
             if (string.IsNullOrWhiteSpace(projected.Manifest) ||
                 string.IsNullOrWhiteSpace(projected.Npm))
                 throw new InvalidDataException("Missing native NBGV browser projection.");
@@ -122,7 +121,7 @@ internal static class BrowserStorePreparation
                     "--config.verify-deps-before-run=false", "run", target.Script], 600));
             foreach (var target in Outputs)
             {
-                string name = $"{Unit}-{projected.Npm}-{target.Suffix}.zip";
+                string name = $"{registered.Id}-{projected.Npm}-{target.Suffix}.zip";
                 string source = Path.Combine(output, name);
                 OwnedFile.RequireExists(source, "Required npm output is missing or not a file: "
                     + source);
@@ -135,13 +134,13 @@ internal static class BrowserStorePreparation
         {
             foreach (var target in Outputs)
             {
-                string relative = $"original/{Unit}-{projected.Npm}-{target.Suffix}.zip";
+                string relative = $"original/{registered.Id}-{projected.Npm}-{target.Suffix}.zip";
                 string path = Path.Combine(scratch, relative);
                 (long size, string sha256) = await OwnedFile.MeasureAsync(path, token,
                     emptyMessage: "Native browser extension output is empty.");
                 originalsByOutput.Add(target.Output, (relative, size, sha256));
                 if (target.Manifest == 0)
-                    BrowserExtensionArchive.ValidateSources(path, Product);
+                    BrowserExtensionArchive.ValidateSources(path, registered.ProductDirectory);
                 else
                     BrowserExtensionArchive.ValidateMembers(path);
             }
@@ -150,8 +149,8 @@ internal static class BrowserStorePreparation
         // NBGV projection and resolve every declared file without the source checkout.
         await qualification.CheckAsync("consumer", () =>
         {
-            var expected = new BrowserExtensionExpectation(ManifestName, projected.Manifest,
-                projected.Npm);
+            var expected = new BrowserExtensionExpectation(registered.ManifestName,
+                projected.Manifest, projected.Npm);
             foreach (var target in Outputs.Where(target => target.Manifest != 0))
                 BrowserExtensionArchive.ValidateExtension(Path.Combine(scratch,
                     originalsByOutput[target.Output].Path), target.Manifest, expected);
@@ -165,7 +164,7 @@ internal static class BrowserStorePreparation
                 await OwnedFile.VerifyAsync(Path.Combine(scratch, path), size, sha256,
                     "Qualified original changed during checks.", token);
                 files.Add(new(build.Id, selected, Outputs.Single(target =>
-                    target.Output == selected).Kind, Unit, projected.Manifest, path, size,
+                    target.Output == selected).Kind, registered.Id, projected.Manifest, path, size,
                     sha256));
             }
         });

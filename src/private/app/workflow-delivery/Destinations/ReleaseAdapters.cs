@@ -37,7 +37,7 @@ internal sealed class NuGetDestinationAdapter : IDestinationAdapter
     {
         PreparedRelease prepared = preparation.Prepared;
         ReleaseCompletion.Validate(prepared);
-        NuGetReleaseUnit unit = NuGetReleaseUnits.Admit(prepared.Subject);
+        NuGetReleaseUnit unit = ReleaseUnitCatalog.AdmitNuGet(prepared.Subject);
         ReleasePolicy.RequireEligible(prepared.Subject);
         if (prepared.Files is not [{ Kind: "nuget-package" }] ||
             !prepared.RequiredChecks.SequenceEqual(NuGetPreparation.Required) ||
@@ -45,7 +45,10 @@ internal sealed class NuGetDestinationAdapter : IDestinationAdapter
             preparation.Errors.Length != 0 || preparation.Commands.Length == 0 ||
             preparation.Commands.Any(command => !command.Result.Succeeded))
             throw new InvalidDataException("Incomplete or unsupported NuGet preparation.");
-        DotNetPackageResults.ValidateExpectations(unit.Library ? "" : unit.Frameworks[0], "",
+        string expectedFramework = unit.Library ? ""
+            : preparation.Native.TryGetValue("TargetFramework", out string? tfm)
+                && !string.IsNullOrWhiteSpace(tfm) ? tfm : "net10.0";
+        DotNetPackageResults.ValidateExpectations(expectedFramework, "",
             preparation.Native);
         ReleaseFile file = prepared.Files[0];
         if (file.Name != preparation.Native["PackageId"] ||
@@ -119,7 +122,7 @@ internal sealed class NpmDestinationAdapter : IDestinationAdapter
     {
         PreparedRelease prepared = preparation.Prepared;
         ReleaseCompletion.Validate(prepared);
-        _ = NpmReleaseUnits.Admit(prepared.Subject);
+        _ = ReleaseUnitCatalog.AdmitNpm(prepared.Subject);
         ReleasePolicy.RequireQualified(prepared);
         if (preparation.Errors.Length != 0 ||
             prepared.Subject.Destination is not ("npmjs" or "github-packages-npm") ||
@@ -150,7 +153,7 @@ internal sealed class PythonDestinationAdapter : IDestinationAdapter
         ReleaseSubject subject = prepared.Subject;
         bool buddy = subject.Channel == "buddy" && subject.Destination == "testpypi";
         bool official = subject.Channel == "official" && subject.Destination == "pypi";
-        PythonReleaseUnit unit = PythonReleaseUnits.Admit(subject);
+        PythonReleaseUnit unit = ReleaseUnitCatalog.AdmitPython(subject);
         if (!(buddy || official) ||
             prepared.Files.Length != 2 || Formats.Any(kind =>
                 prepared.Files.Count(file => file.Kind == kind) != 1) ||
@@ -166,7 +169,7 @@ internal sealed class PythonDestinationAdapter : IDestinationAdapter
                 version != prepared.Files[0].Version ||
             !preparation.Native.TryGetValue("commit", out string? commit) ||
                 commit != subject.Revision ||
-            official && !subject.DryRun && unit.Id != PythonReleaseUnits.Nbgv &&
+            official && !subject.DryRun && !unit.StaticVersion &&
                 (!preparation.Native.TryGetValue("public-release", out string? release) ||
                     release != "true"))
             throw new InvalidDataException("Incomplete or unsupported Python preparation.");
@@ -208,7 +211,7 @@ internal sealed class RubyDestinationAdapter : IDestinationAdapter
         bool buddy = subject.Channel == "buddy" &&
             subject.Destination == "github-packages-ruby";
         bool official = subject.Channel == "official" && subject.Destination == "rubygems";
-        RubyReleaseUnit unit = RubyReleaseUnits.Admit(subject);
+        RubyReleaseUnit unit = ReleaseUnitCatalog.AdmitRuby(subject);
         string package = unit.Id;
         if (!(buddy || official) || prepared.Files is not
                 [{ Kind: "ruby-gem", Name: var file }] || file != package ||
@@ -263,11 +266,11 @@ internal sealed class GithubReleaseDestinationAdapter : IDestinationAdapter
         PreparedRelease prepared = preparation.Prepared;
         ReleaseCompletion.Validate(prepared);
         ReleaseSubject subject = prepared.Subject;
-        bool official = GithubReleaseUnits.Admit(subject);
+        (GithubReleaseUnit unit, bool official) = ReleaseUnitCatalog.AdmitGithubRelease(subject);
         string version = prepared.Files.Length == 0 ? "" : prepared.Files[0].Version;
         if (prepared.Files.Length != 2 || Kinds.Any(kind =>
                 prepared.Files.Count(file => file.Kind == kind &&
-                    file.Name == GithubReleaseUnits.Asset(kind, version)) != 1) ||
+                    file.Name == unit.Asset(kind, version)) != 1) ||
             prepared.Files.Any(file => file.Version != version) ||
             !prepared.RequiredChecks.SequenceEqual(GithubReleasePreparation.Required) ||
             !ReleasePolicy.Qualified(prepared.RequiredChecks, prepared.Checks) ||
@@ -277,7 +280,7 @@ internal sealed class GithubReleaseDestinationAdapter : IDestinationAdapter
             !Native(preparation, "name", subject.Unit) ||
             !Native(preparation, "version", version) ||
             !Native(preparation, "commit", subject.Revision) ||
-            !Native(preparation, "tag", GithubReleaseUnits.Tag(subject, version)) ||
+            !Native(preparation, "tag", GithubReleaseUnit.Tag(subject, version)) ||
             official && !subject.DryRun && !Native(preparation, "public-release", "true"))
             throw new InvalidDataException("Incomplete or unsupported GitHub Release preparation.");
     }
@@ -342,7 +345,8 @@ internal sealed class BrowserStoreDestinationAdapter : IDestinationAdapter
         ReleaseCompletion.Validate(prepared);
         if (preparation.Target is not { } target)
             throw new InvalidDataException("Missing browser-store target.");
-        BrowserStorePreparation.RequireRequest(prepared.Subject, target);
+        BrowserStoreUnit registered = BrowserStorePreparation.RequireRequest(prepared.Subject,
+            target);
         ReleasePolicy.RequireQualified(prepared);
         string version = prepared.Files[0].Version;
         if (preparation.Errors.Length != 0 || preparation.Commands.Length == 0 ||
@@ -351,7 +355,7 @@ internal sealed class BrowserStoreDestinationAdapter : IDestinationAdapter
             !prepared.Files.Select(file => file.Output).Order(StringComparer.Ordinal)
                 .SequenceEqual(BrowserStorePreparation.StoreOutputs(prepared.Subject.Destination)
                     .Order(StringComparer.Ordinal)) ||
-            prepared.Files.Any(file => file.Name != BrowserStorePreparation.Unit ||
+            prepared.Files.Any(file => file.Name != registered.Id ||
                 file.Version != version) || !StoreHttp.ManifestVersion(version))
             throw new InvalidDataException("Incomplete or unsupported browser preparation.");
     }

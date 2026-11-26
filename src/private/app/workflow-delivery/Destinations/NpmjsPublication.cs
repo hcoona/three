@@ -27,7 +27,7 @@ internal static partial class NpmjsPublication
         Func<PreparedRelease, CancellationToken, Task<ReleaseObservationResult>> observe,
         CancellationToken token)
     {
-        NpmReleaseUnit unit = NpmReleaseUnits.Admit(prepared.Subject);
+        NpmReleaseUnit unit = ReleaseUnitCatalog.AdmitNpm(prepared.Subject);
         if (prepared.Subject.DryRun || prepared.Subject.Channel != "official" ||
             prepared.Files is not [{ Kind: "npm-tarball" } file] ||
             file.Name != unit.OfficialName)

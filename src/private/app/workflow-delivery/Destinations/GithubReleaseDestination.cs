@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -134,7 +135,7 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
         {
             ["tag_name"] = tag,
             ["target_commitish"] = prepared.Subject.Revision,
-            ["name"] = GithubReleaseUnits.Title(prepared.Subject.Unit, version),
+            ["name"] = GithubReleaseUnit.Title(prepared.Subject.Unit, version),
             ["body"] = "Workflow Delivery " + prepared.Subject.Channel + " release of " +
                 prepared.Subject.Unit + " " + version + " from " + prepared.Subject.Revision + ".",
             ["draft"] = false,
@@ -216,7 +217,7 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
             prepared.Files.Any(file => file.Version != prepared.Files[0].Version) ||
             string.IsNullOrEmpty(credential) || credential.Any(c => c is '\r' or '\n' or '\0'))
             throw new InvalidDataException("Unsupported GitHub Release request.");
-        return (GithubReleaseUnits.Tag(prepared.Subject, prepared.Files[0].Version), buddy);
+        return (GithubReleaseUnit.Tag(prepared.Subject, prepared.Files[0].Version), buddy);
     }
 
     private static ReleaseFileObservation Observed(ReleaseFile file, ReleaseFileState state,

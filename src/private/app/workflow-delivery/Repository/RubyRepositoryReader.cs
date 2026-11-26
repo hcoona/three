@@ -29,9 +29,11 @@ internal static class RubyRepositoryReader
     // candidate is held to the current registration; a basis keeps its own adoption.
     internal static void RequireRegisteredPresets(RubyRevisionInputs inputs)
     {
+        foreach (ReleaseUnitDeclaration unit in inputs.Units)
+            _ = ReleaseUnitCatalog.Ruby(unit.Id);
         foreach (ProjectFacts owner in inputs.Facts.Owners.Where(owner =>
                      owner.ReleaseUnit is not null))
-            if (RubyReleaseUnits.Named(inputs.Facts.Native.Graph.Projects.Single(project =>
+            if (ReleaseUnitCatalog.Ruby(inputs.Facts.Native.Graph.Projects.Single(project =>
                     project.Directory == owner.Directory).Name).Preset != owner.QualityPreset)
                 throw new InvalidDataException("Unsupported adopted Ruby quality obligations.");
     }

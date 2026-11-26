@@ -31,7 +31,7 @@ internal static class RubySourceReader
     {
         bool buddy = host == "https://rubygems.pkg.github.com/hcoona";
         if (!(buddy || host == "https://rubygems.org") ||
-            name is not (RubyReleaseUnits.Smoke or RubyReleaseUnits.Latexmath) ||
+            !ReleaseUnitCatalog.IsRubyRegistered(name) ||
             string.IsNullOrWhiteSpace(version) ||
             new[] { tools.Ruby, tools.Helper, tools.Scratch }.Any(path =>
                 !Path.IsPathFullyQualified(path)) || !Directory.Exists(tools.Scratch) ||
