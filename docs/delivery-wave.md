@@ -1034,3 +1034,83 @@ deletion ends a grant. Git and the proposing PR retain the reason and history.
   registration, live package/release publication, release/proving dispatch,
   ruleset, credential, authentication, or access change; no change to
   `CurrentTargetFramework` (`net10.0`) for unrelated projects.
+
+### Decouple routine controlled release operations from Delivery Wave
+
+- **Work carrier:** [Issue #1865](https://github.com/hcoona/three/issues/1865)
+  and its linked authorization and implementation pull requests.
+- **Accepted inputs:** the [governance policy](governance/governance-system.md)
+  (`Trust Base`, `GOV-001`, `GOV-003`, `GOV-004`, `GOV-006`, and
+  [changing rules](governance/governance-system.md#changing-rules)),
+  [record policy](governance/record-system.md),
+  [control catalog](governance/controls.yaml),
+  [public release triage](engineering/public-release-triage.md), root
+  [`AGENTS.md`](../AGENTS.md) and [`CONTRIBUTING.md`](../CONTRIBUTING.md),
+  Workflow Delivery's
+  [agent handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md)
+  and
+  [Official channel scope](../src/private/app/workflow-delivery/docs/integration/common.md#official-channel-scope),
+  and the [record-system review](../.github/skills/record-system-review/SKILL.md)
+  (with its `evals/`) and
+  [research-evidence review](../.github/skills/research-evidence-review/SKILL.md)
+  procedures.
+- **Owner decisions and boundaries:**
+    - Remove per-release `docs/delivery-wave.md` ceremony for already-admitted
+      release units
+      ([Official channel scope](../src/private/app/workflow-delivery/docs/integration/common.md#official-channel-scope)):
+      ordinary pull requests on `main` transitioning or bumping committed
+      release/prerelease version declarations (`version.json`, static
+      `pyproject.toml`, `version.rb`) and changelogs/release notes without
+      changing public APIs, target frameworks, or Workflow Delivery contracts,
+      operational dispatches of checked-in
+      `.github/workflows/workflow-delivery-v3-*-release.yml` callers
+      (credential-free `dry-run` dispatches, and live Buddy or Official
+      dispatches initiated by the repository owner—or executed by an agent only
+      upon an explicit operational instruction from the repository owner for
+      that specific dispatch—and gated by the destination's GitHub Environment
+      approval), and repository-owner maintenance of existing external
+      publisher/storefront registrations (such as renewing an expired `npmjs`
+      OIDC trusted publisher, `#1358`) require no `Delivery Wave` entry.
+    - Retain hard agent and Wave boundaries: agents must never autonomously
+      dispatch release workflows, approve Environments, or run package/release
+      publication commands during ordinary development, maintenance, testing, or
+      review without an explicit operational instruction from the repository
+      owner for that specific operation; `docs/delivery-wave.md` authorization
+      remains required for admitting a new release unit or Official
+      channel/destination scope, changing Workflow Delivery
+      release/qualification contracts, out-of-band or manual package/release
+      publication bypassing governed release workflows and GitHub Environments,
+      reopening closed proving campaigns, or running new external/paid empirical
+      campaigns; and all closed Workflow Delivery proving-campaign slot,
+      lifetime, ceiling, and non-replay limits remain intact.
+- **Advancement and outcome:** atomically align
+  `docs/governance/record-system.md`, `docs/delivery-wave.md` (header summary
+  and closing this entry),
+  `src/private/app/workflow-delivery/docs/agent-handoff.md`, `AGENTS.md`,
+  `.github/skills/record-system-review/SKILL.md` (and
+  `evals/{positive,negative}.md`), and
+  `.github/skills/research-evidence-review/SKILL.md` (plus any directly affected
+  clause in `CONTRIBUTING.md` or `docs/governance/controls.yaml` if required for
+  atomic alignment), and align open Issues `#1807` and `#1836` with the updated
+  release-dispatch boundary.
+- **Ordering and gates:** merge this authorization before substantive policy and
+  interface edits. Review the implementation pull request against the accepted
+  target-branch policies, catalogs, and review Skills under
+  [changing rules](governance/governance-system.md#changing-rules), retaining
+  atomic alignment (`GOV-006`), explicit-base `records:check`,
+  `mise run records:test`, CI-profile HK checks (plus direct lint/format/typos
+  verification on `.github/skills/**`), Workflow Delivery
+  `open-code-review-delegate` (OCR) review with full Git manifest, independent
+  `record-system-review`, `GOV-011` finding disposition, `Validate` CI, and
+  explicit repository-owner disposition (`record-system-gate`).
+- **Acceptance and closure:** affected governance, Workflow Delivery handoff,
+  root agent instructions, and review procedures/evals agree atomically while
+  preserving closed-campaign limits; validation and independent reviews pass
+  with no unresolved material findings; and this entry is deleted atomically in
+  the implementation pull request.
+- **Exclusions:** no live or dry-run release or proving workflow dispatch,
+  package/release publication, Environment, credential, publisher, ruleset,
+  authentication, or access change during this amendment; no edits to
+  `GOV-001` through `GOV-011`, `WorkflowDelivery` source/workflows,
+  `schemas/governance/*.schema.json`, `apm.yml`, `apm.lock.yaml`, or generated
+  `.agents/skills/**` / `.github/agents/**` files.
