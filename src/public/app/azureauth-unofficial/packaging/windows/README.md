@@ -13,14 +13,14 @@ session with Web Account Manager (WAM) available.
 
 ## Contents
 
-| File | Purpose |
-| --- | --- |
-| `azureauth-unofficial.exe` | The command, a self-contained Native AOT executable. |
-| `msalruntime.dll` | The Microsoft authentication broker runtime. Keep it next to the executable. |
-| `profiles/visual-studio-legacy-wam.json` | An optional Client Profile; see below. |
-| `COPYING`, `COPYING.LESSER`, `LGPL-3.0-linking-exception.txt` | License texts (`LGPL-3.0-or-later WITH LGPL-3.0-linking-exception`). |
-| `THIRD-PARTY-NOTICES.txt` | Notices for the bundled .NET runtime and Microsoft libraries. |
-| `README.md` | This file. |
+| File                                                          | Purpose                                                                      |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `azureauth-unofficial.exe`                                    | The command, a self-contained Native AOT executable.                         |
+| `msalruntime.dll`                                             | The Microsoft authentication broker runtime. Keep it next to the executable. |
+| `profiles/visual-studio-legacy-wam.json`                      | An optional Client Profile; see below.                                       |
+| `COPYING`, `COPYING.LESSER`, `LGPL-3.0-linking-exception.txt` | License texts (`LGPL-3.0-or-later WITH LGPL-3.0-linking-exception`).         |
+| `THIRD-PARTY-NOTICES.txt`                                     | Notices for the bundled .NET runtime and Microsoft libraries.                |
+| `README.md`                                                   | This file.                                                                   |
 
 ## Install
 

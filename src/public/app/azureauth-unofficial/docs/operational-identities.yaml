@@ -26,7 +26,7 @@ reserved_upstream:
   - area: installation
     identifiers:
       - "%LOCALAPPDATA%\\Programs\\AzureAuth"
-      - "~/.azureauth"
+      - '~/.azureauth'
       - /usr/bin/azureauth
       - /usr/lib/azureauth
     rule: Install side by side under a fork-owned root.
@@ -42,7 +42,7 @@ reserved_upstream:
     identifiers:
       - "%LOCALAPPDATA%\\.IdentityService"
       - Microsoft.Developer.IdentityService
-      - "category:azureauth"
+      - 'category:azureauth'
       - com.microsoft.identity.tokencache
       - .azureauth
     rule: Define explicit v2 cache ownership and do not mutate upstream serialized stores.
@@ -58,7 +58,7 @@ reserved_upstream:
     identifiers:
       - AZUREAUTH_APPLICATION_INSIGHTS_INGESTION_TOKEN
       - upstream registry configuration
-      - "event namespace:azureauth"
+      - 'event namespace:azureauth'
     rule: Do not consume or emit under upstream telemetry configuration.
 
   - area: release
@@ -72,7 +72,7 @@ reserved_upstream:
 
   - area: client-application
     identifiers:
-      - "Visual Studio public client: 872cd9fa-d31f-45e0-9eab-6e460a02d1f1"
+      - 'Visual Studio public client: 872cd9fa-d31f-45e0-9eab-6e460a02d1f1'
     rule: Represent only as an explicitly named externally owned compatibility profile.
 
 selected_v2:
@@ -80,15 +80,16 @@ selected_v2:
     value: azureauth-unofficial
     required_before: distribution
     selection_evidence:
-      owning_component: Windows CLI project (src/Authentication.Cli) and the Windows packaging script
+      owning_component: Windows CLI project (Authentication.Cli) and the Windows packaging script
       location: >-
         Product name of the distributed Windows artifact, its Win32 version resource
         product field, and the package README. The public display name AzureAuth
-        Unofficial V2 in docs/governance/project.md remains the project name.
+        Unofficial V2 in docs/project.md remains the project name.
       version_behavior: >-
         Unchanged across versions. Nerdbank.GitVersioning computes the SemVer 2.0
-        version 0.1.0-alpha.{height}+{commit} from version.json, with main-v2 as the
-        only public-release ref; other refs add the commit-ID prerelease suffix.
+        version 0.1.0-alpha.{height}+{commit} from version.json (with versionHeightOffset
+        37 continuing monotonically after 0.1.0-alpha.37), with main as the only
+        public-release ref; other refs add the commit-ID prerelease suffix.
       collision_test: >-
         Differs from every reserved product-and-command identifier: the selected name
         carries the -unofficial suffix, so it never equals AzureAuth, azureauth or
@@ -194,22 +195,24 @@ selected_v2:
     value: unsigned
     required_before: release
     selection_evidence:
-      owning_component: Repository owner (Issue #505)
+      owning_component: Repository owner (hcoona/microsoft-authentication-cli#505)
       location: >-
         Prerelease archives and their executables carry no Authenticode signature. The
         package README states this and the archive is published with a SHA-256 checksum.
-      version_behavior: Applies to the 0.1.0-alpha prerelease line until Issue #505 selects a signing identity.
+      version_behavior: Applies to the 0.1.0-alpha prerelease line until a signing identity is selected.
       collision_test: No upstream signing identity, certificate or publisher is used.
       migration_or_import: Not applicable.
       cleanup_owner: Not applicable; no signing material exists.
 
   - id: update-channel
-    value: GitHub Releases of hcoona/microsoft-authentication-cli, downloaded manually
+    value: GitHub Releases (manual download; non-release allowlisted in hcoona/three pending Workflow Delivery onboarding)
     required_before: release
     selection_evidence:
       owning_component: Repository owner and the release process
       location: >-
-        Prerelease assets of this repository's GitHub Releases. The product never checks
+        Historical prereleases through v0.1.0-alpha.37 live on
+        hcoona/microsoft-authentication-cli Releases; future hcoona/three releases
+        require Workflow Delivery v3 GitHub Release onboarding. The product never checks
         for, downloads or applies updates.
       version_behavior: >-
         Each prerelease is tagged v<version>, where <version> is the computed SemVer 2.0

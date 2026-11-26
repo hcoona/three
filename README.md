@@ -31,13 +31,14 @@ The current repository contract is:
 
 ## Projects included
 
-| Project                       | Directory                                      | Upstream                     | Commit                        |
-| ----------------------------- | ---------------------------------------------- | ---------------------------- | ----------------------------- |
-| Asciidoctor LaTeXMath         | `src/public/lib/asciidoctor-latexmath/`        | [Repo][asciidoctor-upstream] | [514d685][asciidoctor-commit] |
-| ImageOcclusionEditor          | `src/public/app/ImageOcclusionEditor/`         | [Repo][ioe-upstream]         | [e08f834][ioe-commit]         |
-| OneDotNet (historical import) | git history only                               | [Repo][onedotnet-upstream]   | [17f2224][onedotnet-commit]   |
-| Steam Account History to CSV  | `src/public/lib/steam-account-history-to-csv/` | [Repo][steamhist-upstream]   | [b759a52][steamhist-commit]   |
-| Hexo Renderer AsciiDoc        | `src/public/lib/hexo-renderer-asciidoc/`       | [Repo][hexo-upstream]        | [d98f8d5][hexo-commit]        |
+| Project                       | Directory                                      | Upstream                      | Commit                         |
+| ----------------------------- | ---------------------------------------------- | ----------------------------- | ------------------------------ |
+| Asciidoctor LaTeXMath         | `src/public/lib/asciidoctor-latexmath/`        | [Repo][asciidoctor-upstream]  | [514d685][asciidoctor-commit]  |
+| AzureAuth Unofficial V2       | `src/public/app/azureauth-unofficial/`         | [Repo][azureauth-v2-upstream] | [f509276][azureauth-v2-commit] |
+| ImageOcclusionEditor          | `src/public/app/ImageOcclusionEditor/`         | [Repo][ioe-upstream]          | [e08f834][ioe-commit]          |
+| OneDotNet (historical import) | git history only                               | [Repo][onedotnet-upstream]    | [17f2224][onedotnet-commit]    |
+| Steam Account History to CSV  | `src/public/lib/steam-account-history-to-csv/` | [Repo][steamhist-upstream]    | [b759a52][steamhist-commit]    |
+| Hexo Renderer AsciiDoc        | `src/public/lib/hexo-renderer-asciidoc/`       | [Repo][hexo-upstream]         | [d98f8d5][hexo-commit]         |
 
 For retired monorepo projects, prototypes, and pre-monorepo deprecated packages
 (with immutable links to their last intact Git trees and replacement guidance),
@@ -62,6 +63,8 @@ and notification behavior. Use its project documentation for current instruction
 
 [asciidoctor-upstream]: https://github.com/hcoona/asciidoctor-latexmath
 [asciidoctor-commit]: https://github.com/hcoona/asciidoctor-latexmath/commit/514d685558dc1c8215d0b1e42ff5ea2762ecd3b2
+[azureauth-v2-upstream]: https://github.com/hcoona/microsoft-authentication-cli
+[azureauth-v2-commit]: https://github.com/hcoona/microsoft-authentication-cli/commit/f509276cad32c49b5764af906e8374f3f9b182ae
 [ioe-upstream]: https://github.com/hcoona/ImageOcclusionEditor
 [ioe-commit]: https://github.com/hcoona/ImageOcclusionEditor/commit/e08f8348e58b83d04801212e55bace30a9126072
 [onedotnet-upstream]: https://dev.azure.com/zhangshuai89/Public/_git/OneDotNet
@@ -71,4 +74,4 @@ and notification behavior. Use its project documentation for current instruction
 [hexo-upstream]: https://github.com/hcoona/hexo-renderer-asciidoc
 [hexo-commit]: https://github.com/hcoona/hexo-renderer-asciidoc/commit/d98f8d5461c37db229d05a2b32d5aa8e122ec423
 
-Each subtree was imported with `git subtree add --squash`, so future pulls can use `git subtree pull --prefix=<dir> <remote> main --squash` to stay in sync.
+Earlier repository imports used `git subtree add --squash`; retired standalone lines consolidated permanently into `three` (such as `AzureAuth Unofficial V2` from `main-v2`) use linear verbatim snapshot commits followed by monorepo adaptation.

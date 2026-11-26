@@ -131,12 +131,12 @@ The following rules define the high-level mapping if the corresponding Profile a
 integration pass their existing acceptance gates. They do not enable a Profile, select a
 supported platform, or freeze its configuration representation.
 
-| Normalized tenant policy and eligible integration | Provider authority behavior | Required result behavior |
-| --- | --- | --- |
-| `common`, ordinary multitenant integration | Start with the cloud's `common` authority and use documented provider tenant resolution. Do not enable MSA passthrough for an arbitrary registration. | Retain the provider's actual tenant and authority; enforce all request and Profile constraints. |
+| Normalized tenant policy and eligible integration                                 | Provider authority behavior                                                                                                                                                                                                            | Required result behavior                                                                                                                                         |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `common`, ordinary multitenant integration                                        | Start with the cloud's `common` authority and use documented provider tenant resolution. Do not enable MSA passthrough for an arbitrary registration.                                                                                  | Retain the provider's actual tenant and authority; enforce all request and Profile constraints.                                                                  |
 | `common`, Public Cloud Visual Studio legacy passthrough compatibility integration | Use `organizations` with MSA passthrough for the initial authority. For silent acquisition of a uniquely resolved MSA home account, use the public MSA transfer tenant. For other accounts, use documented provider tenant resolution. | Preserve `common` as the caller's unconstrained tenant policy. The observed result tenant is authoritative; the routing tenant is not a fabricated result value. |
-| Explicit compatible tenant GUID, including with the legacy integration | Use that exact resource tenant for silent and interactive acquisition. Do not replace it with the MSA home or transfer tenant. | Require the provider-reported token/resource tenant to equal the requested GUID. A mismatch is terminal validation failure. |
-| Fixed single-tenant Profile | Use the Profile's fixed tenant and reject conflicting caller input before acquisition. | Require the fixed tenant; no MSA-based tenant substitution. |
+| Explicit compatible tenant GUID, including with the legacy integration            | Use that exact resource tenant for silent and interactive acquisition. Do not replace it with the MSA home or transfer tenant.                                                                                                         | Require the provider-reported token/resource tenant to equal the requested GUID. A mismatch is terminal validation failure.                                      |
+| Fixed single-tenant Profile                                                       | Use the Profile's fixed tenant and reject conflicting caller input before acquisition.                                                                                                                                                 | Require the fixed tenant; no MSA-based tenant substitution.                                                                                                      |
 
 The legacy row adapts the already observed Windows configuration and pinned GCM/MSAL
 behavior. `organizations` together with the legacy passthrough capability admits the MSA
@@ -198,4 +198,4 @@ persisted operational identity are governed respectively by:
 - [`RECHECK-007`](../research/rechecks.yaml);
 - the external-client-profile gate in
   [`compatibility-and-migration.md`](../product/compatibility-and-migration.md);
-- [`operational-identities.yaml`](../governance/operational-identities.yaml).
+- [`operational-identities.yaml`](../operational-identities.yaml).

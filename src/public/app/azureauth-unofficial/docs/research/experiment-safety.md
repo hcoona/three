@@ -14,8 +14,10 @@ VMs, and a fresh-state environment are not general prerequisites.
 ## Development Validation
 
 Development validation checks repository source without observing real platform,
-account, or service behavior. It is not an experiment and needs no protocol, but the
-work it validates still needs Delivery Wave authorization. It is limited to:
+account, or service behavior. It is not an experiment and needs no protocol; work
+authorization and local iteration follow the
+[repository record policy](../../../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+and [Delivery Wave](../../../../../../docs/delivery-wave.md). It is limited to:
 
 - ordinary credential-free restore, build, tool evaluation, and synthetic scenario runs,
   using the pinned toolchain, the public package sources named by the repository
@@ -25,7 +27,8 @@ work it validates still needs Delivery Wave authorization. It is limited to:
   process or thread state; that temporarily change the state of the test process, its
   own threads or its child processes and revert or end that change before the test
   exits; or that create, under a fresh temporary root for the run, temporary files,
-  junctions, child processes, console process groups, and hidden windows owned by the
+  junctions, child processes, console process groups, and owned windows (hidden or
+  synthetic test surfaces) owned by the
   test process. Child processes, console process groups and windows are destroyed
   before the test process exits. Files and junctions may remain inside that root, and
   whoever runs the scenarios disposes of the root;
@@ -33,9 +36,8 @@ work it validates still needs Delivery Wave authorization. It is limited to:
   canned responses and fails the test on any unexpected request, that uses no account
   or credential, and that opens no browser, operator surface, or window not owned by
   the test process;
-- opening and analyzing a repository record in its native desktop tool when its record
-  family requires that validation, under the conditions the authorizing Wave entry
-  states.
+- opening and inspecting a committed repository record (such as `.tm7`) locally in its
+  native desktop tool without external, credentialed, or paid effects.
 
 A run that uses an account or credential, starts real interactive or broker
 authentication, contacts an identity or authority-discovery endpoint, uses a
@@ -59,7 +61,7 @@ Before any experiment covered by this policy runs:
   environment and account-state boundaries, expected observations and interaction,
   evidence limits, finite attempt/time/cumulative-effect bounds, stop conditions, and
   cleanup or intentional retention must be independently reviewed and accepted on
-  `main-v2`;
+  `main`;
 - execution and preflight must bind the exact accepted protocol revision; and
 - every applicable contextual review and mechanical precondition must be satisfied.
 
@@ -154,12 +156,15 @@ account store, or create another planned side effect.
   waiting action before requesting a fresh readiness response. Do not run those
   actions in CI or unattended sessions. Manual assistance must use the accepted
   procedure and counts toward the same attempt limits.
-- Fully automated, credential-free synthetic window tests do not require operator
-  attendance solely because a window is visible. Their accepted protocol and exact
-  admission must cover the automation, owned surfaces, required observations, and
-  bounded termination on the designated host/session. Keep sign-in, account choice,
-  consent, and state unlock under operator control. Unexpected human interaction
-  follows the protocol's stop procedure; it is not permission to automate it.
+- Routine local credential-free, network-free synthetic owned-window tests are
+  development validation and require neither operator attendance nor an experiment
+  protocol. When a formal acceptance-evidence run or real-broker/external experiment
+  includes automated window checks, the accepted protocol and exact admission must
+  cover the automation, owned surfaces, required observations, and bounded termination
+  on the designated host/session without requiring operator attendance solely because a
+  window is visible. Keep sign-in, account choice, consent, and state unlock under
+  operator control. Unexpected human interaction follows the protocol's stop procedure;
+  it is not permission to automate it.
 - Do not request desktop attendance solely to watch automated work. Use admitted
   automation for observations; if it cannot establish a required observation,
   leave that claim unvalidated until suitable evidence is admitted.

@@ -62,3 +62,11 @@ Both `src/public/lib/Nanopass/Hcoona.Nanopass.csproj` and `src/public/lib/Nanopa
 - `src/public/lib/Nanopass/Seq{T}.cs`: `[SuppressMessage]` for `CA1000` on `Seq<T>.Empty`, matching the BCL `ImmutableArray<T>.Empty` pattern.
 - `src/public/lib/Nanopass.Generators/LanguageEmitter.cs` and `PassEmitter.cs`: `#pragma warning disable CA1716, CA1720, CS1591` (and `CS1591` on generated pass members) in generated `.g.cs` files so user-chosen compiler grammar and pass names compile cleanly without forcing verbose prefixes onto IR definitions.
 - `src/public/lib/Nanopass.Generators/NanopassGenerator.cs` and `NanopassPassAnalyzer.cs`: `[SuppressMessage]` for `RS1038` (because `MissingRewriteRuleCodeFixProvider` shares the single companion `Hcoona.Nanopass.Generators` assembly while generator and analyzer types never reference `Microsoft.CodeAnalysis.Workspaces` types at command-line compilation time) and `RS2008` (diagnostic release tracking deferred while `Hcoona.Nanopass` is in `0.1.0-beta` pre-release).
+
+## Project-local host-safety and scenario-test suppressions (`azureauth-unofficial`)
+
+All three production projects under `src/public/app/azureauth-unofficial/` (`Authentication.Core`, `Authentication.Windows`, and `Authentication.Cli`) compile under the full `Directory.Build.props` `AnalysisMode=Recommended` profile with zero project-level `NoWarn` settings:
+
+- `src/public/app/azureauth-unofficial/Authentication.Windows/NativeWindowsHostObservations.cs`: `[SuppressMessage]` for `CA2219` on `ReadOwnLogonAndStation` and `ReadInputDesktop`, which intentionally fail closed if native LSA return-buffer or desktop handle cleanup fails in `finally`.
+- `src/public/app/azureauth-unofficial/Authentication.Windows/WindowsProcess.cs`: `[SuppressMessage]` for `CA1001` on `ProcessState`, whose `CancellationTokenSource` outlives unjoined background pipe/host callbacks through single-shot process exit.
+- `tests/public/app/azureauth-unofficial/Directory.Build.props`: `MSTestAnalysisMode=Default` and `NoWarn+=CA1861` (plus narrow `[SuppressMessage]` attributes on `MsalAdapterScenarios.InternalFailureRetainsOnlyFixedProviderCategory` for `CA2201` and `DefaultHttpProcessChild` for `CA1001`) so the imported scenario suites retain their original assertion and inline array-fixture style while running under `MSTest.Sdk`.

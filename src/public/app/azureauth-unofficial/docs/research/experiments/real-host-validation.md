@@ -30,13 +30,13 @@ one set of Wave limits. Each subject was materialized with `git archive` into a 
 directory, restored in locked mode, built, published as Windows x64 Native AOT, and run
 through the Windows scenario project before any real call.
 
-| Subject | Role in the experiment | Calls | Protocol revision bound |
-| --- | --- | --- | --- |
-| `c9ac862` | First subject; stopped at the scenario run | #1, #2 (artifact checks only) | `c9ac862` |
-| `8d9be27` | Second subject; full case plan | #3 to #24 | `8d9be27` |
-| `0eb257a` | Third subject; forced call with the requested email as login hint ([PR #492](https://github.com/hcoona/microsoft-authentication-cli/pull/492)) | #25 to #29 | `0eb257a` (#25 to #27), `268ea4b` (#28, #29) |
-| `389f85a` | Experiment-only variant binding the discovered account, never merged into `main-v2` | #30 to #34 | `97a8d76` |
-| `3ae2554` | Fourth subject; forced call reverted to neither account nor hint ([PR #501](https://github.com/hcoona/microsoft-authentication-cli/pull/501)) | #35 to #40 | `3ae2554` |
+| Subject   | Role in the experiment                                                                                                                         | Calls                         | Protocol revision bound                      |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | -------------------------------------------- |
+| `c9ac862` | First subject; stopped at the scenario run                                                                                                     | #1, #2 (artifact checks only) | `c9ac862`                                    |
+| `8d9be27` | Second subject; full case plan                                                                                                                 | #3 to #24                     | `8d9be27`                                    |
+| `0eb257a` | Third subject; forced call with the requested email as login hint ([PR #492](https://github.com/hcoona/microsoft-authentication-cli/pull/492)) | #25 to #29                    | `0eb257a` (#25 to #27), `268ea4b` (#28, #29) |
+| `389f85a` | Experiment-only variant binding the discovered account, never merged into `main-v2`                                                            | #30 to #34                    | `97a8d76`                                    |
+| `3ae2554` | Fourth subject; forced call reverted to neither account nor hint ([PR #501](https://github.com/hcoona/microsoft-authentication-cli/pull/501))  | #35 to #40                    | `3ae2554`                                    |
 
 **Steps.** B1 restore, B2 build, B3 Native AOT publish, B4 result-validator build; native
 artifact checks (`help` and `authenticate --protocol 0` from an empty directory with
@@ -52,15 +52,15 @@ email, the Azure DevOps default scope, `--tenant common` and `--telemetry stderr
 calls also passed `--cancel-on-stdin-close` with a launcher-held lifetime pipe. Units:
 I is interactive-capable, N is `non-interactive-only`.
 
-| Case | Interaction and action | Expected outcome/route, exit |
-| --- | --- | --- |
-| P7 | Native first call, `non-interactive-only` | `InteractionRequired/None`, 1 |
-| P1 | `interactive-if-needed` | `Success`, 0 |
-| P2 | Fresh process after P1, `non-interactive-only` | `Success/Silent`, 0 |
-| P3 | `force-interactive`; owner chooses the designated account | `Success/Interactive`, 0 |
-| P4 | `force-interactive`; owner cancels on the WAM surface | `Cancelled/None`, 1 |
-| P5 | WSL `force-interactive`; launcher closes the lifetime writer after WAM is shown | `Cancelled/None`, 1 |
-| P6 | `force-interactive --timeout-seconds 30`; owner does not act | `Timeout/None`, 1 |
+| Case | Interaction and action                                                          | Expected outcome/route, exit  |
+| ---- | ------------------------------------------------------------------------------- | ----------------------------- |
+| P7   | Native first call, `non-interactive-only`                                       | `InteractionRequired/None`, 1 |
+| P1   | `interactive-if-needed`                                                         | `Success`, 0                  |
+| P2   | Fresh process after P1, `non-interactive-only`                                  | `Success/Silent`, 0           |
+| P3   | `force-interactive`; owner chooses the designated account                       | `Success/Interactive`, 0      |
+| P4   | `force-interactive`; owner cancels on the WAM surface                           | `Cancelled/None`, 1           |
+| P5   | WSL `force-interactive`; launcher closes the lifetime writer after WAM is shown | `Cancelled/None`, 1           |
+| P6   | `force-interactive --timeout-seconds 30`; owner does not act                    | `Timeout/None`, 1             |
 
 **Evidence channels.** A call passed only with a Windows-local result-validator pass,
 matching product exit and, for success, valid metadata and `persistence_unconfirmed`.
@@ -255,13 +255,13 @@ The Wave limits were 24 I and 40 N, raised to 48 I and 64 N by the F3 amendment.
 attempt was appended to the local ledger before it started; failed starts were counted;
 no call overlapped, overran its bound, was repeated or left a product process.
 
-| Subject | I used | N used |
-| --- | --- | --- |
-| `c9ac862` | 0 | 2 |
-| `8d9be27` | 14 | 8 |
-| `0eb257a` | 3 | 2 |
-| `389f85a` | 3 | 2 |
-| `3ae2554` | 4 | 2 |
+| Subject   | I used | N used |
+| --------- | ------ | ------ |
+| `c9ac862` | 0      | 2      |
+| `8d9be27` | 14     | 8      |
+| `0eb257a` | 3      | 2      |
+| `389f85a` | 3      | 2      |
+| `3ae2554` | 4      | 2      |
 | **Total** | **24** | **16** |
 
 At the end of the Wave, 24 I and 48 N remained unused. No account, consent, cache or

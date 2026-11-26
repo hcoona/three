@@ -37,6 +37,10 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[2]
 DESCRIPTOR = "workflow-delivery.release-unit.yml"
 NON_RELEASE_PUBLIC_DIRS = {
+    "src/public/app/azureauth-unofficial": (
+        "Windows alpha portable/symbols CLI not yet onboarded "
+        "to Workflow Delivery GitHub Releases"
+    ),
     "src/public/lib/Memoization.Generators": (
         "Roslyn source-generator companion packed into Memoization"
     ),

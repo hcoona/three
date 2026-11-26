@@ -32,6 +32,8 @@ enforces two deterministic invariants:
    `src/public/app/` and `src/public/lib/` either commits
    `workflow-delivery.release-unit.yml` or is explicitly listed in the
    non-release allowlist:
+    - `src/public/app/azureauth-unofficial` — Windows alpha portable-plus-symbols
+      CLI not yet onboarded to Workflow Delivery v3 GitHub Release recipes.
     - `src/public/lib/Memoization.Generators` — Roslyn source-generator build
       component packed inside `Memoization`.
     - `src/public/lib/Nanopass.Generators` — Roslyn source-generator and

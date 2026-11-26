@@ -49,6 +49,7 @@ extend-ignore-re = [
   '(?:^|[^A-Za-z0-9_=-])[A-Za-z0-9_-]{40,}={0,2}(?:$|[^A-Za-z0-9_=-])',        # Base64URL
   '\bCC-BY-NC-ND-4.0\b',
   '\bPNGs?\b',
+  '(?i)\bsecur32\.dll\b',
   '\b(?:admittedTerm|deprecatedTerm|preferredTerm|supersededTerm)-admn-sts\b',
 ]
 
@@ -80,3 +81,8 @@ extend-words = { certifi = "certifi" } # Preserve the native package name in rec
 [type.node-release-schedule]
 extend-glob = ["node-release-schedule.json"]
 extend-words = { Jod = "Jod" }               # Upstream Node.js 22 release codename.
+
+[type.tm7]
+extend-glob = ["*.tm7"]
+# Microsoft Threat Modeling Tool default.tb7 built-in property identifiers.
+extend-identifiers = { RemoveableStorage = "RemoveableStorage", enterprizeAuthentication = "enterprizeAuthentication" }
