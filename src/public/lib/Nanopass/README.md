@@ -59,13 +59,16 @@ public static partial class L1;
 public partial class LowerNegation
 {
     [Rewrite(typeof(L0.Neg))]
-    private L1.Expr LowerNeg([Recur] L1.Expr operand) =>
+    private static L1.Expr LowerNeg([Recur] L1.Expr operand) =>
         new L1.Sub(new L1.Int(0), operand);
-}
 
-var pipeline = Pipeline.Start<L0.Expr>().Then(new LowerNegation());
-L1.Expr lowered = pipeline.Run(new L0.Add(new L0.Neg(new L0.Int(3)), new L0.Int(5)));
-// Produces: Add(Sub(Int(0), Int(3)), Int(5))
+    public static L1.Expr Demo()
+    {
+        var pipeline = Pipeline.Start<L0.Expr>().Then(new LowerNegation());
+        return pipeline.Run(new L0.Add(new L0.Neg(new L0.Int(3)), new L0.Int(5)));
+        // Returns: Add(Sub(Int(0), Int(3)), Int(5))
+    }
+}
 ```
 
 Only the `L0.Neg` rule is written by hand; `Int`, `Add`, and `Sub` are synthesized automatically with recursive traversal. Removing `LowerNeg` reports compile-time error `NP1001` and offers an IDE Code Fix to generate the missing `[Rewrite]` stub.
@@ -74,6 +77,12 @@ Only the `L0.Neg` rule is written by hand; `Int`, `Add`, and `Sub` are synthesiz
 
 ```csharp
 using Hcoona.Nanopass;
+
+// Round-trip S-expressions and inspect the grammar:
+LLet.Expr term = LLet.Parse("(let ([a (num 1)] [b (num 2)]) a b)");
+string pretty = LLet.UnparseToString(term);          // (let ((a 1) (b 2)) a b)
+string raw = LLet.UnparseToString(term, raw: true);  // (let ((a (num 1)) (b (num 2))) a b)
+int nodes = LLet.CountNodes(term);                   // 5
 
 [Language]
 [Terminal(typeof(Symbol), "x")]
@@ -85,12 +94,6 @@ using Hcoona.Nanopass;
     "(num n) => n",
     "(let ([x* e*] ...) body* ... body)")]
 public static partial class LLet;
-
-// Round-trip S-expressions and inspect the grammar:
-LLet.Expr term = LLet.Parse("(let ([a (num 1)] [b (num 2)]) a b)");
-string pretty = LLet.UnparseToString(term);          // (let ((a 1) (b 2)) a b)
-string raw = LLet.UnparseToString(term, raw: true);  // (let ((a (num 1)) (b (num 2))) a b)
-int nodes = LLet.CountNodes(term);                   // 5
 ```
 
 ## Releasing

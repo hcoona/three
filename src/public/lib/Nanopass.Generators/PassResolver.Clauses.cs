@@ -90,11 +90,22 @@ internal sealed partial class PassResolver
         }
     }
 
-    private static LanguageModel.Field? FindField(LanguageModel.Production? rule, string name)
+    private static LanguageModel.Field? FindField(
+        LanguageModel.Production? rule, string name, bool allowCamelCase = false)
     {
         var matches = Fields(rule).Where(field =>
             string.Equals(field.MetaVar, name, StringComparison.Ordinal)
             || string.Equals(field.Property, name, StringComparison.Ordinal)).Take(2).ToArray();
+        if (matches.Length == 0 && allowCamelCase)
+        {
+            matches = Fields(rule).Where(field =>
+                field.Property.Length > 0
+                && string.Equals(
+                    char.ToLowerInvariant(field.Property[0]) + field.Property.Substring(1),
+                    name,
+                    StringComparison.Ordinal)).Take(2).ToArray();
+        }
+
         return matches.Length == 1 ? matches[0] : null;
     }
 
@@ -273,7 +284,10 @@ internal sealed partial class PassResolver
                     && (rule is null || parameter.Name == "ir");
                 expression ??= inputMatches
                     ? InputName(processor)
-                    : nodeType is not null && Same(nodeType, parameter.Type) ? NodeVariable : null;
+                    : nodeType is not null && Same(nodeType, parameter.Type)
+                        ? NodeVariable
+                        : this.BindField(
+                            rule, parameter.Name, parameter.Type, allowCamelCase: true);
             }
 
             if (expression is null)
@@ -299,9 +313,10 @@ internal sealed partial class PassResolver
         return arguments.ToImmutable();
     }
 
-    private string? BindField(LanguageModel.Production? rule, string name, PassType type)
+    private string? BindField(
+        LanguageModel.Production? rule, string name, PassType type, bool allowCamelCase = false)
     {
-        if (rule is not null && FindField(rule, name) is { } field
+        if (rule is not null && FindField(rule, name, allowCamelCase) is { } field
             && Same(
                 this.source.Find(field)?.Type,
                 ElementType(type, field.SequenceDepth, field.IsMaybe)))
@@ -320,7 +335,7 @@ internal sealed partial class PassResolver
         PassInput.Recur recur)
     {
         var fieldName = recur.Field ?? parameter.Name;
-        var field = FindField(rule, fieldName);
+        var field = FindField(rule, fieldName, allowCamelCase: true);
         var from = field is null ? null : this.source.Find(field);
         var result = field is null
             ? null

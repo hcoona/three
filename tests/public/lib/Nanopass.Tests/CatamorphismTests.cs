@@ -141,6 +141,28 @@ public sealed class CatamorphismTests
 
         Assert.AreEqual("(value 10)", DefaultsLanguage.UnparseToString(pass.Run(input)));
     }
+
+    /// <summary>
+    /// Verifies camelCase [Recur] matches PascalCase properties without shadowing whole-input ir.
+    /// </summary>
+    [TestMethod]
+    public void Recur_CamelCaseParameterMatchesPascalCaseRecordProperty()
+    {
+        var pipeline = Pipeline.Start<QuickStartL0.Expr>().Then(new QuickStartLowerNegation());
+        QuickStartL1.Expr lowered = pipeline.Run(
+            new QuickStartL0.Add(
+                new QuickStartL0.Neg(new QuickStartL0.Int(3)),
+                new QuickStartL0.Int(5)));
+
+        Assert.AreEqual(
+            new QuickStartL1.Add(
+                new QuickStartL1.Sub(new QuickStartL1.Int(0), new QuickStartL1.Int(3)),
+                new QuickStartL1.Int(5)),
+            lowered);
+
+        QuickStartL0.Expr outer = new QuickStartL0.Hold(new QuickStartL0.Int(7));
+        Assert.AreEqual(outer, new WholeInputPrecedencePass().Run(outer));
+    }
 }
 
 [Pass(typeof(OptionalPairLanguage), typeof(OptionalPairLanguage))]
@@ -383,4 +405,42 @@ internal sealed partial class ConstantDefaultsPass
     private static DefaultsLanguage.Expr GetDefaults(
         [Recur] (DefaultsLanguage.Term Term, float Weight, State Status, long[] Values) t) =>
         new DefaultsLanguage.Value((long)(t.Weight * (int)t.Status) + t.Values.Sum());
+}
+
+[Language]
+internal static partial class QuickStartL0
+{
+    [NonTerminal("e")]
+    [Entry]
+    public partial union Expr(Int, Add, Sub, Neg, Hold);
+
+    public sealed record Int(int Value);
+
+    public sealed record Add(Expr Left, Expr Right);
+
+    public sealed record Sub(Expr Left, Expr Right);
+
+    public sealed record Neg(Expr Operand);
+
+    public sealed record Hold(Expr Ir);
+}
+
+[Language]
+[Extends(typeof(QuickStartL0))]
+[Remove(typeof(QuickStartL0.Neg))]
+internal static partial class QuickStartL1;
+
+[Pass(typeof(QuickStartL0), typeof(QuickStartL1))]
+internal sealed partial class QuickStartLowerNegation
+{
+    [Rewrite(typeof(QuickStartL0.Neg))]
+    private static QuickStartL1.Expr LowerNeg([Recur] QuickStartL1.Expr operand) =>
+        new QuickStartL1.Sub(new QuickStartL1.Int(0), operand);
+}
+
+[Pass(typeof(QuickStartL0), typeof(QuickStartL0))]
+internal sealed partial class WholeInputPrecedencePass
+{
+    [Rewrite(typeof(QuickStartL0.Hold))]
+    private static QuickStartL0.Expr KeepWhole(QuickStartL0.Expr ir) => ir;
 }
