@@ -10,13 +10,16 @@
   <ItemGroup>
     <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
     <EmbeddedResource Include="Repository/resources/hk-scope-copies.json" LogicalName="HkScopeCopies" />
-    <_ReleaseUnitSource Include="../../../../src/public/**/workflow-delivery.release-unit.yml;../../../../tests/private/app/workflow-delivery/fixtures/products/**/workflow-delivery.release-unit.yml">
-      <ManifestPath>$([System.Text.RegularExpressions.Regex]::Replace($([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('%(FullPath)')), '(?ms)(?&lt;=^\s*(?:-\s*)?definition:\s*[''"]?(?:dotnet/nuget-package-v1|node/npm-package-v1)[''"]?(?:\s*#[^\r\n]*)?$[\s\S]*?^\s*(?:-\s*)?entry-point:\s*[''"]?)[^\s#''"]+|(?&lt;=^\s*(?:-\s*)?entry-point:\s*[''"]?)[^\s#''"]+(?=[\s\S]*?^\s*(?:-\s*)?definition:\s*[''"]?(?:dotnet/nuget-package-v1|node/npm-package-v1)[''"]?(?:\s*#[^\r\n]*)?$)').Value), '^(.+)$', '%(RootDir)%(Directory)$1'))</ManifestPath>
-    </_ReleaseUnitSource>
-    <EmbeddedResource Include="@(_ReleaseUnitSource)"
-                      LogicalName="ReleaseUnit:$([System.IO.Path]::GetRelativePath('$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../../..'))', '%(FullPath)').Replace('\', '/'))" />
-    <EmbeddedResource Include="@(_ReleaseUnitSource->'%(ManifestPath)')"
-                      LogicalName="ReleaseManifest:$([System.IO.Path]::GetRelativePath('$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../../..'))', '%(FullPath)').Replace('\', '/'))" />
+    <EmbeddedResource Include="../../../../src/public/**/workflow-delivery.release-unit.yml"
+                      LogicalName="ReleaseUnit:src/public/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../../tests/private/app/workflow-delivery/fixtures/products/**/workflow-delivery.release-unit.yml"
+                      LogicalName="ReleaseUnit:tests/private/app/workflow-delivery/fixtures/products/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../../src/public/**/*.csproj;../../../../src/public/**/package.json"
+                      Exclude="../../../../src/public/**/*.Generators/**;../../../../src/public/app/ImageOcclusionEditor/**;../../../../src/public/lib/steam-account-history-to-csv/package.json;../../../../src/public/**/examples/**;../../../../src/public/**/test*/**;../../../../src/public/**/node_modules/**;../../../../src/public/**/bin/**;../../../../src/public/**/obj/**"
+                      LogicalName="ReleaseManifest:src/public/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../../tests/private/app/workflow-delivery/fixtures/products/**/*.csproj;../../../../tests/private/app/workflow-delivery/fixtures/products/**/package.json"
+                      Exclude="../../../../tests/private/app/workflow-delivery/fixtures/products/**/examples/**;../../../../tests/private/app/workflow-delivery/fixtures/products/**/test*/**;../../../../tests/private/app/workflow-delivery/fixtures/products/**/node_modules/**;../../../../tests/private/app/workflow-delivery/fixtures/products/**/bin/**;../../../../tests/private/app/workflow-delivery/fixtures/products/**/obj/**"
+                      LogicalName="ReleaseManifest:tests/private/app/workflow-delivery/fixtures/products/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
     <PackageReference Include="YamlDotNet" />
     <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" />
     <PackageReference Include="NuGet.Protocol" />
