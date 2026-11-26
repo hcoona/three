@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net11.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <PackageId>Hcoona.Nanopass</PackageId>
+    <AssemblyName>Hcoona.Nanopass</AssemblyName>
+    <RootNamespace>Hcoona.Nanopass</RootNamespace>
+    <PackageDescription>Strongly typed Nanopass intermediate-representation grammar framework for C# 15 and .NET 11 with incremental language definitions, C# 15 union code generation, and S-expression tooling.</PackageDescription>
+    <PackageTags>compiler nanopass ir ast csharp15 union source-generator roslyn</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/ReleaseNotes.md'))</PackageReleaseNotes>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' != ''">
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);ResolveProjectReferences</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="\" />
+    <None Include="ReleaseNotes.md" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' != ''">
+    <TfmSpecificPackageFile Include="$(MSBuildProjectDirectory)/../Nanopass.Generators/bin/$(Configuration)/netstandard2.0/Hcoona.Nanopass.Generators.dll"
+                            PackagePath="analyzers/dotnet/cs/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Nanopass.Generators/Hcoona.Nanopass.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false"
+                      PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

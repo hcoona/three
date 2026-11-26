@@ -40,6 +40,9 @@ NON_RELEASE_PUBLIC_DIRS = {
     "src/public/lib/Memoization.Generators": (
         "Roslyn source-generator companion packed into Memoization"
     ),
+    "src/public/lib/Nanopass.Generators": (
+        "Roslyn source-generator and analyzer companion packed into Nanopass"
+    ),
 }
 KINDS = {
     "dotnet/github-release-assets-v1": "github-release",

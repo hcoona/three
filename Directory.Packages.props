@@ -13,7 +13,7 @@
     <PackageVersion Include="Microsoft.Build" Version="18.9.6" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
     <PackageVersion Include="Microsoft.Build.Framework" Version="18.9.6" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
     <PackageVersion Include="Microsoft.Build.Utilities.Core" Version="18.9.6" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.12.0" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0" Condition="'$(MSBuildProjectName)' == 'LiteAgensh' or '$(MSBuildProjectName)' == 'LiteAgensh.Tests' or '$(MSBuildProjectName)' == 'LiteAgensh.OfflineOwner'" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.14" />

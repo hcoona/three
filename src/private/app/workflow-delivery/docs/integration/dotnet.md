@@ -379,8 +379,9 @@ The Windows `NuGet native preparation (Windows)` CI job owns the preparation
 rows (real preparation, original package and clean consumer): two smoke rows and
 one row per registered library. Each row carries a `NuGetUnit:<unit>` category.
 Scope selection attributes a preparation input inside exactly one registered
-unit's roots (its project directory, the smoke fixture product, or Memoization's
-generator) to that unit, including an inherited input such as its `version.json`.
+unit's roots (its project directory, the smoke fixture product, or the
+`Memoization.Generators` / `Nanopass.Generators` companion directories) to that
+unit, including an inherited input such as its `version.json`.
 A change under another fixture product selects only the smoke unit, and only
 when the smoke fixture consumes it. Any other consumed preparation input selects
 every unit. This covers Workflow Delivery source, and Workflow Delivery tests
@@ -583,7 +584,7 @@ separate qualification responsibilities of the complete group.
 This contract selects one statically registered unit through the `unit` input of
 `.github/workflows/workflow-delivery-v3-nuget-release.yml`: the
 `hcoona-release-smoke-github-packages` fixture (`Hcoona.ReleaseSmoke.GithubPackages`,
-one `net10.0` `.nupkg`) or one of eight ordinary library products, each with a
+one `net10.0` `.nupkg`) or one of nine ordinary library products, each with a
 `workflow-delivery.release-unit.yml` beside its project under `src/public/lib`:
 
 | Unit                                                   | Package ID                                            |
@@ -594,6 +595,7 @@ one `net10.0` `.nupkg`) or one of eight ordinary library products, each with a
 | `microsoft-extensions-logging-mstest`                  | `IO.Github.Hcoona.MicrosoftExtensions.Logging.MSTest` |
 | `microsoft-extensions-logging-xunit`                   | `MicrosoftExtensions.Logging.Xunit`                   |
 | `microsoft-extensions-options-dedup-change-extensions` | `MicrosoftExtensions.Options.DedupChangeExtensions`   |
+| `nanopass`                                             | `Hcoona.Nanopass`                                     |
 | `phi-failure-detector`                                 | `PhiFailureDetector`                                  |
 | `webhdfs-extensions-file-providers`                    | `WebHdfs.Extensions.FileProviders`                    |
 
@@ -610,20 +612,26 @@ required reviewer; the Official Environment `workflow-delivery-v3-nuget-nugetorg
 remains limited to `main`. This adds no other product or destination.
 
 `Ecosystems/NuGetReleaseUnits` statically registers each unit's declaration,
-package ID, assembly name, exact native `TargetFrameworks` set and consumer
-probe. The smoke unit keeps its single-framework recipe. The eight products share
-one concrete multi-target library recipe because they have one native shape: an
-SDK-style packable library with the repository's common package metadata, a
-`lib/<framework>/<assembly>.dll` payload per declared framework, ordinary
-`PackageReference` dependencies, no runtime identifier, build/analyzer assets,
-content files or required test selection. Under the HLD's
+package ID, assembly name, exact native `TargetFrameworks` set, expected packed
+`analyzers/` payload and consumer probe (with optional trailing source
+declarations). The smoke unit keeps its single-framework recipe. The nine
+products share one concrete multi-target library recipe because they have one
+native shape: an SDK-style packable library with the repository's common package
+metadata, a `lib/<framework>/<assembly>.dll` payload per declared framework,
+ordinary `PackageReference` dependencies, optional declared `analyzers/`
+companion DLLs verified by exact path and NBGV assembly version metadata, no
+runtime identifier, no `build/` or content files and no required test selection.
+Under the HLD's
 [extension-cost rule](../high-level-design.md#native-integrations), a project of another
-shape still needs its own concrete recipe; a ninth library of this exact shape
-adds only a declaration and a registry row. `Memoization` references
+shape still needs its own concrete recipe; another library of this shape adds
+only a declaration and a registry row. `Memoization` references
 `Memoization.Generators` as a build-time source generator whose output is compiled
-into `Memoization.dll`; the package ships no `analyzers/` asset, which matches
-its published nuget.org layout. The generator directory is a preparation root,
-and the Memoization probe binds a generated overload.
+into `Memoization.dll` and ships no `analyzers/` asset; `Nanopass` packs its
+companion `Hcoona.Nanopass.Generators.dll` under
+`analyzers/dotnet/cs/Hcoona.Nanopass.Generators.dll`, includes
+`src/public/lib/Nanopass.Generators` as a preparation root, and verifies both
+generator execution and runtime execution through a `[Language]` declaration in
+the clean consumer probe.
 
 Preparation reads the exact committed release declaration, entry and quality
 selection through the existing Git materialization and declaration readers.

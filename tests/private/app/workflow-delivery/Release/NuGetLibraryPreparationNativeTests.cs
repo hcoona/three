@@ -68,8 +68,8 @@ public sealed class NuGetLibraryPreparationNativeTests(TestContext context)
             string[] entries = zip.Entries.Select(entry => entry.FullName).ToArray();
             foreach (string framework in unit.Frameworks)
                 Assert.Contains("lib/" + framework + "/" + unit.AssemblyName + ".dll", entries);
-            Assert.IsFalse(entries.Any(entry => entry.StartsWith("analyzers/",
-                StringComparison.Ordinal)), string.Join('\n', entries));
+            CollectionAssert.AreEquivalent(unit.Analyzers, entries.Where(entry =>
+                entry.StartsWith("analyzers/", StringComparison.OrdinalIgnoreCase)).ToArray());
             Assert.AreEqual(unit.AssemblyName, result.Commands[^1].Result.Stdout.Trim());
             Assert.IsTrue(result.Commands.All(command => command.Command.Environment is not null
                 && !command.Command.Environment.ContainsKey("GITHUB_TOKEN")));
