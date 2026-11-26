@@ -108,11 +108,20 @@ internal static class CiCallerTransfer
                 Path.Combine(directory, "candidate"), comparison.Candidate.Commit);
         // Git creates each fresh detached checkout at the exact commit; consumers bind it.
         foreach (MaterializedEndpoint endpoint in new[] { basis, candidate }.Distinct())
-            await RunAsync(new("git", root, ["worktree", "add", "--detach", endpoint.Directory,
-                endpoint.Reference], 900), directory, Path.GetFileName(endpoint.Directory) +
-                "-checkout", token);
+            await CheckoutAsync(root, endpoint.Directory, endpoint.Reference, 900, directory,
+                Path.GetFileName(endpoint.Directory) + "-checkout", token);
         return new(basis, candidate, full);
     }
+
+    private static readonly IReadOnlyDictionary<string, string?> CheckoutEnvironment =
+        new Dictionary<string, string?>(StringComparer.Ordinal) { ["GIT_LFS_SKIP_SMUDGE"] = "1" };
+
+    internal static Task<NativeCommandResult> CheckoutAsync(string root, string checkout,
+        string revision, int deadlineSeconds, string directory, string label,
+        CancellationToken token) =>
+        RunAsync(new("git", root, [.. GitMaterialization.NoLfsFilterArguments,
+            "--no-lazy-fetch", "--no-replace-objects", "worktree", "add", "--detach",
+            checkout, revision], deadlineSeconds, CheckoutEnvironment), directory, label, token);
 
     internal static bool Full(JsonElement scope)
     {

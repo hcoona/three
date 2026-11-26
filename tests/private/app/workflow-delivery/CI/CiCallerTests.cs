@@ -103,6 +103,64 @@ public sealed class CiCallerTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task CallerMaterializationAndCleanBindingBypassRequiredLfsFilters()
+    {
+        const string pointer = "version https://git-lfs.github.com/spec/v1\n" +
+            "oid sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n" +
+            "size 123\n";
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        await repo.SetAsync(".gitattributes", "*.sf2 filter=lfs diff=lfs merge=lfs -text\n");
+        await repo.SetAsync("asset.sf2", pointer);
+        await repo.SetAsync(ControlTestInputs.Project, "<Project />");
+        string commit = await repo.CommitAsync();
+        foreach ((string key, string value) in new[]
+                 {
+                     ("filter.lfs.process", "git --invalid-lfs-filter"),
+                     ("filter.lfs.smudge", "git --invalid-lfs-filter"),
+                     ("filter.lfs.clean", "git --invalid-lfs-filter"),
+                     ("filter.lfs.required", "true"),
+                 })
+            await repo.GitAsync("config", key, value);
+
+        using var files = new State();
+        NativeCommandResult bare = await NativeProcess.ExecuteAsync(new("git", repo.Directory,
+            ["worktree", "add", "--detach", files.At("bare"), commit], 30),
+            context.CancellationToken);
+        Assert.IsFalse(bare.Succeeded);
+
+        string payload = files.Put("event.json", "{}");
+        ControlTestInputRequest control = Run(0, "caller-control", "prepare", repo.Directory,
+            files.At("control"), "workflow_dispatch", payload, commit)
+            .Read(TransferJson.Default.ControlTestInputRequest);
+        Assert.AreEqual(pointer, File.ReadAllText(Path.Combine(control.CandidateDirectory,
+            "asset.sf2")).Replace("\r\n", "\n", StringComparison.Ordinal));
+
+        string scope = files.Put("scope.json", $$$$"""
+            {"base":"{{{{commit}}}}","candidate":"{{{{commit}}}}","full":true,"changed_paths":[],
+             "endpoint_owners":{"basis":{"revision":"{{{{commit}}}}","paths":[]},
+                "candidate":{"revision":"{{{{commit}}}}","paths":[]}}}
+            """);
+        string nodeState = files.At("node");
+        var node = Run(0, "caller-node", "materialize", repo.Directory, scope, files.Transfer(),
+            nodeState).Read(TransferJson.Default.NodeCiCallerContext);
+        var group = NodeGroup();
+        CiCallerTransfer.Write(Path.Combine(nodeState, "group-plan.json"), group with
+        {
+            Adopted = group.Adopted with { Comparison = commit, Candidate = commit },
+            Runtime = group.Runtime with { Revision = commit },
+        }, TransferJson.Default.NodeGroupReadback);
+        var runtime = Run(0, "caller-node", "runtime", repo.Directory, nodeState, "node22")
+            .Read(TransferJson.Default.NodeRunRequest);
+        string asset = Path.Combine(runtime.Checkout, "asset.sf2");
+        File.SetLastWriteTimeUtc(asset, DateTime.UtcNow.AddMinutes(-2));
+        GitMaterialization bound = await GitMaterialization.BindAsync(runtime.Checkout, commit,
+            context.CancellationToken);
+        Assert.AreEqual(pointer, (await bound.ReadOptionalTextAsync("asset.sf2",
+            context.CancellationToken))?.Replace("\r\n", "\n", StringComparison.Ordinal));
+        Assert.AreEqual(commit, node.Candidate.Reference);
+    }
+
+    [TestMethod]
     [DataRow("{}", false)]
     [DataRow("""{"application":"a","root":"r","transfer":"t","unknown":1}""", false)]
     [DataRow("""{"application":"a","root":"r","root":"other","transfer":"t"}""", true)]
