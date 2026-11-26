@@ -6,10 +6,12 @@ using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Release;
 
-internal sealed record NuGetPreparationRequest(ReleaseSubject Subject, string Checkout,
-    string Scratch);
 internal sealed record NuGetPreparationResult(PreparedRelease Prepared,
-    Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors);
+    Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors)
+    : IReleasePreparation
+{
+    public void Validate() => NuGetRelease.Validate(this);
+}
 
 // The adopted Release recipes use native versioning and packaging independently of CI. The
 // smoke recipe packs one framework; the shared library recipe packs the native multi-target
@@ -29,10 +31,11 @@ internal static class NuGetPreparation
     internal const string SuppressCloudVariables =
         "-property:NBGV_SetCloudBuildVersionVars=false";
 
-    internal static Task<NuGetPreparationResult> PrepareAsync(NuGetPreparationRequest request,
+    internal static Task<NuGetPreparationResult> PrepareAsync(ReleasePreparationRequest request,
         CancellationToken token) => PrepareAsync(request, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<NuGetPreparationResult> PrepareAsync(NuGetPreparationRequest request,
+    internal static async Task<NuGetPreparationResult> PrepareAsync(
+        ReleasePreparationRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
@@ -85,15 +88,10 @@ internal static class NuGetPreparation
             // Ordinary libraries keep their native CI checks and select no quality preset.
             if (registered.Library ? quality is not null : quality?.Preset != Preset)
                 throw new InvalidDataException("Unsupported complete NuGet quality selection.");
-            string globalText = await bound.ReadOptionalTextAsync("global.json", token) ??
-                throw new InvalidDataException("Missing committed SDK selection.");
-            using JsonDocument global = JsonDocument.Parse(globalText);
-            JsonElement sdk = global.RootElement.GetProperty("sdk");
-            string selected = sdk.GetProperty("version").GetString()!;
-            if (sdk.GetProperty("rollForward").GetString() != "disable" ||
-                !Version.TryParse(selected, out _) ||
-                (await RunAsync("native-input", new("dotnet", checkout, ["--version"], 30,
-                    environment, false))).Stdout.Trim() != selected)
+            string selected = await ReleasePreparationContext.RequirePinnedSdkAsync(bound,
+                checkout, "dotnet", command => RunAsync("native-input", command), token,
+                missingSelection: "Missing committed SDK selection.");
+            if (!Version.TryParse(selected, out _))
                 throw new InvalidDataException("Actual SDK differs from committed selection.");
             await RunAsync("native-input", new("dotnet", checkout,
                 ["restore", DotNetCli.DisableBuildServers, project, "--locked-mode",
@@ -221,31 +219,12 @@ internal static class NuGetPreparation
     }
 
     private static Dictionary<string, string?> EnvironmentFor(string scratch,
-        ReleaseSubject subject)
-    {
-        var values = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (string name in new[] { "PATH", "SystemRoot", "WINDIR", "PATHEXT", "ProgramFiles",
-            "ProgramFiles(x86)", "DOTNET_ROOT",
-            "DOTNET_ROOT_X64", "NUGET_PACKAGES",
-            "DOTNET_CLI_TELEMETRY_OPTOUT", "DOTNET_SKIP_FIRST_TIME_EXPERIENCE" })
-            if (Environment.GetEnvironmentVariable(name) is { } value) values.Add(name, value);
-        // Native NBGV evaluates the requested ref, independently of the caller's ref.
-        values["GITHUB_ACTIONS"] = "true";
-        values["GITHUB_REF"] = subject.SelectedRef;
-        values["GITHUB_SHA"] = subject.Revision;
-        // NBGV's native GitHub provider also emits variables; keep those local.
-        string environmentFile = Path.Combine(scratch, "nbgv-environment");
-        File.WriteAllText(environmentFile, "");
-        values["GITHUB_ENV"] = environmentFile;
-        string home = Directory.CreateDirectory(Path.Combine(scratch, "profile")).FullName;
-        foreach (string name in new[] { "HOME", "USERPROFILE", "DOTNET_CLI_HOME" }) values[name] =
-            home;
-        foreach ((string name, string path) in new[] { ("APPDATA", "appdata"),
-            ("LOCALAPPDATA", "localappdata"), ("XDG_CONFIG_HOME", "config"),
-            ("XDG_DATA_HOME", "data"), ("XDG_CACHE_HOME", "cache") })
-            values[name] = Directory.CreateDirectory(Path.Combine(home, path)).FullName;
-        return values;
-    }
+        ReleaseSubject subject) => ReleasePreparationContext.CreateHomeEnvironment(
+            ["PATH", "SystemRoot", "WINDIR", "PATHEXT", "ProgramFiles", "ProgramFiles(x86)",
+                "DOTNET_ROOT", "DOTNET_ROOT_X64", "NUGET_PACKAGES", "DOTNET_CLI_TELEMETRY_OPTOUT",
+                "DOTNET_SKIP_FIRST_TIME_EXPERIENCE"],
+            [.. ReleasePreparationContext.GithubVersioningEnvironment(scratch, subject)],
+            Path.Combine(scratch, "profile"), createProfileDirectories: true);
 
     private const string PathMessage = "NuGet Release paths must be absolute.";
 }

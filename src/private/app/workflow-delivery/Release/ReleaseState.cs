@@ -17,6 +17,20 @@ internal sealed record PreparedRelease(ReleaseSubject Subject, ReleaseFile[] Fil
 
 // Available is the exact coordinate reported available without a served-byte claim; only
 // destinations under the WD-REL-009 version-observation exception may report it.
+internal sealed record ReleasePreparationRequest(ReleaseSubject Subject, string Checkout,
+    string Scratch);
+
+internal interface IReleasePreparation
+{
+    PreparedRelease Prepared { get; }
+    void Validate();
+}
+
+internal interface IReleaseObservation
+{
+    ReleaseObservation Observation { get; }
+}
+
 internal enum ReleaseFileState { Absent, Exact, Conflict, Unknown, Available }
 internal sealed record ReleaseFileObservation(string Output, string Name, string Version,
     ReleaseFileState State, long? Size, string? Sha256);
@@ -140,6 +154,24 @@ internal sealed class ReleaseQualification(
 // infers a multi-file transaction or a missing-file recovery capability.
 internal static class ReleaseCompletion
 {
+    internal static bool ObservationProceeds(ReleaseObservation observation,
+        bool allowAvailable = false) =>
+        observation.Files.All(file => file.State is ReleaseFileState.Absent or
+            ReleaseFileState.Exact || allowAvailable && file.State == ReleaseFileState.Available) &&
+        ReleasePolicy.Qualified(observation.RequiredChecks, observation.Checks);
+
+    internal static string[] MissingOutputs(ReleaseObservation observation) =>
+        [.. observation.Files.Where(file => file.State == ReleaseFileState.Absent)
+            .Select(file => file.Output)];
+
+    internal static string[] Missing(ReleaseObservation observation, string error,
+        IEnumerable<string>? order = null)
+    {
+        if (!ObservationProceeds(observation)) throw new InvalidDataException(error);
+        string[] missing = MissingOutputs(observation);
+        return order is null ? missing : [.. order.Where(missing.Contains)];
+    }
+
     // nuget.org repository-signs every accepted package and its versions are immutable.
     private static readonly string[] VersionObserved = ["nugetorg"];
 
@@ -167,8 +199,7 @@ internal static class ReleaseCompletion
         (ReleaseBusinessState state, string[] reasons) = Assess(prepared, observation);
         if (state == ReleaseBusinessState.Unknown || reasons.Length != 0)
             return new(prepared.Subject, false, [], reasons);
-        string[] missing = observation!.Files.Where(file => file.State == ReleaseFileState.Absent)
-            .Select(file => file.Output).ToArray();
+        string[] missing = MissingOutputs(observation!);
         if (supportedMissingWrites.Distinct(StringComparer.Ordinal).Count() !=
                 supportedMissingWrites.Length ||
             !missing.Order(StringComparer.Ordinal).SequenceEqual(

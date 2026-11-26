@@ -17,11 +17,6 @@ internal static class NpmRelease
         }
     }
 
-    internal static bool Proceeds(ReleaseObservation observation) =>
-        observation.Files.All(file => file.State is ReleaseFileState.Exact or
-            ReleaseFileState.Absent) &&
-        ReleasePolicy.Qualified(observation.RequiredChecks, observation.Checks);
-
     internal static ReleaseDryRun DescribeNpmjs(PreparedRelease prepared,
         ReleaseObservation observation)
     {
@@ -29,8 +24,7 @@ internal static class NpmRelease
             [{ Kind: "npm-tarball" }])
             throw new InvalidDataException("Unsupported npmjs hypothetical operation set.");
         return ReleaseCompletion.Describe(prepared, observation,
-            observation.Files.Where(file => file.State == ReleaseFileState.Absent)
-                .Select(file => file.Output).ToArray());
+            ReleaseCompletion.MissingOutputs(observation));
     }
 
     internal static ReleaseDryRun DescribeGithubNpm(PreparedRelease prepared,
@@ -39,8 +33,7 @@ internal static class NpmRelease
         if (prepared.Subject.Destination != "github-packages-npm")
             throw new InvalidDataException("Unsupported GitHub npm dry-run destination.");
         return ReleaseCompletion.Describe(prepared, observation,
-            observation.Files.Where(file => file.State == ReleaseFileState.Absent)
-                .Select(file => file.Output).ToArray());
+            ReleaseCompletion.MissingOutputs(observation));
     }
 
     internal static ReleaseOutcome Complete(PreparedRelease prepared,
@@ -64,7 +57,7 @@ internal static class NpmRelease
         ReleaseUpload[]? uploads, string[]? errors)
     {
         ReleaseCompletion.ValidateObservation(prepared, initial);
-        if (!Proceeds(initial))
+        if (!ReleaseCompletion.ObservationProceeds(initial))
             throw new InvalidDataException("Initial npm observation could not proceed.");
         bool initiallyMissing = initial.Files.Any(file => file.State == ReleaseFileState.Absent);
         if (publishedSubject is not null)
@@ -73,7 +66,7 @@ internal static class NpmRelease
                 throw new InvalidDataException("Mismatched or unnecessary npm publication result.");
             ReleaseCompletion.ValidateObservation(prepared, before!);
             ReleaseCompletion.ValidateObservation(prepared, after!);
-            if (uploads!.Length != 0 && (!Proceeds(before!) ||
+            if (uploads!.Length != 0 && (!ReleaseCompletion.ObservationProceeds(before!) ||
                     before!.Files.Any(file => file.State != ReleaseFileState.Absent)))
                 throw new InvalidDataException("Unsupported npm write result.");
         }

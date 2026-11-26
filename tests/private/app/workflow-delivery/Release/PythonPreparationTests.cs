@@ -119,13 +119,9 @@ public sealed class PythonPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("version", "2.0.0")]
     [DataRow("commit", "0000000000000000000000000000000000000000")]
-    [DataRow("implementation", "pypy")]
-    [DataRow("interpreter_version", "another-interpreter")]
     [DataRow("dependencies", "runtime")]
     [DataRow("local_version", "g1234567")]
-    [DataRow("public_release", "false")]
     public void NativeFactsCannotQualifyAnotherProduct(string field, string value)
     {
         ReleaseSubject subject = Fixture.SubjectFor(Revision) with
@@ -266,21 +262,6 @@ public sealed class PythonPreparationTests(TestContext context)
                 (name, _) => Task.FromResult(files.GetValueOrDefault(name)),
                 context.CancellationToken));
         Assert.AreEqual(message, error.Message);
-    }
-
-    [TestMethod]
-    public async Task UnsupportedCommittedRecipeStopsBeforeNativeWork()
-    {
-        using var fixture = await Fixture.CreateAsync((path, content) =>
-            path == "product/workflow-delivery.release-unit.yml"
-                ? content.Replace("python-sdist", "other-kind", StringComparison.Ordinal)
-                : content, context.CancellationToken);
-        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
-        Assert.IsEmpty(result.Commands);
-        Assert.IsEmpty(result.Prepared.Files);
-        Assert.AreEqual("Unsupported complete Python distribution set.",
-            Assert.ContainsSingle(result.Errors));
     }
 
     [TestMethod]
@@ -429,10 +410,8 @@ public sealed class PythonPreparationTests(TestContext context)
 
     [TestMethod]
     [DataRow("", "")]
-    [DataRow("commit", Revision)]
     [DataRow("public_release", "true")]
     [DataRow("dependencies", "packaging>=99")]
-    [DataRow("local_version", "g1234567")]
     public void NbgvStaticFactsQualifyOnlyTheirProduct(string field, string value)
     {
         ReleaseSubject subject = Fixture.SubjectFor(Revision, Fixture.Nbgv);

@@ -5,7 +5,7 @@ using WorkflowDelivery.Release;
 namespace WorkflowDelivery.Destinations;
 
 internal sealed record RubyObservationResult(ReleaseObservation Observation,
-    RubySourceReadResult Read);
+    RubySourceReadResult Read) : IReleaseObservation;
 
 internal static class RubyDestinationObservation
 {

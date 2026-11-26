@@ -6,7 +6,7 @@ namespace WorkflowDelivery.Release;
 internal static class NuGetReleaseCli
 {
     internal static int? Run(string[] args, TextWriter output,
-        Func<NuGetPreparationRequest, CancellationToken, Task<NuGetPreparationResult>>?
+        Func<ReleasePreparationRequest, CancellationToken, Task<NuGetPreparationResult>>?
             prepare = null,
         Func<PreparedRelease, string, CancellationToken, Task<NuGetObservationResult>>?
             observe = null, TimeSpan? settleInterval = null)
@@ -14,11 +14,11 @@ internal static class NuGetReleaseCli
         if (args is ["release", "prepare-nuget", var requestPath])
         {
             NuGetPreparationResult result = (prepare ?? NuGetPreparation.PrepareAsync)(
-                ReleaseCli.Read(requestPath, TransferJson.Default.NuGetPreparationRequest),
+                ReleaseCli.Read(requestPath, TransferJson.Default.ReleasePreparationRequest),
                 CancellationToken.None).GetAwaiter().GetResult();
             ReleaseCli.Write(output, result, TransferJson.Default.NuGetPreparationResult);
             if (result.Errors.Length != 0 || result.Prepared.Files.Length == 0) return 1;
-            NuGetRelease.Validate(result);
+            result.Validate();
             return 0;
         }
         // The final observation names the publication result, if any; a returned upload can
@@ -39,10 +39,8 @@ internal static class NuGetReleaseCli
                 .GetAwaiter().GetResult();
             NuGetRelease.ValidateObservation(preparation.Prepared, result);
             ReleaseCli.Write(output, result, TransferJson.Default.NuGetObservationResult);
-            return (NuGetRelease.Present(result.Observation) ||
-                result.Observation.Files[0].State == ReleaseFileState.Absent) &&
-                result.Observation.Checks.All(check =>
-                    check.Status == ReleaseCheckStatus.Passed) ? 0 : 1;
+            return ReleaseCompletion.ObservationProceeds(result.Observation,
+                allowAvailable: true) ? 0 : 1;
         }
         if (args is ["release", "describe-nuget", var describePreparation,
                 var describeObservation])
@@ -51,8 +49,7 @@ internal static class NuGetReleaseCli
             NuGetObservationResult observed = Observation(describeObservation);
             NuGetRelease.ValidateObservation(prepared, observed);
             ReleaseDryRun result = ReleaseCompletion.Describe(prepared, observed.Observation,
-                observed.Observation.Files.Where(file => file.State == ReleaseFileState.Absent)
-                    .Select(file => file.Output).ToArray());
+                ReleaseCompletion.MissingOutputs(observed.Observation));
             ReleaseCli.Write(output, result, TransferJson.Default.ReleaseDryRun);
             return result.Ready ? 0 : 1;
         }

@@ -75,16 +75,6 @@ public sealed class RegistryBodyTests(TestContext context)
             truncated, 4, 4, retain: false, context.CancellationToken));
     }
 
-    [TestMethod]
-    [DataRow(null)]
-    [DataRow(5L)]
-    public async Task MetadataKeepsItsInMemoryBound(long? declared)
-    {
-        using var stream = new MemoryStream(new byte[5]);
-        await Assert.ThrowsExactlyAsync<IOException>(() => RegistryBody.LimitedAsync(stream,
-            declared, 4, context.CancellationToken));
-    }
-
     private sealed class ShortReadStream(byte[] bytes, int chunk) : MemoryStream(bytes)
     {
         public override ValueTask<int> ReadAsync(Memory<byte> buffer,

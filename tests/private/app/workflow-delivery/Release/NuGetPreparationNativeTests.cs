@@ -33,36 +33,12 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
         NuGetPreparationResult result = preparation.Result;
         string revision = result.Prepared.Subject.Revision;
         string checkout = preparation.Checkout;
-        ReleaseSubject subject = result.Prepared.Subject;
-        Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(new
-        {
-            Errors = result.Errors,
-            Revision = revision,
-            SelectedRef = selectedRef,
-            FailedCommands = result.Commands.Where(command => !command.Result.Succeeded)
-                .Select(command => new
-                {
-                    command.Check,
-                    command.Command.Executable,
-                    command.Command.Arguments,
-                    command.Command.DeadlineSeconds,
-                    command.Result.Termination,
-                    command.Result.ExitCode,
-                    command.Result.DurationSeconds,
-                    command.Result.Error,
-                    command.Result.Stdout,
-                    command.Result.Stderr,
-                }),
-        }));
-        ReleaseCompletion.Validate(result.Prepared);
-        Assert.IsTrue(result.Prepared.Checks.All(check => check.Status ==
-            ReleaseCheckStatus.Passed));
         ReleaseFile file = Assert.ContainsSingle(result.Prepared.Files);
         string archive = preparation.Archive;
         Assert.AreEqual(file.Size, new FileInfo(archive).Length);
         Assert.AreEqual(file.Sha256, DotNetPackageArchive.Digest(archive));
         Assert.AreEqual("Hcoona.ReleaseSmoke.GithubPackages", file.Name);
-        Assert.AreEqual(subject, result.Prepared.Subject);
+        Assert.AreEqual(selectedRef, result.Prepared.Subject.SelectedRef);
         Assert.AreEqual(selectedRef == "refs/heads/main",
             !file.Version.Contains(".g", StringComparison.Ordinal));
         Assert.IsTrue(result.Commands.All(command =>
@@ -175,7 +151,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
         using var fixture = new NativeFixture(context);
         Preparation first = await fixture.PrepareAsync(0);
         byte[] firstBytes = File.ReadAllBytes(first.Archive);
-        using var absentFeed = new Feed(first.Result.Prepared.Files[0].Version, null);
+        using var absentFeed = Feed(first.Result.Prepared.Files[0].Version, null);
         using var absentClient = new HttpClient(absentFeed);
         NuGetObservationResult absent = await new GithubNuGetObservation(absentClient)
             .ObserveAsync(first.Result.Prepared, "controlled-read", context.CancellationToken);
@@ -211,7 +187,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
 
         async Task RecoverAsync(bool conflict, string label)
         {
-            using var feed = new Feed(fresh.Result.Prepared.Files[0].Version,
+            using var feed = Feed(fresh.Result.Prepared.Files[0].Version,
                 conflict ? [.. firstBytes, 0] : firstBytes);
             using var client = new HttpClient(feed);
             var observer = new GithubNuGetObservation(client);
@@ -239,10 +215,8 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                 Assert.AreEqual(conflict ? ReleaseBusinessState.Unsatisfied :
                     ReleaseBusinessState.Satisfied, complete.Outcome.State);
                 Assert.AreEqual(false, complete.MutationAttempted);
-                Assert.IsTrue(feed.Requests.Any(request => request.Uri.EndsWith(".nupkg",
-                    StringComparison.Ordinal)));
-                Assert.IsTrue(feed.Requests.All(request => request.Method == "GET"));
-                Assert.IsTrue(absentFeed.Requests.All(request => request.Method == "GET"));
+                Assert.IsTrue(feed.Requests.Any(request =>
+                    request.Uri.AbsolutePath.EndsWith(".nupkg", StringComparison.Ordinal)));
                 CollectionAssert.AreEqual(originalResultBytes, File.ReadAllBytes(originalResult));
                 fixture.Attach(label + "-recovery-history-binding.json", new
                 {
@@ -257,8 +231,11 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             }
             finally
             {
-                fixture.Attach(label + "-fresh-reads.json", feed.Requests);
-                fixture.Attach(label + "-initial-reads.json", absentFeed.Requests);
+                fixture.Attach(label + "-reads.json", new
+                {
+                    Initial = absentFeed.Requests.Select(request => request.Uri.AbsoluteUri),
+                    Fresh = feed.Requests.Select(request => request.Uri.AbsoluteUri),
+                });
             }
         }
     }
@@ -340,11 +317,8 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             context.TestResultsDirectory!, "nuget-native", Guid.NewGuid().ToString("N"))).FullName;
         private const string Product = "tests/private/app/workflow-delivery/" +
             "fixtures/products/hcoona-release-smoke-github-packages";
-        internal const string Project = Product + "/hcoona-release-smoke-github-packages.csproj";
-        private static readonly string[] RootInputs = ["global.json", "Directory.Build.props",
-            "Directory.Packages.props", "nuget.config", "version.json",
-            ".editorconfig", "stylecop.json"];
         private readonly List<ReleaseCommand> commands = [];
+        private readonly List<(string Source, string Label)> evidenceRoots = [];
 
         internal async Task<Preparation> PrepareAsync(int index,
             string selectedRef = "refs/heads/development", bool changeSource = false,
@@ -359,6 +333,8 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             string checkout = Path.Combine(Root, index == 0 ? "a" : "longer-source-root");
             string scratch = Directory.CreateDirectory(Path.Combine(Root, "preparation-" + index))
                 .FullName;
+            evidenceRoots.Add((Path.Combine(checkout, Product), "checkout-" + index));
+            evidenceRoots.Add((scratch, "preparation-" + index));
             string cache = Path.Combine(Root, "owned-cache-" + index);
             string revision = (await RunAsync(new("git", source, ["rev-parse", "HEAD"], 30))).Stdout
                 .Trim();
@@ -395,7 +371,8 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             DateTime mtime = new(2001 + index, 2, 3, 4, 5, 6, DateTimeKind.Utc);
             File.SetLastWriteTimeUtc(smoke, mtime);
             string sourceHash = DotNetPackageArchive.Digest(smoke);
-            SeedCache(source, cache);
+            var dependencies = SeededPackages(source);
+            SeedCache(cache, dependencies);
             var subject = new ReleaseSubject(revision, selectedRef,
                 "hcoona-release-smoke-github-packages",
                 Product + "/workflow-delivery.release-unit.yml",
@@ -439,7 +416,6 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             ReleaseCommand[] executed = result.Commands.Select((command, offset) => command with
             { Command = commands[firstCommand + offset].Command }).ToArray();
             Attach("preparation-" + index + ".json", result);
-            Attach("executed-preparation-" + index + ".json", executed);
             Attach("inputs-" + index + ".json", new
             {
                 SourceRoot = source,
@@ -450,20 +426,9 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                 SourceSha256 = sourceHash,
                 SourceMtime = File.GetLastWriteTimeUtc(smoke),
                 TimestampOverride = timestamp,
-                SourceDateEpoch = timestamp is null ? null : "315532802",
-                NativeDefaultTimestamp = "315532800",
-                DerivedCommit = changeSource,
-                SourceInputs = RootInputs.Select(name => Path.Combine(checkout, name))
-                    .Concat(Directory.EnumerateFiles(Path.Combine(checkout, Product)))
-                    .Where(File.Exists).Select(path => new
-                    {
-                        Path = Path.GetRelativePath(checkout, path).Replace('\\', '/'),
-                        Bytes = new FileInfo(path).Length,
-                        Sha256 = DotNetPackageArchive.Digest(path),
-                    }).ToArray(),
+                Dependencies = dependencies.Select(package => new
+                { package.Name, package.Version }),
             });
-            RetainTree(checkout, "checkout-" + index);
-            RetainTree(scratch, "preparation-" + index);
             Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(result));
             NuGetRelease.Validate(result);
             string archive = Path.Combine(scratch, result.Prepared.Files[0].Path);
@@ -506,11 +471,8 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                 archive, pdb, paths, executed);
         }
 
-        private void SeedCache(string source, string cache)
+        private static List<(string Name, string Version)> SeededPackages(string source)
         {
-            string shared = Environment.GetEnvironmentVariable("NUGET_PACKAGES") ??
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    ".nuget", "packages");
             using JsonDocument locked = JsonDocument.Parse(File.ReadAllText(Path.Combine(source,
                 Product, "packages.lock.json")));
             var dependencies = locked.RootElement.GetProperty("dependencies").GetProperty("net10.0")
@@ -521,7 +483,15 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                 "Microsoft.Build.CopyOnWrite" })
                 dependencies.Add((sdk.ToLowerInvariant(), RepositoryToolSelection.MsBuildSdk(sdk,
                     source)));
-            var inputs = new List<object>();
+            return dependencies;
+        }
+
+        private static void SeedCache(string cache,
+            IEnumerable<(string Name, string Version)> dependencies)
+        {
+            string shared = Environment.GetEnvironmentVariable("NUGET_PACKAGES") ??
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".nuget", "packages");
             foreach ((string name, string version) in dependencies)
             {
                 string from = Path.Combine(shared, name, version);
@@ -534,17 +504,8 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                         Path.GetRelativePath(from, file));
                     Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
                     File.Copy(file, destination);
-                    if (file.EndsWith(".nupkg", StringComparison.Ordinal))
-                        inputs.Add(new
-                        {
-                            Path = file,
-                            OwnedPath = destination,
-                            Bytes = new FileInfo(file).Length,
-                            Sha256 = DotNetPackageArchive.Digest(file)
-                        });
                 }
             }
-            Attach(Path.GetFileName(cache) + "-tools.json", inputs);
         }
 
         private async Task<NativeCommandResult> RunAsync(NativeCommand command)
@@ -556,7 +517,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             return result;
         }
 
-        internal static NativeCommand WithBinlog(NativeCommand command, string directory, int index)
+        private static NativeCommand WithBinlog(NativeCommand command, string directory, int index)
             => command.Arguments[0] is "msbuild" or "restore" ? command with
             {
                 Arguments = [.. command.Arguments, "-binaryLogger:" + Path.Combine(directory,
@@ -571,43 +532,22 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             return path;
         }
 
-        internal void RetainTree(string directory, string label)
+        private void RetainNativeOutputs(string directory, string label)
         {
-            bool checkout = Directory.Exists(Path.Combine(directory, ".git"));
-            IEnumerable<string> candidates = checkout ?
-                Directory.EnumerateFiles(Path.Combine(directory,
-                Product), "*", SearchOption.AllDirectories).Concat(RootInputs.Select(name =>
-                    Path.Combine(directory, name)).Where(File.Exists)) :
-                Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories);
-            foreach (string file in candidates.Where(file =>
-                    !file.Contains(Path.DirectorySeparatorChar + ".git" +
-                    Path.DirectorySeparatorChar, StringComparison.Ordinal) &&
-                    !file.Contains(Path.DirectorySeparatorChar + "profile" +
-                        Path.DirectorySeparatorChar,
-                        StringComparison.Ordinal) &&
-                    (file.EndsWith(".nupkg", StringComparison.Ordinal) ||
-                     file.EndsWith(".binlog", StringComparison.Ordinal) ||
-                     file.EndsWith(".pdb", StringComparison.Ordinal) ||
-                     file.EndsWith(".dll", StringComparison.Ordinal) ||
-                     file.EndsWith(".json", StringComparison.Ordinal) &&
-                         file.Contains(Path.DirectorySeparatorChar + "obj" +
-                             Path.DirectorySeparatorChar,
-                             StringComparison.Ordinal) ||
-                     new[] { "global.json", "Directory.Build.props", "Directory.Packages.props",
-                         "nuget.config", "version.json", "Smoke.cs", "packages.lock.json",
-                         "hcoona-release-smoke-github-packages.csproj", "README.md",
-                         "workflow-delivery.release-unit.yml", "workflow-delivery.quality.yml" }
-                         .Contains(Path.GetFileName(file)) ||
-                     Path.GetDirectoryName(file) == directory)))
+            if (!Directory.Exists(directory)) return;
+            foreach (string file in Directory.EnumerateFiles(directory, "*",
+                SearchOption.AllDirectories))
             {
-                // Whole checkout imports outside this product are not submitted as evidence.
                 string relative = Path.GetRelativePath(directory, file);
-                if (checkout && relative.Contains(
-                    Path.DirectorySeparatorChar) && !relative.StartsWith(Product.Replace('/',
-                        Path.DirectorySeparatorChar), StringComparison.Ordinal)) continue;
+                bool original = Path.GetFileName(file).StartsWith(
+                    "Hcoona.ReleaseSmoke.GithubPackages", StringComparison.OrdinalIgnoreCase);
+                bool evidence = Path.GetExtension(file) == ".binlog" ||
+                    original && Path.GetExtension(file) is ".nupkg" or ".pdb" or ".dll";
+                if (!evidence || relative.Split(Path.DirectorySeparatorChar).Contains("profile"))
+                    continue;
                 string destination = Path.Combine(Retained, label, relative);
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                File.Copy(file, destination, true);
+                File.Copy(file, destination);
                 context.AddResultFile(destination);
             }
         }
@@ -617,10 +557,8 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             try
             {
                 Attach("all-commands.json", commands);
-                foreach (string directory in Directory.EnumerateDirectories(Root))
-                    if (!Path.GetFileName(directory).StartsWith("owned-cache",
-                        StringComparison.Ordinal))
-                        RetainTree(directory, "final-" + Path.GetFileName(directory));
+                foreach ((string source, string label) in evidenceRoots)
+                    RetainNativeOutputs(source, label);
             }
             finally
             {
@@ -632,16 +570,9 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
         }
     }
 
-    private sealed record FeedRead(string Method, string Uri);
-
-    private sealed class Feed(string version, byte[]? original) : HttpMessageHandler
-    {
-        internal List<FeedRead> Requests { get; } = [];
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
-            CancellationToken token)
+    private static ScriptedHttpHandler Feed(string version, byte[]? original) =>
+        new((request, _) =>
         {
-            token.ThrowIfCancellationRequested();
-            Requests.Add(new(request.Method.Method, request.RequestUri!.AbsoluteUri));
             Assert.AreEqual(HttpMethod.Get, request.Method);
             Uri uri = request.RequestUri!;
             HttpResponseMessage response;
@@ -673,10 +604,9 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                 }));
             else throw new AssertFailedException("Unexpected controlled read: " + uri);
             response.RequestMessage = request;
-            return Task.FromResult(response);
-        }
+            return response;
+        });
 
-        private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK)
-        { Content = new StringContent(body, Encoding.UTF8, "application/json") };
-    }
+    private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK)
+    { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 }

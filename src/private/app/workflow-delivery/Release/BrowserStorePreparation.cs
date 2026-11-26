@@ -10,7 +10,10 @@ internal sealed record BrowserStoreTarget(string Store, string Item, string? Pub
 internal sealed record BrowserStorePreparationRequest(ReleaseSubject Subject,
     BrowserStoreTarget Target, string Checkout, string Scratch);
 internal sealed record BrowserStorePreparationResult(PreparedRelease Prepared,
-    BrowserStoreTarget Target, ReleaseCommand[] Commands, string[] Errors);
+    BrowserStoreTarget Target, ReleaseCommand[] Commands, string[] Errors) : IReleasePreparation
+{
+    public void Validate() => BrowserStoreRelease.Validate(this);
+}
 
 internal static class BrowserStorePreparation
 {
@@ -79,25 +82,14 @@ internal static class BrowserStorePreparation
             throw new InvalidDataException("Unsupported selected browser-store revision.");
         var qualification = new ReleaseQualification(execute, token);
         var files = new List<ReleaseFile>();
-        string home = Path.Combine(scratch, "home");
-        Directory.CreateDirectory(home);
-        var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (string name in new[] { "PATH", "SystemRoot", "WINDIR", "PATHEXT",
-            "DOTNET_ROOT", "DOTNET_ROOT_X64", "GITHUB_ACTIONS", "GITHUB_REF", "GITHUB_SHA",
-            "GITHUB_RUN_ID", "GITHUB_RUN_NUMBER", "GITHUB_REPOSITORY", "MISE_DATA_DIR" })
-            if (Environment.GetEnvironmentVariable(name) is { } value)
-                environment.Add(name, value);
-        foreach ((string name, string value) in new[]
-        {
-            ("HOME", home), ("USERPROFILE", home), ("DOTNET_CLI_HOME", home),
-            ("XDG_CONFIG_HOME", Path.Combine(home, "config")),
-            ("XDG_CACHE_HOME", Path.Combine(home, "cache")),
-            ("XDG_DATA_HOME", Path.Combine(home, "data")),
-            ("MISE_CACHE_DIR", Path.Combine(home, "mise-cache")),
-            ("MISE_EXEC_AUTO_INSTALL", "0"), ("MISE_AUTO_INSTALL", "0"),
-            ("MISE_TRUSTED_CONFIG_PATHS", checkout),
-            ("DOTNET_CLI_TELEMETRY_OPTOUT", "1"), ("DOTNET_NOLOGO", "1"),
-        }) environment[name] = value;
+        var environment = ReleasePreparationContext.CreateHomeEnvironment(scratch,
+            ["PATH", "SystemRoot", "WINDIR", "PATHEXT", "DOTNET_ROOT", "DOTNET_ROOT_X64",
+                "GITHUB_ACTIONS", "GITHUB_REF", "GITHUB_SHA", "GITHUB_RUN_ID", "GITHUB_RUN_NUMBER",
+                "GITHUB_REPOSITORY", "MISE_DATA_DIR"],
+            [("MISE_CACHE_DIR", Path.Combine(scratch, "home", "mise-cache")),
+                ("MISE_EXEC_AUTO_INSTALL", "0"), ("MISE_AUTO_INSTALL", "0"),
+                ("MISE_TRUSTED_CONFIG_PATHS", checkout), ("DOTNET_CLI_TELEMETRY_OPTOUT", "1"),
+                ("DOTNET_NOLOGO", "1")]);
         GitMaterialization bound = await GitMaterialization.BindAsync(checkout,
             request.Subject.Revision, token);
         ReleaseUnitDeclaration unit = ReleaseUnitDeclarationReader.Read(
@@ -110,10 +102,9 @@ internal static class BrowserStorePreparation
                 .SequenceEqual(Outputs.Select(output => (output.Output, output.Manifest == 0
                     ? "source-package" : "primary-package", output.Kind)).Order()))
             throw new InvalidDataException("Unsupported complete browser-extension definition.");
-        foreach (string input in new[] { "mise.toml", "mise.lock", "pnpm-lock.yaml",
-            "pnpm-workspace.yaml", Product + "/package.json", Product + "/version.json" })
-            if (await bound.ReadOptionalTextAsync(input, token) is null)
-                throw new InvalidDataException("Missing committed native input: " + input);
+        await ReleasePreparationContext.RequireCommittedInputsAsync(bound,
+            ["mise.toml", "mise.lock", "pnpm-lock.yaml", "pnpm-workspace.yaml",
+                Product + "/package.json", Product + "/version.json"], token);
         string product = Path.Combine(checkout, Product);
         string output = Path.Combine(product, ".output");
         BrowserExtensionVersion projected = new("", "");
@@ -199,9 +190,8 @@ internal static class BrowserStorePreparation
         async Task<string> QueryAsync(NativeCommand command) =>
             (await RunAsync("native-input", command)).Stdout.Trim();
 
-        async Task<string> ToolAsync(string tool) => LockedToolSelection.Selected(tool,
-            checkout, await QueryAsync(new("mise", checkout, LockedToolSelection.Query(tool),
-                30)));
+        Task<string> ToolAsync(string tool) => ReleasePreparationContext.SelectLockedMiseToolAsync(
+            checkout, tool, command => RunAsync("native-input", command));
     }
 
     private const string PathMessage = "Release execution paths must be absolute.";

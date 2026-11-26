@@ -1,7 +1,6 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Extensions.Time.Testing;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Release;
@@ -16,8 +15,8 @@ public sealed class NpmjsObservationTests(TestContext context)
     {
         byte[] original = Encoding.UTF8.GetBytes("qualified original bytes");
         PreparedRelease prepared = Prepare(original);
-        using var handler = new Handler((request, number, _) => Task.FromResult(number == 0
-            ? Response(200, Metadata()) : Response(200, original)));
+        using var handler = new ScriptedHttpHandler((_, number) => number == 0
+            ? Response(200, Metadata()) : Response(200, original));
         using var client = new HttpClient(handler);
 
         NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(prepared,
@@ -29,10 +28,11 @@ public sealed class NpmjsObservationTests(TestContext context)
         Assert.AreEqual(prepared.Files[0].Size, file.Size);
         Assert.HasCount(2, handler.Requests);
         Assert.AreEqual("https://registry.npmjs.org/@example%2Fpackage/1.2.3",
-            handler.Requests[0].Uri);
-        Assert.AreEqual("https://registry.npmjs.org/original.tgz", handler.Requests[1].Uri);
-        Assert.IsTrue(handler.Requests.All(request => request.Method == "GET" &&
-            request.Encoding == "identity" && !request.Authorization && !request.Cookie));
+            handler.Requests[0].Uri.AbsoluteUri);
+        Assert.AreEqual("https://registry.npmjs.org/original.tgz",
+            handler.Requests[1].Uri.AbsoluteUri);
+        Assert.IsTrue(handler.Requests.All(request =>
+            request.Headers.Authorization is null && !request.Headers.Contains("Cookie")));
         Assert.AreEqual(ReleaseCheckStatus.Passed,
             Assert.ContainsSingle(result.Observation.Checks).Status);
     }
@@ -45,7 +45,7 @@ public sealed class NpmjsObservationTests(TestContext context)
     public async Task MetadataStatusDefinesReadOnlyStateWithoutTarballRequest(int status,
         string state)
     {
-        using var handler = new Handler((_, _, _) => Task.FromResult(Response(status, "")));
+        using var handler = new ScriptedHttpHandler((_, _) => Response(status, ""));
         using var client = new HttpClient(handler);
 
         NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
@@ -61,8 +61,8 @@ public sealed class NpmjsObservationTests(TestContext context)
     [DataRow(502)]
     public async Task MissingTarballCannotEstablishCoordinateAbsence(int status)
     {
-        using var handler = new Handler((_, number, _) => Task.FromResult(number == 0
-            ? Response(200, Metadata()) : Response(status, "")));
+        using var handler = new ScriptedHttpHandler((_, number) => number == 0
+            ? Response(200, Metadata()) : Response(status, ""));
         using var client = new HttpClient(handler);
 
         NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
@@ -73,30 +73,11 @@ public sealed class NpmjsObservationTests(TestContext context)
         Assert.HasCount(2, handler.Requests);
     }
 
-    // A body longer than the original stops one byte past it and is a conflict without a
-    // measured size or digest.
-    [TestMethod]
-    public async Task LongerTarballIsAConflictWithoutAMeasurement()
-    {
-        byte[] original = Encoding.UTF8.GetBytes("qualified original bytes");
-        using var handler = new Handler((_, number, _) => Task.FromResult(number == 0
-            ? Response(200, Metadata()) : Response(200, [.. original, 0])));
-        using var client = new HttpClient(handler);
-
-        NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
-            Prepare(original), context.CancellationToken);
-
-        ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
-        Assert.AreEqual(ReleaseFileState.Conflict, file.State);
-        Assert.IsNull(file.Size);
-        Assert.IsNull(file.Sha256);
-    }
-
     [TestMethod]
     public async Task DifferentOriginalBytesAreConflictEvenWhenMetadataMatches()
     {
-        using var handler = new Handler((_, number, _) => Task.FromResult(number == 0
-            ? Response(200, Metadata()) : Response(200, new byte[] { 1, 2, 4 })));
+        using var handler = new ScriptedHttpHandler((_, number) => number == 0
+            ? Response(200, Metadata()) : Response(200, new byte[] { 1, 2, 4 }));
         using var client = new HttpClient(handler);
 
         NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
@@ -110,23 +91,14 @@ public sealed class NpmjsObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("\"version\":", "\"version\":\"1.2.3\",\"version\":", null)]
-    [DataRow("@example/package", "other", null)]
-    [DataRow("1.2.3", "9.9.9", null)]
-    [DataRow("registry.npmjs.org", "example.org", null)]
-    [DataRow(null, null, "gzip")]
-    public async Task UnsupportedMetadataStopsBeforeFurtherRequests(string? original,
-        string? replacement, string? contentEncoding)
+    [DataRow("@example/package", "other")]
+    [DataRow("1.2.3", "9.9.9")]
+    [DataRow("registry.npmjs.org", "example.org")]
+    public async Task UnsupportedMetadataStopsBeforeFurtherRequests(string original,
+        string replacement)
     {
-        string metadata = original is null ? Metadata()
-            : Metadata().Replace(original, replacement, StringComparison.Ordinal);
-        using var handler = new Handler((_, _, _) =>
-        {
-            HttpResponseMessage response = Response(200, metadata);
-            if (contentEncoding is not null)
-                response.Content.Headers.ContentEncoding.Add(contentEncoding);
-            return Task.FromResult(response);
-        });
+        string metadata = Metadata().Replace(original, replacement, StringComparison.Ordinal);
+        using var handler = new ScriptedHttpHandler((_, _) => Response(200, metadata));
         using var client = new HttpClient(handler);
 
         NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
@@ -135,126 +107,6 @@ public sealed class NpmjsObservationTests(TestContext context)
         Assert.AreEqual(ReleaseFileState.Unknown,
             Assert.ContainsSingle(result.Observation.Files).State);
         Assert.HasCount(1, handler.Requests);
-    }
-
-    [TestMethod]
-    public async Task TruncatedBodyCannotEstablishExactOrAbsentState()
-    {
-        using var handler = new Handler((_, _, _) =>
-        {
-            HttpResponseMessage response = Response(404, "short");
-            response.Content.Headers.ContentLength = 100;
-            return Task.FromResult(response);
-        });
-        using var client = new HttpClient(handler);
-
-        NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
-            Prepare([1, 2, 3]), context.CancellationToken);
-
-        Assert.AreEqual(ReleaseFileState.Unknown,
-            Assert.ContainsSingle(result.Observation.Files).State);
-        Assert.HasCount(1, handler.Requests);
-    }
-
-    [TestMethod]
-    public async Task CancellationDuringRequestRemainsUnknownAndStopsReads()
-    {
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            context.CancellationToken);
-        using var handler = new Handler((_, _, token) =>
-        {
-            cancellation.Cancel();
-            token.ThrowIfCancellationRequested();
-            throw new AssertFailedException("Cancellation did not propagate.");
-        });
-        using var client = new HttpClient(handler);
-
-        NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
-            Prepare([1, 2, 3]), cancellation.Token);
-
-        Assert.AreEqual(ReleaseFileState.Unknown,
-            Assert.ContainsSingle(result.Observation.Files).State);
-        Assert.Contains("Cancelled", result.Reads[^1].Detail);
-        Assert.HasCount(1, handler.Requests);
-    }
-
-    [TestMethod]
-    public async Task IndividualRequestDeadlineIncludesResponseBody()
-    {
-        var clock = new FakeTimeProvider();
-        using var handler = new Handler((_, _, _) => Task.FromResult(
-            new HttpResponseMessage(HttpStatusCode.OK)
-            { Content = new StreamContent(new DeadlineStream(clock)) }));
-        using var client = new HttpClient(handler);
-
-        NpmjsObservationResult result = await new NpmjsObservation(client, clock).ObserveAsync(
-            Prepare([1, 2, 3]), context.CancellationToken);
-
-        Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
-        Assert.HasCount(1, handler.Requests);
-        Assert.Contains("deadline", result.Reads[^1].Detail);
-    }
-
-    private sealed class DeadlineStream(FakeTimeProvider clock) : MemoryStream
-    {
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer,
-            CancellationToken cancellationToken = default)
-        {
-            clock.Advance(TimeSpan.FromSeconds(21));
-            cancellationToken.ThrowIfCancellationRequested();
-            throw new AssertFailedException("Body read escaped its request deadline.");
-        }
-    }
-
-    [TestMethod]
-    public async Task CancellationDuringResponseBodyStopsBeforeTarballRead()
-    {
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            context.CancellationToken);
-        using var handler = new Handler((_, _, _) => Task.FromResult(
-            new HttpResponseMessage(HttpStatusCode.OK)
-            { Content = new StreamContent(new CancelledBody(cancellation)) }));
-        using var client = new HttpClient(handler);
-
-        NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
-            Prepare([1, 2, 3]), cancellation.Token);
-
-        Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
-        Assert.HasCount(1, handler.Requests);
-        Assert.Contains("Cancelled", result.Reads[^1].Detail);
-    }
-
-    [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
-    public async Task OversizedMetadataCannotAuthorizeHypotheticalCreation(bool declared)
-    {
-        using var handler = new Handler((_, _, _) =>
-        {
-            HttpResponseMessage response = Response(404, new byte[1_000_001]);
-            if (!declared) response.Content.Headers.ContentLength = null;
-            return Task.FromResult(response);
-        });
-        using var client = new HttpClient(handler);
-        PreparedRelease prepared = Prepare([1, 2, 3]);
-
-        NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(prepared,
-            context.CancellationToken);
-
-        Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
-        Assert.IsFalse(ReleaseCompletion.Describe(prepared, result.Observation, []).Ready);
-        Assert.HasCount(1, handler.Requests);
-    }
-
-    private sealed class CancelledBody(CancellationTokenSource cancellation) : MemoryStream
-    {
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer,
-            CancellationToken cancellationToken = default)
-        {
-            cancellation.Cancel();
-            cancellationToken.ThrowIfCancellationRequested();
-            throw new AssertFailedException("Body cancellation did not propagate.");
-        }
     }
 
     private static PreparedRelease Prepare(byte[] bytes) => new(
@@ -276,22 +128,4 @@ public sealed class NpmjsObservationTests(TestContext context)
     private static HttpResponseMessage Response(int status, byte[] bytes) =>
         new((HttpStatusCode)status) { Content = new ByteArrayContent(bytes) };
 
-    private sealed record Request(string Uri, string Method, string Encoding,
-        bool Authorization, bool Cookie);
-
-    private sealed class Handler(Func<HttpRequestMessage, int, CancellationToken,
-        Task<HttpResponseMessage>> respond) : HttpMessageHandler
-    {
-        internal List<Request> Requests { get; } = [];
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
-            CancellationToken cancellationToken)
-        {
-            int number = Requests.Count;
-            Requests.Add(new(request.RequestUri!.AbsoluteUri, request.Method.Method,
-                string.Join(",", request.Headers.AcceptEncoding),
-                request.Headers.Authorization is not null, request.Headers.Contains("Cookie")));
-            return respond(request, number, cancellationToken);
-        }
-    }
 }

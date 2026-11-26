@@ -1,13 +1,15 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using WorkflowDelivery.Destinations;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Release;
 
 internal static class ReleaseCli
 {
     internal static int? Run(string[] args, TextWriter output,
-        Func<NpmPreparationRequest, CancellationToken, Task<NpmPreparationResult>>? prepare = null,
+        Func<ReleasePreparationRequest, CancellationToken, Task<NpmPreparationResult>>?
+            prepare = null,
         Func<PreparedRelease, CancellationToken, Task<NpmjsObservationResult>>? observe = null)
     {
         if (ReleaseJobInputs.Run(args) is { } jobStatus) return jobStatus;
@@ -19,7 +21,7 @@ internal static class ReleaseCli
         if (args is ["release", "prepare-npm", var requestPath])
         {
             NpmPreparationResult result = (prepare ?? NpmPreparation.PrepareAsync)(
-                Read(requestPath, TransferJson.Default.NpmPreparationRequest),
+                Read(requestPath, TransferJson.Default.ReleasePreparationRequest),
                 CancellationToken.None).GetAwaiter().GetResult();
             if (result.Prepared.Files.Length != 0) ReleaseCompletion.Validate(result.Prepared);
             Write(output, result, TransferJson.Default.NpmPreparationResult);
@@ -41,7 +43,7 @@ internal static class ReleaseCli
             }
             else result = observe(prepared, CancellationToken.None).GetAwaiter().GetResult();
             Write(output, result, TransferJson.Default.NpmjsObservationResult);
-            return NpmRelease.Proceeds(result.Observation) ? 0 : 1;
+            return ReleaseCompletion.ObservationProceeds(result.Observation) ? 0 : 1;
         }
         if (args is ["release", "publish-npmjs", var officialPreparedPath, var officialOriginals,
                 var officialScratch, var officialToolchain])
@@ -98,7 +100,7 @@ internal static class ReleaseCli
                     "Current GitHub read/write credential is unavailable."),
                 CancellationToken.None).GetAwaiter().GetResult();
             Write(output, result, TransferJson.Default.GithubNpmObservationResult);
-            return NpmRelease.Proceeds(result.Observation) ? 0 : 1;
+            return ReleaseCompletion.ObservationProceeds(result.Observation) ? 0 : 1;
         }
         if (args is ["release", "publish-github-npm", var publishPreparedPath, var publishOriginals,
                 var publishScratch, var publishToolchain])
@@ -164,24 +166,19 @@ internal static class ReleaseCli
 
     internal static T Read<T>(string path, JsonTypeInfo<T> type)
     {
-        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path,
-            new System.Text.UTF8Encoding(false, true)));
-        Unique(document.RootElement);
+        string text = File.ReadAllText(path, StrictJson.Utf8);
+        using JsonDocument document = ParseTransfer(text);
         return document.RootElement.Deserialize(type)
             ?? throw new InvalidDataException("Missing required release input.");
     }
 
-    private static void Unique(JsonElement value)
+    private static JsonDocument ParseTransfer(string text)
     {
-        if (value.ValueKind == JsonValueKind.Array)
-            foreach (JsonElement item in value.EnumerateArray()) Unique(item);
-        if (value.ValueKind != JsonValueKind.Object) return;
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        foreach (JsonProperty property in value.EnumerateObject())
+        try { return StrictJson.Parse(text); }
+        catch (JsonException error)
         {
-            if (!names.Add(property.Name))
-                throw new InvalidDataException("Duplicate release input property.");
-            Unique(property.Value);
+            JsonDocument.Parse(text).Dispose();
+            throw new InvalidDataException("Duplicate release input property.", error);
         }
     }
 }

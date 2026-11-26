@@ -9,7 +9,11 @@ internal sealed record PythonPreparationRequest(ReleaseSubject Subject, string C
     string Scratch, string MiseDataDirectory);
 internal sealed record PythonReleaseRecipe(ReleaseBuild Build, string Directory);
 internal sealed record PythonPreparationResult(PreparedRelease Prepared,
-    Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors);
+    Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors)
+    : IReleasePreparation
+{
+    public void Validate() => PythonRelease.Validate(this);
+}
 
 // Release qualifies its complete declaration independently of CI impact selection.
 internal static class PythonPreparation
@@ -68,9 +72,8 @@ internal static class PythonPreparation
                 bound.ReadOptionalTextAsync, token);
             build = recipe.Build;
             string directory = recipe.Directory;
-            if ((await RunAsync(new("git", checkout,
-                ["rev-parse", "--is-shallow-repository"], 30))).Stdout.Trim() != "false")
-                throw new InvalidDataException("Native versioning requires complete Git history.");
+            await ReleasePreparationContext.RequireCompleteHistoryAsync(checkout,
+                command => RunAsync(command));
             string uvVersion = await ToolAsync("uv");
             string pythonVersion = await ToolAsync("python");
             string interpreter = Absolute((await RunAsync(new("mise", checkout,
@@ -141,9 +144,8 @@ internal static class PythonPreparation
             }, cancellation, requireNullError: true);
         }
 
-        async Task<string> ToolAsync(string tool) => LockedToolSelection.Selected(tool,
-            checkout, (await RunAsync(new("mise", checkout, LockedToolSelection.Query(tool),
-                30))).Stdout);
+        Task<string> ToolAsync(string tool) => ReleasePreparationContext.SelectLockedMiseToolAsync(
+            checkout, tool, command => RunAsync(command));
     }
 
     // Pure subject admission, before any Git or native work.
@@ -186,9 +188,7 @@ internal static class PythonPreparation
             directory.Length == 0 ? "." : directory, "python", token);
         if (quality?.Preset != PythonPackageOperations.Preset)
             throw new InvalidDataException("Unsupported complete Python quality selection.");
-        foreach (string input in Inputs)
-            if (await read(input, token) is null)
-                throw new InvalidDataException("Missing committed native input: " + input);
+        await ReleasePreparationContext.RequireCommittedInputsAsync(read, Inputs, token);
         return new(build, directory);
     }
 
@@ -225,31 +225,19 @@ internal static class PythonPreparation
     private static Dictionary<string, string?> EnvironmentFor(string scratch, string checkout,
         ReleaseSubject subject)
     {
-        var values = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (string name in new[] { "PATH", "SystemRoot", "WINDIR", "PATHEXT", "DOTNET_ROOT",
-            "DOTNET_ROOT_X64", "MISE_DATA_DIR" })
-            if (Environment.GetEnvironmentVariable(name) is { } value) values.Add(name, value);
-        string home = Directory.CreateDirectory(Path.Combine(scratch, "home")).FullName;
-        foreach (string name in new[] { "HOME", "USERPROFILE", "DOTNET_CLI_HOME" }) values[name] =
-            home;
-        foreach ((string name, string path) in new[] { ("XDG_CONFIG_HOME", "config"),
-            ("XDG_CACHE_HOME", "cache"), ("XDG_DATA_HOME", "data"),
-            ("MISE_CACHE_DIR", "mise-cache"),
-            ("APPDATA", "appdata"), ("LOCALAPPDATA", "localappdata"), ("TMPDIR", "tmp"),
-            ("TEMP", "tmp"), ("TMP", "tmp") })
-            values[name] = Directory.CreateDirectory(Path.Combine(home, path)).FullName;
-        values["MISE_TRUSTED_CONFIG_PATHS"] = checkout;
-        values["MISE_AUTO_INSTALL"] = "0";
-        values["MISE_EXEC_AUTO_INSTALL"] = "0";
-        values["UV_PYTHON_DOWNLOADS"] = "never";
-        values["UV_NO_PROGRESS"] = "1";
-        values["PYTHONDONTWRITEBYTECODE"] = "1";
-        values["GITHUB_ACTIONS"] = "true";
-        values["GITHUB_REF"] = subject.SelectedRef;
-        values["GITHUB_SHA"] = subject.Revision;
-        string output = Path.Combine(scratch, "nbgv-environment");
-        File.WriteAllText(output, "");
-        values["GITHUB_ENV"] = output;
+        string home = Path.Combine(scratch, "home");
+        var values = ReleasePreparationContext.CreateHomeEnvironment(
+            ["PATH", "SystemRoot", "WINDIR", "PATHEXT", "DOTNET_ROOT", "DOTNET_ROOT_X64",
+                "MISE_DATA_DIR"],
+            [("MISE_TRUSTED_CONFIG_PATHS", checkout), ("MISE_AUTO_INSTALL", "0"),
+                ("MISE_EXEC_AUTO_INSTALL", "0"), ("UV_PYTHON_DOWNLOADS", "never"),
+                ("UV_NO_PROGRESS", "1"), ("PYTHONDONTWRITEBYTECODE", "1")],
+            home, Path.Combine(home, "tmp"), createProfileDirectories: true);
+        values["MISE_CACHE_DIR"] = Directory.CreateDirectory(Path.Combine(home, "mise-cache"))
+            .FullName;
+        foreach (var (key, value) in ReleasePreparationContext.GithubVersioningEnvironment(
+            scratch, subject))
+            values[key] = value;
         return values;
     }
 

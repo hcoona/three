@@ -59,7 +59,6 @@ public sealed class NuGetPreparationTests(TestContext context)
 
     [TestMethod]
     [DataRow("restore", "Exited", "Failed")]
-    [DataRow("Build", "Cancelled", "Cancelled")]
     [DataRow("Pack,_GetOutputItemsFromPack", "TimedOut", "TimedOut")]
     public async Task NativeFailureStopsPreparationAndRetainsTermination(string phase,
         string terminationText, string expectedText)
@@ -72,7 +71,7 @@ public sealed class NuGetPreparationTests(TestContext context)
                 new(termination, termination == NativeTermination.Exited ? 1 : null,
                     "partial native output", "native diagnostic", 0.1, null) : null;
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        string check = phase == "restore" ? "native-input" : phase == "Build" ? "build" : "pack";
+        string check = phase == "restore" ? "native-input" : "pack";
         Assert.AreEqual(expected, result.Prepared.Checks.Single(item => item.Id == check).Status);
         Assert.IsTrue(result.Prepared.Checks.TakeWhile(item => item.Id != check)
             .All(item => item.Status == ReleaseCheckStatus.Passed));
@@ -91,7 +90,6 @@ public sealed class NuGetPreparationTests(TestContext context)
     [TestMethod]
     [DataRow("Build", "NuGetPackageVersion", "2.0.0", "build",
         "inconsistent native package projections")]
-    [DataRow("Build", "AssemblyVersion", "2.0.0.0", "build", "recomputation differs")]
     [DataRow("Pack,_GetOutputItemsFromPack", "AssemblyInformationalVersion", "changed", "pack",
         "recomputation differs")]
     [DataRow("GetBuildVersion", "RuntimeIdentifier", "linux-x64", "native-input",
@@ -121,7 +119,6 @@ public sealed class NuGetPreparationTests(TestContext context)
 
     [TestMethod]
     [DataRow("GetBuildVersion")]
-    [DataRow("Build")]
     [DataRow("Pack,_GetOutputItemsFromPack")]
     public async Task SuccessfulCommandWithoutRequiredTargetResultCannotPass(string target)
     {

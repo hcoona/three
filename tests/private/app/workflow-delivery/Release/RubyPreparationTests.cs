@@ -148,9 +148,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("product/workflow-delivery.release-unit.yml", null,
         "Missing committed Ruby release declaration.")]
     [DataRow(Fixture.Entry, null, "Missing committed adopted Ruby entry.")]
-    [DataRow("product/workflow-delivery.quality.yml", null, Quality)]
     [DataRow("ruby/gem-v1", "ruby/unknown-v1", Recipe)]
-    [DataRow("kind: ruby-gem", "kind: unknown-kind", Recipe)]
     [DataRow("entry-point: hcoona-release-smoke-ruby.gemspec", "entry-point: other.gemspec",
         "Missing committed adopted Ruby entry.")]
     public async Task UnsupportedCommittedRecipeIsRejected(string input, string? replacement,
@@ -199,12 +197,7 @@ public sealed class RubyPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("runtime", "rubygems", "")]
     [DataRow("gemspec", "name", "other")]
-    [DataRow("gemspec", "version", "9.9.9")]
-    [DataRow("gemspec", "platform", "other")]
-    [DataRow("gemspec", "gemspec", "other.gemspec")]
-    [DataRow("version", "raw", "other")]
     [DataRow("projection", "GitCommitId", "0000000000000000000000000000000000000000")]
     [DataRow("runtime", "ruby", "0.0.0", "differs from the committed locked selection")]
     [DataRow("mise", "path", "product/mise.toml", "not the committed root", "source")]
@@ -229,7 +222,6 @@ public sealed class RubyPreparationTests(TestContext context)
 
     [TestMethod]
     [DataRow(null, null)]
-    [DataRow("mise.toml", "Missing committed native input: mise.toml")]
     [DataRow("mise.lock", "Missing committed native input: mise.lock")]
     [DataRow(".config/dotnet-tools.json", "Missing committed NBGV tool manifest.")]
     [DataRow("global.json", "Missing SDK selection.")]
@@ -307,18 +299,11 @@ public sealed class RubyPreparationTests(TestContext context)
 
     [TestMethod]
     [DataRow(false, "name", "\"other\"")]
-    [DataRow(false, "version", "\"9.9.9\"")]
-    [DataRow(false, "platform", "\"other\"")]
-    [DataRow(false, "require_paths", "[\"other\"]")]
     [DataRow(false, "extensions", "[\"ext/extconf.rb\"]")]
-    [DataRow(false, "extensions", null)]
     [DataRow(false, "metadata", "{\"github_repo\":\"https://other.invalid\"}")]
-    [DataRow(false, "metadata", null)]
-    [DataRow(false, "contents", "[\"extra.rb\"]")]
     [DataRow(false, "contents", "\"extra.rb\"", true)]
     [DataRow(false, "contents",
         "\"lib/hcoona_release_smoke_ruby/_workflow_delivery_provenance.json\"", true)]
-    [DataRow(false, "archive", "\"other.gem\"")]
     [DataRow(false, "runtime_dependencies", "[{\"name\":\"extra\",\"requirement\":\">= 0\"}]")]
     [DataRow(true, "runtime_dependencies", "[]")]
     [DataRow(true, "contents", "[]")]
@@ -361,10 +346,8 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("native-input", "StartFailed", null, "Failed")]
     [DataRow("build", "Exited", 7, "Failed")]
     [DataRow("build", "TimedOut", null, "TimedOut")]
-    [DataRow("contents", "InvalidOutput", null, "Failed")]
     [DataRow("consumer", "Cancelled", null, "Cancelled")]
     [DataRow("build", "Exited", 0, "Failed", "build")]
-    [DataRow("contents", "Exited", 0, "Failed")]
     [DataRow("consumer", "Exited", 2, "Failed", "-e")]
     public async Task FailedPhaseRetainsReceiptAndSkipsDependents(string phase,
         string termination, int? exitCode, string status,

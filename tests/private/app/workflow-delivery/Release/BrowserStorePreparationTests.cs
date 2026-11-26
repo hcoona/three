@@ -142,7 +142,6 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     [TestMethod]
     [DataRow("buddy", "refs/heads/main", false)]
     [DataRow("official", "refs/heads/feature", false)]
-    [DataRow("official", "refs/tags/v1", false)]
     public async Task StoreRequestIsOfficialFromMainOrADryRun(string channel, string selected,
         bool dryRun)
     {

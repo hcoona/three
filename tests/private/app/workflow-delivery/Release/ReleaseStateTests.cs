@@ -93,7 +93,7 @@ public sealed class ReleaseStateTests
     }
 
     [TestMethod]
-    public void AmbiguousWheelUploadDoesNotPermitLaterSdistEvenWithCompleteReadback()
+    public void AmbiguousUploadDoesNotPermitLaterWritesEvenWithCompleteReadback()
     {
         PreparedRelease prepared = Prepare();
         prepared = prepared with
@@ -225,6 +225,47 @@ public sealed class ReleaseStateTests
         if (eligible) ReleasePolicy.RequireEligible(subject);
         else Assert.ThrowsExactly<InvalidDataException>(() =>
             ReleasePolicy.RequireEligible(subject));
+    }
+
+    [TestMethod]
+    public void DryRunAndLiveCompletionCannotBeInterchanged()
+    {
+        PreparedRelease live = Prepare();
+        PreparedRelease dry = live with { Subject = live.Subject with { DryRun = true } };
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ReleaseCompletion.Evaluate(dry, Observe(dry), []));
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ReleaseCompletion.Describe(live, Observe(live), []));
+    }
+
+    [TestMethod]
+    [DataRow("Exited", "Failed")]
+    [DataRow("TimedOut", "TimedOut")]
+    [DataRow("Cancelled", "Cancelled")]
+    public async Task QualificationRetainsTheNativeFailureAndSkipsDependentChecks(
+        string termination, string status)
+    {
+        NativeCommandResult failed = Command(false) with
+        { Termination = Enum.Parse<NativeTermination>(termination) };
+        var command = new NativeCommand("controlled", ".", ["build"], 30);
+        var qualification = new ReleaseQualification((_, _) => Task.FromResult(failed),
+            CancellationToken.None);
+
+        await qualification.CheckAsync("inputs", () => Task.CompletedTask);
+        await qualification.CheckAsync("build", () => qualification.RunAsync(command));
+        await qualification.CheckAsync("consumer", () =>
+            throw new AssertFailedException("Unqualified original reached the consumer."));
+
+        CollectionAssert.AreEqual(new[]
+        {
+            new ReleaseCheck("inputs", ReleaseCheckStatus.Passed),
+            new ReleaseCheck("build", Enum.Parse<ReleaseCheckStatus>(status)),
+            new ReleaseCheck("consumer", ReleaseCheckStatus.Skipped),
+        }, qualification.Checks);
+        Assert.AreEqual(new ReleaseCommand("build", command, failed),
+            Assert.ContainsSingle(qualification.Commands));
+        Assert.Contains("build", Assert.ContainsSingle(qualification.Errors));
     }
 
     private static PreparedRelease Prepare() => new(

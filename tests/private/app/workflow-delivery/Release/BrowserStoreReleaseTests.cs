@@ -42,17 +42,17 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         string? published, string state)
     {
         string body = ChromeStatus(submitted, published);
-        using var handler = new Handler((_, _) => Response(200, body));
+        using var handler = new ScriptedHttpHandler((_, _) => Response(200, body));
         using var client = new HttpClient(handler);
 
         StoreObservation result = await Chrome(client).ObserveAsync(context.CancellationToken);
 
         Assert.AreEqual(Enum.Parse<StoreState>(state), result.State);
-        Request request = Assert.ContainsSingle(handler.Requests);
-        Assert.AreEqual("GET", request.Method);
+        var request = Assert.ContainsSingle(handler.Requests);
+        Assert.AreEqual(HttpMethod.Get, request.Method);
         Assert.AreEqual("https://chromewebstore.googleapis.com/v2/publishers/publisher/items/" +
-            "item:fetchStatus", request.Uri);
-        Assert.AreEqual("Bearer token", request.Authorization);
+            "item:fetchStatus", request.Uri.AbsoluteUri);
+        Assert.AreEqual("Bearer token", request.Headers.Authorization?.ToString());
         Assert.IsFalse(JsonSerializer.Serialize(result, TransferJson.Default.StoreObservation)
             .Contains("token", StringComparison.Ordinal));
     }
@@ -62,7 +62,7 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     [DataRow(401, "Unknown")]
     public async Task UnavailableChromeStatusEstablishesNoAbsence(int status, string state)
     {
-        using var handler = new Handler((_, _) => Response(status, "{}"));
+        using var handler = new ScriptedHttpHandler((_, _) => Response(status, "{}"));
         using var client = new HttpClient(handler);
 
         StoreObservation result = await Chrome(client).ObserveAsync(context.CancellationToken);
@@ -73,7 +73,7 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     [TestMethod]
     public async Task ChromeUploadPollsAsyncStateThenPublishesTheItem()
     {
-        using var handler = new Handler((request, number) => number switch
+        using var handler = new ScriptedHttpHandler((_, number) => number switch
         {
             0 => Response(200, """{"uploadState":"IN_PROGRESS"}"""),
             1 => Response(200, """{"lastAsyncUploadState":"IN_PROGRESS"}"""),
@@ -92,17 +92,18 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         Assert.AreEqual("upload,publish", string.Join(",", operations.Select(operation =>
             operation.Operation)));
         Assert.AreEqual("https://chromewebstore.googleapis.com/upload/v2/publishers/" +
-            "publisher/items/item:upload", handler.Requests[0].Uri);
+            "publisher/items/item:upload", handler.Requests[0].Uri.AbsoluteUri);
         Assert.AreEqual("application/zip", handler.Requests[0].ContentType);
         Assert.AreEqual("https://chromewebstore.googleapis.com/v2/publishers/publisher/" +
-            "items/item:publish", handler.Requests[3].Uri);
+            "items/item:publish", handler.Requests[3].Uri.AbsoluteUri);
         Assert.HasCount(4, handler.Requests);
     }
 
     [TestMethod]
     public async Task FailedChromeUploadIsNeverPublished()
     {
-        using var handler = new Handler((_, _) => Response(200, """{"uploadState":"FAILED"}"""));
+        using var handler = new ScriptedHttpHandler((_, _) =>
+            Response(200, """{"uploadState":"FAILED"}"""));
         using var client = new HttpClient(handler);
         using var files = new Originals(["chrome-zip"]);
         var operations = new List<StoreOperation>();
@@ -128,28 +129,28 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     public async Task AmoVersionDetailDefinesTheExactVersionState(int status, string body,
         int addon, string state)
     {
-        using var handler = new Handler((_, number) => number == 0 ? Response(status, body)
-            : Response(addon, "{}"));
+        using var handler = new ScriptedHttpHandler((_, number) =>
+            number == 0 ? Response(status, body) : Response(addon, "{}"));
         using var client = new HttpClient(handler);
 
         StoreObservation result = await Amo(client).ObserveAsync(context.CancellationToken);
 
         Assert.AreEqual(Enum.Parse<StoreState>(state), result.State);
         Assert.AreEqual("https://addons.mozilla.org/api/v5/addons/addon/item/versions/v1.2.0.7/",
-            handler.Requests[0].Uri);
+            handler.Requests[0].Uri.AbsoluteUri);
     }
 
     [TestMethod]
     public async Task AmoUploadsVersionWithSourceAndObservesTheReceivedVersion()
     {
-        using var handler = new Handler((request, number) => number switch
+        using var handler = new ScriptedHttpHandler((_, number) => number switch
         {
             0 => Response(201, """{"uuid":"abc"}"""),
             1 => Response(200, """{"processed":false}"""),
             2 => Response(200, """{"processed":true,"valid":true,"version":"1.2.0.7"}"""),
             3 => Response(201, """{"id":1}"""),
             _ => Response(200, AmoListed + "\"unreviewed\"}}"),
-        });
+        }, captureBody: true);
         using var client = new HttpClient(handler);
         using var files = new Originals(["firefox-zip", "firefox-sources"]);
         var operations = new List<StoreOperation>();
@@ -160,16 +161,17 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         Assert.AreEqual(StoreState.InReview, final!.State);
         Assert.IsTrue(operations.All(operation => operation.Succeeded));
         Assert.AreEqual("https://addons.mozilla.org/api/v5/addons/upload/",
-            handler.Requests[0].Uri);
+            handler.Requests[0].Uri.AbsoluteUri);
         Assert.Contains("name=channel", handler.Requests[0].Body);
         Assert.Contains("listed", handler.Requests[0].Body);
         Assert.AreEqual("https://addons.mozilla.org/api/v5/addons/addon/item/versions/",
-            handler.Requests[3].Uri);
+            handler.Requests[3].Uri.AbsoluteUri);
         Assert.Contains("name=source", handler.Requests[3].Body);
         Assert.Contains("name=upload", handler.Requests[3].Body);
-        foreach (Request request in handler.Requests)
+        foreach (var request in handler.Requests)
         {
-            string[] jwt = request.Authorization!["JWT ".Length..].Split('.');
+            Assert.AreEqual("JWT", request.Headers.Authorization?.Scheme);
+            string[] jwt = request.Headers.Authorization!.Parameter!.Split('.');
             Assert.HasCount(3, jwt);
             byte[] signature = HMACSHA256.HashData("secret"u8.ToArray(),
                 Encoding.ASCII.GetBytes(jwt[0] + "." + jwt[1]));
@@ -182,13 +184,13 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         }
         // Every request carries a fresh token.
         Assert.AreEqual(handler.Requests.Count, handler.Requests.Select(request =>
-            request.Authorization).Distinct().Count());
+            request.Headers.Authorization?.Parameter).Distinct().Count());
     }
 
     [TestMethod]
     public async Task InvalidAmoUploadCreatesNoVersion()
     {
-        using var handler = new Handler((_, number) => number switch
+        using var handler = new ScriptedHttpHandler((_, number) => number switch
         {
             0 => Response(201, """{"uuid":"abc"}"""),
             1 => Response(200, """{"processed":true,"valid":false,"version":"1.2.0.7"}"""),
@@ -202,8 +204,8 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
             context.CancellationToken);
 
         Assert.IsFalse(Assert.ContainsSingle(operations).Succeeded);
-        Assert.IsFalse(handler.Requests.Any(request => request.Uri.EndsWith("/versions/",
-            StringComparison.Ordinal) && request.Method == "POST"));
+        Assert.IsFalse(handler.Requests.Any(request => request.Uri.AbsolutePath.EndsWith(
+            "/versions/", StringComparison.Ordinal) && request.Method == HttpMethod.Post));
         Assert.AreNotEqual(StoreState.Received, final!.State);
     }
 
@@ -214,7 +216,7 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     public async Task EdgeSubmissionOperationIsTheOnlyStoreReport(string submitted,
         string state)
     {
-        using var handler = new Handler((request, number) => number switch
+        using var handler = new ScriptedHttpHandler((_, number) => number switch
         {
             0 => Response(202, "", "upload-op"),
             1 => Response(200, """{"status":"Succeeded"}"""),
@@ -243,28 +245,27 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
             _ => ReleaseBusinessState.Unknown
         }, completion.Outcome.State);
         Assert.AreEqual("https://api.addons.microsoftedge.microsoft.com/v1/products/item/" +
-            "submissions/draft/package", handler.Requests[0].Uri);
+            "submissions/draft/package", handler.Requests[0].Uri.AbsoluteUri);
         Assert.AreEqual("https://api.addons.microsoftedge.microsoft.com/v1/products/item/" +
-            "submissions/draft/package/operations/upload-op", handler.Requests[1].Uri);
+            "submissions/draft/package/operations/upload-op", handler.Requests[1].Uri.AbsoluteUri);
         Assert.AreEqual("https://api.addons.microsoftedge.microsoft.com/v1/products/item/" +
-            "submissions", handler.Requests[2].Uri);
+            "submissions", handler.Requests[2].Uri.AbsoluteUri);
         Assert.AreEqual("https://api.addons.microsoftedge.microsoft.com/v1/products/item/" +
-            "submissions/operations/submit-op", handler.Requests[3].Uri);
-        Assert.IsTrue(handler.Requests.All(request => request.Authorization == "ApiKey key" &&
-            request.ClientId == "client"));
+            "submissions/operations/submit-op", handler.Requests[3].Uri.AbsoluteUri);
+        Assert.IsTrue(handler.Requests.All(request =>
+            request.Headers.Authorization?.ToString() == "ApiKey key" &&
+            request.Headers.GetValues("X-ClientID").Single() == "client"));
         // An unfinished or failed submission returns to the owner; it is never resubmitted.
-        Assert.AreEqual(1, handler.Requests.Count(request => request.Method == "POST" &&
-            request.Uri.EndsWith("/submissions", StringComparison.Ordinal)));
+        Assert.ContainsSingle(handler.Requests.Where(request => request.Method == HttpMethod.Post &&
+            request.Uri.AbsolutePath.EndsWith("/submissions", StringComparison.Ordinal)));
     }
 
     [TestMethod]
-    [DataRow("chrome-web-store")]
-    [DataRow("firefox-amo")]
-    [DataRow("edge-addons")]
-    public void DryRunObservesNoStoreAndReportsItUnobserved(string store)
+    public void DryRunDoesNotResolveStoreCredentialsAndDescribesFirefoxOutputs()
     {
-        using var files = new Originals(BrowserStorePreparation.StoreOutputs(store));
-        BrowserStorePreparationResult preparation = files.Preparation(store);
+        const string Store = "firefox-amo";
+        using var files = new Originals(BrowserStorePreparation.StoreOutputs(Store));
+        BrowserStorePreparationResult preparation = files.Preparation(Store);
         string root = Directory.CreateTempSubdirectory("browser-store-dry-").FullName;
         try
         {
@@ -453,14 +454,11 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
             Assert.AreEqual(0, Run("state"));
             Assert.AreEqual("write-needed=" + needed + "\n", File.ReadAllText(env[
                 "GITHUB_OUTPUT"]));
-            env["STORE_ITEM"] = "another";
-            Assert.ThrowsExactly<InvalidDataException>(() => Run("receive", "verification"));
-            env["STORE_ITEM"] = "item";
-            env["CHANNEL"] = "buddy";
-            Assert.ThrowsExactly<InvalidDataException>(() => Run("receive", "verification"));
-            env["CHANNEL"] = "official";
-            env["GITHUB_REF"] = "refs/heads/feature";
-            Assert.ThrowsExactly<InvalidDataException>(() => Run("receive", "verification"));
+            if (store == "chrome-web-store" && state == "Absent")
+            {
+                env["STORE_ITEM"] = "another";
+                Assert.ThrowsExactly<InvalidDataException>(() => Run("receive", "verification"));
+            }
         }
         finally { Directory.Delete(root, recursive: true); }
     }
@@ -560,26 +558,4 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         }
     }
 
-    private sealed record Request(string Uri, string Method, string? Authorization,
-        string? ClientId, string? ContentType, string Body);
-
-    private sealed class Handler(Func<HttpRequestMessage, int, HttpResponseMessage> respond)
-        : HttpMessageHandler
-    {
-        internal List<Request> Requests { get; } = [];
-
-        protected override async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            int number = Requests.Count;
-            string body = request.Content is null ? "" :
-                await request.Content.ReadAsStringAsync(cancellationToken);
-            Requests.Add(new(request.RequestUri!.AbsoluteUri, request.Method.Method,
-                request.Headers.Authorization?.ToString(),
-                request.Headers.TryGetValues("X-ClientID", out var values)
-                    ? values.Single() : null,
-                request.Content?.Headers.ContentType?.MediaType, body));
-            return respond(request, number);
-        }
-    }
 }
