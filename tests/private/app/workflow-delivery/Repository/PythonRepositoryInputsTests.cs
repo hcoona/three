@@ -56,6 +56,15 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
+    public void RetiredQidianLabScriptOnBasisHasNoPythonOwner()
+    {
+        const string path = "src/lab/qidian-novel-downloader/poc_headless_login.py";
+        PythonFactsEndpoint basis = Facts(Endpoint([RuntimePytest], [path], "before"));
+
+        Owners(basis.Inputs, path);
+    }
+
+    [TestMethod]
     public void AttributesSelectOnlyConfiguredDotnetDependentChecks()
     {
         const string path = ".gitattributes";

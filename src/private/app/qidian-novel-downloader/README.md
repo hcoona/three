@@ -1,6 +1,6 @@
 # Qidian Novel Downloader
 
-This directory contains the formal C# implementation of the private Qidian downloader described in `docs/requirements.md` and informed by the lab Playwright PoCs under `src/lab/qidian-novel-downloader/`.
+This directory contains the formal C# implementation of the private Qidian downloader described in `docs/requirements.md` and informed by the [retired Playwright prototypes](https://github.com/hcoona/three/tree/a1f4f7266f153525212e637bed6f12272623a679/src/lab/qidian-novel-downloader).
 
 ## Implementation choices
 

@@ -99,7 +99,9 @@ internal static class PythonRepositoryInputs
         foreach (string path in Pytest)
             foreach (PythonPytestTarget target in targets.Targets)
                 Add(path, "pytest:" + target.Target);
-        foreach (string path in paths.Where(ControlInputs.InertDocument)) Add(path, null);
+        // Retired lab scripts can still appear on the comparison basis but have no pytest owner.
+        foreach (string path in paths.Where(path => ControlInputs.InertDocument(path) ||
+            Under(path, "src/lab/qidian-novel-downloader"))) Add(path, null);
         foreach (PythonPytestTarget target in targets.Targets)
         {
             string owner = "pytest:" + target.Target;

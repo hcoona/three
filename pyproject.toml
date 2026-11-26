@@ -24,18 +24,10 @@ workflow-delivery-python = ["build==1.6.1", "nbgv-python", "packaging==26.3"]
 [tool.uv.workspace]
 # Python projects live under src/; internal delivery products live under tests/.
 members = [
-  "src/lab/azure-document-intelligence-lab",
-  "src/private/app/factorio-cycle-calculator",
-  "src/private/app/git-commit-heatmap",
   "src/private/app/html-sm-processor",
-  "src/private/app/llm-text-splitter",
-  "src/private/app/music-flash-card-generator",
-  "src/private/app/rag-postgresql-openai",
   "src/private/app/sheet-music-omr",
   "src/private/app/supermemo-mcp",
-  "src/private/app/transcribe",
   "src/private/app/azureauth-credprovider/python",
-  "src/public/app/markdown-hybrid-search-mcp",
   "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python",
   "src/public/lib/nbgv-python",
   "src/sample/nbgv-hatch-demo",
@@ -47,17 +39,10 @@ nbgv-python = { workspace = true }
 [tool.pyrefly]
 # Keep type-check coverage aligned with the root uv workspace membership.
 project-includes = [
-  "src/private/app/factorio-cycle-calculator/**/*.py",
-  "src/private/app/git-commit-heatmap/**/*.py",
   "src/private/app/html-sm-processor/**/*.py",
-  "src/private/app/llm-text-splitter/**/*.py",
-  "src/private/app/music-flash-card-generator/**/*.py",
-  "src/private/app/rag-postgresql-openai/**/*.py",
   "src/private/app/sheet-music-omr/**/*.py",
   "src/private/app/supermemo-mcp/**/*.py",
-  "src/private/app/transcribe/**/*.py",
   "src/private/app/azureauth-credprovider/python",
-  "src/public/app/markdown-hybrid-search-mcp/src/**/*.py",
   "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/**/*.py",
   "src/public/lib/nbgv-python/**/*.py",
   "src/sample/nbgv-hatch-demo/**/*.py",
@@ -211,13 +196,7 @@ testpaths = [
   "tests/eng/test_typos_config.py",
   "tests/eng/test_workflow_delivery_v3_hk.py",
   "src/private/app/azureauth-credprovider/python/tests",
-  "src/private/app/factorio-cycle-calculator/tests",
-  "src/private/app/git-commit-heatmap/tests",
   "src/private/app/html-sm-processor/tests",
-  "src/private/app/llm-text-splitter/tests",
-  "src/private/app/music-flash-card-generator/tests",
-  "src/private/app/rag-postgresql-openai/tests",
   "src/private/app/sheet-music-omr/tests",
-  "src/private/app/transcribe/tests",
   "src/public/lib/nbgv-python/tests",
 ]

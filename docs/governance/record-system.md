@@ -12,28 +12,29 @@ The system follows the governance principles in
 
 Authority is scoped rather than globally ranked.
 
-| Concern                                                                    | Canonical carrier                                             |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Repository identity, layout, and imported-project provenance               | Root `README.md` and repository engineering records           |
-| Public navigation to canonical records                                     | Root and project `README.md` files                            |
-| AI-agent behavior and routing                                              | Root `AGENTS.md` and applicable local instructions            |
-| Human contribution workflow                                                | Root `CONTRIBUTING.md`                                        |
-| Current positive work authorization                                        | Root `docs/delivery-wave.md`                                  |
-| Repository governance and record policy                                    | `docs/governance/`                                            |
-| Product purpose and directional boundary                                   | Project-local product vision, or README when sufficient       |
-| User context and motivation for required behavior                          | Project-local user stories, when admitted for a real consumer |
-| Required product behavior                                                  | Project-local requirements                                    |
-| Current system structure and invariants                                    | Project-local architecture records                            |
-| Durable design choices and rationale                                       | Decision records in the owning namespace                      |
-| Public source and empirical evidence                                       | Research records in the owning namespace                      |
-| Security assumptions and trust boundaries                                  | Security records in the owning namespace                      |
-| Validation needed for a claim                                              | Validation records in the owning namespace                    |
-| Upstream relationship and imports                                          | Existing project provenance and license notices               |
-| Issue-backed work scope, ownership, discussion, dependencies, and progress | GitHub Issues and Milestones                                  |
-| Direct single-PR work scope and proposed repository state                  | Pull requests                                                 |
-| Current accepted repository state                                          | `main`                                                        |
-| Published state                                                            | Git tags and GitHub Releases                                  |
-| Authorship, changes, and deleted records                                   | Git history                                                   |
+| Concern                                                                            | Canonical carrier                                             |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Repository identity, layout, and imported-project provenance                       | Root `README.md` and repository engineering records           |
+| Public navigation to canonical records                                             | Root and project `README.md` files                            |
+| AI-agent behavior and routing                                                      | Root `AGENTS.md` and applicable local instructions            |
+| Human contribution workflow                                                        | Root `CONTRIBUTING.md`                                        |
+| Current positive work authorization                                                | Root `docs/delivery-wave.md`                                  |
+| Repository governance and record policy                                            | `docs/governance/`                                            |
+| Product purpose and directional boundary                                           | Project-local product vision, or README when sufficient       |
+| User context and motivation for required behavior                                  | Project-local user stories, when admitted for a real consumer |
+| Required product behavior                                                          | Project-local requirements                                    |
+| Current system structure and invariants                                            | Project-local architecture records                            |
+| Durable design choices and rationale                                               | Decision records in the owning namespace                      |
+| Public source and empirical evidence                                               | Research records in the owning namespace                      |
+| Security assumptions and trust boundaries                                          | Security records in the owning namespace                      |
+| Validation needed for a claim                                                      | Validation records in the owning namespace                    |
+| Upstream relationship and imports                                                  | Existing project provenance and license notices               |
+| Issue-backed work scope, ownership, discussion, dependencies, and progress         | GitHub Issues and Milestones                                  |
+| Direct single-PR work scope and proposed repository state                          | Pull requests                                                 |
+| Current accepted repository state                                                  | `main`                                                        |
+| Published state                                                                    | Git tags and GitHub Releases                                  |
+| Authorship, changes, and deleted records                                           | Git history                                                   |
+| Retired-project summaries, rationale, alternatives, and last-intact Git tree links | Root `docs/retired-projects.md`                               |
 
 An index or overview may identify the authoritative record but must not restate its
 normative content.
@@ -278,6 +279,10 @@ Delete a replaced record after:
 
 Do not create a general archive or supersession graph. Retain multiple versions only when
 current consumers require them.
+
+A single repository-level retired-projects index (`docs/retired-projects.md`) may record
+retired project summaries, retirement rationale, recommended alternatives, and immutable
+links to their last intact Git trees without retaining deleted project files in the working tree.
 
 ## Current, Scheduled, Conditional, and Discarded Mechanisms
 

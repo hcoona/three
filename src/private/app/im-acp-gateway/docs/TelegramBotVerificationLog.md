@@ -31,13 +31,13 @@ It is not the place for gateway design decisions or broader product planning.
 
 ## Validation artifact used so far
 
-The current validation helper is the dedicated POC at:
+The validation helper used for these runs was the retired POC at:
 
-- `src/private/app/im-acp-gateway/poc/telegram-bot-verifier`
+- [`src/private/app/im-acp-gateway/poc/telegram-bot-verifier`](https://github.com/hcoona/three/tree/61336a7af93d1eb3b907fb3ce8b700cdb0a14dad/src/private/app/im-acp-gateway/poc/telegram-bot-verifier)
 
-That POC talks directly to the Telegram Bot API and is designed to validate
-Telegram-side transport and interaction primitives before any broader gateway
-assumptions are treated as confirmed.
+That POC talked directly to the Telegram Bot API to validate Telegram-side
+transport and interaction primitives before any broader gateway assumptions were
+treated as confirmed.
 
 ## Run log
 
@@ -52,7 +52,7 @@ approval-button flow work on the intended setup.
 #### Process
 
 1. a dedicated Telegram verifier POC was created under
-   `src/private/app/im-acp-gateway/poc/telegram-bot-verifier`,
+   [`src/private/app/im-acp-gateway/poc/telegram-bot-verifier`](https://github.com/hcoona/three/tree/61336a7af93d1eb3b907fb3ce8b700cdb0a14dad/src/private/app/im-acp-gateway/poc/telegram-bot-verifier),
 2. the POC passed its local `test`, `typecheck`, `lint`, and CLI-help checks,
 3. the runtime credentials were loaded locally from
    `src/private/app/im-acp-gateway/.env` using `TG_BOT_TOKEN` and `TG_CHAT_ID`,

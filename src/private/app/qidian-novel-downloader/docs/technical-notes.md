@@ -164,7 +164,8 @@ implementation input.
 
 ### 4.1 Observed PoC Approaches
 
-The lab folder currently contains three relevant PoC directions:
+The [retired lab](https://github.com/hcoona/three/tree/a1f4f7266f153525212e637bed6f12272623a679/src/lab/qidian-novel-downloader)
+explored three relevant PoC directions:
 
 1. **Playwright MCP extension bridge**
     - Works with a running Edge instance plus the bridge extension
@@ -295,7 +296,8 @@ the extracted paragraphs, the fetched word count, and a fetch timestamp.
 
 ### 6.2 Cache Behavior Notes
 
-`poc_mcp_extension.py` currently demonstrates:
+In the [retired lab](https://github.com/hcoona/three/tree/a1f4f7266f153525212e637bed6f12272623a679/src/lab/qidian-novel-downloader),
+`poc_mcp_extension.py` demonstrated:
 
 - per-book catalog cache files
 - per-chapter content cache files
