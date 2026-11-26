@@ -72,14 +72,13 @@ internal static class CiCallerTransfer
         return Path.Combine(control, "WorkflowDelivery.dll");
     }
 
-    internal static async Task<GitComparison> ComparisonAsync(string root, string scopePath,
-        CancellationToken token)
+    internal static async Task<(GitComparison Comparison, bool Full)> ComparisonAsync(
+        string root, string scopePath, CancellationToken token)
     {
         JsonElement scope = Read(scopePath, TransferJson.Default.JsonElement);
         string basis = ScopeCommit(scope, "base");
         string candidate = ScopeCommit(scope, "candidate");
         bool full = Full(scope);
-        Commit(basis); Commit(candidate);
         if (full && basis != candidate)
             throw new InvalidDataException("Explicit full has a different basis.");
         var reader = new GitReader(root);
@@ -88,15 +87,19 @@ internal static class CiCallerTransfer
             await reader.ResolveAsync("HEAD", token) != candidate)
             throw new
                 InvalidDataException("Scope does not name exact available candidate commits.");
-        return comparison;
+        return (comparison, full);
     }
 
     internal static async Task<CiCallerEndpoints> MaterializeAsync(string root, string scopePath,
-        string directory, bool separate, CancellationToken token)
+        string directory, bool separate, CancellationToken token) =>
+        await MaterializeAsync(root, directory, separate,
+            await ComparisonAsync(root, scopePath, token), token);
+
+    internal static async Task<CiCallerEndpoints> MaterializeAsync(string root, string directory,
+        bool separate, (GitComparison Comparison, bool Full) prevalidated, CancellationToken token)
     {
         External(root, directory);
-        GitComparison comparison = await ComparisonAsync(root, scopePath, token);
-        bool full = Full(Read(scopePath, TransferJson.Default.JsonElement));
+        (GitComparison comparison, bool full) = prevalidated;
         Fresh(directory);
         var basis = new MaterializedEndpoint(Path.Combine(directory, "basis"),
             comparison.Basis.Commit);

@@ -35,7 +35,7 @@ internal sealed class PythonPassiveReader
         token.ThrowIfCancellationRequested();
         CanonicalEndpoint(directory);
         NativeCommandResult result = await execute(new(helperPython, directory,
-            [passiveScript, directory], 30, environment), token);
+            [passiveScript, directory], 30, environment, InheritEnvironment: false), token);
         if (!result.Succeeded || result.Error is not null)
             throw new InvalidDataException("Python passive extraction failed: " +
                 NativeDiagnostic.Describe(result));
@@ -98,7 +98,8 @@ internal sealed class PythonPassiveReader
         string[] inputs = ordered.Select(directory => Path.Combine(directory, "pyproject.toml"))
             .Order(StringComparer.Ordinal).ToArray();
         NativeCommandResult preflight = await execute(new(helperPython, root,
-            [passiveScript, "--configuration-only", .. ordered], 30, environment), token);
+            [passiveScript, "--configuration-only", .. ordered], 30, environment,
+            InheritEnvironment: false), token);
         if (!preflight.Succeeded || preflight.Error is not null)
             throw new InvalidDataException("Python configuration preflight failed: " +
                 NativeDiagnostic.Describe(preflight));

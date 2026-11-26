@@ -20,22 +20,10 @@ internal static class PythonPytestExecution
         PythonPytestRunRequest request, CancellationToken token) =>
         RunAsync(plan, request, NativeProcess.ExecuteAsync, token);
 
-    internal static Task<PythonPytestRunResult> RunAsync(CiPlan plan,
+    internal static async Task<PythonPytestRunResult> RunAsync(CiPlan plan,
         PythonPytestRunRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        CancellationToken token)
-        => RunAsync(plan, request, execute, null, token);
-
-    // The group has already bound the checkout and the native membership before dispatching
-    // either partition.
-    internal static Task<PythonPytestRunResult> RunBoundAsync(CiPlan plan,
-        PythonPytestRunRequest request, GitMaterialization bound, CancellationToken token) =>
-        RunAsync(plan, request, NativeProcess.ExecuteAsync, bound, token);
-
-    private static async Task<PythonPytestRunResult> RunAsync(CiPlan plan,
-        PythonPytestRunRequest request,
-        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        GitMaterialization? bound, CancellationToken token)
+        CancellationToken token, GitMaterialization? bound = null)
     {
         string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
         string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
@@ -148,8 +136,6 @@ internal static class PythonPytestExecution
     {
         // Query only: no sync, resolution, backend or user environment inheritance.
         var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (string name in System.Environment.GetEnvironmentVariables().Keys)
-            environment[name] = null;
         foreach (string name in new[] { "PATH", "SystemRoot", "WINDIR", "PATHEXT" })
             environment[name] = request.Environment.TryGetValue(name, out string? value)
                 ? value : System.Environment.GetEnvironmentVariable(name);

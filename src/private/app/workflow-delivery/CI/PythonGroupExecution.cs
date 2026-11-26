@@ -1,3 +1,4 @@
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
@@ -58,22 +59,19 @@ internal static class PythonGroupExecution
         {
             _ = OwnedPath.Absolute(request.PackageHelper, PathMessage);
             // Apply the archive consumer's boundary before either partition can execute.
-            for (DirectoryInfo? parent = new(scratch); parent is not null; parent = parent.Parent)
-                if (File.Exists(Path.Combine(parent.FullName, ".git")) ||
-                    Directory.Exists(Path.Combine(parent.FullName, ".git")))
-                    throw new InvalidDataException(
-                        "Python package consumers require Git-free scratch.");
+            PythonPackageOperations.RequireGitFreeScratch(scratch,
+                "Python package consumers require Git-free scratch.");
         }
         if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Python group requires its exact candidate.");
         GitMaterialization materialization = await GitMaterialization.BindAsync(checkout,
             plan.Candidate, token);
         pytest ??= (partition, partitionRequest, cancellation) =>
-            PythonPytestExecution.RunBoundAsync(partition, partitionRequest, materialization,
-                cancellation);
+            PythonPytestExecution.RunAsync(partition, partitionRequest, NativeProcess.ExecuteAsync,
+                cancellation, materialization);
         packages ??= (partition, partitionRequest, cancellation) =>
-            PythonPackageExecution.RunBoundAsync(partition, partitionRequest, materialization,
-                cancellation);
+            PythonPackageExecution.RunAsync(partition, partitionRequest, NativeProcess.ExecuteAsync,
+                cancellation, materialization);
         PythonPytestExecution.ReadChecks(pytestPlan, native, materialization.Revision);
         await PythonPackageExecution.ReadChecksAsync(packagePlan, native.Members,
             materialization, token);

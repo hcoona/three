@@ -32,7 +32,7 @@ internal static class RubyGroupExecution
         string scratch = Path.GetFullPath(request.Scratch);
         string checkout = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Checkout));
         if (!Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
-            OwnedPath.Within(scratch, checkout))
+            OwnedPath.Overlap(scratch, checkout))
             throw new InvalidDataException("Ruby execution requires fresh external scratch.");
         if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Ruby execution requires the exact original plan.");

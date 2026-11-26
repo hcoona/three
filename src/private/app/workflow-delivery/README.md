@@ -31,7 +31,7 @@ command's output in a file.
 
 Use the checked-in ordinary workflows and the finite typed
 [CI callers](CI/Callers/CiCallerCli.cs) to compose native preparation and requests. The
-[CLI](Program.cs), source-generated transfer serialization and
+[CLI](Program.cs), [CI CLI](CI/CiCli.cs), source-generated transfer serialization and
 [Release CLI](Release/ReleaseCli.cs) define current internal command signatures
 and types; internal formats have no compatibility promise. A request must supply
 its required frozen native facts and owned directories, rather than a latest

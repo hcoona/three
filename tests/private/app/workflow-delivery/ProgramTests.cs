@@ -125,7 +125,7 @@ public sealed class ProgramTests
         using var error = new StringWriter();
 
         int exit = Program.Run(["ci", "run-node", planPath, requestPath], output, error,
-            (receivedPlan, receivedRequest, _) =>
+            new(RunNode: (receivedPlan, receivedRequest, _) =>
             {
                 Assert.AreEqual(plan.Candidate, receivedPlan.Candidate);
                 Assert.AreEqual(request, receivedRequest);
@@ -136,7 +136,7 @@ public sealed class ProgramTests
                         CheckStatus.Passed)).ToArray();
                 return Task.FromResult(new NodeRunResult(receivedPlan.Candidate, results, [],
                     [original], [], receivedRequest.Runtime, null));
-            });
+            }));
 
         Assert.AreEqual(expectedExit, exit, error.ToString());
         Assert.IsEmpty(error.ToString());
@@ -160,7 +160,8 @@ public sealed class ProgramTests
         using var error = new StringWriter();
 
         int exit = Program.Run(["ci", "run-node", planPath, requestPath], output, error,
-            (_, _, _) => throw new AssertFailedException("Invalid transfer reached executor."));
+            new(RunNode: (_, _, _) =>
+                throw new AssertFailedException("Invalid transfer reached executor.")));
 
         Assert.AreEqual(2, exit);
         Assert.IsEmpty(output.ToString());
@@ -182,14 +183,14 @@ public sealed class ProgramTests
             TransferJson.Default.PythonGroupPreparationRequest));
 
         Assert.AreEqual(0, Program.Run(["ci", "prepare-python-group", path], output, error,
-            preparePythonGroup: (received, _) =>
+            new(PreparePythonGroup: (received, _) =>
             {
                 Assert.AreEqual(request.Basis, received.Basis);
                 Assert.AreEqual(request.Candidate, received.Candidate);
                 Assert.AreEqual(request.Tools, received.Tools);
                 return Task.FromResult(new PythonGroupPreparationResult(prepared with
                 { Full = received.Full, ScopePath = received.ScopePath }, []));
-            }), error.ToString());
+            })), error.ToString());
         var preparation = JsonSerializer.Deserialize(output.ToString(),
             TransferJson.Default.PythonGroupPreparationResult);
         Assert.IsNotNull(preparation);
@@ -209,14 +210,14 @@ public sealed class ProgramTests
             operation);
 
         Assert.AreEqual(0, Program.Run(["ci", "plan-python-group", path], output, error,
-            planPythonGroup: (received, _) =>
+            new(PlanPythonGroup: (received, _) =>
             {
                 Assert.AreEqual(prepared.Basis.Checkout, received.Basis.Checkout);
                 Assert.AreEqual(prepared.Candidate.Checkout, received.Candidate.Checkout);
                 Assert.IsTrue(received.Full);
                 Assert.AreEqual(prepared.ScopePath, received.ScopePath);
                 return Task.FromResult(readback);
-            }), error.ToString());
+            })), error.ToString());
         var planning = JsonSerializer.Deserialize(output.ToString(),
             TransferJson.Default.PythonGroupReadback);
         Assert.IsNotNull(planning);
@@ -231,7 +232,7 @@ public sealed class ProgramTests
         output.GetStringBuilder().Clear();
 
         int exit = Program.Run(["ci", "run-python-group", planPath, path], output, error,
-            runPythonGroup: (plan, native, _) =>
+            new(RunPythonGroup: (plan, native, _) =>
             {
                 Assert.AreEqual(prepared.Basis.Checkout.Reference, plan.Comparison);
                 Assert.AreEqual(candidate, plan.Candidate);
@@ -243,7 +244,7 @@ public sealed class ProgramTests
                 return Task.FromResult(new PythonGroupRunResult(plan.Candidate, results,
                     new(plan.Candidate, results, [], []), new(plan.Candidate, [], [], [], []),
                     ResultCollector.Collect(plan, results)));
-            });
+            }));
 
         Assert.AreEqual(expectedExit, exit, error.ToString());
         var result = JsonSerializer.Deserialize(output.ToString(),
@@ -279,8 +280,8 @@ public sealed class ProgramTests
                 ? CheckStatus.Failed : CheckStatus.Passed)).ToArray();
 
         int exit = Program.Run(["ci", "run-python-package", planPath, requestPath], output, error,
-            runPythonPackage: (_, _, _) => Task.FromResult(
-                new PythonPackageRunResult(candidate, results, [], originals, [])));
+            new(RunPythonPackage: (_, _, _) => Task.FromResult(
+                new PythonPackageRunResult(candidate, results, [], originals, []))));
 
         Assert.AreEqual(1, exit);
         Assert.IsEmpty(error.ToString());
@@ -312,7 +313,7 @@ public sealed class ProgramTests
         using var error = new StringWriter();
 
         int exit = Program.Run(["ci", "prepare-python-group", path], output, error,
-            preparePythonGroup: (_, _) => throw failure);
+            new(PreparePythonGroup: (_, _) => throw failure));
 
         Assert.AreEqual(2, exit);
         Assert.IsEmpty(output.ToString());
@@ -322,6 +323,9 @@ public sealed class ProgramTests
         Assert.DoesNotContain(native.Stdout, diagnostics);
         Assert.DoesNotContain("/owned/home", diagnostics);
         CiCallerTransferTests.AssertNoWorkflowCommand(diagnostics);
+        foreach (string line in diagnostics.ReplaceLineEndings("\n")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            Assert.StartsWith("  | ", line);
         if (existing)
         {
             Assert.AreEqual("existing observation", File.ReadAllText(failure.DiagnosticsPath));
@@ -349,8 +353,8 @@ public sealed class ProgramTests
         using var error = new StringWriter();
 
         int exit = Program.Run(["ci", "plan-python-group", path], output, error,
-            planPythonGroup: (_, _) => throw new InvalidDataException(
-                CiCallerTransferTests.WorkflowCommandText));
+            new(PlanPythonGroup: (_, _) => throw new InvalidDataException(
+                CiCallerTransferTests.WorkflowCommandText)));
 
         Assert.AreEqual(2, exit);
         Assert.IsEmpty(output.ToString());
@@ -384,11 +388,11 @@ public sealed class ProgramTests
             TransferJson.Default.RubyGroupPreparationRequest));
 
         Assert.AreEqual(0, Program.Run(["ci", "prepare-ruby-group", path], output, error,
-            prepareRubyGroup: (received, _) =>
+            new(PrepareRubyGroup: (received, _) =>
             {
                 Assert.AreEqual(request, received);
                 return Task.FromResult(new RubyGroupPreparationResult(prepared, []));
-            }), error.ToString());
+            })), error.ToString());
         var preparation = JsonSerializer.Deserialize(output.ToString(),
             TransferJson.Default.RubyGroupPreparationResult);
         Assert.IsNotNull(preparation);
@@ -403,13 +407,13 @@ public sealed class ProgramTests
             [], [], []);
 
         Assert.AreEqual(0, Program.Run(["ci", "plan-ruby-group", path], output, error,
-            planRubyGroup: (received, _) =>
+            new(PlanRubyGroup: (received, _) =>
             {
                 Assert.AreEqual(nbgv, received.Candidate.Collection.Nbgv);
                 Assert.AreEqual(tools.Environment["GEM_HOME"],
                     received.Candidate.Collection.Tools.Environment["GEM_HOME"]);
                 return Task.FromResult(new RubyGroupReadback(plan, inputs, inputs));
-            }), error.ToString());
+            })), error.ToString());
         var readback = JsonSerializer.Deserialize(output.ToString(),
             TransferJson.Default.RubyGroupReadback);
         Assert.IsNotNull(readback);
@@ -422,14 +426,14 @@ public sealed class ProgramTests
         output.GetStringBuilder().Clear();
 
         int exit = Program.Run(["ci", "run-ruby-group", planPath, path], output, error,
-            runRubyGroup: (received, native, _) =>
+            new(RunRubyGroup: (received, native, _) =>
             {
                 Assert.AreEqual(key, Assert.ContainsSingle(received.Checks).Work.Key);
                 Assert.AreEqual(candidate, native.Candidate.Facts.Revision.Commit);
                 CheckResult[] results = missing ? [] : [new(candidate, key, CheckStatus.Passed)];
                 return Task.FromResult(new RubyGroupRun(results, [], new([], [], [], []),
                     ResultCollector.Collect(received, results)));
-            });
+            }));
 
         Assert.AreEqual(expectedExit, exit, error.ToString());
         Assert.IsEmpty(error.ToString());
@@ -451,11 +455,11 @@ public sealed class ProgramTests
         int dispatches = 0;
 
         int exit = Program.Run(["ci", "prepare-ruby-group", path], output, error,
-            prepareRubyGroup: (_, _) =>
+            new(PrepareRubyGroup: (_, _) =>
             {
                 dispatches++;
                 throw new AssertFailedException("Null request reached Ruby preparation.");
-            });
+            }));
 
         Assert.AreEqual(2, exit);
         Assert.IsEmpty(output.ToString());
@@ -493,7 +497,7 @@ public sealed class ProgramTests
             TransferJson.Default.DotNetRunRequest));
 
         int exit = Program.Run(["ci", "run-dotnet", planPath, requestPath], output, error,
-            runDotNet: (received, native, _) =>
+            new(RunDotNet: (received, native, _) =>
             {
                 Assert.AreEqual(request, native);
                 CheckResult[] results = [new(received.Candidate, received.Checks.Single(item =>
@@ -502,7 +506,7 @@ public sealed class ProgramTests
                     new(received.Candidate, results, [], []),
                     new(received.Candidate, [], [], [], [], []),
                     ResultCollector.Collect(received, results)));
-            });
+            }));
 
         Assert.AreEqual(1, exit, error.ToString());
         Assert.IsEmpty(error.ToString());

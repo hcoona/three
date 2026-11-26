@@ -593,6 +593,7 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         CollectionAssert.AreEqual(new[] { "passive-script", PassiveDirectory }, command.Arguments);
         Assert.AreEqual(30, command.DeadlineSeconds);
         Assert.AreSame(Environment, command.Environment);
+        Assert.IsFalse(command.InheritEnvironment);
     }
 
     [TestMethod]
@@ -738,6 +739,7 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
             Assert.AreEqual(PytestRoot, command.Directory);
             CollectionAssert.AreEqual(Arguments, command.Arguments);
             Assert.AreEqual(30, command.DeadlineSeconds);
+            Assert.IsFalse(command.InheritEnvironment);
             Assert.IsNotNull(command.Environment);
             Assert.AreEqual("owned-home", command.Environment["HOME"]);
             Assert.IsNull(command.Environment["PYTEST_ADDOPTS"]);
@@ -982,6 +984,7 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
                 { "workspace", "metadata", "--frozen", "--python", interpreter },
                 command.Arguments);
             Assert.AreSame(environment, command.Environment);
+            Assert.IsFalse(command.InheritEnvironment);
             return Task.FromResult(new NativeCommandResult(NativeTermination.Exited, 0,
                 PythonMetadataReaderTests.Fixture().ToJsonString(), "", 0, null));
         });

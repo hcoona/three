@@ -24,20 +24,10 @@ internal static class PythonPackageExecution
         PythonPackageRunRequest request, CancellationToken token) =>
         RunAsync(plan, request, NativeProcess.ExecuteAsync, token);
 
-    internal static Task<PythonPackageRunResult> RunAsync(CiPlan plan,
+    internal static async Task<PythonPackageRunResult> RunAsync(CiPlan plan,
         PythonPackageRunRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        CancellationToken token) => RunAsync(plan, request, null, execute, token);
-
-    // The group has already bound this exact checkout for the original plan.
-    internal static Task<PythonPackageRunResult> RunBoundAsync(CiPlan plan,
-        PythonPackageRunRequest request, GitMaterialization bound, CancellationToken token) =>
-        RunAsync(plan, request, bound, NativeProcess.ExecuteAsync, token);
-
-    private static async Task<PythonPackageRunResult> RunAsync(CiPlan plan,
-        PythonPackageRunRequest request, GitMaterialization? bound,
-        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        CancellationToken token)
+        CancellationToken token, GitMaterialization? bound = null)
     {
         string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
         string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
@@ -68,8 +58,7 @@ internal static class PythonPackageExecution
             string name = request.Members.Single(member =>
                 member.Directory == subject.Directory).Name;
             string root = Path.Combine(scratch, "package-" + ordinal++);
-            PythonPackageOperations operations = PythonReleaseUnits.Package(name, tools,
-                root);
+            PythonPackageOperations operations = PythonReleaseUnits.Package(name, tools, root);
             PythonDistribution[] originals = [];
             foreach (string kind in PythonPackageChecks.Kinds)
             {

@@ -18,8 +18,8 @@ internal static class PythonOwnerProjection
         PythonOwnerEndpoint candidate, string[] changedPaths,
         SelectionReason[]? pairedReasons = null)
     {
-        Validate(basis);
-        Validate(candidate);
+        var endpoints = new[] { (Endpoint: basis, Index: Validate(basis)),
+            (Endpoint: candidate, Index: Validate(candidate)) };
         if (changedPaths.Distinct(StringComparer.Ordinal).Count() != changedPaths.Length)
             throw new InvalidDataException("Duplicate Python changed coordinate.");
         var direct = new Dictionary<(string Path, string Revision), HashSet<string>>();
@@ -30,14 +30,14 @@ internal static class PythonOwnerProjection
         {
             ImpactPlanner.ValidatePath(reason.Path);
             ImpactPlanner.RequireText(reason.Project, "paired Python quality owner");
-            PythonOwnerEndpoint[] sources = new[] { basis, candidate }.Where(endpoint =>
-                endpoint.Revision.Commit == reason.Revision && endpoint.Revision.Entries.Any(
-                    entry => entry.Path == reason.Path)).ToArray();
+            var sources = endpoints.Where(source =>
+                source.Endpoint.Revision.Commit == reason.Revision &&
+                source.Index.Entries.ContainsKey(reason.Path));
             if (!seen.Add(reason) || !changedPaths.Contains(reason.Path, StringComparer.Ordinal) ||
-                !unionOwners.Contains(reason.Project) || sources.Length == 0)
+                !unionOwners.Contains(reason.Project) || !sources.Any())
                 throw new InvalidDataException("Unresolved paired Python input reason.");
-            foreach (PythonOwnerEndpoint source in sources)
-                Regular(source.Revision.Entries.Single(entry => entry.Path == reason.Path));
+            foreach (var source in sources)
+                Regular(source.Index.Entries[reason.Path]);
             var coordinate = (reason.Path, reason.Revision);
             if (!direct.TryGetValue(coordinate, out HashSet<string>? targets))
                 direct.Add(coordinate, targets = new(StringComparer.Ordinal));
@@ -47,7 +47,7 @@ internal static class PythonOwnerProjection
         // and package names remain endpoint-local; moves retain their two coordinates.
         var consumers = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         var quality = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        foreach (PythonOwnerEndpoint endpoint in new[] { basis, candidate })
+        foreach (var (endpoint, _) in endpoints)
         {
             foreach (PythonProjectDependencies project in endpoint.Projects)
                 foreach (string producer in project.Ordinary.Concat(project.Build))
@@ -62,24 +62,19 @@ internal static class PythonOwnerProjection
         {
             ImpactPlanner.ValidatePath(path);
             bool present = false;
-            foreach (PythonOwnerEndpoint endpoint in new[] { basis, candidate })
+            foreach (var (endpoint, index) in endpoints)
             {
-                GitEntry? entry = endpoint.Revision.Entries.SingleOrDefault(item =>
-                    item.Path == path);
-                if (entry is null) continue;
+                if (!index.Entries.TryGetValue(path, out GitEntry? entry)) continue;
                 present = true;
                 Regular(entry);
                 var members = new HashSet<string>(StringComparer.Ordinal);
                 var owners = new HashSet<string>(StringComparer.Ordinal);
                 if (direct.TryGetValue((path, endpoint.Revision.Commit),
                         out HashSet<string>? pairedOwners)) owners.UnionWith(pairedOwners);
-                string? nearest = endpoint.Projects.Select(project => project.Directory)
-                    .Where(directory => directory != "." && Under(path, directory))
-                    .OrderByDescending(directory => directory.Length).FirstOrDefault();
+                string? nearest = GitPathOwnership.NearestDirectory(path,
+                    endpoint.Projects.Select(project => project.Directory));
                 if (nearest is not null) members.Add(nearest);
-                PythonInputBinding[] inputs = endpoint.Inputs.Where(input => input.Path == path)
-                    .ToArray();
-                foreach (PythonInputBinding input in inputs)
+                foreach (PythonInputBinding input in index.Inputs[path])
                 {
                     members.UnionWith(input.Members);
                     owners.UnionWith(input.Owners);
@@ -87,7 +82,7 @@ internal static class PythonOwnerProjection
                 foreach (PythonQualityBinding binding in endpoint.Quality.Where(binding =>
                     binding.Paths.Contains(path, StringComparer.Ordinal)))
                     owners.Add(binding.Owner);
-                if (nearest is null && inputs.Length == 0 && owners.Count == 0)
+                if (nearest is null && !index.Inputs.Contains(path) && owners.Count == 0)
                     throw new InvalidDataException($"Unresolved Python input: {path}");
                 var pending = new Queue<string>(members);
                 while (pending.TryDequeue(out string? member))
@@ -107,7 +102,8 @@ internal static class PythonOwnerProjection
         return impacts.ToArray();
     }
 
-    private static void Validate(PythonOwnerEndpoint endpoint)
+    private static (Dictionary<string, GitEntry> Entries,
+        ILookup<string, PythonInputBinding> Inputs) Validate(PythonOwnerEndpoint endpoint)
     {
         ImpactPlanner.RequireText(endpoint.Revision.Commit, "Python revision");
         var entries = new Dictionary<string, GitEntry>(StringComparer.Ordinal);
@@ -150,6 +146,7 @@ internal static class PythonOwnerProjection
                 input.Owners.Any(owner => !owners.Contains(owner)))
                 throw new InvalidDataException("Unresolved Python input binding.");
         }
+        return (entries, endpoint.Inputs.ToLookup(input => input.Path, StringComparer.Ordinal));
 
         void Require(string path)
         {
@@ -159,9 +156,6 @@ internal static class PythonOwnerProjection
             Regular(entry);
         }
     }
-
-    private static bool Under(string path, string directory) =>
-        path.StartsWith(directory + "/", StringComparison.Ordinal);
 
     private static void Regular(GitEntry entry)
     {
