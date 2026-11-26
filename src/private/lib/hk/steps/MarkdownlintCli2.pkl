@@ -5,9 +5,9 @@ markdownlint_cli2 = new Config.Step {
   glob = List("*.md")
   stage = List("*.md")
   check = new Config.Command {
-    argv = List("markdownlint-cli2", "--", "{{files}}")
+    argv = List("./node_modules/.bin/markdownlint-cli2", "--", "{{files}}")
   }
   fix = new Config.Command {
-    argv = List("markdownlint-cli2", "--fix", "--", "{{files}}")
+    argv = List("./node_modules/.bin/markdownlint-cli2", "--fix", "--", "{{files}}")
   }
 }

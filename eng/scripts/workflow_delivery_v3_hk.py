@@ -34,6 +34,7 @@ PROVIDER_LOCKS = {
 NON_LINTER_EXECUTABLES = frozenset(
     {"python", "python3", "node", "npx", "uv", "uvx", "pnpm", "pnpx"}
 )
+NODE_BIN_PREFIX = "./node_modules/.bin/"
 PKL = ("mise", "exec", "--locked", "pkl", "--", "pkl", "eval", "-f", "json")
 STEP_COMMANDS = ("check", "check_diff", "fix")
 FILES_PLACEHOLDER = re.compile(r"\{\{\s*(?:workspace_)?files\s*\}\}")
@@ -190,10 +191,11 @@ def _step_uses_files(step: dict[str, object]) -> bool:
 def _linter_from_tokens(rest: list[str]) -> tuple[str, str] | None:
     if rest[:2] == ["uv", "run"]:
         provider, rest = "uv", rest[2:]
-    elif rest[:3] == ["pnpm", "exec", "--"]:
-        provider, rest = "pnpm", rest[3:]
-    elif rest[:2] == ["pnpm", "exec"]:
-        provider, rest = "pnpm", rest[2:]
+    elif rest and rest[0].startswith(NODE_BIN_PREFIX):
+        tool = rest[0].removeprefix(NODE_BIN_PREFIX)
+        if "/" in tool:
+            return None
+        provider, rest = "pnpm", [tool, *rest[1:]]
     else:
         provider = "mise"
     if not rest or rest[0].startswith("-") or rest[0] in NON_LINTER_EXECUTABLES:

@@ -42,11 +42,13 @@ or through explicit local test commands—not HK's `large` profile.
 - **Shell-free `Config.Command`:** `hk.pkl` and `src/private/lib/hk/` execute
   both guard steps and file-reading linters directly via structured
   `Config.Command` `argv` (passing `--` before `{{files}}` on positional-file
-  linters so leading-dash filenames stay literal, and `--force-exclude` on
-  `typos` so `.typos.toml` exclusions apply). HK `2.13.0+` natively filters out
-  deleted and absent file operands before expanding `{{files}}` and skips
-  filtered steps when no existing operands remain while still running
-  unconditional checks.
+  linters so leading-dash filenames stay literal, `--force-exclude` on `typos`
+  so `.typos.toml` exclusions apply, and `./node_modules/.bin/<tool>` rather
+  than `pnpm exec` for `pnpm`-locked binaries so HK's Windows `.cmd` shim
+  command-line sizing caps `cmd.exe` batches below 8,191 characters). HK
+  `2.13.0+` natively filters out deleted and absent file operands before
+  expanding `{{files}}` and skips filtered steps when no existing operands
+  remain while still running unconditional checks.
 - **`eng/scripts/workflow_delivery_v3_hk.py`:** Passes NUL-delimited impact
   paths (`--files0`, retaining deletions and rename endpoints) from `--staged`
   or `--from-ref` / `--to-ref`, omits operands replaced on disk by regular
