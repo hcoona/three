@@ -49,20 +49,7 @@ All tests execute strictly in-process on `.NET 11` without spawning external com
 
 ## Upstream Differential Verification
 
-Use this optional out-of-repository runbook to compare `Hcoona.Nanopass` against upstream [`nanopass-framework-scheme`](https://github.com/nanopass/nanopass-framework-scheme) on Chez Scheme and Node.js. Do not commit temporary harnesses to the repository.
-
-### Reproduction Runbook
-
-1. Create a scratch directory on disk (`WORKDIR="$(mktemp -d "$HOME/.cache/nanopass-diff-XXXXXX")"`). Do not use RAM-backed `/tmp`.
-2. Download and extract Chez Scheme without root privileges: run `apt-get download chezscheme` and `dpkg-deb -x chezscheme_*.deb "$WORKDIR/chez"`.
-3. Clone `https://github.com/nanopass/nanopass-framework-scheme.git` into `"$WORKDIR/nanopass-scheme"`, check out the pinned upstream commit (`c14d392487886df9275c1d4a3f0f61e1b6c4f2ef`), export the repository commit under test (for example `HEAD` or `61cc6457e1a2592267c6bebab5fd424737370db7`) into `"$WORKDIR/src"` with `git archive`, and record its 40-character SHA.
-4. Build a temporary `.NET 11` harness in `"$WORKDIR/harness"` against `Hcoona.Nanopass`, `Hcoona.Nanopass.Generators`, and `tests/public/lib/Nanopass.Tests/Compilers/`.
-5. Run the four checks below using `"$WORKDIR/chez/usr/bin/chezscheme"` (passing `-b` for `petite.boot` and `scheme.boot` under `usr/lib/csv*/`), `mise exec -- node`, and `mise exec -- dotnet`. Stop on the first unexplained evaluation, standard-output, grammar-set, or pass-IR mismatch; expect zero `Hcoona.Nanopass` defects.
-6. Delete `"$WORKDIR"` (`rm -rf "$WORKDIR"`) when verification finishes.
-
-### Verification Summary
-
-Local development differential check (not a CI gate or broader platform-support claim; archived in [Issue #1779](https://github.com/hcoona/three/issues/1779#issuecomment-7186123792)) recorded on Ubuntu x86_64 comparing `Hcoona.Nanopass` (`61cc6457e1a2592267c6bebab5fd424737370db7`) against `nanopass/nanopass-framework-scheme` (`c14d392487886df9275c1d4a3f0f61e1b6c4f2ef`) with Chez Scheme `10.0.0+dfsg-5build1`, Node.js `26.13.1`, and `.NET SDK 11.0.100`:
+Local out-of-repository differential check (not a CI gate or broader platform-support claim; archived in [Issue #1779](https://github.com/hcoona/three/issues/1779#issuecomment-7186123792)) recorded on Ubuntu x86_64 comparing `Hcoona.Nanopass` (`61cc6457e1a2592267c6bebab5fd424737370db7`) against [`nanopass/nanopass-framework-scheme`](https://github.com/nanopass/nanopass-framework-scheme) (`c14d392487886df9275c1d4a3f0f61e1b6c4f2ef`) with Chez Scheme `10.0.0+dfsg-5build1`, Node.js `26.13.1`, and `.NET SDK 11.0.100`:
 
 | Check                                                                               |                   Result                    | Summary                                                                                                                                                                      |
 | :---------------------------------------------------------------------------------- | :-----------------------------------------: | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
