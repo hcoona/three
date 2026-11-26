@@ -9,9 +9,8 @@ the W4 bulk system-crop packaging milestones
 ([Issue #1491](https://github.com/hcoona/three/issues/1491), with sub-issues
 [Issue #1494](https://github.com/hcoona/three/issues/1494) W4b,
 [Issue #1495](https://github.com/hcoona/three/issues/1495) W4c and
-[Issue #1496](https://github.com/hcoona/three/issues/1496) W4d) under the
-`Prepare OMR pilot datasets and training stack (W6 Slice A)`
-[Delivery Wave](../../../../../docs/delivery-wave.md) entry
+[Issue #1496](https://github.com/hcoona/three/issues/1496) W4d) originally
+admitted under the retired W6 CPU Slice A grant
 ([PR #1766](https://github.com/hcoona/three/pull/1766), amended in
 [PR #1769](https://github.com/hcoona/three/pull/1769); owner dispositions in
 [#1498 comment 7141304639](https://github.com/hcoona/three/issues/1498#issuecomment-7141304639),
@@ -23,11 +22,13 @@ downstream W6 GPU Slice B, W7 ([Issue #1499](https://github.com/hcoona/three/iss
 and W8 ([Issue #1500](https://github.com/hcoona/three/issues/1500)) workstreams.
 This protocol does not itself grant work: execution requires an active
 [Delivery Wave](../../../../../docs/delivery-wave.md) entry covering the
-specific slice (CPU Slice A now; GPU Slice B on the local RTX 4090 `24 GB`
-physical host under a subsequent Wave entry). The `sheet_music_omr.training`
-modules, asset-lock manifest and CLI commands named below implement the CPU
-Slice A controls, while full-weight GPU training, calibration fits and frozen
-`TEST` evaluation remain deferred to Slice B.
+specific slice (W6 CPU Slice A is completed and retired; the
+[W6 Slice B Delivery Wave entry](../../../../../docs/delivery-wave.md#execute-omr-gpu-training-and-evaluation-on-local-rtx-4090-w6-slice-b)
+is active on the local RTX 4090 `24 GB` physical host, gating Slice B campaign
+execution on the accepted Slice B protocol amendments and CUDA/checkpoint locks).
+The `sheet_music_omr.training` modules, asset-lock manifest and CLI commands
+currently defined below implement the completed CPU Slice A controls pending
+the Slice B protocol and lock amendments.
 
 When authorized by an accepted [Delivery Wave](../../../../../docs/delivery-wave.md)
 entry, this record governs:

@@ -107,55 +107,65 @@ and `4` ink-clipped matches driving `recommend_training = true` from
 systems) zero-difference `TRAIN_DEV` slice assembly plus `5 / 5` fault-class
 rejections (`341,067,483 / 15,000,000,000` download bytes, `889,390,301 /
 50,000,000,000` proof disk bytes, `1,215 / 25,000` formal pages, `1 / 1` locked
-`92`-page pass spent). Under the active
-[W6 Slice A Delivery Wave entry](../../../../docs/delivery-wave.md#prepare-omr-pilot-datasets-and-training-stack-w6-slice-a)
+`92`-page pass spent). Under the retired W6 CPU Slice A grant
 ([PR #1766](https://github.com/hcoona/three/pull/1766), amended in
 [PR #1769](https://github.com/hcoona/three/pull/1769)) and the
 [training, bulk-packaging and page-detector protocol](docs/training-protocol.md)
 ([PR #1770](https://github.com/hcoona/three/pull/1770), implemented in `#1775`,
-`#1777`, `#1778`, `#1783` and `#1786`), W6 CPU Slice A
+`#1777`, `#1778`, `#1783`, `#1786`, `#1857` and `#1875`), W6 CPU Slice A
 ([Issue #1498](https://github.com/hcoona/three/issues/1498),
 [Issue #1491](https://github.com/hcoona/three/issues/1491) / `#1494`–`#1496`)
-completed its authorized execution runs and published readiness and baseline
-reports
+completed its authorized execution runs and published readiness, full-category
+supplement and per-system baseline reports
 ([#1498 comment 7173082854](https://github.com/hcoona/three/issues/1498#issuecomment-7173082854),
+[#1498 comment 7185613521](https://github.com/hcoona/three/issues/1498#issuecomment-7185613521),
 [#1491 comment 7173083668](https://github.com/hcoona/three/issues/1491#issuecomment-7173083668),
-[#686 comment 7173099158](https://github.com/hcoona/three/issues/686#issuecomment-7173099158);
-independent `research-evidence-review` receipt in
-[#1498 comment 7173281357](https://github.com/hcoona/three/issues/1498#issuecomment-7173281357)):
+[#1491 comment 7185614792](https://github.com/hcoona/three/issues/1491#issuecomment-7185614792),
+[#686 comment 7173099158](https://github.com/hcoona/three/issues/686#issuecomment-7173099158),
+[#686 comment 7185615455](https://github.com/hcoona/three/issues/686#issuecomment-7185615455);
+independent `research-evidence-review` receipts in
+[#1498 comment 7173281357](https://github.com/hcoona/three/issues/1498#issuecomment-7173281357)
+and
+[#1498 comment 7185614009](https://github.com/hcoona/three/issues/1498#issuecomment-7185614009)):
 expanded `permissive` W4a intake admitted `3,160` two-staff piano scores (`60`
 `OpenScore Lieder` + `3,100` `PDMX`, `3,051` works with `306` `synth_val` works,
-`0` `TEST` overlap), `w6-slice-a-package-formal-4` (`e7250dca`) packaged
-`w6-crops-20k` (`18,007` `synth_train` + `2,013` `synth_val` crops; `5,912`
-page-box rows) and `w6-crops-50k` (`45,001` `synth_train` + `5,007` `synth_val`
-crops; `14,633` page-box rows) in `14,930 / 15,000` single-run pages (`98.44%`
-`Verovio 6.4.1` evaluated pass rate with `21` observed unmasked categories `<=
-0.36%`, verifying all `8` pinned model metadata locks including `Qwen3-VL-4B`
-sizing), non-formal synthetic-fixture CPU smoke (`w6-slice-a-smoke-2`) verified
-the locked `54`-wheel `w6-train-venv` and tiny-config steps across `3` Arm A
-processors (`Qwen3-VL-2B`, `Qwen3.5-2B`, `PaddleOCR-VL-1.6`), Arm B, 2-class
-`D-FINE` / `RT-DETRv2` page detectors, constrained decoding, synthetic 4-fold
-calibration and W7 sidecars, and offline per-system `copista-28m@44464d1` on
-`TRAIN_DEV` (`w6-slice-a-copista-formal-2` at `01c5acce`, `0` `TEST` touches)
-parsed `16 / 16` assembled pieces (`253 / 318 = 79.56%` `comb_dp_blind` crops)
-with converged-aspect-masked Layer-1 `A`-error `0.645749` (`638 / 988`, with
-missed/unparsed oracle-system measures forcibly unmasked and charged
-fail-closed; unequal in denominator and not a paired comparison with Stage S0
-draft's converged-aspect-masked `0.201814` = `178 / 882`) and `52.81%` (`94 /
+`0` `TEST` overlap), `w6-slice-a-package-formal-4` (`e7250dca`) and the
+`MuseScore Studio 4.7.7.261109195` rarity-interleaved supplement
+`w6-slice-a-package-formal-6` (`bf1aedf4`, `1,808` rendered pages, `187` passed /
+`168` dropped variants, `3,007` new `MuseScore` crops) packaged self-contained
+`w6-slice-a-package-formal-6/datasets/` (`w6-crops-20k`: `18,000` `synth_train`
+
+- `2,005` `synth_val` crops, `5,845` page-box rows; `w6-crops-50k`: `45,004`
+  `synth_train` + `5,001` `synth_val` crops, `14,569` page-box rows; plus shared
+  `datasets/assets/` PNGs) with non-zero supervised positive crops across all
+  `27 / 27` W1 `CONTENT_CATEGORIES` in both splits of both milestones (`0` shared
+  canonical composers between `synth_train` and `synth_val`), non-formal
+  synthetic-fixture CPU smoke (`w6-slice-a-smoke-2`) verified
+  the locked `54`-wheel `w6-train-venv` and tiny-config steps across `3` Arm A
+  processors (`Qwen3-VL-2B`, `Qwen3.5-2B`, `PaddleOCR-VL-1.6`), Arm B, 2-class
+  `D-FINE` / `RT-DETRv2` page detectors, constrained decoding, synthetic 4-fold
+  calibration and W7 sidecars, and offline per-system `copista-28m@44464d1` on
+  `TRAIN_DEV` (`w6-slice-a-copista-formal-2` at `01c5acce`, `0` `TEST` touches)
+  parsed `16 / 16` assembled pieces (`253 / 318 = 79.56%` `comb_dp_blind` crops)
+  with converged-aspect-masked Layer-1 `A`-error `0.645749` (`638 / 988`, with
+  missed/unparsed oracle-system measures forcibly unmasked and charged
+  fail-closed; unequal in denominator and not a paired comparison with Stage S0
+  draft's converged-aspect-masked `0.201814` = `178 / 882`) and `52.81%` (`94 /
 178`) Layer-1 / `55.48%` (`81 / 146`) in-vocab Layer-2 blind second-reader
-recall on converged-aspect-masked draft errors at `320 / 1,602` (`19.98%`)
-flagged draft measures (`443,814,298 / 15,000,000,000` Slice A download bytes,
-`15,466 / 35,000` settled charged pages from `15,465` actual rendered pages plus
-`1` failed-start minimum charge, `3 / 10` Copista invocations, `51,823,249,852 /
-100,000,000,000` Slice A disk bytes), awaiting owner Slice A acceptance prior to
-GPU Slice B authorization. With the W1, W2/W3 and W4/W5 execution
-[Delivery Wave](../../../../docs/delivery-wave.md) entries retired on
-acceptance, current work authorization and routine-maintenance boundaries
-follow the [Delivery Wave](../../../../docs/delivery-wave.md) and
-[record policy](../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
-([Issue #686](https://github.com/hcoona/three/issues/686) is the overall
-planning work carrier; see [Agent handoff](docs/agent-handoff.md)). There is no
-trained recognizer, model packaging or release.
+  recall on converged-aspect-masked draft errors at `320 / 1,602` (`19.98%`)
+  flagged draft measures (`443,814,298 / 15,000,000,000` Slice A download bytes,
+  `18,150 / 35,000` settled charged pages from `18,149` actual rendered pages plus
+  `1` failed-start minimum charge, `3 / 10` Copista invocations, `56,639,196,692 /
+100,000,000,000` Slice A disk bytes). With the W1, W2/W3, W4/W5 and W6 Slice A
+  execution [Delivery Wave](../../../../docs/delivery-wave.md) entries retired and
+  the [W6 Slice B Delivery Wave entry](../../../../docs/delivery-wave.md#execute-omr-gpu-training-and-evaluation-on-local-rtx-4090-w6-slice-b)
+  active for local RTX 4090 (`24 GB`) GPU training and evaluation, current work
+  authorization and routine-maintenance boundaries follow the
+  [Delivery Wave](../../../../docs/delivery-wave.md) and
+  [record policy](../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+  ([Issue #686](https://github.com/hcoona/three/issues/686) is the overall
+  planning work carrier; see [Agent handoff](docs/agent-handoff.md)). There is no
+  trained recognizer, model packaging or release.
 
 ## Usage
 

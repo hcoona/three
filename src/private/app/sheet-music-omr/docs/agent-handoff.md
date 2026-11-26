@@ -13,9 +13,7 @@ The accepted [Delivery Wave](../../../../../docs/delivery-wave.md) governs
 feature/capability advancements, architectural or public-contract changes, and
 external/privacy effects ([Issue #686](https://github.com/hcoona/three/issues/686)
 for sheet-music recognition design and planning, and the
-[W6 Slice A Delivery Wave entry](../../../../../docs/delivery-wave.md#prepare-omr-pilot-datasets-and-training-stack-w6-slice-a)
-(merged in [PR #1766](https://github.com/hcoona/three/pull/1766), amended in
-[PR #1769](https://github.com/hcoona/three/pull/1769))
+[W6 Slice B Delivery Wave entry](../../../../../docs/delivery-wave.md#execute-omr-gpu-training-and-evaluation-on-local-rtx-4090-w6-slice-b)
 for [Issue #1498](https://github.com/hcoona/three/issues/1498) and
 [Issue #1491](https://github.com/hcoona/three/issues/1491) (`#1494`–`#1496`);
 the W1 text-representation grant for
@@ -25,12 +23,20 @@ owner acceptance of `formal-5` in
 the W2/W3 grant for [Issue #1489](https://github.com/hcoona/three/issues/1489)
 and [Issue #1490](https://github.com/hcoona/three/issues/1490) was retired in
 [PR #1751](https://github.com/hcoona/three/pull/1751) after owner acceptance of
-`w2-s0-formal-3`, and the [PR #1752](https://github.com/hcoona/three/pull/1752)
+`w2-s0-formal-3`, the [PR #1752](https://github.com/hcoona/three/pull/1752)
 W4/W5 Stage S3 and system-detection grant for
 [Issue #1491](https://github.com/hcoona/three/issues/1491) (`#1493`–`#1496`)
 and [Issue #1497](https://github.com/hcoona/three/issues/1497) was retired in
 [PR #1762](https://github.com/hcoona/three/pull/1762) after owner acceptance of
-`w4-w5-formal-2`, `w4-w5-formal-w5-traindev` and `w4-w5-formal-w5-locked92`),
+`w4-w5-formal-2`, `w4-w5-formal-w5-traindev` and `w4-w5-formal-w5-locked92`,
+and the [PR #1766](https://github.com/hcoona/three/pull/1766) /
+[PR #1769](https://github.com/hcoona/three/pull/1769) W6 CPU Slice A grant was
+retired upon transitioning to W6 GPU Slice B after completing
+`w6-slice-a-package-formal-6`, `w6-slice-a-smoke-2` and
+`w6-slice-a-copista-formal-2` in
+[#1498 comment 7173082854](https://github.com/hcoona/three/issues/1498#issuecomment-7173082854)
+and
+[#1498 comment 7185613521](https://github.com/hcoona/three/issues/1498#issuecomment-7185613521)),
 while contract-preserving routine maintenance without new external, paid, or
 privacy effects follows the
 [record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency).
@@ -294,23 +300,28 @@ Two formal harness attempts ran on Windows x64 at clean `main` commit
   (`889,390,301` bytes across `runs/w4-w5-*`), and `25,000`-page formal ledger
   (`1,215` settled pages, `1 / 20` `TRAIN_DEV` W5 starts, and `1 / 3` starts
   with `1 / 1` completed and locked `92`-page pass in
-  `w4-w5-run-ledger.jsonl`) ended when the `PR #1752` Wave entry was retired.
-  Under the active W6 Slice A entry, persistent
-  `w6-slice-a-download-ledger.json` stands at `443,814,298 / 15,000,000,000`
-  bytes across `108` entries (`SHA-256`
+  `w4-w5-run-ledger.jsonl`) ended when the `PR #1752` Wave entry was retired,
+  and W6 CPU Slice A's `15,000,000,000`-byte download allowance
+  (`443,814,298` bytes across `108` entries in `w6-slice-a-download-ledger.json`,
+  `SHA-256`
   `9a4c84f60f73155a4f5169f367e8a5ebca51cf5c0c2ab0758c6c7b37a6331711`),
-  append-only `w6-slice-a-run-ledger.jsonl` stands at `15,466 / 35,000`
-  settled charged pages (`15,465` actual rendered pages plus `1` failed-start
-  minimum charge) and `3 / 10` private-input `copista-28m` invocations
-  (`SHA-256`
-  `02f44c7a7938e848e2dcb6681be88a0f23b9d2fadd3f9b55114ee5b6daab21d2`, `0`
-  `TEST` touches), and protocol-metered `runs/w6-slice-a-*` disk usage stands at
-  `51,823,249,852 / 100,000,000,000` bytes;
-  any new download, batch synthetic rendering, or private-page execution outside
-  active Wave bounds requires explicit bounds in a future Delivery Wave entry,
-  and initializing a fresh authorized `DOWNLOADS` directory without
-  `download-ledger.json` must pass `--prior-total 2350276855` and `--basis` on
-  the first `preflight` or `download`.
+  `35,000`-page / `10`-invocation run ledger (`18,150` settled charged pages
+  from `18,149` actual rendered pages plus `1` failed-start minimum charge and
+  `3 / 10` private-input `copista-28m` invocations in
+  `w6-slice-a-run-ledger.jsonl`, `SHA-256`
+  `e2120f815812a8ac181fc671cef40af1446f2cc27688aa0244282d2c70dc9004`, `0`
+  `TEST` touches), and `100,000,000,000`-byte Slice A disk cap
+  (`56,639,196,692` unique-inode bytes across `runs/w6-slice-a-*`, with
+  self-contained `w6-slice-a-package-formal-6` `report/w6-packaging.json`
+  `SHA-256` `77b8c24212118c8707b164eae2e46b3c668400ff644b443d09bbb7c4c0be0331`)
+  ended when the `PR #1766` / `PR #1769` Slice A Wave entry was retired in
+  favor of the active
+  [W6 Slice B Delivery Wave entry](../../../../../docs/delivery-wave.md#execute-omr-gpu-training-and-evaluation-on-local-rtx-4090-w6-slice-b);
+  any new download, campaign synthetic rendering, campaign GPU training, or
+  private-page execution outside active Wave bounds requires explicit bounds in
+  a future Delivery Wave entry, and initializing a fresh authorized `DOWNLOADS`
+  directory without `download-ledger.json` must pass `--prior-total 2350276855`
+  and `--basis` on the first `preflight` or `download`.
 - **Code-tree and MuseScore provenance binding:** `harness/cli.py:_require_preflight`
   and `harness/run.py:begin_run` enforce the clean project code-tree (`CODE_PATHS`)
   on formal runs (`pilot` permits uncommitted edits in a fresh `--run-dir`,
@@ -504,89 +515,67 @@ preserved external `w4-w5-formal-1`, `w4-w5-formal-2`,
 `w4-w5-formal-w5-traindev` and `w4-w5-formal-w5-locked92` run directories
 unless the repository owner deletes those run directories after closure merge.
 
-## Formal Slice A gates for authorized W6 runs
+## Completed W6 Slice A baselines and ordered Slice B gates
 
-Under the accepted [W6 Slice A Delivery Wave entry](../../../../../docs/delivery-wave.md#prepare-omr-pilot-datasets-and-training-stack-w6-slice-a),
-execute external provisioning, expanded `PDMX` intake, `20k` / `50k` crop
-packaging and `TRAIN_DEV` per-system `copista-28m` baseline runs strictly in
-order:
+W6 CPU Slice A's execution grant (`#1766`, `#1769`) is retired after completing
+its authorized runs (runtime observations in
+[#1498 comment 7173082854](https://github.com/hcoona/three/issues/1498#issuecomment-7173082854),
+[#1498 comment 7185613521](https://github.com/hcoona/three/issues/1498#issuecomment-7185613521),
+[#1491 comment 7173083668](https://github.com/hcoona/three/issues/1491#issuecomment-7173083668),
+[#1491 comment 7185614792](https://github.com/hcoona/three/issues/1491#issuecomment-7185614792),
+[#686 comment 7173099158](https://github.com/hcoona/three/issues/686#issuecomment-7173099158)
+and
+[#686 comment 7185615455](https://github.com/hcoona/three/issues/686#issuecomment-7185615455);
+independent `research-evidence-review` receipts in
+[#1498 comment 7173281357](https://github.com/hcoona/three/issues/1498#issuecomment-7173281357)
+and
+[#1498 comment 7185614009](https://github.com/hcoona/three/issues/1498#issuecomment-7185614009)):
 
-1. **Accept protocol on `main` before external, bulk or private-input effects:**
-   confirm [OMR-REQ-026 through OMR-REQ-030](requirements.md#pilot-dataset-packaging-clean-training-stack-and-per-system-baseline)
-   and the [training, bulk-packaging and page-detector protocol](training-protocol.md)
-   are merged on `origin/main` before installing `DOWNLOADS/w6-train-venv` or
-   model-metadata files, running expanded W4a intake, rendering bulk `20k` /
-   `50k` synthetic crops, preparing new `TRAIN_DEV` crops, or running
-   private-input `copista-28m` per-system invocations.
-2. **Preserve all prior ledgers and enforce persistent Slice A ledgers:** carry
-   forward `download-ledger.json`, `w2-download-ledger.json`,
-   `w2-touch-log.jsonl`, `w4-w5-download-ledger.json` and
-   `w4-w5-run-ledger.jsonl` unchanged (`locked92` single-pass stop intact), and
-   keep `DOWNLOADS/w6-slice-a-download-ledger.json` (`15 GB` cap, settled
-   history preserved) and append-only `DOWNLOADS/w6-slice-a-run-ledger.jsonl`
-   (`35,000` cumulative rendered pages, `10` private-input `copista-28m`
-   per-system invocations charged pre-start regardless of purpose or outcome)
-   permanently preserved across cleanup and `DOWNLOADS` roots (`100 GB` disk cap
-   across `RUNS/w6-slice-a-*`, `15,000` pages/run).
-3. **Maintain zero `TEST` touches and clean-license isolation:** never pass any
-   `TEST` piece (`gold-01`–`gold-06`, `gold-18`), `TEST` page PDF or `TEST` crop
-   into Slice A packaging, calibration or `copista-28m` per-system runs (`TEST`
-   `gold-cache` entries are read-only solely for W4a file-digest and
-   non-notation work-identity exclusion checks), enforce the external-asset
-   license allowlist and mutable-source recheck gate in
-   [training-protocol.md](training-protocol.md#environment-isolated-provisioning-and-mutable-source-rechecks),
-   and pass `OMR-REQ-015` `privacy.scan` and independent
-   `research-evidence-review` before publishing Slice A readiness and baseline
-   reports to `#1498`, `#1491` (`#1494`–`#1496`) and `#686`.
-4. **Completed Slice A execution runs and fixture smoke (awaiting owner
-   readiness acceptance prior to GPU Slice B):** runtime observations recorded
-   in
-   [#1498 comment 7173082854](https://github.com/hcoona/three/issues/1498#issuecomment-7173082854)
-   (independent `research-evidence-review` receipt in
-   [#1498 comment 7173281357](https://github.com/hcoona/three/issues/1498#issuecomment-7173281357)),
-   [#1491 comment 7173083668](https://github.com/hcoona/three/issues/1491#issuecomment-7173083668)
-   (`#1494`–`#1496`) and
-   [#686 comment 7173099158](https://github.com/hcoona/three/issues/686#issuecomment-7173099158):
-    - Non-formal fixture smoke `w6-slice-a-smoke-2` (`smoke-report.json`
-      `SHA-256`
-      `116d2cca857af4082cb72363ee9123a19fe073b16ac51049288e3f14f67de907`, not a
-      Git-bound formal run) verified `wheel_lock_sha256`
-      `4905d78783d7ca10660975706321829cee83ac7dc359e5cc5dd102f777c0b1de` and
-      `metadata_lock_sha256`
-      `4ae3c88d9040430d4d9558ba923916bfc2f259b5ea213eadf2d453f406c4972d` and
-      exercised tiny-config synthetic-fixture checks across `3` Arm A processors
-      (`Qwen3-VL-2B`, `Qwen3.5-2B`, `PaddleOCR-VL-1.6`), Arm B, sequential
-      `D-FINE` / `RT-DETRv2` detector steps, constrained decoding, synthetic
-      calibration and W7 sidecar emission.
-    - Formal baseline `w6-slice-a-copista-formal-2` (clean `origin/main`
-      `01c5acceb79f050170f686237f3d82da10e5719d`, `copista-per-system-traindev.json`
-      `SHA-256`
-      `fb804747aebc0e591fa04672e9f6361f6d06578834cb843e43c1795912a1ea74`, `0`
-      `TEST` touches) parsed `16 / 16` `TRAIN_DEV` pieces (`253 / 318`
-      `comb_dp_blind` crops; `318 / 323` exact 2-staff oracle matches, `5`
-      missed), recording converged-aspect-masked `A`-error `0.645749` (`638 /
-988`, forcibly unmasking and charging missed/unparsed oracle-system
-      measures fail-closed; unequal in denominator and not a paired comparison
-      with Stage S0 draft's converged-aspect-masked `0.201814` = `178 / 882`)
-      and `52.81%` (`94 / 178`, `0.528090`) Layer-1 / `55.48%` (`81 / 146`,
-      `0.554795`) in-vocab Layer-2 blind second-reader recall on
-      converged-aspect-masked draft errors at `320 / 1,602` (`19.98%`) flagged
-      draft measures.
-    - Formal packaging `w6-slice-a-package-formal-4` (clean `origin/main`
-      `e7250dca2c6a9c24d806a0de31008536dff7ff1b`, `w6-packaging.json` `SHA-256`
-      `260b461d20c7647415d60f9fb3f025fc33b290cf7a92ef7c4d7db85bcc9f22c3`)
-      admitted `3,160` `permissive` piano scores (`60` `OpenScore Lieder` +
-      `3,100` `PDMX`, `306` `synth_val` works, `0` `TEST` overlap) and packaged
-      `w6-crops-20k` (`summary.json`
-      `62b7c9444b6e1b025c20dd754789c4ccf538ad483fb2619cff731337b90dfe2c`:
-      `18,007` `synth_train` + `2,013` `synth_val` crops) and `w6-crops-50k`
-      (`summary.json`
-      `fc32a37ffe93c6a30b4219fad01c4cfb7bc3568931f07b8658c702139d7c9b83`:
-      `45,001` `synth_train` + `5,007` `synth_val` crops, including
-      `Qwen3-VL-4B` sizing) in `14,930` rendered pages. Follow the retention,
-      cleanup and same-host root-rebinding (`migrate-w6-downloads`) rules in
-      [training-protocol.md](training-protocol.md#finite-execution-bounds-ledgers-stops-privacy-and-cleanup);
-      any cross-host transfer to the local RTX 4090 GPU host and all GPU Slice B
-      operations (`E0` zero-shot inference, neural training, paired `TRAIN_DEV`
-      replay and final `TEST` evaluation) remain unauthorized until Slice B's
-      separate Delivery Wave entry and protocol are accepted.
+- Non-formal fixture smoke `w6-slice-a-smoke-2` (`smoke-report.json` `SHA-256`
+  `116d2cca857af4082cb72363ee9123a19fe073b16ac51049288e3f14f67de907`, not a
+  Git-bound formal run) verified `wheel_lock_sha256`
+  `4905d78783d7ca10660975706321829cee83ac7dc359e5cc5dd102f777c0b1de` and
+  `metadata_lock_sha256`
+  `4ae3c88d9040430d4d9558ba923916bfc2f259b5ea213eadf2d453f406c4972d` across
+  `3` Arm A processors (`Qwen3-VL-2B`, `Qwen3.5-2B`, `PaddleOCR-VL-1.6`), Arm B,
+  sequential `D-FINE` / `RT-DETRv2` detector steps, constrained decoding,
+  synthetic calibration and W7 sidecar emission.
+- Formal baseline `w6-slice-a-copista-formal-2` (clean `origin/main`
+  `01c5acceb79f050170f686237f3d82da10e5719d`, `copista-per-system-traindev.json`
+  `SHA-256`
+  `fb804747aebc0e591fa04672e9f6361f6d06578834cb843e43c1795912a1ea74`, `0`
+  `TEST` touches) parsed `16 / 16` `TRAIN_DEV` pieces (`253 / 318`
+  `comb_dp_blind` crops; `318 / 323` exact 2-staff oracle matches, `5` missed),
+  recording converged-aspect-masked `A`-error `0.645749` (`638 / 988`, forcibly
+  unmasking and charging missed/unparsed oracle-system measures fail-closed;
+  unequal in denominator and not a paired comparison with Stage S0 draft's
+  converged-aspect-masked `0.201814` = `178 / 882`) and `52.81%` (`94 / 178`,
+  `0.528090`) Layer-1 / `55.48%` (`81 / 146`, `0.554795`) in-vocab Layer-2 blind
+  second-reader recall on converged-aspect-masked draft errors at `320 / 1,602`
+  (`19.98%`) flagged draft measures.
+- Formal base packaging `w6-slice-a-package-formal-4` (`e7250dca`,
+  `w6-packaging.json` `SHA-256`
+  `260b461d20c7647415d60f9fb3f025fc33b290cf7a92ef7c4d7db85bcc9f22c3`, `3,160`
+  admitted `permissive` piano scores, `14,930` rendered pages) and full-category
+  `MuseScore Studio 4.7.7.261109195` supplement `w6-slice-a-package-formal-6`
+  (clean `origin/main` `bf1aedf454babf3532eb732120652b1d3fb703b2`,
+  `w6-packaging.json` `SHA-256`
+  `77b8c24212118c8707b164eae2e46b3c668400ff644b443d09bbb7c4c0be0331`, `1,808`
+  rendered pages, `3,007` new `MuseScore` crops) published self-contained
+  `w6-slice-a-package-formal-6/datasets/` (including shared `datasets/assets/`
+  PNGs, `w6-crops-20k/summary.json` `SHA-256`
+  `5ded55ce63fb1f2591529e65a5c605cffc77c4b4d770d4090a524db356e1e495`: `18,000`
+  `synth_train` + `2,005` `synth_val` crops, `5,845` page-box rows; and
+  `w6-crops-50k/summary.json` `SHA-256`
+  `b0f3cf6ef51973e07c9aa8f4914b14f9d23d9ed392699207c10d8aaa0df2756f`: `45,004`
+  `synth_train` + `5,001` `synth_val` crops, `14,569` page-box rows) with
+  non-zero supervised positive crops across all `27 / 27` `CONTENT_CATEGORIES`
+  in both splits of both milestones.
+
+For **W6 GPU Slice B** on the local RTX 4090 (`24 GB`) workstation, follow the
+ordering, accepted-protocol prerequisites, persistent ledger bounds, offline
+fixture-smoke exemption, and pre-read `w2-touch-log.jsonl` +
+`w6-slice-b-run-ledger.jsonl` frozen-`TEST` touch governance owned by the
+active
+[W6 Slice B Delivery Wave entry](../../../../../docs/delivery-wave.md#execute-omr-gpu-training-and-evaluation-on-local-rtx-4090-w6-slice-b)
+and the [training, bulk-packaging and page-detector protocol](training-protocol.md).
